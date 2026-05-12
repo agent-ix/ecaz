@@ -13634,6 +13634,116 @@ fn ec_spire_validate_tuple_payload_columns(
     Ok(())
 }
 
+struct EcSpireTypedTuplePayloadColumn {
+    attnum: i16,
+    name: String,
+    type_oid: pg_sys::Oid,
+    typmod: i32,
+    collation: pg_sys::Oid,
+    send_function_sql: String,
+}
+
+fn ec_spire_tuple_payload_column_metadata(
+    heap_relation_oid: pg_sys::Oid,
+    requested_columns: &[String],
+    context: &str,
+) -> Result<Vec<EcSpireTypedTuplePayloadColumn>, String> {
+    ec_spire_validate_tuple_payload_columns(heap_relation_oid, requested_columns)
+        .map_err(|e| format!("{context} {e}"))?;
+    let requested_column_refs = requested_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    Spi::connect(|client| {
+        let rows = client
+            .select(
+                "SELECT attr.attnum::int2 AS attnum, \
+                        attr.attname::text AS attname, \
+                        attr.atttypid::oid AS atttypid, \
+                        attr.atttypmod::int4 AS atttypmod, \
+                        attr.attcollation::oid AS attcollation, \
+                        typ.typsend::oid AS typsend_oid, \
+                        proc_namespace.nspname::text AS send_schema, \
+                        send_proc.proname::text AS send_name \
+                   FROM unnest($1::text[]) WITH ORDINALITY AS requested(column_name, ordinality) \
+                   JOIN pg_attribute AS attr \
+                     ON attr.attrelid = $2::oid \
+                    AND attr.attname = requested.column_name \
+                    AND attr.attnum > 0 \
+                    AND NOT attr.attisdropped \
+                   JOIN pg_type AS typ \
+                     ON typ.oid = attr.atttypid \
+              LEFT JOIN pg_proc AS send_proc \
+                     ON send_proc.oid = typ.typsend \
+              LEFT JOIN pg_namespace AS proc_namespace \
+                     ON proc_namespace.oid = send_proc.pronamespace \
+                  ORDER BY requested.ordinality",
+                None,
+                &[
+                    requested_column_refs.as_slice().into(),
+                    heap_relation_oid.into(),
+                ],
+            )
+            .map_err(|e| format!("{context} typed metadata lookup failed: {e}"))?;
+        let mut metadata = Vec::with_capacity(requested_columns.len());
+        for row in rows {
+            let attnum = row["attnum"]
+                .value::<i16>()
+                .map_err(|e| format!("{context} typed attnum decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed attnum is null"))?;
+            let name = row["attname"]
+                .value::<String>()
+                .map_err(|e| format!("{context} typed attname decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed attname is null"))?;
+            let type_oid = row["atttypid"]
+                .value::<pg_sys::Oid>()
+                .map_err(|e| format!("{context} typed atttypid decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed atttypid is null"))?;
+            let typmod = row["atttypmod"]
+                .value::<i32>()
+                .map_err(|e| format!("{context} typed atttypmod decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed atttypmod is null"))?;
+            let collation = row["attcollation"]
+                .value::<pg_sys::Oid>()
+                .map_err(|e| format!("{context} typed attcollation decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed attcollation is null"))?;
+            let send_oid = row["typsend_oid"]
+                .value::<pg_sys::Oid>()
+                .map_err(|e| format!("{context} typed typsend decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed typsend is null"))?;
+            if send_oid == pg_sys::InvalidOid {
+                return Err(format!(
+                    "{context} unsupported_type_binary_io for column \"{name}\""
+                ));
+            }
+            let send_schema = row["send_schema"]
+                .value::<String>()
+                .map_err(|e| format!("{context} typed send schema decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed send schema is null"))?;
+            let send_name = row["send_name"]
+                .value::<String>()
+                .map_err(|e| format!("{context} typed send name decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed send name is null"))?;
+            metadata.push(EcSpireTypedTuplePayloadColumn {
+                attnum,
+                name,
+                type_oid,
+                typmod,
+                collation,
+                send_function_sql: pgrx::spi::quote_qualified_identifier(&send_schema, &send_name),
+            });
+        }
+        if metadata.len() != requested_columns.len() {
+            return Err(format!(
+                "{context} typed metadata returned {} rows for {} requested columns",
+                metadata.len(),
+                requested_columns.len()
+            ));
+        }
+        Ok(metadata)
+    })
+}
+
 fn ec_spire_quote_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
@@ -14206,6 +14316,123 @@ fn ec_spire_remote_search_tuple_payloads_for_ctids(
     })
 }
 
+fn ec_spire_remote_search_typed_tuple_payloads_for_ctids(
+    heap_relation_regclass: &str,
+    columns: &[EcSpireTypedTuplePayloadColumn],
+    ctids: &[String],
+) -> Result<Vec<(Vec<bool>, Vec<Vec<u8>>, bool)>, String> {
+    if ctids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ctid_refs = ctids.iter().map(String::as_str).collect::<Vec<_>>();
+    let projected_columns = columns
+        .iter()
+        .map(|column| {
+            let identifier = ec_spire_quote_identifier(&column.name);
+            format!("heap_row.{identifier} AS {identifier}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let found_projection = if projected_columns.is_empty() {
+        "true AS __ec_spire_found".to_owned()
+    } else {
+        format!("true AS __ec_spire_found, {projected_columns}")
+    };
+    let payload_null_exprs = columns
+        .iter()
+        .map(|column| {
+            let identifier = ec_spire_quote_identifier(&column.name);
+            format!("(heap.__ec_spire_found IS NULL OR heap.{identifier} IS NULL)")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let payload_value_exprs = columns
+        .iter()
+        .map(|column| {
+            let identifier = ec_spire_quote_identifier(&column.name);
+            let send_function = &column.send_function_sql;
+            format!(
+                "CASE WHEN heap.__ec_spire_found IS NULL OR heap.{identifier} IS NULL \
+                      THEN ''::bytea \
+                      ELSE {send_function}(heap.{identifier}) \
+                 END"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let payload_null_array = if payload_null_exprs.is_empty() {
+        "ARRAY[]::boolean[]".to_owned()
+    } else {
+        format!("ARRAY[{payload_null_exprs}]::boolean[]")
+    };
+    let payload_value_array = if payload_value_exprs.is_empty() {
+        "ARRAY[]::bytea[]".to_owned()
+    } else {
+        format!("ARRAY[{payload_value_exprs}]::bytea[]")
+    };
+    let sql = format!(
+        "SELECT candidate.ctid_text, \
+                heap.__ec_spire_found IS NULL AS tuple_payload_missing, \
+                {payload_null_array} AS payload_nulls, \
+                {payload_value_array} AS payload_values \
+           FROM unnest($1::text[]) WITH ORDINALITY AS candidate(ctid_text, ordinality) \
+           LEFT JOIN LATERAL ( \
+             SELECT {found_projection} \
+               FROM {heap_relation_regclass} AS heap_row \
+              WHERE heap_row.ctid = candidate.ctid_text::tid \
+           ) AS heap ON true \
+          ORDER BY candidate.ordinality"
+    );
+
+    Spi::connect(|client| {
+        let rows = client
+            .select(sql.as_str(), None, &[ctid_refs.as_slice().into()])
+            .map_err(|e| format!("ec_spire typed tuple payload heap fetch failed: {e}"))?;
+        let mut payloads = Vec::with_capacity(ctids.len());
+        for row in rows {
+            row["ctid_text"]
+                .value::<String>()
+                .map_err(|e| format!("ec_spire typed tuple payload ctid decode failed: {e}"))?
+                .ok_or_else(|| "ec_spire typed tuple payload ctid is null".to_owned())?;
+            let tuple_payload_missing = row["tuple_payload_missing"]
+                .value::<bool>()
+                .map_err(|e| {
+                    format!("ec_spire typed tuple payload missing flag decode failed: {e}")
+                })?
+                .ok_or_else(|| "ec_spire typed tuple payload missing flag is null".to_owned())?;
+            let payload_nulls = row["payload_nulls"]
+                .value::<Vec<bool>>()
+                .map_err(|e| format!("ec_spire typed tuple payload nulls decode failed: {e}"))?
+                .ok_or_else(|| "ec_spire typed tuple payload nulls are null".to_owned())?;
+            let payload_values = row["payload_values"]
+                .value::<pgrx::datum::Array<&[u8]>>()
+                .map_err(|e| format!("ec_spire typed tuple payload values decode failed: {e}"))?
+                .ok_or_else(|| "ec_spire typed tuple payload values are null".to_owned())?
+                .iter_deny_null()
+                .into_iter()
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>();
+            if payload_nulls.len() != columns.len() || payload_values.len() != columns.len() {
+                return Err(format!(
+                    "ec_spire typed tuple payload returned {} null flags and {} values for {} columns",
+                    payload_nulls.len(),
+                    payload_values.len(),
+                    columns.len()
+                ));
+            }
+            payloads.push((payload_nulls, payload_values, tuple_payload_missing));
+        }
+        if payloads.len() != ctids.len() {
+            return Err(format!(
+                "ec_spire typed tuple payload heap fetch returned {} rows for {} CTIDs",
+                payloads.len(),
+                ctids.len()
+            ));
+        }
+        Ok(payloads)
+    })
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_tuple_payload(
@@ -14323,6 +14550,187 @@ fn ec_spire_remote_search_tuple_payload(
                 status,
             )
         })
+        .collect::<Vec<_>>();
+
+    TableIterator::new(payload_rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_tuple_payload_typed(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+    requested_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
+        name!(score, f32),
+        name!(payload_attnums, Vec<i16>),
+        name!(payload_names, Vec<String>),
+        name!(payload_type_oids, Vec<pg_sys::Oid>),
+        name!(payload_typmods, Vec<i32>),
+        name!(payload_collations, Vec<pg_sys::Oid>),
+        name!(payload_nulls, Vec<bool>),
+        name!(payload_values, Vec<Vec<u8>>),
+        name!(payload_formats, Vec<String>),
+        name!(tuple_payload_missing, bool),
+        name!(payload_key, &'static str),
+        name!(payload_column_count, i32),
+        name!(tuple_transport, &'static str),
+        name!(tuple_transport_status, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_tuple_payload_typed requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_tuple_payload_typed top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_tuple_payload_typed selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_tuple_payload_typed")
+    };
+    let heap_relation_oid = unsafe {
+        (*index_relation)
+            .rd_index
+            .as_ref()
+            .expect("opened index relation should expose pg_index metadata")
+            .indrelid
+    };
+    let rows = unsafe {
+        am::spire_remote_search_local_heap_candidate_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let columns = ec_spire_tuple_payload_column_metadata(
+        heap_relation_oid,
+        &requested_columns,
+        "ec_spire_remote_search_tuple_payload_typed",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let heap_relation_regclass = ec_spire_relation_regclass_text(heap_relation_oid)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload_typed {e}"));
+    let payload_column_count = i32::try_from(requested_columns.len()).unwrap_or_else(|_| {
+        pgrx::error!("ec_spire_remote_search_tuple_payload_typed too many columns")
+    });
+    let ctids = rows
+        .iter()
+        .map(|row| format!("({},{})", row.heap_block, row.heap_offset))
+        .collect::<Vec<_>>();
+    let payloads = ec_spire_remote_search_typed_tuple_payloads_for_ctids(
+        &heap_relation_regclass,
+        &columns,
+        &ctids,
+    )
+    .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload_typed {e}"));
+    let payload_attnums = columns
+        .iter()
+        .map(|column| column.attnum)
+        .collect::<Vec<_>>();
+    let payload_names = columns
+        .iter()
+        .map(|column| column.name.clone())
+        .collect::<Vec<_>>();
+    let payload_type_oids = columns
+        .iter()
+        .map(|column| column.type_oid)
+        .collect::<Vec<_>>();
+    let payload_typmods = columns
+        .iter()
+        .map(|column| column.typmod)
+        .collect::<Vec<_>>();
+    let payload_collations = columns
+        .iter()
+        .map(|column| column.collation)
+        .collect::<Vec<_>>();
+    let payload_formats = columns
+        .iter()
+        .map(|_| "pg_binary_attr_v1".to_owned())
+        .collect::<Vec<_>>();
+
+    let payload_rows = rows
+        .into_iter()
+        .zip(payloads)
+        .map(
+            |(row, (payload_nulls, payload_values, tuple_payload_missing))| {
+                let status = if tuple_payload_missing {
+                    "remote_tuple_payload_missing"
+                } else {
+                    row.status
+                };
+                (
+                    i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+                    i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+                    i64::from(row.node_id),
+                    i64::try_from(row.pid).expect("pid should fit in i64"),
+                    i64::try_from(row.object_version).expect("object version should fit in i64"),
+                    i64::from(row.row_index),
+                    i16::try_from(row.assignment_flags)
+                        .expect("assignment flags should fit in i16"),
+                    row.vec_id,
+                    row.row_locator,
+                    i64::from(row.heap_block),
+                    i32::from(row.heap_offset),
+                    row.score,
+                    payload_attnums.clone(),
+                    payload_names.clone(),
+                    payload_type_oids.clone(),
+                    payload_typmods.clone(),
+                    payload_collations.clone(),
+                    payload_nulls,
+                    payload_values,
+                    payload_formats.clone(),
+                    tuple_payload_missing,
+                    "node_id_vec_id",
+                    payload_column_count,
+                    "pg_binary_attr_v1",
+                    if tuple_payload_missing {
+                        "remote_tuple_payload_missing"
+                    } else {
+                        "ready"
+                    },
+                    status,
+                )
+            },
+        )
         .collect::<Vec<_>>();
 
     TableIterator::new(payload_rows.into_iter())
@@ -30310,6 +30718,90 @@ mod tests {
         assert_eq!(alpha_count, 1);
         assert_eq!(missing_count, 0);
         assert_eq!(ready_count, payload_count);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_typed_tuple_payload_scalar_parity_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tuple_payload_typed_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tuple_payload_typed_sql (id, title, embedding) VALUES \
+             (1, 'alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, 'beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tuple_payload_typed_sql_idx \
+             ON ec_spire_tuple_payload_typed_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_tuple_payload_typed_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_tuple_payload_typed_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let endpoint_args = format!(
+            "'ec_spire_tuple_payload_typed_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict', ARRAY['id', 'title']::text[]",
+            selected_pids[0], selected_pids[1],
+        );
+        let json_alpha_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload({endpoint_args}) \
+              WHERE tuple_payload ->> 'id' = '1' \
+                AND tuple_payload ->> 'title' = 'alpha' \
+                AND NOT tuple_payload ? 'embedding' \
+                AND status = 'ready'"
+        ))
+        .expect("JSON tuple payload parity query should succeed")
+        .expect("JSON tuple payload parity count should exist");
+        let typed_summary = Spi::get_one::<String>(&format!(
+            "SELECT count(*)::text || '|' || \
+                    min(payload_column_count)::text || '|' || \
+                    count(*) FILTER (WHERE payload_key = 'node_id_vec_id')::text || '|' || \
+                    count(*) FILTER (WHERE tuple_transport = 'pg_binary_attr_v1')::text || '|' || \
+                    count(*) FILTER (WHERE tuple_transport_status = 'ready')::text || '|' || \
+                    count(*) FILTER (WHERE status = 'ready')::text \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args})"
+        ))
+        .expect("typed tuple payload summary query should succeed")
+        .expect("typed tuple payload summary should exist");
+        let typed_alpha_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args}) \
+              WHERE payload_attnums = ARRAY[1, 2]::int2[] \
+                AND payload_names = ARRAY['id', 'title']::text[] \
+                AND payload_type_oids = ARRAY['int8'::regtype::oid, 'text'::regtype::oid]::oid[] \
+                AND payload_typmods = ARRAY[-1, -1]::int4[] \
+                AND payload_nulls = ARRAY[false, false]::boolean[] \
+                AND payload_formats = ARRAY['pg_binary_attr_v1', 'pg_binary_attr_v1']::text[] \
+                AND payload_values[1] = int8send(1::bigint)::bytea \
+                AND payload_values[2] = textsend('alpha'::text)::bytea \
+                AND NOT tuple_payload_missing \
+                AND tuple_transport_status = 'ready' \
+                AND status = 'ready'"
+        ))
+        .expect("typed tuple payload scalar value query should succeed")
+        .expect("typed tuple payload scalar value count should exist");
+
+        assert_eq!(json_alpha_count, 1);
+        assert_eq!(typed_summary, "2|2|2|2|2|2");
+        assert_eq!(typed_alpha_count, 1);
     }
 
     #[pg_test]

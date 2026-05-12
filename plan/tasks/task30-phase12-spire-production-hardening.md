@@ -76,7 +76,7 @@ described by reviewer packet `30896`.
   - [x] `plan/design/spire-typed-tuple-transport.md` selects per-attribute
     PostgreSQL binary I/O, defines endpoint metadata, negotiation, JSON
     fallback, and removal criteria before executor changes.
-- [ ] Add a typed remote endpoint beside the JSON endpoint, preferably using
+- [x] Add a typed remote endpoint beside the JSON endpoint, preferably using
   PostgreSQL binary composite/record transport or per-attribute `typsend` /
   `typreceive` bytes.
 - [ ] Add endpoint negotiation so CustomScan prefers typed tuple transport when
@@ -93,6 +93,8 @@ described by reviewer packet `30896`.
   typed transport covers them.
 - [ ] Add fixtures proving typed transport round-trips scalar, array,
   composite, NULL, and domain values where supported.
+  - [x] Scalar JSON-parity fixture covers `bigint` and `text` payload bytes via
+    `ec_spire_remote_search_tuple_payload_typed(...)`.
 - [ ] Measure tuple-heavy read throughput before and after typed transport.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path
