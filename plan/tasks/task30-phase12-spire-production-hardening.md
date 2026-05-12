@@ -71,8 +71,11 @@ described by reviewer packet `30896`.
 
 ## Phase 12.2: Typed Tuple Transport and JSON Retirement
 
-- [ ] Design the typed tuple-payload protocol that replaces the current JSON
+- [x] Design the typed tuple-payload protocol that replaces the current JSON
   bridge for remote-origin tuple delivery.
+  - [x] `plan/design/spire-typed-tuple-transport.md` selects per-attribute
+    PostgreSQL binary I/O, defines endpoint metadata, negotiation, JSON
+    fallback, and removal criteria before executor changes.
 - [ ] Add a typed remote endpoint beside the JSON endpoint, preferably using
   PostgreSQL binary composite/record transport or per-attribute `typsend` /
   `typreceive` bytes.
