@@ -170,7 +170,7 @@ described by reviewer packet `30896`.
   - [x] document it as required on every remote;
   - [x] check or warn during descriptor registration;
   - [x] wrap `PREPARE TRANSACTION` exhaustion with a SPIRE-named hint.
-- [ ] Add a multi-row INSERT trigger fixture proving per-row trigger dispatch
+- [x] Add a multi-row INSERT trigger fixture proving per-row trigger dispatch
   lands every row on its owning remote and commits all remote prepared
   transactions on local commit.
 - [ ] Add a placement-table write-contention fixture with many parallel

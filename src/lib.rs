@@ -17284,6 +17284,12 @@ mod tests {
     }
 
     #[pg_extern]
+    fn ec_spire_test_set_env_var(key: String, value: String) -> bool {
+        std::env::set_var(key, value);
+        true
+    }
+
+    #[pg_extern]
     fn ec_spire_test_rewrite_placement_node(
         index_oid: pg_sys::Oid,
         pid: i64,
@@ -21689,6 +21695,223 @@ mod tests {
         );
         assert_eq!(prepared_count, 1);
         assert_eq!(descriptor_row, "18|true|true|true");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_trigger_multirow_commits_prepares_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_INSERT_TRIGGER_MULTIROW_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var(\
+                     'EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_INSERT_TRIGGER_MULTIROW_SQL', \
+                     $1)",
+                &[&loopback_conninfo],
+            )
+            .expect("loopback backend should receive conninfo secret env var");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_insert_trigger_multirow_remote_sql; \
+                 DROP TABLE IF EXISTS ec_spire_coord_insert_trigger_multirow_sql; \
+                 CREATE TABLE ec_spire_coord_insert_trigger_multirow_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_coord_insert_trigger_multirow_remote_idx \
+                     ON ec_spire_coord_insert_trigger_multirow_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_coord_insert_trigger_multirow_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_coord_insert_trigger_multirow_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'coordinator positive seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                     decode('000102030405060708090a0b0c0d0e0f', 'hex')), \
+                 (2, 'coordinator negative seed', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42), \
+                     decode('101112131415161718191a1b1c1d1e1f', 'hex')); \
+                 CREATE INDEX ec_spire_coord_insert_trigger_multirow_idx \
+                     ON ec_spire_coord_insert_trigger_multirow_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) WITH (nlists = 2);",
+            )
+            .expect("loopback multi-row trigger fixtures should be created");
+
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_coord_insert_trigger_multirow_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let positive_pid = loopback_client
+            .query_one(
+                "SELECT child_pid \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_coord_insert_trigger_multirow_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+                  WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+                  ORDER BY scored.score DESC, centroid_index, child_pid \
+                  LIMIT 1",
+                &[],
+            )
+            .expect("positive pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("positive pid should decode");
+        let negative_pid = loopback_client
+            .query_one(
+                "SELECT child_pid \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_coord_insert_trigger_multirow_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[-1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+                  WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+                  ORDER BY scored.score DESC, centroid_index, child_pid \
+                  LIMIT 1",
+                &[],
+            )
+            .expect("negative pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("negative pid should decode");
+        assert_ne!(
+            positive_pid, negative_pid,
+            "fixture requires two leaf placements so prepared GIDs differ by node"
+        );
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT tests.ec_spire_test_rewrite_placement_nodes(\
+                     'ec_spire_coord_insert_trigger_multirow_idx'::regclass, \
+                     ARRAY[{positive_pid}, {negative_pid}]::bigint[], \
+                     ARRAY[14, 15]::integer[])"
+            ))
+            .expect("placement rewrite should succeed");
+        let remote_identity_hex = loopback_client
+            .query_one(
+                "SELECT profile_fingerprint \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_coord_insert_trigger_multirow_remote_idx'::regclass::oid)",
+                &[],
+            )
+            .expect("remote identity query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote identity should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_coord_insert_trigger_multirow_idx'::regclass, \
+                     14, 17, 'spire/remote/coordinator_insert_trigger_multirow_sql', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_coord_insert_trigger_multirow_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_coord_insert_trigger_multirow_idx'::regclass, \
+                     15, 17, 'spire/remote/coordinator_insert_trigger_multirow_sql', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_coord_insert_trigger_multirow_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 SELECT ec_spire_enable_coordinator_insert(\
+                     'ec_spire_coord_insert_trigger_multirow_sql'::regclass, \
+                     'ec_spire_coord_insert_trigger_multirow_idx'::regclass, \
+                     'id', 'embedding', 'source_identity')",
+                env!("CARGO_PKG_VERSION"),
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("remote descriptors and coordinator insert trigger should be enabled");
+
+        loopback_client
+            .batch_execute(
+                "BEGIN; \
+                 INSERT INTO ec_spire_coord_insert_trigger_multirow_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (405, 'trigger routed positive payload', \
+                     encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                     decode('404142434445464748494a4b4c4d4e4f', 'hex')), \
+                 (406, 'trigger routed negative payload', \
+                     encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42), \
+                     decode('505152535455565758595a5b5c5d5e5f', 'hex')); \
+                 COMMIT;",
+            )
+            .expect("multi-row coordinator insert trigger transaction should commit");
+
+        let placement_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_placement \
+                  WHERE index_oid = 'ec_spire_coord_insert_trigger_multirow_idx'::regclass \
+                    AND (pk_value, node_id, centroid_id, served_epoch, source_identity) IN ( \
+                        (int8send(405::bigint)::bytea, 14, $1::bigint, $3::bigint, \
+                         decode('404142434445464748494a4b4c4d4e4f', 'hex')), \
+                        (int8send(406::bigint)::bytea, 15, $2::bigint, $3::bigint, \
+                         decode('505152535455565758595a5b5c5d5e5f', 'hex')) \
+                    )",
+                &[&positive_pid, &negative_pid, &active_epoch],
+            )
+            .expect("placement count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("placement count should decode");
+        loopback_client
+            .batch_execute("BEGIN")
+            .expect("duplicate probe transaction should begin");
+        let positive_duplicate_insert_count = loopback_client
+            .execute(
+                "INSERT INTO ec_spire_coord_insert_trigger_multirow_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (405, 'duplicate positive probe', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('404142434445464748494a4b4c4d4e4f', 'hex')) \
+                 ON CONFLICT DO NOTHING",
+                &[],
+            )
+            .expect("positive duplicate probe should succeed");
+        let negative_duplicate_insert_count = loopback_client
+            .execute(
+                "INSERT INTO ec_spire_coord_insert_trigger_multirow_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (406, 'duplicate negative probe', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42), \
+                  decode('505152535455565758595a5b5c5d5e5f', 'hex')) \
+                 ON CONFLICT DO NOTHING",
+                &[],
+            )
+            .expect("negative duplicate probe should succeed");
+        loopback_client
+            .batch_execute("ROLLBACK")
+            .expect("duplicate probe transaction should roll back");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+
+        assert_eq!(placement_count, 2);
+        assert_eq!(
+            positive_duplicate_insert_count, 0,
+            "committed positive remote row should block duplicate insert"
+        );
+        assert_eq!(
+            negative_duplicate_insert_count, 0,
+            "committed negative remote row should block duplicate insert"
+        );
+        assert_eq!(
+            prepared_count, 0,
+            "local COMMIT should resolve all per-row remote prepared transactions"
+        );
     }
 
     #[pg_test]
