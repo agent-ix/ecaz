@@ -208,11 +208,14 @@ described by reviewer packet `30896`.
   - [ ] nullable columns with SQL NULL;
   - [ ] NOT NULL violation paths;
   - [ ] DEFAULT-valued columns after PostgreSQL has materialized `NEW`.
-- [ ] Document the v1 DDL ordering contract: pause writes, apply DDL to the
+- [x] Document the v1 DDL ordering contract: pause writes, apply DDL to the
   coordinator, apply matching DDL to every remote, refresh descriptors, then
   resume writes.
-- [ ] Decide whether a lightweight DDL window guard is needed to block writes
+- [x] Decide whether a lightweight DDL window guard is needed to block writes
   while remote schemas are known to be inconsistent.
+  - [x] Decision: no separate v1 DDL-window guard GUC/catalog flag; operators
+    must pause writes during DDL, and the Phase 12.5 schema-drift fingerprint
+    remains the planned fail-closed safety net for violated ordering.
 
 ## Phase 12.6: Isolation, EvalPlanQual, and Negative DML Coverage
 

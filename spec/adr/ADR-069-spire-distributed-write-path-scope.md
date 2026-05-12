@@ -534,12 +534,24 @@ DDL changes to the coordinator's logical relation (`ALTER TABLE`,
 remote shard** by the operator. v1 does **not** automatically propagate
 DDL.
 
-The coordinator records the relation's column shape at relation-creation
-time. Stage B endpoint identity / fingerprint already catches schema
-drift between coordinator and remote at query time. An operator who
-applies DDL to the coordinator but forgets to propagate to a remote
-will see the fingerprint mismatch surface as a normal Stage B fault
-(`endpoint_identity_mismatch`).
+The v1 DDL ordering contract is:
+
+1. Pause coordinator-routed writes and any bulk-load placement registration
+   for the affected distributed relation.
+2. Apply DDL to the coordinator relation.
+3. Apply matching DDL to every remote shard relation.
+4. Refresh affected remote-node descriptors so endpoint identity and served
+   schema metadata are current.
+5. Resume writes only after all remotes report the expected descriptor state.
+
+Stage B endpoint identity / fingerprint already catches read-path schema drift
+between coordinator and remote at query time. Phase 12.5 tracks a separate
+write-path column-shape fingerprint so coordinator-routed INSERT can fail
+closed before remote dispatch when the coordinator and descriptor shapes
+diverge. v1 does not add an independent DDL-window guard GUC or catalog flag:
+operators must use the pause/apply/refresh/resume sequence above, and the
+schema-drift fingerprint is the planned fail-closed safety net when that
+sequence is violated.
 
 A future ADR may add coordinator-driven DDL propagation. v1 keeps DDL
 operator-managed.

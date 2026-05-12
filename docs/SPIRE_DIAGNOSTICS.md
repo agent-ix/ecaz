@@ -279,6 +279,23 @@ established, leave the prepared transaction unresolved and escalate with the
 GID, remote node id, and coordinator index OID. Do not bulk-resolve SPIRE GIDs
 from the remote side alone.
 
+## Distributed DDL Ordering
+
+SPIRE v1 does not propagate DDL from the coordinator relation to remote shard
+relations. For any `ALTER TABLE` or other schema change that affects
+coordinator-routed writes or tuple payloads, operators must pause writes, apply
+the DDL to the coordinator, apply matching DDL to every remote, refresh the
+affected remote-node descriptors, verify the descriptors report the expected
+state, and only then resume writes. Bulk-load placement registration for the
+same relation should remain paused during the same window.
+
+There is no separate v1 DDL-window guard flag. The operational guard is the
+pause/apply/refresh/resume sequence; the Phase 12.5 schema-drift fingerprint is
+the planned fail-closed safety net for coordinator-routed writes when
+coordinator and remote column shapes diverge. Read-path endpoint identity
+mismatches continue to surface through the Stage B/Stage E remote fault
+diagnostics.
+
 ## Reading Notes
 
 - These functions inspect SPIRE partition-object storage, not PostgreSQL
