@@ -21951,6 +21951,267 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_insert_trigger_payload_type_roundtrip_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var(\
+                     'EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_TRIGGER_PAYLOAD_TYPES', \
+                     $1)",
+                &[&loopback_conninfo],
+            )
+            .expect("loopback backend should receive conninfo secret env var");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_trig_payload_remote; \
+                 DROP TABLE IF EXISTS ec_spire_trig_payload_coord; \
+                 DROP DOMAIN IF EXISTS ec_spire_payload_code_dom; \
+                 CREATE DOMAIN ec_spire_payload_code_dom AS text \
+                     CHECK (VALUE ~ '^[A-Z]{3}[0-9]{2}$'); \
+                 CREATE TABLE ec_spire_trig_payload_remote \
+                     (id bigint primary key, title text not null, \
+                      amount numeric(12,4) not null, event_at timestamptz not null, \
+                      metadata_json json not null, metadata_jsonb jsonb not null, \
+                      edge_text text not null, domain_code ec_spire_payload_code_dom not null, \
+                      nullable_note text, required_label text not null, \
+                      default_label text not null default 'remote-default', \
+                      embedding ecvector, source_identity bytea not null); \
+                 CREATE INDEX ec_spire_trig_payload_remote_idx \
+                     ON ec_spire_trig_payload_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_trig_payload_coord \
+                     (id bigint primary key, title text not null, \
+                      amount numeric(12,4) not null, event_at timestamptz not null, \
+                      metadata_json json not null, metadata_jsonb jsonb not null, \
+                      edge_text text not null, domain_code ec_spire_payload_code_dom not null, \
+                      nullable_note text, required_label text not null, \
+                      default_label text not null default 'coord-default', \
+                      embedding ecvector, source_identity bytea not null); \
+                 INSERT INTO ec_spire_trig_payload_coord \
+                     (id, title, amount, event_at, metadata_json, metadata_jsonb, edge_text, \
+                      domain_code, nullable_note, required_label, embedding, source_identity) \
+                 VALUES \
+                     (1, 'payload seed', 1.0000, '2026-05-12 00:00:00+00', \
+                      '{\"seed\":true}'::json, '{\"seed\":true}'::jsonb, \
+                      'seed text', 'ABC01', NULL, 'seed required', \
+                      encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                      decode('000102030405060708090a0b0c0d0e0f', 'hex')); \
+                 CREATE INDEX ec_spire_trig_payload_coord_idx \
+                     ON ec_spire_trig_payload_coord USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback trigger payload fixtures should be created");
+
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_trig_payload_coord_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT child_pid \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_trig_payload_coord_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+                  WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+                  ORDER BY scored.score DESC, centroid_index, child_pid \
+                  LIMIT 1",
+                &[],
+            )
+            .expect("selected pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("selected pid should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT tests.ec_spire_test_rewrite_placement_node(\
+                     'ec_spire_trig_payload_coord_idx'::regclass, {selected_pid}, 18)"
+            ))
+            .expect("placement rewrite should succeed");
+        let remote_identity_hex = loopback_client
+            .query_one(
+                "SELECT profile_fingerprint \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_trig_payload_remote_idx'::regclass::oid)",
+                &[],
+            )
+            .expect("remote identity query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote identity should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_trig_payload_coord_idx'::regclass, \
+                     18, 17, 'spire/remote/trigger_payload_types', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_trig_payload_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 SELECT ec_spire_enable_coordinator_insert(\
+                     'ec_spire_trig_payload_coord'::regclass, \
+                     'ec_spire_trig_payload_coord_idx'::regclass, \
+                     'id', 'embedding', 'source_identity')",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("remote descriptor and coordinator insert trigger should be enabled");
+
+        loopback_client
+            .batch_execute(
+                "INSERT INTO ec_spire_trig_payload_coord \
+                     (id, title, amount, event_at, metadata_json, metadata_jsonb, edge_text, \
+                      domain_code, nullable_note, required_label, embedding, source_identity) \
+                 VALUES \
+                     (501, 'payload roundtrip', 12345.6789, \
+                      '2026-05-12 21:30:45.123456+00', \
+                      '{\"outer\":{\"answer\":42},\"list\":[true,\"json\"]}'::json, \
+                      '{\"outer\":{\"answer\":84},\"list\":[false,\"jsonb\"]}'::jsonb, \
+                      E'quote '' and slash \\\\ and newline\\nend', \
+                      'XYZ99', NULL, 'required ok', \
+                      encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                      decode('606162636465666768696a6b6c6d6e6f', 'hex'))",
+            )
+            .expect("payload type coordinator insert trigger should forward row");
+
+        let remote_row = loopback_client
+            .query_one(
+                "SELECT amount::text, \
+                        to_char(event_at AT TIME ZONE 'UTC', \
+                                'YYYY-MM-DD HH24:MI:SS.US'), \
+                        metadata_json::jsonb #>> '{outer,answer}', \
+                        metadata_json::jsonb #>> '{list,1}', \
+                        metadata_jsonb #>> '{outer,answer}', \
+                        metadata_jsonb #>> '{list,1}', \
+                        edge_text, domain_code::text, nullable_note IS NULL, \
+                        required_label, default_label, encode(source_identity, 'hex') \
+                   FROM ec_spire_trig_payload_remote \
+                  WHERE id = 501",
+                &[],
+            )
+            .expect("remote payload row query should succeed");
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(0)
+                .expect("amount should decode"),
+            "12345.6789"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(1)
+                .expect("event_at should decode"),
+            "2026-05-12 21:30:45.123456"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(2)
+                .expect("json answer should decode"),
+            "42"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(3)
+                .expect("json list value should decode"),
+            "json"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(4)
+                .expect("jsonb answer should decode"),
+            "84"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(5)
+                .expect("jsonb list value should decode"),
+            "jsonb"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(6)
+                .expect("edge text should decode"),
+            "quote ' and slash \\ and newline\nend"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(7)
+                .expect("domain code should decode"),
+            "XYZ99"
+        );
+        assert!(remote_row
+            .try_get::<_, bool>(8)
+            .expect("nullable note flag should decode"));
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(9)
+                .expect("required label should decode"),
+            "required ok"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(10)
+                .expect("default label should decode"),
+            "coord-default"
+        );
+        assert_eq!(
+            remote_row
+                .try_get::<_, String>(11)
+                .expect("source identity should decode"),
+            "606162636465666768696a6b6c6d6e6f"
+        );
+
+        let not_null_error = loopback_client
+            .batch_execute(
+                "INSERT INTO ec_spire_trig_payload_coord \
+                     (id, title, amount, event_at, metadata_json, metadata_jsonb, edge_text, \
+                      domain_code, embedding, source_identity) \
+                 VALUES \
+                     (502, 'payload not null failure', 2.0000, \
+                      '2026-05-12 22:00:00+00', \
+                      '{\"bad\":true}'::json, '{\"bad\":true}'::jsonb, \
+                      'not null probe', 'DEF02', \
+                      encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                      decode('707172737475767778797a7b7c7d7e7f', 'hex'))",
+            )
+            .expect_err("missing required_label should fail through remote payload insert");
+        let not_null_message = not_null_error
+            .as_db_error()
+            .map(|db_error| format!("{}|{}", db_error.message(), db_error.detail().unwrap_or("")))
+            .unwrap_or_else(|| not_null_error.to_string());
+        assert!(
+            not_null_message.contains("null value in column \"required_label\""),
+            "{not_null_message}"
+        );
+        let failed_remote_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM ec_spire_trig_payload_remote WHERE id = 502",
+                &[],
+            )
+            .expect("failed remote count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("failed remote count should decode");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("prepared xact count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        assert_eq!(failed_remote_count, 0);
+        assert_eq!(prepared_count, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_forward_coordinator_update_tuple_payload_sql() {
         let _env_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();

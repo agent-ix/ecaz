@@ -198,16 +198,16 @@ described by reviewer packet `30896`.
   error and remediation hint.
 - [ ] Add a fixture that `ALTER TABLE`s the coordinator only, attempts INSERT,
   and asserts the schema-drift error fires before remote dispatch.
-- [ ] Add round-trip fixtures for non-trivial trigger payload types:
-  - [ ] `numeric` / `decimal` precision;
-  - [ ] `timestamptz` timezone and value preservation;
-  - [ ] `json` and `jsonb` nested payloads;
-  - [ ] `text` with embedded edge characters, documenting unsupported values
+- [x] Add round-trip fixtures for non-trivial trigger payload types:
+  - [x] `numeric` / `decimal` precision;
+  - [x] `timestamptz` timezone and value preservation;
+  - [x] `json` and `jsonb` nested payloads;
+  - [x] `text` with embedded edge characters, documenting unsupported values
     if PostgreSQL/JSON cannot round-trip them;
-  - [ ] domain-over-base-type validation;
-  - [ ] nullable columns with SQL NULL;
-  - [ ] NOT NULL violation paths;
-  - [ ] DEFAULT-valued columns after PostgreSQL has materialized `NEW`.
+  - [x] domain-over-base-type validation;
+  - [x] nullable columns with SQL NULL;
+  - [x] NOT NULL violation paths;
+  - [x] DEFAULT-valued columns after PostgreSQL has materialized `NEW`.
 - [x] Document the v1 DDL ordering contract: pause writes, apply DDL to the
   coordinator, apply matching DDL to every remote, refresh descriptors, then
   resume writes.

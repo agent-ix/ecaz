@@ -2434,6 +2434,26 @@ fn spire_remote_prepare_transaction_error(
     }
 }
 
+fn postgres_error_message_with_detail(error: &postgres::Error) -> String {
+    let Some(db_error) = error.as_db_error() else {
+        return error.to_string();
+    };
+    let mut message = format!("{} (SQLSTATE {})", db_error.message(), db_error.code().code());
+    if let Some(detail) = db_error.detail() {
+        if !detail.is_empty() {
+            message.push_str("; DETAIL: ");
+            message.push_str(detail);
+        }
+    }
+    if let Some(hint) = db_error.hint() {
+        if !hint.is_empty() {
+            message.push_str("; HINT: ");
+            message.push_str(hint);
+        }
+    }
+    message
+}
+
 pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
     index_relation: pg_sys::Relation,
     node_id: u32,
@@ -2467,9 +2487,10 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
             format!(
                 "ec_spire coordinator insert failed to begin remote transaction for node_id {node_id}"
             )
-        })?;
+    })?;
     if let Err(error) = client.batch_execute(remote_sql) {
         let _ = client.batch_execute("ROLLBACK");
+        let error = postgres_error_message_with_detail(&error);
         return Err(format!(
             "ec_spire coordinator insert remote SQL failed for node_id {node_id}: {error}"
         ));
