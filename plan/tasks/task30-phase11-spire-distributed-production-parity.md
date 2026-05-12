@@ -1,11 +1,80 @@
 # Task 30 Phase 11: SPIRE Distributed Production Parity
 
-Status: functional CustomScan and ADR-069 distributed read/write delivery
-complete; production hardening continues in
-`plan/tasks/task30-phase12-spire-production-hardening.md`; AWS verification is
-deferred to `plan/tasks/task30-phase13-spire-aws-verification.md`
-Owner: coder1 / SPIRE distributed production track
+Status: **closed** as of 2026-05-12 by reviewer packet `30910`. Functional
+CustomScan and ADR-069 v1 distributed read/write delivery is complete.
+Production hardening continues in
+`plan/tasks/task30-phase12-spire-production-hardening.md`; AWS verification
+is deferred to `plan/tasks/task30-phase13-spire-aws-verification.md`.
+Remaining open items in this file are reconciled in the "Phase 11 Closeout"
+section below; do not pick up new work from this file.
+Owner: coder1 / SPIRE distributed production track (closed)
 Priority: 1 after Phase 9 and Phase 10 local architecture closeout
+
+## Phase 11 Closeout (2026-05-12)
+
+Reviewer packet `30910` records the disposition of every remaining open
+box in this file. The categories are:
+
+- **Done — evidence in subitems.** Parent box was never ticked because
+  reconciliation lagged, but a `[x]` sub-bullet (or a referenced packet)
+  documents the evidence. Treat as complete.
+- **Moved to Phase 12.** The work is genuinely incomplete but has a
+  durable home in `task30-phase12-spire-production-hardening.md`. Do not
+  duplicate effort here.
+- **Moved to Phase 13.** AWS-scale work; gated on Phase 12 exit.
+
+Specific dispositions:
+
+- Phase 11.2 boundary-replica global identity (parent of `30775`
+  evidence): **done** — see the `[x]` sub-bullet.
+- Phase 11.3 endpoint promotion / negotiation / version-skew /
+  stale-epoch / nonempty tests: **done** — every parent has `[x]`
+  sub-evidence under it. The endpoint is in production via the
+  18-column envelope + ADR-068 tuple-payload extension (`30807`,
+  `30812`, `30814`).
+- Phase 11.4 production libpq executor (serial diagnostic replacement,
+  pipeline/async, fanout caps, identity caching, connection lifecycle,
+  security contract, governance, cancellation, fail-closed strict /
+  degraded): **done** — Stage C packets `30702`–`30760` deliver this in
+  full. The remaining `[ ]` "Keep distinct diagnostic categories" item
+  for cancel-vs-timeout-vs-termination is satisfied by the existing
+  fault-taxonomy coverage.
+- Phase 11.5 CustomScan provider registration + planner path generation:
+  **done** — packets `30805`, `30809`–`30816`, `30820`, `30821`, `30883`,
+  `30884`. Stage E migration onto CustomScan: **done** — packet `30895`.
+- Phase 11.6 multi-instance epoch and placement readiness: **moved to
+  Phase 12.7**. The `[x]` sub-evidence under each parent (`30770`,
+  `30772`, `30773`, `30774`) is preserved as historical Stage E
+  scaffolding.
+- Phase 11.7 multi-NVMe / multi-store readiness: **moved to Phase 12.8**.
+- Phase 11.8 production harness and operator runbooks: **moved to Phase
+  12.9** (with the `H3`/`H9` runbook items also folded in).
+- Phase 11.9 AWS scale entry gate: **moved to Phase 13** entry gate.
+- Production Landing Sequence ladder steps 1–9: **done** (each
+  corresponds to a now-completed Stage A–D + cleanup packet). Steps 10
+  and 11 (Stage E local matrix, Stage F/G readiness bundle): moved to
+  Phase 12.7/12.8/12.9.
+- Stage A "Accept ADR-063 or revise": **done** — ADR-063 is committed in
+  `spec/adr/`.
+- Stage B parent items with `[x]` sub-evidence (envelope, identity,
+  binding, version-skew, fingerprint, stale-epoch coverage): **done**.
+- Stage C parent items with `[x]` sub-evidence (production state,
+  libpq async, governance, identity cache, slow-remote fixture):
+  **done**.
+- Stage D "Move handoff from summary/proof to amrescan/amgettuple":
+  **superseded** — CustomScan replaces the AM cursor entirely. Stage D
+  cancellation-category-distinction item: **done** under existing
+  fault-taxonomy work.
+- Stage E "local one-coordinator/two-remote setup, placement readiness,
+  fault matrix": **moved to Phase 12.7**. Sub-evidence (`30770`-`30774`)
+  preserved as historical scaffolding.
+- Stage F "multi-store readiness": **moved to Phase 12.8**.
+- Stage G "production harness and AWS gate": **moved to Phase 12.9
+  (harness/runbook) + Phase 13 (AWS)**.
+
+Below this point, the file is a historical record. Do not modify
+checkboxes to claim new work; instead update the Phase 12 / Phase 13
+files.
 
 ## Goal
 
