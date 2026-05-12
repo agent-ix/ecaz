@@ -1251,6 +1251,10 @@ v1 write contract from ADR-069:
     SELECT projected columns are serialized with the DML CustomScan plan and
     decoded during `BeginCustomScan`, while UPDATE/DELETE path generation stays
     disabled until executor semantics are wired.
+  - [x] Packet `30881` adds a `BeginCustomScan` fail-closed metadata guard so
+    each DML mode receives the expected column payload shape: UPDATE requires
+    updated columns only, DELETE carries no column payload metadata, and PK
+    SELECT requires projected columns only.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
