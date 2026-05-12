@@ -190,14 +190,20 @@ described by reviewer packet `30896`.
 
 ## Phase 12.5: Schema Drift, DDL, and Type Round-Trip Hardening
 
-- [ ] Fingerprint the user table column shape on the coordinator at trigger
+- [x] Fingerprint the user table column shape on the coordinator at trigger
   installation or descriptor registration time.
-- [ ] Store or bind the column-shape fingerprint to the remote descriptor.
-- [ ] Before INSERT dispatch, compare current coordinator shape to the
+- [x] Store or bind the column-shape fingerprint to the remote descriptor.
+- [x] Before INSERT dispatch, compare current coordinator shape to the
   descriptor fingerprint and fail closed on drift with a clear "schema drift"
   error and remediation hint.
-- [ ] Add a fixture that `ALTER TABLE`s the coordinator only, attempts INSERT,
+- [x] Add a fixture that `ALTER TABLE`s the coordinator only, attempts INSERT,
   and asserts the schema-drift error fires before remote dispatch.
+  - [x] `ec_spire_register_remote_node_descriptor` binds
+    `coordinator_insert_shape_fingerprint` from the coordinator heap shape, and
+    coordinator-routed INSERT validates it before remote libpq dispatch.
+  - [x] `test_ec_spire_schema_drift_fails_before_dispatch_sql` alters only the
+    coordinator table and asserts the schema-drift error leaves no remote row
+    and no SPIRE prepared transaction.
 - [x] Add round-trip fixtures for non-trivial trigger payload types:
   - [x] `numeric` / `decimal` precision;
   - [x] `timestamptz` timezone and value preservation;

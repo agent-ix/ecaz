@@ -1982,15 +1982,18 @@ fn ec_spire_register_remote_node_descriptor(
                 "INSERT INTO ec_spire_remote_node_descriptor \
              (coordinator_index_oid, node_id, descriptor_generation, \
               conninfo_secret_name, remote_index_identity, remote_index_regclass, \
-              descriptor_state, last_seen_at, last_served_epoch, min_retained_epoch, \
+              coordinator_insert_shape_fingerprint, descriptor_state, last_seen_at, \
+              last_served_epoch, min_retained_epoch, \
               extension_version, last_error) \
              VALUES ($1::oid, $2::integer, $3::bigint, $4::text, $5::bytea, $6::text, \
+                     ec_spire_coordinator_index_shape_fingerprint($1::oid::regclass), \
                      $7::text, clock_timestamp(), $8::bigint, $9::bigint, $10::text, $11::text) \
              ON CONFLICT (coordinator_index_oid, node_id) DO UPDATE SET \
                  descriptor_generation = EXCLUDED.descriptor_generation, \
                  conninfo_secret_name = EXCLUDED.conninfo_secret_name, \
                  remote_index_identity = EXCLUDED.remote_index_identity, \
                  remote_index_regclass = EXCLUDED.remote_index_regclass, \
+                 coordinator_insert_shape_fingerprint = EXCLUDED.coordinator_insert_shape_fingerprint, \
                  descriptor_state = EXCLUDED.descriptor_state, \
                  last_seen_at = EXCLUDED.last_seen_at, \
                  last_served_epoch = EXCLUDED.last_served_epoch, \
@@ -22212,6 +22215,146 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_schema_drift_fails_before_dispatch_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var(\
+                     'EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_TRIGGER_SCHEMA_DRIFT', \
+                     $1)",
+                &[&loopback_conninfo],
+            )
+            .expect("loopback backend should receive conninfo secret env var");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_trig_schema_drift_remote; \
+                 DROP TABLE IF EXISTS ec_spire_trig_schema_drift_coord; \
+                 CREATE TABLE ec_spire_trig_schema_drift_remote \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_trig_schema_drift_remote_idx \
+                     ON ec_spire_trig_schema_drift_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_trig_schema_drift_coord \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_trig_schema_drift_coord \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'schema drift seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('000102030405060708090a0b0c0d0e0f', 'hex')); \
+                 CREATE INDEX ec_spire_trig_schema_drift_coord_idx \
+                     ON ec_spire_trig_schema_drift_coord USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback schema drift fixtures should be created");
+
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT child_pid \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_trig_schema_drift_coord_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+                  WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+                  ORDER BY scored.score DESC, centroid_index, child_pid \
+                  LIMIT 1",
+                &[],
+            )
+            .expect("selected pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("selected pid should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT tests.ec_spire_test_rewrite_placement_node(\
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass, {selected_pid}, 19)"
+            ))
+            .expect("placement rewrite should succeed");
+        let remote_identity_hex = loopback_client
+            .query_one(
+                "SELECT profile_fingerprint \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_trig_schema_drift_remote_idx'::regclass::oid)",
+                &[],
+            )
+            .expect("remote identity query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote identity should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass, \
+                     19, 17, 'spire/remote/trigger_schema_drift', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_trig_schema_drift_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 SELECT ec_spire_enable_coordinator_insert(\
+                     'ec_spire_trig_schema_drift_coord'::regclass, \
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass, \
+                     'id', 'embedding', 'source_identity'); \
+                 ALTER TABLE ec_spire_trig_schema_drift_coord \
+                     ADD COLUMN coord_only text",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("descriptor, trigger, and coordinator-only DDL should succeed");
+
+        let drift_error = loopback_client
+            .batch_execute(
+                "INSERT INTO ec_spire_trig_schema_drift_coord \
+                     (id, title, embedding, source_identity, coord_only) VALUES \
+                 (601, 'schema drift payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('808182838485868788898a8b8c8d8e8f', 'hex'), 'coordinator-only')",
+            )
+            .expect_err("coordinator-only DDL should trip schema drift guard");
+        let drift_message = drift_error
+            .as_db_error()
+            .map(|db_error| db_error.message().to_owned())
+            .unwrap_or_else(|| drift_error.to_string());
+        let remote_row_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_trig_schema_drift_remote \
+                  WHERE id = 601",
+                &[],
+            )
+            .expect("remote schema drift row count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote schema drift row count should decode");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("prepared xact count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+
+        assert!(
+            drift_message.contains("schema drift detected"),
+            "{drift_message}"
+        );
+        assert_eq!(remote_row_count, 0);
+        assert_eq!(prepared_count, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_forward_coordinator_update_tuple_payload_sql() {
         let _env_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();
@@ -37224,13 +37367,20 @@ mod tests {
         ))
         .expect("descriptor epoch field query should succeed")
         .expect("descriptor epoch field count should exist");
+        let shape_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {contract_from} \
+             WHERE field_name = 'coordinator_insert_shape_fingerprint'"
+        ))
+        .expect("descriptor shape validator query should succeed")
+        .expect("descriptor shape validator should exist");
 
-        assert_eq!(field_count, 12);
+        assert_eq!(field_count, 13);
         assert_eq!(secret_role, "indirect_connection_secret");
         assert_eq!(
             secret_validator,
             "must_be_nonempty_noncolliding_secret_reference"
         );
+        assert_eq!(shape_validator, "must_match_current_coordinator_heap_shape");
         assert_eq!(raw_conninfo_count, 0);
         assert_eq!(required_epoch_fields, 2);
     }
@@ -37477,7 +37627,7 @@ mod tests {
         .expect("descriptor registration prepared capacity action query should succeed")
         .expect("descriptor registration prepared capacity action should exist");
 
-        assert_eq!(step_count, 10);
+        assert_eq!(step_count, 11);
         assert_eq!(
             secret_validator,
             "must_be_nonempty_noncolliding_secret_reference"
@@ -37572,15 +37722,15 @@ mod tests {
         .expect("descriptor readiness summary missing required query should succeed")
         .expect("descriptor readiness summary missing required count should exist");
 
-        assert_eq!(row_count, 12);
+        assert_eq!(row_count, 13);
         assert_eq!(raw_conninfo_count, 0);
         assert_eq!(secret_status, "missing_descriptor");
         assert_eq!(optional_status, "optional_descriptor_missing");
         assert_eq!(summary_status, "requires_remote_node_descriptor");
         assert_eq!(remote_node_count, 1);
-        assert_eq!(required_field_count, 10);
-        assert_eq!(blocked_field_count, 10);
-        assert_eq!(missing_required_field_count, 10);
+        assert_eq!(required_field_count, 11);
+        assert_eq!(blocked_field_count, 11);
+        assert_eq!(missing_required_field_count, 11);
     }
 
     #[pg_test]

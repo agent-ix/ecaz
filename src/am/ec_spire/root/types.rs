@@ -554,6 +554,7 @@ pub(crate) struct SpireCoordinatorInsertDispatchPlanRow {
     pub(crate) remote_index_regclass: String,
     pub(crate) descriptor_generation: u64,
     pub(crate) remote_index_identity_bytes: u64,
+    pub(crate) coordinator_insert_shape_fingerprint: String,
     pub(crate) dispatch_action: &'static str,
     pub(crate) status: &'static str,
     pub(crate) next_step: &'static str,

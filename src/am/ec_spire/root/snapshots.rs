@@ -1209,6 +1209,14 @@ pub(crate) fn remote_node_descriptor_contract_rows(
         },
         SpireRemoteNodeDescriptorContractRow {
             field_ordinal: 7,
+            field_name: "coordinator_insert_shape_fingerprint",
+            pg_type: "text",
+            semantic_role: "coordinator_insert_schema_shape",
+            required: true,
+            validator: "must_match_current_coordinator_heap_shape",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 8,
             field_name: "state",
             pg_type: "text",
             semantic_role: "remote_node_policy_state",
@@ -1216,7 +1224,7 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             validator: "must_be_active_or_draining_for_reads",
         },
         SpireRemoteNodeDescriptorContractRow {
-            field_ordinal: 8,
+            field_ordinal: 9,
             field_name: "last_seen_at",
             pg_type: "timestamptz",
             semantic_role: "health_check_timestamp",
@@ -1224,7 +1232,7 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             validator: "diagnostic_only",
         },
         SpireRemoteNodeDescriptorContractRow {
-            field_ordinal: 9,
+            field_ordinal: 10,
             field_name: "last_served_epoch",
             pg_type: "bigint",
             semantic_role: "max_served_epoch",
@@ -1232,7 +1240,7 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             validator: "must_cover_requested_epoch",
         },
         SpireRemoteNodeDescriptorContractRow {
-            field_ordinal: 10,
+            field_ordinal: 11,
             field_name: "min_retained_epoch",
             pg_type: "bigint",
             semantic_role: "retention_floor",
@@ -1240,7 +1248,7 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             validator: "must_not_exceed_requested_epoch",
         },
         SpireRemoteNodeDescriptorContractRow {
-            field_ordinal: 11,
+            field_ordinal: 12,
             field_name: "extension_version",
             pg_type: "text",
             semantic_role: "remote_extension_version",
@@ -1248,7 +1256,7 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             validator: "must_match_required_extension_version",
         },
         SpireRemoteNodeDescriptorContractRow {
-            field_ordinal: 12,
+            field_ordinal: 13,
             field_name: "last_error",
             pg_type: "text",
             semantic_role: "last_health_or_search_error",
@@ -1387,6 +1395,15 @@ pub(crate) fn remote_node_descriptor_registration_contract_rows(
         },
         SpireRemoteNodeDescriptorRegistrationContractRow {
             step_ordinal: 9,
+            step_name: "bind_coordinator_insert_shape",
+            input_field: "coordinator_index_oid",
+            semantic_role: "coordinator_insert_schema_shape",
+            validator: "fingerprint_current_coordinator_heap_columns",
+            persistence_action: "persist_shape_fingerprint",
+            failure_status: "schema_drift",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 10,
             step_name: "apply_policy_state",
             input_field: "state",
             semantic_role: "remote_node_policy_state",
@@ -1395,7 +1412,7 @@ pub(crate) fn remote_node_descriptor_registration_contract_rows(
             failure_status: "disabled_remote_node",
         },
         SpireRemoteNodeDescriptorRegistrationContractRow {
-            step_ordinal: 10,
+            step_ordinal: 11,
             step_name: "publish_generation",
             input_field: "generation",
             semantic_role: "membership_generation",

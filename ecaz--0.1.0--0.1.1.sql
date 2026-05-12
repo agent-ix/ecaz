@@ -100,6 +100,8 @@ CREATE TABLE ec_spire_remote_node_descriptor (
     conninfo_secret_name text NOT NULL CHECK (length(conninfo_secret_name) > 0),
     remote_index_identity bytea NOT NULL CHECK (octet_length(remote_index_identity) > 0),
     remote_index_regclass text NOT NULL CHECK (length(remote_index_regclass) > 0),
+    coordinator_insert_shape_fingerprint text NOT NULL DEFAULT 'unset'
+        CHECK (length(coordinator_insert_shape_fingerprint) > 0),
     descriptor_state text NOT NULL CHECK (
         descriptor_state IN ('active', 'draining', 'disabled', 'failed')
     ),
@@ -227,6 +229,35 @@ CREATE TYPE ec_spire_placement_entry AS (
     served_epoch bigint,
     source_identity bytea
 );
+
+CREATE FUNCTION ec_spire_coordinator_insert_shape_fingerprint(table_oid regclass)
+RETURNS text
+STABLE STRICT
+LANGUAGE sql
+AS $$
+    SELECT md5(COALESCE(string_agg(
+               attnum::text || ':' ||
+               quote_ident(attname) || ':' ||
+               atttypid::text || ':' ||
+               atttypmod::text || ':' ||
+               attcollation::text || ':' ||
+               attnotnull::text,
+               ',' ORDER BY attnum), ''))
+      FROM pg_attribute
+     WHERE attrelid = table_oid::oid
+       AND attnum > 0
+       AND NOT attisdropped
+$$;
+
+CREATE FUNCTION ec_spire_coordinator_index_shape_fingerprint(index_oid regclass)
+RETURNS text
+STABLE STRICT
+LANGUAGE sql
+AS $$
+    SELECT ec_spire_coordinator_insert_shape_fingerprint(indrelid::regclass)
+      FROM pg_index
+     WHERE indexrelid = index_oid::oid
+$$;
 
 CREATE FUNCTION ec_spire_register_placement_batch(
     index_oid oid,
