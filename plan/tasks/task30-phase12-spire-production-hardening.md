@@ -126,7 +126,7 @@ described by reviewer packet `30896`.
     endpoint fixtures through `ec_spire_remote_search_tuple_payload_typed(...)`;
     the remaining Phase 12.2 rows still track negotiation, CustomScan typed
     receive, throughput measurement, and production JSON retirement.
-- [ ] Measure tuple-heavy read throughput before and after typed transport.
+- [x] Measure tuple-heavy read throughput before and after typed transport.
   - [x] Add `ec_spire.remote_tuple_transport` plus
     `ecaz bench spire-pipeline --remote-tuple-transport` so the measurement
     can force JSON fallback versus `pg_binary_attr_v1` without editing fixture
@@ -134,6 +134,14 @@ described by reviewer packet `30896`.
   - [x] Add `ecaz bench spire-pipeline --query-metric-projection-columns` so
     the benchmark can project payload columns during coordinator KNN latency
     measurement instead of timing id-only scans.
+  - [x] Packet `30975` measures a two-index loopback fixture with `rabitq`
+    storage, 20 coordinator KNN queries, `nprobe=8`, `k=10`, and tuple-heavy
+    `title,body` projection. The warm pass returned the same 200 rows and
+    31,510 payload bytes for both modes: JSON fallback p50/p95/p99
+    `28.988/30.459/35.103 ms` at `34.081 qps`, typed `pg_binary_attr_v1`
+    p50/p95/p99 `33.892/35.179/41.313 ms` at `29.160 qps`. This local
+    loopback shape proves the transport switch and typed capability readiness
+    but does not claim a typed speedup for the small scalar payload fixture.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path
   needs it.
@@ -272,6 +280,9 @@ described by reviewer packet `30896`.
     `test_ec_spire_enable_coordinator_insert_trigger_sql` and
     `test_ec_spire_trigger_multirow_commits_prepares_sql` cover trigger
     installation, queue drain, and multi-row commit behavior.
+  - Follow-up notes from review packet `30973`: keep any future read/write
+    fanout adapter consolidation and same-node batch micro-optimization
+    evidence-driven; current P9 closure does not require either refactor.
 - [x] Document the 2PC latency tradeoff and the bulk-load escape hatch for
   applications that can tolerate post-write placement registration.
 
