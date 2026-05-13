@@ -1,6 +1,6 @@
 # Task 30 Phase 12a: SPIRE Readiness Follow-ups
 
-Status: planned
+Status: complete
 Owner: coder1 / SPIRE distributed production-hardening track
 Priority: 1 before Phase 13 AWS verification burns real cloud spend
 
@@ -21,6 +21,8 @@ verification work cannot silently regress Phase 12 closure.
   do not block Phase 12 closure but should land before Phase 13 cloud
   spend begins.
 - Source SHA at task creation: branch `task-30-spire` HEAD `0b0f62f5`.
+- Final Phase 12a review packet `30990` accepted closure at source SHA
+  `46701d95`; Phase 12b now owns cleanup-only structural follow-up.
 
 ## Non-Goals
 

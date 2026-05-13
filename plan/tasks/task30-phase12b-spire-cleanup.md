@@ -1,6 +1,6 @@
 # Task 30 Phase 12b: SPIRE Cleanup
 
-Status: planned
+Status: in progress
 Owner: coder1 / SPIRE distributed production-hardening track
 Priority: 1 before Phase 13 AWS verification adds new code on top of the
 existing SPIRE surface; should ideally land before or alongside Phase
@@ -20,11 +20,9 @@ new tests.
 ## Entry State
 
 - Phase 12 closed; tracker has zero unchecked rows.
-- Phase 12a opened (`task30-phase12a-spire-readiness-followups.md`)
-  with 12a.5 already at `[x]`. The remaining 12a rows
-  (12a.1 reaper, 12a.2 payload caps, 12a.6 remote-side fingerprint)
-  will all touch `src/am/ec_spire/root/remote_candidates.rs` if landed
-  on the current layout.
+- Phase 12a is complete. Final-review packet `30990` accepted closure
+  at source SHA `46701d95`; Phase 12b now owns cleanup-only structural
+  follow-up.
 - Architecture audit measurements at this entry SHA:
   - `src/am/ec_spire/root/remote_candidates.rs` = 12,405 lines (kitchen
     sink: vocab, fault matrix, endpoint identity, payload decoder,
@@ -39,6 +37,8 @@ new tests.
     external `tests.rs` / `tests/` (`scan/`, `build/`, `update/`,
     `meta/`, `storage/`, `root/`).
 - Source SHA at task creation: branch `task-30-spire` HEAD `0b0f62f5`.
+- First cleanup checkpoint source: branch `task-30-spire` after
+  `7310eff9`, with Phase 12a final review recorded locally.
 
 ## Non-Goals
 
@@ -57,30 +57,33 @@ new tests.
 The file is a kitchen sink at 12,405 lines. Split it into a directory
 module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
 
-- [ ] Convert `src/am/ec_spire/root/remote_candidates.rs` to
+- [x] Convert `src/am/ec_spire/root/remote_candidates.rs` to
   `src/am/ec_spire/root/remote_candidates/mod.rs` with public re-exports
   preserving every external symbol path used elsewhere in the crate.
+  First checkpoint preserves symbol paths with textual `include!`
+  files in the existing `ec_spire` scope; no caller path changes were
+  required beyond the top-level include.
 - [ ] Extract into sibling files:
-  - [ ] `remote_candidates/vocab.rs`: status-string constants
+  - [x] `remote_candidates/vocab.rs`: status-string constants
     (current lines 23-120) and hint strings.
-  - [ ] `remote_candidates/sort.rs`: candidate comparator
+  - [x] `remote_candidates/sort.rs`: candidate comparator
     (current lines 1-21).
-  - [ ] `remote_candidates/endpoint_identity.rs`: typed identity struct
+  - [x] `remote_candidates/endpoint_identity.rs`: typed identity struct
     and validation (current ~8783-8900).
-  - [ ] `remote_candidates/payload.rs`:
+  - [x] `remote_candidates/payload.rs`:
     `decode_remote_search_typed_tuple_payload_pg_row` and tuple decode
     helpers (current ~9468-9581).
-  - [ ] `remote_candidates/fault_matrix.rs`: `production_fault_matrix_row`,
+  - [x] `remote_candidates/fault_matrix.rs`: `production_fault_matrix_row`,
     matrix builder, and uniqueness assertion (current ~6300-6800,
     11555-11591).
-  - [ ] `remote_candidates/dispatch.rs`:
+  - [x] `remote_candidates/dispatch.rs`:
     `run_insert_prepare_requests_with_local_cancel_source`,
     `run_one_insert_prepare_request`, `selected_pids` plumbing
     (current ~3437-3582, 4154-4198).
-  - [ ] `remote_candidates/resolve.rs`:
+  - [x] `remote_candidates/resolve.rs`:
     `coordinator_insert_resolve_remote_prepared` and prepared-xact
     cleanup helpers (current ~2230).
-  - [ ] `remote_candidates/operator.rs`: pg_extern surface including
+  - [x] `remote_candidates/operator.rs`: pg_extern surface including
     `ec_spire_remote_search_degraded_skip_report` (current ~12221) and
     other operator-callable wrappers.
   - [ ] `remote_candidates/tests/` (subdirectory): move the two inline
@@ -88,13 +91,16 @@ module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
     co-located files matching the split
     (`tests/endpoint_identity.rs`, `tests/payload.rs`,
     `tests/fault_matrix.rs`, etc.).
+    First checkpoint moved `production_executor_state_tests`; the
+    endpoint-identity unit block remains co-located in
+    `endpoint_identity.rs` for a follow-up test-layout pass.
 - [ ] Verify zero behavior change: `cargo test -p ecaz` and the
   packet-local PG18 fixtures cited in Phase 11/12 trackers pass without
   assertion edits.
-- [ ] Verify the split with a per-file line-count sanity:
+- [x] Verify the split with a per-file line-count sanity:
   no resulting file should exceed 2,500 lines; flag any that do as a
   follow-up split row.
-- [ ] Update any `pub(crate) use` paths in dependents
+- [x] Update any `pub(crate) use` paths in dependents
   (`custom_scan.rs`, `dml_frontdoor.rs`, `cost.rs`, `scan/`, build/
   callbacks).
 
