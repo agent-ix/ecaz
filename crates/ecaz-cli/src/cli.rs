@@ -204,6 +204,33 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_spire_pipeline_remote_tuple_transport() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "bench",
+            "spire-pipeline",
+            "--prefix",
+            "bench_pfx",
+            "--sweep",
+            "8,16",
+            "--remote-tuple-transport",
+            "pg_binary_attr_v1",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Bench {
+                command: crate::commands::bench::BenchCommand::SpirePipeline(args),
+            } => {
+                assert_eq!(
+                    args.remote_tuple_transport,
+                    Some(crate::commands::bench::SpireRemoteTupleTransportMode::PgBinaryAttrV1)
+                );
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_spire_multicluster_customscan_read_command() {
         let cli = Cli::try_parse_from([
             "ecaz",

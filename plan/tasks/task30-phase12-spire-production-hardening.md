@@ -127,6 +127,10 @@ described by reviewer packet `30896`.
     the remaining Phase 12.2 rows still track negotiation, CustomScan typed
     receive, throughput measurement, and production JSON retirement.
 - [ ] Measure tuple-heavy read throughput before and after typed transport.
+  - [x] Add `ec_spire.remote_tuple_transport` plus
+    `ecaz bench spire-pipeline --remote-tuple-transport` so the measurement
+    can force JSON fallback versus `pg_binary_attr_v1` without editing fixture
+    scripts.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path
   needs it.

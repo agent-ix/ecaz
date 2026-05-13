@@ -8205,12 +8205,81 @@ struct SpireRemoteValidatedEndpointIdentity {
 
 impl SpireRemoteValidatedEndpointIdentity {
     fn prefers_typed_tuple_transport(&self) -> bool {
-        self.tuple_transport_status == SPIRE_REMOTE_STATUS_READY
-            && self.tuple_transport_default == SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
-            && self
-                .tuple_transport_capabilities
-                .iter()
-                .any(|capability| capability == SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1)
+        remote_endpoint_prefers_typed_tuple_transport(
+            self.tuple_transport_status.as_str(),
+            self.tuple_transport_default.as_str(),
+            &self.tuple_transport_capabilities,
+            options::current_session_remote_tuple_transport(),
+        )
+    }
+}
+
+fn remote_endpoint_prefers_typed_tuple_transport(
+    tuple_transport_status: &str,
+    tuple_transport_default: &str,
+    tuple_transport_capabilities: &[String],
+    session_transport: options::SpireRemoteTupleTransportGuc,
+) -> bool {
+    if tuple_transport_status != SPIRE_REMOTE_STATUS_READY
+        || !tuple_transport_capabilities
+            .iter()
+            .any(|capability| capability == SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1)
+    {
+        return false;
+    }
+    match session_transport {
+        options::SpireRemoteTupleTransportGuc::Auto => {
+            tuple_transport_default == SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
+        }
+        options::SpireRemoteTupleTransportGuc::JsonTuplePayloadV1 => false,
+        options::SpireRemoteTupleTransportGuc::PgBinaryAttrV1 => true,
+    }
+}
+
+#[cfg(test)]
+mod remote_tuple_transport_tests {
+    use super::*;
+
+    fn pg_binary_capabilities() -> Vec<String> {
+        vec![SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned()]
+    }
+
+    #[test]
+    fn remote_tuple_transport_auto_uses_endpoint_default() {
+        assert!(remote_endpoint_prefers_typed_tuple_transport(
+            SPIRE_REMOTE_STATUS_READY,
+            SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1,
+            &pg_binary_capabilities(),
+            options::SpireRemoteTupleTransportGuc::Auto,
+        ));
+        assert!(!remote_endpoint_prefers_typed_tuple_transport(
+            SPIRE_REMOTE_STATUS_READY,
+            "json_tuple_payload_v1",
+            &pg_binary_capabilities(),
+            options::SpireRemoteTupleTransportGuc::Auto,
+        ));
+    }
+
+    #[test]
+    fn remote_tuple_transport_session_override_keeps_capability_gate() {
+        assert!(!remote_endpoint_prefers_typed_tuple_transport(
+            SPIRE_REMOTE_STATUS_READY,
+            SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1,
+            &pg_binary_capabilities(),
+            options::SpireRemoteTupleTransportGuc::JsonTuplePayloadV1,
+        ));
+        assert!(remote_endpoint_prefers_typed_tuple_transport(
+            SPIRE_REMOTE_STATUS_READY,
+            "json_tuple_payload_v1",
+            &pg_binary_capabilities(),
+            options::SpireRemoteTupleTransportGuc::PgBinaryAttrV1,
+        ));
+        assert!(!remote_endpoint_prefers_typed_tuple_transport(
+            SPIRE_REMOTE_STATUS_READY,
+            "json_tuple_payload_v1",
+            &[],
+            options::SpireRemoteTupleTransportGuc::PgBinaryAttrV1,
+        ));
     }
 }
 

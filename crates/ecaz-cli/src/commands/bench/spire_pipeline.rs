@@ -5,10 +5,11 @@
 //! routing budgets, local scan pipeline counts, and optional remote fanout
 //! diagnostics from the SQL-visible operator surfaces.
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 use tokio_postgres::{Client, Row};
 
@@ -65,9 +66,38 @@ pub struct SpirePipelineArgs {
     /// Consistency mode to pass to `ec_spire_remote_pipeline_steps`.
     #[arg(long, default_value = "epoch")]
     pub consistency_mode: String,
+    /// Session tuple-payload transport policy for remote CustomScan payloads.
+    #[arg(long, value_enum)]
+    pub remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     /// Write the pipeline report to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum SpireRemoteTupleTransportMode {
+    #[value(name = "auto")]
+    Auto,
+    #[value(name = "json_tuple_payload_v1")]
+    JsonTuplePayloadV1,
+    #[value(name = "pg_binary_attr_v1")]
+    PgBinaryAttrV1,
+}
+
+impl SpireRemoteTupleTransportMode {
+    fn as_guc_value(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::JsonTuplePayloadV1 => "json_tuple_payload_v1",
+            Self::PgBinaryAttrV1 => "pg_binary_attr_v1",
+        }
+    }
+}
+
+impl fmt::Display for SpireRemoteTupleTransportMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_guc_value())
+    }
 }
 
 pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()> {
@@ -117,6 +147,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             *nprobe,
             args.rerank_width,
             args.max_candidate_rows,
+            args.remote_tuple_transport,
             adaptive_nprobe_options,
         )
         .await?;
@@ -188,6 +219,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         sweep_values: &sweep_values,
         rerank_width: args.rerank_width,
         max_candidate_rows: args.max_candidate_rows,
+        remote_tuple_transport: args.remote_tuple_transport,
         adaptive_nprobe_options,
         remote_enabled,
         remote_selected_pids: &args.remote_selected_pids,
@@ -346,6 +378,7 @@ async fn apply_session_options(
     nprobe: i32,
     rerank_width: Option<i32>,
     max_candidate_rows: Option<i32>,
+    remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
 ) -> Result<()> {
     client
@@ -365,6 +398,20 @@ async fn apply_session_options(
             ))
             .await
             .wrap_err_with(|| format!("SET ec_spire.max_candidate_rows = {max_candidate_rows}"))?;
+    }
+    if let Some(remote_tuple_transport) = remote_tuple_transport {
+        client
+            .batch_execute(&format!(
+                "SET ec_spire.remote_tuple_transport = '{}'",
+                remote_tuple_transport.as_guc_value()
+            ))
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "SET ec_spire.remote_tuple_transport = '{}'",
+                    remote_tuple_transport.as_guc_value()
+                )
+            })?;
     }
     super::apply_spire_adaptive_nprobe_options(client, adaptive_nprobe_options).await?;
     Ok(())
@@ -690,6 +737,7 @@ struct ReportInput<'a> {
     sweep_values: &'a [i32],
     rerank_width: Option<i32>,
     max_candidate_rows: Option<i32>,
+    remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
     remote_enabled: bool,
     remote_selected_pids: &'a [i64],
@@ -719,13 +767,14 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
         sweep = input.sweep_values,
         rerank_width = option_label(input.rerank_width),
         max_candidate_rows = option_label(input.max_candidate_rows),
+        remote_tuple_transport = option_label(input.remote_tuple_transport),
         remote = input.remote_enabled,
         remote_selected_pids = input.remote_selected_pids,
         remote_epoch = option_label(input.remote_epoch),
@@ -856,6 +905,7 @@ mod tests {
             sweep: vec![],
             rerank_width: None,
             max_candidate_rows: None,
+            remote_tuple_transport: None,
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,
@@ -914,6 +964,33 @@ mod tests {
         assert!(local_pipeline_snapshot_sql().contains("ec_spire_index_scan_pipeline_snapshot"));
         assert!(remote_pipeline_steps_sql().contains("ec_spire_remote_pipeline_steps"));
         assert!(remote_pipeline_steps_sql().contains("$4::bigint[]"));
+    }
+
+    #[test]
+    fn spire_pipeline_reports_remote_tuple_transport_override() {
+        let routing = BTreeMap::new();
+        let local = BTreeMap::new();
+        let remote = BTreeMap::new();
+        let header = render_header(&ReportInput {
+            prefix: "pfx",
+            index: "pfx_idx",
+            queries: 1,
+            sweep_values: &[8],
+            rerank_width: None,
+            max_candidate_rows: None,
+            remote_tuple_transport: Some(SpireRemoteTupleTransportMode::PgBinaryAttrV1),
+            adaptive_nprobe_options: super::super::SpireAdaptiveNprobeBenchOptions {
+                enabled: false,
+                score_gap_micros: None,
+            },
+            remote_enabled: true,
+            remote_selected_pids: &[2, 3],
+            remote_epoch: Some(1),
+            routing: &routing,
+            local: &local,
+            remote: &remote,
+        });
+        assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
     }
 
     #[test]

@@ -68,6 +68,8 @@ static EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC: GucSetting<
 > = GucSetting::<SpireRemoteSearchConsistencyModeGuc>::new(
     SpireRemoteSearchConsistencyModeGuc::Strict,
 );
+static EC_SPIRE_REMOTE_TUPLE_TRANSPORT_GUC: GucSetting<SpireRemoteTupleTransportGuc> =
+    GucSetting::<SpireRemoteTupleTransportGuc>::new(SpireRemoteTupleTransportGuc::Auto);
 #[cfg(any(test, feature = "pg_test"))]
 static EC_SPIRE_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(0);
@@ -87,6 +89,16 @@ impl SpireRemoteSearchConsistencyModeGuc {
             Self::Degraded => "degraded",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
+pub(super) enum SpireRemoteTupleTransportGuc {
+    #[name = c"auto"]
+    Auto,
+    #[name = c"json_tuple_payload_v1"]
+    JsonTuplePayloadV1,
+    #[name = c"pg_binary_attr_v1"]
+    PgBinaryAttrV1,
 }
 
 #[repr(C)]
@@ -790,6 +802,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_enum_guc(
+        c"ec_spire.remote_tuple_transport",
+        c"Session tuple-payload transport policy for production ec_spire remote search.",
+        c"Controls coordinator selection of remote tuple-payload transport. Values: auto prefers the remote endpoint default, json_tuple_payload_v1 forces the compatibility JSON path, pg_binary_attr_v1 forces typed binary payloads when the remote advertises that ready capability.",
+        &EC_SPIRE_REMOTE_TUPLE_TRANSPORT_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     #[cfg(any(test, feature = "pg_test"))]
     GucRegistry::define_int_guc(
         c"ec_spire.remote_search_governance_test_namespace",
@@ -853,6 +873,10 @@ pub(super) fn current_session_remote_search_statement_timeout_ms() -> i32 {
 
 pub(super) fn current_session_remote_search_consistency_mode_name() -> &'static str {
     EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC.get().as_str()
+}
+
+pub(super) fn current_session_remote_tuple_transport() -> SpireRemoteTupleTransportGuc {
+    EC_SPIRE_REMOTE_TUPLE_TRANSPORT_GUC.get()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
