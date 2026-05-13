@@ -218,15 +218,19 @@ described by reviewer packet `30896`.
     libpq/tokio cancellation path;
   - [x] fixture local cancel or statement timeout during slow remote prepare;
   - [x] assert remote prepared transactions are rolled back, not orphaned.
-  - [x] `coordinator_insert_prepare_remote_sql` now wraps the synchronous
-    libpq prepare path with a PostgreSQL cancel watcher that polls local
-    cancel flags, sends the remote cancel token, rolls back open remote
-    transactions, and rolls back any just-prepared remote transaction before
-    local commit callbacks are registered. PG18 fixture
+  - [x] `coordinator_insert_prepare_remote_sql` now routes through the async
+    prepare adapter, which polls local cancel flags, sends the remote cancel
+    token, rolls back open remote transactions, and rolls back any
+    just-prepared remote transaction before local commit callbacks are
+    registered. PG18 fixture
     `test_ec_spire_insert_prepare_local_cancel_rolls_back` has the loopback
     remote cancel the coordinator while remote prepare SQL is sleeping, then
     asserts `local_query_cancelled`, no matching `pg_prepared_xacts`, and no
     visible remote row.
+  - [x] Reviewer note: the fixture covers the hardest post-prepare cleanup
+    window directly; the earlier remote-SQL, descriptor-metadata, and
+    `PREPARE TRANSACTION` failure windows rely on the same rollback path by
+    construction.
 - [x] Add `max_prepared_transactions` readiness:
   - [x] document it as required on every remote;
   - [x] check or warn during descriptor registration;
@@ -241,6 +245,9 @@ described by reviewer packet `30896`.
     releases 8 distinct-PK INSERT+DELETE workers behind an advisory barrier,
     asserts worker success, row counts, no placement lock waiters, no new
     deadlocks, and p99 completion below a predeclared 20s threshold.
+    A fixture comment now pins the same-transaction app-table plus
+    placement-table write shape so it keeps mirroring the production
+    coordinator INSERT trigger path.
 - [x] Evaluate partitioning `ec_spire_placement` by `index_oid` if contention
   evidence shows shared-table hot pages.
   - [x] Exit criterion: choose the fixture's writer count and p99 latency
@@ -253,6 +260,12 @@ described by reviewer packet `30896`.
 - [ ] Migrate wide-fanout INSERT 2PC dispatch to the same async/pipelined
   transport pattern as the read path, so M remote prepares do not serialize
   into M round trips.
+  - [ ] Async prepare executor foundation landed: `coordinator_insert_prepare_remote_sql`
+    now routes through a Tokio fanout batch adapter that can prepare multiple
+    remote transactions concurrently and rolls back any prepared remotes if one
+    dispatch fails. The row remains open until the coordinator INSERT trigger
+    accumulates statement-level batches instead of invoking the helper once per
+    row.
 - [x] Document the 2PC latency tradeoff and the bulk-load escape hatch for
   applications that can tolerate post-write placement registration.
 

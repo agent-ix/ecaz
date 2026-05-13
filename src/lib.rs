@@ -42396,6 +42396,9 @@ mod tests {
             let delete_id = i64::try_from(worker_idx + 1).expect("worker index should fit i64");
             let insert_id = 101_i64 + i64::try_from(worker_idx).expect("worker index fits i64");
             let inserted_tail = (worker_idx + 1) as f32 / 10.0;
+            // Keep app-table and placement writes in one transaction: that is
+            // the coordinator INSERT trigger production shape this fixture
+            // is meant to pressure.
             let worker_sql = format!(
                 "SET lock_timeout = '10s';
                  SET statement_timeout = '30s';

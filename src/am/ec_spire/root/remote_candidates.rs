@@ -2423,6 +2423,68 @@ fn coordinator_insert_remote_descriptor_metadata(
     Ok((active_epoch, remote_index_identity, extension_version))
 }
 
+async fn coordinator_insert_remote_descriptor_metadata_async(
+    client: &tokio_postgres::Client,
+    node_id: u32,
+    remote_index_regclass: &str,
+) -> Result<(u64, Vec<u8>, String), String> {
+    let row = client
+        .query_one(
+            "SELECT h.active_epoch::bigint AS active_epoch, \
+                    e.protocol_version, e.extension_version, e.opclass_identity, \
+                    e.storage_format, e.assignment_payload_format, e.quantizer_profile, \
+                    e.scoring_profile, e.profile_fingerprint, e.status, e.recommendation \
+               FROM ec_spire_index_hierarchy_snapshot($1::text::regclass) h \
+              CROSS JOIN ec_spire_remote_search_endpoint_identity($1::text::regclass::oid) e",
+            &[&remote_index_regclass],
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "ec_spire coordinator insert remote descriptor metadata query failed for node_id {node_id}: {error}"
+            )
+        })?;
+    let active_epoch = row
+        .try_get::<_, i64>("active_epoch")
+        .map_err(|_| {
+            "ec_spire coordinator insert remote descriptor active_epoch decode failed".to_owned()
+        })
+        .and_then(|value| {
+            u64::try_from(value).map_err(|_| {
+                "ec_spire coordinator insert remote descriptor active_epoch is negative".to_owned()
+            })
+        })?;
+    let profile_fingerprint = row
+        .try_get::<_, String>("profile_fingerprint")
+        .map_err(|_| {
+            "ec_spire coordinator insert remote descriptor profile_fingerprint decode failed"
+                .to_owned()
+        })?;
+    let remote_index_identity =
+        remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)?;
+    let extension_version = row
+        .try_get::<_, String>("extension_version")
+        .map_err(|_| {
+            "ec_spire coordinator insert remote descriptor extension_version decode failed".to_owned()
+        })?;
+    if extension_version.is_empty() {
+        return Err(
+            "ec_spire coordinator insert remote descriptor extension_version is empty".to_owned(),
+        );
+    }
+
+    Ok((active_epoch, remote_index_identity, extension_version))
+}
+
+fn insert_step_observed_local_cancel<T>(
+    result: &Result<SpireCoordinatorInsertAsyncStep<T>, String>,
+) -> bool {
+    result
+        .as_ref()
+        .map(|step| step.local_cancel_observed)
+        .unwrap_or(false)
+}
+
 const SPIRE_PREPARED_TRANSACTION_CAPACITY_HINT: &str =
     "SPIRE requires max_prepared_transactions > 0 and enough free prepared \
      transaction slots on every remote PostgreSQL instance; increase \
@@ -2461,6 +2523,40 @@ fn spire_remote_prepare_transaction_error(
     } else {
         base
     }
+}
+
+fn spire_remote_prepare_transaction_async_error(
+    operation: &str,
+    node_id: u32,
+    error: &tokio_postgres::Error,
+) -> String {
+    let base = format!(
+        "ec_spire coordinator {operation} remote PREPARE TRANSACTION failed for node_id {node_id}: {error}"
+    );
+    let (sqlstate, message) = error
+        .as_db_error()
+        .map(|db_error| (Some(db_error.code().code()), db_error.message()))
+        .unwrap_or((None, base.as_str()));
+    if postgres_prepare_transaction_capacity_failure(sqlstate, message) {
+        format!("{base}; {SPIRE_PREPARED_TRANSACTION_CAPACITY_HINT}")
+    } else {
+        base
+    }
+}
+
+fn postgres_async_error_message_with_detail(error: &tokio_postgres::Error) -> String {
+    let mut message = error.to_string();
+    if let Some(db_error) = error.as_db_error() {
+        if let Some(detail) = db_error.detail() {
+            message.push_str("; detail: ");
+            message.push_str(detail);
+        }
+        if let Some(hint) = db_error.hint() {
+            message.push_str("; hint: ");
+            message.push_str(hint);
+        }
+    }
+    message
 }
 
 fn postgres_error_message_with_detail(error: &postgres::Error) -> String {
@@ -2517,140 +2613,118 @@ fn validate_coordinator_write_shape_fingerprint(
     Ok(())
 }
 
+fn coordinator_insert_prepare_row_from_async_result(
+    dispatch: &SpireCoordinatorInsertDispatchPlanRow,
+    result: &SpireCoordinatorInsertRemotePrepareResult,
+) -> SpireCoordinatorInsertRemotePrepareRow {
+    SpireCoordinatorInsertRemotePrepareRow {
+        node_id: result.node_id,
+        prepared_gid: result.prepared_gid.clone(),
+        remote_insert_sent: true,
+        remote_prepared: true,
+        descriptor_generation: dispatch.descriptor_generation.saturating_add(1),
+        remote_index_identity: result.remote_index_identity.clone(),
+        remote_last_served_epoch: result.remote_last_served_epoch,
+        remote_min_retained_epoch: result.remote_last_served_epoch,
+        remote_extension_version: result.remote_extension_version.clone(),
+        status: SPIRE_COORDINATOR_INSERT_PREPARED_STATUS,
+        next_step: SPIRE_COORDINATOR_INSERT_NEXT_STEP_LOCAL_PLACEMENT,
+    }
+}
+
+pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
+    index_relation: pg_sys::Relation,
+    requests: Vec<(u32, u64, String)>,
+) -> Result<Vec<SpireCoordinatorInsertRemotePrepareRow>, String> {
+    let mut dispatches = Vec::with_capacity(requests.len());
+    let mut prepare_requests = Vec::with_capacity(requests.len());
+    for (node_id, served_epoch, remote_sql) in requests {
+        let dispatch =
+            unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+        if dispatch.status != SPIRE_REMOTE_STATUS_READY {
+            return Err(format!(
+                "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
+                node_id, dispatch.status
+            ));
+        }
+        validate_coordinator_write_shape_fingerprint(
+            "insert",
+            dispatch.index_oid,
+            &dispatch.coordinator_insert_shape_fingerprint,
+        )?;
+        let conninfo =
+            remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
+                format!(
+                    "ec_spire coordinator insert conninfo secret for node_id {node_id} is not resolved: {status}"
+                )
+            })?;
+        let prepared_gid =
+            coordinator_insert_prepared_gid(dispatch.index_oid, node_id, served_epoch);
+        prepare_requests.push(SpireCoordinatorInsertRemotePrepareRequest {
+            node_id,
+            conninfo,
+            remote_index_regclass: dispatch.remote_index_regclass.clone(),
+            remote_sql,
+            prepared_gid,
+        });
+        dispatches.push(dispatch);
+    }
+
+    let prepare_results =
+        SpireRemoteProductionTransportAdapter::run_insert_prepare_requests(prepare_requests)?;
+    if prepare_results.len() != dispatches.len() {
+        return Err(format!(
+            "ec_spire coordinator insert remote prepare returned {} rows for {} dispatches",
+            prepare_results.len(),
+            dispatches.len()
+        ));
+    }
+    let mut rows = Vec::with_capacity(prepare_results.len());
+    for (dispatch, result) in dispatches.iter().zip(&prepare_results) {
+        if dispatch.node_id != result.node_id {
+            return Err(format!(
+                "ec_spire coordinator insert remote prepare result for node_id {} does not match planned node_id {}",
+                result.node_id, dispatch.node_id
+            ));
+        }
+        rows.push(coordinator_insert_prepare_row_from_async_result(
+            dispatch,
+            result,
+        ));
+    }
+
+    for result in prepare_results {
+        let commit_conninfo = result.conninfo.clone();
+        let rollback_conninfo = result.conninfo;
+        let node_id = result.node_id;
+        let commit_gid = result.prepared_gid.clone();
+        let rollback_gid = result.prepared_gid;
+        pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+            coordinator_insert_resolve_remote_prepared(commit_conninfo, node_id, commit_gid, true);
+        });
+        pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+            coordinator_insert_resolve_remote_prepared(rollback_conninfo, node_id, rollback_gid, false);
+        });
+    }
+
+    Ok(rows)
+}
+
 pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,
     remote_sql: &str,
 ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
-    let dispatch =
-        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
-    if dispatch.status != SPIRE_REMOTE_STATUS_READY {
-        return Err(format!(
-            "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
-            node_id, dispatch.status
-        ));
-    }
-    validate_coordinator_write_shape_fingerprint(
-        "insert",
-        dispatch.index_oid,
-        &dispatch.coordinator_insert_shape_fingerprint,
-    )?;
-
-    let _governance_permit = remote_search_libpq_executor_governance_permit_for_node(node_id)?;
-    let conninfo = remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
-        format!(
-            "ec_spire coordinator insert conninfo secret for node_id {node_id} is not resolved: {status}"
+    unsafe {
+        coordinator_insert_prepare_remote_sql_batch(
+            index_relation,
+            vec![(node_id, served_epoch, remote_sql.to_owned())],
         )
-    })?;
-    let mut client = remote_search_libpq_connect_with_session_timeouts(
-        &conninfo,
-        node_id,
-        "coordinator insert remote prepare",
-    )?;
-    let prepared_gid = coordinator_insert_prepared_gid(dispatch.index_oid, node_id, served_epoch);
-    client
-        .batch_execute("BEGIN")
-        .map_err(|_| {
-            format!(
-                "ec_spire coordinator insert failed to begin remote transaction for node_id {node_id}"
-            )
-    })?;
-    let cancel_watcher = SpireSyncPostgresCancelWatcher::start(client.cancel_token());
-    if let Err(error) = client.batch_execute(remote_sql) {
-        let local_cancel_observed = cancel_watcher.observed_local_cancel();
-        drop(cancel_watcher);
-        let _ = client.batch_execute("ROLLBACK");
-        if local_cancel_observed {
-            return Err(coordinator_remote_local_cancel_error(
-                "insert",
-                node_id,
-                postgres_local_cancel_failure_category(),
-            ));
-        }
-        let error = postgres_error_message_with_detail(&error);
-        return Err(format!(
-            "ec_spire coordinator insert remote SQL failed for node_id {node_id}: {error}"
-        ));
-    }
-    let (remote_last_served_epoch, remote_index_identity, remote_extension_version) =
-        match coordinator_insert_remote_descriptor_metadata(
-            &mut client,
-            node_id,
-            &dispatch.remote_index_regclass,
-        ) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                let local_cancel_observed = cancel_watcher.observed_local_cancel();
-                drop(cancel_watcher);
-                let _ = client.batch_execute("ROLLBACK");
-                if local_cancel_observed {
-                    return Err(coordinator_remote_local_cancel_error(
-                        "insert",
-                        node_id,
-                        postgres_local_cancel_failure_category(),
-                    ));
-                }
-                return Err(error);
-            }
-        };
-    if let Err(error) = client.batch_execute(&format!(
-        "PREPARE TRANSACTION {}",
-        quote_sql_literal(&prepared_gid)
-    )) {
-        let local_cancel_observed = cancel_watcher.observed_local_cancel();
-        drop(cancel_watcher);
-        let _ = client.batch_execute("ROLLBACK");
-        if local_cancel_observed {
-            return Err(coordinator_remote_local_cancel_error(
-                "insert",
-                node_id,
-                postgres_local_cancel_failure_category(),
-            ));
-        }
-        return Err(spire_remote_prepare_transaction_error(
-            "insert", node_id, &error,
-        ));
-    }
-    let local_cancel_observed = cancel_watcher.observed_local_cancel();
-    drop(cancel_watcher);
-    if local_cancel_observed {
-        coordinator_insert_resolve_remote_prepared(
-            conninfo.clone(),
-            node_id,
-            prepared_gid.clone(),
-            false,
-        );
-        return Err(coordinator_remote_local_cancel_error(
-            "insert",
-            node_id,
-            postgres_local_cancel_failure_category(),
-        ));
-    }
-
-    let commit_conninfo = conninfo.clone();
-    let commit_gid = prepared_gid.clone();
-    let rollback_gid = prepared_gid.clone();
-    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
-        coordinator_insert_resolve_remote_prepared(commit_conninfo, node_id, commit_gid, true);
-    });
-    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
-        coordinator_insert_resolve_remote_prepared(conninfo, node_id, rollback_gid, false);
-    });
-
-    Ok(SpireCoordinatorInsertRemotePrepareRow {
-        node_id,
-        prepared_gid,
-        remote_insert_sent: true,
-        remote_prepared: true,
-        descriptor_generation: dispatch.descriptor_generation.saturating_add(1),
-        remote_index_identity,
-        remote_last_served_epoch,
-        remote_min_retained_epoch: remote_last_served_epoch,
-        remote_extension_version,
-        status: SPIRE_COORDINATOR_INSERT_PREPARED_STATUS,
-        next_step: SPIRE_COORDINATOR_INSERT_NEXT_STEP_LOCAL_PLACEMENT,
-    })
+    }?
+    .into_iter()
+    .next()
+    .ok_or_else(|| "ec_spire coordinator insert remote prepare returned no row".to_owned())
 }
 
 pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
@@ -3165,6 +3239,31 @@ pub(crate) struct SpireRemoteProductionHeapReceiveResult {
     pub(crate) candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SpireCoordinatorInsertRemotePrepareRequest {
+    node_id: u32,
+    conninfo: String,
+    remote_index_regclass: String,
+    remote_sql: String,
+    prepared_gid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireCoordinatorInsertRemotePrepareResult {
+    node_id: u32,
+    conninfo: String,
+    prepared_gid: String,
+    remote_index_identity: Vec<u8>,
+    remote_last_served_epoch: u64,
+    remote_extension_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireCoordinatorInsertAsyncStep<T> {
+    value: T,
+    local_cancel_observed: bool,
+}
+
 struct SpireRemoteProductionTransportAdapter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3175,63 +3274,6 @@ enum SpireRemoteLocalCancelSource {
 }
 
 const SPIRE_REMOTE_POSTGRES_INTERRUPT_POLL_MS: u64 = 5;
-const SPIRE_SYNC_POSTGRES_CANCEL_NONE: u8 = 0;
-const SPIRE_SYNC_POSTGRES_CANCEL_OBSERVED: u8 = 1;
-
-struct SpireSyncPostgresCancelWatcher {
-    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    observed: std::sync::Arc<std::sync::atomic::AtomicU8>,
-    handle: Option<std::thread::JoinHandle<()>>,
-}
-
-impl SpireSyncPostgresCancelWatcher {
-    fn start(cancel_token: postgres::CancelToken) -> Self {
-        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let observed = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
-            SPIRE_SYNC_POSTGRES_CANCEL_NONE,
-        ));
-        let thread_done = std::sync::Arc::clone(&done);
-        let thread_observed = std::sync::Arc::clone(&observed);
-        let handle = std::thread::Builder::new()
-            .name("ec_spire_sync_remote_cancel".to_owned())
-            .spawn(move || {
-                while !thread_done.load(std::sync::atomic::Ordering::Acquire) {
-                    if postgres_query_cancel_pending() {
-                        thread_observed.store(
-                            SPIRE_SYNC_POSTGRES_CANCEL_OBSERVED,
-                            std::sync::atomic::Ordering::Release,
-                        );
-                        let _ = cancel_token.cancel_query(postgres::NoTls);
-                        return;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        SPIRE_REMOTE_POSTGRES_INTERRUPT_POLL_MS,
-                    ));
-                }
-            })
-            .ok();
-        Self {
-            done,
-            observed,
-            handle,
-        }
-    }
-
-    fn observed_local_cancel(&self) -> bool {
-        self.observed.load(std::sync::atomic::Ordering::Acquire)
-            != SPIRE_SYNC_POSTGRES_CANCEL_NONE
-    }
-}
-
-impl Drop for SpireSyncPostgresCancelWatcher {
-    fn drop(&mut self) {
-        self.done
-            .store(true, std::sync::atomic::Ordering::Release);
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-    }
-}
 
 impl SpireRemoteLocalCancelSource {
     fn production() -> Self {
@@ -3358,6 +3400,57 @@ impl SpireRemoteProductionTransportAdapter {
                 Self::run_one_heap_receive_request(request, batch_start, local_cancel_source).await
             });
             Ok(futures_util::future::join_all(futures).await)
+        })
+    }
+
+    fn run_insert_prepare_requests(
+        requests: Vec<SpireCoordinatorInsertRemotePrepareRequest>,
+    ) -> Result<Vec<SpireCoordinatorInsertRemotePrepareResult>, String> {
+        Self::run_insert_prepare_requests_with_local_cancel_source(
+            requests,
+            SpireRemoteLocalCancelSource::production(),
+        )
+    }
+
+    fn run_insert_prepare_requests_with_local_cancel_source(
+        requests: Vec<SpireCoordinatorInsertRemotePrepareRequest>,
+        local_cancel_source: SpireRemoteLocalCancelSource,
+    ) -> Result<Vec<SpireCoordinatorInsertRemotePrepareResult>, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .map_err(|_| {
+                "ec_spire coordinator insert prepare adapter failed to build runtime".to_owned()
+            })?;
+
+        runtime.block_on(async move {
+            let futures = requests.into_iter().map(|request| async move {
+                Self::run_one_insert_prepare_request(request, local_cancel_source).await
+            });
+            let results = futures_util::future::join_all(futures).await;
+            let mut prepared_rows = Vec::new();
+            let mut first_error = None;
+            for result in results {
+                match result {
+                    Ok(row) => prepared_rows.push(row),
+                    Err(error) if first_error.is_none() => first_error = Some(error),
+                    Err(_) => {}
+                }
+            }
+            if let Some(error) = first_error {
+                for row in &prepared_rows {
+                    coordinator_insert_resolve_remote_prepared(
+                        row.conninfo.clone(),
+                        row.node_id,
+                        row.prepared_gid.clone(),
+                        false,
+                    );
+                }
+                Err(error)
+            } else {
+                Ok(prepared_rows)
+            }
         })
     }
 
@@ -3924,6 +4017,207 @@ impl SpireRemoteProductionTransportAdapter {
             status: SPIRE_REMOTE_STATUS_READY,
             failure_category: SPIRE_REMOTE_NONE,
             candidates,
+        }
+    }
+
+    async fn run_one_insert_prepare_request(
+        request: SpireCoordinatorInsertRemotePrepareRequest,
+        local_cancel_source: SpireRemoteLocalCancelSource,
+    ) -> Result<SpireCoordinatorInsertRemotePrepareResult, String> {
+        let _governance_permit =
+            remote_search_libpq_executor_governance_permit_for_node(request.node_id)?;
+        let mut config = request
+            .conninfo
+            .parse::<tokio_postgres::Config>()
+            .map_err(|_| {
+                format!(
+                    "ec_spire coordinator insert remote prepare conninfo parse failed for node_id {}",
+                    request.node_id
+                )
+            })?;
+        let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+        if limits.connect_timeout_ms > 0 {
+            config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
+        }
+
+        let (client, connection) = config
+            .connect(tokio_postgres::NoTls)
+            .await
+            .map_err(|_| {
+                format!(
+                    "ec_spire coordinator insert remote prepare failed to open connection for node_id {}",
+                    request.node_id
+                )
+            })?;
+        let connection_task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        let cancel_token = client.cancel_token();
+
+        let result = async {
+            if limits.statement_timeout_ms > 0 {
+                client
+                    .batch_execute(&format!(
+                        "SET statement_timeout = {}",
+                        limits.statement_timeout_ms
+                    ))
+                    .await
+                    .map_err(|_| {
+                        format!(
+                            "ec_spire coordinator insert remote prepare failed to configure statement_timeout for node_id {}",
+                            request.node_id
+                        )
+                    })?;
+            }
+            client.batch_execute("BEGIN").await.map_err(|_| {
+                format!(
+                    "ec_spire coordinator insert failed to begin remote transaction for node_id {}",
+                    request.node_id
+                )
+            })?;
+
+            let remote_sql_result = Self::run_insert_step_with_optional_local_cancel(
+                cancel_token.clone(),
+                async {
+                    client.batch_execute(&request.remote_sql).await.map_err(|error| {
+                        format!(
+                            "ec_spire coordinator insert remote SQL failed for node_id {}: {}",
+                            request.node_id,
+                            postgres_async_error_message_with_detail(&error)
+                        )
+                    })
+                },
+                local_cancel_source,
+            )
+            .await;
+            if insert_step_observed_local_cancel(&remote_sql_result) {
+                let _ = client.batch_execute("ROLLBACK").await;
+                return Err(coordinator_remote_local_cancel_error(
+                    "insert",
+                    request.node_id,
+                    postgres_local_cancel_failure_category(),
+                ));
+            }
+            if let Err(error) = remote_sql_result.map(|_| ()) {
+                let _ = client.batch_execute("ROLLBACK").await;
+                return Err(error);
+            }
+
+            let metadata_result = Self::run_insert_step_with_optional_local_cancel(
+                cancel_token.clone(),
+                async {
+                    coordinator_insert_remote_descriptor_metadata_async(
+                        &client,
+                        request.node_id,
+                        &request.remote_index_regclass,
+                    )
+                    .await
+                },
+                local_cancel_source,
+            )
+            .await;
+            if insert_step_observed_local_cancel(&metadata_result) {
+                let _ = client.batch_execute("ROLLBACK").await;
+                return Err(coordinator_remote_local_cancel_error(
+                    "insert",
+                    request.node_id,
+                    postgres_local_cancel_failure_category(),
+                ));
+            }
+            let (remote_last_served_epoch, remote_index_identity, remote_extension_version) =
+                match metadata_result.map(|step| step.value) {
+                    Ok(metadata) => metadata,
+                    Err(error) => {
+                        let _ = client.batch_execute("ROLLBACK").await;
+                        return Err(error);
+                    }
+                };
+
+            let prepare_sql = format!(
+                "PREPARE TRANSACTION {}",
+                quote_sql_literal(&request.prepared_gid)
+            );
+            let prepare_result = Self::run_insert_step_with_optional_local_cancel(
+                cancel_token,
+                async {
+                    client.batch_execute(&prepare_sql).await.map_err(|error| {
+                        spire_remote_prepare_transaction_async_error(
+                            "insert",
+                            request.node_id,
+                            &error,
+                        )
+                    })
+                },
+                local_cancel_source,
+            )
+            .await;
+            match prepare_result {
+                Ok(step) if step.local_cancel_observed => {
+                    coordinator_insert_resolve_remote_prepared(
+                        request.conninfo.clone(),
+                        request.node_id,
+                        request.prepared_gid.clone(),
+                        false,
+                    );
+                    Err(coordinator_remote_local_cancel_error(
+                        "insert",
+                        request.node_id,
+                        postgres_local_cancel_failure_category(),
+                    ))
+                }
+                Ok(_) => Ok(SpireCoordinatorInsertRemotePrepareResult {
+                    node_id: request.node_id,
+                    conninfo: request.conninfo,
+                    prepared_gid: request.prepared_gid,
+                    remote_index_identity,
+                    remote_last_served_epoch,
+                    remote_extension_version,
+                }),
+                Err(error) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
+                    Err(error)
+                }
+            }
+        }
+        .await;
+
+        connection_task.abort();
+        result
+    }
+
+    async fn run_insert_step_with_optional_local_cancel<T, F>(
+        cancel_token: tokio_postgres::CancelToken,
+        query_future: F,
+        local_cancel_source: SpireRemoteLocalCancelSource,
+    ) -> Result<SpireCoordinatorInsertAsyncStep<T>, String>
+    where
+        F: std::future::Future<Output = Result<T, String>>,
+    {
+        if local_cancel_source == SpireRemoteLocalCancelSource::None {
+            return query_future.await.map(|value| SpireCoordinatorInsertAsyncStep {
+                value,
+                local_cancel_observed: false,
+            });
+        }
+        let mut query_future = Box::pin(query_future);
+        let mut cancel_signal = Box::pin(Self::local_cancel_signal(local_cancel_source));
+        match futures_util::future::select(query_future.as_mut(), cancel_signal.as_mut()).await {
+            futures_util::future::Either::Left((query_result, _)) => {
+                query_result.map(|value| SpireCoordinatorInsertAsyncStep {
+                    value,
+                    local_cancel_observed: false,
+                })
+            }
+            futures_util::future::Either::Right((failure_category, _)) => {
+                let _ = cancel_token.cancel_query(tokio_postgres::NoTls).await;
+                match query_future.await {
+                    Ok(value) => Ok(SpireCoordinatorInsertAsyncStep {
+                        value,
+                        local_cancel_observed: true,
+                    }),
+                    Err(_) => Err(failure_category.to_owned()),
+                }
+            }
         }
     }
 
