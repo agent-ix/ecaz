@@ -1,4 +1,4 @@
-# Task 30 Phase 12c: SPIRE Cleanup
+# Task 30 Phase 12b: SPIRE Cleanup
 
 Status: planned
 Owner: coder1 / SPIRE distributed production-hardening track
@@ -10,7 +10,7 @@ existing SPIRE surface; should ideally land before or alongside Phase
 
 Pay down the structural debt identified by the Phase 12 final review and
 the RemoteScan/architecture audit (final-review packet `30982`,
-architecture audit attached to the same conversation). Phase 12c is a
+architecture audit attached to the same conversation). Phase 12b is a
 no-behavior-change refactor plus targeted test-coverage fills for the
 `EcSpireDistributedScan` CustomScan entry points. The phase MUST NOT
 introduce new SPIRE features and MUST NOT alter remote dispatch
@@ -42,7 +42,7 @@ new tests.
 
 ## Non-Goals
 
-- New SPIRE features. Phase 12c is structural cleanup plus targeted
+- New SPIRE features. Phase 12b is structural cleanup plus targeted
   test fills only.
 - Behavior changes to remote dispatch, planner gating, CustomScan
   semantics, or operator-visible SQL. Pre-refactor and post-refactor
@@ -52,7 +52,7 @@ new tests.
   phase makes 12a easier to land cleanly.
 - Rewriting unsafe FFI thunks. Move them, do not rewrite.
 
-## Phase 12c.1: Split `root/remote_candidates.rs`
+## Phase 12b.1: Split `root/remote_candidates.rs`
 
 The file is a kitchen sink at 12,405 lines. Split it into a directory
 module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
@@ -98,7 +98,7 @@ module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
   (`custom_scan.rs`, `dml_frontdoor.rs`, `cost.rs`, `scan/`, build/
   callbacks).
 
-## Phase 12c.2: Split `src/lib.rs` PG18 fixture sink
+## Phase 12b.2: Split `src/lib.rs` PG18 fixture sink
 
 `src/lib.rs` at 66,054 lines is the single translation unit for 247
 PG18 fixtures. Editor and `rustc` compile time are already painful;
@@ -126,7 +126,7 @@ Phase 13 will push it past 80k.
 - [ ] Spot-check 10 random tracker rows that cite a fixture name; each
   should still resolve via `rg test_ec_spire_<name> src/tests/`.
 
-## Phase 12c.3: Split `custom_scan.rs` and fill RemoteScan test gaps
+## Phase 12b.3: Split `custom_scan.rs` and fill RemoteScan test gaps
 
 Two-part: structural split, then add the missing Rust-level tests for
 the FFI entry points that today have only shell-fixture coverage.
@@ -179,7 +179,7 @@ the FFI entry points that today have only shell-fixture coverage.
   zero rows for a valid query; assert the CustomScan returns zero rows
   cleanly with no `not_applicable` status leakage.
 
-## Phase 12c.4: Standardize test layout
+## Phase 12b.4: Standardize test layout
 
 Pick one convention and migrate. Current mix is historical drift.
 
@@ -194,12 +194,12 @@ Pick one convention and migrate. Current mix is historical drift.
   - [ ] `vacuum.rs` → `vacuum/tests.rs`
   - [ ] `assign.rs` → `assign/tests.rs`
   - [ ] `quantizer.rs` → `quantizer/tests.rs`
-  - [ ] `custom_scan.rs` already covered by 12c.3.
+  - [ ] `custom_scan.rs` already covered by 12b.3.
 - [ ] Document the convention in `docs/SPIRE_DIAGNOSTICS.md` (or a new
   short `docs/SPIRE_CODE_LAYOUT.md`) so the next contributor does not
   reintroduce the drift.
 
-## Phase 12c.5: Rename `root/` → `coordinator/`
+## Phase 12b.5: Rename `root/` → `coordinator/`
 
 `root/` is a misnomer. Originally it meant "root-node ops"; today it
 hosts cross-cutting coordinator/fanout concerns (remote_candidates,
@@ -217,7 +217,7 @@ types, debug).
   Operator-visible identifiers are stable; only the Rust module name
   changes. Record the decision in the packet.
 
-## Phase 12c.6: Reduce unsafe / business-logic mixing
+## Phase 12b.6: Reduce unsafe / business-logic mixing
 
 Audit-flagged smell: `dml_frontdoor.rs` and `update/` carry `unsafe`
 mixed with business logic.
@@ -233,11 +233,11 @@ mixed with business logic.
   should not increase; goal is a small reduction with concentration at
   the FFI surface.
 
-## Phase 12c.7: Re-audit `unwrap()` / `expect()` density in non-test
+## Phase 12b.7: Re-audit `unwrap()` / `expect()` density in non-test
 paths
 
 The earlier audit reported 1,565 total occurrences, most in tests.
-Post-12c.1/12c.2/12c.3 splits, re-run with proper test exclusion.
+Post-12b.1/12b.2/12b.3 splits, re-run with proper test exclusion.
 
 - [ ] `rg -n '\.unwrap\(\)|\.expect\(' src/am/ec_spire/ --glob '!**/tests*'`
   after the splits land.
@@ -254,20 +254,20 @@ These are mostly independent and can interleave with Phase 12a if
 needed, but the `remote_candidates.rs` split should land first to
 reduce 12a merge friction.
 
-1. `12c.1` split `remote_candidates.rs` — biggest merge-friction
+1. `12b.1` split `remote_candidates.rs` — biggest merge-friction
    reducer; do this before 12a.1/12a.2/12a.6 land.
-2. `12c.3` `custom_scan.rs` split + RemoteScan test fills — the
+2. `12b.3` `custom_scan.rs` split + RemoteScan test fills — the
    `ReScanCustomScan` gap and `ExplainCustomScan` contract are
    load-bearing for Phase 13 EXPLAIN-driven tuning.
-3. `12c.2` `src/lib.rs` fixture split — large mechanical change,
+3. `12b.2` `src/lib.rs` fixture split — large mechanical change,
    self-contained.
-4. `12c.4` test layout standardization — fold into the above splits
+4. `12b.4` test layout standardization — fold into the above splits
    where convenient.
-5. `12c.5` `root/` rename — late so other splits do not need to
+5. `12b.5` `root/` rename — late so other splits do not need to
    reflow paths twice.
-6. `12c.6` unsafe consolidation — after splits, since FFI thunks are
+6. `12b.6` unsafe consolidation — after splits, since FFI thunks are
    now in their own modules.
-7. `12c.7` unwrap/expect non-test audit — last, since the
+7. `12b.7` unwrap/expect non-test audit — last, since the
    test-exclusion glob depends on the post-split layout.
 
 ## Exit Criteria
