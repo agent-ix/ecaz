@@ -443,14 +443,20 @@ described by reviewer packet `30896`.
 
 ## Phase 12.9: Local Production Harness and Runbook
 
-- [ ] Extend `ecaz` with setup, load, query, teardown, and benchmark commands
+- [x] Extend `ecaz` with setup, load, query, teardown, and benchmark commands
   for the local distributed SPIRE fixture when shell scripts become repeated
   operator workflows.
   - [x] `ecaz dev spire-multicluster` now exposes the baseline PG18
     multicluster smoke fixture and INSERT-after-CustomScan read fixture through
     `smoke-pg18` and `insert-read-after-customscan-pg18`, including
     packet-local artifact/log controls and skip-install/run-dir options.
-- [ ] Add or extend `ecaz bench spire-pipeline` for distributed recall,
+  - [x] Together with the accepted `customscan-read-pg18`,
+    `transport-overlap-pg18`, `fault-pg18`, and `lifecycle-pg18` wrappers, the
+    local distributed fixture CLI covers baseline setup/teardown, repeated
+    reads, write-then-read, two-remote transport overlap, and Stage E fault /
+    lifecycle reruns without direct shell-script invocation. The CLI README
+    command tree now lists all six wrappers.
+- [x] Add or extend `ecaz bench spire-pipeline` for distributed recall,
   latency, and counter capture across local instances.
   - [x] `ecaz bench spire-pipeline` can now optionally emit coordinator query
     latency p50/p95/p99 and recall@k alongside routing/local/remote pipeline
@@ -460,6 +466,9 @@ described by reviewer packet `30896`.
   - [x] `ecaz bench spire-pipeline` now records endpoint tuple-transport
     readiness plus remote degraded-skip node/count/category counters when
     remote diagnostics are enabled.
+  - [x] Reviewer packet `30968` accepted the combined 30965-30967 bench batch
+    as the completed Phase 12.9 harness surface; live packet-local artifact
+    capture remains a separate open row below.
 - [ ] Capture recall, latency p50/p95/p99, object bytes, route counts,
   candidate counts, heap rows, remote fanout, timeout/cancel counts,
   strict-failure counts, degraded-skip counts, placement contention, and typed
