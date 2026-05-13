@@ -591,6 +591,10 @@ described by reviewer packet `30896`.
     packet-local bench artifact includes tuple transport readiness
     (`pg_binary_attr_v1_ready = true`), p50/p95/p99 latency, recall, pipeline
     rows, local-store counters, and `remote_fanout = not_applicable_local_scan`.
+  - [x] Packet `30981` is the curated final bundle assembly requested by the
+    reviewer for packet `30980`; it indexes the committed raw logs and manifests
+    from packets `30978`, `30979`, and `30980` under the local
+    production-readiness smoke evidence label.
 
 ## Suggested Packet Sequence
 
