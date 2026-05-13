@@ -8,9 +8,11 @@
 use clap::{Args, ValueEnum};
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
+use ndarray::Array2;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use tokio_postgres::{Client, Row};
 
 use crate::profiles::{self, EC_SPIRE};
@@ -69,6 +71,15 @@ pub struct SpirePipelineArgs {
     /// Session tuple-payload transport policy for remote CustomScan payloads.
     #[arg(long, value_enum)]
     pub remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
+    /// Run coordinator KNN queries and report single-connection latency stats.
+    #[arg(long)]
+    pub include_query_metrics: bool,
+    /// Also compute exact local truth and report recall@k for coordinator KNN queries.
+    #[arg(long)]
+    pub include_recall: bool,
+    /// k for optional query latency and recall metrics.
+    #[arg(long, default_value_t = 10)]
+    pub query_metric_k: usize,
     /// Write the pipeline report to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -119,6 +130,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
     };
     super::validate_spire_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
+    let query_metrics_enabled = args.include_query_metrics || args.include_recall;
 
     let client = psql::connect(conn).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
@@ -135,10 +147,39 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     if queries.is_empty() {
         return Err(eyre!("queries table {queries_table:?} is empty"));
     }
+    let query_truth = if args.include_recall {
+        let (corpus_ids, corpus) =
+            super::recall::fetch_sources_public(&client, &corpus_table, None)
+                .await
+                .wrap_err_with(|| format!("fetching exact-truth corpus from {corpus_table}"))?;
+        let query_matrix = query_matrix(&queries)?;
+        let truth = super::recall::brute_force_top_k(&corpus, &query_matrix, args.query_metric_k);
+        Some(super::recall::map_indices_to_ids(
+            &truth.indices,
+            &corpus_ids,
+        ))
+    } else {
+        None
+    };
+    if query_metrics_enabled {
+        psql::prefer_ordered_ann_path(&client).await?;
+    }
+    let query_metric_stmt = if query_metrics_enabled {
+        let sql = super::recall::build_knn_sql(&EC_SPIRE, &corpus_table);
+        Some(
+            client
+                .prepare(&sql)
+                .await
+                .wrap_err("preparing SPIRE pipeline query-metrics KNN statement")?,
+        )
+    } else {
+        None
+    };
 
     let mut routing = BTreeMap::<RoutingKey, RoutingAggregate>::new();
     let mut local = BTreeMap::<StepKey, LocalStepAggregate>::new();
     let mut remote = BTreeMap::<StepKey, RemoteStepAggregate>::new();
+    let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
     for nprobe in &sweep_values {
@@ -209,6 +250,20 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         .record(row);
                 }
             }
+
+            if let Some(stmt) = &query_metric_stmt {
+                let measured =
+                    execute_query_metric(&client, stmt, &query.source, args.query_metric_k).await?;
+                query_metrics
+                    .entry(*nprobe)
+                    .or_default()
+                    .record(measured.duration, measured.predicted_ids);
+            }
+        }
+    }
+    if let Some(truth_ids) = query_truth.as_ref() {
+        for aggregate in query_metrics.values_mut() {
+            aggregate.record_recall(truth_ids, args.query_metric_k);
         }
     }
 
@@ -224,9 +279,13 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         remote_enabled,
         remote_selected_pids: &args.remote_selected_pids,
         remote_epoch,
+        query_metrics_enabled,
+        include_recall: args.include_recall,
+        query_metric_k: args.query_metric_k,
         routing: &routing,
         local: &local,
         remote: &remote,
+        query_metrics: &query_metrics,
     });
     println!("{output}");
     if let Some(path) = args.log_output {
@@ -248,6 +307,9 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     }
     if args.top_k < 0 {
         return Err(eyre!("--top-k must be >= 0"));
+    }
+    if args.query_metric_k == 0 {
+        return Err(eyre!("--query-metric-k must be >= 1"));
     }
     for pid in &args.remote_selected_pids {
         if *pid < 0 {
@@ -276,6 +338,55 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn query_matrix(queries: &[QueryVector]) -> Result<Array2<f32>> {
+    let Some(first) = queries.first() else {
+        return Err(eyre!("query metrics require at least one query"));
+    };
+    let dimensions = first.source.len();
+    if dimensions == 0 {
+        return Err(eyre!("query metrics require non-empty query vectors"));
+    }
+    let mut values = Vec::with_capacity(queries.len() * dimensions);
+    for query in queries {
+        if query.source.len() != dimensions {
+            return Err(eyre!(
+                "query metrics require fixed dimensions; query {} has {}, expected {}",
+                query.id,
+                query.source.len(),
+                dimensions
+            ));
+        }
+        values.extend_from_slice(&query.source);
+    }
+    Array2::from_shape_vec((queries.len(), dimensions), values)
+        .wrap_err("building query metrics matrix")
+}
+
+struct QueryMetricRow {
+    duration: Duration,
+    predicted_ids: Vec<i64>,
+}
+
+async fn execute_query_metric(
+    client: &Client,
+    statement: &tokio_postgres::Statement,
+    query: &[f32],
+    k: usize,
+) -> Result<QueryMetricRow> {
+    let k = i64::try_from(k).wrap_err("--query-metric-k exceeds i64")?;
+    let query = query.to_vec();
+    let started = Instant::now();
+    let rows = client
+        .query(statement, &[&query, &k])
+        .await
+        .wrap_err("executing SPIRE pipeline query-metrics KNN query")?;
+    let duration = started.elapsed();
+    Ok(QueryMetricRow {
+        duration,
+        predicted_ids: rows.into_iter().map(|row| row.get(0)).collect(),
+    })
 }
 
 fn sweep_values(args: &SpirePipelineArgs) -> Result<Vec<i32>> {
@@ -705,6 +816,77 @@ impl RemoteStepAggregate {
 }
 
 #[derive(Debug, Default)]
+struct QueryMetricAggregate {
+    durations: Vec<Duration>,
+    predicted_ids: Vec<Vec<i64>>,
+    recall_at_k: Option<f64>,
+}
+
+impl QueryMetricAggregate {
+    fn record(&mut self, duration: Duration, predicted_ids: Vec<i64>) {
+        self.durations.push(duration);
+        self.predicted_ids.push(predicted_ids);
+    }
+
+    fn record_recall(&mut self, truth_ids: &[Vec<i64>], k: usize) {
+        self.recall_at_k = Some(super::recall::recall_at_k(
+            truth_ids,
+            &self.predicted_ids,
+            k,
+        ));
+    }
+
+    fn latency_stats(&self) -> DurationStats {
+        summarize_durations(&self.durations)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DurationStats {
+    count: usize,
+    min: Duration,
+    p50: Duration,
+    p95: Duration,
+    p99: Duration,
+    max: Duration,
+}
+
+fn summarize_durations(durations: &[Duration]) -> DurationStats {
+    if durations.is_empty() {
+        return DurationStats {
+            count: 0,
+            min: Duration::ZERO,
+            p50: Duration::ZERO,
+            p95: Duration::ZERO,
+            p99: Duration::ZERO,
+            max: Duration::ZERO,
+        };
+    }
+    let mut sorted = durations.to_vec();
+    sorted.sort_unstable();
+    DurationStats {
+        count: sorted.len(),
+        min: sorted[0],
+        p50: percentile_duration(&sorted, 0.50),
+        p95: percentile_duration(&sorted, 0.95),
+        p99: percentile_duration(&sorted, 0.99),
+        max: sorted[sorted.len() - 1],
+    }
+}
+
+fn percentile_duration(sorted: &[Duration], percentile: f64) -> Duration {
+    if sorted.is_empty() {
+        return Duration::ZERO;
+    }
+    let idx = ((sorted.len() - 1) as f64 * percentile).round() as usize;
+    sorted[idx.min(sorted.len() - 1)]
+}
+
+fn format_duration_ms(duration: Duration) -> String {
+    format!("{:.3} ms", duration.as_secs_f64() * 1000.0)
+}
+
+#[derive(Debug, Default)]
 struct MixedValue {
     value: Option<String>,
     mixed: bool,
@@ -742,9 +924,13 @@ struct ReportInput<'a> {
     remote_enabled: bool,
     remote_selected_pids: &'a [i64],
     remote_epoch: Option<i64>,
+    query_metrics_enabled: bool,
+    include_recall: bool,
+    query_metric_k: usize,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
     remote: &'a BTreeMap<StepKey, RemoteStepAggregate>,
+    query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
 }
 
 fn render_report(input: ReportInput<'_>) -> String {
@@ -753,6 +939,12 @@ fn render_report(input: ReportInput<'_>) -> String {
     sections.push(render_local_table(input.local));
     if input.remote_enabled {
         sections.push(render_remote_table(input.remote));
+    }
+    if input.query_metrics_enabled {
+        sections.push(render_query_metrics_table(
+            input.query_metrics,
+            input.include_recall,
+        ));
     }
     sections.join("\n\n")
 }
@@ -767,7 +959,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_recall: {query_recall}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -778,6 +970,9 @@ fn render_header(input: &ReportInput<'_>) -> String {
         remote = input.remote_enabled,
         remote_selected_pids = input.remote_selected_pids,
         remote_epoch = option_label(input.remote_epoch),
+        query_metrics = input.query_metrics_enabled,
+        query_metric_k = input.query_metric_k,
+        query_recall = input.include_recall,
     )
 }
 
@@ -887,6 +1082,49 @@ fn render_remote_table(rows: &BTreeMap<StepKey, RemoteStepAggregate>) -> String 
     format!("Remote pipeline counters\n{table}")
 }
 
+fn render_query_metrics_table(
+    rows: &BTreeMap<i32, QueryMetricAggregate>,
+    include_recall: bool,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    let mut header = vec![
+        "nprobe",
+        "queries",
+        "latency_min",
+        "latency_p50",
+        "latency_p95",
+        "latency_p99",
+        "latency_max",
+    ];
+    if include_recall {
+        header.push("recall@k");
+    }
+    table.set_header(header);
+    for (nprobe, aggregate) in rows {
+        let stats = aggregate.latency_stats();
+        let mut row = vec![
+            Cell::new(nprobe),
+            Cell::new(stats.count),
+            Cell::new(format_duration_ms(stats.min)),
+            Cell::new(format_duration_ms(stats.p50)),
+            Cell::new(format_duration_ms(stats.p95)),
+            Cell::new(format_duration_ms(stats.p99)),
+            Cell::new(format_duration_ms(stats.max)),
+        ];
+        if include_recall {
+            row.push(Cell::new(
+                aggregate
+                    .recall_at_k
+                    .map(|value| format!("{value:.4}"))
+                    .unwrap_or_else(|| "not_computed".to_owned()),
+            ));
+        }
+        table.add_row(row);
+    }
+    format!("Coordinator query metrics\n{table}")
+}
+
 fn option_label<T: std::fmt::Display>(value: Option<T>) -> String {
     value
         .map(|value| value.to_string())
@@ -906,6 +1144,9 @@ mod tests {
             rerank_width: None,
             max_candidate_rows: None,
             remote_tuple_transport: None,
+            include_query_metrics: false,
+            include_recall: false,
+            query_metric_k: 10,
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,
@@ -945,6 +1186,13 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--remote-selected-pids"));
+
+        let mut args = default_args();
+        args.query_metric_k = 0;
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--query-metric-k"));
     }
 
     #[test]
@@ -986,11 +1234,52 @@ mod tests {
             remote_enabled: true,
             remote_selected_pids: &[2, 3],
             remote_epoch: Some(1),
+            query_metrics_enabled: true,
+            include_recall: false,
+            query_metric_k: 10,
             routing: &routing,
             local: &local,
             remote: &remote,
+            query_metrics: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
+        assert!(header.contains("query_metrics: true"));
+        assert!(header.contains("query_metric_k: 10"));
+        assert!(header.contains("query_recall: false"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_query_metrics_with_recall() {
+        let mut aggregate = QueryMetricAggregate::default();
+        aggregate.record(Duration::from_millis(1), vec![10, 20]);
+        aggregate.record(Duration::from_millis(3), vec![20, 30]);
+        aggregate.record_recall(&[vec![10, 20], vec![20, 40]], 2);
+        let mut rows = BTreeMap::new();
+        rows.insert(8, aggregate);
+
+        let rendered = render_query_metrics_table(&rows, true);
+        assert!(rendered.contains("Coordinator query metrics"));
+        assert!(rendered.contains("latency_p50"));
+        assert!(rendered.contains("recall@k"));
+        assert!(rendered.contains("0.7500"));
+    }
+
+    #[test]
+    fn spire_pipeline_query_matrix_requires_fixed_dimensions() {
+        let rows = vec![
+            QueryVector {
+                id: 1,
+                source: vec![1.0, 0.0],
+            },
+            QueryVector {
+                id: 2,
+                source: vec![1.0],
+            },
+        ];
+        assert!(query_matrix(&rows)
+            .unwrap_err()
+            .to_string()
+            .contains("fixed dimensions"));
     }
 
     #[test]

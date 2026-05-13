@@ -215,6 +215,10 @@ mod tests {
             "8,16",
             "--remote-tuple-transport",
             "pg_binary_attr_v1",
+            "--include-query-metrics",
+            "--include-recall",
+            "--query-metric-k",
+            "20",
         ])
         .expect("cli parses");
         match cli.command {
@@ -225,6 +229,9 @@ mod tests {
                     args.remote_tuple_transport,
                     Some(crate::commands::bench::SpireRemoteTupleTransportMode::PgBinaryAttrV1)
                 );
+                assert!(args.include_query_metrics);
+                assert!(args.include_recall);
+                assert_eq!(args.query_metric_k, 20);
             }
             other => panic!("unexpected command: {other:?}"),
         }

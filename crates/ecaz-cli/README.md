@@ -97,7 +97,7 @@ ecaz
 │   ├── diskann-graph       # persisted graph reachability/degree/edge diagnostics
 │   ├── diskann-build-probe # in-memory candidate pool/pruning/degree diagnostics
 │   ├── overhead            # encode / internal scan / residual SQL breakdown
-│   ├── spire-pipeline      # SPIRE routing, remote fanout, and transport counters
+│   ├── spire-pipeline      # SPIRE routing, remote fanout, recall, latency, and transport counters
 │   └── suite
 │       ├── run             # dry-run or execute a configured benchmark suite
 │       ├── audit           # validate suite shape and required local inputs
