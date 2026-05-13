@@ -323,8 +323,15 @@ described by reviewer packet `30896`.
     placement to remote node `2` and verifies at least one ready global
     identity spans node IDs `0..2` while preserving one
     primary plus one boundary-replica assignment per source identity.
-- [ ] Add boundary-replica manifest freshness fixtures using
+- [x] Add boundary-replica manifest freshness fixtures using
   `ec_spire_remote_epoch_manifest_freshness()`.
+  - Evidence: `test_ec_spire_boundary_replica_manifest_freshness_sql` builds a
+    boundary-replica index with global source identity, rewrites one leaf
+    placement to remote node `2`, verifies freshness requires manifest
+    persistence before `ec_spire_persist_remote_epoch_manifest(...)`, verifies
+    ready freshness after persistence, then drifts the persisted entry and
+    verifies `stale_remote_epoch_manifest` with
+    `refresh_remote_epoch_manifest`.
 - [ ] Add operator diagnostics for stale, missing, or unavailable boundary
   replica placements and their degraded-mode reporting.
 - [ ] Preserve and periodically rerun the full Stage E fault/lifecycle matrix

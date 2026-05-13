@@ -161,6 +161,10 @@ global, and surfaces the node/local-store span covered by that identity. The
 snapshot reads coordinator metadata copies for remote placements, so a
 multi-instance readiness fixture can prove one global original-vector identity
 across local and remote placement rows before live remote object reads exist.
+`ec_spire_remote_epoch_manifest_freshness(index_oid)` should be paired with
+that identity snapshot for boundary-replica readiness: it reports whether each
+remote node's persisted epoch-manifest entry is missing, ready, or stale before
+Stage E fixtures rely on the replicated placement metadata.
 `ec_spire_index_scan_placement_snapshot(index_oid, query)` then reports the
 runtime side of that contract with primary versus boundary-replica candidate
 rows, vec-id duplicate candidates suppressed by scan dedupe, and final

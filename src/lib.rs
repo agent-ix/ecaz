@@ -40288,6 +40288,149 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_boundary_replica_manifest_freshness_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_boundary_manifest_freshness_sql (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_boundary_manifest_freshness_sql \
+             (id, source_identity, embedding) VALUES \
+             (1, '00000000-0000-0000-0000-000000000101', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, '00000000-0000-0000-0000-000000000202', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, '00000000-0000-0000-0000-000000000303', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, '00000000-0000-0000-0000-000000000404', encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_boundary_manifest_freshness_idx \
+             ON ec_spire_boundary_manifest_freshness_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH ( \
+                 source_identity = 'include', \
+                 nlists = 4, \
+                 nprobe = 4, \
+                 boundary_replica_count = 1 \
+             )",
+        )
+        .expect("boundary replica index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_boundary_manifest_freshness_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_boundary_manifest_freshness_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let remote_leaf_pid = Spi::get_one::<i64>(
+            "SELECT pid FROM \
+             ec_spire_index_object_snapshot('ec_spire_boundary_manifest_freshness_idx'::regclass) \
+             WHERE object_kind = 'leaf' \
+             ORDER BY pid \
+             LIMIT 1",
+        )
+        .expect("leaf object query should succeed")
+        .expect("leaf object should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, remote_leaf_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 22, 'spire/remote/boundary-freshness', decode('22', 'hex'), \
+                     'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+
+        let freshness_from = "FROM ec_spire_remote_epoch_manifest_freshness(\
+             'ec_spire_boundary_manifest_freshness_idx'::regclass)";
+        let identity_from = "FROM ec_spire_index_boundary_replica_identity_snapshot(\
+             'ec_spire_boundary_manifest_freshness_idx'::regclass)";
+
+        let pre_persist_status =
+            Spi::get_one::<String>(&format!("SELECT freshness_status {freshness_from}"))
+                .expect("pre-persist freshness status query should succeed")
+                .expect("pre-persist freshness status should exist");
+        let pre_persist_action =
+            Spi::get_one::<String>(&format!("SELECT next_action {freshness_from}"))
+                .expect("pre-persist freshness action query should succeed")
+                .expect("pre-persist freshness action should exist");
+        let remote_identity_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {identity_from} \
+             WHERE vec_id_scope = 'global' \
+               AND status = 'ready' \
+               AND node_count = 2 \
+               AND min_node_id = 0 \
+               AND max_node_id = 2"
+        ))
+        .expect("remote boundary identity query should succeed")
+        .expect("remote boundary identity count should exist");
+
+        let persist_result = Spi::get_one::<bool>(
+            "SELECT ec_spire_persist_remote_epoch_manifest(\
+             'ec_spire_boundary_manifest_freshness_idx'::regclass)",
+        )
+        .expect("remote manifest persist should succeed")
+        .expect("remote manifest persist result should exist");
+        let ready_status =
+            Spi::get_one::<String>(&format!("SELECT freshness_status {freshness_from}"))
+                .expect("ready freshness status query should succeed")
+                .expect("ready freshness status should exist");
+        let ready_action = Spi::get_one::<String>(&format!("SELECT next_action {freshness_from}"))
+            .expect("ready freshness action query should succeed")
+            .expect("ready freshness action should exist");
+        let ready_entry_matches =
+            Spi::get_one::<bool>(&format!("SELECT persisted_entry_matches {freshness_from}"))
+                .expect("ready freshness match query should succeed")
+                .expect("ready freshness match should exist");
+
+        Spi::run(&format!(
+            "UPDATE ec_spire_remote_epoch_manifest_entry \
+                SET last_served_epoch = last_served_epoch - 1 \
+              WHERE coordinator_index_oid = '{}'::oid \
+                AND active_epoch = {active_epoch} \
+                AND node_id = 2",
+            u32::from(index_oid)
+        ))
+        .expect("manifest entry drift update should succeed");
+        let stale_status =
+            Spi::get_one::<String>(&format!("SELECT freshness_status {freshness_from}"))
+                .expect("stale freshness status query should succeed")
+                .expect("stale freshness status should exist");
+        let stale_action = Spi::get_one::<String>(&format!("SELECT next_action {freshness_from}"))
+            .expect("stale freshness action query should succeed")
+            .expect("stale freshness action should exist");
+        let stale_entry_matches =
+            Spi::get_one::<bool>(&format!("SELECT persisted_entry_matches {freshness_from}"))
+                .expect("stale freshness match query should succeed")
+                .expect("stale freshness match should exist");
+
+        assert!(register_result);
+        assert_eq!(
+            pre_persist_status,
+            "requires_remote_epoch_manifest_persistence"
+        );
+        assert_eq!(pre_persist_action, "persist_remote_epoch_manifest");
+        assert!(remote_identity_count > 0);
+        assert!(persist_result);
+        assert_eq!(ready_status, "ready");
+        assert_eq!(ready_action, "none");
+        assert!(ready_entry_matches);
+        assert_eq!(stale_status, "stale_remote_epoch_manifest");
+        assert_eq!(stale_action, "refresh_remote_epoch_manifest");
+        assert!(!stale_entry_matches);
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_epoch_manifest_libpq_executor_loopback() {
         let _env_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();
