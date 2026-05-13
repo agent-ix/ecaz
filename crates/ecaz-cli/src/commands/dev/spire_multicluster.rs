@@ -10,6 +10,9 @@ use super::support::{
 
 #[derive(Subcommand, Debug)]
 pub enum SpireMulticlusterCommand {
+    /// Run the PG18 one-coordinator/one-remote CustomScan read fixture.
+    #[command(name = "customscan-read-pg18")]
+    CustomScanReadPg18(CustomScanReadPg18Args),
     /// Run the PG18 one-coordinator/two-remote transport-overlap fixture.
     TransportOverlapPg18(TransportOverlapPg18Args),
     /// Run a PG18 Stage E fault-matrix fixture case.
@@ -21,6 +24,9 @@ pub enum SpireMulticlusterCommand {
 impl SpireMulticlusterCommand {
     pub async fn run(self, _database: &str) -> Result<()> {
         match self {
+            SpireMulticlusterCommand::CustomScanReadPg18(args) => {
+                run_customscan_read_pg18(args).await
+            }
             SpireMulticlusterCommand::TransportOverlapPg18(args) => {
                 run_transport_overlap_pg18(args).await
             }
@@ -28,6 +34,53 @@ impl SpireMulticlusterCommand {
             SpireMulticlusterCommand::LifecyclePg18(args) => run_stage_e_lifecycle_pg18(args).await,
         }
     }
+}
+
+#[derive(Args, Debug)]
+pub struct CustomScanReadPg18Args {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+
+    /// Explicit PostgreSQL bin directory. Defaults to the newest matching pgrx install.
+    #[arg(long)]
+    pgbin: Option<PathBuf>,
+
+    /// Store fixture and PostgreSQL logs in a review packet artifact directory.
+    #[arg(long)]
+    artifact_dir: Option<PathBuf>,
+
+    /// Run directory. Defaults to the script-owned target/ path.
+    #[arg(long)]
+    run_dir: Option<PathBuf>,
+
+    /// Store PostgreSQL logs outside the run directory.
+    #[arg(long)]
+    log_dir: Option<PathBuf>,
+
+    /// Tee fixture stdout/stderr to this file.
+    #[arg(long)]
+    smoke_log: Option<PathBuf>,
+
+    /// Coordinator PostgreSQL port.
+    #[arg(long)]
+    coord_port: Option<u16>,
+
+    /// Remote PostgreSQL port.
+    #[arg(long)]
+    remote_port: Option<u16>,
+
+    /// Run id used in the default run directory.
+    #[arg(long)]
+    run_id: Option<String>,
+
+    /// Skip cargo pgrx install before starting fixture clusters.
+    #[arg(long)]
+    skip_install: bool,
 }
 
 #[derive(Args, Debug)]
@@ -331,6 +384,63 @@ fn parse_stage_e_lifecycle_case(value: &str) -> std::result::Result<StageELifecy
             "unsupported Stage E lifecycle case {other:?}; supported: create_index_concurrently_missing_descriptor, create_index_concurrently_new_descriptor, drop_remote_index_before_fanout, drop_remote_index_in_flight, reindex_remote_index_before_fanout, reindex_remote_index_in_flight"
         )),
     }
+}
+
+async fn run_customscan_read_pg18(args: CustomScanReadPg18Args) -> Result<()> {
+    if args.pg != 18 {
+        bail!("customscan-read-pg18 requires --pg 18, got {}", args.pg);
+    }
+    let repo_root = repo_root()?;
+    let pgbin = match args.pgbin {
+        Some(path) => path,
+        None => {
+            let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+            find_pgrx_install(args.pg, &pgrx_home)?.bin_dir
+        }
+    };
+    let script = repo_root.join("scripts/run_spire_multicluster_customscan_read_pg18.sh");
+    if !script.is_file() {
+        bail!(
+            "SPIRE CustomScan read fixture script is missing: {}",
+            script.display()
+        );
+    }
+
+    crate::ecaz_println!("[spire-multicluster] repo={}", repo_root.display());
+    crate::ecaz_println!("[spire-multicluster] pgbin={}", pgbin.display());
+    if let Some(artifact_dir) = &args.artifact_dir {
+        crate::ecaz_println!(
+            "[spire-multicluster] artifact_dir={}",
+            artifact_dir.display()
+        );
+    }
+
+    let mut command = Command::new("bash");
+    command
+        .arg(&script)
+        .arg("--pgbin")
+        .arg(&pgbin)
+        .current_dir(&repo_root)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    push_path_arg(&mut command, "--artifact-dir", args.artifact_dir.as_ref());
+    push_path_arg(&mut command, "--run-dir", args.run_dir.as_ref());
+    push_path_arg(&mut command, "--log-dir", args.log_dir.as_ref());
+    push_path_arg(&mut command, "--smoke-log", args.smoke_log.as_ref());
+    push_u16_arg(&mut command, "--coord-port", args.coord_port);
+    push_u16_arg(&mut command, "--remote-port", args.remote_port);
+    if let Some(run_id) = args.run_id {
+        command.arg("--run-id").arg(run_id);
+    }
+    if args.skip_install {
+        command.arg("--skip-install");
+    }
+
+    run_status(command)
+        .await
+        .wrap_err("running SPIRE PG18 CustomScan read fixture")
 }
 
 async fn run_transport_overlap_pg18(args: TransportOverlapPg18Args) -> Result<()> {

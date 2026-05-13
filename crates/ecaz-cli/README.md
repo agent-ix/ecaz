@@ -114,8 +114,10 @@ ecaz
 │   │   ├── sql                   # run psql against a pgrx scratch cluster
 │   │   └── refresh-debug-helpers # install ADR-030 debug SQL wrappers
 │   ├── spire-multicluster
+│   │   ├── customscan-read-pg18            # setup/read/teardown CustomScan readiness fixture
 │   │   ├── transport-overlap-pg18          # one-coordinator/two-remote PG18 fixture
-│   │   └── fault-pg18                      # Stage E fault matrix fixtures
+│   │   ├── fault-pg18                      # Stage E fault matrix fixtures
+│   │   └── lifecycle-pg18                  # Stage E lifecycle matrix fixtures
 │   ├── sql         # version-aware pgrx SQL runner with packet-local logging
 │   └── test
 │       ├── pgrx                # run cargo pgrx test

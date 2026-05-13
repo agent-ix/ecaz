@@ -204,6 +204,32 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_spire_multicluster_customscan_read_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "spire-multicluster",
+            "customscan-read-pg18",
+            "--artifact-dir",
+            "review/30962-spire-customscan-read-cli/artifacts",
+            "--remote-port",
+            "39228",
+            "--coord-port",
+            "39229",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::SpireMulticluster { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_spire_multicluster_fault_command() {
         let cli = Cli::try_parse_from([
             "ecaz",

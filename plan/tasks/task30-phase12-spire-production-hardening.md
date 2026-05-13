@@ -290,8 +290,16 @@ described by reviewer packet `30896`.
 
 ## Phase 12.7: Multi-Instance Placement, Epoch, and Replica Readiness
 
-- [ ] Add or extend an `ecaz`-owned local one-coordinator/two-remote setup and
+- [x] Add or extend an `ecaz`-owned local one-coordinator/two-remote setup and
   teardown command for repeated Stage E and readiness runs.
+  - Evidence: `ecaz dev spire-multicluster` now covers the repeated fixture
+    setup/teardown paths used by this phase: the existing
+    `transport-overlap-pg18` command owns the one-coordinator/two-remote
+    transport fixture, and the new `customscan-read-pg18` command owns the
+    CustomScan readiness setup/read/teardown path. The CustomScan wrapper
+    forwards packet-local artifact, run-dir, log-dir, smoke-log, port, run-id,
+    and `--skip-install` options to the existing PG18 fixture; parser coverage
+    pins the CLI surface without starting PostgreSQL.
 - [x] Publish and inspect placement metadata that maps selected PIDs to remote
   nodes and local store IDs.
   - Evidence: `ec_spire_index_selected_pid_placement_snapshot(index_oid,
