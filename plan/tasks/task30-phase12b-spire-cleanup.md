@@ -179,12 +179,15 @@ the FFI entry points that today have only shell-fixture coverage.
   symmetric read-path test that drives the CustomScan, sets local
   cancel, and asserts the executor unwinds with
   `local_query_cancelled` and no leaked transport state.
-- [ ] `ExplainCustomScan` contract: implement at least a minimal
+- [x] `ExplainCustomScan` contract: implement at least a minimal
   `ExplainCustomScan` callback that emits a stable JSON shape with
   `node = EcSpireDistributedScan`, `remote_fanout`,
   `tuple_transport_status`, `nprobe`, `rerank_width`. Add a fixture
   that runs `EXPLAIN (FORMAT JSON)` on a canonical query and asserts
   the shape. This replaces today's two shell `grep`s on plan text.
+  Packet `30996` wires the callback and extends the loopback remote
+  tuple-payload fixture with `EXPLAIN (FORMAT JSON, ANALYZE, COSTS OFF)`
+  assertions for the stable shape.
 - [ ] Empty-remote-result CustomScan fixture: a remote that returns
   zero rows for a valid query; assert the CustomScan returns zero rows
   cleanly with no `not_applicable` status leakage.

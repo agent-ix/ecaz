@@ -15045,6 +15045,27 @@
             }
             lines.join("\n")
         });
+        let json_plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (FORMAT JSON, ANALYZE, COSTS OFF) \
+                     SELECT id, title FROM ec_spire_customscan_payload_coord_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("CustomScan JSON explain should succeed");
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<pgrx::datum::JsonString>(1)
+                        .expect("CustomScan JSON explain row should decode")
+                        .expect("CustomScan JSON explain row should not be NULL")
+                        .0,
+                );
+            }
+            lines.join("\n")
+        });
         let row = Spi::connect(|client| {
             let rows = client
                 .select(
@@ -15106,6 +15127,18 @@
             plan.contains("Custom Scan (EcSpireDistributedScan)"),
             "expected EcSpireDistributedScan in plan:\n{plan}"
         );
+        for expected in [
+            "\"node\": \"EcSpireDistributedScan\"",
+            "\"remote_fanout\": 1",
+            "\"tuple_transport_status\": \"ready\"",
+            "\"nprobe\": 2",
+            "\"rerank_width\": 0",
+        ] {
+            assert!(
+                json_plan.contains(expected),
+                "missing {expected} in CustomScan JSON plan: {json_plan:?}"
+            );
+        }
         assert_eq!(row, (10, "remote alpha".to_owned()));
         assert_eq!(expression_row, (10, "remote alpha (boosted)".to_owned()));
         assert_eq!(embedding_projection, vec![1.0, 0.0]);

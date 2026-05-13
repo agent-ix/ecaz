@@ -110,7 +110,7 @@ static mut CUSTOM_EXEC_METHODS: pg_sys::CustomExecMethods = pg_sys::CustomExecMe
     ReInitializeDSMCustomScan: None,
     InitializeWorkerCustomScan: None,
     ShutdownCustomScan: None,
-    ExplainCustomScan: None,
+    ExplainCustomScan: Some(ec_spire_explain_custom_scan),
 };
 
 #[repr(C)]
@@ -180,6 +180,7 @@ include!("planner.rs");
 include!("cost_helpers.rs");
 include!("plan_private.rs");
 include!("dml.rs");
+include!("explain.rs");
 include!("begin_exec.rs");
 include!("tuple_payload.rs");
 include!("tests.rs");
