@@ -437,6 +437,9 @@ described by reviewer packet `30896`.
     counters through `--include-query-metrics` and `--include-recall`; it can
     also aggregate local-store object bytes, read batches, and delta-decode
     counts through `--include-local-store-overlap`.
+  - [x] `ecaz bench spire-pipeline` now records endpoint tuple-transport
+    readiness plus remote degraded-skip node/count/category counters when
+    remote diagnostics are enabled.
 - [ ] Capture recall, latency p50/p95/p99, object bytes, route counts,
   candidate counts, heap rows, remote fanout, timeout/cancel counts,
   strict-failure counts, degraded-skip counts, placement contention, and typed

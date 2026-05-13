@@ -146,6 +146,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         ));
     }
     let index = resolve_spire_index(&client, &corpus_table, args.index.as_deref()).await?;
+    let endpoint_identity = query_endpoint_identity(&client, &index).await?;
     let queries = fetch_queries(&client, &queries_table, args.queries_limit).await?;
     if queries.is_empty() {
         return Err(eyre!("queries table {queries_table:?} is empty"));
@@ -184,6 +185,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut remote = BTreeMap::<StepKey, RemoteStepAggregate>::new();
     let mut local_store_overlap =
         BTreeMap::<LocalStoreOverlapKey, LocalStoreOverlapAggregate>::new();
+    let mut degraded_skip = BTreeMap::<DegradedSkipKey, DegradedSkipAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
@@ -268,6 +270,25 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         .or_default()
                         .record(row);
                 }
+                let degraded_skip_rows = query_degraded_skip_rows(
+                    &client,
+                    &index,
+                    requested_epoch,
+                    &query.source,
+                    &args.remote_selected_pids,
+                    args.top_k,
+                    &args.consistency_mode,
+                )
+                .await?;
+                for row in degraded_skip_rows {
+                    degraded_skip
+                        .entry(DegradedSkipKey {
+                            nprobe: *nprobe,
+                            node_id: row.node_id,
+                        })
+                        .or_default()
+                        .record(row);
+                }
             }
 
             if let Some(stmt) = &query_metric_stmt {
@@ -294,6 +315,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         rerank_width: args.rerank_width,
         max_candidate_rows: args.max_candidate_rows,
         remote_tuple_transport: args.remote_tuple_transport,
+        endpoint_identity: &endpoint_identity,
         adaptive_nprobe_options,
         remote_enabled,
         remote_selected_pids: &args.remote_selected_pids,
@@ -306,6 +328,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         local: &local,
         remote: &remote,
         local_store_overlap: &local_store_overlap,
+        degraded_skip: &degraded_skip,
         query_metrics: &query_metrics,
     });
     println!("{output}");
@@ -612,6 +635,42 @@ async fn query_remote_pipeline_rows(
     Ok(rows.into_iter().map(RemotePipelineRow::from).collect())
 }
 
+async fn query_degraded_skip_rows(
+    client: &Client,
+    index: &str,
+    requested_epoch: i64,
+    query: &[f32],
+    selected_pids: &[i64],
+    top_k: i32,
+    consistency_mode: &str,
+) -> Result<Vec<DegradedSkipRow>> {
+    let query = query.to_vec();
+    let selected_pids = selected_pids.to_vec();
+    let rows = client
+        .query(
+            degraded_skip_report_sql(),
+            &[
+                &index,
+                &requested_epoch,
+                &query,
+                &selected_pids,
+                &top_k,
+                &consistency_mode,
+            ],
+        )
+        .await
+        .wrap_err("querying ec_spire_remote_search_degraded_skip_report")?;
+    Ok(rows.into_iter().map(DegradedSkipRow::from).collect())
+}
+
+async fn query_endpoint_identity(client: &Client, index: &str) -> Result<EndpointIdentityRow> {
+    let row = client
+        .query_one(endpoint_identity_sql(), &[&index])
+        .await
+        .wrap_err("querying ec_spire_remote_search_endpoint_identity")?;
+    Ok(EndpointIdentityRow::from(row))
+}
+
 fn routing_snapshot_sql() -> &'static str {
     "SELECT active_epoch, effective_nprobe, effective_nprobe_source,
             adaptive_nprobe_decision, recursive_beam_width, max_leaf_routes,
@@ -647,6 +706,21 @@ fn remote_pipeline_steps_sql() -> &'static str {
             $1::text::regclass::oid, $2::bigint, $3::real[], $4::bigint[],
             $5::integer, $6::text)
      ORDER BY step_ordinal"
+}
+
+fn degraded_skip_report_sql() -> &'static str {
+    "SELECT requested_epoch, node_id, skipped_pid_count, first_skip_category,
+            status
+     FROM ec_spire_remote_search_degraded_skip_report(
+            $1::text::regclass::oid, $2::bigint, $3::real[], $4::bigint[],
+            $5::integer, $6::text)
+     ORDER BY node_id"
+}
+
+fn endpoint_identity_sql() -> &'static str {
+    "SELECT tuple_transport_capabilities, tuple_transport_default,
+            tuple_transport_status, status, recommendation
+     FROM ec_spire_remote_search_endpoint_identity($1::text::regclass::oid)"
 }
 
 #[derive(Debug)]
@@ -754,6 +828,58 @@ impl From<Row> for RemotePipelineRow {
 }
 
 #[derive(Debug)]
+struct DegradedSkipRow {
+    requested_epoch: i64,
+    node_id: i64,
+    skipped_pid_count: i64,
+    first_skip_category: String,
+    status: String,
+}
+
+impl From<Row> for DegradedSkipRow {
+    fn from(row: Row) -> Self {
+        Self {
+            requested_epoch: row.get(0),
+            node_id: row.get(1),
+            skipped_pid_count: row.get(2),
+            first_skip_category: row.get(3),
+            status: row.get(4),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct EndpointIdentityRow {
+    tuple_transport_capabilities: Vec<String>,
+    tuple_transport_default: String,
+    tuple_transport_status: String,
+    status: String,
+    recommendation: String,
+}
+
+impl EndpointIdentityRow {
+    fn pg_binary_attr_v1_ready(&self) -> bool {
+        self.tuple_transport_capabilities
+            .iter()
+            .any(|capability| capability == "pg_binary_attr_v1")
+            && self.tuple_transport_default == "pg_binary_attr_v1"
+            && self.tuple_transport_status == "ready"
+    }
+}
+
+impl From<Row> for EndpointIdentityRow {
+    fn from(row: Row) -> Self {
+        Self {
+            tuple_transport_capabilities: row.get(0),
+            tuple_transport_default: row.get(1),
+            tuple_transport_status: row.get(2),
+            status: row.get(3),
+            recommendation: row.get(4),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct LocalStoreOverlapRow {
     node_id: i64,
     local_store_id: i64,
@@ -800,6 +926,12 @@ struct LocalStoreOverlapKey {
     nprobe: i32,
     node_id: i64,
     local_store_id: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct DegradedSkipKey {
+    nprobe: i32,
+    node_id: i64,
 }
 
 #[derive(Debug, Default)]
@@ -889,6 +1021,25 @@ impl RemoteStepAggregate {
         self.blocked_count_sum += row.blocked_count;
         self.remote_pid_count_sum += row.remote_pid_count;
         self.next_blocker.record(row.next_blocker);
+    }
+}
+
+#[derive(Debug, Default)]
+struct DegradedSkipAggregate {
+    reports: usize,
+    requested_epoch: MixedValue,
+    skipped_pid_count_sum: i64,
+    first_skip_category: MixedValue,
+    status: MixedValue,
+}
+
+impl DegradedSkipAggregate {
+    fn record(&mut self, row: DegradedSkipRow) {
+        self.reports += 1;
+        self.requested_epoch.record(row.requested_epoch.to_string());
+        self.skipped_pid_count_sum += row.skipped_pid_count;
+        self.first_skip_category.record(row.first_skip_category);
+        self.status.record(row.status);
     }
 }
 
@@ -1022,6 +1173,7 @@ struct ReportInput<'a> {
     rerank_width: Option<i32>,
     max_candidate_rows: Option<i32>,
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
+    endpoint_identity: &'a EndpointIdentityRow,
     adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
     remote_enabled: bool,
     remote_selected_pids: &'a [i64],
@@ -1034,15 +1186,18 @@ struct ReportInput<'a> {
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
     remote: &'a BTreeMap<StepKey, RemoteStepAggregate>,
     local_store_overlap: &'a BTreeMap<LocalStoreOverlapKey, LocalStoreOverlapAggregate>,
+    degraded_skip: &'a BTreeMap<DegradedSkipKey, DegradedSkipAggregate>,
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
 }
 
 fn render_report(input: ReportInput<'_>) -> String {
     let mut sections = vec![render_header(&input)];
+    sections.push(render_endpoint_identity_table(input.endpoint_identity));
     sections.push(render_routing_table(input.routing));
     sections.push(render_local_table(input.local));
     if input.remote_enabled {
         sections.push(render_remote_table(input.remote));
+        sections.push(render_degraded_skip_table(input.degraded_skip));
     }
     if input.local_store_overlap_enabled {
         sections.push(render_local_store_overlap_table(input.local_store_overlap));
@@ -1082,6 +1237,39 @@ fn render_header(input: &ReportInput<'_>) -> String {
         query_metric_k = input.query_metric_k,
         query_recall = input.include_recall,
     )
+}
+
+fn render_endpoint_identity_table(row: &EndpointIdentityRow) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec!["field", "value"]);
+    let capabilities = if row.tuple_transport_capabilities.is_empty() {
+        "none".to_owned()
+    } else {
+        row.tuple_transport_capabilities.join(",")
+    };
+    table.add_row(vec![
+        Cell::new("tuple_transport_capabilities"),
+        Cell::new(capabilities),
+    ]);
+    table.add_row(vec![
+        Cell::new("tuple_transport_default"),
+        Cell::new(&row.tuple_transport_default),
+    ]);
+    table.add_row(vec![
+        Cell::new("tuple_transport_status"),
+        Cell::new(&row.tuple_transport_status),
+    ]);
+    table.add_row(vec![
+        Cell::new("pg_binary_attr_v1_ready"),
+        Cell::new(row.pg_binary_attr_v1_ready()),
+    ]);
+    table.add_row(vec![Cell::new("status"), Cell::new(&row.status)]);
+    table.add_row(vec![
+        Cell::new("recommendation"),
+        Cell::new(&row.recommendation),
+    ]);
+    format!("Endpoint tuple transport identity\n{table}")
 }
 
 fn render_routing_table(rows: &BTreeMap<RoutingKey, RoutingAggregate>) -> String {
@@ -1188,6 +1376,32 @@ fn render_remote_table(rows: &BTreeMap<StepKey, RemoteStepAggregate>) -> String 
         ]);
     }
     format!("Remote pipeline counters\n{table}")
+}
+
+fn render_degraded_skip_table(rows: &BTreeMap<DegradedSkipKey, DegradedSkipAggregate>) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "reports",
+        "requested_epoch",
+        "skipped_pid_sum",
+        "first_skip_category",
+        "status",
+    ]);
+    for (key, aggregate) in rows {
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(aggregate.reports),
+            Cell::new(aggregate.requested_epoch.label()),
+            Cell::new(aggregate.skipped_pid_count_sum),
+            Cell::new(aggregate.first_skip_category.label()),
+            Cell::new(aggregate.status.label()),
+        ]);
+    }
+    format!("Remote degraded skip counters\n{table}")
 }
 
 fn render_local_store_overlap_table(
@@ -1303,6 +1517,16 @@ mod tests {
         }
     }
 
+    fn ready_endpoint_identity() -> EndpointIdentityRow {
+        EndpointIdentityRow {
+            tuple_transport_capabilities: vec!["pg_binary_attr_v1".to_owned()],
+            tuple_transport_default: "pg_binary_attr_v1".to_owned(),
+            tuple_transport_status: "ready".to_owned(),
+            status: "ready".to_owned(),
+            recommendation: "none".to_owned(),
+        }
+    }
+
     #[test]
     fn spire_pipeline_defaults_to_spire_sweep_values() {
         let args = default_args();
@@ -1359,6 +1583,10 @@ mod tests {
             .contains("ec_spire_index_scan_local_store_read_overlap_harness"));
         assert!(remote_pipeline_steps_sql().contains("ec_spire_remote_pipeline_steps"));
         assert!(remote_pipeline_steps_sql().contains("$4::bigint[]"));
+        assert!(degraded_skip_report_sql().contains("ec_spire_remote_search_degraded_skip_report"));
+        assert!(degraded_skip_report_sql().contains("$4::bigint[]"));
+        assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
+        assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
     }
 
     #[test]
@@ -1374,6 +1602,7 @@ mod tests {
             rerank_width: None,
             max_candidate_rows: None,
             remote_tuple_transport: Some(SpireRemoteTupleTransportMode::PgBinaryAttrV1),
+            endpoint_identity: &ready_endpoint_identity(),
             adaptive_nprobe_options: super::super::SpireAdaptiveNprobeBenchOptions {
                 enabled: false,
                 score_gap_micros: None,
@@ -1389,6 +1618,7 @@ mod tests {
             local: &local,
             remote: &remote,
             local_store_overlap: &BTreeMap::new(),
+            degraded_skip: &BTreeMap::new(),
             query_metrics: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
@@ -1396,6 +1626,42 @@ mod tests {
         assert!(header.contains("query_metrics: true"));
         assert!(header.contains("query_metric_k: 10"));
         assert!(header.contains("query_recall: false"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_endpoint_identity_readiness() {
+        let rendered = render_endpoint_identity_table(&ready_endpoint_identity());
+        assert!(rendered.contains("Endpoint tuple transport identity"));
+        assert!(rendered.contains("tuple_transport_capabilities"));
+        assert!(rendered.contains("pg_binary_attr_v1"));
+        assert!(rendered.contains("pg_binary_attr_v1_ready"));
+        assert!(rendered.contains("true"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_degraded_skip_counters() {
+        let mut aggregate = DegradedSkipAggregate::default();
+        aggregate.record(DegradedSkipRow {
+            requested_epoch: 7,
+            node_id: 3,
+            skipped_pid_count: 2,
+            first_skip_category: "remote_index_unavailable".to_owned(),
+            status: "degraded_skipped".to_owned(),
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            DegradedSkipKey {
+                nprobe: 8,
+                node_id: 3,
+            },
+            aggregate,
+        );
+
+        let rendered = render_degraded_skip_table(&rows);
+        assert!(rendered.contains("Remote degraded skip counters"));
+        assert!(rendered.contains("skipped_pid_sum"));
+        assert!(rendered.contains("remote_index_unavailable"));
+        assert!(rendered.contains("degraded_skipped"));
     }
 
     #[test]
