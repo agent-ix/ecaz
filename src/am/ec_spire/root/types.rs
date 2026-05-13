@@ -819,6 +819,7 @@ pub(crate) struct SpireRemoteProductionDegradedSkipReportRow {
     pub(crate) node_id: u32,
     pub(crate) skipped_pid_count: u64,
     pub(crate) first_skip_category: &'static str,
+    pub(crate) first_skip_hint: &'static str,
     pub(crate) status: &'static str,
 }
 

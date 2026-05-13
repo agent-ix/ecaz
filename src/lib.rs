@@ -12232,6 +12232,7 @@ fn ec_spire_remote_search_degraded_skip_report(
         name!(node_id, i64),
         name!(skipped_pid_count, i64),
         name!(first_skip_category, &'static str),
+        name!(first_skip_hint, &'static str),
         name!(status, &'static str),
     ),
 > {
@@ -12278,6 +12279,7 @@ fn ec_spire_remote_search_degraded_skip_report(
             i64::from(row.node_id),
             i64::try_from(row.skipped_pid_count).expect("skipped PID count should fit in i64"),
             row.first_skip_category,
+            row.first_skip_hint,
             row.status,
         )
     }))

@@ -38,6 +38,7 @@ const SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION: &str =
     "incompatible_extension_version";
 const SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH: &str = "consistency_mode_mismatch";
 const SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH: &str = "endpoint_identity_mismatch";
+const SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED: &str = "tuple_transport_retired";
 const SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD: &str = "remote_executor_overload";
 const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
@@ -105,6 +106,8 @@ const SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT: &str = "local_statement_t
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1: &str = "pg_binary_attr_v1";
+const SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT: &str =
+    "upgrade the remote ecaz extension, refresh the descriptor, and ensure tuple_transport_capabilities includes pg_binary_attr_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
 const SPIRE_REMOTE_VEC_ID_DEDUPE_KEY: &str = "global_vec_id_or_node_scoped_local_vec_id";
 const SPIRE_REMOTE_VEC_ID_KEY_GLOBAL: u8 = 0xA0;
@@ -4369,13 +4372,22 @@ fn production_governance_failure_category(_error: &str) -> &'static str {
 
 fn production_candidate_decode_failure_category(error: &str) -> &'static str {
     let status = remote_search_receive_attempt_failure_status(error);
-    if status == SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH
+    if status == SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED {
+        SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED
+    } else if status == SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH
         || status == "protocol_version_mismatch"
         || status == "extension_version_mismatch"
     {
         SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH
     } else {
         SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED
+    }
+}
+
+fn remote_production_failure_hint(failure_category: &str) -> &'static str {
+    match failure_category {
+        SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED => SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT,
+        _ => SPIRE_REMOTE_NONE,
     }
 }
 
@@ -5376,6 +5388,7 @@ impl SpireRemoteFanoutExecutor {
                 node_id: dispatch.node_id,
                 skipped_pid_count: dispatch.pid_count,
                 first_skip_category: dispatch.degraded_skip_category,
+                first_skip_hint: remote_production_failure_hint(dispatch.degraded_skip_category),
                 status: dispatch.status,
             });
         }
@@ -5983,6 +5996,24 @@ fn remote_search_production_executor_state_summary_from_candidate_receive_result
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn remote_search_production_degraded_skip_report_from_candidate_receive_results_with_consistency_mode(
+    requested_epoch: u64,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    transport_rows: &[SpireRemoteProductionTransportProbeRow],
+    candidate_receive_results: &[SpireRemoteProductionCandidateReceiveResult],
+    consistency_mode: &str,
+) -> Result<Vec<SpireRemoteProductionDegradedSkipReportRow>, String> {
+    let mut executor =
+        SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
+    executor.apply_transport_probe_rows_with_consistency_mode(transport_rows, consistency_mode)?;
+    executor.apply_candidate_receive_results_with_consistency_mode(
+        candidate_receive_results,
+        consistency_mode,
+    )?;
+    executor.degraded_skip_report()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn remote_search_production_compact_merge_from_candidate_receive_results(
     requested_epoch: u64,
     dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
@@ -6390,6 +6421,17 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "skip_node",
             SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
             "uncategorized remote query failures, including remote OOM, cannot enter merge as empty results",
+        ),
+        production_fault_matrix_row(
+            27,
+            SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED,
+            "tuple_transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT,
         ),
     ]
 }
@@ -8643,7 +8685,7 @@ fn remote_tuple_payload_production_sql(
     if endpoint_identity.prefers_typed_tuple_transport() {
         Ok(SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE)
     } else {
-        Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
+        Err(SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED)
     }
 }
 
@@ -8749,14 +8791,14 @@ mod remote_tuple_transport_tests {
         let json_identity = endpoint_identity("json_tuple_payload_v1", pg_binary_capabilities());
         assert_eq!(
             remote_tuple_payload_production_sql(&json_identity),
-            Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
+            Err(SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED)
         );
 
         let missing_capability_identity =
             endpoint_identity(SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1, Vec::new());
         assert_eq!(
             remote_tuple_payload_production_sql(&missing_capability_identity),
-            Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
+            Err(SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED)
         );
     }
 }
@@ -9727,6 +9769,8 @@ fn remote_search_receive_attempt_failure_status(error: &str) -> String {
         || error.contains("endpoint identity")
     {
         SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH.to_owned()
+    } else if error.contains(SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED) {
+        SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED.to_owned()
     } else if error.contains(SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD) {
         SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD.to_owned()
     } else if error.contains("conninfo secret") {
@@ -11398,6 +11442,7 @@ mod production_executor_state_tests {
             SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
             SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
             SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
+            SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED,
             SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
             SPIRE_REMOTE_PRODUCTION_EXTENSION_VERSION_MISMATCH,
             SPIRE_REMOTE_STATUS_STALE_EPOCH,
@@ -11606,11 +11651,36 @@ mod production_executor_state_tests {
         assert_eq!(rows[0].node_id, 2);
         assert_eq!(rows[0].skipped_pid_count, 3);
         assert_eq!(rows[0].first_skip_category, "stale_epoch");
+        assert_eq!(rows[0].first_skip_hint, "none");
         assert_eq!(rows[0].status, "degraded_skipped");
         assert_eq!(rows[1].node_id, 4);
         assert_eq!(rows[1].skipped_pid_count, 2);
         assert_eq!(rows[1].first_skip_category, "incompatible_extension_version");
+        assert_eq!(rows[1].first_skip_hint, "none");
         assert_eq!(rows[1].status, "degraded_skipped");
+    }
+
+    #[test]
+    fn degraded_skip_report_hints_retired_tuple_transport_upgrade() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            failed_candidate_receive_result(2, SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED),
+            ready_candidate_receive_result(3, vec![30], 1),
+        ];
+        let rows =
+            remote_search_production_degraded_skip_report_from_candidate_receive_results_with_consistency_mode(
+                7,
+                &dispatch_rows,
+                &transport_rows,
+                &receive_results,
+                "degraded",
+            )
+            .expect("degraded skip report should include retired tuple transport");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first_skip_category, SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED);
+        assert_eq!(rows[0].first_skip_hint, SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT);
     }
 
     #[test]

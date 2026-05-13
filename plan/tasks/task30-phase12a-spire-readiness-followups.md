@@ -147,21 +147,21 @@ is point-in-time archived evidence from packet `30895`.
 Source: review packet `30982`, finding "JSON fail-closed error category
 is generic."
 
-- [ ] Add a new strict-failure category
+- [x] Add a new strict-failure category
   `SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED` distinct from
   `SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH`.
-- [ ] In `remote_tuple_payload_production_sql`
+- [x] In `remote_tuple_payload_production_sql`
   (`src/am/ec_spire/root/remote_candidates.rs:8637-8645`), return the
   new category whenever the remote endpoint advertises a valid identity
   but does not advertise `pg_binary_attr_v1`. Reserve the existing
   identity-mismatch category for genuine identity-mismatch shapes.
-- [ ] Attach an actionable hint string naming the required capability
+- [x] Attach an actionable hint string naming the required capability
   (`pg_binary_attr_v1`) and the upgrade path.
-- [ ] Fixture: a remote stubbed to advertise only `json_tuple_payload_v1`
+- [x] Fixture: a remote stubbed to advertise only `json_tuple_payload_v1`
   with a valid identity envelope; assert the production path returns
   the new category with the hint, and the operator can read the hint
   from `ec_spire_remote_search_degraded_skip_report(...)`.
-- [ ] Update `docs/SPIRE_LIBPQ_RUNBOOK.md` with the new category and
+- [x] Update `docs/SPIRE_LIBPQ_RUNBOOK.md` with the new category and
   the operator response (upgrade remote `ecaz` extension version).
 
 ## Phase 12a.6: Remote-Side Schema Fingerprint (P3)

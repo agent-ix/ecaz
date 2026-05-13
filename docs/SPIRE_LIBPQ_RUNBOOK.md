@@ -51,6 +51,15 @@ Neither mode should expose passwords, hosts embedded in secret payloads,
 certificate contents, raw conninfo, or raw remote error text through SQL
 diagnostics.
 
+If a degraded skip report shows
+`first_skip_category = 'tuple_transport_retired'`, the remote endpoint identity
+was valid but production tuple delivery could not use the required
+`pg_binary_attr_v1` transport. Upgrade the remote `ecaz` extension, refresh the
+remote descriptor, and verify the endpoint advertises
+`tuple_transport_capabilities` containing `pg_binary_attr_v1`. Do not force the
+legacy `json_tuple_payload_v1` transport for production payload dispatch; it is
+a compatibility label only.
+
 ## Prepared Transaction Readiness
 
 Coordinator-routed writes use remote prepared transactions. Every remote that
