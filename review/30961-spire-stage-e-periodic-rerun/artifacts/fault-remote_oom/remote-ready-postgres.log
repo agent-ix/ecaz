@@ -1,0 +1,23 @@
+2026-05-12 20:54:22.407 PDT [1374486] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-12 20:54:22.410 PDT [1374486] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/se30961-fault-remote-oom/sockets/.s.PGSQL.39324"
+2026-05-12 20:54:22.417 PDT [1374492] LOG:  database system was shut down at 2026-05-12 20:54:20 PDT
+2026-05-12 20:54:22.421 PDT [1374486] LOG:  database system is ready to accept connections
+2026-05-12 20:54:22.870 PDT [1374519] ERROR:  simulated remote out of memory
+2026-05-12 20:54:22.870 PDT [1374519] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-12 20:54:22.870 PDT [1374519] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-12 20:54:22.881 PDT [1374523] ERROR:  simulated remote out of memory
+2026-05-12 20:54:22.881 PDT [1374523] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-12 20:54:22.881 PDT [1374523] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-12 20:54:22.895 PDT [1374529] ERROR:  simulated remote out of memory
+2026-05-12 20:54:22.895 PDT [1374529] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-12 20:54:22.895 PDT [1374529] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-12 20:54:22.907 PDT [1374533] ERROR:  simulated remote out of memory
+2026-05-12 20:54:22.907 PDT [1374533] CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+2026-05-12 20:54:22.907 PDT [1374533] STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$
+2026-05-12 20:54:23.013 PDT [1374486] LOG:  received fast shutdown request
+2026-05-12 20:54:23.133 PDT [1374486] LOG:  aborting any active transactions
+2026-05-12 20:54:23.134 PDT [1374486] LOG:  background worker "logical replication launcher" (PID 1374495) exited with exit code 1
+2026-05-12 20:54:23.134 PDT [1374490] LOG:  shutting down
+2026-05-12 20:54:23.137 PDT [1374490] LOG:  checkpoint starting: shutdown immediate
+2026-05-12 20:54:23.149 PDT [1374490] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.016 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-12 20:54:23.156 PDT [1374486] LOG:  database system is shut down
