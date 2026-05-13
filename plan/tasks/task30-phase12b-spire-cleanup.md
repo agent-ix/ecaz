@@ -144,6 +144,10 @@ Phase 13 will push it past 80k.
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
   the `tests/placement.rs` row is not yet closed.
+- Packet `31003` starts `src/tests/scan.rs` by moving the scan-placement,
+  scan pipeline, routing, and centroid-classification fixture block with
+  a textual include; later build/scan fixtures remain open, so the
+  `tests/scan.rs` row is not yet closed.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
