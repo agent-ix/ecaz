@@ -1,0 +1,14 @@
+2026-05-12 21:19:51.412 PDT [1410941] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-12 21:19:51.415 PDT [1410941] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/se30963-customscan-read-typed-debug/s/.s.PGSQL.39229"
+2026-05-12 21:19:51.421 PDT [1410947] LOG:  database system was shut down at 2026-05-12 21:19:50 PDT
+2026-05-12 21:19:51.425 PDT [1410941] LOG:  database system is ready to accept connections
+2026-05-12 21:19:52.070 PDT [1410977] WARNING:  ec_spire remote heap receive decode failed: ec_spire remote heap executor typed payload_collations decode failed
+2026-05-12 21:19:52.071 PDT [1410977] ERROR:  EcSpireDistributedScan production executor blocked: status remote_heap_resolution_failed, next_blocker remote_heap_resolution, recommendation inspect production remote heap failure category before final row delivery
+2026-05-12 21:19:52.071 PDT [1410977] STATEMENT:  SELECT id, title, tags, label::text, pair::text FROM ec_spire_customscan_coord_sql ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1
+2026-05-12 21:19:52.072 PDT [1410941] LOG:  received fast shutdown request
+2026-05-12 21:19:52.075 PDT [1410941] LOG:  aborting any active transactions
+2026-05-12 21:19:52.075 PDT [1410941] LOG:  background worker "logical replication launcher" (PID 1410950) exited with exit code 1
+2026-05-12 21:19:52.076 PDT [1410945] LOG:  shutting down
+2026-05-12 21:19:52.077 PDT [1410945] LOG:  checkpoint starting: shutdown immediate
+2026-05-12 21:19:52.148 PDT [1410945] LOG:  checkpoint complete: wrote 290 buffers (1.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.008 s, sync=0.057 s, total=0.073 s; sync files=124, longest=0.003 s, average=0.001 s; distance=2232 kB, estimate=2232 kB; lsn=0/19827A8, redo lsn=0/19827A8
+2026-05-12 21:19:52.155 PDT [1410941] LOG:  database system is shut down
