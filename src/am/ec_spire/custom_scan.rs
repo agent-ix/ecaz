@@ -9,8 +9,9 @@ use super::meta;
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcSpireDistributedScan";
 const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const CUSTOM_SCAN_ROUTING_SCORE_BOUND: f64 = 64.0;
-const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 32.0;
-const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 4.0;
+const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 1024.0;
+const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 0.5;
+const CUSTOM_SCAN_TUPLE_BYTE_CPU_UNITS: f64 = 0.001;
 const CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT: u32 = 1;
 const CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT: u32 = 2;
 const CUSTOM_SCAN_PLAN_MODE_DML_UPDATE: u32 = 3;
@@ -709,7 +710,10 @@ unsafe fn add_custom_scan_path(
     } else {
         rel_ref.rows.max(1.0)
     };
-    let cost = unsafe { estimate_custom_scan_cost(rows, rel_ref.rows.max(1.0), &eligibility) };
+    let target_width = custom_scan_target_width(rel_ref.reltarget);
+    let cost = unsafe {
+        estimate_custom_scan_cost(rows, rel_ref.rows.max(1.0), target_width, &eligibility)
+    };
     custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
     custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
     custom_path.path.parent = rel;
@@ -790,6 +794,7 @@ struct SpireCustomScanCostEstimate {
 unsafe fn estimate_custom_scan_cost(
     output_rows: f64,
     rel_rows: f64,
+    target_width: f64,
     eligibility: &SpireCustomScanIndexEligibilityRow,
 ) -> SpireCustomScanCostEstimate {
     let constants = unsafe { current_planner_cost_constants() };
@@ -797,15 +802,25 @@ unsafe fn estimate_custom_scan_cost(
     estimate_custom_scan_cost_with_constants(
         output_rows,
         rel_rows,
+        target_width,
         eligibility,
         constants,
         cpu_tuple_cost,
     )
 }
 
+fn custom_scan_target_width(target: *mut pg_sys::PathTarget) -> f64 {
+    if target.is_null() {
+        0.0
+    } else {
+        f64::from(unsafe { (*target).width }.max(0))
+    }
+}
+
 fn estimate_custom_scan_cost_with_constants(
     output_rows: f64,
     rel_rows: f64,
+    target_width: f64,
     eligibility: &SpireCustomScanIndexEligibilityRow,
     constants: PlannerCostConstants,
     cpu_tuple_cost: f64,
@@ -825,10 +840,18 @@ fn estimate_custom_scan_cost_with_constants(
         * CUSTOM_SCAN_MERGE_CPU_UNITS
         * constants.cpu_operator_cost;
     let tuple_delivery_cost = output_rows * cpu_tuple_cost;
+    let tuple_width_cost = output_rows
+        * target_width.max(0.0)
+        * CUSTOM_SCAN_TUPLE_BYTE_CPU_UNITS
+        * constants.cpu_operator_cost;
     let startup_cost = routing_traversal_cost + remote_dispatch_cost;
     SpireCustomScanCostEstimate {
         startup_cost,
-        total_cost: startup_cost + heap_rerank_cost + merge_cost + tuple_delivery_cost,
+        total_cost: startup_cost
+            + heap_rerank_cost
+            + merge_cost
+            + tuple_delivery_cost
+            + tuple_width_cost,
     }
 }
 
@@ -2829,6 +2852,7 @@ mod tests {
         let low = estimate_custom_scan_cost_with_constants(
             10.0,
             1_000.0,
+            64.0,
             &low_fanout,
             default_cost_constants(),
             0.01,
@@ -2836,6 +2860,7 @@ mod tests {
         let high = estimate_custom_scan_cost_with_constants(
             10.0,
             1_000.0,
+            64.0,
             &high_fanout,
             default_cost_constants(),
             0.01,
@@ -2852,6 +2877,7 @@ mod tests {
         let small = estimate_custom_scan_cost_with_constants(
             1.0,
             1_000.0,
+            64.0,
             &eligibility,
             default_cost_constants(),
             0.01,
@@ -2859,6 +2885,7 @@ mod tests {
         let large = estimate_custom_scan_cost_with_constants(
             100.0,
             1_000.0,
+            64.0,
             &eligibility,
             default_cost_constants(),
             0.01,
@@ -2866,6 +2893,30 @@ mod tests {
 
         assert!(large.total_cost > small.total_cost);
         assert_eq!(large.startup_cost, small.startup_cost);
+    }
+
+    #[test]
+    fn custom_scan_cost_accounts_for_projected_tuple_width() {
+        let eligibility = eligible_cost_row();
+        let narrow = estimate_custom_scan_cost_with_constants(
+            100.0,
+            1_000.0,
+            8.0,
+            &eligibility,
+            default_cost_constants(),
+            0.01,
+        );
+        let wide = estimate_custom_scan_cost_with_constants(
+            100.0,
+            1_000.0,
+            512.0,
+            &eligibility,
+            default_cost_constants(),
+            0.01,
+        );
+
+        assert!(wide.total_cost > narrow.total_cost);
+        assert_eq!(wide.startup_cost, narrow.startup_cost);
     }
 
     fn eligible_cost_row() -> SpireCustomScanIndexEligibilityRow {

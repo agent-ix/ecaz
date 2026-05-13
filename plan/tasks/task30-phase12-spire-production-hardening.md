@@ -170,11 +170,21 @@ described by reviewer packet `30896`.
     `test_ec_spire_dml_context_cache_invalidation_sql`
     warms a no-index context, verifies a cache hit, creates the `ec_spire`
     index, and verifies the refreshed context is not stale.
-- [ ] Calibrate the symbolic CustomScan cost constants from local benchmark
+- [x] Calibrate the symbolic CustomScan cost constants from local benchmark
   measurements across fanout counts, placement counts, output row counts, and
   tuple payload widths.
-- [ ] Store the benchmark logs packet-locally and update the cost constants
+- [x] Store the benchmark logs packet-locally and update the cost constants
   only when the measurement explains the chosen values.
+  - [x] Packet `30976` calibrates the distributed CustomScan cost constants
+    against the local PG18 two-index loopback fixture. The final measurement
+    covers 16 remote placements on one available remote node, 20 queries,
+    `k=10/50/100`, `id_only` versus `title_body` projection widths, and
+    `ec_spire.nprobe=1/4/8/16`. The chosen constants make fixed remote
+    dispatch dominate the model (`2.56` of `2.60` startup cost for the local
+    one-remote fixture), lower merge CPU units to match the shallow output-row
+    slope, and add a small projected-width term. Packet-local artifacts include
+    the raw latency matrix, installed extension log, and post-change
+    modeled-cost rows.
 - [x] Clean up `custom_private` layout by replacing JSON string lists with
   native PostgreSQL node lists or another typed representation.
   - [x] DML CustomScan `custom_private` now stores updated/projected column
