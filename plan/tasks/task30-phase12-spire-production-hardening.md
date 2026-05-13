@@ -367,8 +367,11 @@ described by reviewer packet `30896`.
   `sslmode` preservation, raw-conninfo non-exposure, sanitized
   auth/certificate failures, credential-rotation deferral, audit-log deferral,
   `max_prepared_transactions`, and orphaned-prepared-xact recovery.
-- [ ] Distinguish local functionality, local production-readiness smoke, and
+- [x] Distinguish local functionality, local production-readiness smoke, and
   AWS/RDS product-scale evidence in the docs.
+  - Evidence: `docs/SPIRE_LOCAL_READINESS.md` defines the three evidence labels,
+    allowed claims, disallowed claims, artifact requirements, and the Phase 13
+    entry boundary.
 - [ ] Produce a final local production-readiness bundle from clean setup
   through distributed read/write, fault/degraded checks, multi-store checks,
   and harness artifact capture.
