@@ -94,7 +94,7 @@ described by reviewer packet `30896`.
   `serde_json`/text input to typed binary datum construction.
 - [ ] Remove or retire the scalar-only JSON gate for arrays/composites once the
   typed transport covers them.
-- [ ] Add fixtures proving typed transport round-trips scalar, array,
+- [x] Add fixtures proving typed transport round-trips scalar, array,
   composite, NULL, and domain values where supported.
   - [x] Scalar JSON-parity fixture covers `bigint` and `text` payload bytes via
     `ec_spire_remote_search_tuple_payload_typed(...)`.
@@ -107,6 +107,11 @@ described by reviewer packet `30896`.
   - [x] All v1 distributed table column classes that blocked the JSON bridge
     now have endpoint-level typed transport coverage; negotiation can proceed
     without a known scalar/array/composite/domain/NULL type-class gap.
+  - Evidence: packets `30915`, `30916`, `30917`, and `30918` cover scalar
+    JSON-parity, NULL, `text[]`, domain, named composite, and empty-projection
+    endpoint fixtures through `ec_spire_remote_search_tuple_payload_typed(...)`;
+    the remaining Phase 12.2 rows still track negotiation, CustomScan typed
+    receive, throughput measurement, and production JSON retirement.
 - [ ] Measure tuple-heavy read throughput before and after typed transport.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path
