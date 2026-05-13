@@ -270,10 +270,11 @@ Candidate scoring should stay close to the bytes read from each store group.
 The first implementation may execute store groups synchronously inside one
 backend while preserving this grouping boundary. ADR-057 accepts PostgreSQL
 relation prefetch/read-stream as the Phase 10 overlap primitive and keeps
-object decoding plus scoring sequential inside that backend. Any claim that the
-runtime performs or benefits from parallel multi-NVMe reads must wait for a
-benchmark packet that compares one-store and multi-store layouts on real
-multi-NVMe hardware.
+object decoding plus scoring sequential inside that backend. This means
+`local_store_count > 1` can make placement explicit before it improves CPU or
+store-group throughput. Any claim that the runtime performs or benefits from
+parallel multi-NVMe reads must wait for a benchmark packet that compares
+one-store and multi-store layouts on real multi-NVMe hardware.
 `ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` exposes
 this limitation with `local_store_execution_mode = 'sequential_backend'` and
 reports the exact future primitive as
@@ -292,6 +293,8 @@ for delete suppression and delta-insert candidate scoring. Remote candidate and
 tuple-payload endpoints call the same selected-leaf collector before origin-node
 heap or tuple payload resolution, so they inherit the same decoded-delta reuse
 instead of adding a second delta-object read in the remote handoff path.
+The `(node_id, local_store_id)` grouping key above explains why the collector
+groups by selected route set before the per-store object read and scoring pass.
 
 ## Diagnostics
 

@@ -42643,7 +42643,7 @@ mod tests {
         run_psql_script(
             &connection,
             "ec_spire multistore SQL vacuum delete",
-            &format!("DELETE FROM {TABLE_NAME} WHERE id = 2;"),
+            &format!("DELETE FROM {TABLE_NAME} WHERE id = 5;"),
         );
         run_psql_script(
             &connection,
@@ -42651,6 +42651,10 @@ mod tests {
             &format!("VACUUM {TABLE_NAME};"),
         );
 
+        // Use SPIRE diagnostic snapshots rather than broad heap SELECTs here:
+        // the coordinator DML frontdoor intentionally fail-closes unsupported
+        // broad SELECTs on ec_spire-indexed tables, which would obscure the
+        // VACUUM placement assertions this fixture owns.
         let placement_store_count = Spi::get_one::<i64>(&format!(
             "SELECT count(DISTINCT local_store_id) FROM \
              ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"

@@ -118,9 +118,12 @@ the local-store execution limitation explicitly:
 `local_store_execution_mode = 'sequential_backend'`. PG18 builds report
 `local_store_read_ahead_primitive = 'pg18_read_stream'`, which means relation
 block read-ahead is used within the current backend, not concurrent store-group
-execution. The future primitive for real local multi-store overlap is reported
-as
+execution; object decoding, candidate scoring, and heap rerank CPU work still
+serialize in that backend. The future primitive for real local multi-store
+overlap is reported as
 `local_store_parallelism_next_step = 'async_or_parallel_store_group_executor'`.
+The execution-mode label is an operator-visible public contract; a future
+parallel executor must intentionally change that label and update its tests.
 `ec_spire_index_scan_local_store_read_overlap_harness(index_oid, query)` is the
 repeatable local multi-store harness for the same scan collector. It returns
 one row per touched `(node_id, local_store_id)` with route counts, visible
