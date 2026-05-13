@@ -330,6 +330,9 @@ DECLARE
     source_identity bytea;
     row_payload jsonb;
     requested_columns text[];
+    planned_node_id bigint;
+    planned_centroid_id bigint;
+    planned_served_epoch bigint;
 BEGIN
     IF TG_WHEN <> 'BEFORE' OR TG_LEVEL <> 'ROW' OR TG_OP <> 'INSERT' THEN
         RAISE EXCEPTION 'ec_spire_coordinator_insert_forward_trigger must be a BEFORE INSERT row trigger'
@@ -362,15 +365,116 @@ BEGIN
        AND attnum > 0
        AND NOT attisdropped;
 
+    SELECT node_id, centroid_id, served_epoch
+      INTO planned_node_id, planned_centroid_id, planned_served_epoch
+      FROM ec_spire_plan_coordinator_insert(
+           target_index_oid, pk_value, embedding, source_identity);
+
+    CREATE TEMP TABLE IF NOT EXISTS ec_spire_coordinator_insert_tuple_payload_queue (
+        table_oid oid NOT NULL,
+        index_oid oid NOT NULL,
+        queue_order bigserial,
+        pk_value bytea NOT NULL,
+        node_id integer NOT NULL,
+        centroid_id bigint NOT NULL,
+        served_epoch bigint NOT NULL,
+        source_identity bytea NOT NULL,
+        row_payload_json text NOT NULL,
+        requested_columns text[] NOT NULL
+    ) ON COMMIT DELETE ROWS;
+
+    INSERT INTO ec_spire_coordinator_insert_tuple_payload_queue
+        (table_oid, index_oid, pk_value, node_id, centroid_id, served_epoch,
+         source_identity, row_payload_json, requested_columns)
+    VALUES
+        (TG_RELID, target_index_oid, pk_value, planned_node_id::integer,
+         planned_centroid_id, planned_served_epoch, source_identity,
+         row_payload::text, requested_columns);
+
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION ec_spire_coordinator_insert_flush_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_index_oid oid;
+    requested_columns text[];
+BEGIN
+    IF TG_WHEN <> 'AFTER' OR TG_LEVEL <> 'STATEMENT' OR TG_OP <> 'INSERT' THEN
+        RAISE EXCEPTION 'ec_spire_coordinator_insert_flush_trigger must be an AFTER INSERT statement trigger'
+            USING ERRCODE = '0A000';
+    END IF;
+    IF TG_NARGS <> 1 THEN
+        RAISE EXCEPTION 'ec_spire_coordinator_insert_flush_trigger requires 1 trigger argument'
+            USING ERRCODE = '22023',
+                  HINT = 'Use ec_spire_enable_coordinator_insert(table_oid, index_oid, pk_column, embedding_column, source_identity_column).';
+    END IF;
+
+    target_index_oid := TG_ARGV[0]::oid;
+    IF to_regclass('pg_temp.ec_spire_coordinator_insert_tuple_payload_queue') IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT q.requested_columns
+      INTO requested_columns
+      FROM ec_spire_coordinator_insert_tuple_payload_queue q
+     WHERE q.table_oid = TG_RELID
+       AND q.index_oid = target_index_oid
+     ORDER BY q.queue_order
+     LIMIT 1;
+
+    IF requested_columns IS NULL THEN
+        RETURN NULL;
+    END IF;
+
     PERFORM 1
-      FROM ec_spire_prepare_coordinator_insert_tuple_payload(
+      FROM ec_spire_prepare_coordinator_insert_tuple_payload_batch(
            target_index_oid,
-           pk_value,
-           embedding,
-           source_identity,
-           row_payload,
+           ARRAY(
+             SELECT encode(q.pk_value, 'hex')
+               FROM ec_spire_coordinator_insert_tuple_payload_queue q
+              WHERE q.table_oid = TG_RELID AND q.index_oid = target_index_oid
+              ORDER BY q.queue_order
+           ),
+           ARRAY(
+             SELECT q.node_id
+               FROM ec_spire_coordinator_insert_tuple_payload_queue q
+              WHERE q.table_oid = TG_RELID AND q.index_oid = target_index_oid
+              ORDER BY q.queue_order
+           ),
+           ARRAY(
+             SELECT q.centroid_id
+               FROM ec_spire_coordinator_insert_tuple_payload_queue q
+              WHERE q.table_oid = TG_RELID AND q.index_oid = target_index_oid
+              ORDER BY q.queue_order
+           ),
+           ARRAY(
+             SELECT q.served_epoch
+               FROM ec_spire_coordinator_insert_tuple_payload_queue q
+              WHERE q.table_oid = TG_RELID AND q.index_oid = target_index_oid
+              ORDER BY q.queue_order
+           ),
+           ARRAY(
+             SELECT encode(q.source_identity, 'hex')
+               FROM ec_spire_coordinator_insert_tuple_payload_queue q
+              WHERE q.table_oid = TG_RELID AND q.index_oid = target_index_oid
+              ORDER BY q.queue_order
+           ),
+           ARRAY(
+             SELECT q.row_payload_json
+               FROM ec_spire_coordinator_insert_tuple_payload_queue q
+              WHERE q.table_oid = TG_RELID AND q.index_oid = target_index_oid
+              ORDER BY q.queue_order
+           ),
            requested_columns
       );
+
+    DELETE FROM ec_spire_coordinator_insert_tuple_payload_queue q
+     WHERE q.table_oid = TG_RELID
+       AND q.index_oid = target_index_oid;
 
     RETURN NULL;
 END
@@ -457,6 +561,7 @@ BEGIN
             USING ERRCODE = '42804';
     END IF;
 
+    EXECUTE format('DROP TRIGGER IF EXISTS ec_spire_coordinator_insert_flush ON %s', table_oid);
     EXECUTE format('DROP TRIGGER IF EXISTS ec_spire_coordinator_insert_forward ON %s', table_oid);
     EXECUTE format(
         'CREATE TRIGGER ec_spire_coordinator_insert_forward BEFORE INSERT ON %s FOR EACH ROW EXECUTE FUNCTION ec_spire_coordinator_insert_forward_trigger(%L, %L, %L, %L)',
@@ -465,6 +570,11 @@ BEGIN
         pk_column,
         embedding_column,
         source_identity_column
+    );
+    EXECUTE format(
+        'CREATE TRIGGER ec_spire_coordinator_insert_flush AFTER INSERT ON %s FOR EACH STATEMENT EXECUTE FUNCTION ec_spire_coordinator_insert_flush_trigger(%L)',
+        table_oid,
+        index_oid::oid::text
     );
 END
 $$;

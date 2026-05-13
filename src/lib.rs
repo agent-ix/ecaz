@@ -8194,6 +8194,272 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
 
 #[pg_extern(strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_prepare_coordinator_insert_tuple_payload_batch(
+    index_oid: pg_sys::Oid,
+    pk_value_hex_values: Vec<String>,
+    node_ids: Vec<i32>,
+    centroid_ids: Vec<i64>,
+    served_epochs: Vec<i64>,
+    source_identity_hex_values: Vec<String>,
+    row_payload_json_values: Vec<String>,
+    requested_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(pk_value, Vec<u8>),
+        name!(node_id, i64),
+        name!(centroid_id, i64),
+        name!(served_epoch, i64),
+        name!(source_identity, Vec<u8>),
+        name!(prepared_gid, String),
+        name!(remote_insert_sent, bool),
+        name!(remote_prepared, bool),
+        name!(placement_staged, bool),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    const POST_STAGING_STATUS: &str = "remote_insert_prepared_pending_local_commit";
+    const POST_STAGING_NEXT_STEP: &str = "await_local_commit";
+
+    let row_count = pk_value_hex_values.len();
+    if row_count == 0 {
+        pgrx::error!("ec_spire_prepare_coordinator_insert_tuple_payload_batch row list is empty");
+    }
+    for (label, len) in [
+        ("node_ids", node_ids.len()),
+        ("centroid_ids", centroid_ids.len()),
+        ("served_epochs", served_epochs.len()),
+        (
+            "source_identity_hex_values",
+            source_identity_hex_values.len(),
+        ),
+        ("row_payload_json_values", row_payload_json_values.len()),
+    ] {
+        if len != row_count {
+            pgrx::error!(
+                "ec_spire_prepare_coordinator_insert_tuple_payload_batch {label} length {len} does not match pk_value_hex_values length {row_count}"
+            );
+        }
+    }
+    if requested_columns.is_empty() {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_insert_tuple_payload_batch requested_columns must not be empty"
+        );
+    }
+    let pk_values = pk_value_hex_values
+        .iter()
+        .map(|value| {
+            hex::decode(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_prepare_coordinator_insert_tuple_payload_batch pk_value hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let source_identities = source_identity_hex_values
+        .iter()
+        .map(|value| {
+            hex::decode(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_prepare_coordinator_insert_tuple_payload_batch source_identity hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if pk_values.iter().any(Vec::is_empty) {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_insert_tuple_payload_batch pk_values must not contain empty bytea values"
+        );
+    }
+    if source_identities
+        .iter()
+        .any(|source_identity| source_identity.len() != 16)
+    {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_insert_tuple_payload_batch source identities must be exactly 16 bytes"
+        );
+    }
+
+    let batch_rows = node_ids
+        .iter()
+        .zip(served_epochs.iter())
+        .zip(row_payload_json_values.iter())
+        .map(|((node_id, served_epoch), row_payload_json)| {
+            if *node_id <= 0 {
+                pgrx::error!(
+                    "ec_spire_prepare_coordinator_insert_tuple_payload_batch node_id must be greater than 0"
+                );
+            }
+            if *served_epoch <= 0 {
+                pgrx::error!(
+                    "ec_spire_prepare_coordinator_insert_tuple_payload_batch served_epoch must be greater than 0"
+                );
+            }
+            (
+                u32::try_from(*node_id).expect("positive node_id should fit u32"),
+                u64::try_from(*served_epoch).expect("positive served_epoch should fit u64"),
+                row_payload_json.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_prepare_coordinator_insert_tuple_payload_batch",
+        )
+    };
+    let prepare_rows = unsafe {
+        am::spire_coordinator_insert_prepare_remote_tuple_payload_batch(
+            index_relation,
+            batch_rows,
+            &requested_columns,
+        )
+    }
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    if prepare_rows.len() != row_count {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_insert_tuple_payload_batch prepared {} rows for {row_count} inputs",
+            prepare_rows.len()
+        );
+    }
+
+    Spi::connect_mut(|client| {
+        let mut refreshed_descriptors = std::collections::HashSet::<(i32, i64)>::new();
+        for (((((pk_value, node_id), centroid_id), served_epoch), source_identity), prepare_row) in
+            pk_values
+                .iter()
+                .zip(node_ids.iter())
+                .zip(centroid_ids.iter())
+                .zip(served_epochs.iter())
+                .zip(source_identities.iter())
+                .zip(prepare_rows.iter())
+        {
+            let prepared_node_id =
+                i32::try_from(prepare_row.node_id).expect("prepared node_id should fit i32");
+            if prepared_node_id != *node_id {
+                pgrx::error!(
+                    "ec_spire_prepare_coordinator_insert_tuple_payload_batch prepared node_id {prepared_node_id} does not match planned node_id {node_id}"
+                );
+            }
+            let descriptor_generation = i64::try_from(prepare_row.descriptor_generation)
+                .expect("descriptor generation should fit i64");
+            if refreshed_descriptors.insert((prepared_node_id, descriptor_generation)) {
+                let descriptor_refreshed = client
+                    .select(
+                        "UPDATE ec_spire_remote_node_descriptor \
+                            SET descriptor_generation = $3::bigint, \
+                                remote_index_identity = $4::bytea, \
+                                last_seen_at = clock_timestamp(), \
+                                last_served_epoch = $5::bigint, \
+                                min_retained_epoch = $6::bigint, \
+                                extension_version = $7::text, \
+                                last_error = 'none' \
+                          WHERE coordinator_index_oid = $1::oid \
+                            AND node_id = $2::integer \
+                            AND descriptor_generation < $3::bigint \
+                      RETURNING true AS refreshed",
+                        None,
+                        &[
+                            index_oid.into(),
+                            prepared_node_id.into(),
+                            descriptor_generation.into(),
+                            prepare_row.remote_index_identity.clone().into(),
+                            i64::try_from(prepare_row.remote_last_served_epoch)
+                                .expect("remote last served epoch should fit i64")
+                                .into(),
+                            i64::try_from(prepare_row.remote_min_retained_epoch)
+                                .expect("remote min retained epoch should fit i64")
+                                .into(),
+                            prepare_row.remote_extension_version.as_str().into(),
+                        ],
+                    )
+                    .map_err(|e| {
+                        format!("ec_spire coordinator insert descriptor refresh failed: {e}")
+                    })?
+                    .map(|row| {
+                        row["refreshed"]
+                            .value::<bool>()
+                            .map_err(|e| {
+                                format!(
+                                    "ec_spire coordinator insert descriptor refresh decode failed: {e}"
+                                )
+                            })?
+                            .ok_or_else(|| {
+                                "ec_spire coordinator insert descriptor refresh result is null"
+                                    .to_owned()
+                            })
+                    })
+                    .next()
+                    .transpose()?
+                    .unwrap_or(false);
+                if !descriptor_refreshed {
+                    pgrx::ereport!(
+                        ERROR,
+                        pgrx::PgSqlErrorCode::ERRCODE_T_R_SERIALIZATION_FAILURE,
+                        "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation",
+                        "Retry the whole coordinator write after the winning descriptor refresh commits."
+                    );
+                }
+            }
+            client
+                .update(
+                    "INSERT INTO ec_spire_placement \
+                         (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+                     VALUES ($1::oid, $2::bytea, $3::integer, $4::bigint, $5::bigint, $6::bytea)",
+                    None,
+                    &[
+                        index_oid.into(),
+                        pk_value.clone().into(),
+                        (*node_id).into(),
+                        (*centroid_id).into(),
+                        (*served_epoch).into(),
+                        source_identity.clone().into(),
+                    ],
+                )
+                .map_err(|e| format!("ec_spire coordinator insert placement staging failed: {e}"))?;
+        }
+        Ok::<(), String>(())
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    let output_rows = pk_values
+        .into_iter()
+        .zip(node_ids)
+        .zip(centroid_ids)
+        .zip(served_epochs)
+        .zip(source_identities)
+        .zip(prepare_rows)
+        .map(
+            |(
+                ((((pk_value, node_id), centroid_id), served_epoch), source_identity),
+                prepare_row,
+            )| {
+                (
+                    index_oid,
+                    pk_value,
+                    i64::from(node_id),
+                    centroid_id,
+                    served_epoch,
+                    source_identity,
+                    prepare_row.prepared_gid,
+                    prepare_row.remote_insert_sent,
+                    prepare_row.remote_prepared,
+                    true,
+                    POST_STAGING_STATUS,
+                    POST_STAGING_NEXT_STEP,
+                )
+            },
+        )
+        .collect::<Vec<_>>();
+    TableIterator::new(output_rows.into_iter())
+}
+
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_forward_coordinator_update_tuple_payload(
     index_oid: pg_sys::Oid,
     pk_column: String,
@@ -8721,11 +8987,11 @@ fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
         vec![
             (
                 "insert",
-                "before_insert_trigger",
+                "before_row_queue_after_statement_flush_triggers",
                 "bigint_pk_ecvector_embedding_bytea_source_identity",
-                "ec_spire_prepare_coordinator_insert_tuple_payload",
+                "ec_spire_prepare_coordinator_insert_tuple_payload_batch",
                 "ready",
-                "already installed by ec_spire_enable_coordinator_insert",
+                "batch queue and flush triggers installed by ec_spire_enable_coordinator_insert",
             ),
             (
                 "update_non_embedding",
@@ -22282,6 +22548,17 @@ mod tests {
                  'id', 'embedding', 'source_identity')",
         )
         .expect("coordinator insert trigger enable should succeed");
+        let installed_trigger_count = Spi::get_one::<i64>(
+            "SELECT count(*)::bigint \
+               FROM pg_trigger \
+              WHERE tgrelid = 'ec_spire_coord_insert_trigger_sql'::regclass \
+                AND tgname IN (\
+                    'ec_spire_coordinator_insert_forward', \
+                    'ec_spire_coordinator_insert_flush') \
+                AND NOT tgisinternal",
+        )
+        .expect("coordinator insert trigger count query should succeed")
+        .expect("coordinator insert trigger count should exist");
 
         Spi::run(
             "INSERT INTO ec_spire_coord_insert_trigger_sql \
@@ -22297,6 +22574,15 @@ mod tests {
         )
         .expect("coordinator row count query should succeed")
         .expect("coordinator row count should exist");
+        let queued_after_statement_count = Spi::get_one::<i64>(
+            "SELECT CASE \
+                    WHEN to_regclass('pg_temp.ec_spire_coordinator_insert_tuple_payload_queue') IS NULL \
+                    THEN 0 \
+                    ELSE (SELECT count(*)::bigint FROM ec_spire_coordinator_insert_tuple_payload_queue) \
+                    END",
+        )
+        .expect("coordinator insert queue count query should succeed")
+        .expect("coordinator insert queue count should exist");
         let placement_query = format!(
             "SELECT count(*) FROM ec_spire_placement \
               WHERE index_oid = 'ec_spire_coord_insert_trigger_idx'::regclass \
@@ -22345,6 +22631,8 @@ mod tests {
             coordinator_row_count, 0,
             "BEFORE trigger should suppress the coordinator heap row"
         );
+        assert_eq!(installed_trigger_count, 2);
+        assert_eq!(queued_after_statement_count, 0);
         assert_eq!(placement_count, 1);
         assert_eq!(
             remote_visible_count, 0,
@@ -24355,7 +24643,10 @@ mod tests {
 
         assert_eq!(operation_count, 5);
         assert_eq!(pending_operations, "delete,pk_select,update_non_embedding");
-        assert_eq!(insert_frontdoor, "before_insert_trigger");
+        assert_eq!(
+            insert_frontdoor,
+            "before_row_queue_after_statement_flush_triggers"
+        );
         assert_eq!(
             embedding_update_status,
             "ready|reject with ADR-069 error and hint"

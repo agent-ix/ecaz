@@ -2752,6 +2752,31 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
     }
 }
 
+pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch(
+    index_relation: pg_sys::Relation,
+    rows: Vec<(u32, u64, String)>,
+    requested_columns: &[String],
+) -> Result<Vec<SpireCoordinatorInsertRemotePrepareRow>, String> {
+    let mut requests = Vec::with_capacity(rows.len());
+    for (node_id, served_epoch, row_payload_json) in rows {
+        let dispatch =
+            unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+        if dispatch.status != SPIRE_REMOTE_STATUS_READY {
+            return Err(format!(
+                "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
+                node_id, dispatch.status
+            ));
+        }
+        let remote_sql = coordinator_insert_remote_tuple_payload_sql(
+            &dispatch.remote_index_regclass,
+            &row_payload_json,
+            requested_columns,
+        )?;
+        requests.push((node_id, served_epoch, remote_sql));
+    }
+    unsafe { coordinator_insert_prepare_remote_sql_batch(index_relation, requests) }
+}
+
 pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
     index_relation: pg_sys::Relation,
     node_id: u32,

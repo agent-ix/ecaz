@@ -35,6 +35,7 @@ pub(crate) use self::ec_spire::{
     coordinator_insert_dispatch_plan_row as spire_coordinator_insert_dispatch_plan_row,
     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
     coordinator_insert_prepare_remote_tuple_payload as spire_coordinator_insert_prepare_remote_tuple_payload,
+    coordinator_insert_prepare_remote_tuple_payload_batch as spire_coordinator_insert_prepare_remote_tuple_payload_batch,
     coordinator_select_remote_tuple_payload as spire_coordinator_select_remote_tuple_payload,
     coordinator_update_remote_tuple_payload as spire_coordinator_update_remote_tuple_payload,
     custom_scan_index_eligibility_row as spire_custom_scan_index_eligibility_row,

@@ -235,8 +235,8 @@ described by reviewer packet `30896`.
   - [x] document it as required on every remote;
   - [x] check or warn during descriptor registration;
   - [x] wrap `PREPARE TRANSACTION` exhaustion with a SPIRE-named hint.
-- [x] Add a multi-row INSERT trigger fixture proving per-row trigger dispatch
-  lands every row on its owning remote and commits all remote prepared
+- [x] Add a multi-row INSERT trigger fixture proving statement-batched trigger
+  dispatch lands every row on its owning remote and commits all remote prepared
   transactions on local commit.
 - [x] Add a placement-table write-contention fixture with many parallel
   distinct-PK INSERTs and DELETEs, asserting no deadlocks and bounded latency
@@ -257,15 +257,18 @@ described by reviewer packet `30896`.
   - [x] Current decision: keep the shared table for now because the PG18
     fixture passed with 8 writers, no deadlocks, no placement lock waiters, and
     p99 below the 20s partition threshold.
-- [ ] Migrate wide-fanout INSERT 2PC dispatch to the same async/pipelined
+- [x] Migrate wide-fanout INSERT 2PC dispatch to the same async/pipelined
   transport pattern as the read path, so M remote prepares do not serialize
   into M round trips.
-  - [ ] Async prepare executor foundation landed: `coordinator_insert_prepare_remote_sql`
-    now routes through a Tokio fanout batch adapter that can prepare multiple
-    remote transactions concurrently and rolls back any prepared remotes if one
-    dispatch fails. The row remains open until the coordinator INSERT trigger
-    accumulates statement-level batches instead of invoking the helper once per
-    row.
+  - [x] `ec_spire_enable_coordinator_insert(...)` now installs a BEFORE ROW
+    queue trigger plus an AFTER STATEMENT flush trigger. The flush calls
+    `ec_spire_prepare_coordinator_insert_tuple_payload_batch(...)`, which
+    routes all queued remote prepares through the Tokio fanout batch adapter
+    and rolls back any prepared remotes if one dispatch fails before local
+    callbacks are registered. PG18 fixtures
+    `test_ec_spire_enable_coordinator_insert_trigger_sql` and
+    `test_ec_spire_trigger_multirow_commits_prepares_sql` cover trigger
+    installation, queue drain, and multi-row commit behavior.
 - [x] Document the 2PC latency tradeoff and the bulk-load escape hatch for
   applications that can tolerate post-write placement registration.
 
