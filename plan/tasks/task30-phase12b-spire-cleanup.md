@@ -140,6 +140,10 @@ Phase 13 will push it past 80k.
   DML hook/plan/remote-customscan fixture block with a textual include;
   earlier select-plan and later primitive-plan fixtures remain open, so
   the `tests/dml_frontdoor.rs` row is not yet closed.
+- Packet `31004` extends `src/tests/dml_frontdoor.rs` with the later
+  primitive-plan helper fixture block; earlier select-plan and
+  replacement-decision SQL fixtures remain open, so the row is still not
+  closed.
 - Packet `31002` starts `src/tests/placement.rs` by moving the placement
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
