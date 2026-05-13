@@ -1667,3 +1667,896 @@
         assert!(!update_from_supported);
         assert_eq!(update_from_kind, "unsupported_join_shape");
     }
+
+    #[pg_test]
+    fn test_ec_spire_update_delete_schema_drift_guard_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var(\
+                     'EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_UPDATE_DELETE_SCHEMA_DRIFT', \
+                     $1)",
+                &[&loopback_conninfo],
+            )
+            .expect("loopback backend should receive conninfo secret env var");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_ud_schema_drift_remote; \
+                 DROP TABLE IF EXISTS ec_spire_ud_schema_drift_coord; \
+                 CREATE TABLE ec_spire_ud_schema_drift_remote \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_ud_schema_drift_remote \
+                     (id, title, embedding, source_identity) VALUES \
+                 (701, 'update before drift', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('101112131415161718191a1b1c1d1e1f', 'hex')), \
+                 (702, 'delete before drift', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('202122232425262728292a2b2c2d2e2f', 'hex')); \
+                 CREATE INDEX ec_spire_ud_schema_drift_remote_idx \
+                     ON ec_spire_ud_schema_drift_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_ud_schema_drift_coord \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_ud_schema_drift_coord \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('303132333435363738393a3b3c3d3e3f', 'hex')); \
+                 CREATE INDEX ec_spire_ud_schema_drift_coord_idx \
+                     ON ec_spire_ud_schema_drift_coord USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback update/delete schema drift fixtures should be created");
+
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let remote_identity_hex = loopback_client
+            .query_one(
+                "SELECT profile_fingerprint \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_ud_schema_drift_remote_idx'::regclass::oid)",
+                &[],
+            )
+            .expect("remote identity query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote identity should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                     27, 31, 'spire/remote/update_delete_schema_drift', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_ud_schema_drift_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 INSERT INTO ec_spire_placement \
+                     (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+                 VALUES \
+                     ('ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                      int8send(701::bigint)::bytea, 27, 2, {active_epoch}, \
+                      decode('101112131415161718191a1b1c1d1e1f', 'hex')), \
+                     ('ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                      int8send(702::bigint)::bytea, 27, 2, {active_epoch}, \
+                      decode('202122232425262728292a2b2c2d2e2f', 'hex')); \
+                 ALTER TABLE ec_spire_ud_schema_drift_coord \
+                     ADD COLUMN coord_only text",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("descriptor, placements, and coordinator-only DDL should succeed");
+
+        let update_error = loopback_client
+            .batch_execute(
+                "SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                     'id', \
+                     int8send(701::bigint)::bytea, \
+                     jsonb_build_object('title', 'update after drift'), \
+                     ARRAY['title']::text[])",
+            )
+            .expect_err("coordinator-only DDL should trip update schema drift guard");
+        let delete_error = loopback_client
+            .batch_execute(
+                "SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                     'id', \
+                     int8send(702::bigint)::bytea)",
+            )
+            .expect_err("coordinator-only DDL should trip delete schema drift guard");
+        let update_message = update_error
+            .as_db_error()
+            .map(|db_error| db_error.message().to_owned())
+            .unwrap_or_else(|| update_error.to_string());
+        let delete_message = delete_error
+            .as_db_error()
+            .map(|db_error| db_error.message().to_owned())
+            .unwrap_or_else(|| delete_error.to_string());
+        let remote_summary = loopback_client
+            .query_one(
+                "SELECT \
+                    (SELECT title FROM ec_spire_ud_schema_drift_remote WHERE id = 701) \
+                    || '|' || \
+                    (SELECT count(*)::text FROM ec_spire_ud_schema_drift_remote WHERE id = 702)",
+                &[],
+            )
+            .expect("remote update/delete drift summary query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote update/delete drift summary should decode");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("prepared xact count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        let placement_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_placement \
+                  WHERE index_oid = 'ec_spire_ud_schema_drift_coord_idx'::regclass \
+                    AND pk_value IN (int8send(701::bigint)::bytea, int8send(702::bigint)::bytea)",
+                &[],
+            )
+            .expect("placement count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("placement count should decode");
+
+        assert!(
+            update_message.contains("coordinator update schema drift detected"),
+            "{update_message}"
+        );
+        assert!(
+            delete_message.contains("coordinator delete schema drift detected"),
+            "{delete_message}"
+        );
+        assert_eq!(remote_summary, "update before drift|1");
+        assert_eq!(prepared_count, 0);
+        assert_eq!(placement_count, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_forward_coordinator_update_tuple_payload_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_UPDATE_PAYLOAD_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_update_payload_remote_sql; \
+                 CREATE TABLE ec_spire_coord_update_payload_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_coord_update_payload_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (505, 'before update', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('404142434445464748494a4b4c4d4e4f', 'hex')); \
+                 CREATE INDEX ec_spire_coord_update_payload_remote_idx \
+                     ON ec_spire_coord_update_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote update target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_update_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("coordinator update table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_update_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('505152535455565758595a5b5c5d5e5f', 'hex'))",
+        )
+        .expect("coordinator update seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_update_payload_idx \
+             ON ec_spire_coord_update_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator update ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_coord_update_payload_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_update_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_coord_update_payload_remote_idx'::regclass::oid)",
+        )
+        .expect("remote identity query should succeed")
+        .expect("remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_coord_update_payload_idx'::regclass, \
+                 15, 19, 'spire/remote/coordinator_update_payload_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_coord_update_payload_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("remote descriptor registration should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_update_payload_idx'::regclass, int8send(505::bigint)::bytea, \
+                     15, 2, {active_epoch}, decode('404142434445464748494a4b4c4d4e4f', 'hex'))"
+        ))
+        .expect("placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                     'ec_spire_coord_update_payload_idx'::regclass, \
+                     'id', \
+                     int8send(505::bigint)::bytea, \
+                     jsonb_build_object('title', 'after update'), \
+                     ARRAY['title']::text[]) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_update_sent::text || '|' || remote_updated_count::text || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("coordinator update helper query should succeed")
+        .expect("coordinator update helper should return a row");
+        let remote_title = loopback_client
+            .query_one(
+                "SELECT title \
+                   FROM ec_spire_coord_update_payload_remote_sql \
+                  WHERE id = 505",
+                &[],
+            )
+            .expect("remote title query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote title should decode");
+
+        assert_eq!(
+            result,
+            format!("15|{active_epoch}|true|1|remote_update_applied|done")
+        );
+        assert_eq!(remote_title, "after update");
+        let _ = index_oid;
+    }
+
+    #[pg_test]
+    fn test_ec_spire_forward_coordinator_update_local_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_update_local_payload_sql \
+             (id bigint primary key, title text not null, body text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("local coordinator update table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_update_local_payload_sql \
+                 (id, title, body, embedding, source_identity) VALUES \
+             (707, 'local before update', 'local body before update', \
+              encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('808182838485868788898a8b8c8d8e8f', 'hex'))",
+        )
+        .expect("local coordinator update row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_update_local_payload_idx \
+             ON ec_spire_coord_update_local_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("local coordinator update ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_update_local_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_update_local_payload_idx'::regclass, int8send(707::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('808182838485868788898a8b8c8d8e8f', 'hex'))"
+        ))
+        .expect("local placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                     'ec_spire_coord_update_local_payload_idx'::regclass, \
+                     'id', \
+                     int8send(707::bigint)::bytea, \
+                     jsonb_build_object(\
+                         'title', 'local after update', \
+                         'body', 'local body after update'), \
+                     ARRAY['title', 'body']::text[]) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_update_sent::text || '|' || remote_updated_count::text || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("local coordinator update helper query should succeed")
+        .expect("local coordinator update helper should return a row");
+        let local_tuple = Spi::get_one::<String>(
+            "SELECT title || '|' || body \
+               FROM ec_spire_coord_update_local_payload_sql \
+              WHERE id = 707",
+        )
+        .expect("local tuple query should succeed")
+        .expect("local tuple should exist");
+
+        assert_eq!(
+            result,
+            format!("0|{active_epoch}|false|1|local_update_applied|done")
+        );
+        assert_eq!(local_tuple, "local after update|local body after update");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire coordinator update placement row is missing")]
+    fn test_ec_spire_forward_coordinator_update_missing_placement_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_update_missing_placement_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("missing placement update table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_update_missing_placement_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (808, 'missing placement before update', \
+              encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('909192939495969798999a9b9c9d9e9f', 'hex'))",
+        )
+        .expect("missing placement update seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_update_missing_placement_idx \
+             ON ec_spire_coord_update_missing_placement_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("missing placement ec_spire index creation should succeed");
+
+        Spi::run(
+            "SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                 'ec_spire_coord_update_missing_placement_idx'::regclass, \
+                 'id', \
+                 int8send(808::bigint)::bytea, \
+                 jsonb_build_object('title', 'should not update'), \
+                 ARRAY['title']::text[])",
+        )
+        .expect("missing placement update should fail before returning");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_update_rejects_embedding_column_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_update_embedding_reject_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("embedding reject update table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_update_embedding_reject_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1001, 'before embedding update', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('c0c1c2c3c4c5c6c7c8c9cacbcccdcecf', 'hex'))",
+        )
+        .expect("embedding reject update row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_update_embedding_reject_idx \
+             ON ec_spire_coord_update_embedding_reject_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("embedding reject ec_spire index creation should succeed");
+        let error = pg_sys::PgTryBuilder::new(|| {
+            Spi::run(
+                "SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                     'ec_spire_coord_update_embedding_reject_idx'::regclass, \
+                     'id', \
+                     int8send(1001::bigint)::bytea, \
+                     jsonb_build_object(\
+                         'embedding', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)::text), \
+                     ARRAY['embedding']::text[])",
+            )
+            .expect("embedding update rejection query should raise before returning");
+            "no_error".to_owned()
+        })
+        .catch_others(|cause| match cause {
+            pg_sys::panic::CaughtError::ErrorReport(report)
+            | pg_sys::panic::CaughtError::PostgresError(report) => {
+                format!("{}|{}", report.message(), report.hint().unwrap_or(""))
+            }
+            pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                format!("{}|{}", ereport.message(), ereport.hint().unwrap_or(""))
+            }
+        })
+        .execute();
+
+        assert_eq!(
+            error,
+            "ec_spire_distributed: UPDATE of indexed embedding column is not supported on a distributed ec_spire table. Use DELETE + INSERT.|Cross-shard atomic moves will be available in a future release."
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prepare_coordinator_delete_tuple_payload_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_DELETE_PAYLOAD_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_delete_payload_remote_sql; \
+                 CREATE TABLE ec_spire_coord_delete_payload_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_coord_delete_payload_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (606, 'delete me', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('606162636465666768696a6b6c6d6e6f', 'hex')); \
+                 CREATE INDEX ec_spire_coord_delete_payload_remote_idx \
+                     ON ec_spire_coord_delete_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote delete target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_delete_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("coordinator delete table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_delete_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('707172737475767778797a7b7c7d7e7f', 'hex'))",
+        )
+        .expect("coordinator delete seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_delete_payload_idx \
+             ON ec_spire_coord_delete_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator delete ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_coord_delete_payload_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_delete_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_coord_delete_payload_remote_idx'::regclass::oid)",
+        )
+        .expect("remote identity query should succeed")
+        .expect("remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_coord_delete_payload_idx'::regclass, \
+                 16, 20, 'spire/remote/coordinator_delete_payload_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_coord_delete_payload_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("remote descriptor registration should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_delete_payload_idx'::regclass, int8send(606::bigint)::bytea, \
+                     16, 2, {active_epoch}, decode('606162636465666768696a6b6c6d6e6f', 'hex'))"
+        ))
+        .expect("placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_payload_idx'::regclass, \
+                     'id', \
+                     int8send(606::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_delete_sent::text || '|' || remote_prepared::text || '|' || \
+                    remote_deleted_count::text || '|' || placement_deleted::text || '|' || \
+                    status || '|' || next_step || '|' || prepared_gid \
+               FROM result",
+        )
+        .expect("coordinator delete helper query should succeed")
+        .expect("coordinator delete helper should return a row");
+        let parts = result.split('|').collect::<Vec<_>>();
+        assert_eq!(parts.len(), 9);
+        let prepared_gid = parts[8].to_owned();
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
+                &[&prepared_gid],
+            )
+            .expect("prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        let remote_visible_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_coord_delete_payload_remote_sql \
+                  WHERE id = 606",
+                &[],
+            )
+            .expect("remote visibility query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote visibility count should decode");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_delete_payload_idx'::regclass \
+                AND pk_value = int8send(606::bigint)::bytea",
+        )
+        .expect("placement query should succeed")
+        .expect("placement count should exist");
+
+        assert_eq!(parts[0], "16");
+        assert_eq!(parts[1], active_epoch.to_string());
+        assert_eq!(parts[2], "true");
+        assert_eq!(parts[3], "true");
+        assert_eq!(parts[4], "1");
+        assert_eq!(parts[5], "true");
+        assert_eq!(parts[6], "remote_delete_prepared_pending_local_commit");
+        assert_eq!(parts[7], "await_local_commit");
+        assert_stable_spire_prepared_gid(&prepared_gid, index_oid, 16, active_epoch);
+        assert_eq!(prepared_count, 1);
+        assert_eq!(
+            remote_visible_count, 1,
+            "prepared remote DELETE should not be visible before transaction resolution"
+        );
+        assert_eq!(placement_count, 0);
+        let _ = index_oid;
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prepare_coordinator_delete_local_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_delete_local_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("local coordinator delete table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_delete_local_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1002, 'local delete me', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('d0d1d2d3d4d5d6d7d8d9dadbdcdddedf', 'hex'))",
+        )
+        .expect("local coordinator delete row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_delete_local_payload_idx \
+             ON ec_spire_coord_delete_local_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("local coordinator delete ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_delete_local_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_delete_local_payload_idx'::regclass, int8send(1002::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('d0d1d2d3d4d5d6d7d8d9dadbdcdddedf', 'hex'))"
+        ))
+        .expect("local delete placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_local_payload_idx'::regclass, \
+                     'id', \
+                     int8send(1002::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    prepared_gid || '|' || remote_delete_sent::text || '|' || \
+                    remote_prepared::text || '|' || remote_deleted_count::text || '|' || \
+                    placement_deleted::text || '|' || status || '|' || next_step \
+               FROM result",
+        )
+        .expect("local coordinator delete helper query should succeed")
+        .expect("local coordinator delete helper should return a row");
+        let local_row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_coord_delete_local_payload_sql WHERE id = 1002",
+        )
+        .expect("local delete row count query should succeed")
+        .expect("local delete row count should exist");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_delete_local_payload_idx'::regclass \
+                AND pk_value = int8send(1002::bigint)::bytea",
+        )
+        .expect("local delete placement count query should succeed")
+        .expect("local delete placement count should exist");
+
+        assert_eq!(
+            result,
+            format!("0|{active_epoch}|none|false|false|1|true|local_delete_applied|done")
+        );
+        assert_eq!(local_row_count, 0);
+        assert_eq!(placement_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prepare_coordinator_delete_idempotent_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_delete_idempotent_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("idempotent coordinator delete table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_delete_idempotent_payload_idx \
+             ON ec_spire_coord_delete_idempotent_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("idempotent coordinator delete ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot(\
+                 'ec_spire_coord_delete_idempotent_payload_idx'::regclass)",
+        )
+        .expect("idempotent delete active epoch query should succeed")
+        .expect("idempotent delete active epoch should exist");
+        let stale_placement_epoch = active_epoch.max(1);
+
+        let missing_placement_result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_idempotent_payload_idx'::regclass, \
+                     'id', \
+                     int8send(2001::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    prepared_gid || '|' || remote_delete_sent::text || '|' || \
+                    remote_prepared::text || '|' || remote_deleted_count::text || '|' || \
+                    placement_deleted::text || '|' || status || '|' || next_step \
+               FROM result",
+        )
+        .expect("missing placement coordinator delete query should succeed")
+        .expect("missing placement coordinator delete should return a row");
+        assert_eq!(
+            missing_placement_result,
+            "-1|0|none|false|false|0|false|delete_not_found_noop|done"
+        );
+
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_delete_idempotent_payload_idx'::regclass, \
+                     int8send(2002::bigint)::bytea, \
+                     0, 2, {stale_placement_epoch}, \
+                     decode('e0e1e2e3e4e5e6e7e8e9eaebecedeeef', 'hex'))"
+        ))
+        .expect("stale local placement row should be inserted");
+
+        let stale_placement_result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_idempotent_payload_idx'::regclass, \
+                     'id', \
+                     int8send(2002::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    prepared_gid || '|' || remote_delete_sent::text || '|' || \
+                    remote_prepared::text || '|' || remote_deleted_count::text || '|' || \
+                    placement_deleted::text || '|' || status || '|' || next_step \
+               FROM result",
+        )
+        .expect("stale placement coordinator delete query should succeed")
+        .expect("stale placement coordinator delete should return a row");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_delete_idempotent_payload_idx'::regclass \
+                AND pk_value = int8send(2002::bigint)::bytea",
+        )
+        .expect("stale placement count query should succeed")
+        .expect("stale placement count should exist");
+
+        assert_eq!(
+            stale_placement_result,
+            format!(
+                "0|{stale_placement_epoch}|none|false|false|0|true|local_delete_not_found_noop|done"
+            )
+        );
+        assert_eq!(placement_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_forward_coordinator_select_tuple_payload_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_SELECT_PAYLOAD_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_select_payload_remote_sql; \
+                 CREATE TABLE ec_spire_coord_select_payload_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_coord_select_payload_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (808, 'remote selected payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('909192939495969798999a9b9c9d9e9f', 'hex')); \
+                 CREATE INDEX ec_spire_coord_select_payload_remote_idx \
+                     ON ec_spire_coord_select_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote select target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_select_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("coordinator select table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_select_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('a0a1a2a3a4a5a6a7a8a9aaabacadaeaf', 'hex'))",
+        )
+        .expect("coordinator select seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_select_payload_idx \
+             ON ec_spire_coord_select_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator select ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_select_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_coord_select_payload_remote_idx'::regclass::oid)",
+        )
+        .expect("remote identity query should succeed")
+        .expect("remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_coord_select_payload_idx'::regclass, \
+                 17, 21, 'spire/remote/coordinator_select_payload_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_coord_select_payload_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("remote descriptor registration should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_select_payload_idx'::regclass, int8send(808::bigint)::bytea, \
+                     17, 2, {active_epoch}, decode('909192939495969798999a9b9c9d9e9f', 'hex'))"
+        ))
+        .expect("placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                     'ec_spire_coord_select_payload_idx'::regclass, \
+                     'id', \
+                     int8send(808::bigint)::bytea, \
+                     ARRAY['id', 'title']::text[]) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_select_sent::text || '|' || selected_count::text || '|' || \
+                    payload_column_count::text || '|' || \
+                    (tuple_payload_json::jsonb ->> 'id') || '|' || \
+                    (tuple_payload_json::jsonb ->> 'title') || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("coordinator select helper query should succeed")
+        .expect("coordinator select helper should return a row");
+
+        assert_eq!(
+            result,
+            format!(
+                "17|{active_epoch}|true|1|2|808|remote selected payload|remote_select_ready|done"
+            )
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_forward_coordinator_select_local_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_select_local_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("local coordinator select table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_select_local_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (909, 'local selected payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('b0b1b2b3b4b5b6b7b8b9babbbcbdbebf', 'hex'))",
+        )
+        .expect("local coordinator select row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_select_local_payload_idx \
+             ON ec_spire_coord_select_local_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("local coordinator select ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_select_local_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_select_local_payload_idx'::regclass, int8send(909::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('b0b1b2b3b4b5b6b7b8b9babbbcbdbebf', 'hex'))"
+        ))
+        .expect("local placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                     'ec_spire_coord_select_local_payload_idx'::regclass, \
+                     'id', \
+                     int8send(909::bigint)::bytea, \
+                     ARRAY['id', 'title']::text[]) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_select_sent::text || '|' || selected_count::text || '|' || \
+                    payload_column_count::text || '|' || \
+                    (tuple_payload_json::jsonb ->> 'id') || '|' || \
+                    (tuple_payload_json::jsonb ->> 'title') || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("local coordinator select helper query should succeed")
+        .expect("local coordinator select helper should return a row");
+
+        assert_eq!(
+            result,
+            format!(
+                "0|{active_epoch}|false|1|2|909|local selected payload|local_select_ready|done"
+            )
+        );
+    }

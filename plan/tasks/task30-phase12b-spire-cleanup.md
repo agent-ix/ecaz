@@ -115,7 +115,7 @@ Phase 13 will push it past 80k.
   - [ ] `tests/scan.rs`
   - [x] `tests/custom_scan.rs`
   - [ ] `tests/remote_search.rs`
-  - [ ] `tests/dml_frontdoor.rs`
+  - [x] `tests/dml_frontdoor.rs`
   - [ ] `tests/placement.rs`
   - [ ] `tests/vacuum.rs`
   - [ ] `tests/cost_and_planner.rs`
@@ -148,6 +148,10 @@ Phase 13 will push it past 80k.
   PK-select/custom-scan plan fixtures and replacement-decision SQL
   fixture; broader coordinator update/delete/select tuple-payload SQL
   fixtures remain in `src/tests/mod.rs`, so the row is still not closed.
+- Packet `31006` moves the remaining coordinator update/delete/select
+  tuple-payload and update/delete schema-drift fixtures to
+  `src/tests/dml_frontdoor.rs`; `src/tests/mod.rs` now only retains the
+  DML concern include, so the `tests/dml_frontdoor.rs` row is closed.
 - Packet `31002` starts `src/tests/placement.rs` by moving the placement
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
