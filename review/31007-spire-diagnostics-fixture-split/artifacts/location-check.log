@@ -1,0 +1,9 @@
+Script started on 2026-05-13 16:28:41-07:00 [<not executed on terminal>]
+src/tests/diagnostics.rs
+2:    fn test_ec_spire_hierarchy_snapshot_sql() {
+120:    fn test_ec_spire_object_snapshot_sql() {
+213:    fn test_ec_spire_delta_snapshot_sql() {
+295:    fn test_ec_spire_delta_snapshot_sql_delete_delta() {
+360:    fn test_ec_spire_options_snapshot_sql() {
+
+Script done on 2026-05-13 16:28:41-07:00 [COMMAND_EXIT_CODE="0"]
