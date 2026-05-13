@@ -25,8 +25,9 @@ described by reviewer packet `30896`.
     are removed.
   - Stage E fault matrix (11 cases) and lifecycle matrix (6 cases) pass
     against the CustomScan build in packet `30895` (matrix archived in
-    `30895`; live re-run cadence is reviewer-requested, not CI-gated; see
-    Phase 12a.4 for the CI subset).
+    `30895`; CI re-runs subset `remote_statement_timeout`, `local_cancel`,
+    `epoch_mismatch`, and `version_skew`; full matrix is operator-runnable, not
+    CI-gated).
 
 ## Non-Goals
 

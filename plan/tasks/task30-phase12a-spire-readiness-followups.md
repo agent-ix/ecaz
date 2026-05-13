@@ -125,21 +125,21 @@ Source: review packet `30982`, finding "Stage E fault matrix bitrot
 risk." Tracker line 26 of the Phase 12 task implies CI gating; reality
 is point-in-time archived evidence from packet `30895`.
 
-- [ ] Pick the lightweight subset of the 11 fault cases that is
+- [x] Pick the lightweight subset of the 11 fault cases that is
   feasible in GitHub Actions `services:` with two PG18 clusters. At
   minimum: `remote_statement_timeout`, `local_cancel`, `epoch_mismatch`,
   and one pre-dispatch blocker (incompatible-version). The other 7
   remain operator-runnable via `ecaz dev spire-multicluster fault-pg18`.
-- [ ] Add a workflow job that runs the chosen subset on every PR
+- [x] Add a workflow job that runs the chosen subset on every PR
   touching `src/am/ec_spire/**`, `sql/**`, or
   `scripts/run_spire_multicluster_*.sh`.
-- [ ] Confirm the workflow reuses the existing `ecaz dev
+- [x] Confirm the workflow reuses the existing `ecaz dev
   spire-multicluster` wrappers from packets `30971`/`30978`; no new
   shell scripting.
-- [ ] Amend the Phase 12 task tracker line 26 to add the parenthetical:
+- [x] Amend the Phase 12 task tracker line 26 to add the parenthetical:
   "(matrix archived in `30895`; CI re-runs subset $LIST; full matrix is
   operator-runnable, not CI-gated)."
-- [ ] Document the CI vs operator-runnable split in
+- [x] Document the CI vs operator-runnable split in
   `docs/SPIRE_LOCAL_READINESS.md` so the evidence boundary stays honest.
 
 ## Phase 12a.5: Typed Transport Retirement Error Specificity (P3)

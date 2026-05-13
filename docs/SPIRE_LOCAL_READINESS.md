@@ -92,3 +92,25 @@ claims do not hide local readiness gaps.
   explicitly reviewer-deferred.
 - Do not raise local capacity targets without packet-local benchmark or
   contention logs for the tested fixture.
+
+## Stage E CI Boundary
+
+The full Stage E fault matrix remains operator-runnable evidence. Packet
+`30895` archives the 11 fault cases and 6 lifecycle cases against the
+CustomScan build; reviewers can request a live full rerun through
+`ecaz dev spire-multicluster fault-pg18` and
+`ecaz dev spire-multicluster lifecycle-pg18`.
+
+CI runs a lighter PR subset when files under `src/am/ec_spire/**`, `sql/**`, or
+`scripts/run_spire_multicluster_*.sh` change. The subset is:
+
+- `remote_statement_timeout`
+- `local_cancel`
+- `epoch_mismatch`
+- `version_skew`
+
+The first two cover transport-time timeout/cancel behavior, `epoch_mismatch`
+covers stale epoch rejection, and `version_skew` is the pre-dispatch
+incompatible-version blocker. The other Stage E cases stay outside CI because
+they are slower or require heavier fault/lifecycle orchestration, but they
+continue to use the same `ecaz dev spire-multicluster` wrapper surface.

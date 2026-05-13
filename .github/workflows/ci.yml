@@ -71,6 +71,77 @@ jobs:
       - name: pg18 tests
         run: cargo pgrx test pg18
 
+  spire-stage-e-subset:
+    name: SPIRE Stage E subset (${{ matrix.case }})
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'pull_request'
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - remote_statement_timeout
+          - local_cancel
+          - epoch_mismatch
+          - version_skew
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect SPIRE surface changes
+        id: changes
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > /tmp/changed-files
+          if grep -Eq '^(src/am/ec_spire/|sql/|scripts/run_spire_multicluster_.*\.sh)' /tmp/changed-files; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install PostgreSQL build dependencies
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+
+      - name: Install cargo-pgrx
+        if: steps.changes.outputs.run == 'true'
+        run: cargo install cargo-pgrx --version 0.17.0 --locked
+
+      - name: Initialize pgrx for pg18 and pg17
+        if: steps.changes.outputs.run == 'true'
+        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config --pg17 /usr/lib/postgresql/17/bin/pg_config
+
+      - name: Build ecaz CLI
+        if: steps.changes.outputs.run == 'true'
+        run: cargo build -p ecaz-cli
+
+      - name: Run Stage E fault subset case
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          target/debug/ecaz dev spire-multicluster fault-pg18 \
+            --case "${{ matrix.case }}" \
+            --artifact-dir "target/spire-stage-e-ci/${{ matrix.case }}" \
+            --run-id "ci-${{ matrix.case }}"
+
+      - name: Upload Stage E subset artifacts
+        if: always() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spire-stage-e-${{ matrix.case }}
+          path: target/spire-stage-e-ci/${{ matrix.case }}
+
   pgrx-pg17:
     name: pgrx pg17
     runs-on: ubuntu-24.04
