@@ -188,19 +188,20 @@ the FFI entry points that today have only shell-fixture coverage.
 
 Pick one convention and migrate. Current mix is historical drift.
 
-- [ ] Decision: every module uses an external `tests.rs` (or `tests/`
+- [x] Decision: every module uses an external `tests.rs` (or `tests/`
   subdirectory if the test surface is large enough to need a split).
   Inline `#[cfg(test)] mod tests` is removed.
-- [ ] Migrate the inline-test files to the chosen convention:
-  - [ ] `cost.rs` → `cost/tests.rs`
-  - [ ] `dml_frontdoor.rs` → `dml_frontdoor/tests.rs`
-  - [ ] `options.rs` → `options/tests.rs`
-  - [ ] `diagnostics.rs` → `diagnostics/tests.rs`
-  - [ ] `vacuum.rs` → `vacuum/tests.rs`
-  - [ ] `assign.rs` → `assign/tests.rs`
-  - [ ] `quantizer.rs` → `quantizer/tests.rs`
-  - [ ] `custom_scan.rs` already covered by 12b.3.
-- [ ] Document the convention in `docs/SPIRE_DIAGNOSTICS.md` (or a new
+  Decision is recorded in `docs/SPIRE_CODE_LAYOUT.md`.
+- [x] Migrate the inline-test files to the chosen convention:
+  - [x] `cost.rs` → `cost/tests.rs`
+  - [x] `dml_frontdoor.rs` → `dml_frontdoor/tests.rs`
+  - [x] `options.rs` → `options/tests.rs`
+  - [x] `diagnostics.rs` → `diagnostics/tests.rs`
+  - [x] `vacuum.rs` → `vacuum/tests.rs`
+  - [x] `assign.rs` → `assign/tests.rs`
+  - [x] `quantizer.rs` → `quantizer/tests.rs`
+  - [x] `custom_scan.rs` already covered by 12b.3.
+- [x] Document the convention in `docs/SPIRE_DIAGNOSTICS.md` (or a new
   short `docs/SPIRE_CODE_LAYOUT.md`) so the next contributor does not
   reintroduce the drift.
 
