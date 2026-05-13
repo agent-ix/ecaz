@@ -2556,8 +2556,18 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
                 "ec_spire coordinator insert failed to begin remote transaction for node_id {node_id}"
             )
     })?;
+    let cancel_watcher = SpireSyncPostgresCancelWatcher::start(client.cancel_token());
     if let Err(error) = client.batch_execute(remote_sql) {
+        let local_cancel_observed = cancel_watcher.observed_local_cancel();
+        drop(cancel_watcher);
         let _ = client.batch_execute("ROLLBACK");
+        if local_cancel_observed {
+            return Err(coordinator_remote_local_cancel_error(
+                "insert",
+                node_id,
+                postgres_local_cancel_failure_category(),
+            ));
+        }
         let error = postgres_error_message_with_detail(&error);
         return Err(format!(
             "ec_spire coordinator insert remote SQL failed for node_id {node_id}: {error}"
@@ -2571,18 +2581,52 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
         ) {
             Ok(metadata) => metadata,
             Err(error) => {
+                let local_cancel_observed = cancel_watcher.observed_local_cancel();
+                drop(cancel_watcher);
                 let _ = client.batch_execute("ROLLBACK");
+                if local_cancel_observed {
+                    return Err(coordinator_remote_local_cancel_error(
+                        "insert",
+                        node_id,
+                        postgres_local_cancel_failure_category(),
+                    ));
+                }
                 return Err(error);
             }
         };
-    client
-        .batch_execute(&format!(
-            "PREPARE TRANSACTION {}",
-            quote_sql_literal(&prepared_gid)
-        ))
-        .map_err(|error| {
-            spire_remote_prepare_transaction_error("insert", node_id, &error)
-        })?;
+    if let Err(error) = client.batch_execute(&format!(
+        "PREPARE TRANSACTION {}",
+        quote_sql_literal(&prepared_gid)
+    )) {
+        let local_cancel_observed = cancel_watcher.observed_local_cancel();
+        drop(cancel_watcher);
+        let _ = client.batch_execute("ROLLBACK");
+        if local_cancel_observed {
+            return Err(coordinator_remote_local_cancel_error(
+                "insert",
+                node_id,
+                postgres_local_cancel_failure_category(),
+            ));
+        }
+        return Err(spire_remote_prepare_transaction_error(
+            "insert", node_id, &error,
+        ));
+    }
+    let local_cancel_observed = cancel_watcher.observed_local_cancel();
+    drop(cancel_watcher);
+    if local_cancel_observed {
+        coordinator_insert_resolve_remote_prepared(
+            conninfo.clone(),
+            node_id,
+            prepared_gid.clone(),
+            false,
+        );
+        return Err(coordinator_remote_local_cancel_error(
+            "insert",
+            node_id,
+            postgres_local_cancel_failure_category(),
+        ));
+    }
 
     let commit_conninfo = conninfo.clone();
     let commit_gid = prepared_gid.clone();
@@ -3131,6 +3175,63 @@ enum SpireRemoteLocalCancelSource {
 }
 
 const SPIRE_REMOTE_POSTGRES_INTERRUPT_POLL_MS: u64 = 5;
+const SPIRE_SYNC_POSTGRES_CANCEL_NONE: u8 = 0;
+const SPIRE_SYNC_POSTGRES_CANCEL_OBSERVED: u8 = 1;
+
+struct SpireSyncPostgresCancelWatcher {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    observed: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl SpireSyncPostgresCancelWatcher {
+    fn start(cancel_token: postgres::CancelToken) -> Self {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
+            SPIRE_SYNC_POSTGRES_CANCEL_NONE,
+        ));
+        let thread_done = std::sync::Arc::clone(&done);
+        let thread_observed = std::sync::Arc::clone(&observed);
+        let handle = std::thread::Builder::new()
+            .name("ec_spire_sync_remote_cancel".to_owned())
+            .spawn(move || {
+                while !thread_done.load(std::sync::atomic::Ordering::Acquire) {
+                    if postgres_query_cancel_pending() {
+                        thread_observed.store(
+                            SPIRE_SYNC_POSTGRES_CANCEL_OBSERVED,
+                            std::sync::atomic::Ordering::Release,
+                        );
+                        let _ = cancel_token.cancel_query(postgres::NoTls);
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        SPIRE_REMOTE_POSTGRES_INTERRUPT_POLL_MS,
+                    ));
+                }
+            })
+            .ok();
+        Self {
+            done,
+            observed,
+            handle,
+        }
+    }
+
+    fn observed_local_cancel(&self) -> bool {
+        self.observed.load(std::sync::atomic::Ordering::Acquire)
+            != SPIRE_SYNC_POSTGRES_CANCEL_NONE
+    }
+}
+
+impl Drop for SpireSyncPostgresCancelWatcher {
+    fn drop(&mut self) {
+        self.done
+            .store(true, std::sync::atomic::Ordering::Release);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
 
 impl SpireRemoteLocalCancelSource {
     fn production() -> Self {
@@ -3914,6 +4015,16 @@ fn postgres_local_cancel_failure_category() -> &'static str {
 fn is_local_cancellation_failure_category(failure_category: &str) -> bool {
     failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
         || failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT
+}
+
+fn coordinator_remote_local_cancel_error(
+    operation: &str,
+    node_id: u32,
+    failure_category: &str,
+) -> String {
+    format!(
+        "ec_spire coordinator {operation} remote prepare cancelled for node_id {node_id}: {failure_category}"
+    )
 }
 
 fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'static str {

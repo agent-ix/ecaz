@@ -212,12 +212,21 @@ described by reviewer packet `30896`.
     outcome needed to safely choose `COMMIT PREPARED` versus
     `ROLLBACK PREPARED`; operators must use the explicit placement-directory
     runbook until SPIRE records durable prepared-transaction intent metadata.
-- [ ] Bring INSERT 2PC dispatch cancellation to parity with Stage C read
+- [x] Bring INSERT 2PC dispatch cancellation to parity with Stage C read
   cancellation:
-  - [ ] bridge local `InterruptPending` / `QueryCancelPending` to the remote
+  - [x] bridge local `InterruptPending` / `QueryCancelPending` to the remote
     libpq/tokio cancellation path;
-  - [ ] fixture local cancel or statement timeout during slow remote prepare;
-  - [ ] assert remote prepared transactions are rolled back, not orphaned.
+  - [x] fixture local cancel or statement timeout during slow remote prepare;
+  - [x] assert remote prepared transactions are rolled back, not orphaned.
+  - [x] `coordinator_insert_prepare_remote_sql` now wraps the synchronous
+    libpq prepare path with a PostgreSQL cancel watcher that polls local
+    cancel flags, sends the remote cancel token, rolls back open remote
+    transactions, and rolls back any just-prepared remote transaction before
+    local commit callbacks are registered. PG18 fixture
+    `test_ec_spire_insert_prepare_local_cancel_rolls_back` has the loopback
+    remote cancel the coordinator while remote prepare SQL is sleeping, then
+    asserts `local_query_cancelled`, no matching `pg_prepared_xacts`, and no
+    visible remote row.
 - [x] Add `max_prepared_transactions` readiness:
   - [x] document it as required on every remote;
   - [x] check or warn during descriptor registration;

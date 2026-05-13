@@ -17477,6 +17477,36 @@ mod tests {
                 previous_query_cancel_pending,
             })
         }
+
+        unsafe fn clear_pending_for_test() {
+            unsafe extern "C" {
+                fn dlsym(
+                    handle: *mut std::ffi::c_void,
+                    symbol: *const std::ffi::c_char,
+                ) -> *mut std::ffi::c_void;
+            }
+
+            let interrupt_pending_ptr =
+                unsafe { dlsym(std::ptr::null_mut(), b"InterruptPending\0".as_ptr().cast()) }
+                    .cast::<std::ffi::c_int>();
+            let query_cancel_pending_ptr = unsafe {
+                dlsym(
+                    std::ptr::null_mut(),
+                    b"QueryCancelPending\0".as_ptr().cast(),
+                )
+            }
+            .cast::<std::ffi::c_int>();
+            if !interrupt_pending_ptr.is_null() {
+                unsafe {
+                    *interrupt_pending_ptr = 0;
+                }
+            }
+            if !query_cancel_pending_ptr.is_null() {
+                unsafe {
+                    *query_cancel_pending_ptr = 0;
+                }
+            }
+        }
     }
 
     impl Drop for ScopedPgQueryCancelFlags {
@@ -21777,6 +21807,113 @@ mod tests {
             "prepared remote INSERT should not be visible before transaction resolution"
         );
         assert_eq!(placement_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_prepare_local_cancel_rolls_back() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_PREPARE_CANCEL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_insert_prepare_cancel_remote_sql; \
+                 CREATE TABLE ec_spire_insert_prepare_cancel_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_insert_prepare_cancel_remote_idx \
+                     ON ec_spire_insert_prepare_cancel_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote INSERT target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_prepare_cancel_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_prepare_cancel_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_prepare_cancel_coord_idx \
+             ON ec_spire_insert_prepare_cancel_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_insert_prepare_cancel_coord_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        Spi::run(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_insert_prepare_cancel_coord_idx'::regclass, \
+                 21, 24, 'spire/remote/insert_prepare_cancel', \
+                 decode('1234', 'hex'), 'ec_spire_insert_prepare_cancel_remote_idx', \
+                 'active', 9, 1, '0.1.1', '')",
+        )
+        .expect("remote descriptor registration should succeed");
+
+        let local_backend_pid = Spi::get_one::<i32>("SELECT pg_backend_pid()")
+            .expect("local backend pid query should succeed")
+            .expect("local backend pid should exist");
+        let remote_sql = format!(
+            "SELECT pg_cancel_backend({local_backend_pid}); \
+             SELECT pg_sleep(0.30); \
+             INSERT INTO ec_spire_insert_prepare_cancel_remote_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (401, 'cancelled prepare', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('303132333435363738393a3b3c3d3e3f', 'hex'))"
+        );
+        let index_relation = unsafe {
+            open_valid_ec_spire_index(
+                index_oid,
+                "test_ec_spire_insert_remote_prepare_local_cancel",
+            )
+        };
+        let result = unsafe {
+            am::spire_coordinator_insert_prepare_remote_sql(index_relation, 21, 5, &remote_sql)
+        };
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        unsafe { ScopedPgQueryCancelFlags::clear_pending_for_test() };
+
+        let error = result.expect_err("local cancel should abort remote insert prepare");
+        let prepared_gid_prefix = format!("ec_spire_insert_{}_21_5_%", u32::from(index_oid));
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid LIKE $1",
+                &[&prepared_gid_prefix],
+            )
+            .expect("prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        let remote_visible_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_insert_prepare_cancel_remote_sql \
+                  WHERE id = 401",
+                &[],
+            )
+            .expect("remote visibility query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote visibility count should decode");
+
+        assert!(error.contains("local_query_cancelled"), "{error}");
+        assert_eq!(
+            prepared_count, 0,
+            "local cancel should not leave an orphaned remote prepared xact"
+        );
+        assert_eq!(
+            remote_visible_count, 0,
+            "local cancel should roll back the remote INSERT transaction"
+        );
     }
 
     #[pg_test]
