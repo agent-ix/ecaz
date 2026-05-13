@@ -780,6 +780,15 @@ pub(crate) struct SpireRemoteProductionExecutorStateSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionDegradedSkipReportRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) first_skip_category: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteProductionExecutorSessionSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) consistency_mode_source: &'static str,

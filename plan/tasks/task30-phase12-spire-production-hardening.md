@@ -295,8 +295,13 @@ described by reviewer packet `30896`.
 - [ ] Publish and inspect placement metadata that maps selected PIDs to remote
   nodes and local store IDs.
 - [ ] Verify strict mode never mixes incompatible epochs across nodes.
-- [ ] Verify degraded mode reports every skipped or stale remote node with node
+- [x] Verify degraded mode reports every skipped or stale remote node with node
   identity, count, and first skip category.
+  - Evidence: `ec_spire_remote_search_degraded_skip_report(...)` returns one
+    row per degraded-skipped remote dispatch with `node_id`,
+    `skipped_pid_count`, `first_skip_category`, and `status`; unit coverage
+    proves stale-epoch and incompatible-version pre-dispatch blockers are
+    reported as separate skipped nodes in degraded mode.
 - [ ] Add remote-node multi-instance proof that boundary replicas carry the
   same global original-vector identity across leaves, stores, and remotes.
 - [ ] Add boundary-replica manifest freshness fixtures using

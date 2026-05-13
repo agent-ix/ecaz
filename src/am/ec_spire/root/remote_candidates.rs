@@ -4922,6 +4922,25 @@ impl SpireRemoteFanoutExecutor {
         Ok((ready_dispatch_count, failed_dispatch_count, candidate_count))
     }
 
+    fn degraded_skip_report(
+        &self,
+    ) -> Result<Vec<SpireRemoteProductionDegradedSkipReportRow>, String> {
+        let mut rows = Vec::new();
+        for dispatch in &self.dispatches {
+            if dispatch.state != SpireRemoteProductionDispatchState::DegradedSkipped {
+                continue;
+            }
+            rows.push(SpireRemoteProductionDegradedSkipReportRow {
+                requested_epoch: self.requested_epoch,
+                node_id: dispatch.node_id,
+                skipped_pid_count: dispatch.pid_count,
+                first_skip_category: dispatch.degraded_skip_category,
+                status: dispatch.status,
+            });
+        }
+        Ok(rows)
+    }
+
     fn summary(
         &self,
         consistency_mode_source: &'static str,
@@ -5440,6 +5459,19 @@ fn remote_search_production_executor_state_summary_from_dispatch_rows(
         executor.apply_blocked_before_dispatch_degraded_skips();
     }
     executor.summary(consistency_mode_source, consistency_mode)
+}
+
+fn remote_search_production_degraded_skip_report_from_dispatch_rows(
+    requested_epoch: u64,
+    rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    consistency_mode: &str,
+) -> Result<Vec<SpireRemoteProductionDegradedSkipReportRow>, String> {
+    let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, rows);
+    if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
+        executor.apply_blocked_before_dispatch_degraded_skips();
+    }
+    executor.degraded_skip_report()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -6264,6 +6296,34 @@ pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
             requested_epoch,
             &dispatch_rows,
             "function_argument",
+            consistency_mode,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_production_degraded_skip_report_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteProductionDegradedSkipReportRow> {
+    let result = (|| -> Result<Vec<SpireRemoteProductionDegradedSkipReportRow>, String> {
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        remote_search_production_degraded_skip_report_from_dispatch_rows(
+            requested_epoch,
+            &dispatch_rows,
             consistency_mode,
         )
     })();
@@ -10817,6 +10877,32 @@ mod production_executor_state_tests {
         assert_eq!(row.transport_pending_dispatch_count, 1);
         assert_eq!(row.next_executor_step, "production_transport_adapter");
         assert_eq!(row.status, "requires_production_transport_adapter");
+    }
+
+    #[test]
+    fn degraded_skip_report_lists_each_skipped_node() {
+        let dispatch_rows = vec![
+            blocked_dispatch(2, 3, SPIRE_REMOTE_STATUS_STALE_EPOCH),
+            blocked_dispatch(4, 2, SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION),
+            planned_dispatch(5, 1),
+        ];
+        let rows = remote_search_production_degraded_skip_report_from_dispatch_rows(
+            7,
+            &dispatch_rows,
+            "degraded",
+        )
+        .expect("degraded skip report should succeed");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].requested_epoch, 7);
+        assert_eq!(rows[0].node_id, 2);
+        assert_eq!(rows[0].skipped_pid_count, 3);
+        assert_eq!(rows[0].first_skip_category, "stale_epoch");
+        assert_eq!(rows[0].status, "degraded_skipped");
+        assert_eq!(rows[1].node_id, 4);
+        assert_eq!(rows[1].skipped_pid_count, 2);
+        assert_eq!(rows[1].first_skip_category, "incompatible_extension_version");
+        assert_eq!(rows[1].status, "degraded_skipped");
     }
 
     #[test]

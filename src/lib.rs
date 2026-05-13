@@ -11901,6 +11901,73 @@ fn ec_spire_remote_search_production_executor_state_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_degraded_skip_report(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i64),
+        name!(skipped_pid_count, i64),
+        name!(first_skip_category, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_degraded_skip_report requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_degraded_skip_report top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_degraded_skip_report selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_degraded_skip_report")
+    };
+    let rows = unsafe {
+        am::spire_remote_search_production_degraded_skip_report_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.skipped_pid_count).expect("skipped PID count should fit in i64"),
+            row.first_skip_category,
+            row.status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_production_executor_session_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,

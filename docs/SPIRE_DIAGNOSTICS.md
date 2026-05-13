@@ -29,6 +29,9 @@ Start with:
 - `ec_spire_remote_search_production_executor_state_summary(...)` when you need
   the dry production fanout state and C0/C1 counters without conninfo secret
   lookup or socket opens.
+- `ec_spire_remote_search_degraded_skip_report(...)` when degraded mode needs
+  one row per skipped remote node with node ID, skipped PID count, and first
+  skip category.
 - `ec_spire_remote_pipeline_steps(...)` when remote search spans multiple
   libpq/manifest/result diagnostic surfaces and you need one cheap step list.
 
@@ -61,6 +64,7 @@ Start with:
 | `ec_spire_index_maintenance_scheduler_run(index_oid)` | operator | You need a periodic-job entrypoint that reuses the normal maintenance publish path. |
 | `ec_spire_index_allocator_snapshot(index_oid, warn_within)` | operator | You need PID and local vec_id cursor distance-to-exhaustion warnings. |
 | `ec_spire_remote_search_production_executor_state_summary(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need the planned production fanout state plus dry C0/C1 counters without resolving conninfo secrets or opening remote libpq sockets. |
+| `ec_spire_remote_search_degraded_skip_report(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need every degraded-skipped remote node with node ID, skipped PID count, first skip category, and status. |
 | `ec_spire_remote_pipeline_steps(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need one consolidated remote-search pipeline row per dispatch, connection, candidate, heap, manifest, and result step without opening remote libpq connections. |
 | `ec_spire_remote_pipeline_steps_live(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You have already inspected the dry pipeline row and explicitly want live libpq connection, candidate, heap, and coordinator-result probes. |
 
