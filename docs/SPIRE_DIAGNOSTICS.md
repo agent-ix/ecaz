@@ -124,7 +124,12 @@ surface by `(node_id, local_store_id, store_relid)`.
 reports one row per requested PID with its `node_id`, `local_store_id`,
 `store_relid`, placement state, object version, and object bytes. Use it before
 remote fanout when an operator needs to inspect the exact selected PID mapping
-rather than grouped scan counters.
+rather than grouped scan counters. `selection_ordinal` is the 1-indexed
+position of the PID in the `selected_pids` input array. This diagnostic answers
+"where would this PID be served from?" rather than proving end-to-end data
+readability; if it returns fewer rows than requested, check for object-version
+mismatches between the object manifest and placement directory before treating
+the PID as absent.
 `ec_spire_index_scan_placement_snapshot(index_oid, query)` reports the
 scan-touched store groups by `(node_id, local_store_id)`. Local relation-backed
 object reads resolve those diagnostics through bounded store maps keyed by
@@ -162,6 +167,8 @@ global, and surfaces the node/local-store span covered by that identity. The
 snapshot reads coordinator metadata copies for remote placements, so a
 multi-instance readiness fixture can prove one global original-vector identity
 across local and remote placement rows before live remote object reads exist.
+The reported `node_id` and `local_store_id` columns are placement identity, not
+the local coordinator metadata read source.
 `ec_spire_index_boundary_replica_placement_diagnostics(index_oid)` reports the
 operator side of boundary-replica placement health. It groups by `vec_id` and
 surfaces missing replica assignments, stale replica placements, unavailable
@@ -170,7 +177,10 @@ replica placements, skipped replica placements, and the degraded-mode action
 `ec_spire_remote_epoch_manifest_freshness(index_oid)` should be paired with
 that identity snapshot for boundary-replica readiness: it reports whether each
 remote node's persisted epoch-manifest entry is missing, ready, or stale before
-Stage E fixtures rely on the replicated placement metadata.
+Stage E fixtures rely on the replicated placement metadata. When the freshness
+next action is `persist_remote_epoch_manifest` or `refresh_remote_epoch_manifest`,
+run `ec_spire_persist_remote_epoch_manifest(index_oid)` after confirming the
+placement metadata is the intended remote surface.
 `ec_spire_index_scan_placement_snapshot(index_oid, query)` then reports the
 runtime side of that contract with primary versus boundary-replica candidate
 rows, vec-id duplicate candidates suppressed by scan dedupe, and final
