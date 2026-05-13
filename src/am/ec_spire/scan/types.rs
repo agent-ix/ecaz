@@ -183,9 +183,12 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) leaf_route_count: usize,
     pub(super) delta_route_count: usize,
     pub(super) prefetched_object_count: usize,
+    pub(super) prefetched_object_bytes: u64,
+    pub(super) read_batch_count: usize,
     pub(super) scanned_pid_count: usize,
     pub(super) leaf_pid_count: usize,
     pub(super) delta_pid_count: usize,
+    pub(super) delta_decode_count: usize,
     pub(super) candidate_row_count: usize,
     pub(super) leaf_candidate_row_count: usize,
     pub(super) delta_candidate_row_count: usize,
@@ -214,6 +217,8 @@ trait SpireRoutedScanObserver {
     fn routed_leaf(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
     fn routed_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn store_read_batch(&mut self, _epoch: u64, _node_id: u32, _local_store_id: u32) {}
 
     fn prefetched_object(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
@@ -290,19 +295,31 @@ impl SpireScanPlacementDiagnosticsObserver {
         epoch: u64,
         placement: &SpirePlacementEntry,
     ) -> &mut SpireStoreScanDiagnostics {
+        self.entry_by_store(epoch, placement.node_id, placement.local_store_id)
+    }
+
+    fn entry_by_store(
+        &mut self,
+        epoch: u64,
+        node_id: u32,
+        local_store_id: u32,
+    ) -> &mut SpireStoreScanDiagnostics {
         self.by_store
-            .entry((placement.node_id, placement.local_store_id))
+            .entry((node_id, local_store_id))
             .or_insert_with(|| SpireStoreScanDiagnostics {
                 epoch,
-                node_id: placement.node_id,
-                local_store_id: placement.local_store_id,
+                node_id,
+                local_store_id,
                 route_count: 0,
                 leaf_route_count: 0,
                 delta_route_count: 0,
                 prefetched_object_count: 0,
+                prefetched_object_bytes: 0,
+                read_batch_count: 0,
                 scanned_pid_count: 0,
                 leaf_pid_count: 0,
                 delta_pid_count: 0,
+                delta_decode_count: 0,
                 candidate_row_count: 0,
                 leaf_candidate_row_count: 0,
                 delta_candidate_row_count: 0,
@@ -336,8 +353,15 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         entry.delta_route_count += 1;
     }
 
+    fn store_read_batch(&mut self, epoch: u64, node_id: u32, local_store_id: u32) {
+        self.entry_by_store(epoch, node_id, local_store_id)
+            .read_batch_count += 1;
+    }
+
     fn prefetched_object(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
-        self.entry(epoch, placement).prefetched_object_count += 1;
+        let entry = self.entry(epoch, placement);
+        entry.prefetched_object_count += 1;
+        entry.prefetched_object_bytes += u64::from(placement.object_bytes);
     }
 
     fn scanned_leaf(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
@@ -350,6 +374,7 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         let entry = self.entry(epoch, placement);
         entry.scanned_pid_count += 1;
         entry.delta_pid_count += 1;
+        entry.delta_decode_count += 1;
     }
 
     fn delete_delta_row(&mut self, epoch: u64, placement: &SpirePlacementEntry) {

@@ -318,8 +318,15 @@ described by reviewer packet `30896`.
     resolve by `(local_store_id, store_relid) -> stores[index]`; packet `30678`
     reviewed the indexed lookup implementation and its non-contiguous store-id
     coverage.
-- [ ] Add a repeatable local multi-store read-overlap harness with per-store
+- [x] Add a repeatable local multi-store read-overlap harness with per-store
   route, candidate, object-byte, read-batch, and delta-decode counters.
+  - Evidence:
+    `ec_spire_index_scan_local_store_read_overlap_harness(index_oid, query)`
+    reports one row per touched `(node_id, local_store_id)` with route counts,
+    candidate rows, prefetched object bytes, read-batch count, and
+    delta-decode count. The PG18 multi-store SQL fixture asserts two touched
+    store groups, one read batch per store group, positive object bytes, and
+    one selected delta decode after a post-build insert.
 - [x] If PostgreSQL backend constraints keep execution sequential, expose the
   limitation in diagnostics and document the exact future primitive needed to
   improve it.

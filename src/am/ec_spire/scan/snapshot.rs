@@ -413,6 +413,7 @@ fn prefetch_store_object_read_groups(
 ) -> Result<(), String> {
     let mut placements = Vec::new();
     for route_group in route_groups {
+        observer.store_read_batch(epoch, route_group.node_id, route_group.local_store_id);
         collect_store_object_read_group_prefetch_placements(route_group, &mut placements);
     }
     object_store.prefetch_objects(&placements)?;

@@ -278,6 +278,12 @@ multi-NVMe hardware.
 this limitation with `local_store_execution_mode = 'sequential_backend'` and
 reports the exact future primitive as
 `local_store_parallelism_next_step = 'async_or_parallel_store_group_executor'`.
+`ec_spire_index_scan_local_store_read_overlap_harness(index_oid, query)`
+provides the repeatable per-store harness for this boundary. It reports route
+counts, candidate rows, prefetched object bytes, read-batch count, and
+delta-decode count for each touched `(node_id, local_store_id)` so benchmark
+packets can distinguish store-grouped sequential reads from future true
+overlap.
 
 Delta object decoding is shared across local multi-store scans and remote
 candidate endpoints. The selected-leaf candidate collector loads each selected
@@ -310,6 +316,8 @@ row per scan-touched store, including:
 - scanned PID count after degraded skips;
 - visible candidate row count;
 - object bytes read or planned for the query;
+- read-batch and delta-decode counters for the query, via
+  `ec_spire_index_scan_local_store_read_overlap_harness(index_oid, query)`;
 - skipped PID count and placement-state labels.
 - local-store execution mode, read-ahead primitive, and the next parallelism
   primitive needed when execution remains sequential inside one backend, via

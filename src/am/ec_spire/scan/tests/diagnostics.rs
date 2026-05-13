@@ -90,9 +90,12 @@
         assert_eq!(store.leaf_route_count, 1);
         assert_eq!(store.delta_route_count, 1);
         assert_eq!(store.prefetched_object_count, 2);
+        assert!(store.prefetched_object_bytes > 0);
+        assert_eq!(store.read_batch_count, 1);
         assert_eq!(store.scanned_pid_count, 2);
         assert_eq!(store.leaf_pid_count, 1);
         assert_eq!(store.delta_pid_count, 1);
+        assert_eq!(store.delta_decode_count, 1);
         assert_eq!(store.candidate_row_count, 1);
         assert_eq!(store.leaf_candidate_row_count, 0);
         assert_eq!(store.delta_candidate_row_count, 1);
@@ -212,6 +215,9 @@
         assert_eq!(store.scanned_pid_count, 1);
         assert_eq!(store.leaf_pid_count, 1);
         assert_eq!(store.delta_pid_count, 0);
+        assert!(store.prefetched_object_bytes > 0);
+        assert_eq!(store.read_batch_count, 1);
+        assert_eq!(store.delta_decode_count, 0);
         assert_eq!(store.candidate_row_count, 1);
         assert_eq!(store.leaf_candidate_row_count, 1);
         assert_eq!(store.delta_candidate_row_count, 0);

@@ -7415,6 +7415,54 @@ fn ec_spire_index_scan_local_store_execution_snapshot(
     }))
 }
 
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_local_store_read_overlap_harness(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(route_count, i64),
+        name!(leaf_route_count, i64),
+        name!(delta_route_count, i64),
+        name!(candidate_row_count, i64),
+        name!(prefetched_object_bytes, i64),
+        name!(read_batch_count, i64),
+        name!(delta_decode_count, i64),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_index_scan_local_store_read_overlap_harness",
+        )
+    };
+    let rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.effective_nprobe),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::try_from(row.route_count).expect("route count should fit in i64"),
+            i64::try_from(row.leaf_route_count).expect("leaf route count should fit in i64"),
+            i64::try_from(row.delta_route_count).expect("delta route count should fit in i64"),
+            i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+            i64::try_from(row.prefetched_object_bytes)
+                .expect("prefetched object bytes should fit in i64"),
+            i64::try_from(row.read_batch_count).expect("read batch count should fit in i64"),
+            i64::try_from(row.delta_decode_count).expect("delta decode count should fit in i64"),
+        )
+    }))
+}
+
 #[cfg(feature = "pg18")]
 fn ec_spire_local_store_read_ahead_primitive_label() -> &'static str {
     "pg18_read_stream"
@@ -20516,6 +20564,118 @@ mod tests {
         assert_eq!(capped_candidate_row_count, 2);
         assert_eq!(capped_truncated_candidate_row_count, 1);
         assert_eq!(capped_candidate_winner_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_multistore_read_overlap_harness_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_multistore_read_harness \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_multistore_read_harness (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                     FROM generate_series(1, 16) AS d), \
+               4, 42) \
+             FROM generate_series(1, 64) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_multistore_read_harness_idx \
+             ON ec_spire_multistore_read_harness USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH ( \
+                 nlists = 8, \
+                 nprobe = 8, \
+                 rerank_width = 10, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store ec_spire index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_multistore_read_harness (id, embedding) \
+             SELECT 65, encode_to_ecvector(\
+               ARRAY(SELECT (((65 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                     FROM generate_series(1, 16) AS d), \
+               4, 42)",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let store_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness( \
+             'ec_spire_multistore_read_harness_idx'::regclass, \
+             ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                   FROM generate_series(1, 16) AS d)::real[])",
+        )
+        .expect("read-overlap harness query should succeed")
+        .expect("store count should exist");
+        let read_batch_count = Spi::get_one::<i64>(
+            "SELECT sum(read_batch_count)::bigint FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness( \
+             'ec_spire_multistore_read_harness_idx'::regclass, \
+             ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                   FROM generate_series(1, 16) AS d)::real[])",
+        )
+        .expect("read-overlap harness query should succeed")
+        .expect("read batch count should exist");
+        let empty_read_batch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness( \
+             'ec_spire_multistore_read_harness_idx'::regclass, \
+             ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                   FROM generate_series(1, 16) AS d)::real[]) \
+             WHERE read_batch_count = 0",
+        )
+        .expect("read-overlap harness query should succeed")
+        .expect("empty read batch count should exist");
+        let route_count = Spi::get_one::<i64>(
+            "SELECT sum(route_count)::bigint FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness( \
+             'ec_spire_multistore_read_harness_idx'::regclass, \
+             ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                   FROM generate_series(1, 16) AS d)::real[])",
+        )
+        .expect("read-overlap harness query should succeed")
+        .expect("route count should exist");
+        let candidate_row_count = Spi::get_one::<i64>(
+            "SELECT sum(candidate_row_count)::bigint FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness( \
+             'ec_spire_multistore_read_harness_idx'::regclass, \
+             ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                   FROM generate_series(1, 16) AS d)::real[])",
+        )
+        .expect("read-overlap harness query should succeed")
+        .expect("candidate row count should exist");
+        let prefetched_object_bytes = Spi::get_one::<i64>(
+            "SELECT sum(prefetched_object_bytes)::bigint FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness( \
+             'ec_spire_multistore_read_harness_idx'::regclass, \
+             ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                   FROM generate_series(1, 16) AS d)::real[])",
+        )
+        .expect("read-overlap harness query should succeed")
+        .expect("prefetched object bytes should exist");
+        let delta_decode_count = Spi::get_one::<i64>(
+            "SELECT sum(delta_decode_count)::bigint FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness( \
+             'ec_spire_multistore_read_harness_idx'::regclass, \
+             ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                   FROM generate_series(1, 16) AS d)::real[])",
+        )
+        .expect("read-overlap harness query should succeed")
+        .expect("delta decode count should exist");
+
+        assert_eq!(store_count, 2);
+        assert_eq!(read_batch_count, store_count);
+        assert_eq!(empty_read_batch_count, 0);
+        assert!(route_count >= 9);
+        assert!(candidate_row_count >= 65);
+        assert!(prefetched_object_bytes > 0);
+        assert_eq!(delta_decode_count, 1);
     }
 
     #[pg_test]

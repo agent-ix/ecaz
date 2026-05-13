@@ -785,6 +785,8 @@
         let stores = observer.into_stores();
         assert_eq!(stores.len(), 1);
         assert_eq!(stores[0].prefetched_object_count, 2);
+        assert_eq!(stores[0].prefetched_object_bytes, 200);
+        assert_eq!(stores[0].read_batch_count, 1);
     }
 
     #[test]
@@ -889,7 +891,11 @@
         let stores = observer.into_stores();
         assert_eq!(stores.len(), 2);
         assert_eq!(stores[0].prefetched_object_count, 1);
+        assert_eq!(stores[0].prefetched_object_bytes, 100);
+        assert_eq!(stores[0].read_batch_count, 1);
         assert_eq!(stores[1].prefetched_object_count, 1);
+        assert_eq!(stores[1].prefetched_object_bytes, 100);
+        assert_eq!(stores[1].read_batch_count, 1);
     }
 
     #[test]
