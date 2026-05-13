@@ -139,20 +139,20 @@ the FFI entry points that today have only shell-fixture coverage.
 
 ### Structural split
 
-- [ ] Convert `src/am/ec_spire/custom_scan.rs` (2,946 lines) to
+- [x] Convert `src/am/ec_spire/custom_scan.rs` (2,946 lines) to
   `src/am/ec_spire/custom_scan/mod.rs`.
-- [ ] Extract into sibling files:
-  - [ ] `custom_scan/plan_private.rs`: plan-mode and private decode
+- [x] Extract into sibling files:
+  - [x] `custom_scan/plan_private.rs`: plan-mode and private decode
     helpers (current ~992-1170 region).
-  - [ ] `custom_scan/begin_exec.rs`: `ec_spire_begin_custom_scan`,
+  - [x] `custom_scan/begin_exec.rs`: `ec_spire_begin_custom_scan`,
     `ec_spire_exec_custom_scan`, `ec_spire_end_custom_scan`,
     `ec_spire_rescan_custom_scan` FFI thunks
     (current 1673-1778 region) plus their helper state-mgmt functions.
-  - [ ] `custom_scan/dml.rs`: DML-specific CustomScan plan/exec
+  - [x] `custom_scan/dml.rs`: DML-specific CustomScan plan/exec
     helpers.
-  - [ ] `custom_scan/cost_helpers.rs`: cost-glue helpers that
+  - [x] `custom_scan/cost_helpers.rs`: cost-glue helpers that
     `cost.rs` calls into.
-  - [ ] `custom_scan/tests.rs`: relocate the inline tests block
+  - [x] `custom_scan/tests.rs`: relocate the inline tests block
     (current 2621-2945) to a sibling file.
 
 ### RemoteScan test fills (audit-identified gaps)
