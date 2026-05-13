@@ -152,6 +152,11 @@ Phase 13 will push it past 80k.
   tuple-payload and update/delete schema-drift fixtures to
   `src/tests/dml_frontdoor.rs`; `src/tests/mod.rs` now only retains the
   DML concern include, so the `tests/dml_frontdoor.rs` row is closed.
+- Packet `31007` starts `src/tests/diagnostics.rs` by moving the
+  hierarchy/object/delta/options snapshot fixture block with a textual
+  include; later scan-sanity, health, relation-storage, top-graph, and
+  placement diagnostic fixtures remain open, so the row is not yet
+  closed.
 - Packet `31002` starts `src/tests/placement.rs` by moving the placement
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
