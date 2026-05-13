@@ -161,6 +161,10 @@ Phase 13 will push it past 80k.
   health, and relation-storage snapshot fixture block; later top-graph,
   active/allocator, and placement diagnostic fixtures remain open, so the
   row is still not closed.
+- Packet `31011` extends `src/tests/diagnostics.rs` with the active
+  snapshot, large-routing diagnostics, and allocator snapshot fixture
+  block; later top-graph and placement diagnostic fixtures remain open,
+  so the row is still not closed.
 - Packet `31008` starts `src/tests/build.rs` by moving the initial
   boundary-replica, recursive boundary-replica, and PQ-FastScan populated
   build-deferral fixtures with a textual include; later populated-build,
