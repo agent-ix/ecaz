@@ -190,7 +190,7 @@ coordinator-only."
 
 ## Phase 12a.7: Tracker Phrasing Nit (P3 cosmetic)
 
-- [ ] Amend `plan/tasks/task30-phase12-spire-production-hardening.md`
+- [x] Amend `plan/tasks/task30-phase12-spire-production-hardening.md`
   line 26 to clarify Stage E evidence shape:
   "Stage E fault matrix (11 cases) and lifecycle matrix (6 cases) pass
   against the CustomScan build in packet `30895` (matrix archived in
