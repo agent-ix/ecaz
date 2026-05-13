@@ -2074,6 +2074,80 @@ fn ec_spire_register_remote_node_descriptor(
     true
 }
 
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_reap_orphaned_remote_prepared_xacts(
+    node_id: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(node_id, i64),
+        name!(index_oid, i64),
+        name!(served_epoch, i64),
+        name!(xid, i64),
+        name!(gid, String),
+        name!(intent_state, String),
+        name!(coordinator_xid_live, bool),
+        name!(action, String),
+        name!(detail, String),
+    ),
+> {
+    if node_id <= 0 {
+        pgrx::error!("ec_spire_reap_orphaned_remote_prepared_xacts node_id must be greater than 0");
+    }
+    let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+        pgrx::error!("ec_spire_reap_orphaned_remote_prepared_xacts node_id is out of range")
+    });
+    let rows = am::spire_reap_orphaned_remote_prepared_xacts(node_id)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::from(row.node_id),
+            i64::from(row.index_oid),
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::try_from(row.xid).expect("xid should fit in i64"),
+            row.gid,
+            row.intent_state,
+            row.coordinator_xid_live,
+            row.action,
+            row.detail,
+        )
+    }))
+}
+
+#[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ec_spire_reap_all_orphaned_remote_prepared_xacts() -> TableIterator<
+    'static,
+    (
+        name!(node_id, i64),
+        name!(index_oid, i64),
+        name!(served_epoch, i64),
+        name!(xid, i64),
+        name!(gid, String),
+        name!(intent_state, String),
+        name!(coordinator_xid_live, bool),
+        name!(action, String),
+        name!(detail, String),
+    ),
+> {
+    let rows =
+        am::spire_reap_orphaned_remote_prepared_xacts_all().unwrap_or_else(|e| pgrx::error!("{e}"));
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::from(row.node_id),
+            i64::from(row.index_oid),
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::try_from(row.xid).expect("xid should fit in i64"),
+            row.gid,
+            row.intent_state,
+            row.coordinator_xid_live,
+            row.action,
+            row.detail,
+        )
+    }))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_descriptor_readiness(
@@ -31575,6 +31649,144 @@ mod tests {
             "prepared remote DELETE should not be visible before transaction resolution"
         );
         assert_eq!(placement_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_reaper_resolves_lost_prepare_ack_fixture() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_REAPER_LOST_ACK",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_reaper_lost_ack_remote; \
+                 CREATE TABLE ec_spire_reaper_lost_ack_remote \
+                     (id bigint primary key, embedding ecvector, source_identity bytea not null); \
+                 INSERT INTO ec_spire_reaper_lost_ack_remote \
+                     (id, embedding, source_identity) VALUES \
+                 (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('55565758595a5b5c5d5e5f6061626364', 'hex')); \
+                 CREATE INDEX ec_spire_reaper_lost_ack_remote_idx \
+                     ON ec_spire_reaper_lost_ack_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 DROP TABLE IF EXISTS ec_spire_reaper_lost_ack_payload; \
+                 CREATE TABLE ec_spire_reaper_lost_ack_payload (id bigint primary key)",
+            )
+            .expect("loopback reaper fixture should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_reaper_lost_ack_coord \
+             (id bigint primary key, embedding ecvector, source_identity bytea not null)",
+        )
+        .expect("reaper coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_reaper_lost_ack_coord \
+                 (id, embedding, source_identity) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('65666768696a6b6c6d6e6f7071727374', 'hex'))",
+        )
+        .expect("reaper coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_reaper_lost_ack_coord_idx \
+             ON ec_spire_reaper_lost_ack_coord USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("reaper coordinator index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_reaper_lost_ack_coord_idx'::regclass)",
+        )
+        .expect("reaper active epoch query should succeed")
+        .expect("reaper active epoch should exist");
+        let coord_index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_reaper_lost_ack_coord_idx'::regclass::oid",
+        )
+        .expect("reaper index oid query should succeed")
+        .expect("reaper index oid should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_reaper_lost_ack_remote_idx'::regclass::oid)",
+        )
+        .expect("reaper remote identity query should succeed")
+        .expect("reaper remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_reaper_lost_ack_coord_idx'::regclass, \
+                 33, 37, 'spire/remote/reaper_lost_ack', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_reaper_lost_ack_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("reaper descriptor registration should succeed");
+
+        let xid = 987_654_321_u64;
+        let gid = format!(
+            "ec_spire_insert_{}_33_{}_{}",
+            u32::from(coord_index_oid),
+            active_epoch,
+            xid
+        );
+        for row in loopback_client
+            .query("SELECT gid FROM pg_prepared_xacts WHERE gid = $1", &[&gid])
+            .expect("lost-ack stale prepared lookup should succeed")
+        {
+            let stale_gid = row
+                .try_get::<_, String>(0)
+                .expect("stale prepared gid should decode");
+            let _ = loopback_client.batch_execute(&format!(
+                "ROLLBACK PREPARED '{}'",
+                stale_gid.replace('\'', "''")
+            ));
+        }
+        loopback_client
+            .batch_execute(&format!(
+                "BEGIN; \
+                 INSERT INTO ec_spire_reaper_lost_ack_payload VALUES (1); \
+                 PREPARE TRANSACTION '{}'",
+                gid.replace('\'', "''")
+            ))
+            .expect("lost-ack fixture remote prepare should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_prepared_xact_intent \
+                 (index_oid, node_id, served_epoch, xid, gid, intent_state) \
+             VALUES ('{}'::oid, 33, {active_epoch}, {xid}, '{}', 'prepare_requested')",
+            u32::from(coord_index_oid),
+            gid.replace('\'', "''")
+        ))
+        .expect("lost-ack fixture intent insert should succeed");
+
+        let action = Spi::get_one::<String>(&format!(
+            "SELECT action \
+               FROM ec_spire_reap_orphaned_remote_prepared_xacts(33) \
+              WHERE gid = '{}'",
+            gid.replace('\'', "''")
+        ))
+        .expect("lost-ack fixture reaper should run")
+        .expect("lost-ack fixture reaper should return the prepared gid");
+        assert_eq!(action, "rolled_back");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
+                &[&gid],
+            )
+            .expect("lost-ack prepared count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("lost-ack prepared count should decode");
+        assert_eq!(prepared_count, 0);
+        let payload_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM ec_spire_reaper_lost_ack_payload WHERE id = 1",
+                &[],
+            )
+            .expect("lost-ack payload count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("lost-ack payload count should decode");
+        assert_eq!(payload_count, 0);
     }
 
     #[pg_test]

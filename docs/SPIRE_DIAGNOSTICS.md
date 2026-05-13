@@ -346,7 +346,24 @@ its placement row, and its remote prepared transaction is rolled back by the
 transaction callback.
 
 If a coordinator backend crashes after remote prepare and before the xact
-callback resolves the remote transaction, inspect the remote:
+callback resolves the remote transaction, run the operator-driven reaper first:
+
+```sql
+SELECT *
+  FROM ec_spire_reap_orphaned_remote_prepared_xacts(2);
+
+SELECT *
+  FROM ec_spire_reap_all_orphaned_remote_prepared_xacts();
+```
+
+The reaper scans remote `pg_prepared_xacts` for `ec_spire_insert_%` GIDs,
+joins each parsed GID to coordinator
+`ec_spire_remote_prepared_xact_intent`, and rolls back only entries whose
+coordinator top xid is no longer visible and whose intent state is not
+`commit_local`. There is no background worker in v1; operators run this helper
+during incident response and recovery drills.
+
+For manual audit or escalation, inspect the remote:
 
 ```sql
 SELECT gid, prepared, owner, database
@@ -364,7 +381,8 @@ to correlate with logs and coordinator-side evidence while the resolution
 decision remains based on the known coordinator transaction outcome and the
 placement row state for the affected key.
 
-Resolve only after the affected primary key and coordinator outcome are known:
+Manually resolve only after the affected primary key and coordinator outcome
+are known:
 
 1. On the coordinator, inspect `ec_spire_placement` for the parsed
    `index_oid`, `node_id`, `served_epoch`, and the affected primary key.
@@ -380,17 +398,9 @@ Resolve only after the affected primary key and coordinator outcome are known:
    outcome.
 
 If the coordinator transaction outcome or affected primary key cannot be
-established, leave the prepared transaction unresolved and escalate with the
-GID, remote node id, and coordinator index OID. Do not bulk-resolve SPIRE GIDs
-from the remote side alone.
-
-There is intentionally no v1
-`ec_spire_recover_orphaned_prepared_xacts(node_id)` helper. The helper cannot
-determine the affected primary key or the coordinator transaction outcome from
-remote `pg_prepared_xacts` alone, and an automated bulk commit/rollback would
-be less safe than the explicit placement-directory runbook above. Reconsider a
-coordinator-side helper only after SPIRE records enough prepared-transaction
-intent metadata to make the same decision rule machine-checkable.
+established for a `commit_local` row, leave the prepared transaction unresolved
+and escalate with the GID, remote node id, and coordinator index OID. Do not
+bulk-resolve SPIRE GIDs from the remote side alone.
 
 ## Distributed DDL Ordering
 

@@ -630,6 +630,19 @@ pub(crate) struct SpireCoordinatorDeleteRemotePrepareRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemotePreparedXactReaperRow {
+    pub(crate) node_id: u32,
+    pub(crate) index_oid: u32,
+    pub(crate) served_epoch: u64,
+    pub(crate) xid: u64,
+    pub(crate) gid: String,
+    pub(crate) intent_state: String,
+    pub(crate) coordinator_xid_live: bool,
+    pub(crate) action: String,
+    pub(crate) detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireCoordinatorSelectRemoteRow {
     pub(crate) node_id: u32,
     pub(crate) remote_select_sent: bool,

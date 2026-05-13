@@ -88,7 +88,36 @@ before retrying the write workload.
 ## Orphaned Prepared Transaction Recovery
 
 If a coordinator backend crashes after remote prepare and before the local xact
-callback resolves the remote transaction, inspect the remote:
+callback resolves the remote transaction, first run the coordinator-side
+reaper. SPIRE records remote prepared-transaction intent before sending
+`PREPARE TRANSACTION`; the reaper joins remote `ec_spire_insert_%` GIDs to
+that intent metadata and rolls back only entries whose coordinator top
+transaction is no longer visible and whose intent state is not `commit_local`.
+
+```sql
+SELECT *
+  FROM ec_spire_reap_orphaned_remote_prepared_xacts(2);
+
+SELECT *
+  FROM ec_spire_reap_all_orphaned_remote_prepared_xacts();
+```
+
+The reaper is operator-driven in v1. There is no SPIRE background worker or
+periodic automatic sweep; run it during incident response, after a synthetic
+orphan recovery drill, or before resuming writes after a coordinator crash.
+
+The expected actions are:
+
+- `rolled_back`: the remote prepared transaction was rolled back after a
+  matching non-commit intent row and a non-live coordinator top xid;
+- `rolled_back_missing_intent`: the GID parsed as SPIRE-owned, no coordinator
+  intent row remained, and the coordinator top xid was no longer live;
+- `skipped_commit_local`: the coordinator recorded local commit, so do not
+  roll back automatically;
+- `skipped_xid_still_live`: the coordinator transaction still appears active;
+- `rollback_failed`: inspect the returned detail and resolve manually.
+
+For manual audit or escalation, inspect the remote:
 
 ```sql
 SELECT gid, prepared, owner, database
@@ -104,9 +133,9 @@ ec_spire_insert_<index_oid>_<node_id>_<served_epoch>_<top_xid>
 ```
 
 The `ec_spire_insert` prefix is historical and can cover INSERT or DELETE
-prepares. Do not infer the operation type from the prefix. Resolve the prepared
-transaction only after the affected primary key and coordinator transaction
-outcome are known:
+prepares. Do not infer the operation type from the prefix. Resolve any
+manually escalated prepared transaction only after the affected primary key and
+coordinator transaction outcome are known:
 
 - commit an INSERT prepare only when the coordinator transaction committed and
   the expected placement row exists;
@@ -122,10 +151,11 @@ coordinator placement row match the intended outcome. If the coordinator
 outcome or affected key cannot be established, leave the prepared transaction
 unresolved and escalate with the GID, node ID, and coordinator index OID.
 
-There is intentionally no v1
-`ec_spire_recover_orphaned_prepared_xacts(node_id)` helper. Remote
-`pg_prepared_xacts` alone does not contain enough information to choose commit
-versus rollback safely.
+Rows with `intent_state = 'commit_local'` are manual recovery items if the
+remote commit callback failed. Commit them only after confirming the local
+placement-directory outcome matches the intended write. Rows with
+`prepare_requested` or `prepare_acked` and a non-live top xid are safe for the
+operator-driven reaper to roll back.
 
 ## Credential Rotation
 

@@ -343,27 +343,40 @@ coordinator transaction aborts before commit, the remote prepared
 transaction is rolled back; if the coordinator commits, the remote
 prepared transaction is committed. A failed callback resolution leaves the
 prepared transaction visible to normal PostgreSQL prepared-transaction
-operator recovery. Operators identify SPIRE prepared transactions on the
-remote with `pg_prepared_xacts.gid LIKE 'ec_spire_insert_%'`, parse the
-stable `(index_oid, node_id, served_epoch, top_xid)` identity from the GID,
-and resolve only after matching the coordinator transaction outcome to the
-placement-directory state for the affected primary key. For INSERT recovery,
-a committed coordinator transaction with the expected placement row means
-`COMMIT PREPARED`; an aborted or absent placement outcome means
-`ROLLBACK PREPARED`. For DELETE recovery, a committed coordinator
-transaction with the placement row removed means `COMMIT PREPARED`; if the
-placement row remains because the coordinator transaction did not commit,
-use `ROLLBACK PREPARED`. If the coordinator transaction outcome or affected
-primary key cannot be established, leave the prepared transaction in place
-for manual escalation instead of guessing.
+operator recovery.
 
-ADR-069 therefore does not add a v1
-`ec_spire_recover_orphaned_prepared_xacts(node_id)` helper. Remote
-`pg_prepared_xacts` exposes the GID but not the affected primary key or the
-coordinator transaction outcome needed by the recovery rule above. A helper may
-be reconsidered after the coordinator records durable prepared-transaction
-intent metadata that lets it prove the same commit/rollback decision without
-operator judgment.
+The named v1 in-doubt failure mode is **remote-prepare-lost-ack**:
+the remote WAL flush for `PREPARE TRANSACTION` can complete, then the
+coordinator can lose the libpq acknowledgement before the prepared row is
+added to the in-memory rollback sweep. To make that window recoverable, the
+coordinator records prepared-transaction intent in
+`ec_spire_remote_prepared_xact_intent` before sending the remote prepare. The
+minimum durable fields are `(index_oid, node_id, served_epoch, xid, gid,
+intent_state)`, where `intent_state` is one of `prepare_requested`,
+`prepare_acked`, `commit_local`, or `rollback_local`. The coordinator marks
+`commit_local` in a pre-commit callback before the existing remote
+`COMMIT PREPARED` callback runs, so a later sweeper does not roll back a
+prepared transaction whose local transaction committed.
+
+Operators identify SPIRE prepared transactions on the remote with
+`pg_prepared_xacts.gid LIKE 'ec_spire_insert_%'`, parse the stable
+`(index_oid, node_id, served_epoch, top_xid)` identity from the GID, and use
+the coordinator intent row as the automated decision source. The operator
+entrypoint `ec_spire_reap_orphaned_remote_prepared_xacts(node_id)` scans one
+remote; `ec_spire_reap_all_orphaned_remote_prepared_xacts()` scans every
+active registered remote. The reaper rolls back a SPIRE GID only when the
+coordinator top transaction is no longer visible and the intent state is not
+`commit_local`. A parsed GID with no intent row is rolled back only under that
+same non-live top-xid rule; this covers the local-abort half of the lost-ack
+window while preserving committed local transactions that reached the
+pre-commit intent mark. Entries marked `commit_local` remain operator-visible
+manual recovery items if the remote commit callback itself failed.
+
+The reaper remains **operator-driven** in v1 rather than a SPIRE background
+worker. A background worker would need cadence, failure notification, and
+multi-coordinator ownership rules that ADR-069 has not accepted yet. The
+operator-driven helper is enough for Phase 13 recovery drills and keeps the
+transaction-resolution policy explicit.
 
 The remote shard exposes `ec_spire_remote_insert_tuple_payload(index_oid,
 row_payload, requested_columns)` as the typed INSERT endpoint the
@@ -655,11 +668,10 @@ when their use cases warrant. They are listed so the deferral is visible.
   change, automatically migrate those rows to their new shards.
 - **Multi-coordinator deployments** (future ADR). v1 assumes one
   coordinator.
-- **Automated orphaned prepared-transaction recovery helper** (future
-  ADR). A safe `ec_spire_recover_orphaned_prepared_xacts(node_id)` helper
-  requires durable coordinator-side intent metadata that records the GID,
-  affected primary key, and enough transaction outcome evidence to make the
-  documented manual commit/rollback rule machine-checkable.
+- **Background orphaned prepared-transaction recovery** (future ADR). The
+  v1 helper is operator-driven. A future background worker needs cadence,
+  failure notification, and multi-coordinator ownership rules before it can
+  resolve prepared transactions automatically.
 
 ## Consequences
 

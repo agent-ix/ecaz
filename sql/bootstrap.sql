@@ -153,6 +153,33 @@ CREATE TABLE ec_spire_remote_node_descriptor (
     PRIMARY KEY (coordinator_index_oid, node_id)
 );
 
+CREATE TABLE ec_spire_remote_prepared_xact_intent (
+    index_oid oid NOT NULL,
+    node_id integer NOT NULL CHECK (node_id > 0),
+    served_epoch bigint NOT NULL CHECK (served_epoch >= 0),
+    xid bigint NOT NULL CHECK (xid >= 0),
+    gid text NOT NULL CHECK (
+        length(gid) > 0 AND gid LIKE 'ec_spire_insert_%'
+    ),
+    intent_state text NOT NULL CHECK (
+        intent_state IN (
+            'prepare_requested',
+            'prepare_acked',
+            'commit_local',
+            'rollback_local'
+        )
+    ),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (gid)
+);
+
+CREATE INDEX ec_spire_remote_prepared_xact_intent_by_node
+    ON ec_spire_remote_prepared_xact_intent (node_id, intent_state);
+
+CREATE INDEX ec_spire_remote_prepared_xact_intent_by_index
+    ON ec_spire_remote_prepared_xact_intent (index_oid, node_id, served_epoch);
+
 CREATE TABLE ec_spire_remote_epoch_manifest (
     coordinator_index_oid oid NOT NULL,
     active_epoch bigint NOT NULL CHECK (active_epoch > 0),

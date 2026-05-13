@@ -82,6 +82,8 @@ pub(crate) use self::ec_spire::{
     index_selected_pid_placement_snapshot as spire_index_selected_pid_placement_snapshot,
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     index_writer_identity_snapshot as spire_index_writer_identity_snapshot,
+    reap_orphaned_remote_prepared_xacts as spire_reap_orphaned_remote_prepared_xacts,
+    reap_orphaned_remote_prepared_xacts_all as spire_reap_orphaned_remote_prepared_xacts_all,
     remote_catalog_lifecycle_contract_rows as spire_remote_catalog_lifecycle_contract_rows,
     remote_conninfo_secret_provider_lookup_key as spire_remote_conninfo_secret_provider_lookup_key,
     remote_conninfo_secret_resolution_contract_rows as spire_remote_conninfo_secret_resolution_contract_rows,

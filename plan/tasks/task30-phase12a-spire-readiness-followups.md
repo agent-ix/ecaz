@@ -36,31 +36,31 @@ verification work cannot silently regress Phase 12 closure.
 Source: review packet `30982`, finding "In-doubt prepared txn on
 PREPARE-network-timeout."
 
-- [ ] Document the in-doubt window: if `PREPARE TRANSACTION` ack is lost
+- [x] Document the in-doubt window: if `PREPARE TRANSACTION` ack is lost
   after remote WAL-flush, the prepared row is not in `prepared_rows` in
   `run_insert_prepare_requests_with_local_cancel_source`
   (`src/am/ec_spire/root/remote_candidates.rs:3463-3472`), so the outer
   rollback sweep does not visit it. Add this to ADR-069 as a named
   failure mode.
-- [ ] Record durable prepared-transaction intent on the coordinator so a
+- [x] Record durable prepared-transaction intent on the coordinator so a
   reaper can decide commit vs rollback without consulting the remote
   `pg_prepared_xacts` row alone. Minimum metadata:
   `(index_oid, node_id, served_epoch, xid, gid, intent_state)` where
   `intent_state` ∈ {`prepare_requested`, `prepare_acked`, `commit_local`,
   `rollback_local`}.
-- [ ] Add `ec_spire_reap_orphaned_remote_prepared_xacts(node_id)` that:
-  - [ ] scans the remote's `pg_prepared_xacts` for `ec_spire_insert_*`
+- [x] Add `ec_spire_reap_orphaned_remote_prepared_xacts(node_id)` that:
+  - [x] scans the remote's `pg_prepared_xacts` for `ec_spire_insert_*`
     GIDs;
-  - [ ] joins each GID against coordinator intent metadata;
-  - [ ] rolls back any GID whose coordinator top-transaction OID is no
+  - [x] joins each GID against coordinator intent metadata;
+  - [x] rolls back any GID whose coordinator top-transaction OID is no
     longer live and whose intent state is not `commit_local`;
-  - [ ] returns one row per resolved GID with action taken.
-- [ ] Add an operator-runnable entrypoint that sweeps all registered
+  - [x] returns one row per resolved GID with action taken.
+- [x] Add an operator-runnable entrypoint that sweeps all registered
   remotes in one call.
-- [ ] Fixture: simulate a lost-ack window by injecting a panic between
+- [x] Fixture: simulate a lost-ack window by injecting a panic between
   remote WAL-flush of `PREPARE TRANSACTION` and the libpq ack. Verify
   the reaper resolves the orphan with no manual SQL.
-- [ ] Decide whether to run the reaper as a SPIRE background worker on
+- [x] Decide whether to run the reaper as a SPIRE background worker on
   a configurable interval, or leave it operator-driven. Record decision
   in ADR-069 and `docs/SPIRE_LIBPQ_RUNBOOK.md`.
 
