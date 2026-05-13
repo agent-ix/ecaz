@@ -128,6 +128,10 @@ Phase 13 will push it past 80k.
   `src/tests/custom_scan.rs` with a textual include so fixture names and
   pg_schema scope remain unchanged; the other concern-specific files
   remain open.
+- Packet `30999` starts `src/tests/remote_search.rs` by moving the first
+  contiguous remote-search contract fixture block with a textual include;
+  later tuple-payload, libpq, remote-node, and degraded-mode fixtures
+  remain open, so the `tests/remote_search.rs` row is not yet closed.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
