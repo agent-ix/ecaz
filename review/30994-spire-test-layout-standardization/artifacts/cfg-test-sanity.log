@@ -1,0 +1,5 @@
+Script started on 2026-05-13 12:02:07-07:00 [<not executed on terminal>]
+src/am/ec_spire/meta/root_control.rs
+29:    #[cfg(test)]
+
+Script done on 2026-05-13 12:02:07-07:00 [COMMAND_EXIT_CODE="0"]
