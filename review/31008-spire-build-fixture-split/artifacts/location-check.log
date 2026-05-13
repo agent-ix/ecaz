@@ -1,0 +1,7 @@
+Script started on 2026-05-13 16:35:26-07:00 [<not executed on terminal>]
+src/tests/build.rs
+2:    fn test_ec_spire_boundary_replica_build_writes_and_dedupes_scan() {
+136:    fn test_ec_spire_recursive_boundary_replica_build_dedupes() {
+209:    fn test_ec_spire_pq_fastscan_populated_build_reports_deferral() {
+
+Script done on 2026-05-13 16:35:26-07:00 [COMMAND_EXIT_CODE="0"]
