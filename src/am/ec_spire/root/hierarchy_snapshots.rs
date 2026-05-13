@@ -179,6 +179,9 @@ fn remote_search_exact_heap_score(
     if !inner_product.is_finite() {
         return Err("ec_spire remote heap resolution produced a non-finite score".to_owned());
     }
+    // Keep heap-resolution scores in PostgreSQL `<#>` order-by convention:
+    // negative inner product, where lower values are better. Packet 30980
+    // records the local-readiness recall bug fixed by this sign contract.
     Ok(-inner_product)
 }
 
