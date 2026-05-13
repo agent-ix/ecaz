@@ -39,6 +39,7 @@ A local production-readiness smoke packet should include:
   reachable;
 - 2PC readiness, cancellation/failure behavior, and orphaned prepared xact
   operator guidance;
+- libpq security and operations coverage from `docs/SPIRE_LIBPQ_RUNBOOK.md`;
 - placement, local-store, and boundary-replica diagnostics;
 - local counters for recall, latency, object bytes, route counts, candidate
   counts, heap rows, fanout, timeout/cancel counts, strict failures, degraded

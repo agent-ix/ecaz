@@ -4,6 +4,12 @@ SPIRE diagnostics are read-only SQL functions for inspecting the currently
 published index state. They are operator-facing triage surfaces, not recall or
 latency measurements.
 
+For remote libpq security and operations, including `sslmode` preservation,
+raw-conninfo non-exposure, sanitized auth/certificate failures,
+`max_prepared_transactions`, orphaned prepared xact recovery, credential
+rotation deferral, and audit-log deferral, see
+`docs/SPIRE_LIBPQ_RUNBOOK.md`.
+
 Start with:
 
 - `ec_spire_index_health_snapshot(index_oid)` for a compact health summary and

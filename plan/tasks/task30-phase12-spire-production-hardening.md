@@ -363,10 +363,14 @@ described by reviewer packet `30896`.
 - [ ] Publish local capacity targets for maximum remotes, maximum concurrent
   coordinator queries, maximum concurrent writers, maximum work per remote,
   maximum PIDs per node, and expected overload/degraded behavior.
-- [ ] Include libpq security and operations in the runbook:
+- [x] Include libpq security and operations in the runbook:
   `sslmode` preservation, raw-conninfo non-exposure, sanitized
   auth/certificate failures, credential-rotation deferral, audit-log deferral,
   `max_prepared_transactions`, and orphaned-prepared-xact recovery.
+  - Evidence: `docs/SPIRE_LIBPQ_RUNBOOK.md` defines the connection security
+    contract, sanitized strict/degraded failure behavior, prepared-transaction
+    readiness, orphaned prepared xact recovery, credential-rotation deferral,
+    and audit-log deferral; `docs/SPIRE_DIAGNOSTICS.md` links operators to it.
 - [x] Distinguish local functionality, local production-readiness smoke, and
   AWS/RDS product-scale evidence in the docs.
   - Evidence: `docs/SPIRE_LOCAL_READINESS.md` defines the three evidence labels,
