@@ -1,0 +1,8 @@
+Script started on 2026-05-13 15:22:12-07:00 [<not executed on terminal>]
+plan/tasks/task30-phase12b-spire-cleanup.md
+27:  - `src/am/ec_spire/root/remote_candidates.rs` = 12,405 lines (kitchen
+60:- [x] Convert `src/am/ec_spire/root/remote_candidates.rs` to
+61:  `src/am/ec_spire/root/remote_candidates/mod.rs` with public re-exports
+223:- [x] Rename `src/am/ec_spire/root/` to `src/am/ec_spire/coordinator/`.
+
+Script done on 2026-05-13 15:22:12-07:00 [COMMAND_EXIT_CODE="0"]
