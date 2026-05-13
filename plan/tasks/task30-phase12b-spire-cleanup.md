@@ -144,6 +144,10 @@ Phase 13 will push it past 80k.
   primitive-plan helper fixture block; earlier select-plan and
   replacement-decision SQL fixtures remain open, so the row is still not
   closed.
+- Packet `31005` extends `src/tests/dml_frontdoor.rs` with the earlier
+  PK-select/custom-scan plan fixtures and replacement-decision SQL
+  fixture; broader coordinator update/delete/select tuple-payload SQL
+  fixtures remain in `src/tests/mod.rs`, so the row is still not closed.
 - Packet `31002` starts `src/tests/placement.rs` by moving the placement
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
