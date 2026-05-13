@@ -342,8 +342,14 @@ described by reviewer packet `30896`.
     `skip_and_report`; the PG18 fixture rewrites a boundary-replica leaf
     through unavailable, skipped, and stale states and verifies each diagnostic
     status/action.
-- [ ] Preserve and periodically rerun the full Stage E fault/lifecycle matrix
+- [x] Preserve and periodically rerun the full Stage E fault/lifecycle matrix
   against the current CustomScan path while this hardening proceeds.
+  - Evidence: packet `30961` reruns the CustomScan read proof plus the full
+    Stage E matrix against the current branch: 11/11 fault cases report
+    `stage_e_fault_<case>_passed=true`, all 6 lifecycle cases report
+    `stage_e_lifecycle_<case>_passed=true`, and the CustomScan read proof
+    reports `Custom Scan (EcSpireDistributedScan)` plus
+    `SPIRE multicluster CustomScan read passed`.
 
 ## Phase 12.8: Local Multi-Store and Multi-NVMe Readiness
 
