@@ -204,6 +204,52 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_spire_multicluster_smoke_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "spire-multicluster",
+            "smoke-pg18",
+            "--artifact-dir",
+            "review/30968-spire-multicluster-cli-smoke-insert/artifacts",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::SpireMulticluster { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_spire_multicluster_insert_read_after_customscan_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "spire-multicluster",
+            "insert-read-after-customscan-pg18",
+            "--artifact-dir",
+            "review/30968-spire-multicluster-cli-smoke-insert/artifacts",
+            "--insert-mode",
+            "trigger",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::SpireMulticluster { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_spire_pipeline_remote_tuple_transport() {
         let cli = Cli::try_parse_from([
             "ecaz",

@@ -430,6 +430,10 @@ described by reviewer packet `30896`.
 - [ ] Extend `ecaz` with setup, load, query, teardown, and benchmark commands
   for the local distributed SPIRE fixture when shell scripts become repeated
   operator workflows.
+  - [x] `ecaz dev spire-multicluster` now exposes the baseline PG18
+    multicluster smoke fixture and INSERT-after-CustomScan read fixture through
+    `smoke-pg18` and `insert-read-after-customscan-pg18`, including
+    packet-local artifact/log controls and skip-install/run-dir options.
 - [ ] Add or extend `ecaz bench spire-pipeline` for distributed recall,
   latency, and counter capture across local instances.
   - [x] `ecaz bench spire-pipeline` can now optionally emit coordinator query

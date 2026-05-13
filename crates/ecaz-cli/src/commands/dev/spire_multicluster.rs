@@ -1,4 +1,4 @@
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{bail, Context, Result};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -10,9 +10,15 @@ use super::support::{
 
 #[derive(Subcommand, Debug)]
 pub enum SpireMulticlusterCommand {
+    /// Run the PG18 one-coordinator/one-remote baseline smoke fixture.
+    #[command(name = "smoke-pg18")]
+    SmokePg18(SmokePg18Args),
     /// Run the PG18 one-coordinator/one-remote CustomScan read fixture.
     #[command(name = "customscan-read-pg18")]
     CustomScanReadPg18(CustomScanReadPg18Args),
+    /// Run the PG18 INSERT followed by CustomScan read fixture.
+    #[command(name = "insert-read-after-customscan-pg18")]
+    InsertReadAfterCustomScanPg18(InsertReadAfterCustomScanPg18Args),
     /// Run the PG18 one-coordinator/two-remote transport-overlap fixture.
     TransportOverlapPg18(TransportOverlapPg18Args),
     /// Run a PG18 Stage E fault-matrix fixture case.
@@ -24,8 +30,12 @@ pub enum SpireMulticlusterCommand {
 impl SpireMulticlusterCommand {
     pub async fn run(self, _database: &str) -> Result<()> {
         match self {
+            SpireMulticlusterCommand::SmokePg18(args) => run_smoke_pg18(args).await,
             SpireMulticlusterCommand::CustomScanReadPg18(args) => {
                 run_customscan_read_pg18(args).await
+            }
+            SpireMulticlusterCommand::InsertReadAfterCustomScanPg18(args) => {
+                run_insert_read_after_customscan_pg18(args).await
             }
             SpireMulticlusterCommand::TransportOverlapPg18(args) => {
                 run_transport_overlap_pg18(args).await
@@ -34,6 +44,53 @@ impl SpireMulticlusterCommand {
             SpireMulticlusterCommand::LifecyclePg18(args) => run_stage_e_lifecycle_pg18(args).await,
         }
     }
+}
+
+#[derive(Args, Debug)]
+pub struct SmokePg18Args {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+
+    /// Explicit PostgreSQL bin directory. Defaults to the newest matching pgrx install.
+    #[arg(long)]
+    pgbin: Option<PathBuf>,
+
+    /// Store fixture and PostgreSQL logs in a review packet artifact directory.
+    #[arg(long)]
+    artifact_dir: Option<PathBuf>,
+
+    /// Run directory. Defaults to the script-owned target/ path.
+    #[arg(long)]
+    run_dir: Option<PathBuf>,
+
+    /// Store PostgreSQL logs outside the run directory.
+    #[arg(long)]
+    log_dir: Option<PathBuf>,
+
+    /// Tee fixture stdout/stderr to this file.
+    #[arg(long)]
+    smoke_log: Option<PathBuf>,
+
+    /// Coordinator PostgreSQL port.
+    #[arg(long)]
+    coord_port: Option<u16>,
+
+    /// Remote PostgreSQL port.
+    #[arg(long)]
+    remote_port: Option<u16>,
+
+    /// Run id used in the default run directory.
+    #[arg(long)]
+    run_id: Option<String>,
+
+    /// Skip cargo pgrx install before starting fixture clusters.
+    #[arg(long)]
+    skip_install: bool,
 }
 
 #[derive(Args, Debug)]
@@ -81,6 +138,78 @@ pub struct CustomScanReadPg18Args {
     /// Skip cargo pgrx install before starting fixture clusters.
     #[arg(long)]
     skip_install: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct InsertReadAfterCustomScanPg18Args {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+
+    /// Explicit PostgreSQL bin directory. Defaults to the newest matching pgrx install.
+    #[arg(long)]
+    pgbin: Option<PathBuf>,
+
+    /// Store fixture and PostgreSQL logs in a review packet artifact directory.
+    #[arg(long)]
+    artifact_dir: Option<PathBuf>,
+
+    /// Run directory. Defaults to the script-owned target/ path.
+    #[arg(long)]
+    run_dir: Option<PathBuf>,
+
+    /// Store PostgreSQL logs outside the run directory.
+    #[arg(long)]
+    log_dir: Option<PathBuf>,
+
+    /// Tee fixture stdout/stderr to this file.
+    #[arg(long)]
+    smoke_log: Option<PathBuf>,
+
+    /// Coordinator PostgreSQL port.
+    #[arg(long)]
+    coord_port: Option<u16>,
+
+    /// Remote PostgreSQL port.
+    #[arg(long)]
+    remote_port: Option<u16>,
+
+    /// Insert path to exercise.
+    #[arg(long, value_enum, default_value_t = InsertReadMode::Helper)]
+    insert_mode: InsertReadMode,
+
+    /// Run id used in the default run directory.
+    #[arg(long)]
+    run_id: Option<String>,
+
+    /// Skip cargo pgrx install before starting fixture clusters.
+    #[arg(long)]
+    skip_install: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum InsertReadMode {
+    Helper,
+    Trigger,
+}
+
+impl InsertReadMode {
+    fn as_script_value(self) -> &'static str {
+        match self {
+            Self::Helper => "helper",
+            Self::Trigger => "trigger",
+        }
+    }
+}
+
+impl std::fmt::Display for InsertReadMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_script_value())
+    }
 }
 
 #[derive(Args, Debug)]
@@ -386,6 +515,63 @@ fn parse_stage_e_lifecycle_case(value: &str) -> std::result::Result<StageELifecy
     }
 }
 
+async fn run_smoke_pg18(args: SmokePg18Args) -> Result<()> {
+    if args.pg != 18 {
+        bail!("smoke-pg18 requires --pg 18, got {}", args.pg);
+    }
+    let repo_root = repo_root()?;
+    let pgbin = match args.pgbin {
+        Some(path) => path,
+        None => {
+            let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+            find_pgrx_install(args.pg, &pgrx_home)?.bin_dir
+        }
+    };
+    let script = repo_root.join("scripts/run_spire_multicluster_pg18_smoke.sh");
+    if !script.is_file() {
+        bail!(
+            "SPIRE PG18 smoke fixture script is missing: {}",
+            script.display()
+        );
+    }
+
+    crate::ecaz_println!("[spire-multicluster] repo={}", repo_root.display());
+    crate::ecaz_println!("[spire-multicluster] pgbin={}", pgbin.display());
+    if let Some(artifact_dir) = &args.artifact_dir {
+        crate::ecaz_println!(
+            "[spire-multicluster] artifact_dir={}",
+            artifact_dir.display()
+        );
+    }
+
+    let mut command = Command::new("bash");
+    command
+        .arg(&script)
+        .arg("--pgbin")
+        .arg(&pgbin)
+        .current_dir(&repo_root)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    push_path_arg(&mut command, "--artifact-dir", args.artifact_dir.as_ref());
+    push_path_arg(&mut command, "--run-dir", args.run_dir.as_ref());
+    push_path_arg(&mut command, "--log-dir", args.log_dir.as_ref());
+    push_path_arg(&mut command, "--smoke-log", args.smoke_log.as_ref());
+    push_u16_arg(&mut command, "--coord-port", args.coord_port);
+    push_u16_arg(&mut command, "--remote-port", args.remote_port);
+    if let Some(run_id) = args.run_id {
+        command.arg("--run-id").arg(run_id);
+    }
+    if args.skip_install {
+        command.arg("--skip-install");
+    }
+
+    run_status(command)
+        .await
+        .wrap_err("running SPIRE PG18 multicluster smoke fixture")
+}
+
 async fn run_customscan_read_pg18(args: CustomScanReadPg18Args) -> Result<()> {
     if args.pg != 18 {
         bail!("customscan-read-pg18 requires --pg 18, got {}", args.pg);
@@ -441,6 +627,75 @@ async fn run_customscan_read_pg18(args: CustomScanReadPg18Args) -> Result<()> {
     run_status(command)
         .await
         .wrap_err("running SPIRE PG18 CustomScan read fixture")
+}
+
+async fn run_insert_read_after_customscan_pg18(
+    args: InsertReadAfterCustomScanPg18Args,
+) -> Result<()> {
+    if args.pg != 18 {
+        bail!(
+            "insert-read-after-customscan-pg18 requires --pg 18, got {}",
+            args.pg
+        );
+    }
+    let repo_root = repo_root()?;
+    let pgbin = match args.pgbin {
+        Some(path) => path,
+        None => {
+            let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+            find_pgrx_install(args.pg, &pgrx_home)?.bin_dir
+        }
+    };
+    let script =
+        repo_root.join("scripts/run_spire_multicluster_insert_read_after_customscan_pg18.sh");
+    if !script.is_file() {
+        bail!(
+            "SPIRE INSERT/read-after-CustomScan fixture script is missing: {}",
+            script.display()
+        );
+    }
+
+    crate::ecaz_println!("[spire-multicluster] repo={}", repo_root.display());
+    crate::ecaz_println!("[spire-multicluster] pgbin={}", pgbin.display());
+    crate::ecaz_println!(
+        "[spire-multicluster] insert_mode={}",
+        args.insert_mode.as_script_value()
+    );
+    if let Some(artifact_dir) = &args.artifact_dir {
+        crate::ecaz_println!(
+            "[spire-multicluster] artifact_dir={}",
+            artifact_dir.display()
+        );
+    }
+
+    let mut command = Command::new("bash");
+    command
+        .arg(&script)
+        .arg("--pgbin")
+        .arg(&pgbin)
+        .arg("--insert-mode")
+        .arg(args.insert_mode.as_script_value())
+        .current_dir(&repo_root)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    push_path_arg(&mut command, "--artifact-dir", args.artifact_dir.as_ref());
+    push_path_arg(&mut command, "--run-dir", args.run_dir.as_ref());
+    push_path_arg(&mut command, "--log-dir", args.log_dir.as_ref());
+    push_path_arg(&mut command, "--smoke-log", args.smoke_log.as_ref());
+    push_u16_arg(&mut command, "--coord-port", args.coord_port);
+    push_u16_arg(&mut command, "--remote-port", args.remote_port);
+    if let Some(run_id) = args.run_id {
+        command.arg("--run-id").arg(run_id);
+    }
+    if args.skip_install {
+        command.arg("--skip-install");
+    }
+
+    run_status(command)
+        .await
+        .wrap_err("running SPIRE PG18 INSERT/read-after-CustomScan fixture")
 }
 
 async fn run_transport_overlap_pg18(args: TransportOverlapPg18Args) -> Result<()> {
