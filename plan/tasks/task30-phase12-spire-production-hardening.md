@@ -131,6 +131,9 @@ described by reviewer packet `30896`.
     `ecaz bench spire-pipeline --remote-tuple-transport` so the measurement
     can force JSON fallback versus `pg_binary_attr_v1` without editing fixture
     scripts.
+  - [x] Add `ecaz bench spire-pipeline --query-metric-projection-columns` so
+    the benchmark can project payload columns during coordinator KNN latency
+    measurement instead of timing id-only scans.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path
   needs it.

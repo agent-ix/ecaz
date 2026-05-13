@@ -83,6 +83,10 @@ pub struct SpirePipelineArgs {
     /// k for optional query latency and recall metrics.
     #[arg(long, default_value_t = 10)]
     pub query_metric_k: usize,
+    /// Extra corpus columns to project while measuring coordinator KNN query
+    /// latency. `id` is always selected first for recall accounting.
+    #[arg(long, value_delimiter = ',')]
+    pub query_metric_projection_columns: Vec<String>,
     /// Write the pipeline report to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -169,7 +173,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         psql::prefer_ordered_ann_path(&client).await?;
     }
     let query_metric_stmt = if query_metrics_enabled {
-        let sql = super::recall::build_knn_sql(&EC_SPIRE, &corpus_table);
+        let sql = build_query_metric_sql(&corpus_table, &args.query_metric_projection_columns);
         Some(
             client
                 .prepare(&sql)
@@ -323,6 +327,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metrics_enabled,
         include_recall: args.include_recall,
         query_metric_k: args.query_metric_k,
+        query_metric_projection_columns: &args.query_metric_projection_columns,
         local_store_overlap_enabled: args.include_local_store_overlap,
         routing: &routing,
         local: &local,
@@ -355,6 +360,11 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     if args.query_metric_k == 0 {
         return Err(eyre!("--query-metric-k must be >= 1"));
     }
+    for column in &args.query_metric_projection_columns {
+        profiles::validate_ident(column).wrap_err_with(|| {
+            format!("invalid --query-metric-projection-columns entry {column:?}")
+        })?;
+    }
     for pid in &args.remote_selected_pids {
         if *pid < 0 {
             return Err(eyre!("--remote-selected-pids entries must be >= 0"));
@@ -382,6 +392,22 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn build_query_metric_sql(corpus_table: &str, projection_columns: &[String]) -> String {
+    let mut select_columns = vec!["id".to_owned()];
+    for column in projection_columns {
+        if column != "id" && !select_columns.iter().any(|existing| existing == column) {
+            select_columns.push(column.clone());
+        }
+    }
+    format!(
+        "SELECT {select_columns} FROM {corpus_table} \
+         ORDER BY embedding <#> \
+         $1::real[] \
+         LIMIT $2",
+        select_columns = select_columns.join(", ")
+    )
 }
 
 fn query_matrix(queries: &[QueryVector]) -> Result<Array2<f32>> {
@@ -1181,6 +1207,7 @@ struct ReportInput<'a> {
     query_metrics_enabled: bool,
     include_recall: bool,
     query_metric_k: usize,
+    query_metric_projection_columns: &'a [String],
     local_store_overlap_enabled: bool,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
@@ -1221,7 +1248,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_recall: {query_recall}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -1235,6 +1262,11 @@ fn render_header(input: &ReportInput<'_>) -> String {
         local_store_overlap = input.local_store_overlap_enabled,
         query_metrics = input.query_metrics_enabled,
         query_metric_k = input.query_metric_k,
+        query_metric_projection_columns = if input.query_metric_projection_columns.is_empty() {
+            "id".to_owned()
+        } else {
+            format!("id,{}", input.query_metric_projection_columns.join(","))
+        },
         query_recall = input.include_recall,
     )
 }
@@ -1505,6 +1537,7 @@ mod tests {
             include_query_metrics: false,
             include_recall: false,
             query_metric_k: 10,
+            query_metric_projection_columns: vec![],
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,
@@ -1562,6 +1595,13 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--query-metric-k"));
+
+        let mut args = default_args();
+        args.query_metric_projection_columns = vec!["title;drop".to_owned()];
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--query-metric-projection-columns"));
     }
 
     #[test]
@@ -1590,6 +1630,21 @@ mod tests {
     }
 
     #[test]
+    fn spire_pipeline_query_metric_sql_projects_payload_columns() {
+        assert_eq!(
+            build_query_metric_sql("corpus", &[]),
+            "SELECT id FROM corpus ORDER BY embedding <#> $1::real[] LIMIT $2"
+        );
+        assert_eq!(
+            build_query_metric_sql(
+                "corpus",
+                &["title".to_owned(), "body".to_owned(), "id".to_owned()]
+            ),
+            "SELECT id, title, body FROM corpus ORDER BY embedding <#> $1::real[] LIMIT $2"
+        );
+    }
+
+    #[test]
     fn spire_pipeline_reports_remote_tuple_transport_override() {
         let routing = BTreeMap::new();
         let local = BTreeMap::new();
@@ -1613,6 +1668,7 @@ mod tests {
             query_metrics_enabled: true,
             include_recall: false,
             query_metric_k: 10,
+            query_metric_projection_columns: &["title".to_owned(), "body".to_owned()],
             local_store_overlap_enabled: true,
             routing: &routing,
             local: &local,
@@ -1625,6 +1681,7 @@ mod tests {
         assert!(header.contains("local_store_overlap: true"));
         assert!(header.contains("query_metrics: true"));
         assert!(header.contains("query_metric_k: 10"));
+        assert!(header.contains("query_metric_projection_columns: id,title,body"));
         assert!(header.contains("query_recall: false"));
     }
 
