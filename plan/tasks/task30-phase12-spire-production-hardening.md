@@ -152,9 +152,21 @@ described by reviewer packet `30896`.
     measurement shape without tripping the v1 DML frontdoor guard, so future
     automation needs either a widened bench-client read path or a documented
     measurement bypass.
-- [ ] After compatibility is sufficient, remove the JSON endpoint from the
+- [x] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path
   needs it.
+  - [x] Production coordinator tuple-payload dispatch now requires a typed
+    `pg_binary_attr_v1` endpoint and no longer falls back to
+    `ec_spire_remote_search_tuple_payload(...)` when an endpoint defaults to
+    `json_tuple_payload_v1` or lacks the typed capability. The legacy JSON
+    endpoint and `ec_spire.remote_tuple_transport = json_tuple_payload_v1`
+    value remain available for compatibility/measurement, but that value now
+    fails closed for production payload dispatch instead of selecting the JSON
+    SQL path.
+  - [x] The root `serde_json` dependency remains required by other runtime
+    paths, including DML CustomScan JSON update payload handling and JSONB
+    manifest surfaces, so Phase 12 does not drop it as part of tuple-transport
+    production-path retirement.
 
 ## Phase 12.3: Planner, Metadata, and Cost Hardening
 

@@ -1574,9 +1574,6 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_local_heap_candidates($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
-const SPIRE_REMOTE_SEARCH_LIBPQ_TUPLE_PAYLOAD_SQL_TEMPLATE: &str =
-    "SELECT payload.*, payload.tuple_payload::text AS tuple_payload_text \
-       FROM ec_spire_remote_search_tuple_payload($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text, $7::text[]) AS payload";
 const SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE: &str =
     "SELECT requested_epoch, served_epoch, node_id, pid, object_version, row_index, \
             assignment_flags, vec_id, row_locator, heap_block, heap_offset, score, \
@@ -3930,11 +3927,7 @@ impl SpireRemoteProductionTransportAdapter {
                 }
                 match request.tuple_payload_columns.as_ref() {
                     Some(tuple_payload_columns) => {
-                        let sql = if endpoint_identity.prefers_typed_tuple_transport() {
-                            SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE
-                        } else {
-                            SPIRE_REMOTE_SEARCH_LIBPQ_TUPLE_PAYLOAD_SQL_TEMPLATE
-                        };
+                        let sql = remote_tuple_payload_production_sql(&endpoint_identity)?;
                         client
                             .query(
                                 sql,
@@ -8644,6 +8637,16 @@ impl SpireRemoteValidatedEndpointIdentity {
     }
 }
 
+fn remote_tuple_payload_production_sql(
+    endpoint_identity: &SpireRemoteValidatedEndpointIdentity,
+) -> Result<&'static str, &'static str> {
+    if endpoint_identity.prefers_typed_tuple_transport() {
+        Ok(SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE)
+    } else {
+        Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
+    }
+}
+
 fn remote_endpoint_prefers_typed_tuple_transport(
     tuple_transport_status: &str,
     tuple_transport_default: &str,
@@ -8672,6 +8675,26 @@ mod remote_tuple_transport_tests {
 
     fn pg_binary_capabilities() -> Vec<String> {
         vec![SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned()]
+    }
+
+    fn endpoint_identity(
+        tuple_transport_default: &str,
+        tuple_transport_capabilities: Vec<String>,
+    ) -> SpireRemoteValidatedEndpointIdentity {
+        SpireRemoteValidatedEndpointIdentity {
+            protocol_version: "1".to_owned(),
+            extension_version: "0.1.2".to_owned(),
+            opclass_identity: "ec_spire".to_owned(),
+            storage_format: "rabitq".to_owned(),
+            assignment_payload_format: "leaf-pid-v1".to_owned(),
+            quantizer_profile: "rabitq".to_owned(),
+            scoring_profile: "l2".to_owned(),
+            tuple_transport_capabilities,
+            tuple_transport_default: tuple_transport_default.to_owned(),
+            tuple_transport_status: SPIRE_REMOTE_STATUS_READY.to_owned(),
+            profile_fingerprint: "00".to_owned(),
+            profile_fingerprint_bytes: vec![0],
+        }
     }
 
     #[test]
@@ -8710,6 +8733,31 @@ mod remote_tuple_transport_tests {
             &[],
             options::SpireRemoteTupleTransportGuc::PgBinaryAttrV1,
         ));
+    }
+
+    #[test]
+    fn remote_tuple_payload_production_sql_requires_typed_transport() {
+        let typed_identity = endpoint_identity(
+            SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1,
+            pg_binary_capabilities(),
+        );
+        assert_eq!(
+            remote_tuple_payload_production_sql(&typed_identity),
+            Ok(SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE)
+        );
+
+        let json_identity = endpoint_identity("json_tuple_payload_v1", pg_binary_capabilities());
+        assert_eq!(
+            remote_tuple_payload_production_sql(&json_identity),
+            Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
+        );
+
+        let missing_capability_identity =
+            endpoint_identity(SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1, Vec::new());
+        assert_eq!(
+            remote_tuple_payload_production_sql(&missing_capability_identity),
+            Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
+        );
     }
 }
 

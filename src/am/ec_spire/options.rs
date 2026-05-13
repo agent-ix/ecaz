@@ -805,7 +805,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_enum_guc(
         c"ec_spire.remote_tuple_transport",
         c"Session tuple-payload transport policy for production ec_spire remote search.",
-        c"Controls coordinator selection of remote tuple-payload transport. Values: auto prefers the remote endpoint default, json_tuple_payload_v1 forces the compatibility JSON path, pg_binary_attr_v1 forces typed binary payloads when the remote advertises that ready capability.",
+        c"Controls coordinator selection of remote tuple-payload transport. Values: auto uses the remote endpoint default, json_tuple_payload_v1 is a legacy compatibility value that no longer enables production payload dispatch, pg_binary_attr_v1 forces typed binary payloads when the remote advertises that ready capability.",
         &EC_SPIRE_REMOTE_TUPLE_TRANSPORT_GUC,
         GucContext::Userset,
         GucFlags::default(),
