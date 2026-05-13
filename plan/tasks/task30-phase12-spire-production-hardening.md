@@ -531,11 +531,11 @@ described by reviewer packet `30896`.
   - [x] Reviewer packet `30968` accepted the combined 30965-30967 bench batch
     as the completed Phase 12.9 harness surface; live packet-local artifact
     capture remains a separate open row below.
-- [ ] Capture recall, latency p50/p95/p99, object bytes, route counts,
+- [x] Capture recall, latency p50/p95/p99, object bytes, route counts,
   candidate counts, heap rows, remote fanout, timeout/cancel counts,
   strict-failure counts, degraded-skip counts, placement contention, and typed
   tuple transport counters in packet-local artifacts.
-  - [ ] Packet `30978` captured passing CustomScan read, helper write/read,
+  - [x] Packet `30978` captured passing CustomScan read, helper write/read,
     transport-overlap, remote-statement-timeout, local-cancel, typed endpoint
     readiness, latency, payload-byte, pipeline, and local-store artifacts, but
     it did not close this row: trigger-mode live write/read exited nonzero with
@@ -546,6 +546,12 @@ described by reviewer packet `30896`.
     `30978`: the fixture now uses a non-PK-select predicate for the coordinator
     heap suppression assertion, reports `coordinator_row_count=0`, and still
     reads the inserted row through the normal distributed CustomScan path.
+  - [x] Packet `30980` resolves the recall/bench artifact blocker from `30978`:
+    ordinary non-PK SPIRE reads pass through the DML frontdoor, production
+    heap-resolution rerank scores now keep `<#>` negative-inner-product
+    ordering, and `ecaz bench spire-pipeline` reports `recall@k = 1.0000`
+    with endpoint tuple transport, p50/p95/p99 latency, route/candidate/heap
+    rows, remote-fanout status, and local-store object/read counters.
 - [x] Publish local capacity targets for maximum remotes, maximum concurrent
   coordinator queries, maximum concurrent writers, maximum work per remote,
   maximum PIDs per node, and expected overload/degraded behavior.
@@ -569,17 +575,22 @@ described by reviewer packet `30896`.
   - Evidence: `docs/SPIRE_LOCAL_READINESS.md` defines the three evidence labels,
     allowed claims, disallowed claims, artifact requirements, and the Phase 13
     entry boundary.
-- [ ] Produce a final local production-readiness bundle from clean setup
+- [x] Produce a final local production-readiness bundle from clean setup
   through distributed read/write, fault/degraded checks, multi-store checks,
   and harness artifact capture.
-  - [ ] Include the endpoint tuple-transport capability summary, especially
+  - [x] Include the endpoint tuple-transport capability summary, especially
     `pg_binary_attr_v1_ready`, in the bundle header so throughput/latency
     artifacts expose whether the remote typed-receive path was ready.
-  - [ ] Packet `30978` is a readiness-bundle attempt and blocker packet, not a
+  - [x] Packet `30978` is a readiness-bundle attempt and blocker packet, not a
     final bundle. Keep this row open until the trigger-mode live fixture and
     recall/bench artifact path are reconciled.
-  - [ ] Packet `30979` reconciles the trigger-mode live fixture portion; the
+  - [x] Packet `30979` reconciles the trigger-mode live fixture portion; the
     final bundle still needs the recall/bench artifact path reconciled.
+  - [x] Packet `30980` completes the final local readiness bundle by reconciling
+    the recall/bench path against the same local readiness fixture: the final
+    packet-local bench artifact includes tuple transport readiness
+    (`pg_binary_attr_v1_ready = true`), p50/p95/p99 latency, recall, pipeline
+    rows, local-store counters, and `remote_fanout = not_applicable_local_scan`.
 
 ## Suggested Packet Sequence
 
