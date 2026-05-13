@@ -332,8 +332,16 @@ described by reviewer packet `30896`.
     ready freshness after persistence, then drifts the persisted entry and
     verifies `stale_remote_epoch_manifest` with
     `refresh_remote_epoch_manifest`.
-- [ ] Add operator diagnostics for stale, missing, or unavailable boundary
+- [x] Add operator diagnostics for stale, missing, or unavailable boundary
   replica placements and their degraded-mode reporting.
+  - Evidence:
+    `ec_spire_index_boundary_replica_placement_diagnostics(index_oid)` groups
+    boundary-replica placement health by global `vec_id`, reports missing
+    replica assignments plus stale, unavailable, and skipped replica placement
+    counts, and labels the degraded-mode action as either `fail_closed` or
+    `skip_and_report`; the PG18 fixture rewrites a boundary-replica leaf
+    through unavailable, skipped, and stale states and verifies each diagnostic
+    status/action.
 - [ ] Preserve and periodically rerun the full Stage E fault/lifecycle matrix
   against the current CustomScan path while this hardening proceeds.
 

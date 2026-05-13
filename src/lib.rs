@@ -15835,6 +15835,65 @@ fn ec_spire_index_boundary_replica_identity_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_boundary_replica_placement_diagnostics(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(vec_id, Vec<u8>),
+        name!(vec_id_scope, String),
+        name!(assignment_count, i64),
+        name!(primary_assignment_count, i64),
+        name!(boundary_replica_assignment_count, i64),
+        name!(stale_boundary_replica_count, i64),
+        name!(unavailable_boundary_replica_count, i64),
+        name!(skipped_boundary_replica_count, i64),
+        name!(node_count, i64),
+        name!(min_node_id, i64),
+        name!(max_node_id, i64),
+        name!(status, String),
+        name!(degraded_mode_action, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_index_boundary_replica_placement_diagnostics",
+        )
+    };
+    let rows = unsafe { am::spire_index_boundary_replica_placement_diagnostics(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            row.vec_id,
+            row.vec_id_scope.to_owned(),
+            i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+            i64::try_from(row.primary_assignment_count)
+                .expect("primary assignment count should fit in i64"),
+            i64::try_from(row.boundary_replica_assignment_count)
+                .expect("boundary replica assignment count should fit in i64"),
+            i64::try_from(row.stale_boundary_replica_count)
+                .expect("stale boundary replica count should fit in i64"),
+            i64::try_from(row.unavailable_boundary_replica_count)
+                .expect("unavailable boundary replica count should fit in i64"),
+            i64::try_from(row.skipped_boundary_replica_count)
+                .expect("skipped boundary replica count should fit in i64"),
+            i64::try_from(row.node_count).expect("node count should fit in i64"),
+            i64::from(row.min_node_id),
+            i64::from(row.max_node_id),
+            row.status.to_owned(),
+            row.degraded_mode_action.to_owned(),
+            row.recommendation.to_owned(),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_level_parameter_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -42475,6 +42534,130 @@ mod tests {
         assert_eq!(replica_count, 4);
         assert_eq!(max_leaf_pid_count, 2);
         assert!(remote_ready_count > 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_boundary_replica_placement_diagnostics_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_boundary_replica_diag_missing (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("missing table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_boundary_replica_diag_missing \
+             (id, source_identity, embedding) VALUES \
+             (1, '00000000-0000-0000-0000-000000000501', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, '00000000-0000-0000-0000-000000000502', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("missing seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_boundary_replica_diag_missing_idx \
+             ON ec_spire_boundary_replica_diag_missing USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include', nlists = 2, nprobe = 2)",
+        )
+        .expect("missing index creation should succeed");
+
+        let missing_from = "FROM ec_spire_index_boundary_replica_placement_diagnostics(\
+             'ec_spire_boundary_replica_diag_missing_idx'::regclass)";
+        let missing_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {missing_from} \
+             WHERE status = 'missing_boundary_replica' \
+               AND degraded_mode_action = 'fail_closed'"
+        ))
+        .expect("missing diagnostic query should succeed")
+        .expect("missing diagnostic count should exist");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_boundary_replica_diag_state (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("state table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_boundary_replica_diag_state \
+             (id, source_identity, embedding) VALUES \
+             (1, '00000000-0000-0000-0000-000000000601', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, '00000000-0000-0000-0000-000000000602', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, '00000000-0000-0000-0000-000000000603', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, '00000000-0000-0000-0000-000000000604', encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("state seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_boundary_replica_diag_state_idx \
+             ON ec_spire_boundary_replica_diag_state USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH ( \
+                 source_identity = 'include', \
+                 nlists = 4, \
+                 nprobe = 4, \
+                 boundary_replica_count = 1 \
+             )",
+        )
+        .expect("state index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_boundary_replica_diag_state_idx'::regclass::oid",
+        )
+        .expect("state index oid query should succeed")
+        .expect("state index oid should exist");
+        let replica_pid = Spi::get_one::<i64>(
+            "SELECT leaf_pid FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_diag_state_idx'::regclass) \
+             WHERE base_boundary_replica_assignment_count > 0 \
+             ORDER BY leaf_pid \
+             LIMIT 1",
+        )
+        .expect("boundary replica leaf query should succeed")
+        .expect("boundary replica leaf should exist");
+        let state_from = "FROM ec_spire_index_boundary_replica_placement_diagnostics(\
+             'ec_spire_boundary_replica_diag_state_idx'::regclass)";
+
+        unsafe {
+            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "unavailable");
+        }
+        let unavailable_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {state_from} \
+             WHERE status = 'unavailable_boundary_replica' \
+               AND degraded_mode_action = 'skip_and_report' \
+               AND unavailable_boundary_replica_count > 0"
+        ))
+        .expect("unavailable diagnostic query should succeed")
+        .expect("unavailable diagnostic count should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "skipped");
+        }
+        let skipped_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {state_from} \
+             WHERE status = 'skipped_boundary_replica' \
+               AND degraded_mode_action = 'skip_and_report' \
+               AND skipped_boundary_replica_count > 0"
+        ))
+        .expect("skipped diagnostic query should succeed")
+        .expect("skipped diagnostic count should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "stale");
+        }
+        let stale_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {state_from} \
+             WHERE status = 'stale_boundary_replica' \
+               AND degraded_mode_action = 'fail_closed' \
+               AND stale_boundary_replica_count > 0"
+        ))
+        .expect("stale diagnostic query should succeed")
+        .expect("stale diagnostic count should exist");
+
+        assert!(missing_count > 0);
+        assert!(unavailable_count > 0);
+        assert!(skipped_count > 0);
+        assert!(stale_count > 0);
     }
 
     #[pg_test]

@@ -54,6 +54,7 @@ pub(crate) use self::ec_spire::{
     dml_frontdoor_target_relation_oid as spire_dml_frontdoor_target_relation_oid,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
+    index_boundary_replica_placement_diagnostics as spire_index_boundary_replica_placement_diagnostics,
     index_cost_snapshot as spire_index_cost_snapshot,
     index_delta_snapshot as spire_index_delta_snapshot,
     index_epoch_cleanup_run as spire_index_epoch_cleanup_run,

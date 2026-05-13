@@ -96,6 +96,25 @@ pub(crate) struct SpireBoundaryReplicaIdentitySnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireBoundaryReplicaPlacementDiagnosticRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) vec_id: Vec<u8>,
+    pub(crate) vec_id_scope: &'static str,
+    pub(crate) assignment_count: u64,
+    pub(crate) primary_assignment_count: u64,
+    pub(crate) boundary_replica_assignment_count: u64,
+    pub(crate) stale_boundary_replica_count: u64,
+    pub(crate) unavailable_boundary_replica_count: u64,
+    pub(crate) skipped_boundary_replica_count: u64,
+    pub(crate) node_count: u64,
+    pub(crate) min_node_id: u32,
+    pub(crate) max_node_id: u32,
+    pub(crate) status: &'static str,
+    pub(crate) degraded_mode_action: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexLevelParameterSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) level: u16,

@@ -423,9 +423,21 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let local_store_config =
             unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
-        let (epoch_manifest, object_manifest, mut placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
-        };
+        let epoch_bytes =
+            unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+        let object_bytes =
+            unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+        let placement_bytes =
+            unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+        let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
+        let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
+        let mut placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
+        if epoch_manifest.epoch != root_control.active_epoch {
+            return Err(format!(
+                "ec_spire debug placement rewrite active epoch {} does not match epoch manifest {}",
+                root_control.active_epoch, epoch_manifest.epoch
+            ));
+        }
         let placement = placement_directory
             .entries
             .iter_mut()
