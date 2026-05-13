@@ -121,9 +121,14 @@ Phase 13 will push it past 80k.
   - [ ] `tests/cost_and_planner.rs`
   - [ ] `tests/build.rs`
   - [ ] `tests/diagnostics.rs`
-- [ ] Move all `test_ec_spire_*` PG18 fixture functions out of
+- First fixture-sink checkpoint creates `src/tests/mod.rs` and moves the
+  `#[pg_schema] mod tests` body out of `src/lib.rs`; concern-specific
+  subfiles remain open.
+- [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
+  Packet `30995` moved the fixture bodies to `src/tests/mod.rs`;
+  concern-specific files remain open under the preceding row.
 - [ ] After the move, `src/lib.rs` should be under 2,000 lines.
 - [ ] Verify `cargo pgrx test` passes against PG18 with no fixture name
   changes. Coverage for cited tracker rows must remain at the same
