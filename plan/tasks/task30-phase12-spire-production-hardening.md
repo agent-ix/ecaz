@@ -142,6 +142,16 @@ described by reviewer packet `30896`.
     p50/p95/p99 `33.892/35.179/41.313 ms` at `29.160 qps`. This local
     loopback shape proves the transport switch and typed capability readiness
     but does not claim a typed speedup for the small scalar payload fixture.
+  - [x] Reviewer packet `30975` accepted the measurement row closure and
+    clarified the remaining JSON-retirement decision shape: retirement now
+    hinges on compatibility-window closure, operator migration to typed
+    endpoints, code-surface reduction, and typed transport correctness rather
+    than a performance claim from the small scalar loopback benchmark. The
+    packet also records that the Rust `ecaz bench spire-pipeline`
+    `tokio-postgres` query-metrics path cannot yet automate this remote KNN
+    measurement shape without tripping the v1 DML frontdoor guard, so future
+    automation needs either a widened bench-client read path or a documented
+    measurement bypass.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path
   needs it.
