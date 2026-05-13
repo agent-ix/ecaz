@@ -106,13 +106,13 @@ pub(super) const EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE: i32 = 1_000_000;
 pub(super) const SPIRE_PUBLISH_LOCK_MODE: pg_sys::LOCKMODE =
     pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
 
-include!("root/lifecycle.rs");
-include!("root/types.rs");
-include!("root/remote_candidates/mod.rs");
-include!("root/diagnostics.rs");
-include!("root/hierarchy_shape.rs");
-include!("root/snapshots.rs");
-include!("root/maintenance.rs");
-include!("root/hierarchy_snapshots.rs");
-include!("root/debug.rs");
-include!("root/tests.rs");
+include!("coordinator/lifecycle.rs");
+include!("coordinator/types.rs");
+include!("coordinator/remote_candidates/mod.rs");
+include!("coordinator/diagnostics.rs");
+include!("coordinator/hierarchy_shape.rs");
+include!("coordinator/snapshots.rs");
+include!("coordinator/maintenance.rs");
+include!("coordinator/hierarchy_snapshots.rs");
+include!("coordinator/debug.rs");
+include!("coordinator/tests.rs");

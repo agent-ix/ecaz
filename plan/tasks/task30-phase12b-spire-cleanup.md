@@ -220,16 +220,18 @@ hosts cross-cutting coordinator/fanout concerns (remote_candidates,
 snapshots, hierarchy_snapshots, diagnostics, lifecycle, maintenance,
 types, debug).
 
-- [ ] Rename `src/am/ec_spire/root/` to `src/am/ec_spire/coordinator/`.
-- [ ] Update every `use crate::am::ec_spire::root::...` path across the
-  crate.
-- [ ] Verify the rename with a `git grep root::` sanity pass; remaining
+- [x] Rename `src/am/ec_spire/root/` to `src/am/ec_spire/coordinator/`.
+- [x] Update every `use crate::am::ec_spire::root::...` path across the
+  crate. Packet `30997` confirms there were no Rust `root::` module
+  paths; the old folder was an include-only implementation layout.
+- [x] Verify the rename with a `git grep root::` sanity pass; remaining
   matches should be unrelated (e.g. `tree.root`, `ec_spire_root_*` SQL
   identifiers — those stay).
-- [ ] Decide whether SQL/identifier `root` names (e.g.
+- [x] Decide whether SQL/identifier `root` names (e.g.
   `ec_spire_root_control_state`) also need renaming. Default: **no**.
   Operator-visible identifiers are stable; only the Rust module name
-  changes. Record the decision in the packet.
+  changes. Packet `30997` records the decision to leave `root/control`
+  wording and SQL identifiers stable.
 
 ## Phase 12b.6: Reduce unsafe / business-logic mixing
 
