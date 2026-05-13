@@ -18,3 +18,4 @@ include!("executor_receive.rs");
 include!("result_contracts.rs");
 include!("pipeline.rs");
 include!("tests/production_executor_state.rs");
+include!("tests/endpoint_identity.rs");

@@ -63,7 +63,7 @@ module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
   First checkpoint preserves symbol paths with textual `include!`
   files in the existing `ec_spire` scope; no caller path changes were
   required beyond the top-level include.
-- [ ] Extract into sibling files:
+- [x] Extract into sibling files:
   - [x] `remote_candidates/vocab.rs`: status-string constants
     (current lines 23-120) and hint strings.
   - [x] `remote_candidates/sort.rs`: candidate comparator
@@ -86,14 +86,13 @@ module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
   - [x] `remote_candidates/operator.rs`: pg_extern surface including
     `ec_spire_remote_search_degraded_skip_report` (current ~12221) and
     other operator-callable wrappers.
-  - [ ] `remote_candidates/tests/` (subdirectory): move the two inline
+  - [x] `remote_candidates/tests/` (subdirectory): move the two inline
     `#[cfg(test)] mod` blocks (current ~8842 and ~11437) into
     co-located files matching the split
     (`tests/endpoint_identity.rs`, `tests/payload.rs`,
     `tests/fault_matrix.rs`, etc.).
-    First checkpoint moved `production_executor_state_tests`; the
-    endpoint-identity unit block remains co-located in
-    `endpoint_identity.rs` for a follow-up test-layout pass.
+    Packets `30991` and `30993` moved `production_executor_state_tests`
+    and the endpoint-identity tuple-transport tests.
 - [ ] Verify zero behavior change: `cargo test -p ecaz` and the
   packet-local PG18 fixtures cited in Phase 11/12 trackers pass without
   assertion edits.
