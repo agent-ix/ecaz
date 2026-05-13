@@ -132,6 +132,10 @@ Phase 13 will push it past 80k.
   contiguous remote-search contract fixture block with a textual include;
   later tuple-payload, libpq, remote-node, and degraded-mode fixtures
   remain open, so the `tests/remote_search.rs` row is not yet closed.
+- Packet `31000` starts `src/tests/insert.rs` by moving the contiguous
+  coordinator-insert and insert-trigger fixture block with a textual
+  include; later insert-after-build fixtures remain open, so the
+  `tests/insert.rs` row is not yet closed.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
