@@ -79,21 +79,35 @@ described by reviewer packet `30896`.
 - [x] Add a typed remote endpoint beside the JSON endpoint, preferably using
   PostgreSQL binary composite/record transport or per-attribute `typsend` /
   `typreceive` bytes.
-- [ ] Add endpoint negotiation so CustomScan prefers typed tuple transport when
+- [x] Add endpoint negotiation so CustomScan prefers typed tuple transport when
   the remote advertises support and falls back to JSON only during the
   migration window.
   - [x] Endpoint identity advertises `tuple_transport_capabilities`,
     `tuple_transport_default`, and `tuple_transport_status` for
     `pg_binary_attr_v1`.
-  - [ ] Exit criterion: the JSON fallback may remain production-reachable for
+  - [x] Exit criterion: the JSON fallback may remain production-reachable for
     one minor-version compatibility window after the typed endpoint release;
     removal requires all scalar, array, composite, NULL, and domain fixture
     classes to pass through typed transport and a reviewer-accepted packet that
     names any unsupported type gaps.
-- [ ] Switch `EcSpireDistributedScan` tuple slot delivery from
+  - Evidence: packet `30963` switches the production libpq heap receive path
+    to request `ec_spire_remote_search_tuple_payload_typed(...)` whenever the
+    endpoint identity advertises ready `pg_binary_attr_v1`, with JSON retained
+    only for older endpoints that lack the typed capability metadata.
+- [x] Switch `EcSpireDistributedScan` tuple slot delivery from
   `serde_json`/text input to typed binary datum construction.
-- [ ] Remove or retire the scalar-only JSON gate for arrays/composites once the
+  - Evidence: packet `30963` adds typed payload rows to the production scan
+    output model and materializes remote-origin CustomScan slots through
+    PostgreSQL binary receive functions. The PG18 CustomScan fixture returns a
+    remote row with `text[]`, domain, and named-composite payload columns via
+    `Custom Scan (EcSpireDistributedScan)`.
+- [x] Remove or retire the scalar-only JSON gate for arrays/composites once the
   typed transport covers them.
+  - Evidence: packet `30963` removes the CustomScan array/composite planner
+    rejection gate and proves the production CustomScan path can deliver
+    `text[]` and named-composite values through typed payload bytes. JSON
+    remains as a compatibility fallback and production retirement is still
+    tracked separately below.
 - [x] Add fixtures proving typed transport round-trips scalar, array,
   composite, NULL, and domain values where supported.
   - [x] Scalar JSON-parity fixture covers `bigint` and `text` payload bytes via

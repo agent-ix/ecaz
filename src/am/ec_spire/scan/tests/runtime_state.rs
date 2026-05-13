@@ -252,6 +252,7 @@
                 vec_id: vec![1],
                 row_locator: vec![2],
                 tuple_payload_json: None,
+                typed_tuple_payload: None,
                 tuple_payload_missing: false,
             }],
         );
@@ -289,6 +290,7 @@
                 vec_id: vec![1],
                 row_locator: vec![2],
                 tuple_payload_json: None,
+                typed_tuple_payload: None,
                 tuple_payload_missing: false,
             }],
         );

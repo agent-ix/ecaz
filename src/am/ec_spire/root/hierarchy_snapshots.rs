@@ -257,6 +257,7 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
                 score,
                 heap_lookup_owner,
                 tuple_payload_json: None,
+                typed_tuple_payload: None,
                 tuple_payload_missing: false,
                 status,
             });

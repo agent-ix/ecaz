@@ -141,11 +141,26 @@ coord_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$COORD_PORT" -U post
 "${coord_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
 
 "${remote_psql[@]}" <<'SQL' >/dev/null
+CREATE DOMAIN ec_spire_customscan_label_domain AS text
+    CHECK (VALUE <> 'blocked');
+CREATE TYPE ec_spire_customscan_pair AS (code int4, label text);
 CREATE TABLE ec_spire_customscan_remote_sql
-    (id bigint primary key, title text not null, embedding ecvector);
-INSERT INTO ec_spire_customscan_remote_sql (id, title, embedding) VALUES
-    (10, 'remote alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
-    (20, 'remote beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42));
+    (id bigint primary key,
+     title text not null,
+     tags text[] not null,
+     label ec_spire_customscan_label_domain not null,
+     pair ec_spire_customscan_pair not null,
+     embedding ecvector);
+INSERT INTO ec_spire_customscan_remote_sql
+    (id, title, tags, label, pair, embedding) VALUES
+    (10, 'remote alpha', ARRAY['red', 'blue']::text[],
+     'domain alpha'::ec_spire_customscan_label_domain,
+     ROW(7, 'left')::ec_spire_customscan_pair,
+     encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+    (20, 'remote beta', ARRAY['green']::text[],
+     'domain beta'::ec_spire_customscan_label_domain,
+     ROW(9, 'right')::ec_spire_customscan_pair,
+     encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42));
 CREATE INDEX ec_spire_customscan_remote_idx
     ON ec_spire_customscan_remote_sql USING ec_spire
     (embedding ecvector_spire_ip_ops)
@@ -153,11 +168,26 @@ CREATE INDEX ec_spire_customscan_remote_idx
 SQL
 
 "${coord_psql[@]}" <<'SQL' >/dev/null
+CREATE DOMAIN ec_spire_customscan_label_domain AS text
+    CHECK (VALUE <> 'blocked');
+CREATE TYPE ec_spire_customscan_pair AS (code int4, label text);
 CREATE TABLE ec_spire_customscan_coord_sql
-    (id bigint primary key, title text not null, embedding ecvector);
-INSERT INTO ec_spire_customscan_coord_sql (id, title, embedding) VALUES
-    (1, 'coordinator alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
-    (2, 'coordinator beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42));
+    (id bigint primary key,
+     title text not null,
+     tags text[] not null,
+     label ec_spire_customscan_label_domain not null,
+     pair ec_spire_customscan_pair not null,
+     embedding ecvector);
+INSERT INTO ec_spire_customscan_coord_sql
+    (id, title, tags, label, pair, embedding) VALUES
+    (1, 'coordinator alpha', ARRAY['local', 'red']::text[],
+     'domain coord alpha'::ec_spire_customscan_label_domain,
+     ROW(1, 'coord-left')::ec_spire_customscan_pair,
+     encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+    (2, 'coordinator beta', ARRAY['local', 'green']::text[],
+     'domain coord beta'::ec_spire_customscan_label_domain,
+     ROW(2, 'coord-right')::ec_spire_customscan_pair,
+     encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42));
 CREATE INDEX ec_spire_customscan_coord_idx
     ON ec_spire_customscan_coord_sql USING ec_spire
     (embedding ecvector_spire_ip_ops)
@@ -208,8 +238,9 @@ SELECT ec_spire_register_remote_node_descriptor(
 SQL
 
 plan="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" "${coord_psql[@]}" -At -c "EXPLAIN (COSTS OFF) SELECT id, title FROM ec_spire_customscan_coord_sql ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1")"
-read_row="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" "${coord_psql[@]}" -At -F ',' -c "SELECT id, title FROM ec_spire_customscan_coord_sql ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1")"
+read_row="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" "${coord_psql[@]}" -At -F '|' -c "SELECT id, title, tags, label::text, pair::text FROM ec_spire_customscan_coord_sql ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1")"
 payload_probe="$("${remote_psql[@]}" -At -F ',' -c "SELECT status, payload_column_count::text, tuple_payload::text FROM ec_spire_remote_search_tuple_payload('ec_spire_customscan_remote_idx'::regclass::oid, ${remote_epoch}::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[${remote_pids}]::bigint[], 1, 'strict', ARRAY['id','title']::text[]) LIMIT 1")"
+typed_payload_probe="$("${remote_psql[@]}" -At -F ',' -c "SELECT status, tuple_transport, payload_formats = ARRAY['pg_binary_attr_v1','pg_binary_attr_v1','pg_binary_attr_v1']::text[], payload_values[3] = array_send(ARRAY['red','blue']::text[])::bytea FROM ec_spire_remote_search_tuple_payload_typed('ec_spire_customscan_remote_idx'::regclass::oid, ${remote_epoch}::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[${remote_pids}]::bigint[], 1, 'strict', ARRAY['id','title','tags']::text[]) LIMIT 1")"
 
 echo "remote_epoch=$remote_epoch"
 echo "coord_epoch=$coord_epoch"
@@ -219,10 +250,12 @@ echo "remote_identity_hex=$remote_identity_hex"
 echo "plan=$plan"
 echo "read_row=$read_row"
 echo "payload_probe=$payload_probe"
+echo "typed_payload_probe=$typed_payload_probe"
 
 [[ "$plan" == *"Custom Scan (EcSpireDistributedScan)"* ]]
-[[ "$read_row" == "10,remote alpha" ]]
+[[ "$read_row" == '10|remote alpha|{red,blue}|domain alpha|(7,left)' ]]
 [[ "$payload_probe" == ready,2,*'"id": 10'* ]]
 [[ "$payload_probe" == ready,2,*'"title": "remote alpha"'* ]]
+[[ "$typed_payload_probe" == "ready,pg_binary_attr_v1,t,t" ]]
 
 echo "SPIRE multicluster CustomScan read passed"

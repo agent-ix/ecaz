@@ -105,6 +105,7 @@ mod tests {
             score,
             heap_lookup_owner,
             tuple_payload_json: None,
+            typed_tuple_payload: None,
             tuple_payload_missing: false,
             status: SPIRE_REMOTE_STATUS_READY,
         }

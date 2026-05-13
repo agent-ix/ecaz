@@ -197,6 +197,20 @@ pub(crate) struct SpireRemoteSearchLocalHeapResolutionPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteTypedTuplePayload {
+    pub(crate) payload_attnums: Vec<i16>,
+    pub(crate) payload_names: Vec<String>,
+    pub(crate) payload_type_oids: Vec<pg_sys::Oid>,
+    pub(crate) payload_typmods: Vec<i32>,
+    pub(crate) payload_collations: Vec<pg_sys::Oid>,
+    pub(crate) payload_nulls: Vec<bool>,
+    pub(crate) payload_values: Vec<Vec<u8>>,
+    pub(crate) payload_formats: Vec<String>,
+    pub(crate) tuple_transport: &'static str,
+    pub(crate) tuple_transport_status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireRemoteSearchLocalHeapCandidateRow {
     pub(crate) requested_epoch: u64,
     pub(crate) served_epoch: u64,
@@ -212,6 +226,7 @@ pub(crate) struct SpireRemoteSearchLocalHeapCandidateRow {
     pub(crate) score: f32,
     pub(crate) heap_lookup_owner: &'static str,
     pub(crate) tuple_payload_json: Option<String>,
+    pub(crate) typed_tuple_payload: Option<SpireRemoteTypedTuplePayload>,
     pub(crate) tuple_payload_missing: bool,
     pub(crate) status: &'static str,
 }
@@ -914,6 +929,7 @@ pub(crate) struct SpireRemoteProductionScanOutputRow {
     pub(crate) vec_id: Vec<u8>,
     pub(crate) row_locator: Vec<u8>,
     pub(crate) tuple_payload_json: Option<String>,
+    pub(crate) typed_tuple_payload: Option<SpireRemoteTypedTuplePayload>,
     pub(crate) tuple_payload_missing: bool,
 }
 

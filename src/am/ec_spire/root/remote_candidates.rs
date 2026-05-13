@@ -1577,6 +1577,16 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE: &str =
 const SPIRE_REMOTE_SEARCH_LIBPQ_TUPLE_PAYLOAD_SQL_TEMPLATE: &str =
     "SELECT payload.*, payload.tuple_payload::text AS tuple_payload_text \
        FROM ec_spire_remote_search_tuple_payload($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text, $7::text[]) AS payload";
+const SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE: &str =
+    "SELECT requested_epoch, served_epoch, node_id, pid, object_version, row_index, \
+            assignment_flags, vec_id, row_locator, heap_block, heap_offset, score, \
+            payload_attnums, payload_names, payload_type_oids::text[] AS payload_type_oids, \
+            payload_typmods, payload_collations::text[] AS payload_collations, \
+            payload_nulls, \
+            ARRAY(SELECT encode(payload_value, 'hex') FROM unnest(payload_values) AS payload_value)::text[] AS payload_values_hex, \
+            payload_formats, tuple_payload_missing, payload_key, payload_column_count, \
+            tuple_transport, tuple_transport_status, status \
+       FROM ec_spire_remote_search_tuple_payload_typed($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text, $7::text[])";
 const SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_endpoint_identity($1::oid)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
@@ -3700,21 +3710,28 @@ impl SpireRemoteProductionTransportAdapter {
                     return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
                 }
                 match request.tuple_payload_columns.as_ref() {
-                    Some(tuple_payload_columns) => client
-                        .query(
-                            SPIRE_REMOTE_SEARCH_LIBPQ_TUPLE_PAYLOAD_SQL_TEMPLATE,
-                            &[
-                                &remote_index_oid,
-                                &requested_epoch,
-                                &request.query,
-                                &selected_pids,
-                                &top_k,
-                                &request.consistency_mode,
-                                tuple_payload_columns,
-                            ],
-                        )
-                        .await
-                        .map_err(|error| production_remote_query_failure_category(&error)),
+                    Some(tuple_payload_columns) => {
+                        let sql = if endpoint_identity.prefers_typed_tuple_transport() {
+                            SPIRE_REMOTE_SEARCH_LIBPQ_TYPED_TUPLE_PAYLOAD_SQL_TEMPLATE
+                        } else {
+                            SPIRE_REMOTE_SEARCH_LIBPQ_TUPLE_PAYLOAD_SQL_TEMPLATE
+                        };
+                        client
+                            .query(
+                                sql,
+                                &[
+                                    &remote_index_oid,
+                                    &requested_epoch,
+                                    &request.query,
+                                    &selected_pids,
+                                    &top_k,
+                                    &request.consistency_mode,
+                                    tuple_payload_columns,
+                                ],
+                            )
+                            .await
+                            .map_err(|error| production_remote_query_failure_category(&error))
+                    }
                     None => client
                         .query(
                             SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
@@ -3760,6 +3777,7 @@ impl SpireRemoteProductionTransportAdapter {
         {
             Ok(candidates) => candidates,
             Err(error) => {
+                pgrx::warning!("ec_spire remote heap receive decode failed: {error}");
                 return failed_production_heap_receive_result(
                     request.node_id,
                     batch_start,
@@ -6572,6 +6590,7 @@ fn production_scan_output_from_heap_candidate(
         vec_id: candidate.vec_id.clone(),
         row_locator: candidate.row_locator.clone(),
         tuple_payload_json: candidate.tuple_payload_json.clone(),
+        typed_tuple_payload: candidate.typed_tuple_payload.clone(),
         tuple_payload_missing: candidate.tuple_payload_missing,
     }
 }
@@ -8177,8 +8196,22 @@ struct SpireRemoteValidatedEndpointIdentity {
     assignment_payload_format: String,
     quantizer_profile: String,
     scoring_profile: String,
+    tuple_transport_capabilities: Vec<String>,
+    tuple_transport_default: String,
+    tuple_transport_status: String,
     profile_fingerprint: String,
     profile_fingerprint_bytes: Vec<u8>,
+}
+
+impl SpireRemoteValidatedEndpointIdentity {
+    fn prefers_typed_tuple_transport(&self) -> bool {
+        self.tuple_transport_status == SPIRE_REMOTE_STATUS_READY
+            && self.tuple_transport_default == SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
+            && self
+                .tuple_transport_capabilities
+                .iter()
+                .any(|capability| capability == SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1)
+    }
 }
 
 fn validate_remote_search_endpoint_identity_row(
@@ -8194,6 +8227,15 @@ fn validate_remote_search_endpoint_identity_row(
     let scoring_profile = remote_search_candidate_endpoint_text(row, "scoring_profile")?;
     let profile_fingerprint = remote_search_candidate_endpoint_text(row, "profile_fingerprint")?;
     let endpoint_status = remote_search_candidate_endpoint_text(row, "status")?;
+    let tuple_transport_capabilities = row
+        .try_get::<_, Vec<String>>("tuple_transport_capabilities")
+        .unwrap_or_default();
+    let tuple_transport_default = row
+        .try_get::<_, String>("tuple_transport_default")
+        .unwrap_or_else(|_| "json_tuple_payload_v1".to_owned());
+    let tuple_transport_status = row
+        .try_get::<_, String>("tuple_transport_status")
+        .unwrap_or_else(|_| SPIRE_REMOTE_STATUS_READY.to_owned());
 
     validate_remote_search_endpoint_identity_fields(
         &protocol_version,
@@ -8216,6 +8258,9 @@ fn validate_remote_search_endpoint_identity_row(
         assignment_payload_format,
         quantizer_profile,
         scoring_profile,
+        tuple_transport_capabilities,
+        tuple_transport_default,
+        tuple_transport_status,
         profile_fingerprint,
         profile_fingerprint_bytes,
     })
@@ -8865,11 +8910,127 @@ fn decode_remote_search_heap_candidate_pg_row(
         score: candidate.score,
         heap_lookup_owner: SPIRE_REMOTE_HEAP_RESOLUTION,
         tuple_payload_json: row.try_get::<_, String>("tuple_payload_text").ok(),
+        typed_tuple_payload: decode_remote_search_typed_tuple_payload_pg_row(row)?,
         tuple_payload_missing: row
             .try_get::<_, bool>("tuple_payload_missing")
             .unwrap_or(false),
         status: SPIRE_REMOTE_STATUS_READY,
     })
+}
+
+fn decode_remote_search_typed_tuple_payload_pg_row(
+    row: &postgres::Row,
+) -> Result<Option<SpireRemoteTypedTuplePayload>, String> {
+    let Ok(payload_attnums) = row.try_get::<_, Vec<i16>>("payload_attnums") else {
+        return Ok(None);
+    };
+    let payload_names = row
+        .try_get::<_, Vec<String>>("payload_names")
+        .map_err(|_| "ec_spire remote heap executor typed payload_names decode failed".to_owned())?;
+    let payload_type_oids = row
+        .try_get::<_, Vec<String>>("payload_type_oids")
+        .map_err(|_| {
+            "ec_spire remote heap executor typed payload_type_oids decode failed".to_owned()
+        })?
+        .into_iter()
+        .map(|oid| {
+            oid.parse::<u32>()
+                .map(pg_sys::Oid::from)
+                .map_err(|_| "ec_spire remote heap executor typed payload_type_oid is invalid".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let payload_typmods = row
+        .try_get::<_, Vec<i32>>("payload_typmods")
+        .map_err(|_| "ec_spire remote heap executor typed payload_typmods decode failed".to_owned())?;
+    let payload_collations = match row.try_get::<_, Vec<String>>("payload_collations") {
+        Ok(collations) => collations
+            .into_iter()
+            .map(|oid| {
+                oid.parse::<u32>()
+                    .map(pg_sys::Oid::from)
+                    .map_err(|_| {
+                        "ec_spire remote heap executor typed payload_collation is invalid"
+                            .to_owned()
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Err(_) => vec![pg_sys::InvalidOid; payload_attnums.len()],
+    };
+    let payload_nulls = row
+        .try_get::<_, Vec<bool>>("payload_nulls")
+        .map_err(|_| "ec_spire remote heap executor typed payload_nulls decode failed".to_owned())?;
+    let payload_values = row
+        .try_get::<_, Vec<String>>("payload_values_hex")
+        .map_err(|_| {
+            "ec_spire remote heap executor typed payload_values_hex decode failed".to_owned()
+        })?
+        .into_iter()
+        .map(|value| {
+            hex::decode(&value).map_err(|_| {
+                "ec_spire remote heap executor typed payload_values_hex is invalid".to_owned()
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let payload_formats = row
+        .try_get::<_, Vec<String>>("payload_formats")
+        .map_err(|_| {
+            "ec_spire remote heap executor typed payload_formats decode failed".to_owned()
+        })?;
+    let tuple_transport = row
+        .try_get::<_, String>("tuple_transport")
+        .map_err(|_| "ec_spire remote heap executor tuple_transport decode failed".to_owned())?;
+    let tuple_transport_status = row
+        .try_get::<_, String>("tuple_transport_status")
+        .map_err(|_| {
+            "ec_spire remote heap executor tuple_transport_status decode failed".to_owned()
+        })?;
+    let payload_width = payload_attnums.len();
+    for (label, width) in [
+        ("payload_names", payload_names.len()),
+        ("payload_type_oids", payload_type_oids.len()),
+        ("payload_typmods", payload_typmods.len()),
+        ("payload_collations", payload_collations.len()),
+        ("payload_nulls", payload_nulls.len()),
+        ("payload_values", payload_values.len()),
+        ("payload_formats", payload_formats.len()),
+    ] {
+        if width != payload_width {
+            return Err(format!(
+                "ec_spire remote heap executor typed {label} width {width} does not match attnum width {payload_width}"
+            ));
+        }
+    }
+    if tuple_transport != SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1 {
+        return Err(format!(
+            "ec_spire remote heap executor unsupported tuple transport {tuple_transport}"
+        ));
+    }
+    if tuple_transport_status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire remote heap executor tuple transport status {tuple_transport_status} is not ready"
+        ));
+    }
+    if payload_formats
+        .iter()
+        .any(|format| format != SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1)
+    {
+        return Err(
+            "ec_spire remote heap executor typed payload format mismatch".to_owned()
+        );
+    }
+
+    Ok(Some(SpireRemoteTypedTuplePayload {
+        payload_attnums,
+        payload_names,
+        payload_type_oids,
+        payload_typmods,
+        payload_collations,
+        payload_nulls,
+        payload_values,
+        payload_formats,
+        tuple_transport: SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1,
+        tuple_transport_status: SPIRE_REMOTE_STATUS_READY,
+    }))
 }
 
 fn remote_search_libpq_executor_candidates_for_dispatch(
