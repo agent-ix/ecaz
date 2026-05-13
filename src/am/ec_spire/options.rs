@@ -38,6 +38,10 @@ const EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT: i32 = 1_000_000;
 const EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT: i32 = 4096;
 const EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS: i32 = 0;
 const EC_SPIRE_MAX_REMOTE_SEARCH_TIMEOUT_MS: i32 = 3_600_000;
+const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1024;
+const EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1_073_741_824;
+const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 64;
+const EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 1_000_000;
 #[cfg(any(test, feature = "pg_test"))]
 const EC_SPIRE_MAX_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE: i32 = 10_000;
 
@@ -63,6 +67,10 @@ static EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
 static EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
+static EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW);
+static EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH);
 static EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC: GucSetting<
     SpireRemoteSearchConsistencyModeGuc,
 > = GucSetting::<SpireRemoteSearchConsistencyModeGuc>::new(
@@ -794,6 +802,26 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_spire.max_remote_payload_bytes_per_row",
+        c"Session cap for one ec_spire remote typed tuple payload row.",
+        c"Maximum decoded tuple-payload bytes accepted from one remote heap row before strict mode fails closed; default 1024 comes from packet 30975 payload measurements plus a rounded 4x safety margin.",
+        &EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW_GUC,
+        1,
+        EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.max_remote_payload_rows_per_batch",
+        c"Session cap for one ec_spire remote payload batch.",
+        c"Maximum selected PIDs or returned remote heap rows accepted for one remote payload batch before strict mode fails closed; default 64 matches the Phase 12 local capacity target.",
+        &EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC,
+        1,
+        EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_enum_guc(
         c"ec_spire.remote_search_consistency_mode",
         c"Session consistency policy for production ec_spire remote search.",
@@ -869,6 +897,14 @@ pub(super) fn current_session_remote_search_connect_timeout_ms() -> i32 {
 
 pub(super) fn current_session_remote_search_statement_timeout_ms() -> i32 {
     EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC.get()
+}
+
+pub(super) fn current_session_max_remote_payload_bytes_per_row() -> i32 {
+    EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW_GUC.get()
+}
+
+pub(super) fn current_session_max_remote_payload_rows_per_batch() -> i32 {
+    EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC.get()
 }
 
 pub(super) fn current_session_remote_search_consistency_mode_name() -> &'static str {

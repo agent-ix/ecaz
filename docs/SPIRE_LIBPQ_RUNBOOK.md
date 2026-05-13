@@ -60,6 +60,14 @@ remote descriptor, and verify the endpoint advertises
 legacy `json_tuple_payload_v1` transport for production payload dispatch; it is
 a compatibility label only.
 
+If a degraded skip report shows
+`first_skip_category = 'remote_payload_too_large'`, the remote returned more
+tuple payload than the coordinator is configured to accept. First reduce the
+projected payload columns or batch width. Raise
+`ec_spire.max_remote_payload_bytes_per_row` or
+`ec_spire.max_remote_payload_rows_per_batch` only with packet-local benchmark
+evidence for that workload, and record the chosen limits in the review packet.
+
 ## Prepared Transaction Readiness
 
 Coordinator-routed writes use remote prepared transactions. Every remote that

@@ -69,27 +69,27 @@ PREPARE-network-timeout."
 Source: review packet `30982`, finding "Unbounded coordinator memory on
 adversarial remote payload."
 
-- [ ] Add GUC `ec_spire.max_remote_payload_bytes_per_row` (default sized
+- [x] Add GUC `ec_spire.max_remote_payload_bytes_per_row` (default sized
   from the `30975` measurement plus a 4x safety margin; record the
   chosen number in packet evidence).
-- [ ] Add GUC `ec_spire.max_remote_payload_rows_per_batch` (default
+- [x] Add GUC `ec_spire.max_remote_payload_rows_per_batch` (default
   sized from the local capacity profile in
   `docs/SPIRE_LOCAL_CAPACITY_TARGETS.md`).
-- [ ] Enforce both caps in
+- [x] Enforce both caps in
   `decode_remote_search_typed_tuple_payload_pg_row`
   (`src/am/ec_spire/root/remote_candidates.rs:9468-9581`) **before**
   per-row allocation; on breach, return a strict-failure category
   `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE` with hint naming the
   GUC.
-- [ ] Apply the same caps to `selected_pids: Vec<u64>` plumbing at
+- [x] Apply the same caps to `selected_pids: Vec<u64>` plumbing at
   `remote_candidates.rs:3582` and any other unbounded
   remote-controlled `Vec<...>` allocation on the coordinator side.
-- [ ] Fixture: a fault-injection remote that returns one row exceeding
+- [x] Fixture: a fault-injection remote that returns one row exceeding
   the row cap, and a batch exceeding the batch cap; assert strict mode
   reports the new failure category, degraded mode reports
   `degraded_skipped_dispatch_count`, and no memory growth beyond the
   cap is observable.
-- [ ] Document the caps in `docs/SPIRE_LOCAL_CAPACITY_TARGETS.md` and
+- [x] Document the caps in `docs/SPIRE_LOCAL_CAPACITY_TARGETS.md` and
   `docs/SPIRE_LIBPQ_RUNBOOK.md` (operator action: raise the GUC if a
   legitimate workload trips it, with a packet-local benchmark).
 

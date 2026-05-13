@@ -39,6 +39,7 @@ const SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION: &str =
 const SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH: &str = "consistency_mode_mismatch";
 const SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH: &str = "endpoint_identity_mismatch";
 const SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED: &str = "tuple_transport_retired";
+const SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE: &str = "remote_payload_too_large";
 const SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD: &str = "remote_executor_overload";
 const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
@@ -108,6 +109,8 @@ const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1: &str = "pg_binary_attr_v1";
 const SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT: &str =
     "upgrade the remote ecaz extension, refresh the descriptor, and ensure tuple_transport_capabilities includes pg_binary_attr_v1";
+const SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT: &str =
+    "reduce remote tuple projection width or raise ec_spire.max_remote_payload_bytes_per_row / ec_spire.max_remote_payload_rows_per_batch with packet-local benchmark evidence";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
 const SPIRE_REMOTE_VEC_ID_DEDUPE_KEY: &str = "global_vec_id_or_node_scoped_local_vec_id";
 const SPIRE_REMOTE_VEC_ID_KEY_GLOBAL: u8 = 0xA0;
@@ -199,6 +202,10 @@ impl SpireRemoteSearchLibpqExecutorBudgetLimits {
 
 fn session_limit_to_u64(value: i32) -> u64 {
     u64::try_from(value.max(0)).expect("non-negative session limit should fit in u64")
+}
+
+fn session_limit_to_usize(value: i32) -> usize {
+    usize::try_from(value.max(0)).expect("non-negative session limit should fit in usize")
 }
 
 fn remote_search_pre_dispatch_blocker_step(status: &str) -> &'static str {
@@ -3582,6 +3589,19 @@ impl SpireRemoteProductionTransportAdapter {
     ) -> SpireRemoteProductionCandidateReceiveResult {
         let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
+        if validate_remote_payload_batch_row_count(
+            request.selected_pids.len(),
+            "remote candidate receive selected_pids",
+        )
+        .is_err()
+        {
+            return failed_production_candidate_receive_result(
+                request.node_id,
+                batch_start,
+                request_start,
+                SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
+            );
+        }
         let selected_pids = match request
             .selected_pids
             .iter()
@@ -3741,6 +3761,19 @@ impl SpireRemoteProductionTransportAdapter {
                 );
             }
         };
+        if validate_remote_payload_batch_row_count(
+            result_rows.len(),
+            "remote candidate receive result rows",
+        )
+        .is_err()
+        {
+            return failed_production_candidate_receive_result(
+                request.node_id,
+                batch_start,
+                request_start,
+                SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
+            );
+        }
         let candidates = match result_rows
             .iter()
             .map(|candidate_row| {
@@ -3800,6 +3833,19 @@ impl SpireRemoteProductionTransportAdapter {
     ) -> SpireRemoteProductionHeapReceiveResult {
         let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
+        if validate_remote_payload_batch_row_count(
+            request.selected_pids.len(),
+            "remote heap receive selected_pids",
+        )
+        .is_err()
+        {
+            return failed_production_heap_receive_result(
+                request.node_id,
+                batch_start,
+                request_start,
+                SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
+            );
+        }
         let selected_pids = match request
             .selected_pids
             .iter()
@@ -3979,6 +4025,16 @@ impl SpireRemoteProductionTransportAdapter {
                 );
             }
         };
+        if validate_remote_payload_batch_row_count(result_rows.len(), "remote heap result rows")
+            .is_err()
+        {
+            return failed_production_heap_receive_result(
+                request.node_id,
+                batch_start,
+                request_start,
+                SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
+            );
+        }
         let candidates = match result_rows
             .iter()
             .map(|candidate_row| {
@@ -4374,6 +4430,8 @@ fn production_candidate_decode_failure_category(error: &str) -> &'static str {
     let status = remote_search_receive_attempt_failure_status(error);
     if status == SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED {
         SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED
+    } else if status == SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE {
+        SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE
     } else if status == SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH
         || status == "protocol_version_mismatch"
         || status == "extension_version_mismatch"
@@ -4387,6 +4445,7 @@ fn production_candidate_decode_failure_category(error: &str) -> &'static str {
 fn remote_production_failure_hint(failure_category: &str) -> &'static str {
     match failure_category {
         SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED => SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT,
+        SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE => SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT,
         _ => SPIRE_REMOTE_NONE,
     }
 }
@@ -4402,7 +4461,9 @@ fn production_candidate_validation_failure_category(error: &str) -> &'static str
 }
 
 fn production_remote_heap_decode_failure_category(error: &str) -> &'static str {
-    if error.contains(SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING) {
+    if error.contains(SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE) {
+        SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE
+    } else if error.contains(SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING) {
         SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING
     } else if error.contains(SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD) {
         SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD
@@ -4415,6 +4476,73 @@ fn production_remote_heap_decode_failure_category(error: &str) -> &'static str {
     } else {
         SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED
     }
+}
+
+fn current_remote_payload_bytes_per_row_limit() -> usize {
+    session_limit_to_usize(options::current_session_max_remote_payload_bytes_per_row())
+}
+
+fn current_remote_payload_rows_per_batch_limit() -> usize {
+    session_limit_to_usize(options::current_session_max_remote_payload_rows_per_batch())
+}
+
+fn validate_remote_payload_batch_row_count(row_count: usize, context: &str) -> Result<(), String> {
+    validate_remote_payload_batch_row_count_with_limit(
+        row_count,
+        current_remote_payload_rows_per_batch_limit(),
+        context,
+    )
+}
+
+fn validate_remote_payload_batch_row_count_with_limit(
+    row_count: usize,
+    limit: usize,
+    context: &str,
+) -> Result<(), String> {
+    if row_count > limit {
+        return Err(format!(
+            "{SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE}: {context} row count {row_count} exceeds ec_spire.max_remote_payload_rows_per_batch {limit}; {SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_remote_payload_row_bytes(row_bytes: usize, context: &str) -> Result<(), String> {
+    validate_remote_payload_row_bytes_with_limit(
+        row_bytes,
+        current_remote_payload_bytes_per_row_limit(),
+        context,
+    )
+}
+
+fn validate_remote_payload_row_bytes_with_limit(
+    row_bytes: usize,
+    limit: usize,
+    context: &str,
+) -> Result<(), String> {
+    if row_bytes > limit {
+        return Err(format!(
+            "{SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE}: {context} payload bytes {row_bytes} exceeds ec_spire.max_remote_payload_bytes_per_row {limit}; {SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT}"
+        ));
+    }
+    Ok(())
+}
+
+fn typed_payload_hex_decoded_bytes(payload_values_hex: &[String]) -> Result<usize, String> {
+    let mut row_bytes = 0_usize;
+    for value in payload_values_hex {
+        if value.len() % 2 != 0 {
+            return Err(
+                "ec_spire remote heap executor typed payload_values_hex is invalid".to_owned(),
+            );
+        }
+        row_bytes = row_bytes.checked_add(value.len() / 2).ok_or_else(|| {
+            format!(
+                "{SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE}: remote typed tuple payload byte count overflow; {SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT}"
+            )
+        })?;
+    }
+    Ok(row_bytes)
 }
 
 fn failed_production_transport_probe_row(
@@ -6432,6 +6560,17 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "skip_node",
             SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
             SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT,
+        ),
+        production_fault_matrix_row(
+            28,
+            SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
+            "remote_payload",
+            SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT,
         ),
     ]
 }
@@ -9548,14 +9687,19 @@ fn decode_remote_search_typed_tuple_payload_pg_row(
     let payload_nulls = row
         .try_get::<_, Vec<bool>>("payload_nulls")
         .map_err(|_| "ec_spire remote heap executor typed payload_nulls decode failed".to_owned())?;
-    let payload_values = row
+    let payload_values_hex = row
         .try_get::<_, Vec<String>>("payload_values_hex")
         .map_err(|_| {
             "ec_spire remote heap executor typed payload_values_hex decode failed".to_owned()
-        })?
-        .into_iter()
+        })?;
+    validate_remote_payload_row_bytes(
+        typed_payload_hex_decoded_bytes(&payload_values_hex)?,
+        "remote typed tuple payload",
+    )?;
+    let payload_values = payload_values_hex
+        .iter()
         .map(|value| {
-            hex::decode(&value).map_err(|_| {
+            hex::decode(value).map_err(|_| {
                 "ec_spire remote heap executor typed payload_values_hex is invalid".to_owned()
             })
         })
@@ -9769,6 +9913,8 @@ fn remote_search_receive_attempt_failure_status(error: &str) -> String {
         || error.contains("endpoint identity")
     {
         SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH.to_owned()
+    } else if error.contains(SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE) {
+        SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE.to_owned()
     } else if error.contains(SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED) {
         SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED.to_owned()
     } else if error.contains(SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD) {
@@ -11443,6 +11589,7 @@ mod production_executor_state_tests {
             SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
             SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
             SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED,
+            SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
             SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
             SPIRE_REMOTE_PRODUCTION_EXTENSION_VERSION_MISMATCH,
             SPIRE_REMOTE_STATUS_STALE_EPOCH,
@@ -11681,6 +11828,47 @@ mod production_executor_state_tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].first_skip_category, SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED);
         assert_eq!(rows[0].first_skip_hint, SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT);
+    }
+
+    #[test]
+    fn remote_payload_caps_reject_oversized_rows_and_batches() {
+        let row_error =
+            validate_remote_payload_row_bytes_with_limit(17, 16, "remote typed tuple payload")
+                .expect_err("row over cap should fail");
+        assert!(row_error.contains(SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE));
+        assert!(row_error.contains("ec_spire.max_remote_payload_bytes_per_row"));
+
+        let batch_error =
+            validate_remote_payload_batch_row_count_with_limit(65, 64, "remote heap result rows")
+                .expect_err("batch over cap should fail");
+        assert!(batch_error.contains(SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE));
+        assert!(batch_error.contains("ec_spire.max_remote_payload_rows_per_batch"));
+
+        let payload_values = vec!["0a0b".to_owned(), "ff".to_owned()];
+        assert_eq!(typed_payload_hex_decoded_bytes(&payload_values).unwrap(), 3);
+    }
+
+    #[test]
+    fn degraded_skip_report_hints_remote_payload_cap() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            failed_candidate_receive_result(2, SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE),
+            ready_candidate_receive_result(3, vec![30], 1),
+        ];
+        let rows =
+            remote_search_production_degraded_skip_report_from_candidate_receive_results_with_consistency_mode(
+                7,
+                &dispatch_rows,
+                &transport_rows,
+                &receive_results,
+                "degraded",
+            )
+            .expect("degraded skip report should include remote payload cap");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first_skip_category, SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE);
+        assert_eq!(rows[0].first_skip_hint, SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT);
     }
 
     #[test]

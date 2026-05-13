@@ -19,6 +19,8 @@ for distributed SPIRE:
 | Maximum ready remotes per coordinator query | 8 | `ec_spire.remote_search_max_nodes = 8` |
 | Maximum remote leaf PIDs per coordinator query | 256 | `ec_spire.remote_search_max_pids = 256` |
 | Maximum selected PIDs per remote node | 64 | `ec_spire.remote_search_max_pids_per_node = 64` |
+| Maximum remote tuple payload bytes per row | 1024 | `ec_spire.max_remote_payload_bytes_per_row = 1024` |
+| Maximum remote payload rows per batch | 64 | `ec_spire.max_remote_payload_rows_per_batch = 64` |
 | Maximum concurrent distributed-read coordinator sessions | 1 | workload admission for the local smoke bundle |
 | Maximum concurrent remote-search dispatches across coordinator backends | 8 | `ec_spire.remote_search_max_concurrent_dispatches = 8` |
 | Maximum concurrent remote-search dispatches per remote node | 1 | `ec_spire.remote_search_max_concurrent_dispatches_per_node = 1` |
@@ -41,6 +43,8 @@ A packet-local run that uses this profile should set:
 SET ec_spire.remote_search_max_nodes = 8;
 SET ec_spire.remote_search_max_pids = 256;
 SET ec_spire.remote_search_max_pids_per_node = 64;
+SET ec_spire.max_remote_payload_bytes_per_row = 1024;
+SET ec_spire.max_remote_payload_rows_per_batch = 64;
 SET ec_spire.remote_search_max_concurrent_dispatches = 8;
 SET ec_spire.remote_search_max_concurrent_dispatches_per_node = 1;
 ```
@@ -79,6 +83,16 @@ The current local readiness target does not rely on unlimited default GUCs.
 Although the remote-search budget GUCs default to `0`, meaning uncapped, a
 local production-readiness smoke packet should use explicit nonzero caps so an
 accidental fanout or cross-backend overload is visible in diagnostics.
+
+Remote tuple-payload caps fail closed with
+`remote_payload_too_large` before a decoded typed payload row or batch is
+accepted into coordinator merge state. The default row cap is 1024 bytes:
+packet `30975` measured 31,510 payload bytes across 200 rows, or roughly 158
+bytes per row, and the default rounds the 4x safety margin up to 1 KiB. The
+default batch cap is 64 rows, matching the selected-PID local capacity target.
+Raise either GUC only with packet-local benchmark evidence for the tuple
+projection, fixture, storage format, and rerank mode that need the larger
+payload.
 
 ## Write Capacity Boundary
 
