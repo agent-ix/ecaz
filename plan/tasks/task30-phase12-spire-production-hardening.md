@@ -294,7 +294,14 @@ described by reviewer packet `30896`.
   teardown command for repeated Stage E and readiness runs.
 - [ ] Publish and inspect placement metadata that maps selected PIDs to remote
   nodes and local store IDs.
-- [ ] Verify strict mode never mixes incompatible epochs across nodes.
+- [x] Verify strict mode never mixes incompatible epochs across nodes.
+  - Evidence: packet `30895` Stage E `epoch_mismatch` strict artifact runs a
+    two-dispatch coordinator/remote fixture where one remote advertises a stale
+    epoch window. Strict mode reports `status = stale_epoch`,
+    `blocked_before_dispatch_count = 1`,
+    `degraded_skipped_dispatch_count = 0`, and
+    `next_executor_step = remote_epoch_window`, proving the coordinator does
+    not continue by mixing the ready remote with the incompatible-epoch remote.
 - [x] Verify degraded mode reports every skipped or stale remote node with node
   identity, count, and first skip category.
   - Evidence: `ec_spire_remote_search_degraded_skip_report(...)` returns one
