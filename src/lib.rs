@@ -7371,6 +7371,57 @@ fn ec_spire_index_scan_placement_snapshot(
 }
 
 #[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_selected_pid_placement_snapshot(
+    index_oid: pg_sys::Oid,
+    selected_pids: Vec<i64>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(selection_ordinal, i64),
+        name!(pid, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(store_relid, i64),
+        name!(placement_state, &'static str),
+        name!(object_version, i64),
+        name!(object_bytes, i64),
+    ),
+> {
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_index_selected_pid_placement_snapshot selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_index_selected_pid_placement_snapshot")
+    };
+    let rows =
+        unsafe { am::spire_index_selected_pid_placement_snapshot(index_relation, selected_pids) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.selection_ordinal).expect("selection ordinal should fit in i64"),
+            i64::try_from(row.pid).expect("PID should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::from(row.store_relid),
+            row.placement_state,
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::try_from(row.object_bytes).expect("object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
 fn ec_spire_index_scan_local_store_execution_snapshot(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -20371,6 +20422,70 @@ mod tests {
         assert_eq!(post_insert_delta_object_count, 1);
         assert_eq!(post_insert_assignment_count, 4);
         assert!(delta_object_bytes > 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_selected_pid_placement_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_selected_pid_place_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_selected_pid_place_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_selected_pid_place_idx \
+             ON ec_spire_selected_pid_place_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_selected_pid_place_idx'::regclass::oid")
+                .expect("index oid query should succeed")
+                .expect("index oid should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_selected_pid_place_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid array should exist");
+        assert_eq!(selected_pids.len(), 2);
+        unsafe {
+            am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
+        }
+
+        let placement_map = Spi::get_one::<String>(&format!(
+            "SELECT string_agg(\
+                 pid::text || ':' || node_id::text || ':' || local_store_id::text || ':' || placement_state, \
+                 ',' ORDER BY selection_ordinal) \
+             FROM ec_spire_index_selected_pid_placement_snapshot(\
+                 'ec_spire_selected_pid_place_idx'::regclass, ARRAY[{}, {}]::bigint[])",
+            selected_pids[0], selected_pids[1]
+        ))
+        .expect("selected PID placement snapshot query should succeed")
+        .expect("selected PID placement map should exist");
+        let object_bytes_positive = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(object_bytes > 0) \
+             FROM ec_spire_index_selected_pid_placement_snapshot(\
+                 'ec_spire_selected_pid_place_idx'::regclass, ARRAY[{}, {}]::bigint[])",
+            selected_pids[0], selected_pids[1]
+        ))
+        .expect("selected PID placement object bytes query should succeed")
+        .expect("selected PID placement object bytes result should exist");
+
+        assert_eq!(
+            placement_map,
+            format!(
+                "{}:0:0:available,{}:2:2:available",
+                selected_pids[0], selected_pids[1]
+            )
+        );
+        assert!(object_bytes_positive);
     }
 
     #[pg_test]

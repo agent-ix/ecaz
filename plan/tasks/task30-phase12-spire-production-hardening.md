@@ -292,8 +292,14 @@ described by reviewer packet `30896`.
 
 - [ ] Add or extend an `ecaz`-owned local one-coordinator/two-remote setup and
   teardown command for repeated Stage E and readiness runs.
-- [ ] Publish and inspect placement metadata that maps selected PIDs to remote
+- [x] Publish and inspect placement metadata that maps selected PIDs to remote
   nodes and local store IDs.
+  - Evidence: `ec_spire_index_selected_pid_placement_snapshot(index_oid,
+    selected_pids)` returns one row per selected PID with `pid`, `node_id`,
+    `local_store_id`, `store_relid`, placement state, object version, and
+    object bytes; the PG18 fixture rewrites one selected PID to a remote node
+    and verifies the selected PID map reports both the local and remote
+    `(node_id, local_store_id)` pairs.
 - [x] Verify strict mode never mixes incompatible epochs across nodes.
   - Evidence: packet `30895` Stage E `epoch_mismatch` strict artifact runs a
     two-dispatch coordinator/remote fixture where one remote advertises a stale

@@ -1799,6 +1799,55 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn index_selected_pid_placement_snapshot(
+    index_relation: pg_sys::Relation,
+    selected_pids: Vec<u64>,
+) -> Vec<SpireIndexSelectedPidPlacementSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexSelectedPidPlacementSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (_epoch_manifest, object_manifest, placement_directory) =
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+        let mut rows = Vec::with_capacity(selected_pids.len());
+        for (selection_index, pid) in selected_pids.into_iter().enumerate() {
+            if pid == 0 {
+                return Err("ec_spire selected PID placement snapshot received PID 0".to_owned());
+            }
+            let manifest_entry = object_manifest.get(pid).ok_or_else(|| {
+                format!("ec_spire selected PID placement snapshot missing object for pid {pid}")
+            })?;
+            let placement = placement_directory.get(pid).ok_or_else(|| {
+                format!("ec_spire selected PID placement snapshot missing placement for pid {pid}")
+            })?;
+            if placement.object_version != manifest_entry.object_version {
+                return Err(format!(
+                    "ec_spire selected PID placement snapshot object_version mismatch for pid {}: manifest {}, placement {}",
+                    pid, manifest_entry.object_version, placement.object_version
+                ));
+            }
+            rows.push(SpireIndexSelectedPidPlacementSnapshotRow {
+                active_epoch: root_control.active_epoch,
+                selection_ordinal: u64::try_from(selection_index + 1).map_err(|_| {
+                    "ec_spire selected PID placement snapshot selection ordinal exceeds u64"
+                        .to_owned()
+                })?,
+                pid,
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                store_relid: placement.store_relid,
+                placement_state: placement_state_name(placement.state),
+                object_version: placement.object_version,
+                object_bytes: u64::from(placement.object_bytes),
+            });
+        }
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) unsafe fn index_scan_routing_snapshot(
     index_relation: pg_sys::Relation,
     query_values: Vec<f32>,

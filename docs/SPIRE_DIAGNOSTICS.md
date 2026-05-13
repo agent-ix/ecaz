@@ -49,6 +49,7 @@ Start with:
 | `ec_spire_index_epoch_cleanup_run(index_oid)` | operator | You need to reclaim cleanup-eligible old-epoch object tuples under the SPIRE publish lock. |
 | `ec_spire_index_placement_snapshot(index_oid)` | operator | You need per-store placement counts, availability counts, and object bytes by kind. |
 | `ec_spire_index_scan_placement_snapshot(index_oid, query)` | operator/debug | You need the stores, leaf PIDs, delta PIDs, and candidate rows touched by one query. |
+| `ec_spire_index_selected_pid_placement_snapshot(index_oid, selected_pids)` | operator/debug | You need the exact selected PID to remote node and local store mapping before remote fanout. |
 | `ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` | operator/debug | You need to know whether scan-touched local stores execute sequentially or through a real parallel primitive. |
 | `ec_spire_index_scan_local_store_read_overlap_harness(index_oid, query)` | operator/debug | You need repeatable per-store route, candidate, object-byte, read-batch, and delta-decode counters for a local multi-store query. |
 | `ec_spire_index_scan_routing_snapshot(index_oid, query)` | operator/debug | You need per-routing-level frontier widths, expansion counts, deduped route counts, and truncation reasons for one query. |
@@ -117,6 +118,11 @@ local multi-store indexes, while multi-store REINDEX remains explicitly
 rejected until a full auxiliary-store rebuild lifecycle lands.
 `ec_spire_index_placement_snapshot(index_oid)` reports the configured placement
 surface by `(node_id, local_store_id, store_relid)`.
+`ec_spire_index_selected_pid_placement_snapshot(index_oid, selected_pids)`
+reports one row per requested PID with its `node_id`, `local_store_id`,
+`store_relid`, placement state, object version, and object bytes. Use it before
+remote fanout when an operator needs to inspect the exact selected PID mapping
+rather than grouped scan counters.
 `ec_spire_index_scan_placement_snapshot(index_oid, query)` reports the
 scan-touched store groups by `(node_id, local_store_id)`. Local relation-backed
 object reads resolve those diagnostics through bounded store maps keyed by
