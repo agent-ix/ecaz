@@ -162,6 +162,10 @@ Phase 13 will push it past 80k.
   build-deferral fixtures with a textual include; later populated-build,
   multistore, recursive-fanout, and top-graph build fixtures remain open,
   so the row is not yet closed.
+- Packet `31009` starts `src/tests/vacuum.rs` by moving the epoch cleanup,
+  epoch snapshot, and maintenance-run fixture block with a textual
+  include; later SQL VACUUM and concurrent insert/vacuum fixtures remain
+  open, so the row is not yet closed.
 - Packet `31002` starts `src/tests/placement.rs` by moving the placement
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
