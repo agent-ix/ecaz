@@ -42201,6 +42201,170 @@ mod tests {
         assert_eq!(inserted_rows_returned, 2);
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_spire_placement_write_contention_distinct_pk_dml() {
+        const TABLE_NAME: &str = "ec_spire_placement_contention_dml";
+        const INDEX_NAME: &str = "ec_spire_placement_contention_dml_idx";
+        // Test-unique advisory-lock id; conventionally `<review-packet>0`.
+        const BARRIER_KEY: i64 = 309_690;
+        const WRITER_COUNT: usize = 8;
+        const P99_THRESHOLD: Duration = Duration::from_secs(20);
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire placement contention setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 SELECT gs, encode_to_ecvector(
+                     ARRAY[1.0, (gs::real / 100.0)]::real[], 4, 42)
+                   FROM generate_series(1, {WRITER_COUNT}) AS gs;
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (nlists = 1, nprobe = 1, training_sample_rows = {WRITER_COUNT});
+                 WITH active AS (
+                     SELECT active_epoch
+                       FROM ec_spire_index_hierarchy_snapshot('{INDEX_NAME}'::regclass)
+                 )
+                 INSERT INTO ec_spire_placement
+                     (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity)
+                 SELECT '{INDEX_NAME}'::regclass,
+                        int8send(gs::bigint)::bytea,
+                        0,
+                        2,
+                        active.active_epoch,
+                        decode(md5(gs::text), 'hex')
+                   FROM generate_series(1, {WRITER_COUNT}) AS gs
+                   CROSS JOIN active;",
+            ),
+        );
+        let deadlocks_before = Spi::get_one::<i64>(
+            "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()",
+        )
+        .expect("deadlock stats query should succeed")
+        .expect("deadlock stats should exist");
+        let active_epoch = Spi::get_one::<i64>(&format!(
+            "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('{INDEX_NAME}'::regclass)"
+        ))
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+
+        Spi::run(&format!("SELECT pg_advisory_lock({BARRIER_KEY})"))
+            .expect("barrier lock should be acquired");
+        let mut workers = Vec::with_capacity(WRITER_COUNT);
+        for worker_idx in 0..WRITER_COUNT {
+            let delete_id = i64::try_from(worker_idx + 1).expect("worker index should fit i64");
+            let insert_id = 101_i64 + i64::try_from(worker_idx).expect("worker index fits i64");
+            let inserted_tail = (worker_idx + 1) as f32 / 10.0;
+            let worker_sql = format!(
+                "SET lock_timeout = '10s';
+                 SET statement_timeout = '30s';
+                 SELECT pg_advisory_lock_shared({BARRIER_KEY});
+                 SELECT pg_advisory_unlock_shared({BARRIER_KEY});
+                 BEGIN;
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES ({insert_id}, encode_to_ecvector(
+                     ARRAY[1.0, {inserted_tail}]::real[], 4, 42));
+                 INSERT INTO ec_spire_placement
+                     (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity)
+                 VALUES ('{INDEX_NAME}'::regclass,
+                         int8send({insert_id}::bigint)::bytea,
+                         0,
+                         2,
+                         {active_epoch},
+                         decode(md5({insert_id}::text), 'hex'));
+                 DO $worker$
+                 DECLARE row_count bigint;
+                 BEGIN
+                     DELETE FROM {TABLE_NAME} WHERE id = {delete_id};
+                     GET DIAGNOSTICS row_count = ROW_COUNT;
+                     IF row_count != 1 THEN
+                         RAISE EXCEPTION 'unexpected placement contention delete row count %',
+                             row_count;
+                     END IF;
+                 END
+                 $worker$;
+                 DELETE FROM ec_spire_placement
+                  WHERE index_oid = '{INDEX_NAME}'::regclass
+                    AND pk_value = int8send({delete_id}::bigint)::bytea;
+                 COMMIT;",
+            );
+            let label = format!("spire placement contention worker {}", worker_idx + 1);
+            let child = spawn_psql_script(&connection, &label, &worker_sql);
+            workers.push((label, child));
+        }
+        wait_for_advisory_lock_waiters(BARRIER_KEY, WRITER_COUNT as i64);
+        let released_at = Instant::now();
+        Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
+            .expect("barrier lock should be released");
+
+        let handles = workers
+            .into_iter()
+            .map(|(label, child)| {
+                std::thread::spawn(move || {
+                    let output = child
+                        .wait_with_output()
+                        .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
+                    (label, released_at.elapsed(), output)
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut durations = Vec::with_capacity(WRITER_COUNT);
+        for handle in handles {
+            let (label, duration, output) = handle
+                .join()
+                .expect("placement contention worker join should succeed");
+            assert_psql_success(&label, output);
+            durations.push(duration);
+        }
+        durations.sort_unstable();
+        let p99 = durations[durations.len() - 1];
+        let point_lookup_count = |ids: std::ops::RangeInclusive<i64>| -> i64 {
+            ids.map(|id| {
+                Spi::get_one::<i64>(&format!(
+                    "SELECT count(*) FROM {TABLE_NAME} WHERE id = {id}"
+                ))
+                .expect("point lookup count query should succeed")
+                .expect("point lookup count should exist")
+            })
+            .sum()
+        };
+
+        let inserted_count = point_lookup_count(101..=108);
+        let placement_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ec_spire_placement WHERE index_oid = '{INDEX_NAME}'::regclass"
+        ))
+        .expect("placement count query should succeed")
+        .expect("placement count should exist");
+        let placement_waiter_count = Spi::get_one::<i64>(
+            "SELECT count(*)::bigint
+               FROM pg_locks
+              WHERE relation = 'ec_spire_placement'::regclass
+                AND NOT granted",
+        )
+        .expect("placement waiter count query should succeed")
+        .expect("placement waiter count should exist");
+        let deadlocks_after = Spi::get_one::<i64>(
+            "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()",
+        )
+        .expect("post deadlock stats query should succeed")
+        .expect("post deadlock stats should exist");
+
+        assert_eq!(inserted_count, WRITER_COUNT as i64);
+        assert_eq!(placement_count, WRITER_COUNT as i64);
+        assert_eq!(placement_waiter_count, 0);
+        assert_eq!(deadlocks_after, deadlocks_before);
+        assert!(
+            p99 <= P99_THRESHOLD,
+            "placement contention p99 {:?} exceeded {:?}; samples={durations:?}",
+            p99,
+            P99_THRESHOLD
+        );
+    }
+
     #[pg_test]
     fn test_ec_spire_insert_after_build_multi_row_epoch_progression() {
         Spi::run(

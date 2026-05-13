@@ -225,15 +225,22 @@ described by reviewer packet `30896`.
 - [x] Add a multi-row INSERT trigger fixture proving per-row trigger dispatch
   lands every row on its owning remote and commits all remote prepared
   transactions on local commit.
-- [ ] Add a placement-table write-contention fixture with many parallel
+- [x] Add a placement-table write-contention fixture with many parallel
   distinct-PK INSERTs and DELETEs, asserting no deadlocks and bounded latency
   growth.
-- [ ] Evaluate partitioning `ec_spire_placement` by `index_oid` if contention
+  - [x] `test_pg18_ec_spire_placement_write_contention_distinct_pk_dml`
+    releases 8 distinct-PK INSERT+DELETE workers behind an advisory barrier,
+    asserts worker success, row counts, no placement lock waiters, no new
+    deadlocks, and p99 completion below a predeclared 20s threshold.
+- [x] Evaluate partitioning `ec_spire_placement` by `index_oid` if contention
   evidence shows shared-table hot pages.
-  - [ ] Exit criterion: choose the fixture's writer count and p99 latency
+  - [x] Exit criterion: choose the fixture's writer count and p99 latency
     threshold before running it; partition only if packet-local evidence crosses
     that threshold or shows lock waits/deadlocks attributable to shared-table
     placement pages.
+  - [x] Current decision: keep the shared table for now because the PG18
+    fixture passed with 8 writers, no deadlocks, no placement lock waiters, and
+    p99 below the 20s partition threshold.
 - [ ] Migrate wide-fanout INSERT 2PC dispatch to the same async/pipelined
   transport pattern as the read path, so M remote prepares do not serialize
   into M round trips.
@@ -474,6 +481,9 @@ described by reviewer packet `30896`.
 - [ ] Produce a final local production-readiness bundle from clean setup
   through distributed read/write, fault/degraded checks, multi-store checks,
   and harness artifact capture.
+  - [ ] Include the endpoint tuple-transport capability summary, especially
+    `pg_binary_attr_v1_ready`, in the bundle header so throughput/latency
+    artifacts expose whether the remote typed-receive path was ready.
 
 ## Suggested Packet Sequence
 
