@@ -1,0 +1,10 @@
+
+   0: [91mquerying ec_spire_index_scan_routing_snapshot[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 16 remote placement(s); first remote pid 1 is on node_id 2[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/spire_pipeline.rs[0m:[35m695[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

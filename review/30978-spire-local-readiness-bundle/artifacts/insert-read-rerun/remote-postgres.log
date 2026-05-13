@@ -1,0 +1,5 @@
+2026-05-13 01:08:34.299 PDT [1791739] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-13 01:08:34.299 PDT [1791739] LOG:  Unix-domain socket path "/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-phase12-final-insert-read-rerun/s/.s.PGSQL.39188" is too long (maximum 107 bytes)
+2026-05-13 01:08:34.299 PDT [1791739] WARNING:  could not create Unix-domain socket in directory "/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-phase12-final-insert-read-rerun/s"
+2026-05-13 01:08:34.299 PDT [1791739] FATAL:  could not create any Unix-domain sockets
+2026-05-13 01:08:34.300 PDT [1791739] LOG:  database system is shut down

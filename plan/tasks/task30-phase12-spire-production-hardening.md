@@ -535,6 +535,13 @@ described by reviewer packet `30896`.
   candidate counts, heap rows, remote fanout, timeout/cancel counts,
   strict-failure counts, degraded-skip counts, placement contention, and typed
   tuple transport counters in packet-local artifacts.
+  - [ ] Packet `30978` captured passing CustomScan read, helper write/read,
+    transport-overlap, remote-statement-timeout, local-cancel, typed endpoint
+    readiness, latency, payload-byte, pipeline, and local-store artifacts, but
+    it did not close this row: trigger-mode live write/read exited nonzero with
+    `coordinator_row_count=1`, `ecaz bench spire-pipeline` still trips the v1
+    DML frontdoor guard for readiness recall/query metrics, and the packet-local
+    SQL recall sanity run reported `recall_at_10 = 0.0000`.
 - [x] Publish local capacity targets for maximum remotes, maximum concurrent
   coordinator queries, maximum concurrent writers, maximum work per remote,
   maximum PIDs per node, and expected overload/degraded behavior.
@@ -564,6 +571,9 @@ described by reviewer packet `30896`.
   - [ ] Include the endpoint tuple-transport capability summary, especially
     `pg_binary_attr_v1_ready`, in the bundle header so throughput/latency
     artifacts expose whether the remote typed-receive path was ready.
+  - [ ] Packet `30978` is a readiness-bundle attempt and blocker packet, not a
+    final bundle. Keep this row open until the trigger-mode live fixture and
+    recall/bench artifact path are reconciled.
 
 ## Suggested Packet Sequence
 

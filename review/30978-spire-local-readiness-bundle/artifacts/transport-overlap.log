@@ -1,0 +1,16 @@
+run_dir=/home/peter/dev/ecaz/target/spire-multicluster-transport-overlap-pg18-p12to
+remote_fast_port=39192
+remote_slow_port=39193
+coord_port=39191
+transport_overlap_row=2,ready,none,0,305,305,3
+transport_overlap_row=3,ready,none,0,3,3,3
+slow_status=ready
+slow_failure_category=none
+slow_completed_after_ms=305
+slow_elapsed_ms=305
+fast_status=ready
+fast_failure_category=none
+fast_completed_after_ms=3
+fast_elapsed_ms=3
+fast_completed_before_slow=true
+SPIRE multicluster PG18 transport overlap passed
