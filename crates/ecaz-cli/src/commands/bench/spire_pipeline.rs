@@ -55,6 +55,9 @@ pub struct SpirePipelineArgs {
     /// provided this records the empty-fanout remote diagnostic shape.
     #[arg(long)]
     pub include_remote: bool,
+    /// Also aggregate local-store read-overlap counters for sampled queries.
+    #[arg(long)]
+    pub include_local_store_overlap: bool,
     /// Remote partition/object PIDs to pass to `ec_spire_remote_pipeline_steps`.
     #[arg(long, value_delimiter = ',')]
     pub remote_selected_pids: Vec<i64>,
@@ -179,6 +182,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut routing = BTreeMap::<RoutingKey, RoutingAggregate>::new();
     let mut local = BTreeMap::<StepKey, LocalStepAggregate>::new();
     let mut remote = BTreeMap::<StepKey, RemoteStepAggregate>::new();
+    let mut local_store_overlap =
+        BTreeMap::<LocalStoreOverlapKey, LocalStoreOverlapAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
@@ -221,6 +226,20 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     })
                     .or_default()
                     .record(row);
+            }
+            if args.include_local_store_overlap {
+                let overlap_rows =
+                    query_local_store_overlap_rows(&client, &index, &query.source).await?;
+                for row in overlap_rows {
+                    local_store_overlap
+                        .entry(LocalStoreOverlapKey {
+                            nprobe: *nprobe,
+                            node_id: row.node_id,
+                            local_store_id: row.local_store_id,
+                        })
+                        .or_default()
+                        .record(row);
+                }
             }
 
             if remote_enabled {
@@ -282,9 +301,11 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metrics_enabled,
         include_recall: args.include_recall,
         query_metric_k: args.query_metric_k,
+        local_store_overlap_enabled: args.include_local_store_overlap,
         routing: &routing,
         local: &local,
         remote: &remote,
+        local_store_overlap: &local_store_overlap,
         query_metrics: &query_metrics,
     });
     println!("{output}");
@@ -552,6 +573,18 @@ async fn query_local_pipeline_rows(
     Ok(rows.into_iter().map(LocalPipelineRow::from).collect())
 }
 
+async fn query_local_store_overlap_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+) -> Result<Vec<LocalStoreOverlapRow>> {
+    let rows = client
+        .query(local_store_overlap_sql(), &[&index, &query])
+        .await
+        .wrap_err("querying ec_spire_index_scan_local_store_read_overlap_harness")?;
+    Ok(rows.into_iter().map(LocalStoreOverlapRow::from).collect())
+}
+
 async fn query_remote_pipeline_rows(
     client: &Client,
     index: &str,
@@ -596,6 +629,14 @@ fn local_pipeline_snapshot_sql() -> &'static str {
             recommendation
      FROM ec_spire_index_scan_pipeline_snapshot($1::text::regclass::oid, $2::real[])
      ORDER BY step_ordinal"
+}
+
+fn local_store_overlap_sql() -> &'static str {
+    "SELECT node_id, local_store_id, route_count, leaf_route_count,
+            delta_route_count, candidate_row_count, prefetched_object_bytes,
+            read_batch_count, delta_decode_count
+     FROM ec_spire_index_scan_local_store_read_overlap_harness($1::text::regclass::oid, $2::real[])
+     ORDER BY node_id, local_store_id"
 }
 
 fn remote_pipeline_steps_sql() -> &'static str {
@@ -712,6 +753,35 @@ impl From<Row> for RemotePipelineRow {
     }
 }
 
+#[derive(Debug)]
+struct LocalStoreOverlapRow {
+    node_id: i64,
+    local_store_id: i64,
+    route_count: i64,
+    leaf_route_count: i64,
+    delta_route_count: i64,
+    candidate_row_count: i64,
+    prefetched_object_bytes: i64,
+    read_batch_count: i64,
+    delta_decode_count: i64,
+}
+
+impl From<Row> for LocalStoreOverlapRow {
+    fn from(row: Row) -> Self {
+        Self {
+            node_id: row.get(0),
+            local_store_id: row.get(1),
+            route_count: row.get(2),
+            leaf_route_count: row.get(3),
+            delta_route_count: row.get(4),
+            candidate_row_count: row.get(5),
+            prefetched_object_bytes: row.get(6),
+            read_batch_count: row.get(7),
+            delta_decode_count: row.get(8),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct RoutingKey {
     nprobe: i32,
@@ -723,6 +793,13 @@ struct StepKey {
     nprobe: i32,
     step_ordinal: i64,
     step_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct LocalStoreOverlapKey {
+    nprobe: i32,
+    node_id: i64,
+    local_store_id: i64,
 }
 
 #[derive(Debug, Default)]
@@ -812,6 +889,31 @@ impl RemoteStepAggregate {
         self.blocked_count_sum += row.blocked_count;
         self.remote_pid_count_sum += row.remote_pid_count;
         self.next_blocker.record(row.next_blocker);
+    }
+}
+
+#[derive(Debug, Default)]
+struct LocalStoreOverlapAggregate {
+    queries: usize,
+    route_count_sum: i64,
+    leaf_route_count_sum: i64,
+    delta_route_count_sum: i64,
+    candidate_row_count_sum: i64,
+    prefetched_object_bytes_sum: i64,
+    read_batch_count_sum: i64,
+    delta_decode_count_sum: i64,
+}
+
+impl LocalStoreOverlapAggregate {
+    fn record(&mut self, row: LocalStoreOverlapRow) {
+        self.queries += 1;
+        self.route_count_sum += row.route_count;
+        self.leaf_route_count_sum += row.leaf_route_count;
+        self.delta_route_count_sum += row.delta_route_count;
+        self.candidate_row_count_sum += row.candidate_row_count;
+        self.prefetched_object_bytes_sum += row.prefetched_object_bytes;
+        self.read_batch_count_sum += row.read_batch_count;
+        self.delta_decode_count_sum += row.delta_decode_count;
     }
 }
 
@@ -927,9 +1029,11 @@ struct ReportInput<'a> {
     query_metrics_enabled: bool,
     include_recall: bool,
     query_metric_k: usize,
+    local_store_overlap_enabled: bool,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
     remote: &'a BTreeMap<StepKey, RemoteStepAggregate>,
+    local_store_overlap: &'a BTreeMap<LocalStoreOverlapKey, LocalStoreOverlapAggregate>,
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
 }
 
@@ -939,6 +1043,9 @@ fn render_report(input: ReportInput<'_>) -> String {
     sections.push(render_local_table(input.local));
     if input.remote_enabled {
         sections.push(render_remote_table(input.remote));
+    }
+    if input.local_store_overlap_enabled {
+        sections.push(render_local_store_overlap_table(input.local_store_overlap));
     }
     if input.query_metrics_enabled {
         sections.push(render_query_metrics_table(
@@ -959,7 +1066,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_recall: {query_recall}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_recall: {query_recall}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -970,6 +1077,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         remote = input.remote_enabled,
         remote_selected_pids = input.remote_selected_pids,
         remote_epoch = option_label(input.remote_epoch),
+        local_store_overlap = input.local_store_overlap_enabled,
         query_metrics = input.query_metrics_enabled,
         query_metric_k = input.query_metric_k,
         query_recall = input.include_recall,
@@ -1082,6 +1190,42 @@ fn render_remote_table(rows: &BTreeMap<StepKey, RemoteStepAggregate>) -> String 
     format!("Remote pipeline counters\n{table}")
 }
 
+fn render_local_store_overlap_table(
+    rows: &BTreeMap<LocalStoreOverlapKey, LocalStoreOverlapAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "node_id",
+        "local_store_id",
+        "queries",
+        "route_sum",
+        "leaf_route_sum",
+        "delta_route_sum",
+        "candidate_sum",
+        "object_bytes_sum",
+        "read_batch_sum",
+        "delta_decode_sum",
+    ]);
+    for (key, aggregate) in rows {
+        table.add_row(vec![
+            Cell::new(key.nprobe),
+            Cell::new(key.node_id),
+            Cell::new(key.local_store_id),
+            Cell::new(aggregate.queries),
+            Cell::new(aggregate.route_count_sum),
+            Cell::new(aggregate.leaf_route_count_sum),
+            Cell::new(aggregate.delta_route_count_sum),
+            Cell::new(aggregate.candidate_row_count_sum),
+            Cell::new(aggregate.prefetched_object_bytes_sum),
+            Cell::new(aggregate.read_batch_count_sum),
+            Cell::new(aggregate.delta_decode_count_sum),
+        ]);
+    }
+    format!("Local store overlap counters\n{table}")
+}
+
 fn render_query_metrics_table(
     rows: &BTreeMap<i32, QueryMetricAggregate>,
     include_recall: bool,
@@ -1150,6 +1294,7 @@ mod tests {
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,
+            include_local_store_overlap: false,
             remote_selected_pids: vec![],
             remote_requested_epoch: None,
             top_k: 10,
@@ -1210,6 +1355,8 @@ mod tests {
         assert!(routing_snapshot_sql().contains("ec_spire_index_scan_routing_snapshot"));
         assert!(routing_snapshot_sql().contains("$1::text::regclass::oid"));
         assert!(local_pipeline_snapshot_sql().contains("ec_spire_index_scan_pipeline_snapshot"));
+        assert!(local_store_overlap_sql()
+            .contains("ec_spire_index_scan_local_store_read_overlap_harness"));
         assert!(remote_pipeline_steps_sql().contains("ec_spire_remote_pipeline_steps"));
         assert!(remote_pipeline_steps_sql().contains("$4::bigint[]"));
     }
@@ -1237,15 +1384,49 @@ mod tests {
             query_metrics_enabled: true,
             include_recall: false,
             query_metric_k: 10,
+            local_store_overlap_enabled: true,
             routing: &routing,
             local: &local,
             remote: &remote,
+            local_store_overlap: &BTreeMap::new(),
             query_metrics: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
+        assert!(header.contains("local_store_overlap: true"));
         assert!(header.contains("query_metrics: true"));
         assert!(header.contains("query_metric_k: 10"));
         assert!(header.contains("query_recall: false"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_local_store_overlap_counters() {
+        let mut aggregate = LocalStoreOverlapAggregate::default();
+        aggregate.record(LocalStoreOverlapRow {
+            node_id: 2,
+            local_store_id: 1,
+            route_count: 3,
+            leaf_route_count: 2,
+            delta_route_count: 1,
+            candidate_row_count: 4,
+            prefetched_object_bytes: 4096,
+            read_batch_count: 1,
+            delta_decode_count: 1,
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            LocalStoreOverlapKey {
+                nprobe: 8,
+                node_id: 2,
+                local_store_id: 1,
+            },
+            aggregate,
+        );
+
+        let rendered = render_local_store_overlap_table(&rows);
+        assert!(rendered.contains("Local store overlap counters"));
+        assert!(rendered.contains("object_bytes_sum"));
+        assert!(rendered.contains("delta_decode_sum"));
+        assert!(rendered.contains("4096"));
     }
 
     #[test]

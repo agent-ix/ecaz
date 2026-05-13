@@ -215,6 +215,7 @@ mod tests {
             "8,16",
             "--remote-tuple-transport",
             "pg_binary_attr_v1",
+            "--include-local-store-overlap",
             "--include-query-metrics",
             "--include-recall",
             "--query-metric-k",
@@ -229,6 +230,7 @@ mod tests {
                     args.remote_tuple_transport,
                     Some(crate::commands::bench::SpireRemoteTupleTransportMode::PgBinaryAttrV1)
                 );
+                assert!(args.include_local_store_overlap);
                 assert!(args.include_query_metrics);
                 assert!(args.include_recall);
                 assert_eq!(args.query_metric_k, 20);

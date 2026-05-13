@@ -434,7 +434,9 @@ described by reviewer packet `30896`.
   latency, and counter capture across local instances.
   - [x] `ecaz bench spire-pipeline` can now optionally emit coordinator query
     latency p50/p95/p99 and recall@k alongside routing/local/remote pipeline
-    counters through `--include-query-metrics` and `--include-recall`.
+    counters through `--include-query-metrics` and `--include-recall`; it can
+    also aggregate local-store object bytes, read batches, and delta-decode
+    counts through `--include-local-store-overlap`.
 - [ ] Capture recall, latency p50/p95/p99, object bytes, route counts,
   candidate counts, heap rows, remote fanout, timeout/cancel counts,
   strict-failure counts, degraded-skip counts, placement contention, and typed
