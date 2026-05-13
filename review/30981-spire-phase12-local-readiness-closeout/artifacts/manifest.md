@@ -1,6 +1,6 @@
 # Artifact Manifest: SPIRE Phase 12 Local Readiness Closeout
 
-- head SHA at assembly time: `9c0310362926178ed848f714e61b772a7da1351e`
+- source head before assembly: `9c0310362926178ed848f714e61b772a7da1351e`
 - packet/topic: `30981-spire-phase12-local-readiness-closeout`
 - timestamp: `2026-05-13`
 - evidence label: local production-readiness smoke
