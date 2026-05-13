@@ -175,11 +175,11 @@ fn remote_search_exact_heap_score(
             "ec_spire remote heap resolution source vector contains a non-finite value".to_owned(),
         );
     }
-    let score = crate::am::ec_hnsw::source::inner_product(query, source_vector);
-    if !score.is_finite() {
+    let inner_product = crate::am::ec_hnsw::source::inner_product(query, source_vector);
+    if !inner_product.is_finite() {
         return Err("ec_spire remote heap resolution produced a non-finite score".to_owned());
     }
-    Ok(score)
+    Ok(-inner_product)
 }
 
 unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(

@@ -30889,6 +30889,19 @@ mod tests {
         assert!(hook_classification_supported);
         assert_eq!(hook_classification_kind, "pk_select_by_pk");
         assert_eq!(hook_classification_status, "supported_v1_shape");
+
+        Spi::run("SELECT id FROM ec_spire_dml_query_shape_sql ORDER BY id")
+            .expect("ordinary non-PK SELECT should pass through the DML frontdoor hook");
+        let non_pk_hook_action =
+            Spi::get_one::<String>(&format!("SELECT last_hook_action {hook_status}"))
+                .expect("DML frontdoor hook action after non-PK SELECT should succeed")
+                .expect("DML frontdoor hook action after non-PK SELECT should exist");
+        let non_pk_hook_kind =
+            Spi::get_one::<String>(&format!("SELECT last_classification_kind {hook_status}"))
+                .expect("DML frontdoor hook kind after non-PK SELECT should succeed")
+                .expect("DML frontdoor hook kind after non-PK SELECT should exist");
+        assert_eq!(non_pk_hook_action, "pass_through_not_spire_frontdoor");
+        assert_eq!(non_pk_hook_kind, "non_pk_select_pass_through");
     }
 
     #[pg_test]

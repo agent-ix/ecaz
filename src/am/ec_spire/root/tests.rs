@@ -111,6 +111,13 @@ mod tests {
         }
     }
 
+    #[test]
+    fn remote_heap_exact_score_uses_orderby_negative_inner_product() {
+        let score = remote_search_exact_heap_score(&[1.0, 2.0], &[3.0, 4.0])
+            .expect("finite equal-dimension vectors should score");
+        assert_eq!(score, -11.0);
+    }
+
     fn ready_production_scan_heap_summary(
         returned_candidate_count: u64,
     ) -> SpireRemoteProductionScanHeapResolutionSummaryRow {

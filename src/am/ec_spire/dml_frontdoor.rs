@@ -523,7 +523,19 @@ fn dml_frontdoor_hook_action(decision: &SpireDmlFrontdoorReplacementDecisionRow)
 fn dml_frontdoor_decision_is_spire_frontdoor_candidate(
     decision: &SpireDmlFrontdoorReplacementDecisionRow,
 ) -> bool {
-    decision.index_oid != pg_sys::InvalidOid || decision.kind == "relation_context_error"
+    if decision.kind == "relation_context_error" {
+        return true;
+    }
+    if decision.index_oid == pg_sys::InvalidOid {
+        return false;
+    }
+    if decision.operation == "pk_select" {
+        return matches!(
+            decision.kind,
+            "unsupported_empty_projection" | "unsupported_pk_predicate"
+        );
+    }
+    true
 }
 
 fn dml_frontdoor_raise_planner_error(decision: &SpireDmlFrontdoorReplacementDecisionRow) -> ! {
@@ -1682,6 +1694,16 @@ pub(crate) fn classify_dml_frontdoor_shape(
             "ec_spire_distributed: RETURNING is not yet supported in v1",
         );
     }
+    if input.operation == SpireDmlFrontdoorOperation::PkSelect
+        && input.predicate_column != Some(input.pk_column)
+    {
+        return unsupported(
+            operation,
+            "non_pk_select_pass_through",
+            "ec_spire_distributed: non-PK SELECT is not routed by the DML frontdoor",
+            None,
+        );
+    }
     if input.pk_column.is_empty()
         || input.predicate_column != Some(input.pk_column)
         || input.predicate_operator != Some("=")
@@ -1955,9 +1977,20 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<SpireDmlFrontdoorPkPredicate> {
-    if clause.is_null()
-        || unsafe { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr
-    {
+    if clause.is_null() {
+        return None;
+    }
+    if unsafe { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr {
+        if unsafe {
+            dml_frontdoor_expr_references_column(clause, target_rtindex, context, context.pk_column)
+        } {
+            return Some(SpireDmlFrontdoorPkPredicate {
+                column: Some(context.pk_column.to_owned()),
+                operator: Some("other"),
+                value: dml_frontdoor_other_predicate_value(),
+                value_expr: None,
+            });
+        }
         return None;
     }
     let op_expr = clause.cast::<pg_sys::OpExpr>();
@@ -1980,7 +2013,8 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     let right = args.get_ptr(1);
     match (left, right) {
         (Some(left), Some(right)) => {
-            if let Some(column) = unsafe { dml_frontdoor_var_column(left, target_rtindex, context) }
+            if let Some(column) =
+                unsafe { dml_frontdoor_predicate_var_column(left, target_rtindex, context) }
             {
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
@@ -1990,7 +2024,7 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
                 });
             }
             if let Some(column) =
-                unsafe { dml_frontdoor_var_column(right, target_rtindex, context) }
+                unsafe { dml_frontdoor_predicate_var_column(right, target_rtindex, context) }
             {
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
@@ -2013,6 +2047,155 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
             value_expr: None,
         }),
     }
+}
+
+unsafe fn dml_frontdoor_predicate_var_column(
+    expr: *mut pg_sys::Expr,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> Option<String> {
+    if let Some(column) = unsafe { dml_frontdoor_var_column(expr, target_rtindex, context) } {
+        return Some(column);
+    }
+    if expr.is_null() {
+        return None;
+    }
+    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+        pg_sys::NodeTag::T_RelabelType => {
+            let relabel = expr.cast::<pg_sys::RelabelType>();
+            unsafe { dml_frontdoor_predicate_var_column((*relabel).arg, target_rtindex, context) }
+        }
+        pg_sys::NodeTag::T_CoerceViaIO => {
+            let coerce = expr.cast::<pg_sys::CoerceViaIO>();
+            unsafe { dml_frontdoor_predicate_var_column((*coerce).arg, target_rtindex, context) }
+        }
+        pg_sys::NodeTag::T_FuncExpr => {
+            let func_expr = expr.cast::<pg_sys::FuncExpr>();
+            unsafe {
+                dml_frontdoor_single_predicate_var_column(
+                    (*func_expr).args,
+                    target_rtindex,
+                    context,
+                )
+            }
+        }
+        _ => None,
+    }
+}
+
+unsafe fn dml_frontdoor_single_predicate_var_column(
+    exprs: *mut pg_sys::List,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> Option<String> {
+    if exprs.is_null() {
+        return None;
+    }
+    let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
+    if exprs.len() != 1 {
+        return None;
+    }
+    let expr = exprs.get_ptr(0)?;
+    unsafe { dml_frontdoor_predicate_var_column(expr, target_rtindex, context) }
+}
+
+unsafe fn dml_frontdoor_expr_references_column(
+    expr: *mut pg_sys::Expr,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+    column_name: &str,
+) -> bool {
+    if expr.is_null() {
+        return false;
+    }
+    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+        pg_sys::NodeTag::T_Var => unsafe {
+            dml_frontdoor_var_column(expr, target_rtindex, context).as_deref() == Some(column_name)
+        },
+        pg_sys::NodeTag::T_OpExpr => {
+            let op_expr = expr.cast::<pg_sys::OpExpr>();
+            unsafe {
+                dml_frontdoor_expr_list_references_column(
+                    (*op_expr).args,
+                    target_rtindex,
+                    context,
+                    column_name,
+                )
+            }
+        }
+        pg_sys::NodeTag::T_ScalarArrayOpExpr => {
+            let array_expr = expr.cast::<pg_sys::ScalarArrayOpExpr>();
+            unsafe {
+                dml_frontdoor_expr_list_references_column(
+                    (*array_expr).args,
+                    target_rtindex,
+                    context,
+                    column_name,
+                )
+            }
+        }
+        pg_sys::NodeTag::T_BoolExpr => {
+            let bool_expr = expr.cast::<pg_sys::BoolExpr>();
+            unsafe {
+                dml_frontdoor_expr_list_references_column(
+                    (*bool_expr).args,
+                    target_rtindex,
+                    context,
+                    column_name,
+                )
+            }
+        }
+        pg_sys::NodeTag::T_FuncExpr => {
+            let func_expr = expr.cast::<pg_sys::FuncExpr>();
+            unsafe {
+                dml_frontdoor_expr_list_references_column(
+                    (*func_expr).args,
+                    target_rtindex,
+                    context,
+                    column_name,
+                )
+            }
+        }
+        pg_sys::NodeTag::T_RelabelType => {
+            let relabel = expr.cast::<pg_sys::RelabelType>();
+            unsafe {
+                dml_frontdoor_expr_references_column(
+                    (*relabel).arg,
+                    target_rtindex,
+                    context,
+                    column_name,
+                )
+            }
+        }
+        pg_sys::NodeTag::T_CoerceViaIO => {
+            let coerce = expr.cast::<pg_sys::CoerceViaIO>();
+            unsafe {
+                dml_frontdoor_expr_references_column(
+                    (*coerce).arg,
+                    target_rtindex,
+                    context,
+                    column_name,
+                )
+            }
+        }
+        _ => false,
+    }
+}
+
+unsafe fn dml_frontdoor_expr_list_references_column(
+    exprs: *mut pg_sys::List,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+    column_name: &str,
+) -> bool {
+    if exprs.is_null() {
+        return false;
+    }
+    let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
+    let references_column = exprs.iter_ptr().any(|expr| unsafe {
+        dml_frontdoor_expr_references_column(expr, target_rtindex, context, column_name)
+    });
+    references_column
 }
 
 struct SpireDmlFrontdoorPkPredicate {
@@ -2362,7 +2545,7 @@ mod tests {
         wrong_column.predicate_column = Some("title");
         assert_eq!(
             classify_dml_frontdoor_shape(wrong_column).kind,
-            "unsupported_pk_predicate"
+            "non_pk_select_pass_through"
         );
 
         let mut wrong_operator = select_input(&["id"]);
@@ -2377,6 +2560,26 @@ mod tests {
         assert_eq!(
             classify_dml_frontdoor_shape(wrong_value).kind,
             "unsupported_pk_predicate"
+        );
+    }
+
+    #[test]
+    fn classifier_allows_non_pk_selects_to_pass_through() {
+        let mut no_predicate = select_input(&["id"]);
+        no_predicate.predicate_column = None;
+        no_predicate.predicate_operator = None;
+        no_predicate.predicate_value_kind = SpireDmlFrontdoorValueKind::Other;
+        let no_predicate_shape = classify_dml_frontdoor_shape(no_predicate);
+        assert!(!no_predicate_shape.supported);
+        assert_eq!(no_predicate_shape.kind, "non_pk_select_pass_through");
+        assert_eq!(no_predicate_shape.hint, None);
+
+        let mut non_pk_predicate = select_input(&["id"]);
+        non_pk_predicate.predicate_column = Some("title");
+        non_pk_predicate.predicate_value_kind = SpireDmlFrontdoorValueKind::Other;
+        assert_eq!(
+            classify_dml_frontdoor_shape(non_pk_predicate).kind,
+            "non_pk_select_pass_through"
         );
     }
 
