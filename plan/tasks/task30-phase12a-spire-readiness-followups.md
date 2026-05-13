@@ -169,23 +169,23 @@ is generic."
 Source: review packet `30982`, finding "Schema-drift fingerprint is
 coordinator-only."
 
-- [ ] Decide scope: full echo-back round-trip on every dispatch, or
+- [x] Decide scope: full echo-back round-trip on every dispatch, or
   echo-back only on descriptor register/refresh. Record the decision
   rationale in ADR-069 with a fixture that demonstrates the chosen
   detection latency.
-- [ ] Implement remote-side fingerprint computation using the same
+- [x] Implement remote-side fingerprint computation using the same
   `(attnum, name, typid, typmod, collation, notnull)` tuple as
   `coordinator_write_current_shape_fingerprint`
   (`remote_candidates.rs:2579`).
-- [ ] Echo the remote fingerprint on descriptor register/refresh; store
+- [x] Echo the remote fingerprint on descriptor register/refresh; store
   on the descriptor row alongside
   `coordinator_insert_shape_fingerprint`.
-- [ ] Pre-dispatch validation compares coordinator and remote
+- [x] Pre-dispatch validation compares coordinator and remote
   fingerprints; on mismatch, return `SPIRE_REMOTE_STATUS_SCHEMA_DRIFT`
   with a remediation hint naming which side drifted.
-- [ ] Fixture: `ALTER TYPE` on the remote without re-registering;
+- [x] Fixture: `ALTER TYPE` on the remote without re-registering;
   assert pre-dispatch validation fires before remote SQL execution.
-- [ ] Document the v1.x remote-side fingerprint contract in ADR-069 and
+- [x] Document the v1.x remote-side fingerprint contract in ADR-069 and
   the DDL ordering runbook section of `docs/SPIRE_LIBPQ_RUNBOOK.md`.
 
 ## Phase 12a.7: Tracker Phrasing Nit (P3 cosmetic)

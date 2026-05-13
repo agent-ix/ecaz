@@ -142,6 +142,8 @@ CREATE TABLE ec_spire_remote_node_descriptor (
     remote_index_regclass text NOT NULL CHECK (length(remote_index_regclass) > 0),
     coordinator_insert_shape_fingerprint text NOT NULL DEFAULT 'unset'
         CHECK (length(coordinator_insert_shape_fingerprint) > 0),
+    remote_insert_shape_fingerprint text NOT NULL DEFAULT 'unset'
+        CHECK (length(remote_insert_shape_fingerprint) > 0),
     descriptor_state text NOT NULL CHECK (
         descriptor_state IN ('active', 'draining', 'disabled', 'failed')
     ),
@@ -298,6 +300,14 @@ AS $$
     SELECT ec_spire_coordinator_insert_shape_fingerprint(indrelid::regclass)
       FROM pg_index
      WHERE indexrelid = index_oid::oid
+$$;
+
+CREATE FUNCTION ec_spire_remote_index_shape_fingerprint(index_oid regclass)
+RETURNS text
+STABLE STRICT
+LANGUAGE sql
+AS $$
+    SELECT ec_spire_coordinator_index_shape_fingerprint(index_oid)
 $$;
 
 CREATE FUNCTION ec_spire_register_placement_batch(

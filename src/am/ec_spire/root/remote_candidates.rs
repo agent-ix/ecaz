@@ -40,6 +40,7 @@ const SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH: &str = "consistency_mode_mi
 const SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH: &str = "endpoint_identity_mismatch";
 const SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED: &str = "tuple_transport_retired";
 const SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE: &str = "remote_payload_too_large";
+const SPIRE_REMOTE_STATUS_SCHEMA_DRIFT: &str = "schema_drift";
 const SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD: &str = "remote_executor_overload";
 const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
@@ -1739,6 +1740,7 @@ struct SpireRemoteLibpqConnectionDescriptorRow {
     remote_index_identity: Vec<u8>,
     remote_index_identity_bytes: u64,
     coordinator_insert_shape_fingerprint: String,
+    remote_insert_shape_fingerprint: String,
     last_served_epoch: u64,
     min_retained_epoch: u64,
 }
@@ -1763,6 +1765,7 @@ fn load_remote_libpq_connection_descriptors(
                 remote_index_identity, \
                 remote_index_regclass, \
                 coordinator_insert_shape_fingerprint, \
+                remote_insert_shape_fingerprint, \
                 last_served_epoch::bigint, \
                 min_retained_epoch::bigint \
            FROM ec_spire_remote_node_descriptor \
@@ -1844,6 +1847,17 @@ fn load_remote_libpq_connection_descriptors(
                         "ec_spire libpq connection coordinator insert shape fingerprint is null"
                             .to_owned()
                     })?;
+                let remote_insert_shape_fingerprint = row["remote_insert_shape_fingerprint"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!(
+                            "ec_spire libpq connection remote insert shape fingerprint decode failed: {e}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire libpq connection remote insert shape fingerprint is null"
+                            .to_owned()
+                    })?;
                 let last_served_epoch = row["last_served_epoch"]
                     .value::<i64>()
                     .map_err(|e| {
@@ -1880,6 +1894,7 @@ fn load_remote_libpq_connection_descriptors(
                         remote_index_identity,
                         remote_index_identity_bytes,
                         coordinator_insert_shape_fingerprint,
+                        remote_insert_shape_fingerprint,
                         last_served_epoch,
                         min_retained_epoch,
                     },
@@ -2172,6 +2187,7 @@ pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
                 descriptor_generation: 0,
                 remote_index_identity_bytes: 0,
                 coordinator_insert_shape_fingerprint: SPIRE_REMOTE_NONE.to_owned(),
+                remote_insert_shape_fingerprint: SPIRE_REMOTE_NONE.to_owned(),
                 dispatch_action: SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_BLOCKED,
                 status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
                 next_step: SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
@@ -2221,6 +2237,7 @@ pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
             coordinator_insert_shape_fingerprint: descriptor
                 .coordinator_insert_shape_fingerprint
                 .clone(),
+            remote_insert_shape_fingerprint: descriptor.remote_insert_shape_fingerprint.clone(),
             dispatch_action,
             status,
             next_step,
@@ -2904,26 +2921,122 @@ fn coordinator_write_current_shape_fingerprint(index_oid: pg_sys::Oid) -> Result
         })
 }
 
+fn remote_write_current_shape_fingerprint(
+    conninfo: &str,
+    node_id: u32,
+    remote_index_regclass: &str,
+) -> Result<String, String> {
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        conninfo,
+        node_id,
+        "remote write shape fingerprint",
+    )?;
+    let row = client
+        .query_one(
+            "SELECT ec_spire_remote_index_shape_fingerprint(to_regclass($1))::text AS fingerprint",
+            &[&remote_index_regclass],
+        )
+        .map_err(|error| {
+            format!(
+                "ec_spire remote write shape fingerprint query failed for node_id {node_id}: {}",
+                postgres_error_message_with_detail(&error)
+            )
+        })?;
+    row.try_get::<_, Option<String>>("fingerprint")
+        .map_err(|error| {
+            format!(
+                "ec_spire remote write shape fingerprint decode failed for node_id {node_id}: {error}"
+            )
+        })?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire remote write shape fingerprint remote index {remote_index_regclass} did not resolve for node_id {node_id}"
+            )
+        })
+}
+
+pub(crate) fn remote_write_shape_fingerprint_from_secret(
+    conninfo_secret_name: &str,
+    node_id: u32,
+    remote_index_regclass: &str,
+) -> Result<String, String> {
+    let conninfo = remote_conninfo_secret_value(conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire remote write shape fingerprint conninfo secret for node_id {node_id} is not resolved: {status}"
+        )
+    })?;
+    remote_write_current_shape_fingerprint(&conninfo, node_id, remote_index_regclass)
+}
+
 fn validate_coordinator_write_shape_fingerprint(
     operation: &str,
     index_oid: pg_sys::Oid,
     descriptor_fingerprint: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
     if descriptor_fingerprint == SPIRE_REMOTE_NONE || descriptor_fingerprint == "unset" {
         return Err(format!(
-            "ec_spire coordinator {operation} schema drift guard is missing descriptor fingerprint; refresh remote node descriptors before coordinator-routed writes"
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: schema drift guard is missing coordinator descriptor fingerprint; hint: refresh remote node descriptors before coordinator-routed writes"
         ));
     }
     let current_fingerprint = coordinator_write_current_shape_fingerprint(index_oid)?;
     if current_fingerprint != descriptor_fingerprint {
         return Err(format!(
-            "ec_spire coordinator {operation} schema drift detected for index_oid {}: descriptor fingerprint {} does not match current coordinator fingerprint {}; pause writes, apply matching DDL on every remote, refresh descriptors, then retry",
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: coordinator side drifted for index_oid {}: descriptor coordinator fingerprint {} does not match current coordinator fingerprint {}; hint: pause writes, apply matching DDL on every remote, refresh descriptors, then retry",
             u32::from(index_oid),
             descriptor_fingerprint,
             current_fingerprint
         ));
     }
+    Ok(current_fingerprint)
+}
+
+fn validate_remote_write_shape_fingerprint(
+    operation: &str,
+    node_id: u32,
+    conninfo: &str,
+    remote_index_regclass: &str,
+    coordinator_fingerprint: &str,
+    descriptor_remote_fingerprint: &str,
+) -> Result<(), String> {
+    if descriptor_remote_fingerprint == SPIRE_REMOTE_NONE || descriptor_remote_fingerprint == "unset"
+    {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: schema drift guard is missing remote descriptor fingerprint for node_id {node_id}; hint: refresh the remote node descriptor after verifying coordinator and remote DDL match"
+        ));
+    }
+    let current_remote_fingerprint =
+        remote_write_current_shape_fingerprint(conninfo, node_id, remote_index_regclass)?;
+    if current_remote_fingerprint != descriptor_remote_fingerprint {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: remote side drifted for node_id {node_id}: descriptor remote fingerprint {descriptor_remote_fingerprint} does not match current remote fingerprint {current_remote_fingerprint}; hint: pause writes, apply matching DDL on the remote, refresh the descriptor, then retry"
+        ));
+    }
+    if current_remote_fingerprint != coordinator_fingerprint {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: coordinator and remote schema fingerprints differ for node_id {node_id}: coordinator fingerprint {coordinator_fingerprint}, remote fingerprint {current_remote_fingerprint}; hint: pause writes, apply matching DDL on the side that drifted, refresh descriptors, then retry"
+        ));
+    }
     Ok(())
+}
+
+fn validate_write_shape_fingerprints_before_remote_dispatch(
+    operation: &str,
+    dispatch: &SpireCoordinatorInsertDispatchPlanRow,
+    conninfo: &str,
+) -> Result<(), String> {
+    let coordinator_fingerprint = validate_coordinator_write_shape_fingerprint(
+        operation,
+        dispatch.index_oid,
+        &dispatch.coordinator_insert_shape_fingerprint,
+    )?;
+    validate_remote_write_shape_fingerprint(
+        operation,
+        dispatch.node_id,
+        conninfo,
+        &dispatch.remote_index_regclass,
+        &coordinator_fingerprint,
+        &dispatch.remote_insert_shape_fingerprint,
+    )
 }
 
 fn coordinator_insert_prepare_row_from_async_result(
@@ -2960,17 +3073,13 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
                 node_id, dispatch.status
             ));
         }
-        validate_coordinator_write_shape_fingerprint(
-            "insert",
-            dispatch.index_oid,
-            &dispatch.coordinator_insert_shape_fingerprint,
-        )?;
         let conninfo =
             remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
                 format!(
                     "ec_spire coordinator insert conninfo secret for node_id {node_id} is not resolved: {status}"
                 )
             })?;
+        validate_write_shape_fingerprints_before_remote_dispatch("insert", &dispatch, &conninfo)?;
         let prepared_gid =
             coordinator_insert_prepared_gid(dispatch.index_oid, node_id, served_epoch);
         coordinator_prepared_xact_intent_record_prepare_requested(
@@ -3124,11 +3233,6 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
             node_id, dispatch.status
         ));
     }
-    validate_coordinator_write_shape_fingerprint(
-        "update",
-        dispatch.index_oid,
-        &dispatch.coordinator_insert_shape_fingerprint,
-    )?;
     let remote_sql = coordinator_update_remote_tuple_payload_sql(
         &dispatch.remote_index_regclass,
         pk_column,
@@ -3143,6 +3247,7 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
             "ec_spire coordinator update conninfo secret for node_id {node_id} is not resolved: {status}"
         )
     })?;
+    validate_write_shape_fingerprints_before_remote_dispatch("update", &dispatch, &conninfo)?;
     let mut client = remote_search_libpq_connect_with_session_timeouts(
         &conninfo,
         node_id,
@@ -3183,11 +3288,6 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
             node_id, dispatch.status
         ));
     }
-    validate_coordinator_write_shape_fingerprint(
-        "delete",
-        dispatch.index_oid,
-        &dispatch.coordinator_insert_shape_fingerprint,
-    )?;
     let remote_sql =
         coordinator_delete_remote_tuple_payload_sql(&dispatch.remote_index_regclass, pk_column, pk_value)?;
 
@@ -3197,6 +3297,7 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
             "ec_spire coordinator delete conninfo secret for node_id {node_id} is not resolved: {status}"
         )
     })?;
+    validate_write_shape_fingerprints_before_remote_dispatch("delete", &dispatch, &conninfo)?;
     let mut client = remote_search_libpq_connect_with_session_timeouts(
         &conninfo,
         node_id,

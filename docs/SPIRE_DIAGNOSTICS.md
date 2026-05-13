@@ -415,19 +415,21 @@ same relation should remain paused during the same window.
 There is no separate v1 DDL-window guard flag. The operational guard is the
 pause/apply/refresh/resume sequence; the descriptor-bound Phase 12.5
 schema-drift fingerprint is the fail-closed safety net for coordinator-routed
-writes when the coordinator column shape changes without a descriptor refresh.
+writes when either side's column shape changes without a descriptor refresh.
 The guard compares the current coordinator heap shape to
-`ec_spire_remote_node_descriptor.coordinator_insert_shape_fingerprint` before
-opening remote libpq dispatch. If it reports schema drift, keep writes paused,
-apply matching DDL to every remote, refresh the affected descriptors, and retry.
+`ec_spire_remote_node_descriptor.coordinator_insert_shape_fingerprint`, then
+performs a remote echo-back query and compares the current remote heap shape to
+`remote_insert_shape_fingerprint` and to the coordinator fingerprint before
+opening mutating remote SQL. If it reports `schema_drift`, keep writes paused,
+apply matching DDL to the side named in the hint, refresh the affected
+descriptors, and retry.
 The `coordinator_insert_shape_fingerprint` name is historical: the field landed
 with coordinator-routed INSERT first, but the same guard covers INSERT, UPDATE,
 and DELETE remote write paths.
-Upgrade migration backfills the fingerprint for descriptor rows whose
-coordinator index still exists; rows left with the `unset` sentinel fail closed
-for coordinator-routed INSERT, UPDATE, and DELETE until the descriptor is
-registered again. UPDATE fails before remote mutation, and DELETE fails before
-remote 2PC prepare or placement-directory deletion.
+Rows left with the `unset` sentinel for either fingerprint fail closed for
+coordinator-routed INSERT, UPDATE, and DELETE until the descriptor is
+registered again with a reachable remote. UPDATE fails before remote mutation,
+and DELETE fails before remote 2PC prepare or placement-directory deletion.
 Read-path endpoint identity mismatches continue to surface through the Stage
 B/Stage E remote fault diagnostics.
 

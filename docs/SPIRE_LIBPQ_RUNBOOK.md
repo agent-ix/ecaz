@@ -157,6 +157,25 @@ placement-directory outcome matches the intended write. Rows with
 `prepare_requested` or `prepare_acked` and a non-live top xid are safe for the
 operator-driven reaper to roll back.
 
+## Distributed DDL Ordering
+
+SPIRE v1 does not propagate DDL. For any DDL that changes the coordinator or
+remote heap column shape used by coordinator-routed writes, use this order:
+
+1. Pause coordinator-routed writes and bulk-load placement registration.
+2. Apply the DDL to the coordinator relation.
+3. Apply matching DDL to every remote shard relation.
+4. Refresh every affected remote-node descriptor.
+5. Resume writes only after descriptor readiness is clean.
+
+Descriptor refresh stores both
+`coordinator_insert_shape_fingerprint` and `remote_insert_shape_fingerprint`.
+The write path also performs a remote fingerprint echo-back on every mutating
+dispatch, so a remote-only `ALTER TABLE ... ALTER COLUMN ... TYPE ...` after
+refresh fails before remote SQL execution. A `schema_drift` error names the
+side that changed and means writes should stay paused until DDL is matched and
+descriptors are refreshed.
+
 ## Credential Rotation
 
 Credential rotation is a Phase 12 deferral. The v1 safe procedure is a manual

@@ -18,12 +18,17 @@ CREATE INDEX IF NOT EXISTS ec_spire_placement_by_index_oid
 ON ec_spire_placement (index_oid);
 
 -- Bind coordinator-routed INSERT descriptors to the coordinator heap column
--- shape observed when the descriptor is registered or refreshed. Coordinator-
--- only DDL now fails closed before remote dispatch until operators apply the
--- matching remote DDL and refresh descriptors.
+-- shape observed when the descriptor is registered or refreshed, and bind
+-- them to the remote heap column shape echoed by the remote index. Coordinator-
+-- only or remote-only DDL now fails closed before remote dispatch until
+-- operators apply matching DDL and refresh descriptors.
 ALTER TABLE ec_spire_remote_node_descriptor
 ADD COLUMN IF NOT EXISTS coordinator_insert_shape_fingerprint text NOT NULL DEFAULT 'unset'
     CHECK (length(coordinator_insert_shape_fingerprint) > 0);
+
+ALTER TABLE ec_spire_remote_node_descriptor
+ADD COLUMN IF NOT EXISTS remote_insert_shape_fingerprint text NOT NULL DEFAULT 'unset'
+    CHECK (length(remote_insert_shape_fingerprint) > 0);
 
 CREATE OR REPLACE FUNCTION ec_spire_coordinator_insert_shape_fingerprint(table_oid regclass)
 RETURNS text
@@ -52,6 +57,14 @@ AS $$
     SELECT ec_spire_coordinator_insert_shape_fingerprint(indrelid::regclass)
       FROM pg_index
      WHERE indexrelid = index_oid::oid
+$$;
+
+CREATE OR REPLACE FUNCTION ec_spire_remote_index_shape_fingerprint(index_oid regclass)
+RETURNS text
+STABLE STRICT
+LANGUAGE sql
+AS $$
+    SELECT ec_spire_coordinator_index_shape_fingerprint(index_oid)
 $$;
 
 UPDATE ec_spire_remote_node_descriptor d

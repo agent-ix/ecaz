@@ -165,6 +165,7 @@ pub(crate) use self::ec_spire::{
     remote_search_target_plan_rows as spire_remote_search_target_plan_rows,
     remote_search_target_readiness_rows as spire_remote_search_target_readiness_rows,
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
+    remote_write_shape_fingerprint_from_secret as spire_remote_write_shape_fingerprint_from_secret,
     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
 };
 

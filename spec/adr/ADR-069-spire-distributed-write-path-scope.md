@@ -581,14 +581,22 @@ The v1 DDL ordering contract is:
 
 Stage B endpoint identity / fingerprint already catches read-path schema drift
 between coordinator and remote at query time. Phase 12.5 adds a separate
-write-path column-shape fingerprint:
+write-path column-shape fingerprint, and Phase 12a.6 extends it with a
+remote-side echo:
 `ec_spire_remote_node_descriptor.coordinator_insert_shape_fingerprint` records
 the coordinator heap column shape when a remote descriptor is registered or
-refreshed, and coordinator-routed INSERT compares the current coordinator shape
-against that descriptor-bound value before remote dispatch. v1 does not add an
-independent DDL-window guard GUC or catalog flag: operators must use the
-pause/apply/refresh/resume sequence above, and the schema-drift fingerprint is
-the fail-closed safety net when that sequence is violated.
+refreshed, and `remote_insert_shape_fingerprint` records the remote heap
+column shape returned by the registered remote index. Coordinator-routed
+INSERT, UPDATE, and DELETE compare both descriptor-bound values before remote
+mutation. The v1 scope is a full remote echo-back round trip on every mutating
+dispatch, not descriptor-refresh-only validation, because a remote-only
+`ALTER TABLE ... ALTER COLUMN ... TYPE ...` after descriptor registration must
+fail before remote SQL execution. This chooses stronger detection latency over
+one fewer pre-dispatch remote query.
+
+v1 does not add an independent DDL-window guard GUC or catalog flag: operators
+must use the pause/apply/refresh/resume sequence above, and the schema-drift
+fingerprints are the fail-closed safety net when that sequence is violated.
 The catalog field keeps its `insert` name for 0.1.x compatibility because it
 landed with the INSERT path first; the same descriptor-bound payload-shape
 contract now applies to INSERT, UPDATE, and DELETE. A 0.2.x catalog cleanup may
@@ -598,10 +606,9 @@ The v1 fingerprint input is a canonical text representation of non-dropped heap
 columns ordered by `attnum`: column number, quoted column name, type OID,
 typmod, collation OID, and `attnotnull`. The digest is a drift token, not a
 security boundary; stability comes from ordering explicit catalog fields rather
-than hashing PostgreSQL's ad hoc record formatting. Upgrade migrations backfill
-the fingerprint for descriptors whose coordinator index still exists. A row
-that cannot be backfilled keeps the `unset` sentinel and coordinator-routed
-INSERT fails closed until the descriptor is registered again.
+than hashing PostgreSQL's ad hoc record formatting. Descriptors with an
+`unset` coordinator or remote fingerprint fail closed for coordinator-routed
+writes until refreshed with a reachable remote.
 
 The same pre-dispatch guard covers coordinator-routed UPDATE and DELETE remote
 payload paths. UPDATE fails before remote mutation, and DELETE fails before
