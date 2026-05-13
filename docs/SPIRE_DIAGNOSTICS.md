@@ -40,6 +40,7 @@ Start with:
 | `ec_spire_index_epoch_cleanup_run(index_oid)` | operator | You need to reclaim cleanup-eligible old-epoch object tuples under the SPIRE publish lock. |
 | `ec_spire_index_placement_snapshot(index_oid)` | operator | You need per-store placement counts, availability counts, and object bytes by kind. |
 | `ec_spire_index_scan_placement_snapshot(index_oid, query)` | operator/debug | You need the stores, leaf PIDs, delta PIDs, and candidate rows touched by one query. |
+| `ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` | operator/debug | You need to know whether scan-touched local stores execute sequentially or through a real parallel primitive. |
 | `ec_spire_index_scan_routing_snapshot(index_oid, query)` | operator/debug | You need per-routing-level frontier widths, expansion counts, deduped route counts, and truncation reasons for one query. |
 | `ec_spire_index_root_routing_snapshot(index_oid)` | debug | You need root centroid-to-child routing rows and child placement metadata. |
 | `ec_spire_index_hierarchy_snapshot(index_oid)` | operator/debug | You need the current hierarchy shape and single-level foundation capability flags. |
@@ -111,6 +112,14 @@ object reads resolve those diagnostics through bounded store maps keyed by
 `local_store_id` for in-memory stores and by `(local_store_id, store_relid)` for
 relation-backed stores, so configured local-store lookup does not require a
 linear scan per placement.
+`ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` reports
+the local-store execution limitation explicitly:
+`local_store_execution_mode = 'sequential_backend'`. PG18 builds report
+`local_store_read_ahead_primitive = 'pg18_read_stream'`, which means relation
+block read-ahead is used within the current backend, not concurrent store-group
+execution. The future primitive for real local multi-store overlap is reported
+as
+`local_store_parallelism_next_step = 'async_or_parallel_store_group_executor'`.
 
 `ec_spire_index_options_snapshot(index_oid)` reports Phase 5 boundary
 replication planning state through `boundary_replica_count`,

@@ -7371,6 +7371,61 @@ fn ec_spire_index_scan_placement_snapshot(
 }
 
 #[pg_extern(stable, strict)]
+fn ec_spire_index_scan_local_store_execution_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(local_store_execution_mode, String),
+        name!(local_store_read_ahead_primitive, String),
+        name!(local_store_parallelism_next_step, String),
+        name!(route_count, i64),
+        name!(prefetched_object_count, i64),
+        name!(scanned_pid_count, i64),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_index_scan_local_store_execution_snapshot",
+        )
+    };
+    let rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.effective_nprobe),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            "sequential_backend".to_owned(),
+            ec_spire_local_store_read_ahead_primitive_label().to_owned(),
+            "async_or_parallel_store_group_executor".to_owned(),
+            i64::try_from(row.route_count).expect("route count should fit in i64"),
+            i64::try_from(row.prefetched_object_count)
+                .expect("prefetched object count should fit in i64"),
+            i64::try_from(row.scanned_pid_count).expect("scanned pid count should fit in i64"),
+        )
+    }))
+}
+
+#[cfg(feature = "pg18")]
+fn ec_spire_local_store_read_ahead_primitive_label() -> &'static str {
+    "pg18_read_stream"
+}
+
+#[cfg(not(feature = "pg18"))]
+fn ec_spire_local_store_read_ahead_primitive_label() -> &'static str {
+    "prefetch_buffer"
+}
+
+#[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_scan_routing_snapshot(
     index_oid: pg_sys::Oid,
@@ -20263,6 +20318,27 @@ mod tests {
         )
         .expect("scan placement query should succeed")
         .expect("diagnostic row should exist");
+        let local_store_execution_mode = Spi::get_one::<String>(
+            "SELECT local_store_execution_mode FROM \
+             ec_spire_index_scan_local_store_execution_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan local-store execution query should succeed")
+        .expect("execution diagnostic row should exist");
+        let local_store_read_ahead_primitive = Spi::get_one::<String>(
+            "SELECT local_store_read_ahead_primitive FROM \
+             ec_spire_index_scan_local_store_execution_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan local-store execution query should succeed")
+        .expect("execution diagnostic row should exist");
+        let local_store_parallelism_next_step = Spi::get_one::<String>(
+            "SELECT local_store_parallelism_next_step FROM \
+             ec_spire_index_scan_local_store_execution_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan local-store execution query should succeed")
+        .expect("execution diagnostic row should exist");
         let delta_pid_count = Spi::get_one::<i64>(
             "SELECT delta_pid_count FROM ec_spire_index_scan_placement_snapshot(\
              'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
@@ -20321,6 +20397,12 @@ mod tests {
         assert_eq!(scanned_pid_count, 1);
         assert_eq!(delta_pid_count, 0);
         assert!(candidate_row_count > 0);
+        assert_eq!(local_store_execution_mode, "sequential_backend");
+        assert_eq!(local_store_read_ahead_primitive, "pg18_read_stream");
+        assert_eq!(
+            local_store_parallelism_next_step,
+            "async_or_parallel_store_group_executor"
+        );
         assert_eq!(primary_candidate_row_count, 1);
         assert_eq!(candidate_winner_count, 1);
         assert_eq!(truncated_candidate_row_count, 0);

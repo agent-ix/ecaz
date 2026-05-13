@@ -274,6 +274,10 @@ object decoding plus scoring sequential inside that backend. Any claim that the
 runtime performs or benefits from parallel multi-NVMe reads must wait for a
 benchmark packet that compares one-store and multi-store layouts on real
 multi-NVMe hardware.
+`ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` exposes
+this limitation with `local_store_execution_mode = 'sequential_backend'` and
+reports the exact future primitive as
+`local_store_parallelism_next_step = 'async_or_parallel_store_group_executor'`.
 
 ## Diagnostics
 
@@ -299,6 +303,9 @@ row per scan-touched store, including:
 - visible candidate row count;
 - object bytes read or planned for the query;
 - skipped PID count and placement-state labels.
+- local-store execution mode, read-ahead primitive, and the next parallelism
+  primitive needed when execution remains sequential inside one backend, via
+  `ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)`.
 
 The diagnostics should keep saying "local store" rather than "NVMe" unless
 they are reporting actual tablespace identity. Physical device claims belong in

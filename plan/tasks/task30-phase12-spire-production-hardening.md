@@ -320,9 +320,17 @@ described by reviewer packet `30896`.
     coverage.
 - [ ] Add a repeatable local multi-store read-overlap harness with per-store
   route, candidate, object-byte, read-batch, and delta-decode counters.
-- [ ] If PostgreSQL backend constraints keep execution sequential, expose the
+- [x] If PostgreSQL backend constraints keep execution sequential, expose the
   limitation in diagnostics and document the exact future primitive needed to
   improve it.
+  - Evidence:
+    `ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` now
+    reports `local_store_execution_mode = 'sequential_backend'`,
+    `local_store_read_ahead_primitive`, and
+    `local_store_parallelism_next_step =
+    'async_or_parallel_store_group_executor'`; the PG18 scan-placement SQL
+    fixture asserts those labels, and the diagnostics/design docs define the
+    read-ahead versus true parallel execution boundary.
 - [ ] Confirm delta decode reuse remains covered under multi-store and remote
   candidate paths.
 
