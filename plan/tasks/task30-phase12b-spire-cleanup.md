@@ -140,6 +140,10 @@ Phase 13 will push it past 80k.
   DML hook/plan/remote-customscan fixture block with a textual include;
   earlier select-plan and later primitive-plan fixtures remain open, so
   the `tests/dml_frontdoor.rs` row is not yet closed.
+- Packet `31002` starts `src/tests/placement.rs` by moving the placement
+  catalog and placement-snapshot fixture block with a textual include;
+  scan-placement and later contention/diagnostic fixtures remain open, so
+  the `tests/placement.rs` row is not yet closed.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
