@@ -331,8 +331,16 @@ described by reviewer packet `30896`.
     'async_or_parallel_store_group_executor'`; the PG18 scan-placement SQL
     fixture asserts those labels, and the diagnostics/design docs define the
     read-ahead versus true parallel execution boundary.
-- [ ] Confirm delta decode reuse remains covered under multi-store and remote
+- [x] Confirm delta decode reuse remains covered under multi-store and remote
   candidate paths.
+  - Evidence: packet `30677` added `SpireLoadedDeltaObjectRoute` and
+    `load_delta_rows_for_routes_reads_each_delta_object_once`, proving selected
+    delta routes are decoded once and reused for delete suppression plus
+    delta-insert candidate scoring. Remote candidate and tuple-payload
+    endpoints call the same selected-leaf collector before origin-node heap or
+    payload resolution; the PG18 remote local heap resolution fixture now
+    covers a post-build delta row returned through
+    `ec_spire_remote_search_local_heap_candidates(...)`.
 
 ## Phase 12.9: Local Production Harness and Runbook
 

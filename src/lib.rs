@@ -32341,6 +32341,52 @@ mod tests {
         assert_eq!(result_status, "ready");
         assert_eq!(result_returned_candidate_count, candidate_count);
         assert_eq!(result_next_blocker, "none");
+
+        Spi::run(
+            "INSERT INTO ec_spire_remote_local_heap_res_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+        let delta_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_local_heap_res_sql_idx'::regclass)",
+        )
+        .expect("post-insert hierarchy snapshot query should succeed")
+        .expect("post-insert active epoch should exist");
+        let delta_selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_local_heap_res_sql_idx'::regclass)",
+        )
+        .expect("post-insert leaf snapshot query should succeed")
+        .expect("post-insert leaf pids should exist");
+        let delta_candidates_from = format!(
+            "FROM ec_spire_remote_search_local_heap_candidates(\
+             'ec_spire_remote_local_heap_res_sql_idx'::regclass, \
+             {delta_active_epoch}, ARRAY[0.9, 0.1]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            delta_selected_pids[0], delta_selected_pids[1],
+        );
+        let post_insert_delta_object_count = ec_spire_active_snapshot_i64(
+            "ec_spire_remote_local_heap_res_sql_idx",
+            "delta_object_count",
+        );
+        let delta_candidate_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {delta_candidates_from}"))
+                .expect("post-insert local heap candidate count query should succeed")
+                .expect("post-insert local heap candidate count should exist");
+        let delta_candidate_locator_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {delta_candidates_from} \
+             WHERE served_epoch = requested_epoch \
+             AND heap_block >= 0 AND heap_offset > 0 \
+             AND length(row_locator) = 6 AND score IS NOT NULL"
+        ))
+        .expect("post-insert local heap candidate locator query should succeed")
+        .expect("post-insert local heap candidate locator count should exist");
+
+        assert_eq!(delta_active_epoch, active_epoch + 1);
+        assert_eq!(post_insert_delta_object_count, 1);
+        assert_eq!(delta_candidate_count, 3);
+        assert_eq!(delta_candidate_locator_count, delta_candidate_count);
     }
 
     #[pg_test]

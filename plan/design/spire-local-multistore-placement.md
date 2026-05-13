@@ -279,6 +279,14 @@ this limitation with `local_store_execution_mode = 'sequential_backend'` and
 reports the exact future primitive as
 `local_store_parallelism_next_step = 'async_or_parallel_store_group_executor'`.
 
+Delta object decoding is shared across local multi-store scans and remote
+candidate endpoints. The selected-leaf candidate collector loads each selected
+delta route once with `load_delta_rows_for_routes`, then reuses the loaded rows
+for delete suppression and delta-insert candidate scoring. Remote candidate and
+tuple-payload endpoints call the same selected-leaf collector before origin-node
+heap or tuple payload resolution, so they inherit the same decoded-delta reuse
+instead of adding a second delta-object read in the remote handoff path.
+
 ## Diagnostics
 
 The authoritative placement diagnostics are root/control store configuration
