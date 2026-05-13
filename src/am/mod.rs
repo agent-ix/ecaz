@@ -57,6 +57,7 @@ pub(crate) use self::ec_spire::{
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
     index_boundary_replica_placement_diagnostics as spire_index_boundary_replica_placement_diagnostics,
     index_cost_snapshot as spire_index_cost_snapshot,
+    index_cost_tuning_snapshot as spire_index_cost_tuning_snapshot,
     index_delta_snapshot as spire_index_delta_snapshot,
     index_epoch_cleanup_run as spire_index_epoch_cleanup_run,
     index_epoch_snapshot as spire_index_epoch_snapshot,

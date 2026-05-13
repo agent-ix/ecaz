@@ -23,7 +23,7 @@ use pgrx::{pg_sys, Spi};
 
 use self::storage::SpireObjectReader;
 
-pub(crate) use self::cost::index_cost_snapshot;
+pub(crate) use self::cost::{index_cost_snapshot, index_cost_tuning_snapshot};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::custom_scan::custom_scan_dml_plan_private_copy_roundtrip_for_test;
 #[cfg(any(test, feature = "pg_test"))]

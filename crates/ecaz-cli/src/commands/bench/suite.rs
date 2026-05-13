@@ -1542,6 +1542,14 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
             )
         })
         .unwrap_or_default();
+    let cost_tuning_snapshot_sql = cost_tuning_snapshot_function(profile)
+        .map(|function| {
+            format!(
+                "SELECT *\n\
+                 FROM {function}('{index}'::regclass);\n\n"
+            )
+        })
+        .unwrap_or_default();
     format!(
         "\\pset pager off\n\
          \\timing on\n\n\
@@ -1557,6 +1565,7 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
            pg_relation_size('{index}'::regclass) AS index_bytes,\n\
            pg_size_pretty(pg_relation_size('{index}'::regclass)) AS index_size;\n\n\
          {cost_snapshot_sql}\
+         {cost_tuning_snapshot_sql}\
          EXPLAIN (FORMAT JSON, ecaz, ANALYZE, COSTS OFF)\n\
          SELECT id\n\
          FROM {corpus_table}\n\
@@ -1577,6 +1586,7 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
         profile_name = profile.name,
         index = index,
         cost_snapshot_sql = cost_snapshot_sql,
+        cost_tuning_snapshot_sql = cost_tuning_snapshot_sql,
         corpus_table = corpus_table,
         query_table = query_table,
         reset_rerank_sql = reset_rerank_sql
@@ -1608,6 +1618,13 @@ fn cost_snapshot_function(profile: &IndexProfile) -> Option<&'static str> {
         "ec_hnsw" => Some("ec_hnsw_index_cost_snapshot"),
         "ec_ivf" => Some("ec_ivf_index_cost_snapshot"),
         "ec_spire" => Some("ec_spire_index_cost_snapshot"),
+        _ => None,
+    }
+}
+
+fn cost_tuning_snapshot_function(profile: &IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_spire" => Some("ec_spire_index_cost_tuning_snapshot"),
         _ => None,
     }
 }
@@ -2143,6 +2160,9 @@ mod tests {
         assert!(sql.contains("SET ec_spire.nprobe = 32;"));
         assert!(sql.contains("SET ec_spire.rerank_width = 500;"));
         assert!(sql.contains("FROM ec_spire_index_cost_snapshot('spire_pfx_idx'::regclass);"));
+        assert!(
+            sql.contains("FROM ec_spire_index_cost_tuning_snapshot('spire_pfx_idx'::regclass);")
+        );
         assert!(sql.contains("'ec_spire' AS profile"));
         assert!(sql.contains("RESET ec_spire.nprobe;"));
         assert!(sql.contains("RESET ec_spire.rerank_width;"));

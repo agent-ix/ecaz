@@ -8,11 +8,6 @@ use crate::am::common::cost::{
     self, current_planner_cost_constants, PlannerCostConstants, PlannerCostEstimate,
 };
 
-const SPIRE_ROUTING_SCORING_DIMENSION_SCALE: f64 = 0.01;
-const SPIRE_LEAF_SCORING_DIMENSION_SCALE: f64 = 0.01;
-const SPIRE_INDEX_PAGE_COST_SCALE: f64 = 1.0;
-const SPIRE_LOCAL_STORE_PAGE_FANOUT_SCALE: f64 = 0.05;
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireIndexCostSnapshot {
     pub(crate) planner_scan_enabled: bool,
@@ -46,6 +41,20 @@ pub(crate) struct SpireIndexCostSnapshot {
     pub(crate) modeled_total_cost: f64,
     pub(crate) modeled_selectivity: f64,
     pub(crate) modeled_correlation: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexCostTuningSnapshot {
+    pub(crate) storage_format: &'static str,
+    pub(crate) effective_rerank_width: i32,
+    pub(crate) cost_routing_dimension_scale: f64,
+    pub(crate) cost_leaf_dimension_scale: f64,
+    pub(crate) cost_index_page_scale: f64,
+    pub(crate) cost_local_store_page_fanout_scale: f64,
+    pub(crate) cost_storage_scoring_multiplier: f64,
+    pub(crate) effective_storage_scoring_multiplier: f64,
+    pub(crate) cost_rerank_multiplier: f64,
+    pub(crate) effective_rerank_multiplier: f64,
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
@@ -95,7 +104,8 @@ pub(crate) unsafe fn index_cost_snapshot(
         reltuples,
     );
     let details = estimate_spire_details(&inputs);
-    let estimate = estimate_spire_cost(&inputs, constants);
+    let tuning = SpireCostModelTuning::from_session();
+    let estimate = estimate_spire_cost_with_tuning(&inputs, constants, tuning);
 
     SpireIndexCostSnapshot {
         planner_scan_enabled: true,
@@ -133,6 +143,46 @@ pub(crate) unsafe fn index_cost_snapshot(
         modeled_total_cost: estimate.total_cost,
         modeled_selectivity: estimate.selectivity,
         modeled_correlation: estimate.correlation,
+    }
+}
+
+pub(crate) unsafe fn index_cost_tuning_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexCostTuningSnapshot {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let index_pages = f64::from(block_count);
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+    let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
+    let inputs = SpireCostInputs::from_snapshots(
+        &relation_options,
+        &diagnostics,
+        &hierarchy,
+        index_pages,
+        reltuples,
+    );
+    let tuning = SpireCostModelTuning::from_session();
+
+    SpireIndexCostTuningSnapshot {
+        storage_format: inputs.storage_format.reloption_name(),
+        effective_rerank_width: inputs.effective_rerank_width,
+        cost_routing_dimension_scale: tuning.routing_dimension_scale,
+        cost_leaf_dimension_scale: tuning.leaf_dimension_scale,
+        cost_index_page_scale: tuning.index_page_scale,
+        cost_local_store_page_fanout_scale: tuning.local_store_page_fanout_scale,
+        cost_storage_scoring_multiplier: tuning.storage_scoring_multiplier,
+        effective_storage_scoring_multiplier: effective_storage_scoring_multiplier(
+            inputs.storage_format,
+            tuning,
+        ),
+        cost_rerank_multiplier: tuning.rerank_multiplier,
+        effective_rerank_multiplier: effective_rerank_multiplier(
+            inputs.effective_rerank_width,
+            tuning,
+        ),
     }
 }
 
@@ -251,25 +301,68 @@ struct SpireCostDetails {
     estimated_leaf_pages: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpireCostModelTuning {
+    routing_dimension_scale: f64,
+    leaf_dimension_scale: f64,
+    index_page_scale: f64,
+    local_store_page_fanout_scale: f64,
+    storage_scoring_multiplier: f64,
+    rerank_multiplier: f64,
+}
+
+impl SpireCostModelTuning {
+    fn from_session() -> Self {
+        Self {
+            routing_dimension_scale: options::current_session_cost_routing_dimension_scale(),
+            leaf_dimension_scale: options::current_session_cost_leaf_dimension_scale(),
+            index_page_scale: options::current_session_cost_index_page_scale(),
+            local_store_page_fanout_scale:
+                options::current_session_cost_local_store_page_fanout_scale(),
+            storage_scoring_multiplier: options::current_session_cost_storage_scoring_multiplier(),
+            rerank_multiplier: options::current_session_cost_rerank_multiplier(),
+        }
+    }
+
+    fn packet_30976_defaults() -> Self {
+        Self {
+            routing_dimension_scale: options::EC_SPIRE_DEFAULT_COST_ROUTING_DIMENSION_SCALE,
+            leaf_dimension_scale: options::EC_SPIRE_DEFAULT_COST_LEAF_DIMENSION_SCALE,
+            index_page_scale: options::EC_SPIRE_DEFAULT_COST_INDEX_PAGE_SCALE,
+            local_store_page_fanout_scale:
+                options::EC_SPIRE_DEFAULT_COST_LOCAL_STORE_PAGE_FANOUT_SCALE,
+            storage_scoring_multiplier: options::EC_SPIRE_DEFAULT_COST_STORAGE_SCORING_MULTIPLIER,
+            rerank_multiplier: options::EC_SPIRE_DEFAULT_COST_RERANK_MULTIPLIER,
+        }
+    }
+}
+
 fn estimate_spire_cost(
     inputs: &SpireCostInputs,
     constants: PlannerCostConstants,
 ) -> PlannerCostEstimate {
+    estimate_spire_cost_with_tuning(inputs, constants, SpireCostModelTuning::from_session())
+}
+
+fn estimate_spire_cost_with_tuning(
+    inputs: &SpireCostInputs,
+    constants: PlannerCostConstants,
+    tuning: SpireCostModelTuning,
+) -> PlannerCostEstimate {
     let details = estimate_spire_details(inputs);
-    let routing_scoring_dimensions =
-        f64::from(inputs.dimensions) * SPIRE_ROUTING_SCORING_DIMENSION_SCALE;
-    let leaf_scoring_dimensions = f64::from(inputs.dimensions) * SPIRE_LEAF_SCORING_DIMENSION_SCALE;
+    let routing_scoring_dimensions = f64::from(inputs.dimensions) * tuning.routing_dimension_scale;
+    let leaf_scoring_dimensions = f64::from(inputs.dimensions) * tuning.leaf_dimension_scale;
     let routing_cpu = details.estimated_routing_scores as f64
         * constants.cpu_operator_cost
         * routing_scoring_dimensions;
     let candidate_cpu = details.estimated_candidate_rows
         * constants.cpu_operator_cost
         * leaf_scoring_dimensions
-        * storage_scoring_multiplier(inputs.storage_format)
-        * rerank_multiplier(inputs.effective_rerank_width);
+        * effective_storage_scoring_multiplier(inputs.storage_format, tuning)
+        * effective_rerank_multiplier(inputs.effective_rerank_width, tuning);
     let index_page_cost = constants.seq_page_cost
-        * SPIRE_INDEX_PAGE_COST_SCALE
-        * local_store_page_multiplier(inputs.local_store_count);
+        * tuning.index_page_scale
+        * local_store_page_multiplier(inputs.local_store_count, tuning);
     let routing_page_cost = details.estimated_routing_pages * index_page_cost;
     let leaf_page_cost = details.estimated_leaf_pages * index_page_cost;
     let metadata_page_cost = if inputs.index_pages > 0.0 {
@@ -370,11 +463,11 @@ fn bytes_to_pages(bytes: u64) -> f64 {
     }
 }
 
-fn local_store_page_multiplier(local_store_count: u32) -> f64 {
-    1.0 + f64::from(local_store_count.saturating_sub(1)) * SPIRE_LOCAL_STORE_PAGE_FANOUT_SCALE
+fn local_store_page_multiplier(local_store_count: u32, tuning: SpireCostModelTuning) -> f64 {
+    1.0 + f64::from(local_store_count.saturating_sub(1)) * tuning.local_store_page_fanout_scale
 }
 
-fn storage_scoring_multiplier(storage_format: options::SpireStorageFormat) -> f64 {
+fn storage_format_scoring_baseline(storage_format: options::SpireStorageFormat) -> f64 {
     match storage_format {
         options::SpireStorageFormat::Auto | options::SpireStorageFormat::TurboQuant => 1.0,
         options::SpireStorageFormat::PqFastScan => 0.65,
@@ -382,9 +475,16 @@ fn storage_scoring_multiplier(storage_format: options::SpireStorageFormat) -> f6
     }
 }
 
-fn rerank_multiplier(rerank_width: i32) -> f64 {
+fn effective_storage_scoring_multiplier(
+    storage_format: options::SpireStorageFormat,
+    tuning: SpireCostModelTuning,
+) -> f64 {
+    storage_format_scoring_baseline(storage_format) * tuning.storage_scoring_multiplier
+}
+
+fn effective_rerank_multiplier(rerank_width: i32, tuning: SpireCostModelTuning) -> f64 {
     if rerank_width == 0 {
-        1.35
+        tuning.rerank_multiplier
     } else {
         1.0
     }
@@ -457,6 +557,59 @@ mod tests {
         let multi_store = estimate_spire_cost(&inputs(8, 2, 4), default_constants());
 
         assert!(multi_store.total_cost > single_store.total_cost);
+    }
+
+    #[test]
+    fn packet_30976_default_tuning_preserves_legacy_modeled_costs() {
+        let estimate = estimate_spire_cost_with_tuning(
+            &inputs(8, 2, 4),
+            default_constants(),
+            SpireCostModelTuning::packet_30976_defaults(),
+        );
+
+        assert!((estimate.startup_cost - 23.0404).abs() < f64::EPSILON);
+        assert!((estimate.total_cost - 90.5604).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn non_default_tuning_changes_modeled_costs() {
+        let baseline = estimate_spire_cost_with_tuning(
+            &inputs(8, 2, 1),
+            default_constants(),
+            SpireCostModelTuning::packet_30976_defaults(),
+        );
+        let tuned = estimate_spire_cost_with_tuning(
+            &inputs(8, 2, 1),
+            default_constants(),
+            SpireCostModelTuning {
+                routing_dimension_scale: 0.02,
+                leaf_dimension_scale: 0.02,
+                index_page_scale: 2.0,
+                local_store_page_fanout_scale: 0.10,
+                storage_scoring_multiplier: 2.0,
+                rerank_multiplier: 2.70,
+            },
+        );
+
+        assert!(tuned.startup_cost > baseline.startup_cost);
+        assert!(tuned.total_cost > baseline.total_cost);
+    }
+
+    #[test]
+    fn storage_scoring_guc_scales_format_baseline() {
+        let tuning = SpireCostModelTuning {
+            storage_scoring_multiplier: 2.0,
+            ..SpireCostModelTuning::packet_30976_defaults()
+        };
+
+        assert_eq!(
+            effective_storage_scoring_multiplier(options::SpireStorageFormat::RaBitQ, tuning),
+            0.90
+        );
+        assert_eq!(
+            effective_storage_scoring_multiplier(options::SpireStorageFormat::TurboQuant, tuning),
+            2.0
+        );
     }
 }
 

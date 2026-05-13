@@ -98,24 +98,24 @@ adversarial remote payload."
 Source: review packet `30982`, finding "Cost constants hardcoded, not
 GUC." Also raised by the `30976` reviewer for AWS recalibration.
 
-- [ ] Convert the four `const` scales in `src/am/ec_spire/cost.rs:11-14`
+- [x] Convert the four `const` scales in `src/am/ec_spire/cost.rs:11-14`
   to GUCs with the current packet `30976` values as defaults:
-  - [ ] `ec_spire.cost_routing_dimension_scale`
-  - [ ] `ec_spire.cost_leaf_dimension_scale`
-  - [ ] `ec_spire.cost_index_page_scale`
-  - [ ] `ec_spire.cost_local_store_page_fanout_scale`
-- [ ] Convert the scoring multipliers at `cost.rs:377` and `cost.rs:385`
+  - [x] `ec_spire.cost_routing_dimension_scale`
+  - [x] `ec_spire.cost_leaf_dimension_scale`
+  - [x] `ec_spire.cost_index_page_scale`
+  - [x] `ec_spire.cost_local_store_page_fanout_scale`
+- [x] Convert the scoring multipliers at `cost.rs:377` and `cost.rs:385`
   to GUCs (`ec_spire.cost_storage_scoring_multiplier`,
   `ec_spire.cost_rerank_multiplier`) with current defaults.
-- [ ] Surface the active values in `ec_spire_admin_snapshot()` /
+- [x] Surface the active values in `ec_spire_admin_snapshot()` /
   `ec_spire_explain_snapshot()` so EXPLAIN-driven tuning reports the
   live values.
-- [ ] Verify the modeled-cost rows from packet `30976` still reproduce
+- [x] Verify the modeled-cost rows from packet `30976` still reproduce
   under the new defaults (no behavioral change).
-- [ ] Fixture: set each GUC to a non-default value, run
+- [x] Fixture: set each GUC to a non-default value, run
   `ecaz bench spire-pipeline --include-cost-snapshot`, assert the
   snapshot reflects the override.
-- [ ] Document the knobs and the packet `30976` calibration baseline in
+- [x] Document the knobs and the packet `30976` calibration baseline in
   `docs/SPIRE_DIAGNOSTICS.md` so Phase 13 recalibration has a starting
   point and audit trail.
 

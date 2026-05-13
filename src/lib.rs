@@ -17121,6 +17121,44 @@ fn ec_spire_index_cost_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_cost_tuning_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(storage_format, String),
+        name!(effective_rerank_width, i32),
+        name!(cost_routing_dimension_scale, f64),
+        name!(cost_leaf_dimension_scale, f64),
+        name!(cost_index_page_scale, f64),
+        name!(cost_local_store_page_fanout_scale, f64),
+        name!(cost_storage_scoring_multiplier, f64),
+        name!(effective_storage_scoring_multiplier, f64),
+        name!(cost_rerank_multiplier, f64),
+        name!(effective_rerank_multiplier, f64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_cost_tuning_snapshot") };
+    let snapshot = unsafe { am::spire_index_cost_tuning_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.storage_format.to_owned(),
+        snapshot.effective_rerank_width,
+        snapshot.cost_routing_dimension_scale,
+        snapshot.cost_leaf_dimension_scale,
+        snapshot.cost_index_page_scale,
+        snapshot.cost_local_store_page_fanout_scale,
+        snapshot.cost_storage_scoring_multiplier,
+        snapshot.effective_storage_scoring_multiplier,
+        snapshot.cost_rerank_multiplier,
+        snapshot.effective_rerank_multiplier,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<

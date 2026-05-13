@@ -18,6 +18,8 @@ Start with:
   placement, object, assignment, and byte-count cardinalities.
 - `ec_spire_index_scan_sanity_snapshot(index_oid)` when a query appears slow
   or unexpectedly approximate.
+- `ec_spire_index_cost_tuning_snapshot(index_oid)` when EXPLAIN or benchmark
+  output needs the live SPIRE cost-model GUC values used by planner costing.
 - `ec_spire_index_relation_storage_snapshot(index_oid)` when old epoch or
   relation-object cleanup debt is suspected.
 - `ec_spire_index_maintenance_scheduler_plan(index_oid)` before running a
@@ -42,6 +44,7 @@ Start with:
 | `ec_spire_index_health_snapshot(index_oid)` | operator | You need the quickest health label and recommendation. |
 | `ec_spire_index_active_snapshot_diagnostics(index_oid)` | operator | You need active epoch cardinalities and byte totals. |
 | `ec_spire_index_options_snapshot(index_oid)` | operator | You need resolved reloptions, session overrides, and effective scan settings. |
+| `ec_spire_index_cost_tuning_snapshot(index_oid)` | operator | You need the active SPIRE cost-model GUC values and effective storage/rerank multipliers for EXPLAIN-driven tuning. |
 | `ec_spire_index_boundary_replica_identity_snapshot(index_oid)` | operator/debug | You need to prove boundary replicas share global vector identity across primary and replica assignments. |
 | `ec_spire_index_boundary_replica_placement_diagnostics(index_oid)` | operator/debug | You need missing, stale, unavailable, or skipped boundary-replica placement status and degraded-mode action. |
 | `ec_spire_index_scan_sanity_snapshot(index_oid)` | operator | You need deterministic scan preconditions such as exact leaf coverage and rerank mode. |
@@ -75,6 +78,28 @@ Start with:
 
 Diagnostic label strings are part of the operator-facing contract. Do not reuse
 an existing label for a new meaning; add a new label instead.
+
+## Cost Tuning
+
+Packet `30976` is the Phase 12 local calibration baseline for SPIRE planner
+costs. The default GUC values below preserve that modeled-cost output; Phase 13
+AWS/RDS recalibration should record packet-local before/after rows from
+`ec_spire_index_cost_snapshot(index_oid)` and the live values from
+`ec_spire_index_cost_tuning_snapshot(index_oid)`.
+
+| GUC | Default | Applies to |
+| --- | ---: | --- |
+| `ec_spire.cost_routing_dimension_scale` | `0.01` | Routing-level vector scoring CPU dimension scale. |
+| `ec_spire.cost_leaf_dimension_scale` | `0.01` | Leaf candidate scoring CPU dimension scale. |
+| `ec_spire.cost_index_page_scale` | `1.0` | SPIRE index page cost multiplier over `seq_page_cost`. |
+| `ec_spire.cost_local_store_page_fanout_scale` | `0.05` | Additional page-cost multiplier per local store beyond the first. |
+| `ec_spire.cost_storage_scoring_multiplier` | `1.0` | Session scalar over the calibrated storage-format scoring baseline. |
+| `ec_spire.cost_rerank_multiplier` | `1.35` | Candidate CPU multiplier when effective `rerank_width = 0`. |
+
+`ecaz bench spire-pipeline --include-cost-snapshot` prints the tuning snapshot
+beside the routing and pipeline counters. Pass the matching `--cost-*` flags to
+that command when collecting a packet-local override fixture so the connection
+that runs the benchmark also owns the session GUC changes.
 
 `ec_spire_index_options_snapshot(index_oid)` reports assignment payload
 scannability with these `assignment_payload_status` values:

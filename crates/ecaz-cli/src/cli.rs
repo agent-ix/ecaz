@@ -266,6 +266,11 @@ mod tests {
             "--include-recall",
             "--query-metric-k",
             "20",
+            "--include-cost-snapshot",
+            "--cost-routing-dimension-scale",
+            "0.02",
+            "--cost-rerank-multiplier",
+            "2.0",
         ])
         .expect("cli parses");
         match cli.command {
@@ -279,7 +284,10 @@ mod tests {
                 assert!(args.include_local_store_overlap);
                 assert!(args.include_query_metrics);
                 assert!(args.include_recall);
+                assert!(args.include_cost_snapshot);
                 assert_eq!(args.query_metric_k, 20);
+                assert_eq!(args.cost_routing_dimension_scale, Some(0.02));
+                assert_eq!(args.cost_rerank_multiplier, Some(2.0));
             }
             other => panic!("unexpected command: {other:?}"),
         }

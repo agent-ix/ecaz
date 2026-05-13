@@ -24,6 +24,7 @@ pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use recall::RecallArgs;
+#[allow(unused_imports)]
 pub use spire_pipeline::{SpirePipelineArgs, SpireRemoteTupleTransportMode};
 pub use storage::StorageArgs;
 pub use suite::SuiteArgs;

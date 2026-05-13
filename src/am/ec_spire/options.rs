@@ -42,6 +42,13 @@ const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1024;
 const EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1_073_741_824;
 const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 64;
 const EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 1_000_000;
+pub(super) const EC_SPIRE_DEFAULT_COST_ROUTING_DIMENSION_SCALE: f64 = 0.01;
+pub(super) const EC_SPIRE_DEFAULT_COST_LEAF_DIMENSION_SCALE: f64 = 0.01;
+pub(super) const EC_SPIRE_DEFAULT_COST_INDEX_PAGE_SCALE: f64 = 1.0;
+pub(super) const EC_SPIRE_DEFAULT_COST_LOCAL_STORE_PAGE_FANOUT_SCALE: f64 = 0.05;
+pub(super) const EC_SPIRE_DEFAULT_COST_STORAGE_SCORING_MULTIPLIER: f64 = 1.0;
+pub(super) const EC_SPIRE_DEFAULT_COST_RERANK_MULTIPLIER: f64 = 1.35;
+const EC_SPIRE_MAX_COST_SCALE: f64 = 1_000_000.0;
 #[cfg(any(test, feature = "pg_test"))]
 const EC_SPIRE_MAX_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE: i32 = 10_000;
 
@@ -71,6 +78,18 @@ static EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW);
 static EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH);
+static EC_SPIRE_COST_ROUTING_DIMENSION_SCALE_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_COST_ROUTING_DIMENSION_SCALE);
+static EC_SPIRE_COST_LEAF_DIMENSION_SCALE_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_COST_LEAF_DIMENSION_SCALE);
+static EC_SPIRE_COST_INDEX_PAGE_SCALE_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_COST_INDEX_PAGE_SCALE);
+static EC_SPIRE_COST_LOCAL_STORE_PAGE_FANOUT_SCALE_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_COST_LOCAL_STORE_PAGE_FANOUT_SCALE);
+static EC_SPIRE_COST_STORAGE_SCORING_MULTIPLIER_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_COST_STORAGE_SCORING_MULTIPLIER);
+static EC_SPIRE_COST_RERANK_MULTIPLIER_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_COST_RERANK_MULTIPLIER);
 static EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC: GucSetting<
     SpireRemoteSearchConsistencyModeGuc,
 > = GucSetting::<SpireRemoteSearchConsistencyModeGuc>::new(
@@ -822,6 +841,66 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_float_guc(
+        c"ec_spire.cost_routing_dimension_scale",
+        c"SPIRE routing-score dimension cost scale.",
+        c"Multiplier applied to vector dimensions when estimating routing-level scoring CPU; default 0.01 preserves packet 30976 cost calibration.",
+        &EC_SPIRE_COST_ROUTING_DIMENSION_SCALE_GUC,
+        0.0,
+        EC_SPIRE_MAX_COST_SCALE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.cost_leaf_dimension_scale",
+        c"SPIRE leaf-score dimension cost scale.",
+        c"Multiplier applied to vector dimensions when estimating leaf candidate scoring CPU; default 0.01 preserves packet 30976 cost calibration.",
+        &EC_SPIRE_COST_LEAF_DIMENSION_SCALE_GUC,
+        0.0,
+        EC_SPIRE_MAX_COST_SCALE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.cost_index_page_scale",
+        c"SPIRE index page cost scale.",
+        c"Multiplier applied to seq_page_cost for SPIRE index page reads; default 1.0 preserves packet 30976 cost calibration.",
+        &EC_SPIRE_COST_INDEX_PAGE_SCALE_GUC,
+        0.0,
+        EC_SPIRE_MAX_COST_SCALE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.cost_local_store_page_fanout_scale",
+        c"SPIRE local-store page fanout cost scale.",
+        c"Additional index page cost multiplier per local store beyond the first; default 0.05 preserves packet 30976 cost calibration.",
+        &EC_SPIRE_COST_LOCAL_STORE_PAGE_FANOUT_SCALE_GUC,
+        0.0,
+        EC_SPIRE_MAX_COST_SCALE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.cost_storage_scoring_multiplier",
+        c"SPIRE storage-format scoring cost multiplier.",
+        c"Session multiplier applied on top of the calibrated storage-format scoring baseline; default 1.0 preserves packet 30976 modeled-cost rows.",
+        &EC_SPIRE_COST_STORAGE_SCORING_MULTIPLIER_GUC,
+        0.0,
+        EC_SPIRE_MAX_COST_SCALE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.cost_rerank_multiplier",
+        c"SPIRE full-frontier rerank cost multiplier.",
+        c"Candidate CPU multiplier used when effective rerank_width is 0; default 1.35 preserves packet 30976 cost calibration.",
+        &EC_SPIRE_COST_RERANK_MULTIPLIER_GUC,
+        0.0,
+        EC_SPIRE_MAX_COST_SCALE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_enum_guc(
         c"ec_spire.remote_search_consistency_mode",
         c"Session consistency policy for production ec_spire remote search.",
@@ -905,6 +984,30 @@ pub(super) fn current_session_max_remote_payload_bytes_per_row() -> i32 {
 
 pub(super) fn current_session_max_remote_payload_rows_per_batch() -> i32 {
     EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC.get()
+}
+
+pub(super) fn current_session_cost_routing_dimension_scale() -> f64 {
+    EC_SPIRE_COST_ROUTING_DIMENSION_SCALE_GUC.get()
+}
+
+pub(super) fn current_session_cost_leaf_dimension_scale() -> f64 {
+    EC_SPIRE_COST_LEAF_DIMENSION_SCALE_GUC.get()
+}
+
+pub(super) fn current_session_cost_index_page_scale() -> f64 {
+    EC_SPIRE_COST_INDEX_PAGE_SCALE_GUC.get()
+}
+
+pub(super) fn current_session_cost_local_store_page_fanout_scale() -> f64 {
+    EC_SPIRE_COST_LOCAL_STORE_PAGE_FANOUT_SCALE_GUC.get()
+}
+
+pub(super) fn current_session_cost_storage_scoring_multiplier() -> f64 {
+    EC_SPIRE_COST_STORAGE_SCORING_MULTIPLIER_GUC.get()
+}
+
+pub(super) fn current_session_cost_rerank_multiplier() -> f64 {
+    EC_SPIRE_COST_RERANK_MULTIPLIER_GUC.get()
 }
 
 pub(super) fn current_session_remote_search_consistency_mode_name() -> &'static str {

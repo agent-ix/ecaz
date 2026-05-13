@@ -21,6 +21,7 @@ use crate::psql::{self, ConnectionOptions};
 const EC_SPIRE_MAX_NPROBE: i32 = 1_000_000;
 const EC_SPIRE_MAX_RERANK_WIDTH: i32 = 10_000_000;
 const EC_SPIRE_MAX_CANDIDATE_ROWS: i32 = 10_000_000;
+const EC_SPIRE_MAX_COST_SCALE: f64 = 1_000_000.0;
 
 #[derive(Args, Debug)]
 pub struct SpirePipelineArgs {
@@ -74,6 +75,27 @@ pub struct SpirePipelineArgs {
     /// Session tuple-payload transport policy for remote CustomScan payloads.
     #[arg(long, value_enum)]
     pub remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
+    /// Also print the SPIRE cost-model tuning snapshot for each sweep value.
+    #[arg(long)]
+    pub include_cost_snapshot: bool,
+    /// Session override for ec_spire.cost_routing_dimension_scale.
+    #[arg(long)]
+    pub cost_routing_dimension_scale: Option<f64>,
+    /// Session override for ec_spire.cost_leaf_dimension_scale.
+    #[arg(long)]
+    pub cost_leaf_dimension_scale: Option<f64>,
+    /// Session override for ec_spire.cost_index_page_scale.
+    #[arg(long)]
+    pub cost_index_page_scale: Option<f64>,
+    /// Session override for ec_spire.cost_local_store_page_fanout_scale.
+    #[arg(long)]
+    pub cost_local_store_page_fanout_scale: Option<f64>,
+    /// Session override for ec_spire.cost_storage_scoring_multiplier.
+    #[arg(long)]
+    pub cost_storage_scoring_multiplier: Option<f64>,
+    /// Session override for ec_spire.cost_rerank_multiplier.
+    #[arg(long)]
+    pub cost_rerank_multiplier: Option<f64>,
     /// Run coordinator KNN queries and report single-connection latency stats.
     #[arg(long)]
     pub include_query_metrics: bool,
@@ -136,6 +158,14 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         enabled: args.adaptive_nprobe,
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
     };
+    let cost_tuning_options = SpireCostTuningOptions {
+        routing_dimension_scale: args.cost_routing_dimension_scale,
+        leaf_dimension_scale: args.cost_leaf_dimension_scale,
+        index_page_scale: args.cost_index_page_scale,
+        local_store_page_fanout_scale: args.cost_local_store_page_fanout_scale,
+        storage_scoring_multiplier: args.cost_storage_scoring_multiplier,
+        rerank_multiplier: args.cost_rerank_multiplier,
+    };
     super::validate_spire_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
     let query_metrics_enabled = args.include_query_metrics || args.include_recall;
 
@@ -191,6 +221,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         BTreeMap::<LocalStoreOverlapKey, LocalStoreOverlapAggregate>::new();
     let mut degraded_skip = BTreeMap::<DegradedSkipKey, DegradedSkipAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
+    let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
     for nprobe in &sweep_values {
@@ -201,8 +232,13 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             args.max_candidate_rows,
             args.remote_tuple_transport,
             adaptive_nprobe_options,
+            cost_tuning_options,
         )
         .await?;
+
+        if args.include_cost_snapshot {
+            cost_tuning.insert(*nprobe, query_cost_tuning_row(&client, &index).await?);
+        }
 
         for query in &queries {
             let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
@@ -321,6 +357,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         remote_tuple_transport: args.remote_tuple_transport,
         endpoint_identity: &endpoint_identity,
         adaptive_nprobe_options,
+        cost_snapshot_enabled: args.include_cost_snapshot,
+        cost_tuning: &cost_tuning,
         remote_enabled,
         remote_selected_pids: &args.remote_selected_pids,
         remote_epoch,
@@ -388,6 +426,36 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             return Err(eyre!(
                 "--max-candidate-rows must be between -1 and {}",
                 EC_SPIRE_MAX_CANDIDATE_ROWS
+            ));
+        }
+    }
+    validate_optional_cost_scale(
+        "--cost-routing-dimension-scale",
+        args.cost_routing_dimension_scale,
+    )?;
+    validate_optional_cost_scale(
+        "--cost-leaf-dimension-scale",
+        args.cost_leaf_dimension_scale,
+    )?;
+    validate_optional_cost_scale("--cost-index-page-scale", args.cost_index_page_scale)?;
+    validate_optional_cost_scale(
+        "--cost-local-store-page-fanout-scale",
+        args.cost_local_store_page_fanout_scale,
+    )?;
+    validate_optional_cost_scale(
+        "--cost-storage-scoring-multiplier",
+        args.cost_storage_scoring_multiplier,
+    )?;
+    validate_optional_cost_scale("--cost-rerank-multiplier", args.cost_rerank_multiplier)?;
+    Ok(())
+}
+
+fn validate_optional_cost_scale(flag: &str, value: Option<f64>) -> Result<()> {
+    if let Some(value) = value {
+        if !(value.is_finite() && (0.0..=EC_SPIRE_MAX_COST_SCALE).contains(&value)) {
+            return Err(eyre!(
+                "{flag} must be finite and between 0 and {}",
+                EC_SPIRE_MAX_COST_SCALE
             ));
         }
     }
@@ -540,7 +608,8 @@ async fn fetch_queries(
     queries_table: &str,
     queries_limit: usize,
 ) -> Result<Vec<QueryVector>> {
-    let sql = format!("SELECT id, source FROM {queries_table} ORDER BY id LIMIT {queries_limit}");
+    let sql =
+        format!("SELECT id::bigint, source FROM {queries_table} ORDER BY id LIMIT {queries_limit}");
     let rows = client
         .query(&sql, &[])
         .await
@@ -561,6 +630,7 @@ async fn apply_session_options(
     max_candidate_rows: Option<i32>,
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
+    cost_tuning_options: SpireCostTuningOptions,
 ) -> Result<()> {
     client
         .batch_execute(&format!("SET ec_spire.nprobe = {nprobe}"))
@@ -595,6 +665,67 @@ async fn apply_session_options(
             })?;
     }
     super::apply_spire_adaptive_nprobe_options(client, adaptive_nprobe_options).await?;
+    apply_cost_tuning_options(client, cost_tuning_options).await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct SpireCostTuningOptions {
+    routing_dimension_scale: Option<f64>,
+    leaf_dimension_scale: Option<f64>,
+    index_page_scale: Option<f64>,
+    local_store_page_fanout_scale: Option<f64>,
+    storage_scoring_multiplier: Option<f64>,
+    rerank_multiplier: Option<f64>,
+}
+
+async fn apply_cost_tuning_options(client: &Client, options: SpireCostTuningOptions) -> Result<()> {
+    apply_cost_tuning_option(
+        client,
+        "ec_spire.cost_routing_dimension_scale",
+        options.routing_dimension_scale,
+    )
+    .await?;
+    apply_cost_tuning_option(
+        client,
+        "ec_spire.cost_leaf_dimension_scale",
+        options.leaf_dimension_scale,
+    )
+    .await?;
+    apply_cost_tuning_option(
+        client,
+        "ec_spire.cost_index_page_scale",
+        options.index_page_scale,
+    )
+    .await?;
+    apply_cost_tuning_option(
+        client,
+        "ec_spire.cost_local_store_page_fanout_scale",
+        options.local_store_page_fanout_scale,
+    )
+    .await?;
+    apply_cost_tuning_option(
+        client,
+        "ec_spire.cost_storage_scoring_multiplier",
+        options.storage_scoring_multiplier,
+    )
+    .await?;
+    apply_cost_tuning_option(
+        client,
+        "ec_spire.cost_rerank_multiplier",
+        options.rerank_multiplier,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn apply_cost_tuning_option(client: &Client, guc: &str, value: Option<f64>) -> Result<()> {
+    if let Some(value) = value {
+        client
+            .batch_execute(&format!("SET {guc} = {value}"))
+            .await
+            .wrap_err_with(|| format!("SET {guc} = {value}"))?;
+    }
     Ok(())
 }
 
@@ -689,6 +820,14 @@ async fn query_degraded_skip_rows(
     Ok(rows.into_iter().map(DegradedSkipRow::from).collect())
 }
 
+async fn query_cost_tuning_row(client: &Client, index: &str) -> Result<CostTuningRow> {
+    let row = client
+        .query_one(cost_tuning_snapshot_sql(), &[&index])
+        .await
+        .wrap_err("querying ec_spire_index_cost_tuning_snapshot")?;
+    Ok(CostTuningRow::from(row))
+}
+
 async fn query_endpoint_identity(client: &Client, index: &str) -> Result<EndpointIdentityRow> {
     let row = client
         .query_one(endpoint_identity_sql(), &[&index])
@@ -747,6 +886,15 @@ fn endpoint_identity_sql() -> &'static str {
     "SELECT tuple_transport_capabilities, tuple_transport_default,
             tuple_transport_status, status, recommendation
      FROM ec_spire_remote_search_endpoint_identity($1::text::regclass::oid)"
+}
+
+fn cost_tuning_snapshot_sql() -> &'static str {
+    "SELECT storage_format, effective_rerank_width,
+            cost_routing_dimension_scale, cost_leaf_dimension_scale,
+            cost_index_page_scale, cost_local_store_page_fanout_scale,
+            cost_storage_scoring_multiplier, effective_storage_scoring_multiplier,
+            cost_rerank_multiplier, effective_rerank_multiplier
+     FROM ec_spire_index_cost_tuning_snapshot($1::text::regclass::oid)"
 }
 
 #[derive(Debug)]
@@ -881,6 +1029,37 @@ struct EndpointIdentityRow {
     tuple_transport_status: String,
     status: String,
     recommendation: String,
+}
+
+#[derive(Debug)]
+struct CostTuningRow {
+    storage_format: String,
+    effective_rerank_width: i32,
+    cost_routing_dimension_scale: f64,
+    cost_leaf_dimension_scale: f64,
+    cost_index_page_scale: f64,
+    cost_local_store_page_fanout_scale: f64,
+    cost_storage_scoring_multiplier: f64,
+    effective_storage_scoring_multiplier: f64,
+    cost_rerank_multiplier: f64,
+    effective_rerank_multiplier: f64,
+}
+
+impl From<Row> for CostTuningRow {
+    fn from(row: Row) -> Self {
+        Self {
+            storage_format: row.get(0),
+            effective_rerank_width: row.get(1),
+            cost_routing_dimension_scale: row.get(2),
+            cost_leaf_dimension_scale: row.get(3),
+            cost_index_page_scale: row.get(4),
+            cost_local_store_page_fanout_scale: row.get(5),
+            cost_storage_scoring_multiplier: row.get(6),
+            effective_storage_scoring_multiplier: row.get(7),
+            cost_rerank_multiplier: row.get(8),
+            effective_rerank_multiplier: row.get(9),
+        }
+    }
 }
 
 impl EndpointIdentityRow {
@@ -1201,6 +1380,8 @@ struct ReportInput<'a> {
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     endpoint_identity: &'a EndpointIdentityRow,
     adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
+    cost_snapshot_enabled: bool,
+    cost_tuning: &'a BTreeMap<i32, CostTuningRow>,
     remote_enabled: bool,
     remote_selected_pids: &'a [i64],
     remote_epoch: Option<i64>,
@@ -1220,6 +1401,9 @@ struct ReportInput<'a> {
 fn render_report(input: ReportInput<'_>) -> String {
     let mut sections = vec![render_header(&input)];
     sections.push(render_endpoint_identity_table(input.endpoint_identity));
+    if input.cost_snapshot_enabled {
+        sections.push(render_cost_tuning_table(input.cost_tuning));
+    }
     sections.push(render_routing_table(input.routing));
     sections.push(render_local_table(input.local));
     if input.remote_enabled {
@@ -1248,7 +1432,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -1256,6 +1440,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         rerank_width = option_label(input.rerank_width),
         max_candidate_rows = option_label(input.max_candidate_rows),
         remote_tuple_transport = option_label(input.remote_tuple_transport),
+        cost_snapshot = input.cost_snapshot_enabled,
         remote = input.remote_enabled,
         remote_selected_pids = input.remote_selected_pids,
         remote_epoch = option_label(input.remote_epoch),
@@ -1269,6 +1454,44 @@ fn render_header(input: &ReportInput<'_>) -> String {
         },
         query_recall = input.include_recall,
     )
+}
+
+fn render_cost_tuning_table(rows: &BTreeMap<i32, CostTuningRow>) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "storage",
+        "rerank_width",
+        "routing_dim",
+        "leaf_dim",
+        "page",
+        "store_fanout",
+        "storage_guc",
+        "storage_effective",
+        "rerank_guc",
+        "rerank_effective",
+    ]);
+    for (nprobe, row) in rows {
+        table.add_row(vec![
+            Cell::new(nprobe),
+            Cell::new(&row.storage_format),
+            Cell::new(row.effective_rerank_width),
+            Cell::new(format_cost_scale(row.cost_routing_dimension_scale)),
+            Cell::new(format_cost_scale(row.cost_leaf_dimension_scale)),
+            Cell::new(format_cost_scale(row.cost_index_page_scale)),
+            Cell::new(format_cost_scale(row.cost_local_store_page_fanout_scale)),
+            Cell::new(format_cost_scale(row.cost_storage_scoring_multiplier)),
+            Cell::new(format_cost_scale(row.effective_storage_scoring_multiplier)),
+            Cell::new(format_cost_scale(row.cost_rerank_multiplier)),
+            Cell::new(format_cost_scale(row.effective_rerank_multiplier)),
+        ]);
+    }
+    format!("Cost tuning snapshot\n{table}")
+}
+
+fn format_cost_scale(value: f64) -> String {
+    format!("{value:.6}")
 }
 
 fn render_endpoint_identity_table(row: &EndpointIdentityRow) -> String {
@@ -1534,6 +1757,13 @@ mod tests {
             rerank_width: None,
             max_candidate_rows: None,
             remote_tuple_transport: None,
+            include_cost_snapshot: false,
+            cost_routing_dimension_scale: None,
+            cost_leaf_dimension_scale: None,
+            cost_index_page_scale: None,
+            cost_local_store_page_fanout_scale: None,
+            cost_storage_scoring_multiplier: None,
+            cost_rerank_multiplier: None,
             include_query_metrics: false,
             include_recall: false,
             query_metric_k: 10,
@@ -1602,6 +1832,13 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--query-metric-projection-columns"));
+
+        let mut args = default_args();
+        args.cost_index_page_scale = Some(f64::INFINITY);
+        assert!(validate_args(&args)
+            .unwrap_err()
+            .to_string()
+            .contains("--cost-index-page-scale"));
     }
 
     #[test]
@@ -1627,6 +1864,8 @@ mod tests {
         assert!(degraded_skip_report_sql().contains("$4::bigint[]"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
+        assert!(cost_tuning_snapshot_sql().contains("ec_spire_index_cost_tuning_snapshot"));
+        assert!(cost_tuning_snapshot_sql().contains("cost_routing_dimension_scale"));
     }
 
     #[test]
@@ -1662,6 +1901,8 @@ mod tests {
                 enabled: false,
                 score_gap_micros: None,
             },
+            cost_snapshot_enabled: true,
+            cost_tuning: &BTreeMap::new(),
             remote_enabled: true,
             remote_selected_pids: &[2, 3],
             remote_epoch: Some(1),
@@ -1678,6 +1919,7 @@ mod tests {
             query_metrics: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
+        assert!(header.contains("cost_snapshot: true"));
         assert!(header.contains("local_store_overlap: true"));
         assert!(header.contains("query_metrics: true"));
         assert!(header.contains("query_metric_k: 10"));
@@ -1693,6 +1935,32 @@ mod tests {
         assert!(rendered.contains("pg_binary_attr_v1"));
         assert!(rendered.contains("pg_binary_attr_v1_ready"));
         assert!(rendered.contains("true"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_cost_tuning_snapshot() {
+        let mut rows = BTreeMap::new();
+        rows.insert(
+            8,
+            CostTuningRow {
+                storage_format: "rabitq".to_owned(),
+                effective_rerank_width: 0,
+                cost_routing_dimension_scale: 0.02,
+                cost_leaf_dimension_scale: 0.03,
+                cost_index_page_scale: 2.0,
+                cost_local_store_page_fanout_scale: 0.10,
+                cost_storage_scoring_multiplier: 1.5,
+                effective_storage_scoring_multiplier: 0.675,
+                cost_rerank_multiplier: 2.0,
+                effective_rerank_multiplier: 2.0,
+            },
+        );
+
+        let rendered = render_cost_tuning_table(&rows);
+        assert!(rendered.contains("Cost tuning snapshot"));
+        assert!(rendered.contains("routing_dim"));
+        assert!(rendered.contains("0.020000"));
+        assert!(rendered.contains("0.675000"));
     }
 
     #[test]
