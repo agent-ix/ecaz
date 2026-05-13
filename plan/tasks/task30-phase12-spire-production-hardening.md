@@ -542,6 +542,10 @@ described by reviewer packet `30896`.
     `coordinator_row_count=1`, `ecaz bench spire-pipeline` still trips the v1
     DML frontdoor guard for readiness recall/query metrics, and the packet-local
     SQL recall sanity run reported `recall_at_10 = 0.0000`.
+  - [x] Packet `30979` resolves the trigger-mode live fixture blocker from
+    `30978`: the fixture now uses a non-PK-select predicate for the coordinator
+    heap suppression assertion, reports `coordinator_row_count=0`, and still
+    reads the inserted row through the normal distributed CustomScan path.
 - [x] Publish local capacity targets for maximum remotes, maximum concurrent
   coordinator queries, maximum concurrent writers, maximum work per remote,
   maximum PIDs per node, and expected overload/degraded behavior.
@@ -574,6 +578,8 @@ described by reviewer packet `30896`.
   - [ ] Packet `30978` is a readiness-bundle attempt and blocker packet, not a
     final bundle. Keep this row open until the trigger-mode live fixture and
     recall/bench artifact path are reconciled.
+  - [ ] Packet `30979` reconciles the trigger-mode live fixture portion; the
+    final bundle still needs the recall/bench artifact path reconciled.
 
 ## Suggested Packet Sequence
 

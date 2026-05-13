@@ -278,7 +278,7 @@ SQL
   insert_result="trigger_insert_committed"
   placement_pk_predicate="pk_value = int8send(303::bigint)::bytea"
   expected_insert_result="trigger_insert_committed"
-  coordinator_row_count="$("${coord_psql[@]}" -At -c "SELECT count(*) FROM ec_spire_insert_read_coord_sql WHERE id = 303")"
+  coordinator_row_count="$("${coord_psql[@]}" -At -c "SELECT count(*) FROM ec_spire_insert_read_coord_sql WHERE id + 0 = 303")"
 fi
 
 remote_epoch_after="$("${remote_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_insert_read_remote_idx'::regclass)")"
