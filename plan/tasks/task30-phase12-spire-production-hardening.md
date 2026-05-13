@@ -315,8 +315,14 @@ described by reviewer packet `30896`.
     `skipped_pid_count`, `first_skip_category`, and `status`; unit coverage
     proves stale-epoch and incompatible-version pre-dispatch blockers are
     reported as separate skipped nodes in degraded mode.
-- [ ] Add remote-node multi-instance proof that boundary replicas carry the
+- [x] Add remote-node multi-instance proof that boundary replicas carry the
   same global original-vector identity across leaves, stores, and remotes.
+  - Evidence: `ec_spire_index_boundary_replica_identity_snapshot(index_oid)`
+    groups primary and boundary-replica assignments by global `vec_id` and
+    reports their node/local-store span; the PG18 fixture rewrites one leaf
+    placement to remote node `2` and verifies at least one ready global
+    identity spans node IDs `0..2` while preserving one
+    primary plus one boundary-replica assignment per source identity.
 - [ ] Add boundary-replica manifest freshness fixtures using
   `ec_spire_remote_epoch_manifest_freshness()`.
 - [ ] Add operator diagnostics for stale, missing, or unavailable boundary

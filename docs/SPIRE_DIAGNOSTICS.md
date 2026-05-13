@@ -42,6 +42,7 @@ Start with:
 | `ec_spire_index_health_snapshot(index_oid)` | operator | You need the quickest health label and recommendation. |
 | `ec_spire_index_active_snapshot_diagnostics(index_oid)` | operator | You need active epoch cardinalities and byte totals. |
 | `ec_spire_index_options_snapshot(index_oid)` | operator | You need resolved reloptions, session overrides, and effective scan settings. |
+| `ec_spire_index_boundary_replica_identity_snapshot(index_oid)` | operator/debug | You need to prove boundary replicas share global vector identity across primary and replica assignments. |
 | `ec_spire_index_scan_sanity_snapshot(index_oid)` | operator | You need deterministic scan preconditions such as exact leaf coverage and rerank mode. |
 | `ec_spire_index_relation_storage_snapshot(index_oid)` | operator | You need relation object tuple counts, active referenced bytes, and cleanup-candidate debt. |
 | `ec_spire_index_epoch_snapshot(index_oid)` | operator | You need active, retired, failed, superseded, and cleanup-eligibility epoch rows. |
@@ -154,6 +155,12 @@ replication planning state through `boundary_replica_count`,
 `boundary_replica_count = 0` keeps primary-only assignment and reports
 `scan_dedupe_mode = none`; replica-capable indexes report `vec_id` so operators
 can see when scan plans must deduplicate replicated vector identities.
+`ec_spire_index_boundary_replica_identity_snapshot(index_oid)` groups primary
+and boundary-replica assignments by `vec_id`, reports whether the ID scope is
+global, and surfaces the node/local-store span covered by that identity. The
+snapshot reads coordinator metadata copies for remote placements, so a
+multi-instance readiness fixture can prove one global original-vector identity
+across local and remote placement rows before live remote object reads exist.
 `ec_spire_index_scan_placement_snapshot(index_oid, query)` then reports the
 runtime side of that contract with primary versus boundary-replica candidate
 rows, vec-id duplicate candidates suppressed by scan dedupe, and final

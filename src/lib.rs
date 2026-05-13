@@ -42265,6 +42265,25 @@ mod tests {
         )
         .expect("source_identity boundary replica index creation should succeed");
 
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_boundary_replica_source_identity_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let remote_leaf_pid = Spi::get_one::<i64>(
+            "SELECT pid FROM \
+             ec_spire_index_object_snapshot(\
+               'ec_spire_boundary_replica_source_identity_idx'::regclass) \
+             WHERE object_kind = 'leaf' \
+             ORDER BY pid \
+             LIMIT 1",
+        )
+        .expect("leaf object query should succeed")
+        .expect("leaf object should exist");
+        unsafe {
+            am::debug_spire_rewrite_placement_node(index_oid, remote_leaf_pid as u64, 2);
+        }
+
         let snapshot_from = "FROM ec_spire_index_boundary_replica_identity_snapshot(\
              'ec_spire_boundary_replica_source_identity_idx'::regclass)";
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {snapshot_from}"))
@@ -42295,13 +42314,16 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT max(leaf_pid_count) {snapshot_from}"))
                 .expect("boundary identity leaf span query should succeed")
                 .expect("boundary identity leaf span should exist");
-        let visible_store_count = Spi::get_one::<i64>(&format!(
-            "SELECT count(DISTINCT local_store_id) FROM \
-             ec_spire_index_placement_snapshot(\
-               'ec_spire_boundary_replica_source_identity_idx'::regclass)"
+        let remote_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {snapshot_from} \
+             WHERE vec_id_scope = 'global' \
+               AND status = 'ready' \
+               AND node_count = 2 \
+               AND min_node_id = 0 \
+               AND max_node_id = 2"
         ))
-        .expect("placement store count should succeed")
-        .expect("placement store count should exist");
+        .expect("remote boundary identity span query should succeed")
+        .expect("remote boundary identity span should exist");
 
         assert_eq!(row_count, 4);
         assert_eq!(ready_count, 4);
@@ -42309,7 +42331,7 @@ mod tests {
         assert_eq!(primary_count, 4);
         assert_eq!(replica_count, 4);
         assert_eq!(max_leaf_pid_count, 2);
-        assert_eq!(visible_store_count, 2);
+        assert!(remote_ready_count > 0);
     }
 
     #[pg_test]

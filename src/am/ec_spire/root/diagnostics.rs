@@ -223,13 +223,16 @@ pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
             if placement.state != meta::SpirePlacementState::Available {
                 continue;
             }
-            let header = object_store.read_object_header(placement)?;
+            let metadata_placement = coordinator_metadata_read_placement(placement);
+            let header = object_store.read_object_header(&metadata_placement)?;
             let assignments = match header.kind {
                 storage::SpirePartitionObjectKind::Leaf => {
-                    read_leaf_assignment_rows(&object_store, placement)?
+                    read_leaf_assignment_rows(&object_store, &metadata_placement)?
                 }
                 storage::SpirePartitionObjectKind::Delta => {
-                    object_store.read_delta_object(placement)?.assignments
+                    object_store
+                        .read_delta_object(&metadata_placement)?
+                        .assignments
                 }
                 _ => continue,
             };
