@@ -360,9 +360,16 @@ described by reviewer packet `30896`.
   candidate counts, heap rows, remote fanout, timeout/cancel counts,
   strict-failure counts, degraded-skip counts, placement contention, and typed
   tuple transport counters in packet-local artifacts.
-- [ ] Publish local capacity targets for maximum remotes, maximum concurrent
+- [x] Publish local capacity targets for maximum remotes, maximum concurrent
   coordinator queries, maximum concurrent writers, maximum work per remote,
   maximum PIDs per node, and expected overload/degraded behavior.
+  - Evidence: `docs/SPIRE_LOCAL_CAPACITY_TARGETS.md` publishes the local
+    production-readiness smoke profile, including explicit remote fanout caps,
+    conservative one-at-a-time read/write concurrency targets, per-remote work
+    limits, required GUC settings, and strict/degraded overload behavior. The
+    readiness boundary doc now requires packets to cite the active capacity
+    profile and forbids raising targets without packet-local benchmark or
+    contention logs.
 - [x] Include libpq security and operations in the runbook:
   `sslmode` preservation, raw-conninfo non-exposure, sanitized
   auth/certificate failures, credential-rotation deferral, audit-log deferral,

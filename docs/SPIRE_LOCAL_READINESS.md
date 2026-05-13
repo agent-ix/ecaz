@@ -34,6 +34,8 @@ A local production-readiness smoke packet should include:
 
 - clean setup and teardown from repo-owned commands or documented scripts;
 - distributed read and write fixtures against the current CustomScan path;
+- the local capacity target profile from `docs/SPIRE_LOCAL_CAPACITY_TARGETS.md`,
+  including the active fanout and concurrency caps used by the run;
 - strict and degraded fault checks, including skipped/stale node reporting;
 - typed tuple transport status and any JSON compatibility fallback still
   reachable;
@@ -88,3 +90,5 @@ claims do not hide local readiness gaps.
 - Do not translate local smoke into AWS/RDS product-scale evidence.
 - Keep AWS/RDS work blocked until Phase 12 exit criteria are complete or
   explicitly reviewer-deferred.
+- Do not raise local capacity targets without packet-local benchmark or
+  contention logs for the tested fixture.
