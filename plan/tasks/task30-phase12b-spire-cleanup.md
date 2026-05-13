@@ -113,7 +113,7 @@ Phase 13 will push it past 80k.
   more accurately reflects content). Subdirectories per concern:
   - [ ] `tests/insert.rs`
   - [ ] `tests/scan.rs`
-  - [ ] `tests/custom_scan.rs`
+  - [x] `tests/custom_scan.rs`
   - [ ] `tests/remote_search.rs`
   - [ ] `tests/dml_frontdoor.rs`
   - [ ] `tests/placement.rs`
@@ -124,6 +124,10 @@ Phase 13 will push it past 80k.
 - First fixture-sink checkpoint creates `src/tests/mod.rs` and moves the
   `#[pg_schema] mod tests` body out of `src/lib.rs`; concern-specific
   subfiles remain open.
+- Packet `30998` moves the contiguous CustomScan pg_test fixture block to
+  `src/tests/custom_scan.rs` with a textual include so fixture names and
+  pg_schema scope remain unchanged; the other concern-specific files
+  remain open.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
