@@ -103,6 +103,14 @@ tablespace names are allowed so same-device baseline runs can be configured and
 reported honestly. Phase 4 supports auxiliary partition-store relations for
 local multi-store indexes, while multi-store REINDEX remains explicitly
 rejected until a full auxiliary-store rebuild lifecycle lands.
+`ec_spire_index_placement_snapshot(index_oid)` reports the configured placement
+surface by `(node_id, local_store_id, store_relid)`.
+`ec_spire_index_scan_placement_snapshot(index_oid, query)` reports the
+scan-touched store groups by `(node_id, local_store_id)`. Local relation-backed
+object reads resolve those diagnostics through bounded store maps keyed by
+`local_store_id` for in-memory stores and by `(local_store_id, store_relid)` for
+relation-backed stores, so configured local-store lookup does not require a
+linear scan per placement.
 
 `ec_spire_index_options_snapshot(index_oid)` reports Phase 5 boundary
 replication planning state through `boundary_replica_count`,

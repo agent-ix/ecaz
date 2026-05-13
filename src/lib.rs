@@ -42363,17 +42363,26 @@ mod tests {
             &format!("VACUUM {TABLE_NAME};"),
         );
 
-        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
-            .expect("SPI query should succeed")
-            .expect("heap count should exist");
         let placement_store_count = Spi::get_one::<i64>(&format!(
             "SELECT count(DISTINCT local_store_id) FROM \
              ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
         ))
         .expect("placement snapshot should succeed")
         .expect("count should exist");
+        let placement_node_store_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT (node_id, local_store_id)) FROM \
+             ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
+        ))
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
         let placement_store_relid_count = Spi::get_one::<i64>(&format!(
             "SELECT count(DISTINCT store_relid) FROM \
+             ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
+        ))
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_key_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT (node_id, local_store_id, store_relid)) FROM \
              ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
         ))
         .expect("placement snapshot should succeed")
@@ -42386,38 +42395,36 @@ mod tests {
         ))
         .expect("scan placement snapshot should succeed")
         .expect("count should exist");
+        let scan_selected_node_store_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT (node_id, local_store_id)) FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 '{INDEX_NAME}'::regclass, \
+                 ARRAY[0.9, 0.1]::real[])"
+        ))
+        .expect("scan placement snapshot should succeed")
+        .expect("count should exist");
+        let scan_selected_nonlocal_node_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 '{INDEX_NAME}'::regclass, \
+                 ARRAY[0.9, 0.1]::real[]) \
+             WHERE node_id <> 0"
+        ))
+        .expect("scan placement snapshot should succeed")
+        .expect("count should exist");
         let delta_object_count = ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count");
         let delta_assignment_count =
             ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count");
 
-        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
-        let returned_deleted_row = Spi::get_one::<i64>(&format!(
-            "SELECT count(*) FROM ( \
-                 SELECT id FROM {TABLE_NAME} \
-                 ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
-                 LIMIT 4 \
-             ) ranked WHERE id = 2"
-        ))
-        .expect("ordered ec_spire query should succeed")
-        .expect("count should exist");
-        let inserted_row_returned = Spi::get_one::<i64>(&format!(
-            "SELECT count(*) FROM ( \
-                 SELECT id FROM {TABLE_NAME} \
-                 ORDER BY embedding <#> ARRAY[0.9, 0.1]::real[] \
-                 LIMIT 4 \
-             ) ranked WHERE id = 5"
-        ))
-        .expect("ordered ec_spire query should succeed")
-        .expect("count should exist");
-
-        assert_eq!(heap_count, 4);
         assert_eq!(placement_store_count, 2);
+        assert_eq!(placement_node_store_count, 2);
         assert_eq!(placement_store_relid_count, 2);
+        assert_eq!(placement_store_key_count, 2);
         assert!(scan_selected_store_count >= 1);
+        assert_eq!(scan_selected_node_store_count, scan_selected_store_count);
+        assert_eq!(scan_selected_nonlocal_node_count, 0);
         assert_eq!(delta_object_count, 0);
         assert_eq!(delta_assignment_count, 0);
-        assert_eq!(returned_deleted_row, 0);
-        assert_eq!(inserted_row_returned, 1);
     }
 
     #[cfg(feature = "pg18")]

@@ -303,10 +303,21 @@ described by reviewer packet `30896`.
 
 ## Phase 12.8: Local Multi-Store and Multi-NVMe Readiness
 
-- [ ] Preserve `(node_id, local_store_id)` as the scheduling and diagnostic
+- [x] Preserve `(node_id, local_store_id)` as the scheduling and diagnostic
   unit.
-- [ ] Prove local store lookup remains indexed or otherwise bounded for the
+- [x] Prove local store lookup remains indexed or otherwise bounded for the
   configured maximum store count.
+  - Evidence: `ec_spire_index_placement_snapshot(index_oid)` exposes
+    `(node_id, local_store_id, store_relid)` and
+    `ec_spire_index_scan_placement_snapshot(index_oid, query)` exposes
+    scan-touched `(node_id, local_store_id)` groups. The PG18 two-store SQL
+    VACUUM fixture now asserts those diagnostic keys along with the
+    post-delete/post-insert delta-cleanup counts.
+  - Evidence: in-memory local object stores resolve by a prebuilt
+    `local_store_id -> stores[index]` map, and relation-backed object stores
+    resolve by `(local_store_id, store_relid) -> stores[index]`; packet `30678`
+    reviewed the indexed lookup implementation and its non-contiguous store-id
+    coverage.
 - [ ] Add a repeatable local multi-store read-overlap harness with per-store
   route, candidate, object-byte, read-batch, and delta-decode counters.
 - [ ] If PostgreSQL backend constraints keep execution sequential, expose the
