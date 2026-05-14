@@ -2523,6 +2523,8 @@
 
     include!("data_shape.rs");
 
+    include!("custom_scan_concurrency.rs");
+
 
 
 

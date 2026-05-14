@@ -398,10 +398,10 @@ Source: audit Axis E.
 
 ### 12c.8.d: Idle-in-transaction timeout during open CustomScan cursor
 
-- [ ] Open a cursor over CustomScan; do not read.
-- [ ] `SET idle_in_transaction_session_timeout` to a short value.
-- [ ] Assert backend disconnects per timeout.
-- [ ] Assert cursor close + cleanup runs (no leaked state).
+- [x] Open a cursor over CustomScan; do not read.
+- [x] `SET idle_in_transaction_session_timeout` to a short value.
+- [x] Assert backend disconnects per timeout.
+- [x] Assert cursor close + cleanup runs (no leaked state).
 
 ## Phase 12c.9: DML Frontdoor Coverage Tightening (P2)
 
