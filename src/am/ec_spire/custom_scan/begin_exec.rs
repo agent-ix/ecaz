@@ -333,6 +333,10 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_recheck(
     _scan_state: *mut pg_sys::ScanState,
     _slot: *mut pg_sys::TupleTableSlot,
 ) -> bool {
+    custom_scan_recheck_allows_epq_stale_row()
+}
+
+fn custom_scan_recheck_allows_epq_stale_row() -> bool {
     // V1 remote tuples are virtual payloads without coordinator heap row
     // identity, so EvalPlanQual cannot re-fetch the origin row here.
     true

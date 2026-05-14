@@ -348,82 +348,136 @@ mod tests {
     }
 
     #[test]
-    fn custom_scan_cost_increases_with_remote_fanout() {
+    fn custom_scan_recheck_returns_true_for_epq_stale_row_contract() {
+        // begin_exec.rs documents the V1 EvalPlanQual contract: remote
+        // tuple-payload rows do not carry a coordinator heap identity, so
+        // recheck must not silently filter them during EPQ reruns.
+        assert!(custom_scan_recheck_allows_epq_stale_row());
+    }
+
+    #[test]
+    fn custom_scan_exec_methods_do_not_advertise_mark_restore_callbacks() {
+        let methods = &raw const CUSTOM_EXEC_METHODS;
+
+        assert!(unsafe { (*methods).MarkPosCustomScan.is_none() });
+        assert!(unsafe { (*methods).RestrPosCustomScan.is_none() });
+        assert!(unsafe { (*methods).BeginCustomScan.is_some() });
+        assert!(unsafe { (*methods).ExecCustomScan.is_some() });
+        assert!(unsafe { (*methods).EndCustomScan.is_some() });
+        assert!(unsafe { (*methods).ReScanCustomScan.is_some() });
+        assert!(unsafe { (*methods).ExplainCustomScan.is_some() });
+    }
+
+    #[test]
+    fn custom_scan_cost_scales_proportionally_with_remote_fanout() {
         let mut low_fanout = eligible_cost_row();
         low_fanout.remote_available_node_count = 1;
         low_fanout.remote_available_placement_count = 4;
         let mut high_fanout = low_fanout;
         high_fanout.remote_available_node_count = 4;
         high_fanout.remote_available_placement_count = 16;
+        let output_rows = 10.0;
+        let rel_rows = 1_000.0;
+        let target_width = 64.0;
 
         let low = estimate_custom_scan_cost_with_constants(
-            10.0,
-            1_000.0,
-            64.0,
+            output_rows,
+            rel_rows,
+            target_width,
             &low_fanout,
             default_cost_constants(),
             0.01,
         );
         let high = estimate_custom_scan_cost_with_constants(
-            10.0,
-            1_000.0,
-            64.0,
+            output_rows,
+            rel_rows,
+            target_width,
             &high_fanout,
             default_cost_constants(),
             0.01,
         );
+        let expected_startup_ratio =
+            (high_fanout.remote_available_placement_count.min(64) as f64
+                * default_cost_constants().cpu_operator_cost
+                + high_fanout.remote_available_node_count as f64
+                    * CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS
+                    * default_cost_constants().cpu_operator_cost)
+                / (low_fanout.remote_available_placement_count.min(64) as f64
+                    * default_cost_constants().cpu_operator_cost
+                    + low_fanout.remote_available_node_count as f64
+                        * CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS
+                        * default_cost_constants().cpu_operator_cost);
+        let startup_ratio = high.startup_cost / low.startup_cost;
+        let total_ratio = high.total_cost / low.total_cost;
 
         assert!(low.total_cost.is_finite());
-        assert!(high.startup_cost > low.startup_cost);
-        assert!(high.total_cost > low.total_cost);
+        assert_ratio_near(startup_ratio, expected_startup_ratio, 0.001);
+        assert!(
+            total_ratio > 3.0 && total_ratio < 4.1,
+            "fanout total cost ratio should stay close to fanout scaling: {total_ratio}"
+        );
     }
 
     #[test]
-    fn custom_scan_cost_increases_with_output_rows() {
+    fn custom_scan_cost_scales_with_output_rows_without_moving_startup() {
         let eligibility = eligible_cost_row();
+        let small_rows = 1.0;
+        let large_rows = 100.0;
+        let rel_rows = 1_000.0;
+        let target_width = 64.0;
         let small = estimate_custom_scan_cost_with_constants(
-            1.0,
-            1_000.0,
-            64.0,
+            small_rows,
+            rel_rows,
+            target_width,
             &eligibility,
             default_cost_constants(),
             0.01,
         );
         let large = estimate_custom_scan_cost_with_constants(
-            100.0,
-            1_000.0,
-            64.0,
+            large_rows,
+            rel_rows,
+            target_width,
             &eligibility,
             default_cost_constants(),
             0.01,
         );
+        let variable_small = small.total_cost - small.startup_cost;
+        let variable_large = large.total_cost - large.startup_cost;
 
-        assert!(large.total_cost > small.total_cost);
         assert_eq!(large.startup_cost, small.startup_cost);
+        assert_ratio_near(variable_large / variable_small, large_rows / small_rows, 0.001);
     }
 
     #[test]
-    fn custom_scan_cost_accounts_for_projected_tuple_width() {
+    fn custom_scan_cost_accounts_proportionally_for_projected_tuple_width() {
         let eligibility = eligible_cost_row();
+        let output_rows = 100.0;
+        let rel_rows = 1_000.0;
+        let narrow_width = 8.0;
+        let wide_width = 512.0;
         let narrow = estimate_custom_scan_cost_with_constants(
-            100.0,
-            1_000.0,
-            8.0,
+            output_rows,
+            rel_rows,
+            narrow_width,
             &eligibility,
             default_cost_constants(),
             0.01,
         );
         let wide = estimate_custom_scan_cost_with_constants(
-            100.0,
-            1_000.0,
-            512.0,
+            output_rows,
+            rel_rows,
+            wide_width,
             &eligibility,
             default_cost_constants(),
             0.01,
         );
+        let width_unit_cost =
+            output_rows * CUSTOM_SCAN_TUPLE_BYTE_CPU_UNITS * default_cost_constants().cpu_operator_cost;
+        let expected_delta = (wide_width - narrow_width) * width_unit_cost;
+        let actual_delta = wide.total_cost - narrow.total_cost;
 
-        assert!(wide.total_cost > narrow.total_cost);
         assert_eq!(wide.startup_cost, narrow.startup_cost);
+        assert_ratio_near(actual_delta / expected_delta, 1.0, 0.001);
     }
 
     fn eligible_cost_row() -> SpireCustomScanIndexEligibilityRow {
@@ -449,6 +503,13 @@ mod tests {
             seq_page_cost: 1.0,
             cpu_operator_cost: 0.0025,
         }
+    }
+
+    fn assert_ratio_near(actual: f64, expected: f64, tolerance: f64) {
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "expected ratio {actual} to be within {tolerance} of {expected}"
+        );
     }
 
     fn remote_output_row(
