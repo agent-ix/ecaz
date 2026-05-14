@@ -60,32 +60,77 @@ Source: audit Axis A. The CustomScan callbacks at
 `src/am/ec_spire/custom_scan/mod.rs:97-113` are mostly only exercised
 indirectly via the loopback marquee fixture.
 
-- [ ] Cursor-rescan fixture: open cursor over CustomScan, fetch N/2
-  rows, `MOVE FIRST`, fetch all, assert identical row set. Drives
-  `ec_spire_rescan_custom_scan` (`begin_exec.rs:183`) end-to-end —
-  the helper unit test at `custom_scan/tests.rs:316` does not.
-- [ ] `EndCustomScan` palloc/pfree pairing fixture: cancel mid-Exec,
-  verify `MemoryContextStats` returns to baseline. Exercises
-  `begin_exec.rs:170` post-cancel cleanup path.
-- [ ] `recheck` callback pin test: assert
-  `ec_spire_custom_scan_recheck` always returns `true` and document
-  the consequent stale-row contract from `begin_exec.rs:332-338`.
-  A regression to `false` would silently drop rows during EvalPlanQual
-  rerun.
-- [ ] `MarkPos`/`RestrPos` planner-gate test: assert the planner
-  rejects plans requiring Mark/Restore (e.g., MergeAppend over
-  CustomScan or inner-rescan nested loop above it). Today the
-  callbacks are `None` (`mod.rs:106-107`) but no test pins the
-  planner-side exclusion.
-- [ ] `BeginCustomScan` UPDATE/DELETE branch panic-recovery: drive
-  `dml_update_value_exprs_from_plan` (`begin_exec.rs:90-92`) with
-  invalid column metadata, assert panic during `Begin` does not leak
-  half-initialized `SpireCustomScanExecState`.
-- [ ] Replace the two `#[should_panic(expected="EcSpireDistributedScan
-  production executor blocked")]` scaffolds at `custom_scan.rs:777,838`
-  with positive assertions once the executor is wired. If the
-  scaffolds still apply, document why and tighten the panic-expected
-  string to a versioned identifier.
+### 12c.1.a: Cursor-rescan fixture
+
+Drives `ec_spire_rescan_custom_scan` (`begin_exec.rs:183`)
+end-to-end — the helper unit test at `custom_scan/tests.rs:316` does
+not.
+
+- [ ] Open cursor over CustomScan, fetch N/2 rows.
+- [ ] Issue `MOVE FIRST`, fetch all remaining rows.
+- [ ] Assert second-pass row set equals first-pass row set.
+- [ ] Assert `outputs` / `next_output` / `loaded_outputs` state
+  fields are reset (instrument via diagnostic snapshot or
+  `#[cfg(test)]` getter).
+
+### 12c.1.b: `EndCustomScan` palloc/pfree pairing fixture
+
+Exercises `begin_exec.rs:170` post-cancel cleanup path.
+
+- [ ] Capture `MemoryContextStats` baseline before scan.
+- [ ] Cancel mid-`ExecCustomScan` (interrupt).
+- [ ] Assert `EndCustomScan` invoked exactly once on the cancel
+  unwind path.
+- [ ] Assert `MemoryContextStats` returns to baseline after end.
+
+### 12c.1.c: `recheck` callback pin test
+
+Assert `ec_spire_custom_scan_recheck` (`begin_exec.rs:332`) returns
+`true` unconditionally, documenting the stale-row contract at
+`begin_exec.rs:332-338`. A regression to `false` would silently drop
+rows during EvalPlanQual rerun.
+
+- [ ] Unit test: directly invoke the recheck callback with a
+  synthetic state and assert `true`.
+- [ ] Code-comment cross-reference: link the test to the contract
+  comment in `begin_exec.rs:332-338`.
+
+### 12c.1.d: `MarkPos` / `RestrPos` planner-exclusion test
+
+Today the callbacks are `None` (`mod.rs:106-107`) but no test pins
+the planner-side exclusion.
+
+- [ ] Assert planner refuses a `MergeAppend` plan over CustomScan.
+- [ ] Assert planner refuses an inner-rescan nested-loop above
+  CustomScan (where MarkPos/RestrPos would be required).
+
+### 12c.1.e: `BeginCustomScan` UPDATE-branch panic recovery
+
+`dml_update_value_exprs_from_plan` (`begin_exec.rs:90-92`) is the
+UPDATE branch.
+
+- [ ] Drive UPDATE branch with invalid column metadata.
+- [ ] Assert panic during `Begin` does not leak half-initialized
+  `SpireCustomScanExecState`.
+
+### 12c.1.f: `BeginCustomScan` DELETE-branch panic recovery
+
+- [ ] Drive DELETE branch with invalid column metadata.
+- [ ] Assert panic does not leak half-initialized state.
+
+### 12c.1.g: Retire `#[should_panic]` scaffolds
+
+`custom_scan.rs:777,838` use
+`#[should_panic(expected="EcSpireDistributedScan production executor
+blocked")]`. They prove planner+begin reach a placeholder, not
+positive behaviour.
+
+- [ ] `custom_scan.rs:777` — replace with positive assertion now
+  that the production executor is wired. If still required,
+  document why and tighten the panic string to a versioned
+  identifier.
+- [ ] `custom_scan.rs:838` — same treatment for the
+  parameter-query variant.
 
 ## Phase 12c.2: Stage E Fault Matrix — Live Coverage (P1)
 
@@ -94,49 +139,112 @@ Source: audit Axis C. The matrix at
 fault categories; only ~half have live fixtures. The 12a-era
 categories have no live coverage at all.
 
-- [ ] `payload_too_large` (12a.2) live fault fixture: drive the
-  encoder to emit a payload exceeding the `ec_spire.max_remote_payload_bytes_per_row`
-  GUC, assert strict mode returns
-  `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE`, degraded mode
-  reports `degraded_skipped_dispatch_count`.
-- [ ] `tuple_transport_retired` (12a.5) live fault fixture: stub a
-  remote that advertises only `json_tuple_payload_v1` with valid
-  identity envelope; assert production path returns
-  `SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED` with the
-  upgrade hint readable through
-  `ec_spire_remote_search_degraded_skip_report`.
-- [ ] `local_statement_timeout` end-to-end CustomScan read fixture:
-  `SET statement_timeout = X`, run a CustomScan query that exceeds
-  it, assert cancel error and no leaked transport state. Today only
-  `transport_faults.rs:217` covers the probe; the user-facing query
-  path is untested.
-- [ ] `stale_remote_epoch_manifest` end-to-end strict-mode read:
-  remote advertises a manifest version behind active_epoch, strict
-  mode reads against it, assert
-  `endpoint_status = stale_remote_epoch_manifest` and the matrix-row
-  action fires. Today only contract pinning at `epoch_manifest.rs:78`.
-- [ ] `remote_oom` live fixture (or accepted-deferral row with
-  rationale). Today matrix row only.
-- [ ] `simulated_network_partition` live fixture (or accepted-deferral
-  row). Today matrix row only.
+### 12c.2.a: `payload_too_large` (12a.2)
+
+- [ ] Strict mode: encoder emits a payload exceeding
+  `ec_spire.max_remote_payload_bytes_per_row`; assert
+  `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE`.
+- [ ] Degraded mode: same payload; assert
+  `degraded_skipped_dispatch_count` increments and the matrix-row
+  hint is surfaced.
+- [ ] Per-batch cap: payload count exceeds
+  `ec_spire.max_remote_payload_rows_per_batch`; assert the same
+  category fires before per-row allocation.
+
+### 12c.2.b: `tuple_transport_retired` (12a.5)
+
+Stub remote advertises only `json_tuple_payload_v1` with a valid
+identity envelope.
+
+- [ ] Strict mode: assert production path returns
+  `SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED`.
+- [ ] Degraded mode: assert the upgrade hint is readable through
+  `ec_spire_remote_search_degraded_skip_report` with the expected
+  capability name (`pg_binary_attr_v1`).
+
+### 12c.2.c: `local_statement_timeout` end-to-end
+
+Today only `transport_faults.rs:217` covers the probe; the
+user-facing query path is untested.
+
+- [ ] `SET statement_timeout` to a value below expected scan
+  duration; run CustomScan query; assert cancel error.
+- [ ] Assert no leaked transport state (libpq connection returned
+  to pool, no orphaned prepared rows on remote).
+
+### 12c.2.d: `stale_remote_epoch_manifest` end-to-end
+
+Today only contract pinning at `epoch_manifest.rs:78`.
+
+- [ ] Remote advertises a manifest version behind `active_epoch`.
+- [ ] Strict-mode read: assert
+  `endpoint_status = stale_remote_epoch_manifest`.
+- [ ] Assert the matrix-row action fires (refresh request or
+  fail-closed per matrix).
+
+### 12c.2.e: `remote_oom`
+
+Today matrix row only.
+
+- [ ] Decide: live fixture or accepted-deferral row.
+- [ ] If live: simulate remote OOM (e.g., issue a query that
+  exceeds remote `work_mem` deliberately); assert matrix-row
+  action fires.
+- [ ] If deferred: record the deferral rationale with reviewer
+  acceptance.
+
+### 12c.2.f: `simulated_network_partition`
+
+Today matrix row only.
+
+- [ ] Decide: live fixture or accepted-deferral row.
+- [ ] If live: drive a transport stub that drops all packets after
+  some point; assert detection and matrix-row action.
+- [ ] If deferred: record the deferral rationale with reviewer
+  acceptance.
 
 ## Phase 12c.3: Stage E Lifecycle Matrix — Live Coverage (P1)
 
 Source: audit Axis C. Six lifecycle rows at
 `production_summary.rs:289-298` are contract-only.
 
-- [ ] `drop_remote_index_in_flight`: long-running CustomScan + `DROP
-  INDEX` on remote mid-scan; assert the matrix-prescribed strict /
-  degraded behaviour fires.
-- [ ] `drop_remote_index_pre_dispatch`: `DROP INDEX` on remote before
-  dispatch; assert planner / pre-dispatch validation refuses.
-- [ ] `reindex_remote_index_in_flight`: similar shape, `REINDEX
-  INDEX` on remote mid-scan.
-- [ ] `reindex_remote_index_pre_dispatch`: `REINDEX` before dispatch.
-- [ ] `create_index_concurrently_new_descriptor`: `CREATE INDEX
-  CONCURRENTLY` on remote; descriptor refresh contract.
-- [ ] `create_index_concurrently_pre_dispatch`: same, ordered before
-  dispatch.
+### 12c.3.a: `drop_remote_index_in_flight`
+
+- [ ] Strict mode: long-running CustomScan + `DROP INDEX` on remote
+  mid-scan; assert matrix-prescribed strict action fires.
+- [ ] Degraded mode: same; assert
+  `degraded_skipped_dispatch_count` and the skip-category.
+
+### 12c.3.b: `drop_remote_index_pre_dispatch`
+
+- [ ] `DROP INDEX` on remote before dispatch; assert
+  pre-dispatch validation refuses with the expected category.
+- [ ] Assert no remote SQL is issued (no descriptor refresh
+  attempted against the dropped object).
+
+### 12c.3.c: `reindex_remote_index_in_flight`
+
+- [ ] Strict mode: long-running CustomScan + `REINDEX INDEX` on
+  remote mid-scan; assert matrix action.
+- [ ] Degraded mode: same; assert degraded skip reporting.
+
+### 12c.3.d: `reindex_remote_index_pre_dispatch`
+
+- [ ] `REINDEX` before dispatch; assert pre-dispatch validation
+  fires (or accepts, per matrix).
+- [ ] Assert descriptor freshness check picks up the new relfilenode
+  if the matrix requires that.
+
+### 12c.3.e: `create_index_concurrently_new_descriptor`
+
+- [ ] `CREATE INDEX CONCURRENTLY` on remote; assert descriptor
+  refresh contract picks up the new index without errors.
+- [ ] Assert subsequent CustomScan uses the refreshed descriptor.
+
+### 12c.3.f: `create_index_concurrently_pre_dispatch`
+
+- [ ] Same as above, with the CIC operation completed before any
+  dispatch attempt; assert the new descriptor is the one used.
 
 ## Phase 12c.4: Schema Drift on the READ Path (P1)
 
@@ -145,14 +253,24 @@ Source: audit Axis C / 12a.6. The 12a.6 fingerprint guard
 landed for INSERT/UPDATE/DELETE. The CustomScan read path has no
 drift fixture.
 
-- [ ] Coord-only drift on READ: `ALTER TABLE` coordinator side only,
-  attempt CustomScan, assert pre-dispatch validation fires with
-  `SPIRE_REMOTE_STATUS_SCHEMA_DRIFT` and hint naming the coordinator.
-- [ ] Remote-only drift on READ: `ALTER TABLE` remote side only,
-  attempt CustomScan, assert pre-dispatch validation fires and hint
-  names the remote.
-- [ ] Both-sides drift on READ: independent drifts; assert the hint
-  names both sides.
+### 12c.4.a: Coord-only drift on READ
+
+- [ ] `ALTER TABLE` coordinator side only.
+- [ ] Attempt CustomScan; assert pre-dispatch validation fires
+  with `SPIRE_REMOTE_STATUS_SCHEMA_DRIFT`.
+- [ ] Assert hint string names the coordinator as the drifted side.
+
+### 12c.4.b: Remote-only drift on READ
+
+- [ ] `ALTER TABLE` remote side only.
+- [ ] Attempt CustomScan; assert pre-dispatch validation fires.
+- [ ] Assert hint string names the remote as the drifted side.
+
+### 12c.4.c: Both-sides drift on READ
+
+- [ ] Independent `ALTER TABLE` on both coordinator and remote.
+- [ ] Assert pre-dispatch validation fires.
+- [ ] Assert hint string names both sides.
 
 ## Phase 12c.5: 2PC In-Doubt Reaper Coverage (P1)
 
@@ -160,28 +278,65 @@ Source: audit Axis C. The reaper happy path is covered
 (`catalog_cleanup_policy.rs:591`); the `prepare_acked → commit_local`
 in-doubt path is not.
 
-- [ ] Coordinator-crash-mid-2PC fixture: simulate a coordinator
-  backend exit after `prepare_acked` but before `commit_local`;
-  invoke the reaper; assert it preserves rows in `commit_local`
-  state (operator escalation) and rolls back orphans whose
-  coordinator xid is no longer live but state is not `commit_local`.
-- [ ] Add explicit transition-time invariants: assert the intent
-  state machine cannot go directly from `prepare_requested` to
-  `commit_local` without crossing `prepare_acked`.
+### 12c.5.a: Coordinator-crash-mid-2PC reaper fixture
+
+Simulate a coordinator backend exit after `prepare_acked` but before
+`commit_local`.
+
+- [ ] Set up intent row in `prepare_acked` state with a dead
+  coordinator xid; remote has matching prepared txn.
+- [ ] Invoke `ec_spire_reap_orphaned_remote_prepared_xacts(node_id)`.
+- [ ] Assert orphan in `prepare_acked` with dead coord xid is
+  rolled back (`ROLLBACK PREPARED` issued).
+- [ ] Set up parallel intent row in `commit_local` state with a
+  dead coordinator xid.
+- [ ] Assert reaper preserves `commit_local` rows (operator
+  escalation, not silent rollback).
+
+### 12c.5.b: Intent state-machine invariants
+
+Assert the intent state machine cannot bypass states.
+
+- [ ] Cannot transition `prepare_requested → commit_local`
+  directly (must cross `prepare_acked`).
+- [ ] Cannot transition `prepare_requested → rollback_local`
+  silently (must be either explicit rollback path or reaper).
+- [ ] Add an `#[cfg(test)]` invariant assertion in the intent
+  update path so any future state-machine change fails the test.
 
 ## Phase 12c.6: Recall / Correctness Pinning (P1)
 
 Source: audit Axis I. The only recall evidence is the single-query
 spot check from packet `30980`; no SPIRE-side test pins recall in CI.
 
-- [ ] SPIRE `recall@k=1.0` baseline fixture: small corpus (e.g.,
-  N=64), brute-force vs CustomScan, K=10, assert set match.
-- [ ] `nprobe` sweep recall fixture: `nprobe ∈ {1, 4, 8, 16}`,
-  assert monotonic recall improvement (or pin acceptable plateau).
-- [ ] Tighten `coordinator/tests.rs:115`
-  (`remote_heap_exact_score_uses_orderby_negative_inner_product`)
-  to add high-dim, NaN-input rejection, and dimension-mismatch
-  error semantics. Today it pins one 2-dim case.
+### 12c.6.a: SPIRE `recall@k=1.0` baseline fixture
+
+- [ ] Build a small corpus (e.g., N=64) with embeddings + brute-force
+  reference.
+- [ ] Run CustomScan with K=10; capture predicted set.
+- [ ] Assert predicted set equals brute-force set
+  (recall@10 = 1.0).
+- [ ] Assert returned PIDs are unique (no duplicates from fanout).
+
+### 12c.6.b: `nprobe` sweep recall fixture
+
+- [ ] Run the same corpus with `nprobe = 1`.
+- [ ] Run with `nprobe = 4`.
+- [ ] Run with `nprobe = 8`.
+- [ ] Run with `nprobe = 16`.
+- [ ] Assert recall is monotonically non-decreasing across the
+  sweep (or pin acceptable plateau with reviewer-accepted threshold).
+
+### 12c.6.c: Sign convention pin extension
+
+Today `coordinator/tests.rs:115`
+(`remote_heap_exact_score_uses_orderby_negative_inner_product`) pins
+one 2-dim case.
+
+- [ ] Add a high-dim (≥128) case with known expected score.
+- [ ] Add a NaN-input rejection assertion (AM must refuse).
+- [ ] Add a dimension-mismatch error assertion (query dim ≠ index
+  dim must produce a clear error).
 
 ## Phase 12c.7: Multi-Remote Fanout Coverage (P1)
 
@@ -189,136 +344,367 @@ Source: audit Axis B. `transport_faults.rs:2` is the only fanout
 test; it asserts overlap, not parallelism. All loopback CustomScan
 fixtures are 1-remote.
 
-- [ ] Fanout=3 CustomScan fixture: three loopback remotes, assert
-  all three contribute returned rows and the union matches the
-  expected PID set.
-- [ ] Selected-PID round-trip assertion: extend
-  `custom_scan.rs:46` (or add adjacent) so the returned remote rows
-  include exactly the selected PIDs — a regression where remotes
-  return arbitrary PIDs would fail.
+### 12c.7.a: Fanout=3 CustomScan fixture
+
+- [ ] Set up three loopback remotes with disjoint PID partitions.
+- [ ] Run CustomScan; capture returned rows with origin-remote
+  metadata.
+- [ ] Assert all three remotes contributed at least one row.
+- [ ] Assert union of returned PIDs equals expected union.
+- [ ] Add a fanout=8 widening variant (P3, can defer) to detect
+  scaling regressions.
+
+### 12c.7.b: Selected-PID round-trip assertion
+
+Extend `custom_scan.rs:46` (or add adjacent test).
+
+- [ ] Insert N=8 rows with known PID-to-payload mapping.
+- [ ] Run CustomScan with LIMIT 8.
+- [ ] Assert returned remote rows include exactly the selected PIDs
+  (set equality, not just "≥0 rows returned").
+- [ ] Assert each returned row's payload matches the PID-to-payload
+  mapping (catch payload-PID swap regressions).
 
 ## Phase 12c.8: Concurrency / Long-Running Scan Coverage (P1)
 
 Source: audit Axis E.
 
-- [ ] Concurrent DELETE collision against same PK: assert v1
-  contract (accepted with `deleted_count=0` on the loser, or whichever
-  shape ADR-069 documents).
-- [ ] Long-scan + DROP INDEX (coordinator side) cancellation:
-  assert the running CustomScan unwinds cleanly with no leaked
-  transport state.
-- [ ] Long-scan + remote restart: assert detection and degraded /
-  strict behaviour per matrix.
-- [ ] Idle-in-transaction timeout during open CustomScan cursor:
-  assert cursor close + cleanup.
+### 12c.8.a: Concurrent DELETE collision against same PK
+
+- [ ] Fire two parallel coordinator-routed DELETEs against the same
+  PK; assert exactly one succeeds.
+- [ ] Loser assertion: assert v1 contract (accepted with
+  `deleted_count=0`, or whichever shape ADR-069 documents).
+- [ ] Assert no orphan placement rows or prepared-xact intent
+  rows remain.
+
+### 12c.8.b: Long-scan + DROP INDEX (coordinator side)
+
+- [ ] Start a long-running CustomScan in one session.
+- [ ] Issue `DROP INDEX` in another session against the coordinator
+  index.
+- [ ] Assert scan unwinds with the expected error category.
+- [ ] Assert no leaked transport state (libpq connection returned,
+  no orphaned remote prepared rows).
+
+### 12c.8.c: Long-scan + remote restart
+
+- [ ] Start a long-running CustomScan.
+- [ ] Restart the remote PG instance mid-scan.
+- [ ] Strict mode: assert detection and matrix-prescribed action.
+- [ ] Degraded mode: assert degraded skip reporting.
+- [ ] Assert subsequent CustomScan can succeed after remote
+  rejoins (no stale connection cached).
+
+### 12c.8.d: Idle-in-transaction timeout during open CustomScan cursor
+
+- [ ] Open a cursor over CustomScan; do not read.
+- [ ] `SET idle_in_transaction_session_timeout` to a short value.
+- [ ] Assert backend disconnects per timeout.
+- [ ] Assert cursor close + cleanup runs (no leaked state).
 
 ## Phase 12c.9: DML Frontdoor Coverage Tightening (P2)
 
 Source: audit Axis D.
 
-- [ ] Non-PK SELECT pass-through end-to-end (packet `30980`
-  follow-up): drive a non-PK predicate, assert the original
-  Index Scan / Seq Scan plan is preserved (not a CustomScan).
-  Today only the hook-installation row exists.
-- [ ] Composite-PK rejection in DML frontdoor.
-- [ ] Float / numeric-out-of-int8 PK rejection.
-- [ ] Tighten DELETE-idempotent test (`dml_frontdoor.rs:2323`) to
-  pin the `accepted/deleted_count=0` contract shape from packet
-  `30980`, not just row counts.
-- [ ] Split the UPDATE/DELETE schema-drift test
-  (`dml_frontdoor.rs:1672`) into coord-only, remote-only, and
-  both-sides variants.
-- [ ] Tighten descriptor-race test (`insert.rs:993`) to assert
-  specific descriptor-generation outcome and zero orphan placements.
+### 12c.9.a: Non-PK SELECT pass-through end-to-end
+
+Today only the hook-installation row exists (`dml_frontdoor.rs:2`).
+Packet `30980` follow-up.
+
+- [ ] Drive a non-PK predicate SELECT against a SPIRE-fronted table.
+- [ ] Assert the chosen plan is Index Scan or Seq Scan (not a
+  CustomScan).
+- [ ] Assert returned rows match the expected non-PK predicate.
+
+### 12c.9.b: Composite-PK rejection
+
+- [ ] Define a table with a composite PK; attempt SPIRE registration.
+- [ ] Assert rejection with the expected category.
+
+### 12c.9.c: Float PK rejection
+
+- [ ] Define a table with `float4`/`float8` PK; attempt SPIRE
+  registration or DML.
+- [ ] Assert rejection.
+
+### 12c.9.d: Numeric-out-of-int8 PK rejection
+
+- [ ] Coerce a `numeric` value outside the `int8` range into the
+  PK predicate.
+- [ ] Assert rejection at classifier time, not at SPI execution.
+
+### 12c.9.e: Tighten DELETE-idempotent contract shape
+
+Today `dml_frontdoor.rs:2323` asserts only row counts.
+
+- [ ] Pin the response shape: `accepted=true`, `deleted_count=0`
+  on idempotent re-DELETE.
+- [ ] Assert no remote DML is issued on the second DELETE.
+
+### 12c.9.f: Split UPDATE/DELETE schema-drift into 3 variants
+
+Today `dml_frontdoor.rs:1672` mixes coord-only and remote-only.
+
+- [ ] UPDATE coord-only drift: assert hint names coordinator.
+- [ ] UPDATE remote-only drift: assert hint names remote.
+- [ ] UPDATE both-sides drift: assert hint names both.
+- [ ] DELETE coord-only drift.
+- [ ] DELETE remote-only drift.
+- [ ] DELETE both-sides drift.
+
+### 12c.9.g: Tighten descriptor-race test
+
+Today `insert.rs:993` asserts only that the second INSERT succeeds.
+
+- [ ] Assert which descriptor generation won (record generation
+  numbers).
+- [ ] Assert zero orphan placement rows after the race resolves.
+- [ ] Assert zero SPIRE prepared-xact intent rows in non-terminal
+  state.
 
 ## Phase 12c.10: EXPLAIN / Cost / Planner Tightening (P2)
 
 Source: audit Axes A, G.
 
-- [ ] Tighten JSON-EXPLAIN assertions at `custom_scan.rs:188-208` to
-  include `"actual rows"` and loop counts via `EXPLAIN ANALYZE`.
-- [ ] Tighten cost-monotonicity tests
-  (`custom_scan/tests.rs:351-427`) to assert proportional shape
-  (ratios), not just `>` direction. A flipped-sign fanout regression
-  would slip past `high > low`.
-- [ ] Cost-GUC override EXPLAIN reflection fixture: `SET
-  ec_spire.cost_*`, run EXPLAIN, assert costs changed.
-- [ ] Empty-placement planner-refusal positive fixture: assert the
-  plan node chosen is Index Scan / Seq Scan, not CustomScan.
-- [ ] EXPLAIN ANALYZE counter contract: per-row execution counters
-  (loops, actual rows) appear and have the expected shape.
+### 12c.10.a: Tighten JSON-EXPLAIN assertions
+
+Today `custom_scan.rs:188-208` uses substring asserts.
+
+- [ ] Add `EXPLAIN (ANALYZE, FORMAT JSON)` run.
+- [ ] Assert `"Actual Rows"` field present and equal to LIMIT.
+- [ ] Assert `"Actual Loops"` field present and equal to 1.
+- [ ] Assert `"Actual Total Time"` field present and > 0.
+
+### 12c.10.b: Tighten cost-monotonicity tests to ratios
+
+Today `custom_scan/tests.rs:351-427` uses loose `>` comparisons; a
+flipped-sign fanout regression would slip past `high > low` if the
+constant term dominates.
+
+- [ ] Fanout proportionality: assert `cost(fanout=N) /
+  cost(fanout=1)` is within an expected band proportional to N
+  (not just `cost(fanout=N) > cost(fanout=1)`).
+- [ ] Row-count proportionality: same shape across rows.
+- [ ] Payload-width proportionality: same shape across widths.
+
+### 12c.10.c: Cost-GUC override EXPLAIN reflection
+
+- [ ] `SET ec_spire.cost_routing_dimension_scale` to 2x default;
+  run EXPLAIN; assert cost increased proportionally.
+- [ ] Same for `cost_leaf_dimension_scale`.
+- [ ] Same for `cost_index_page_scale`.
+- [ ] Same for `cost_local_store_page_fanout_scale`.
+- [ ] Same for `cost_storage_scoring_multiplier`.
+- [ ] Same for `cost_rerank_multiplier`.
+
+### 12c.10.d: Empty-placement planner-refusal positive fixture
+
+Today `custom_scan.rs:455` returns `eligible=false` but no test
+asserts what plan the planner produces in this case.
+
+- [ ] Create a SPIRE-fronted table with no active epoch.
+- [ ] Run a query; capture EXPLAIN.
+- [ ] Assert plan node is Index Scan or Seq Scan, not CustomScan.
+
+### 12c.10.e: EXPLAIN ANALYZE counter contract pin
+
+- [ ] Snapshot the full `EXPLAIN (ANALYZE, FORMAT JSON)` output for
+  a canonical query.
+- [ ] Pin the set of fields (not values) the CustomScan emits.
+- [ ] Document the field-set contract in a code comment so future
+  changes are explicit.
 
 ## Phase 12c.11: Isolation Coverage Completion (P2)
 
 Source: audit Axis F.
 
-- [ ] Add `READ COMMITTED` row to the isolation matrix at
-  `catalog_cleanup_policy.rs:839-840` so all three levels are
-  asserted (not just `REPEATABLE READ` and `SERIALIZABLE`).
-- [ ] EvalPlanQual / stale-row pin test: row updated by another tx
-  between SELECT FOR UPDATE and the recheck callback; assert the
-  documented stale-read outcome from `begin_exec.rs:336-338`.
+### 12c.11.a: Add `READ COMMITTED` isolation row
+
+Today `catalog_cleanup_policy.rs:839-840` covers only
+`REPEATABLE READ` and `SERIALIZABLE`.
+
+- [ ] Extend the matrix iterator to include `READ COMMITTED`.
+- [ ] Pin the expected v1 behaviour for distributed PK SELECT under
+  `READ COMMITTED`.
+
+### 12c.11.b: EvalPlanQual / stale-row pin test
+
+Pin the documented contract from `begin_exec.rs:336-338`.
+
+- [ ] Session A: `SELECT FOR UPDATE` over CustomScan; pause.
+- [ ] Session B: UPDATE the same row, commit.
+- [ ] Session A: resume; assert the documented stale-read outcome
+  (recheck returns true, stale row surfaced).
+- [ ] Cross-reference the contract comment from
+  `begin_exec.rs:336-338` in the test.
 
 ## Phase 12c.12: Typed Tuple Transport Coverage (P2)
 
 Source: audit Axis B.
 
-- [ ] Empty projection list typed-payload fixture: zero-attr typed
-  payload bytes layout pinned (today only the JSON column-list path
-  is asserted).
-- [ ] Composite-only typed-payload fixture (isolate from domain):
-  today `tuple_heap.rs:280` mixes domain + composite.
-- [ ] Tighten null-array typed-payload test (`tuple_heap.rs:202`)
-  to assert wire bytes (negative-length sentinel), not just
-  round-trip success.
+### 12c.12.a: Empty projection list typed-payload
+
+- [ ] Pin the zero-attr typed payload bytes layout (today only the
+  JSON column-list path is asserted).
+- [ ] Assert the empty metadata + value arrays are aligned per the
+  protocol spec.
+
+### 12c.12.b: Composite-only typed-payload
+
+Today `tuple_heap.rs:280` mixes domain + composite.
+
+- [ ] Add a fixture with a pure composite (no domain wrapper).
+- [ ] Assert round-trip integrity through the typed path.
+
+### 12c.12.c: Tighten null-array wire-byte assertion
+
+Today `tuple_heap.rs:202` asserts round-trip success only.
+
+- [ ] Capture the bytes-on-wire for a NULL `text[]`.
+- [ ] Assert the negative-length sentinel encoding (not zero-length).
+- [ ] Add a regression-defense byte-pattern assertion so an encoder
+  that wrote zero-length instead of NULL would fail.
 
 ## Phase 12c.13: Operator-Surface / Diagnostic Snapshot Coverage (P2)
 
 Source: audit Axis K.
 
-- [ ] Drive Stage E matrix executor assertions where the row
-  prescribes an action (e.g., `remote_oom` → `fail_closed`); run a
-  fixture and assert the action fires, not just the row exists.
-- [ ] Diagnostic snapshot survival under DROP INDEX mid-call: assert
-  every `ec_spire_*_snapshot(index_oid)` returns empty cleanly (does
-  not panic) when invoked against a dropped index.
-- [ ] `ec_spire_relation_storage_snapshot` invariants under
-  REINDEX mid-flight: assert sane behaviour at the boundary.
+### 12c.13.a: Stage E matrix executor assertions
+
+Today `production_summary.rs:234,290` is contract-only.
+
+- [ ] For each fault-matrix row prescribing a `fail_closed` action,
+  drive a fixture that triggers the fault and assert
+  `fail_closed` actually fires.
+- [ ] For each row prescribing `skip_and_report`, drive a fixture
+  and assert the degraded skip path is taken.
+- [ ] Cross-reference the executor test from the contract-pin
+  comment so a reader sees both.
+
+### 12c.13.b: Diagnostic snapshot survival under DROP INDEX
+
+Assert each diagnostic snapshot returns empty cleanly when invoked
+against a dropped index (not panic / not stale data).
+
+- [ ] `ec_spire_index_hierarchy_snapshot`.
+- [ ] `ec_spire_index_object_snapshot`.
+- [ ] `ec_spire_index_delta_snapshot`.
+- [ ] `ec_spire_index_health_snapshot`.
+- [ ] `ec_spire_index_leaf_snapshot`.
+- [ ] `ec_spire_index_placement_snapshot`.
+- [ ] `ec_spire_index_scan_pipeline_snapshot`.
+- [ ] `ec_spire_index_top_graph_snapshot`.
+- [ ] `ec_spire_index_allocator_snapshot`.
+- [ ] `ec_spire_index_boundary_replica_placement_snapshot`.
+
+### 12c.13.c: `ec_spire_relation_storage_snapshot` under REINDEX
+
+- [ ] Start REINDEX in one session.
+- [ ] Call snapshot mid-REINDEX from another session.
+- [ ] Assert sane behaviour (no panic, returns either pre-REINDEX
+  state or `not_available` per documented contract).
 
 ## Phase 12c.14: Data-Shape Edge Cases (P3)
 
 Source: audit Axis J.
 
-- [ ] Single-row corpus scan fixture.
-- [ ] All-duplicate-vector corpus + `recall@k=1.0` assertion.
-- [ ] Numerical-extreme vector fixture: subnormals, magnitudes near
-  `f32::MAX`, NaN / +Inf rejection where the AM should refuse.
-- [ ] Text-with-NUL-byte projection column round-trip.
-- [ ] Very-large-string projection (≥1 MB; boundary against
-  `ec_spire.max_remote_payload_bytes_per_row`).
-- [ ] Wide projection (≥32 columns) recall + transport fixture.
+### 12c.14.a: Single-row corpus scan fixture
+
+- [ ] Build with N=1; run CustomScan; assert the one row is
+  returned cleanly.
+
+### 12c.14.b: All-duplicate-vector corpus
+
+- [ ] Build a corpus where all vectors are identical.
+- [ ] Run CustomScan with K=10; assert all top-K rows have
+  identical scores.
+- [ ] Assert `recall@k=1.0` against brute-force.
+
+### 12c.14.c: Numerical-extreme vector handling
+
+- [ ] Subnormal vector components: assert clean processing
+  (no panic, no NaN propagation).
+- [ ] Magnitudes near `f32::MAX`: assert no overflow.
+- [ ] NaN component rejection: AM must refuse insertion.
+- [ ] `+Inf` / `-Inf` component rejection: AM must refuse insertion.
+
+### 12c.14.d: Text-with-NUL-byte projection round-trip
+
+- [ ] Insert a row with `text` containing an embedded NUL byte.
+- [ ] Read through CustomScan; assert the NUL byte is preserved
+  (or documented unsupported with explicit error).
+
+### 12c.14.e: Very-large-string projection (≥1 MB)
+
+- [ ] Insert a row with a 1 MB text projection column.
+- [ ] Read through CustomScan; assert success up to
+  `ec_spire.max_remote_payload_bytes_per_row`.
+- [ ] Insert a row exceeding the cap; assert
+  `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE` (boundary
+  cross-check with 12c.2.a).
+
+### 12c.14.f: Wide projection (≥32 columns)
+
+- [ ] Build a table with ≥32 projection columns.
+- [ ] Run CustomScan; assert recall@k matches brute-force.
+- [ ] Assert typed transport handles the width without truncation.
 
 ## Phase 12c.15: Multi-Store / Multi-NVMe Width (P3)
 
 Source: audit Axis H.
 
-- [ ] Three-store scan fixture.
-- [ ] Four-store scan fixture.
-- [ ] Sequential-backend label assertion as a standalone test (today
-  embedded in larger fixtures).
+### 12c.15.a: Three-store scan fixture
+
+- [ ] Build with 3 local stores.
+- [ ] Run scan; assert all 3 stores are touched.
+- [ ] Assert per-store counter rows match overall counters
+  (route, candidate, byte sums).
+
+### 12c.15.b: Four-store scan fixture
+
+- [ ] Build with 4 local stores.
+- [ ] Run scan; assert all 4 stores are touched.
+
+### 12c.15.c: Sequential-backend label standalone test
+
+Today embedded in larger fixtures.
+
+- [ ] Run scan; capture `local_store_execution_snapshot`.
+- [ ] Assert `local_store_execution_mode = 'sequential_backend'`.
+- [ ] Assert `local_store_parallelism_next_step =
+  'async_or_parallel_store_group_executor'`.
 
 ## Phase 12c.16: Semantic Tightening Sweep (P2)
 
 Source: audit "Semantic concerns" section.
 
-- [ ] Tighten the marquee test `custom_scan.rs:46` to insert N=8 rows,
-  LIMIT 8, and assert returned-PID set equals selected-PID set.
-- [ ] Empty-remote-result test at `custom_scan.rs:288`: add explicit
-  assertions that `EndCustomScan` was invoked exactly once and that
-  pfree counters returned to baseline.
-- [ ] Stage E contract tests at `production_summary.rs:234,290`:
-  document the contract-only-not-live status in the test docstring
-  so a reader does not infer live coverage from the assertion shape.
+### 12c.16.a: Tighten marquee CustomScan test
+
+`custom_scan.rs:46` inserts 2 rows; this work expands it.
+
+- [ ] Insert N=8 rows with known PID-to-payload mapping.
+- [ ] Run CustomScan with LIMIT 8.
+- [ ] Assert returned-PID set equals selected-PID set.
+- [ ] Assert each row's payload matches the PID-to-payload mapping
+  (catch payload-PID swap regressions; cross-link 12c.7.b).
+
+### 12c.16.b: Tighten empty-remote-result test
+
+`custom_scan.rs:288` pins JSON status but not invocation counts.
+
+- [ ] Add assertion that `EndCustomScan` was invoked exactly once.
+- [ ] Add assertion that pfree counters returned to baseline.
+
+### 12c.16.c: Document Stage E contract-only status
+
+`production_summary.rs:234,290`.
+
+- [ ] Add docstring on the fault-matrix contract test stating that
+  it is contract-only and pointing at 12c.2 / 12c.13 for the live
+  executor assertions.
+- [ ] Same for the lifecycle-matrix contract test (pointing at
+  12c.3).
 
 ## Suggested Packet Sequence
 
