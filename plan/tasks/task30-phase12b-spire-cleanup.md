@@ -1,6 +1,6 @@
 # Task 30 Phase 12b: SPIRE Cleanup
 
-Status: in progress
+Status: complete
 Owner: coder1 / SPIRE distributed production-hardening track
 Priority: 1 before Phase 13 AWS verification adds new code on top of the
 existing SPIRE surface; should ideally land before or alongside Phase
@@ -93,9 +93,11 @@ module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
     `tests/fault_matrix.rs`, etc.).
     Packets `30991` and `30993` moved `production_executor_state_tests`
     and the endpoint-identity tuple-transport tests.
-- [ ] Verify zero behavior change: `cargo test -p ecaz` and the
+- [x] Verify zero behavior change: `cargo test -p ecaz` and the
   packet-local PG18 fixtures cited in Phase 11/12 trackers pass without
   assertion edits.
+  Packet `31036` records `cargo test -p ecaz` passing at code commit
+  `b11ae95a`.
 - [x] Verify the split with a per-file line-count sanity:
   no resulting file should exceed 2,500 lines; flag any that do as a
   follow-up split row.
@@ -258,6 +260,9 @@ Phase 13 will push it past 80k.
   `src/tests/mod.rs` now retains shared helpers and concern-file includes,
   not direct `test_ec_spire_*` fixture bodies, so the test module-tree row
   is closed.
+- Packet `31051` splits the residual oversized `src/tests/mod.rs` sink
+  into focused HNSW/IVF concern files; `src/tests/mod.rs` is now below
+  3,000 lines and no `src/tests/*.rs` file exceeds 3,000 lines.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
@@ -266,9 +271,11 @@ Phase 13 will push it past 80k.
 - [x] Resolve the `src/lib.rs <2,000 lines` target after the midphase
   audit: the hard numeric target is replaced by the fixture-body absence
   requirement above, plus packet-local line-count evidence.
-- [ ] Verify `cargo pgrx test` passes against PG18 with no fixture name
+- [x] Verify `cargo pgrx test` passes against PG18 with no fixture name
   changes. Coverage for cited tracker rows must remain at the same
   function names so the Phase 11/12/12a trackers do not require edits.
+  Packet `31036` records `cargo pgrx test pg18` passing at code commit
+  `b11ae95a`.
 - [x] Spot-check 10 random tracker rows that cite a fixture name; each
   should still resolve via `rg test_ec_spire_<name> src/tests/`.
   Packet `31029` records the selected tracker strings and their
