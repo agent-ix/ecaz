@@ -1,3 +1,13 @@
+    fn custom_scan_json_explain_root_plan(json_plan: &str) -> serde_json::Value {
+        let explain_rows = serde_json::from_str::<Vec<serde_json::Value>>(json_plan)
+            .expect("CustomScan JSON EXPLAIN should parse");
+        explain_rows
+            .first()
+            .and_then(|row| row.get("Plan"))
+            .cloned()
+            .expect("CustomScan JSON EXPLAIN should contain a root Plan")
+    }
+
     #[pg_test]
     fn test_ec_spire_customscan_tuple_payload_stores_virtual_slot() {
         Spi::run(
@@ -279,6 +289,26 @@
                 "missing {expected} in CustomScan JSON plan: {json_plan:?}"
             );
         }
+        let json_root_plan = custom_scan_json_explain_root_plan(&json_plan);
+        assert_eq!(
+            json_root_plan.get("Actual Rows").and_then(|value| value.as_u64()),
+            Some(1),
+            "CustomScan JSON EXPLAIN should pin Actual Rows to the LIMIT: {json_plan:?}"
+        );
+        assert_eq!(
+            json_root_plan
+                .get("Actual Loops")
+                .and_then(|value| value.as_u64()),
+            Some(1),
+            "CustomScan JSON EXPLAIN should pin Actual Loops: {json_plan:?}"
+        );
+        assert!(
+            json_root_plan
+                .get("Actual Total Time")
+                .and_then(|value| value.as_f64())
+                .is_some_and(|value| value > 0.0),
+            "CustomScan JSON EXPLAIN should include positive Actual Total Time: {json_plan:?}"
+        );
         assert_eq!(row, (10, "remote alpha".to_owned()));
         assert_eq!(expression_row, (10, "remote alpha (boosted)".to_owned()));
         assert_eq!(embedding_projection, vec![1.0, 0.0]);
