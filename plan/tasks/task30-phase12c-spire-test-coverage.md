@@ -333,9 +333,9 @@ Today `coordinator/tests.rs:115`
 (`remote_heap_exact_score_uses_orderby_negative_inner_product`) pins
 one 2-dim case.
 
-- [ ] Add a high-dim (≥128) case with known expected score.
-- [ ] Add a NaN-input rejection assertion (AM must refuse).
-- [ ] Add a dimension-mismatch error assertion (query dim ≠ index
+- [x] Add a high-dim (≥128) case with known expected score.
+- [x] Add a NaN-input rejection assertion (AM must refuse).
+- [x] Add a dimension-mismatch error assertion (query dim ≠ index
   dim must produce a clear error).
 
 ## Phase 12c.7: Multi-Remote Fanout Coverage (P1)
