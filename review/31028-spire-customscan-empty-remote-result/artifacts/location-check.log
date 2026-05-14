@@ -1,0 +1,15 @@
+Script started on 2026-05-13 19:39:51-07:00 [<not executed on terminal>]
+src/tests/custom_scan.rs
+273:            "\"tuple_transport_status\": \"ready\"",
+288:    fn test_ec_spire_customscan_empty_remote_result_returns_no_rows() {
+464:            json_plan.contains("\"tuple_transport_status\": \"ready\""),
+468:            !json_plan.contains("not_applicable"),
+469:            "empty remote result must not leak not_applicable status: {json_plan:?}"
+
+plan/tasks/task30-phase12b-spire-cleanup.md
+321:  `tuple_transport_status`, `nprobe`, `rerank_width`. Add a fixture
+327:- [x] Empty-remote-result CustomScan fixture: a remote that returns
+329:  cleanly with no `not_applicable` status leakage. Packet `31028` adds
+333:  `not_applicable`.
+
+Script done on 2026-05-13 19:39:51-07:00 [COMMAND_EXIT_CODE="0"]
