@@ -389,11 +389,14 @@ Source: audit Axis E.
 
 ### 12c.8.c: Long-scan + remote restart
 
-- [ ] Start a long-running CustomScan.
-- [ ] Restart the remote PG instance mid-scan.
-- [ ] Strict mode: assert detection and matrix-prescribed action.
-- [ ] Degraded mode: assert degraded skip reporting.
-- [ ] Assert subsequent CustomScan can succeed after remote
+- [x] Start a long-running CustomScan.
+- [x] Restart the remote PG instance mid-scan.
+  Evidence: `test_ec_spire_customscan_remote_backend_termination_rejoin_sql`
+  simulates the restart as remote backend termination during candidate
+  receive.
+- [x] Strict mode: assert detection and matrix-prescribed action.
+- [x] Degraded mode: assert degraded skip reporting.
+- [x] Assert subsequent CustomScan can succeed after remote
   rejoins (no stale connection cached).
 
 ### 12c.8.d: Idle-in-transaction timeout during open CustomScan cursor
