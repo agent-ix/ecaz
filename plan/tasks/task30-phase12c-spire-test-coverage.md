@@ -346,12 +346,18 @@ fixtures are 1-remote.
 
 ### 12c.7.a: Fanout=3 CustomScan fixture
 
-- [ ] Set up three loopback remotes with disjoint PID partitions.
-- [ ] Run CustomScan; capture returned rows with origin-remote
+Evidence: `test_ec_spire_customscan_three_remote_fanout_sql` maps
+three selected coordinator PIDs to three loopback remote node IDs,
+probes each remote endpoint for its expected origin-coded payload, and
+asserts CustomScan returns the same union. The widening variant is
+covered by `test_ec_spire_customscan_eight_remote_fanout_sql`.
+
+- [x] Set up three loopback remotes with disjoint PID partitions.
+- [x] Run CustomScan; capture returned rows with origin-remote
   metadata.
-- [ ] Assert all three remotes contributed at least one row.
-- [ ] Assert union of returned PIDs equals expected union.
-- [ ] Add a fanout=8 widening variant (P3, can defer) to detect
+- [x] Assert all three remotes contributed at least one row.
+- [x] Assert union of returned PIDs equals expected union.
+- [x] Add a fanout=8 widening variant (P3, can defer) to detect
   scaling regressions.
 
 ### 12c.7.b: Selected-PID round-trip assertion
