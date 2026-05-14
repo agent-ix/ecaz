@@ -380,11 +380,16 @@ Source: audit Axis E.
 
 ### 12c.8.b: Long-scan + DROP INDEX (coordinator side)
 
-- [ ] Start a long-running CustomScan in one session.
-- [ ] Issue `DROP INDEX` in another session against the coordinator
+- [x] Start a long-running CustomScan in one session.
+- [x] Issue `DROP INDEX` in another session against the coordinator
   index.
-- [ ] Assert scan unwinds with the expected error category.
-- [ ] Assert no leaked transport state (libpq connection returned,
+- [x] Assert the matrix-relevant coordinator-side category:
+  PostgreSQL relation locks make coordinator `DROP INDEX` wait behind
+  the active CustomScan and fail the DDL with `lock_timeout`, while
+  the in-flight scan completes instead of being asynchronously
+  unwound.
+  Evidence: `test_ec_spire_customscan_coord_drop_waits_for_scan_sql`.
+- [x] Assert no leaked transport state (libpq connection returned,
   no orphaned remote prepared rows).
 
 ### 12c.8.c: Long-scan + remote restart
