@@ -351,6 +351,33 @@
             "CustomScan JSON EXPLAIN should include positive Actual Total Time: {json_plan:?}"
         );
         let json_custom_scan_plan = custom_scan_json_explain_node(&json_root_plan, "Custom Scan");
+        // Contract with ec_spire_explain_custom_scan: these are the SPIRE-specific
+        // JSON fields emitted in addition to PostgreSQL's standard Custom Scan keys.
+        let spire_explain_fields = json_custom_scan_plan
+            .as_object()
+            .expect("CustomScan JSON EXPLAIN node should be an object")
+            .keys()
+            .filter(|key| {
+                matches!(
+                    key.as_str(),
+                    "node" | "remote_fanout" | "tuple_transport_status" | "nprobe" | "rerank_width"
+                )
+            })
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            spire_explain_fields,
+            [
+                "node".to_owned(),
+                "nprobe".to_owned(),
+                "remote_fanout".to_owned(),
+                "rerank_width".to_owned(),
+                "tuple_transport_status".to_owned(),
+            ]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+            "CustomScan JSON EXPLAIN should pin the SPIRE-specific field set: {json_plan:?}"
+        );
         assert_eq!(
             json_custom_scan_plan
                 .get("Actual Rows")
