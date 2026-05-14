@@ -119,7 +119,7 @@ Phase 13 will push it past 80k.
   - [ ] `tests/placement.rs`
   - [ ] `tests/vacuum.rs`
   - [ ] `tests/cost_and_planner.rs`
-  - [ ] `tests/build.rs`
+  - [x] `tests/build.rs`
   - [x] `tests/diagnostics.rs`
 - First fixture-sink checkpoint creates `src/tests/mod.rs` and moves the
   `#[pg_schema] mod tests` body out of `src/lib.rs`; concern-specific
@@ -185,6 +185,10 @@ Phase 13 will push it past 80k.
   relcache, multistore, reindex, tqvector populated-build, and two-store
   scan fixture block; later recursive-fanout and top-graph build fixtures
   remain open, so the row is still not closed.
+- Packet `31016` moves the remaining recursive-fanout and large top-graph
+  chain-storage fixtures to `src/tests/build.rs`; `src/tests/mod.rs` now
+  only retains the build concern include, so the `tests/build.rs` row is
+  closed.
 - Packet `31009` starts `src/tests/vacuum.rs` by moving the epoch cleanup,
   epoch snapshot, and maintenance-run fixture block with a textual
   include; later SQL VACUUM and concurrent insert/vacuum fixtures remain
