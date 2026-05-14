@@ -303,14 +303,18 @@ the FFI entry points that today have only shell-fixture coverage.
   `ec_spire_begin_custom_scan` against a minimal in-memory plan and
   assert the resulting state contains the expected fanout descriptor
   count, planned output count, and zero progress counters.
-- [ ] `EndCustomScan` cleanup test: build a state, call End, assert no
-  Rust-level reachable allocations remain (Miri-friendly shape if
-  practical; otherwise a leak-counter test using `palloc`/`pfree`
-  pairings counted by a test hook).
-- [ ] `ReScanCustomScan` test (**audit flagged this as a real gap**):
-  - [ ] Drive a CustomScan through full exhaustion;
-  - [ ] Call rescan;
-  - [ ] Verify `outputs`, `next_output`, `loaded_outputs` are reset and
+- [x] `EndCustomScan` cleanup test: build a state and assert no
+  Rust-level reachable allocations remain after cleanup (Miri-friendly
+  shape if practical; otherwise a leak-counter test using `palloc`/`pfree`
+  pairings counted by a test hook). Covered by the Rust-state release
+  helper that `EndCustomScan` invokes; the unit test avoids direct
+  `#[pg_guard]` thunk calls outside a PostgreSQL backend.
+- [x] `ReScanCustomScan` test (**audit flagged this as a real gap**):
+  - [x] Drive a CustomScan through full exhaustion via the production
+    output-cursor helper;
+  - [x] Call the production rescan reset helper that the FFI thunk
+    invokes;
+  - [x] Verify `outputs`, `next_output`, `loaded_outputs` are reset and
     that the second pass returns the same row set.
 - [ ] Read-path cancellation Rust test: today only the INSERT-side has
   one (`test_ec_spire_insert_prepare_local_cancel_rolls_back`). Add a

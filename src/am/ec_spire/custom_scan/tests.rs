@@ -221,6 +221,96 @@ mod tests {
     }
 
     #[test]
+    fn custom_scan_default_state_starts_with_zero_progress_counters() {
+        let state = custom_scan_default_exec_state();
+
+        assert_eq!(state.mode, SpireCustomScanPlanMode::VectorOrderLimit);
+        assert_eq!(state.index_oid, pg_sys::InvalidOid);
+        assert_eq!(state.top_k, 0);
+        assert!(state.query.is_empty());
+        assert!(state.outputs.is_empty());
+        assert_eq!(state.next_output, 0);
+        assert!(!state.loaded_outputs);
+        assert!(!state.dml_payload_loaded);
+        assert!(!state.dml_payload_emitted);
+        assert!(state.dml_tuple_payload_json.is_none());
+    }
+
+    #[test]
+    fn custom_scan_end_release_drops_reachable_rust_state() {
+        let mut state = custom_scan_default_exec_state();
+        state.index_oid = pg_sys::Oid::from(42);
+        state.top_k = 3;
+        state.query = vec![1.0, 2.0, 3.0];
+        state.dml_pk_column = "id".to_owned();
+        state.dml_pk_value = [0, 0, 0, 0, 0, 0, 0, 5];
+        state.dml_updated_columns = vec!["title".to_owned()];
+        state.dml_projected_columns = vec!["id".to_owned(), "title".to_owned()];
+        state.dml_update_value_exprs = vec![std::ptr::null_mut()];
+        state.tuple_payload_columns = vec!["id".to_owned(), "title".to_owned()];
+        state.outputs = vec![remote_output_row(50, 3, -1.25), remote_output_row(51, 4, -1.0)];
+        state.next_output = 2;
+        state.loaded_outputs = true;
+        state.dml_payload_loaded = true;
+        state.dml_payload_emitted = true;
+        state.dml_tuple_payload_json = Some(r#"{"id":5}"#.to_owned());
+
+        custom_scan_release_exec_state_for_end(&mut state);
+
+        assert_eq!(state.index_oid, pg_sys::InvalidOid);
+        assert_eq!(state.top_k, 0);
+        assert_eq!(state.query.capacity(), 0);
+        assert_eq!(state.dml_pk_column.capacity(), 0);
+        assert_eq!(state.dml_pk_value, [0; 8]);
+        assert_eq!(state.dml_updated_columns.capacity(), 0);
+        assert_eq!(state.dml_projected_columns.capacity(), 0);
+        assert_eq!(state.dml_update_value_exprs.capacity(), 0);
+        assert_eq!(state.tuple_payload_columns.capacity(), 0);
+        assert_eq!(state.tuple_payload_inputs.capacity(), 0);
+        assert_eq!(state.outputs.capacity(), 0);
+        assert_eq!(state.next_output, 0);
+        assert!(!state.loaded_outputs);
+        assert!(!state.dml_payload_loaded);
+        assert!(!state.dml_payload_emitted);
+        assert!(state.dml_tuple_payload_json.is_none());
+    }
+
+    #[test]
+    fn custom_scan_rescan_resets_output_progress_and_allows_second_pass() {
+        let expected = vec![remote_output_row(50, 3, -1.25), remote_output_row(51, 4, -1.0)];
+        let mut state = custom_scan_default_exec_state();
+        state.outputs = expected.clone();
+        state.loaded_outputs = true;
+        state.dml_payload_loaded = true;
+        state.dml_payload_emitted = true;
+        state.dml_tuple_payload_json = Some(r#"{"id":5}"#.to_owned());
+
+        let mut first_pass = Vec::new();
+        while let Some(output_index) = custom_scan_next_output_index(&mut state) {
+            first_pass.push(state.outputs[output_index].clone());
+        }
+        assert_eq!(first_pass, expected);
+        assert_eq!(state.next_output, expected.len());
+
+        custom_scan_reset_exec_state_for_rescan(&mut state);
+
+        assert!(state.outputs.is_empty());
+        assert_eq!(state.next_output, 0);
+        assert!(!state.loaded_outputs);
+        assert!(!state.dml_payload_loaded);
+        assert!(!state.dml_payload_emitted);
+        assert!(state.dml_tuple_payload_json.is_none());
+
+        state.outputs = expected.clone();
+        state.loaded_outputs = true;
+        let mut second_pass = Vec::new();
+        while let Some(output_index) = custom_scan_next_output_index(&mut state) {
+            second_pass.push(state.outputs[output_index].clone());
+        }
+        assert_eq!(second_pass, expected);
+    }
+
+    #[test]
     fn custom_scan_cost_increases_with_remote_fanout() {
         let mut low_fanout = eligible_cost_row();
         low_fanout.remote_available_node_count = 1;
@@ -321,6 +411,27 @@ mod tests {
             random_page_cost: 4.0,
             seq_page_cost: 1.0,
             cpu_operator_cost: 0.0025,
+        }
+    }
+
+    fn remote_output_row(
+        heap_block: u32,
+        heap_offset: u16,
+        score: f32,
+    ) -> super::super::SpireRemoteProductionScanOutputRow {
+        super::super::SpireRemoteProductionScanOutputRow {
+            requested_epoch: 1,
+            served_epoch: 1,
+            node_id: super::super::meta::SPIRE_LOCAL_NODE_ID,
+            heap_block,
+            heap_offset,
+            score,
+            heap_lookup_owner: super::super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            vec_id: vec![heap_block as u8],
+            row_locator: vec![heap_offset as u8],
+            tuple_payload_json: None,
+            typed_tuple_payload: None,
+            tuple_payload_missing: false,
         }
     }
 }

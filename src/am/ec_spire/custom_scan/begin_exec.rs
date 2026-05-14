@@ -5,32 +5,33 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
     unsafe {
         let state = pg_sys::palloc0(std::mem::size_of::<SpireCustomScanExecState>())
             .cast::<SpireCustomScanExecState>();
-        ptr::write(
-            state,
-            SpireCustomScanExecState {
-                custom_scan_state: std::mem::zeroed(),
-                mode: SpireCustomScanPlanMode::VectorOrderLimit,
-                index_oid: pg_sys::InvalidOid,
-                top_k: 0,
-                query: Vec::new(),
-                dml_pk_column: String::new(),
-                dml_pk_value: [0; 8],
-                dml_updated_columns: Vec::new(),
-                dml_projected_columns: Vec::new(),
-                dml_update_value_exprs: Vec::new(),
-                tuple_payload_columns: Vec::new(),
-                tuple_payload_inputs: Vec::new(),
-                outputs: Vec::new(),
-                next_output: 0,
-                loaded_outputs: false,
-                dml_payload_loaded: false,
-                dml_payload_emitted: false,
-                dml_tuple_payload_json: None,
-            },
-        );
+        ptr::write(state, custom_scan_default_exec_state());
         (*state).custom_scan_state.ss.ps.type_ = pg_sys::NodeTag::T_CustomScanState;
         (*state).custom_scan_state.methods = &raw const CUSTOM_EXEC_METHODS;
         state.cast::<pg_sys::Node>()
+    }
+}
+
+fn custom_scan_default_exec_state() -> SpireCustomScanExecState {
+    SpireCustomScanExecState {
+        custom_scan_state: unsafe { std::mem::zeroed() },
+        mode: SpireCustomScanPlanMode::VectorOrderLimit,
+        index_oid: pg_sys::InvalidOid,
+        top_k: 0,
+        query: Vec::new(),
+        dml_pk_column: String::new(),
+        dml_pk_value: [0; 8],
+        dml_updated_columns: Vec::new(),
+        dml_projected_columns: Vec::new(),
+        dml_update_value_exprs: Vec::new(),
+        tuple_payload_columns: Vec::new(),
+        tuple_payload_inputs: Vec::new(),
+        outputs: Vec::new(),
+        next_output: 0,
+        loaded_outputs: false,
+        dml_payload_loaded: false,
+        dml_payload_emitted: false,
+        dml_tuple_payload_json: None,
     }
 }
 
@@ -123,6 +124,7 @@ unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomSc
             return;
         }
         let state = node.cast::<SpireCustomScanExecState>();
+        custom_scan_release_exec_state_for_end(&mut *state);
         ptr::drop_in_place(state);
         pg_sys::pfree(state.cast());
     }
@@ -132,13 +134,43 @@ unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomSc
 unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
     unsafe {
         let state = node.cast::<SpireCustomScanExecState>();
-        (*state).outputs.clear();
-        (*state).next_output = 0;
-        (*state).loaded_outputs = false;
-        (*state).dml_payload_loaded = false;
-        (*state).dml_payload_emitted = false;
-        (*state).dml_tuple_payload_json = None;
+        custom_scan_reset_exec_state_for_rescan(&mut *state);
     }
+}
+
+fn custom_scan_release_exec_state_for_end(state: &mut SpireCustomScanExecState) {
+    state.index_oid = pg_sys::InvalidOid;
+    state.top_k = 0;
+    state.query = Vec::new();
+    state.dml_pk_column = String::new();
+    state.dml_pk_value = [0; 8];
+    state.dml_updated_columns = Vec::new();
+    state.dml_projected_columns = Vec::new();
+    state.dml_update_value_exprs = Vec::new();
+    state.tuple_payload_columns = Vec::new();
+    state.tuple_payload_inputs = Vec::new();
+    state.outputs = Vec::new();
+    state.next_output = 0;
+    state.loaded_outputs = false;
+    state.dml_payload_loaded = false;
+    state.dml_payload_emitted = false;
+    state.dml_tuple_payload_json = None;
+}
+
+fn custom_scan_reset_exec_state_for_rescan(state: &mut SpireCustomScanExecState) {
+    state.outputs.clear();
+    state.next_output = 0;
+    state.loaded_outputs = false;
+    state.dml_payload_loaded = false;
+    state.dml_payload_emitted = false;
+    state.dml_tuple_payload_json = None;
+}
+
+fn custom_scan_next_output_index(state: &mut SpireCustomScanExecState) -> Option<usize> {
+    let output_index = state.next_output;
+    state.outputs.get(output_index)?;
+    state.next_output = state.next_output.saturating_add(1);
+    Some(output_index)
 }
 
 #[pg_guard]
@@ -161,10 +193,10 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
         }
         custom_scan_ensure_outputs(state);
         loop {
-            let Some(output) = (&(*state).outputs).get((*state).next_output) else {
+            let Some(output_index) = custom_scan_next_output_index(&mut *state) else {
                 return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
             };
-            (*state).next_output = (*state).next_output.saturating_add(1);
+            let output = &(&(*state).outputs)[output_index];
             if !matches!(
                 output.heap_lookup_owner,
                 super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
@@ -256,4 +288,3 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_recheck(
     // identity, so EvalPlanQual cannot re-fetch the origin row here.
     true
 }
-
