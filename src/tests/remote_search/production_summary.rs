@@ -833,8 +833,8 @@
         assert_eq!(diagnostic_status, "requires_custom_scan_tuple_delivery");
 
         loopback_client
-            .batch_execute("DELETE FROM ec_spire_prod_scan_heap_remote_sql")
-            .expect("remote heap row delete should succeed");
+            .batch_execute("TRUNCATE ec_spire_prod_scan_heap_remote_sql")
+            .expect("remote heap table truncate should succeed");
         let missing_status = Spi::get_one::<String>(&format!("SELECT status {heap_from}"))
             .expect("missing heap status query should succeed")
             .expect("missing heap status should exist");
@@ -842,12 +842,12 @@
             Spi::get_one::<String>(&format!("SELECT next_blocker {heap_from}"))
                 .expect("missing heap blocker query should succeed")
                 .expect("missing heap blocker should exist");
-        let missing_failed_count = Spi::get_one::<i64>(&format!(
+        let missing_heap_failed_count = Spi::get_one::<i64>(&format!(
             "SELECT remote_heap_failed_dispatch_count {heap_from}"
         ))
         .expect("missing heap failed count query should succeed")
         .expect("missing heap failed count should exist");
-        assert_eq!(missing_status, "remote_heap_resolution_failed");
-        assert_eq!(missing_next_blocker, "remote_heap_resolution");
-        assert_eq!(missing_failed_count, 1);
+        assert_eq!(missing_status, "remote_candidate_receive_failed");
+        assert_eq!(missing_next_blocker, "compact_candidate_receive");
+        assert_eq!(missing_heap_failed_count, 0);
     }

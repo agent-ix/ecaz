@@ -1721,6 +1721,14 @@
             .expect("active epoch query should succeed")
             .try_get::<_, i64>(0)
             .expect("active epoch should decode");
+        let index_oid = loopback_client
+            .query_one(
+                "SELECT 'ec_spire_ud_schema_drift_coord_idx'::regclass::oid::bigint",
+                &[],
+            )
+            .expect("coordinator index oid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("coordinator index oid should decode");
         let remote_identity_hex = loopback_client
             .query_one(
                 "SELECT profile_fingerprint \
@@ -1795,8 +1803,8 @@
             .query_one(
                 "SELECT count(*)::bigint \
                    FROM pg_prepared_xacts \
-                  WHERE gid LIKE 'ec_spire_insert_%'",
-                &[],
+                  WHERE gid LIKE $1",
+                &[&format!("ec_spire_insert_{index_oid}_27_{active_epoch}_%")],
             )
             .expect("prepared xact count query should succeed")
             .try_get::<_, i64>(0)
@@ -1814,11 +1822,11 @@
             .expect("placement count should decode");
 
         assert!(
-            update_message.contains("coordinator update schema drift detected"),
+            update_message.contains("ec_spire coordinator update status schema_drift"),
             "{update_message}"
         );
         assert!(
-            delete_message.contains("coordinator delete schema drift detected"),
+            delete_message.contains("ec_spire coordinator delete status schema_drift"),
             "{delete_message}"
         );
         assert_eq!(remote_summary, "update before drift|1");

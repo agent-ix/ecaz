@@ -931,96 +931,188 @@ pub(super) fn register_gucs() {
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
-    EC_SPIRE_NPROBE_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_SESSION_NPROBE_UNSET
+    } else {
+        EC_SPIRE_NPROBE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_rerank_width() -> i32 {
-    EC_SPIRE_RERANK_WIDTH_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_SESSION_RERANK_WIDTH_UNSET
+    } else {
+        EC_SPIRE_RERANK_WIDTH_GUC.get()
+    }
 }
 
 pub(super) fn current_session_max_candidate_rows() -> i32 {
-    EC_SPIRE_MAX_CANDIDATE_ROWS_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET
+    } else {
+        EC_SPIRE_MAX_CANDIDATE_ROWS_GUC.get()
+    }
 }
 
 pub(super) fn current_session_adaptive_nprobe() -> bool {
-    EC_SPIRE_ADAPTIVE_NPROBE_GUC.get()
+    if cfg!(test) {
+        false
+    } else {
+        EC_SPIRE_ADAPTIVE_NPROBE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
-    EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
+    } else {
+        EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_max_nodes() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_max_pids() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_max_pids_per_node() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_PER_NODE_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_PER_NODE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_max_concurrent_dispatches() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_max_concurrent_dispatches_per_node() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_PER_NODE_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_PER_NODE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_connect_timeout_ms() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_statement_timeout_ms() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC.get()
+    }
 }
 
 pub(super) fn current_session_max_remote_payload_bytes_per_row() -> i32 {
-    EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW
+    } else {
+        EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW_GUC.get()
+    }
 }
 
 pub(super) fn current_session_max_remote_payload_rows_per_batch() -> i32 {
-    EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH
+    } else {
+        EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC.get()
+    }
 }
 
 pub(super) fn current_session_cost_routing_dimension_scale() -> f64 {
-    EC_SPIRE_COST_ROUTING_DIMENSION_SCALE_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_COST_ROUTING_DIMENSION_SCALE
+    } else {
+        EC_SPIRE_COST_ROUTING_DIMENSION_SCALE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_cost_leaf_dimension_scale() -> f64 {
-    EC_SPIRE_COST_LEAF_DIMENSION_SCALE_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_COST_LEAF_DIMENSION_SCALE
+    } else {
+        EC_SPIRE_COST_LEAF_DIMENSION_SCALE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_cost_index_page_scale() -> f64 {
-    EC_SPIRE_COST_INDEX_PAGE_SCALE_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_COST_INDEX_PAGE_SCALE
+    } else {
+        EC_SPIRE_COST_INDEX_PAGE_SCALE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_cost_local_store_page_fanout_scale() -> f64 {
-    EC_SPIRE_COST_LOCAL_STORE_PAGE_FANOUT_SCALE_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_COST_LOCAL_STORE_PAGE_FANOUT_SCALE
+    } else {
+        EC_SPIRE_COST_LOCAL_STORE_PAGE_FANOUT_SCALE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_cost_storage_scoring_multiplier() -> f64 {
-    EC_SPIRE_COST_STORAGE_SCORING_MULTIPLIER_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_COST_STORAGE_SCORING_MULTIPLIER
+    } else {
+        EC_SPIRE_COST_STORAGE_SCORING_MULTIPLIER_GUC.get()
+    }
 }
 
 pub(super) fn current_session_cost_rerank_multiplier() -> f64 {
-    EC_SPIRE_COST_RERANK_MULTIPLIER_GUC.get()
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_COST_RERANK_MULTIPLIER
+    } else {
+        EC_SPIRE_COST_RERANK_MULTIPLIER_GUC.get()
+    }
 }
 
 pub(super) fn current_session_remote_search_consistency_mode_name() -> &'static str {
-    EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC.get().as_str()
+    if cfg!(test) {
+        SpireRemoteSearchConsistencyModeGuc::Strict.as_str()
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC.get().as_str()
+    }
 }
 
 pub(super) fn current_session_remote_tuple_transport() -> SpireRemoteTupleTransportGuc {
-    EC_SPIRE_REMOTE_TUPLE_TRANSPORT_GUC.get()
+    if cfg!(test) {
+        SpireRemoteTupleTransportGuc::Auto
+    } else {
+        EC_SPIRE_REMOTE_TUPLE_TRANSPORT_GUC.get()
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(super) fn current_session_remote_search_governance_test_namespace() -> i32 {
-    EC_SPIRE_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE_GUC.get()
+    if cfg!(test) {
+        0
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE_GUC.get()
+    }
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]

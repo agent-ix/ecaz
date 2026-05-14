@@ -307,12 +307,15 @@
 
         Spi::run(
             "CREATE TABLE ec_spire_insert_prepare_coord_sql \
-             (id bigint primary key, embedding ecvector)",
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
         )
         .expect("coordinator table creation should succeed");
         Spi::run(
-            "INSERT INTO ec_spire_insert_prepare_coord_sql (id, embedding) VALUES \
-             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+            "INSERT INTO ec_spire_insert_prepare_coord_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
         )
         .expect("coordinator seed insert should succeed");
         Spi::run(
@@ -413,12 +416,15 @@
 
         Spi::run(
             "CREATE TABLE ec_spire_insert_prepare_cancel_coord_sql \
-             (id bigint primary key, embedding ecvector)",
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
         )
         .expect("coordinator table creation should succeed");
         Spi::run(
-            "INSERT INTO ec_spire_insert_prepare_cancel_coord_sql (id, embedding) VALUES \
-             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+            "INSERT INTO ec_spire_insert_prepare_cancel_coord_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator cancel seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('303132333435363738393a3b3c3d3e3f', 'hex'))",
         )
         .expect("coordinator seed insert should succeed");
         Spi::run(
@@ -519,12 +525,12 @@
 
         Spi::run(
             "CREATE TABLE ec_spire_insert_prepare_payload_coord_sql \
-             (id bigint primary key, embedding ecvector)",
+             (id bigint primary key, title text not null, embedding ecvector)",
         )
         .expect("coordinator table creation should succeed");
         Spi::run(
-            "INSERT INTO ec_spire_insert_prepare_payload_coord_sql (id, embedding) VALUES \
-             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+            "INSERT INTO ec_spire_insert_prepare_payload_coord_sql (id, title, embedding) VALUES \
+             (1, 'coordinator payload seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
         )
         .expect("coordinator seed insert should succeed");
         Spi::run(
@@ -630,15 +636,15 @@
 
         Spi::run(
             "CREATE TABLE ec_spire_coord_insert_payload_sql \
-             (id bigint primary key, embedding ecvector)",
+             (id bigint primary key, title text not null, embedding ecvector)",
         )
         .expect("coordinator table creation should succeed");
         Spi::run(
-            "INSERT INTO ec_spire_coord_insert_payload_sql (id, embedding) VALUES \
-             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
-             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
-             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
-             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+            "INSERT INTO ec_spire_coord_insert_payload_sql (id, title, embedding) VALUES \
+             (1, 'coordinator payload positive', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, 'coordinator payload near positive', encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, 'coordinator payload negative', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, 'coordinator payload near negative', encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
         )
         .expect("coordinator seed insert should succeed");
         Spi::run(
@@ -1600,6 +1606,14 @@
             .expect("remote identity query should succeed")
             .try_get::<_, String>(0)
             .expect("remote identity should decode");
+        let payload_index_oid = loopback_client
+            .query_one(
+                "SELECT 'ec_spire_trig_payload_coord_idx'::regclass::oid::bigint",
+                &[],
+            )
+            .expect("payload coordinator index oid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("payload coordinator index oid should decode");
         loopback_client
             .batch_execute(&format!(
                 "SELECT ec_spire_register_remote_node_descriptor(\
@@ -1753,8 +1767,10 @@
             .query_one(
                 "SELECT count(*)::bigint \
                    FROM pg_prepared_xacts \
-                  WHERE gid LIKE 'ec_spire_insert_%'",
-                &[],
+                  WHERE gid LIKE $1",
+                &[&format!(
+                    "ec_spire_insert_{payload_index_oid}_18_{active_epoch}_%"
+                )],
             )
             .expect("prepared xact count query should succeed")
             .try_get::<_, i64>(0)

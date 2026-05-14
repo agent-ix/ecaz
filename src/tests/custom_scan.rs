@@ -999,10 +999,34 @@
     }
 
     #[pg_test]
-    #[should_panic(
-        expected = "EcSpireDistributedScan tuple payload column \"tags\" has unsupported array type"
-    )]
-    fn test_ec_spire_customscan_rejects_array_tuple_payload_projection() {
+    fn test_ec_spire_customscan_returns_array_tuple_payload_projection() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_CUSTOMSCAN_ARRAY",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_customscan_array_payload_remote_sql; \
+                 CREATE TABLE ec_spire_customscan_array_payload_remote_sql \
+                     (id bigint primary key, tags text[] not null, embedding ecvector); \
+                 INSERT INTO ec_spire_customscan_array_payload_remote_sql \
+                     (id, tags, embedding) VALUES \
+                     (10, ARRAY['alpha','beta'], encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, ARRAY['gamma'], encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_customscan_array_payload_remote_idx \
+                     ON ec_spire_customscan_array_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback remote array payload fixture should be created");
+        let remote_identity_hex = loopback_remote_index_identity_hex(
+            &mut loopback_client,
+            "ec_spire_customscan_array_payload_remote_idx",
+        );
         Spi::run(
             "CREATE TABLE ec_spire_customscan_array_payload_sql \
              (id bigint primary key, tags text[] not null, embedding ecvector)",
@@ -1044,9 +1068,12 @@
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 1, 'spire/remote/customscan/array', \
-                     decode('0a', 'hex'), 'remote_spire_idx', 'active', \
-                     {active_epoch}, {active_epoch}, '0.1.1', 'none')",
-            u32::from(index_oid)
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_customscan_array_payload_remote_idx', 'active', \
+                     {active_epoch}, {active_epoch}, '{}', \
+                     'spire/remote/customscan/array')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
         ))
         .expect("remote descriptor registration should succeed")
         .expect("remote descriptor registration result should exist");
@@ -1054,10 +1081,12 @@
 
         Spi::run("SET enable_seqscan = off").expect("disable seqscan should succeed");
         Spi::run("SET enable_indexscan = off").expect("disable indexscan should succeed");
-        Spi::run(
+        let tags = Spi::get_one::<Vec<String>>(
             "SELECT tags FROM ec_spire_customscan_array_payload_sql \
              ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
              LIMIT 1",
         )
-        .expect("CustomScan array payload projection should fail closed");
+        .expect("CustomScan array payload projection should succeed")
+        .expect("CustomScan array payload projection should return one row");
+        assert_eq!(tags, vec!["alpha".to_owned(), "beta".to_owned()]);
     }

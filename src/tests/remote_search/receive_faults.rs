@@ -204,6 +204,10 @@
             .expect("leaf pid query should succeed")
             .try_get::<_, i64>(0)
             .expect("leaf pid should decode");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_candidate_receive_timeout_remote_idx",
+        );
         let timeout_conninfo = format!(
             "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_timeout,public'"
         );
@@ -212,7 +216,7 @@
                 node_id: 2,
                 conninfo: timeout_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_timeout_remote_idx".to_owned(),
-                remote_index_identity: vec![0xaa],
+                remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -287,6 +291,10 @@
             .expect("leaf pid query should succeed")
             .try_get::<_, i64>(0)
             .expect("leaf pid should decode");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_candidate_receive_cancel_remote_idx",
+        );
         let cancel_conninfo = format!(
             "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_cancel,public'"
         );
@@ -295,7 +303,7 @@
                 node_id: 2,
                 conninfo: cancel_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_cancel_remote_idx".to_owned(),
-                remote_index_identity: vec![0xaa],
+                remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -570,11 +578,15 @@
                  LANGUAGE sql AS $function$ \
                      SELECT $2 - 1, 2::bigint, $4[1], \
                             1::bigint, 0::bigint, 1::smallint, \
-                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
-                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
-                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
-                            'inner_product_score_v1', 'aa', 'ready' \
-                 $function$",
+	                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+	                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+	                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+	                            'inner_product_score_v1', \
+	                            (SELECT profile_fingerprint \
+	                               FROM ec_spire_remote_search_endpoint_identity(\
+	                                   'ec_spire_candidate_receive_stale_epoch_idx'::regclass)), \
+	                            'ready' \
+	                 $function$",
                 extension_version = env!("CARGO_PKG_VERSION")
             ))
             .expect("loopback stale epoch fixture should be created");
@@ -596,6 +608,10 @@
             .expect("leaf pid query should succeed")
             .try_get::<_, i64>(0)
             .expect("leaf pid should decode");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_candidate_receive_stale_epoch_idx",
+        );
         let stale_epoch_conninfo = format!(
             "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_stale_epoch,public'"
         );
@@ -604,7 +620,7 @@
                 node_id: 2,
                 conninfo: stale_epoch_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_stale_epoch_idx".to_owned(),
-                remote_index_identity: vec![0xaa],
+                remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -679,6 +695,10 @@
             .expect("leaf pid query should succeed")
             .try_get::<_, i64>(0)
             .expect("leaf pid should decode");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_candidate_receive_terminate_remote_idx",
+        );
         let terminate_conninfo = format!(
             "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_terminate,public'"
         );
@@ -687,7 +707,7 @@
                 node_id: 2,
                 conninfo: terminate_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_terminate_remote_idx".to_owned(),
-                remote_index_identity: vec![0xaa],
+                remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -738,11 +758,15 @@
                  LANGUAGE sql AS $function$ \
                      SELECT $2, 1::bigint, $4[1], \
                             1::bigint, 0::bigint, 1::smallint, \
-                            decode('01', 'hex'), decode('02', 'hex'), 'not-a-real'::text, \
-                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
-                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
-                            'inner_product_score_v1', 'aa', 'ready' \
-                 $function$; \
+	                            decode('01', 'hex'), decode('02', 'hex'), 'not-a-real'::text, \
+	                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+	                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+	                            'inner_product_score_v1', \
+	                            (SELECT profile_fingerprint \
+	                               FROM ec_spire_remote_search_endpoint_identity(\
+	                                   'ec_spire_production_candidate_receive_ready_idx'::regclass)), \
+	                            'ready' \
+	                 $function$; \
                  CREATE SCHEMA ec_spire_candidate_receive_validation_fail; \
                  CREATE FUNCTION ec_spire_candidate_receive_validation_fail.ec_spire_remote_search(\
                      oid, bigint, real[], bigint[], integer, text) \
@@ -757,11 +781,15 @@
                  LANGUAGE sql AS $function$ \
                      SELECT $2, 999::bigint, $4[1], \
                             1::bigint, 0::bigint, 1::smallint, \
-                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
-                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
-                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
-                            'inner_product_score_v1', 'aa', 'ready' \
-                 $function$",
+	                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+	                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+	                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+	                            'inner_product_score_v1', \
+	                            (SELECT profile_fingerprint \
+	                               FROM ec_spire_remote_search_endpoint_identity(\
+	                                   'ec_spire_production_candidate_receive_ready_idx'::regclass)), \
+	                            'ready' \
+	                 $function$",
                 extension_version = env!("CARGO_PKG_VERSION")
             ))
             .expect("loopback multi-node candidate receive fixture should be created");
@@ -872,7 +900,7 @@
                 7,
                 loopback_conninfo.clone(),
                 "ec_spire_production_candidate_receive_ready_idx",
-                ready_remote_index_identity,
+                ready_remote_index_identity.clone(),
                 requested_epoch,
                 vec![1.0, 0.0, 0.0],
                 vec![selected_pid],
@@ -882,7 +910,7 @@
                 8,
                 decode_fail_conninfo,
                 "ec_spire_production_candidate_receive_ready_idx",
-                vec![0xaa],
+                ready_remote_index_identity.clone(),
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],
@@ -892,7 +920,7 @@
                 9,
                 validation_fail_conninfo,
                 "ec_spire_production_candidate_receive_ready_idx",
-                vec![0xaa],
+                ready_remote_index_identity,
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],

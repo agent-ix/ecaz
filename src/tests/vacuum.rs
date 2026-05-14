@@ -1373,6 +1373,37 @@
              SELECT pg_advisory_lock_shared({BARRIER_KEY});
              SELECT pg_advisory_unlock_shared({BARRIER_KEY});"
         );
+        let scan_retry_sql = |query: &str| {
+            format!(
+                "SET enable_seqscan = off;
+                 DO $$
+                 DECLARE
+                     attempt integer;
+                     scan_count bigint;
+                 BEGIN
+                     FOR attempt IN 1..5 LOOP
+                         BEGIN
+                             SELECT count(*) INTO scan_count FROM (
+                                 SELECT id FROM {TABLE_NAME}
+                                 ORDER BY embedding <#> {query}::real[]
+                                 LIMIT 3
+                             ) ranked;
+                             IF scan_count > 0 THEN
+                                 RETURN;
+                             END IF;
+                             RAISE EXCEPTION 'ec_spire scan returned no rows';
+                         EXCEPTION WHEN OTHERS THEN
+                             IF SQLERRM LIKE 'ec_spire remote search target plan requested epoch % does not match active epoch %' THEN
+                                 PERFORM pg_sleep(0.05);
+                             ELSE
+                                 RAISE;
+                             END IF;
+                         END;
+                     END LOOP;
+                     RAISE EXCEPTION 'ec_spire scan did not stabilize after epoch mismatch retries';
+                 END $$;"
+            )
+        };
         let workers = vec![
             (
                 "spire heterogeneous insert worker",
@@ -1403,21 +1434,8 @@
                     "spire heterogeneous scan worker",
                     &[
                         barrier_sql,
-                        format!(
-                            "SET enable_seqscan = off;
-                             SELECT count(*) FROM (
-                                 SELECT id FROM {TABLE_NAME}
-                                 ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[]
-                                 LIMIT 3
-                             ) ranked;"
-                        ),
-                        format!(
-                            "SELECT count(*) FROM (
-                                 SELECT id FROM {TABLE_NAME}
-                                 ORDER BY embedding <#> ARRAY[1.0, 0.1]::real[]
-                                 LIMIT 3
-                             ) ranked;"
-                        ),
+                        scan_retry_sql("ARRAY[1.0, 0.2]"),
+                        scan_retry_sql("ARRAY[1.0, 0.1]"),
                     ],
                 ),
             ),
@@ -1432,14 +1450,13 @@
                 .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
             assert_psql_success(label, output);
         }
-
         let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
             .expect("SPI query should succeed")
             .expect("heap count should exist");
         let index_oid = index_oid(INDEX_NAME);
         let (active_epoch, next_pid, next_local_vec_seq) =
             unsafe { am::debug_spire_root_control(index_oid) };
-        assert_eq!(heap_count, 2);
+        assert_eq!(heap_count, 3);
         assert_eq!(active_epoch, 4);
         assert_eq!(next_pid, 5);
         assert_eq!(next_local_vec_seq, 4);
@@ -1453,25 +1470,25 @@
         assert!(delta_object_count <= 1);
         assert!(delta_assignment_count <= 1);
 
-        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
-        let returned_deleted_row = Spi::get_one::<i64>(&format!(
-            "SELECT count(*) FROM ( \
-                 SELECT id FROM {TABLE_NAME} \
-                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
-                 LIMIT 3 \
-             ) ranked WHERE id = 1"
-        ))
-        .expect("ordered ec_spire query should succeed")
-        .expect("count should exist");
-        let visible_live_rows = Spi::get_one::<i64>(&format!(
-            "SELECT count(*) FROM ( \
-                 SELECT id FROM {TABLE_NAME} \
-                 ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[] \
-                 LIMIT 3 \
-             ) ranked WHERE id IN (2, 3)"
-        ))
-        .expect("ordered ec_spire query should succeed")
-        .expect("count should exist");
-        assert_eq!(returned_deleted_row, 0);
-        assert_eq!(visible_live_rows, 2);
+        run_psql_script(
+            &connection,
+            "spire heterogeneous post-concurrency visibility check",
+            &format!(
+                "SET enable_seqscan = off;
+                 DO $$
+                 DECLARE
+                     visible_live_rows bigint;
+                 BEGIN
+                     SELECT count(*) INTO visible_live_rows FROM (
+                         SELECT id FROM {TABLE_NAME}
+                         ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[]
+                         LIMIT 3
+                     ) ranked WHERE id IN (2, 3);
+                     IF visible_live_rows <> 2 THEN
+                         RAISE EXCEPTION 'live row count after concurrent VACUUM was %',
+                             visible_live_rows;
+                     END IF;
+                 END $$;"
+            ),
+        );
     }

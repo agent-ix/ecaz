@@ -289,16 +289,17 @@ fn spire_remote_prepare_transaction_async_error(
 }
 
 fn postgres_async_error_message_with_detail(error: &tokio_postgres::Error) -> String {
-    let mut message = error.to_string();
-    if let Some(db_error) = error.as_db_error() {
-        if let Some(detail) = db_error.detail() {
-            message.push_str("; detail: ");
-            message.push_str(detail);
-        }
-        if let Some(hint) = db_error.hint() {
-            message.push_str("; hint: ");
-            message.push_str(hint);
-        }
+    let Some(db_error) = error.as_db_error() else {
+        return error.to_string();
+    };
+    let mut message = db_error.message().to_owned();
+    if let Some(detail) = db_error.detail() {
+        message.push_str("; detail: ");
+        message.push_str(detail);
+    }
+    if let Some(hint) = db_error.hint() {
+        message.push_str("; hint: ");
+        message.push_str(hint);
     }
     message
 }
@@ -537,6 +538,10 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
             &result.prepared_gid,
             SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
         )?;
+        coordinator_prepared_xact_intent_mark(
+            &result.prepared_gid,
+            SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+        )?;
     }
 
     for result in prepare_results {
@@ -544,14 +549,7 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
         let rollback_conninfo = result.conninfo;
         let node_id = result.node_id;
         let commit_gid = result.prepared_gid.clone();
-        let precommit_gid = result.prepared_gid.clone();
         let rollback_gid = result.prepared_gid;
-        pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
-            let _ = coordinator_prepared_xact_intent_mark(
-                &precommit_gid,
-                SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
-            );
-        });
         pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
             coordinator_insert_resolve_remote_prepared(commit_conninfo, node_id, commit_gid, true);
         });
@@ -757,17 +755,14 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
         &prepared_gid,
         SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
     )?;
+    coordinator_prepared_xact_intent_mark(
+        &prepared_gid,
+        SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+    )?;
 
     let commit_conninfo = conninfo.clone();
     let commit_gid = prepared_gid.clone();
-    let precommit_gid = prepared_gid.clone();
     let rollback_gid = prepared_gid.clone();
-    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
-        let _ = coordinator_prepared_xact_intent_mark(
-            &precommit_gid,
-            SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
-        );
-    });
     pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
         coordinator_insert_resolve_remote_prepared(commit_conninfo, node_id, commit_gid, true);
     });

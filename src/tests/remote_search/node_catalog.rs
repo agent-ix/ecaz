@@ -623,15 +623,15 @@
         .expect("descriptor readiness summary missing required query should succeed")
         .expect("descriptor readiness summary missing required count should exist");
 
-        assert_eq!(row_count, 13);
+        assert_eq!(row_count, 14);
         assert_eq!(raw_conninfo_count, 0);
         assert_eq!(secret_status, "missing_descriptor");
         assert_eq!(optional_status, "optional_descriptor_missing");
         assert_eq!(summary_status, "requires_remote_node_descriptor");
         assert_eq!(remote_node_count, 1);
-        assert_eq!(required_field_count, 11);
-        assert_eq!(blocked_field_count, 11);
-        assert_eq!(missing_required_field_count, 11);
+        assert_eq!(required_field_count, 12);
+        assert_eq!(blocked_field_count, 12);
+        assert_eq!(missing_required_field_count, 12);
     }
 
     #[pg_test]
