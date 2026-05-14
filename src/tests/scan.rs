@@ -391,6 +391,97 @@
         assert_eq!(delta_decode_count, 1);
     }
 
+    fn assert_ec_spire_multistore_scan_width_sql(
+        store_count: i32,
+        table_name: &str,
+        index_name: &str,
+    ) {
+        let local_store_tablespaces = vec!["pg_default"; store_count as usize].join(",");
+        let expected_store_ids = (0..store_count).map(i64::from).collect::<Vec<_>>();
+        let query_vector_sql = "ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+             FROM generate_series(1, 16) AS d)::real[]";
+
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (id bigint primary key, embedding ecvector)"
+        ))
+        .expect("multi-store scan table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO {table_name} (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                     FROM generate_series(1, 16) AS d), \
+               4, 42) \
+             FROM generate_series(1, 96) AS i"
+        ))
+        .expect("multi-store scan seed insert should succeed");
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH ( \
+                 nlists = 12, \
+                 nprobe = 12, \
+                 rerank_width = 12, \
+                 local_store_count = {store_count}, \
+                 local_store_tablespaces = '{local_store_tablespaces}' \
+             )"
+        ))
+        .expect("multi-store scan index creation should succeed");
+
+        let placement_store_ids = Spi::get_one::<Vec<i64>>(&format!(
+            "SELECT array_agg(local_store_id ORDER BY local_store_id) \
+             FROM ec_spire_index_placement_snapshot('{index_name}'::regclass)"
+        ))
+        .expect("multi-store placement snapshot should succeed")
+        .expect("multi-store placement snapshot should return store rows");
+        let harness_store_ids = Spi::get_one::<Vec<i64>>(&format!(
+            "SELECT array_agg(local_store_id ORDER BY local_store_id) \
+             FROM ec_spire_index_scan_local_store_read_overlap_harness(\
+                '{index_name}'::regclass, {query_vector_sql})"
+        ))
+        .expect("multi-store read-overlap harness should succeed")
+        .expect("multi-store read-overlap harness should return store rows");
+        let empty_read_batch_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM \
+             ec_spire_index_scan_local_store_read_overlap_harness(\
+                '{index_name}'::regclass, {query_vector_sql}) \
+             WHERE read_batch_count = 0"
+        ))
+        .expect("multi-store empty read-batch query should succeed")
+        .expect("multi-store empty read-batch count should exist");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("disable seqscan should succeed");
+        let first_id = Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table_name} \
+             ORDER BY embedding <#> {query_vector_sql} \
+             LIMIT 1"
+        ))
+        .expect("multi-store ordered scan should succeed")
+        .expect("multi-store ordered scan should return a row");
+
+        assert_eq!(placement_store_ids, expected_store_ids);
+        assert_eq!(harness_store_ids, expected_store_ids);
+        assert_eq!(empty_read_batch_count, 0);
+        assert_eq!(first_id, 7);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_three_store_scan_width_sql() {
+        assert_ec_spire_multistore_scan_width_sql(
+            3,
+            "ec_spire_three_store_scan_width",
+            "ec_spire_three_store_scan_width_idx",
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_four_store_scan_width_sql() {
+        assert_ec_spire_multistore_scan_width_sql(
+            4,
+            "ec_spire_four_store_scan_width",
+            "ec_spire_four_store_scan_width_idx",
+        );
+    }
+
     #[pg_test]
     fn test_ec_spire_scan_local_store_execution_mode_standalone_sql() {
         Spi::run(
