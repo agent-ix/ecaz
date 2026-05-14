@@ -1,0 +1,10 @@
+Script started on 2026-05-13 18:56:25-07:00 [<not executed on terminal>]
+src/tests/cost_and_planner.rs
+2:    fn test_ec_spire_access_method_is_registered() {
+11:    fn test_ec_spire_operator_classes_are_registered() {
+24:    fn test_ec_spire_custom_scan_status_registered_fail_closed() {
+
+src/tests/mod.rs
+2492:    include!("cost_and_planner.rs");
+
+Script done on 2026-05-13 18:56:25-07:00 [COMMAND_EXIT_CODE="0"]
