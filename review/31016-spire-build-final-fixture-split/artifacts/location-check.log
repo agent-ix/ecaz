@@ -1,0 +1,7 @@
+Script started on 2026-05-13 17:31:24-07:00 [<not executed on terminal>]
+src/tests/build.rs
+762:    fn test_ec_spire_recursive_fanout_one_rejected() {
+778:    fn test_ec_spire_recursive_fanout_build_hierarchy() {
+979:    fn test_ec_spire_large_top_graph_uses_chain_storage() {
+
+Script done on 2026-05-13 17:31:24-07:00 [COMMAND_EXIT_CODE="0"]
