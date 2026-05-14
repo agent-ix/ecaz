@@ -132,7 +132,7 @@ Phase 13 will push it past 80k.
   - [x] `tests/dml_frontdoor.rs`
   - [x] `tests/placement.rs`
   - [x] `tests/vacuum.rs`
-  - [ ] `tests/cost_and_planner.rs`
+  - [x] `tests/cost_and_planner.rs`
   - [x] `tests/build.rs`
   - [x] `tests/diagnostics.rs`
 - First fixture-sink checkpoint creates `src/tests/mod.rs` and moves the
@@ -244,6 +244,10 @@ Phase 13 will push it past 80k.
   flat-vs-recursive scan parity fixtures to `src/tests/scan.rs`;
   `src/tests/mod.rs` now retains no scan concern block, so the
   `tests/scan.rs` row is closed.
+- Packet `31025` creates `src/tests/cost_and_planner.rs` for the
+  remaining SPIRE access-method, operator-class, and CustomScan
+  planner/hook status registration fixtures; the
+  `tests/cost_and_planner.rs` row is closed.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
