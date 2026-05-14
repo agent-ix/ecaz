@@ -90,9 +90,9 @@ Assert `ec_spire_custom_scan_recheck` (`begin_exec.rs:332`) returns
 `begin_exec.rs:332-338`. A regression to `false` would silently drop
 rows during EvalPlanQual rerun.
 
-- [ ] Unit test: directly invoke the recheck callback with a
+- [x] Unit test: directly invoke the recheck callback with a
   synthetic state and assert `true`.
-- [ ] Code-comment cross-reference: link the test to the contract
+- [x] Code-comment cross-reference: link the test to the contract
   comment in `begin_exec.rs:332-338`.
 
 ### 12c.1.d: `MarkPos` / `RestrPos` planner-exclusion test
@@ -297,11 +297,11 @@ Simulate a coordinator backend exit after `prepare_acked` but before
 
 Assert the intent state machine cannot bypass states.
 
-- [ ] Cannot transition `prepare_requested → commit_local`
+- [x] Cannot transition `prepare_requested → commit_local`
   directly (must cross `prepare_acked`).
-- [ ] Cannot transition `prepare_requested → rollback_local`
+- [x] Cannot transition `prepare_requested → rollback_local`
   silently (must be either explicit rollback path or reaper).
-- [ ] Add an `#[cfg(test)]` invariant assertion in the intent
+- [x] Add an `#[cfg(test)]` invariant assertion in the intent
   update path so any future state-machine change fails the test.
 
 ## Phase 12c.6: Recall / Correctness Pinning (P1)
@@ -524,8 +524,8 @@ Source: audit Axis F.
 Today `catalog_cleanup_policy.rs:839-840` covers only
 `REPEATABLE READ` and `SERIALIZABLE`.
 
-- [ ] Extend the matrix iterator to include `READ COMMITTED`.
-- [ ] Pin the expected v1 behaviour for distributed PK SELECT under
+- [x] Extend the matrix iterator to include `READ COMMITTED`.
+- [x] Pin the expected v1 behaviour for distributed PK SELECT under
   `READ COMMITTED`.
 
 ### 12c.11.b: EvalPlanQual / stale-row pin test
