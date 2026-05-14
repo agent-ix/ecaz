@@ -413,6 +413,62 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn production_receive_adapters_reject_selected_pid_batches_before_connection() {
+        let oversized_pids = (0_u64..65).collect::<Vec<_>>();
+        let candidate_results =
+            SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(vec![
+                SpireRemoteProductionCandidateReceiveRequest {
+                    node_id: 2,
+                    conninfo: "host=/conninfo/should/not/be/used".to_owned(),
+                    remote_index_regclass: "ec_spire_remote_2_idx".to_owned(),
+                    remote_index_identity: vec![2],
+                    requested_epoch: 7,
+                    query: vec![1.0, 0.0],
+                    selected_pids: oversized_pids.clone(),
+                    top_k: 1,
+                    consistency_mode: "strict".to_owned(),
+                },
+            ])
+            .expect("candidate receive cap check should not need a live connection");
+        assert_eq!(candidate_results.len(), 1);
+        assert_eq!(
+            candidate_results[0].status,
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED
+        );
+        assert_eq!(
+            candidate_results[0].failure_category,
+            SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE
+        );
+        assert!(candidate_results[0].batch.is_none());
+
+        let heap_results = SpireRemoteProductionTransportAdapter::run_heap_receive_requests(vec![
+            SpireRemoteProductionHeapReceiveRequest {
+                node_id: 2,
+                conninfo: "host=/conninfo/should/not/be/used".to_owned(),
+                remote_index_regclass: "ec_spire_remote_2_idx".to_owned(),
+                remote_index_identity: vec![2],
+                requested_epoch: 7,
+                query: vec![1.0, 0.0],
+                selected_pids: oversized_pids,
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+                tuple_payload_columns: Some(vec!["id".to_owned()]),
+            },
+        ])
+        .expect("heap receive cap check should not need a live connection");
+        assert_eq!(heap_results.len(), 1);
+        assert_eq!(
+            heap_results[0].status,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED
+        );
+        assert_eq!(
+            heap_results[0].failure_category,
+            SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE
+        );
+        assert!(heap_results[0].candidates.is_empty());
+    }
+
+    #[test]
     fn degraded_skip_report_hints_remote_payload_cap() {
         let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
         let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
