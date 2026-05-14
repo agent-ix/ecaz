@@ -1185,3 +1185,285 @@
         assert!(!pid_near_exhaustion);
         assert!(!local_vec_id_near_exhaustion);
     }
+
+    #[pg_test]
+    fn test_ec_spire_top_graph_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_top_graph_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_top_graph_empty_idx ON ec_spire_top_graph_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_empty_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let empty_count = Spi::get_one::<i64>(
+            "SELECT top_graph_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_empty_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+
+        assert_eq!(empty_status, "empty");
+        assert_eq!(empty_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_top_graph_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_top_graph_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_top_graph_sql_idx \
+             ON ec_spire_top_graph_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2, top_graph_enabled = 1, \
+                   top_graph_degree = 2, top_graph_build_list_size = 4, \
+                   top_graph_search_list_size = 3)",
+        )
+        .expect("top graph ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let top_graph_count = Spi::get_one::<i64>(
+            "SELECT top_graph_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let node_count = Spi::get_one::<i64>(
+            "SELECT node_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let graph_degree = Spi::get_one::<i64>(
+            "SELECT graph_degree FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let configured_search = Spi::get_one::<i64>(
+            "SELECT configured_search_list_size FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("configured search size should exist");
+        let effective_search = Spi::get_one::<i64>(
+            "SELECT effective_search_list_size FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let top_graph_enabled = Spi::get_one::<bool>(
+            "SELECT top_graph_enabled FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let frontier_kind = Spi::get_one::<String>(
+            "SELECT frontier_kind FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("frontier kind should exist");
+        let root_child_count = Spi::get_one::<i64>(
+            "SELECT root_child_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("root child count should exist");
+        let active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("active leaf count should exist");
+        let frontier_child_level = Spi::get_one::<i32>(
+            "SELECT frontier_child_level FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("frontier child level should exist");
+        let object_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object tuple count should exist");
+        let object_meta_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_meta_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object meta tuple count should exist");
+        let object_segment_count = Spi::get_one::<i64>(
+            "SELECT object_segment_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object segment count should exist");
+        let object_segment_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_segment_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object segment tuple count should exist");
+        let object_snapshot_top_graph_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_index_object_snapshot(\
+             'ec_spire_top_graph_sql_idx'::regclass) WHERE object_kind = 'top_graph'",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("object count should exist");
+
+        assert_eq!(status, "ready");
+        assert_eq!(top_graph_count, 1);
+        assert_eq!(node_count, 2);
+        assert_eq!(graph_degree, 2);
+        assert_eq!(configured_search, 3);
+        assert_eq!(effective_search, 3);
+        assert!(top_graph_enabled);
+        assert_eq!(frontier_kind, "root_top_routing_children");
+        assert_eq!(root_child_count, node_count);
+        assert_eq!(active_leaf_count, 4);
+        assert_eq!(frontier_child_level, 1);
+        assert_eq!(object_tuple_count, 1);
+        assert_eq!(object_meta_tuple_count, 1);
+        assert_eq!(object_segment_count, 0);
+        assert_eq!(object_segment_tuple_count, 0);
+        assert_eq!(object_snapshot_top_graph_count, 1);
+    }
+    #[pg_test]
+    fn test_ec_spire_boundary_replica_placement_diagnostics_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_boundary_replica_diag_missing (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("missing table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_boundary_replica_diag_missing \
+             (id, source_identity, embedding) VALUES \
+             (1, '00000000-0000-0000-0000-000000000501', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, '00000000-0000-0000-0000-000000000502', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("missing seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_boundary_replica_diag_missing_idx \
+             ON ec_spire_boundary_replica_diag_missing USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include', nlists = 2, nprobe = 2)",
+        )
+        .expect("missing index creation should succeed");
+
+        let missing_from = "FROM ec_spire_index_boundary_replica_placement_diagnostics(\
+             'ec_spire_boundary_replica_diag_missing_idx'::regclass)";
+        let missing_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {missing_from} \
+             WHERE status = 'missing_boundary_replica' \
+               AND degraded_mode_action = 'fail_closed'"
+        ))
+        .expect("missing diagnostic query should succeed")
+        .expect("missing diagnostic count should exist");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_boundary_replica_diag_state (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("state table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_boundary_replica_diag_state \
+             (id, source_identity, embedding) VALUES \
+             (1, '00000000-0000-0000-0000-000000000601', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, '00000000-0000-0000-0000-000000000602', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, '00000000-0000-0000-0000-000000000603', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, '00000000-0000-0000-0000-000000000604', encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("state seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_boundary_replica_diag_state_idx \
+             ON ec_spire_boundary_replica_diag_state USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH ( \
+                 source_identity = 'include', \
+                 nlists = 4, \
+                 nprobe = 4, \
+                 boundary_replica_count = 1 \
+             )",
+        )
+        .expect("state index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_boundary_replica_diag_state_idx'::regclass::oid",
+        )
+        .expect("state index oid query should succeed")
+        .expect("state index oid should exist");
+        let replica_pid = Spi::get_one::<i64>(
+            "SELECT leaf_pid FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_diag_state_idx'::regclass) \
+             WHERE base_boundary_replica_assignment_count > 0 \
+             ORDER BY leaf_pid \
+             LIMIT 1",
+        )
+        .expect("boundary replica leaf query should succeed")
+        .expect("boundary replica leaf should exist");
+        let state_from = "FROM ec_spire_index_boundary_replica_placement_diagnostics(\
+             'ec_spire_boundary_replica_diag_state_idx'::regclass)";
+
+        unsafe {
+            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "unavailable");
+        }
+        let unavailable_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {state_from} \
+             WHERE status = 'unavailable_boundary_replica' \
+               AND degraded_mode_action = 'skip_and_report' \
+               AND unavailable_boundary_replica_count > 0"
+        ))
+        .expect("unavailable diagnostic query should succeed")
+        .expect("unavailable diagnostic count should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "skipped");
+        }
+        let skipped_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {state_from} \
+             WHERE status = 'skipped_boundary_replica' \
+               AND degraded_mode_action = 'skip_and_report' \
+               AND skipped_boundary_replica_count > 0"
+        ))
+        .expect("skipped diagnostic query should succeed")
+        .expect("skipped diagnostic count should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "stale");
+        }
+        let stale_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {state_from} \
+             WHERE status = 'stale_boundary_replica' \
+               AND degraded_mode_action = 'fail_closed' \
+               AND stale_boundary_replica_count > 0"
+        ))
+        .expect("stale diagnostic query should succeed")
+        .expect("stale diagnostic count should exist");
+
+        assert!(missing_count > 0);
+        assert!(unavailable_count > 0);
+        assert!(skipped_count > 0);
+        assert!(stale_count > 0);
+    }

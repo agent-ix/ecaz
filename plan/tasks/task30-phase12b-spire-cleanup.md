@@ -120,7 +120,7 @@ Phase 13 will push it past 80k.
   - [ ] `tests/vacuum.rs`
   - [ ] `tests/cost_and_planner.rs`
   - [ ] `tests/build.rs`
-  - [ ] `tests/diagnostics.rs`
+  - [x] `tests/diagnostics.rs`
 - First fixture-sink checkpoint creates `src/tests/mod.rs` and moves the
   `#[pg_schema] mod tests` body out of `src/lib.rs`; concern-specific
   subfiles remain open.
@@ -165,6 +165,10 @@ Phase 13 will push it past 80k.
   snapshot, large-routing diagnostics, and allocator snapshot fixture
   block; later top-graph and placement diagnostic fixtures remain open,
   so the row is still not closed.
+- Packet `31012` moves the remaining top-graph snapshot and boundary
+  replica placement diagnostics fixtures to `src/tests/diagnostics.rs`;
+  `src/tests/mod.rs` now only retains the diagnostics concern include, so
+  the `tests/diagnostics.rs` row is closed.
 - Packet `31008` starts `src/tests/build.rs` by moving the initial
   boundary-replica, recursive boundary-replica, and PQ-FastScan populated
   build-deferral fixtures with a textual include; later populated-build,
