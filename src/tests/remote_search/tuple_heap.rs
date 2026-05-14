@@ -719,4 +719,3 @@
         assert_eq!(result_next_blocker, "remote_node_descriptor");
         assert_eq!(result_returned_candidate_count, 0);
     }
-

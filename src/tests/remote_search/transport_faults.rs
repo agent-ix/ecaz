@@ -236,4 +236,3 @@
         assert_eq!(failed.failure_category, "local_statement_timeout");
         assert_eq!(failed.row_count, 0);
     }
-

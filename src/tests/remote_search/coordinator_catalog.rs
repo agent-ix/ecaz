@@ -1560,4 +1560,3 @@
         assert_eq!(connect_timeout_ms, 25);
         assert_eq!(statement_timeout_ms, 75);
     }
-

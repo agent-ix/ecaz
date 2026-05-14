@@ -1138,4 +1138,3 @@
         assert_eq!(manifest_decision, "block_manifest");
         assert_eq!(blocked_manifest_count, 1);
     }
-

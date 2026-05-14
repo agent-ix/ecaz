@@ -2862,4 +2862,3 @@
         assert_eq!(delta_candidate_count, 3);
         assert_eq!(delta_candidate_locator_count, delta_candidate_count);
     }
-

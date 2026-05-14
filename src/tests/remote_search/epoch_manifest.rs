@@ -1750,4 +1750,3 @@
         assert_eq!(upgrade_migration_surface, "ecaz--0.1.0--0.1.1.sql");
         assert_eq!(upgrade_status, "supported_after_upgrade_script");
     }
-
