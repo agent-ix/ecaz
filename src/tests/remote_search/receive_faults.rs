@@ -144,6 +144,136 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_receive_drop_remote_index_before_dispatch() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_lifecycle_drop_pre_dispatch_sql; \
+                 CREATE TABLE ec_spire_lifecycle_drop_pre_dispatch_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_lifecycle_drop_pre_dispatch_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_lifecycle_drop_pre_dispatch_ready_idx \
+                     ON ec_spire_lifecycle_drop_pre_dispatch_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE INDEX ec_spire_lifecycle_drop_pre_dispatch_dropped_idx \
+                     ON ec_spire_lifecycle_drop_pre_dispatch_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback drop-before-dispatch fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_lifecycle_drop_pre_dispatch_ready_idx'::regclass)",
+                &[],
+            )
+            .expect("drop-before-dispatch active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("drop-before-dispatch active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot(\
+                     'ec_spire_lifecycle_drop_pre_dispatch_ready_idx'::regclass)",
+                &[],
+            )
+            .expect("drop-before-dispatch leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("drop-before-dispatch leaf pid should decode");
+        let ready_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_lifecycle_drop_pre_dispatch_ready_idx",
+        );
+        let dropped_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_lifecycle_drop_pre_dispatch_dropped_idx",
+        );
+        loopback_client
+            .batch_execute("DROP INDEX ec_spire_lifecycle_drop_pre_dispatch_dropped_idx")
+            .expect("drop-before-dispatch remote index drop should succeed");
+
+        let request = |node_id: u32,
+                       remote_index_regclass: &str,
+                       remote_index_identity: Vec<u8>,
+                       consistency_mode: &str| {
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id,
+                conninfo: loopback_conninfo.clone(),
+                remote_index_regclass: remote_index_regclass.to_owned(),
+                remote_index_identity,
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: consistency_mode.to_owned(),
+            }
+        };
+
+        let strict = am::spire_remote_search_production_candidate_receive_summary_for_test(
+            vec![
+                request(
+                    2,
+                    "ec_spire_lifecycle_drop_pre_dispatch_dropped_idx",
+                    dropped_identity.clone(),
+                    "strict",
+                ),
+                request(
+                    3,
+                    "ec_spire_lifecycle_drop_pre_dispatch_ready_idx",
+                    ready_identity.clone(),
+                    "strict",
+                ),
+            ],
+            "strict",
+        );
+        assert_eq!(strict.candidate_receive_sent_dispatch_count, 2);
+        assert_eq!(strict.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(strict.candidate_receive_failed_dispatch_count, 1);
+        assert_eq!(
+            strict.first_candidate_receive_failure_category,
+            "remote_index_unavailable"
+        );
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(strict.next_executor_step, "compact_candidate_receive");
+        assert_eq!(strict.status, "remote_candidate_receive_failed");
+
+        let degraded = am::spire_remote_search_production_candidate_receive_summary_for_test(
+            vec![
+                request(
+                    2,
+                    "ec_spire_lifecycle_drop_pre_dispatch_dropped_idx",
+                    dropped_identity,
+                    "degraded",
+                ),
+                request(
+                    3,
+                    "ec_spire_lifecycle_drop_pre_dispatch_ready_idx",
+                    ready_identity,
+                    "degraded",
+                ),
+            ],
+            "degraded",
+        );
+        assert_eq!(degraded.candidate_receive_sent_dispatch_count, 1);
+        assert_eq!(degraded.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(degraded.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(degraded.first_candidate_receive_failure_category, "none");
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            degraded.first_degraded_skip_category,
+            "remote_index_unavailable"
+        );
+        assert_eq!(degraded.next_executor_step, "remote_heap_resolution");
+        assert_eq!(degraded.status, "degraded_ready");
+    }
+
+    #[pg_test]
     fn test_ec_spire_prod_receive_remote_stmt_timeout() {
         Spi::run("SET LOCAL ec_spire.remote_search_statement_timeout_ms = 25")
             .expect("statement timeout SET should succeed");

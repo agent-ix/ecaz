@@ -217,7 +217,7 @@ Source: audit Axis C. Six lifecycle rows at
 
 ### 12c.3.b: `drop_remote_index_pre_dispatch`
 
-- [ ] `DROP INDEX` on remote before dispatch; assert
+- [x] `DROP INDEX` on remote before dispatch; assert
   pre-dispatch validation refuses with the expected category.
 - [ ] Assert no remote SQL is issued (no descriptor refresh
   attempted against the dropped object).
