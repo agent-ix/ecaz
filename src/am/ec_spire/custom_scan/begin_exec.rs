@@ -44,15 +44,24 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     unsafe {
         let state = node.cast::<SpireCustomScanExecState>();
         let custom_scan = custom_scan_plan(node);
-        (*state).mode = custom_scan_mode_from_plan(custom_scan);
-        (*state).index_oid = custom_scan_index_oid_from_plan(custom_scan);
-        match (*state).mode {
+        let mode = custom_scan_mode_from_plan(custom_scan);
+        let index_oid = custom_scan_index_oid_from_plan(custom_scan);
+        match mode {
             SpireCustomScanPlanMode::VectorOrderLimit => {
-                custom_scan_init_tuple_payload_state(state, node, custom_scan);
-                (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
-                (*state).query = custom_scan_query_from_plan(node, custom_scan);
+                let (tuple_payload_columns, tuple_payload_inputs) =
+                    custom_scan_tuple_payload_state_from_plan(node, custom_scan);
+                custom_scan_init_vector_order_limit_exec_state(
+                    &mut *state,
+                    index_oid,
+                    custom_scan_top_k_from_plan(custom_scan),
+                    custom_scan_query_from_plan(node, custom_scan),
+                    tuple_payload_columns,
+                    tuple_payload_inputs,
+                );
             }
             SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
+                (*state).mode = mode;
+                (*state).index_oid = index_oid;
                 custom_scan_init_tuple_payload_state(state, node, custom_scan);
                 (*state).dml_pk_column = custom_scan_dml_pk_column(node);
                 (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
@@ -69,6 +78,8 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
             }
             SpireCustomScanPlanMode::DmlUpdateTuplePayload
             | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
+                (*state).mode = mode;
+                (*state).index_oid = index_oid;
                 (*state).dml_pk_column = custom_scan_dml_pk_column_from_plan(custom_scan);
                 (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
                 (*state).dml_updated_columns =
@@ -92,15 +103,53 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     }
 }
 
+fn custom_scan_init_vector_order_limit_exec_state(
+    state: &mut SpireCustomScanExecState,
+    index_oid: pg_sys::Oid,
+    top_k: usize,
+    query: Vec<f32>,
+    tuple_payload_columns: Vec<String>,
+    tuple_payload_inputs: Vec<Option<SpireCustomScanPayloadAttrIo>>,
+) {
+    state.mode = SpireCustomScanPlanMode::VectorOrderLimit;
+    state.index_oid = index_oid;
+    state.top_k = top_k;
+    state.query = query;
+    state.tuple_payload_columns = tuple_payload_columns;
+    state.tuple_payload_inputs = tuple_payload_inputs;
+    state.outputs.clear();
+    state.next_output = 0;
+    state.loaded_outputs = false;
+    state.dml_payload_loaded = false;
+    state.dml_payload_emitted = false;
+    state.dml_tuple_payload_json = None;
+}
+
+unsafe fn custom_scan_tuple_payload_state_from_plan(
+    node: *mut pg_sys::CustomScanState,
+    custom_scan: *mut pg_sys::CustomScan,
+) -> (
+    Vec<String>,
+    Vec<Option<SpireCustomScanPayloadAttrIo>>,
+) {
+    unsafe {
+        (
+            custom_scan_tuple_payload_columns(node, custom_scan),
+            custom_scan_payload_attr_io((*(*node).ss.ss_currentRelation).rd_att),
+        )
+    }
+}
+
 unsafe fn custom_scan_init_tuple_payload_state(
     state: *mut SpireCustomScanExecState,
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) {
     unsafe {
-        (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node, custom_scan);
-        (*state).tuple_payload_inputs =
-            custom_scan_payload_attr_io((*(*node).ss.ss_currentRelation).rd_att);
+        let (tuple_payload_columns, tuple_payload_inputs) =
+            custom_scan_tuple_payload_state_from_plan(node, custom_scan);
+        (*state).tuple_payload_columns = tuple_payload_columns;
+        (*state).tuple_payload_inputs = tuple_payload_inputs;
     }
 }
 

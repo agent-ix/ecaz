@@ -237,6 +237,43 @@ mod tests {
     }
 
     #[test]
+    fn custom_scan_begin_vector_order_limit_state_initializes_plan_parts() {
+        let mut state = custom_scan_default_exec_state();
+        state.outputs = vec![remote_output_row(50, 3, -1.25)];
+        state.next_output = 1;
+        state.loaded_outputs = true;
+        state.dml_payload_loaded = true;
+        state.dml_payload_emitted = true;
+        state.dml_tuple_payload_json = Some(r#"{"id":5}"#.to_owned());
+
+        custom_scan_init_vector_order_limit_exec_state(
+            &mut state,
+            pg_sys::Oid::from(42),
+            3,
+            vec![0.25, 0.5, 0.75],
+            vec!["id".to_owned(), "title".to_owned()],
+            Vec::new(),
+        );
+
+        assert_eq!(state.mode, SpireCustomScanPlanMode::VectorOrderLimit);
+        assert_eq!(state.index_oid, pg_sys::Oid::from(42));
+        assert_eq!(state.top_k, 3);
+        assert_eq!(state.query, vec![0.25, 0.5, 0.75]);
+        assert_eq!(
+            state.tuple_payload_columns,
+            vec!["id".to_owned(), "title".to_owned()]
+        );
+        assert_eq!(state.tuple_payload_columns.len(), 2);
+        assert!(state.tuple_payload_inputs.is_empty());
+        assert!(state.outputs.is_empty());
+        assert_eq!(state.next_output, 0);
+        assert!(!state.loaded_outputs);
+        assert!(!state.dml_payload_loaded);
+        assert!(!state.dml_payload_emitted);
+        assert!(state.dml_tuple_payload_json.is_none());
+    }
+
+    #[test]
     fn custom_scan_end_release_drops_reachable_rust_state() {
         let mut state = custom_scan_default_exec_state();
         state.index_oid = pg_sys::Oid::from(42);

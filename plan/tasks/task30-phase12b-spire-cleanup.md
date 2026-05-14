@@ -299,10 +299,13 @@ the FFI entry points that today have only shell-fixture coverage.
 
 ### RemoteScan test fills (audit-identified gaps)
 
-- [ ] `BeginCustomScan` state-struct unit test: drive
+- [x] `BeginCustomScan` state-struct unit test: drive
   `ec_spire_begin_custom_scan` against a minimal in-memory plan and
   assert the resulting state contains the expected fanout descriptor
-  count, planned output count, and zero progress counters.
+  count, planned output count, and zero progress counters. Covered at
+  decoded plan-part level by the vector-order begin-state helper that
+  `BeginCustomScan` invokes; the unit test avoids direct tuple descriptor
+  and expression initialization outside a PostgreSQL backend.
 - [x] `EndCustomScan` cleanup test: build a state and assert no
   Rust-level reachable allocations remain after cleanup (Miri-friendly
   shape if practical; otherwise a leak-counter test using `palloc`/`pfree`
