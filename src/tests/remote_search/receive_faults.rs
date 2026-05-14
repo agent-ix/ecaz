@@ -649,6 +649,182 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_receive_cic_new_descriptor_deferred() {
+        let run_mode = |consistency_mode: &str, descriptor_generation: i64| {
+            let loopback_conninfo = current_pg_test_loopback_conninfo();
+            let mut loopback_client =
+                postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+                    .expect("loopback client connection should succeed");
+            let fixture_suffix = format!("ec_spire_lc_cic_new_{consistency_mode}");
+            let table_name = format!("{fixture_suffix}_sql");
+            let old_index_name = format!("{fixture_suffix}_old_idx");
+            let ready_index_name = format!("{fixture_suffix}_ready_idx");
+            let new_index_name = format!("{fixture_suffix}_new_idx");
+
+            loopback_client
+                .batch_execute(&format!(
+                    "DROP TABLE IF EXISTS {table_name}; \
+                     CREATE TABLE {table_name} \
+                         (id bigint primary key, embedding ecvector); \
+                     INSERT INTO {table_name} (id, embedding) VALUES \
+                         (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                         (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                     CREATE INDEX {old_index_name} \
+                         ON {table_name} USING ec_spire \
+                         (embedding ecvector_spire_ip_ops) \
+                         WITH (nlists = 2, storage_format = 'rabitq'); \
+                     CREATE INDEX {ready_index_name} \
+                         ON {table_name} USING ec_spire \
+                         (embedding ecvector_spire_ip_ops) \
+                         WITH (nlists = 2, storage_format = 'rabitq')",
+                ))
+                .expect("loopback CIC new-descriptor fixture should be created");
+            let active_epoch = loopback_client
+                .query_one(
+                    &format!(
+                        "SELECT active_epoch FROM \
+                         ec_spire_index_hierarchy_snapshot('{ready_index_name}'::regclass)"
+                    ),
+                    &[],
+                )
+                .expect("CIC new-descriptor active epoch query should succeed")
+                .try_get::<_, i64>(0)
+                .expect("CIC new-descriptor active epoch should decode");
+            let selected_pids = loopback_client
+                .query(
+                    &format!(
+                        "SELECT DISTINCT leaf_pid FROM (\
+                             SELECT leaf_pid FROM ec_spire_index_leaf_snapshot('{old_index_name}'::regclass) \
+                             UNION ALL \
+                             SELECT leaf_pid FROM ec_spire_index_leaf_snapshot('{ready_index_name}'::regclass)\
+                         ) p ORDER BY leaf_pid"
+                    ),
+                    &[],
+                )
+                .expect("CIC new-descriptor selected PID query should succeed")
+                .into_iter()
+                .map(|row| {
+                    u64::try_from(
+                        row.try_get::<_, i64>(0)
+                            .expect("CIC new-descriptor PID should decode"),
+                    )
+                    .expect("CIC new-descriptor PID should fit u64")
+                })
+                .collect::<Vec<_>>();
+            assert!(!selected_pids.is_empty());
+            let ready_identity =
+                loopback_remote_index_identity_bytes(&mut loopback_client, &ready_index_name);
+            let old_identity =
+                loopback_remote_index_identity_bytes(&mut loopback_client, &old_index_name);
+            let old_identity_hex = hex::encode(&old_identity);
+            let coordinator_index_oid = Spi::get_one::<pg_sys::Oid>(&format!(
+                "SELECT '{ready_index_name}'::regclass::oid"
+            ))
+            .expect("CIC new-descriptor coordinator index OID query should succeed")
+            .expect("CIC new-descriptor coordinator index OID should exist");
+            let old_register = Spi::get_one::<bool>(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, {}, 'spire/remote/lifecycle/cic-new', \
+                     decode('{}', 'hex'), '{}', 'active', {}, {}, '{}', 'none')",
+                u32::from(coordinator_index_oid),
+                descriptor_generation - 1,
+                old_identity_hex,
+                old_index_name,
+                active_epoch,
+                active_epoch,
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("CIC old descriptor registration should succeed")
+            .expect("CIC old descriptor registration result should exist");
+            assert!(old_register);
+
+            let request = |node_id: u32, remote_index_regclass: &str, remote_index_identity: Vec<u8>| {
+                am::SpireRemoteProductionCandidateReceiveRequest {
+                    node_id,
+                    conninfo: loopback_conninfo.clone(),
+                    remote_index_regclass: remote_index_regclass.to_owned(),
+                    remote_index_identity,
+                    requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                    query: vec![1.0, 0.0],
+                    selected_pids: selected_pids.clone(),
+                    top_k: 1,
+                    consistency_mode: consistency_mode.to_owned(),
+                }
+            };
+            let requests = vec![
+                request(2, &old_index_name, old_identity.clone()),
+                request(3, &ready_index_name, ready_identity),
+            ];
+
+            loopback_client
+                .batch_execute(&format!(
+                    "CREATE INDEX CONCURRENTLY {new_index_name} \
+                     ON {table_name} USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq')"
+                ))
+                .expect("CIC new remote index creation should succeed");
+            let new_identity =
+                loopback_remote_index_identity_bytes(&mut loopback_client, &new_index_name);
+            assert_ne!(old_identity, new_identity);
+            let new_identity_hex = hex::encode(&new_identity);
+            let new_register = Spi::get_one::<bool>(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, {}, 'spire/remote/lifecycle/cic-new', \
+                     decode('{}', 'hex'), '{}', 'active', {}, {}, '{}', 'none')",
+                u32::from(coordinator_index_oid),
+                descriptor_generation,
+                new_identity_hex,
+                new_index_name,
+                active_epoch,
+                active_epoch,
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("CIC new descriptor registration should succeed")
+            .expect("CIC new descriptor registration result should exist");
+            assert!(new_register);
+            let descriptor_row = Spi::get_one::<String>(&format!(
+                "SELECT descriptor_generation::text || ':' || remote_index_regclass || ':' || \
+                        encode(remote_index_identity, 'hex') \
+                 FROM ec_spire_remote_node_descriptor \
+                 WHERE coordinator_index_oid = '{}'::oid AND node_id = 2",
+                u32::from(coordinator_index_oid)
+            ))
+            .expect("CIC descriptor row query should succeed")
+            .expect("CIC descriptor row should exist");
+            assert_eq!(
+                descriptor_row,
+                format!("{descriptor_generation}:{new_index_name}:{new_identity_hex}")
+            );
+
+            am::spire_remote_search_production_candidate_receive_summary_for_test(
+                requests,
+                consistency_mode,
+            )
+        };
+
+        let strict = run_mode("strict", 31);
+        assert_eq!(strict.candidate_receive_sent_dispatch_count, 2);
+        assert_eq!(strict.candidate_receive_ready_dispatch_count, 2);
+        assert_eq!(strict.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(strict.first_candidate_receive_failure_category, "none");
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(strict.first_degraded_skip_category, "none");
+        assert_eq!(strict.next_executor_step, "remote_heap_resolution");
+        assert_eq!(strict.status, "requires_remote_heap_resolution");
+
+        let degraded = run_mode("degraded", 41);
+        assert_eq!(degraded.candidate_receive_sent_dispatch_count, 2);
+        assert_eq!(degraded.candidate_receive_ready_dispatch_count, 2);
+        assert_eq!(degraded.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(degraded.first_candidate_receive_failure_category, "none");
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 0);
+        assert_eq!(degraded.first_degraded_skip_category, "none");
+        assert_eq!(degraded.next_executor_step, "remote_heap_resolution");
+        assert_eq!(degraded.status, "requires_remote_heap_resolution");
+    }
+
+    #[pg_test]
     fn test_ec_spire_prod_receive_remote_stmt_timeout() {
         Spi::run("SET LOCAL ec_spire.remote_search_statement_timeout_ms = 25")
             .expect("statement timeout SET should succeed");

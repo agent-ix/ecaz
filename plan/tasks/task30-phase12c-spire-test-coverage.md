@@ -237,7 +237,7 @@ Source: audit Axis C. Six lifecycle rows at
 
 ### 12c.3.e: `create_index_concurrently_new_descriptor`
 
-- [ ] `CREATE INDEX CONCURRENTLY` on remote; assert descriptor
+- [x] `CREATE INDEX CONCURRENTLY` on remote; assert descriptor
   refresh contract picks up the new index without errors.
 - [ ] Assert subsequent CustomScan uses the refreshed descriptor.
 
