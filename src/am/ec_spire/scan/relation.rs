@@ -80,11 +80,15 @@ fn ensure_local_heap_placement_directory_is_deliverable(
         return Ok(());
     }
 
-    let first_remote = placement_directory
+    let Some(first_remote) = placement_directory
         .entries
         .iter()
-        .find(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID)
-        .expect("remote placement count should have a first remote placement");
+        .find(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID) else {
+        return Err(
+            "ec_spire local heap tuple delivery remote placement count disagrees with placement directory"
+                .to_owned(),
+        );
+    };
     Err(format!(
         "ec_spire local heap tuple delivery requires {} before consuming {remote_placement_count} remote placement(s); first remote pid {} is on node_id {}",
         super::SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,

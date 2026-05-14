@@ -1059,7 +1059,9 @@ impl SpireScoredCandidateAccumulator {
             return SpireCandidateAppendOutcome::default();
         };
         if scored_candidate_cmp(&candidate, &worst).is_lt() {
-            let evicted = self.pop_live_worst_deduped().expect("peeked live worst");
+            let Some(evicted) = self.pop_live_worst_deduped() else {
+                return SpireCandidateAppendOutcome::default();
+            };
             self.candidates_by_vec_id.remove(&evicted.vec_id);
             self.heap.push(SpireScoredScanCandidateHeapEntry {
                 candidate: candidate.clone(),
