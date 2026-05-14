@@ -230,9 +230,9 @@ Source: audit Axis C. Six lifecycle rows at
 
 ### 12c.3.d: `reindex_remote_index_pre_dispatch`
 
-- [ ] `REINDEX` before dispatch; assert pre-dispatch validation
+- [x] `REINDEX` before dispatch; assert pre-dispatch validation
   fires (or accepts, per matrix).
-- [ ] Assert descriptor freshness check picks up the new relfilenode
+- [x] Assert descriptor freshness check picks up the new relfilenode
   if the matrix requires that.
 
 ### 12c.3.e: `create_index_concurrently_new_descriptor`
