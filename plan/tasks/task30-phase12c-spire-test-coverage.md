@@ -358,11 +358,11 @@ fixtures are 1-remote.
 
 Extend `custom_scan.rs:46` (or add adjacent test).
 
-- [ ] Insert N=8 rows with known PID-to-payload mapping.
-- [ ] Run CustomScan with LIMIT 8.
-- [ ] Assert returned remote rows include exactly the selected PIDs
+- [x] Insert N=8 rows with known PID-to-payload mapping.
+- [x] Run CustomScan with LIMIT 8.
+- [x] Assert returned remote rows include exactly the selected PIDs
   (set equality, not just "≥0 rows returned").
-- [ ] Assert each returned row's payload matches the PID-to-payload
+- [x] Assert each returned row's payload matches the PID-to-payload
   mapping (catch payload-PID swap regressions).
 
 ## Phase 12c.8: Concurrency / Long-Running Scan Coverage (P1)
@@ -683,10 +683,10 @@ Source: audit "Semantic concerns" section.
 
 `custom_scan.rs:46` inserts 2 rows; this work expands it.
 
-- [ ] Insert N=8 rows with known PID-to-payload mapping.
-- [ ] Run CustomScan with LIMIT 8.
-- [ ] Assert returned-PID set equals selected-PID set.
-- [ ] Assert each row's payload matches the PID-to-payload mapping
+- [x] Insert N=8 rows with known PID-to-payload mapping.
+- [x] Run CustomScan with LIMIT 8.
+- [x] Assert returned-PID set equals selected-PID set.
+- [x] Assert each row's payload matches the PID-to-payload mapping
   (catch payload-PID swap regressions; cross-link 12c.7.b).
 
 ### 12c.16.b: Tighten empty-remote-result test
