@@ -277,6 +277,89 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_typed_tuple_payload_null_array_wire_bytes_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tuple_payload_typed_null_array_sql \
+             (id bigint primary key, tags text[], embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tuple_payload_typed_null_array_sql (id, tags, embedding) VALUES \
+             (1, NULL, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, ARRAY[]::text[], encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tuple_payload_typed_null_array_idx \
+             ON ec_spire_tuple_payload_typed_null_array_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_tuple_payload_typed_null_array_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_tuple_payload_typed_null_array_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let endpoint_args = format!(
+            "'ec_spire_tuple_payload_typed_null_array_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict', ARRAY['id', 'tags']::text[]",
+            selected_pids[0], selected_pids[1],
+        );
+        let null_array_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args}) \
+              WHERE payload_attnums = ARRAY[1, 2]::int2[] \
+                AND payload_names = ARRAY['id', 'tags']::text[] \
+                AND payload_type_oids = ARRAY[\
+                    'int8'::regtype::oid, \
+                    'text[]'::regtype::oid]::oid[] \
+                AND payload_nulls = ARRAY[false, true]::boolean[] \
+                AND payload_values[1] = int8send(1::bigint)::bytea \
+                AND payload_values[2] = ''::bytea \
+                AND payload_values[2] <> array_send(ARRAY[]::text[])::bytea \
+                AND NOT tuple_payload_missing \
+                AND tuple_transport = 'pg_binary_attr_v1' \
+                AND tuple_transport_status = 'ready' \
+                AND status = 'ready'"
+        ))
+        .expect("typed tuple payload NULL array wire query should succeed")
+        .expect("typed tuple payload NULL array wire count should exist");
+        let empty_array_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args}) \
+              WHERE payload_attnums = ARRAY[1, 2]::int2[] \
+                AND payload_names = ARRAY['id', 'tags']::text[] \
+                AND payload_type_oids = ARRAY[\
+                    'int8'::regtype::oid, \
+                    'text[]'::regtype::oid]::oid[] \
+                AND payload_nulls = ARRAY[false, false]::boolean[] \
+                AND payload_values[1] = int8send(2::bigint)::bytea \
+                AND payload_values[2] = array_send(ARRAY[]::text[])::bytea \
+                AND payload_values[2] <> ''::bytea \
+                AND NOT tuple_payload_missing \
+                AND tuple_transport = 'pg_binary_attr_v1' \
+                AND tuple_transport_status = 'ready' \
+                AND status = 'ready'"
+        ))
+        .expect("typed tuple payload empty array wire query should succeed")
+        .expect("typed tuple payload empty array wire count should exist");
+
+        assert_eq!(null_array_count, 1);
+        assert_eq!(empty_array_count, 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_typed_tuple_payload_domain_composite_sql() {
         Spi::run(
             "CREATE DOMAIN ec_spire_typed_label_domain AS text \
@@ -369,6 +452,89 @@
 
         assert_eq!(typed_summary, "2|3|2|2|2");
         assert_eq!(alpha_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_typed_tuple_payload_composite_only_sql() {
+        Spi::run("CREATE TYPE ec_spire_typed_pair_only AS (code int4, label text)")
+            .expect("composite type creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_spire_tuple_payload_typed_composite_sql \
+             (id bigint primary key, \
+              pair ec_spire_typed_pair_only not null, \
+              embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tuple_payload_typed_composite_sql \
+             (id, pair, embedding) VALUES \
+             (1, ROW(7, 'left')::ec_spire_typed_pair_only, \
+              encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, ROW(9, 'right')::ec_spire_typed_pair_only, \
+              encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tuple_payload_typed_composite_idx \
+             ON ec_spire_tuple_payload_typed_composite_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_tuple_payload_typed_composite_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_tuple_payload_typed_composite_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let endpoint_args = format!(
+            "'ec_spire_tuple_payload_typed_composite_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict', ARRAY['id', 'pair']::text[]",
+            selected_pids[0], selected_pids[1],
+        );
+        let typed_summary = Spi::get_one::<String>(&format!(
+            "SELECT count(*)::text || '|' || \
+                    min(payload_column_count)::text || '|' || \
+                    count(*) FILTER (WHERE tuple_transport = 'pg_binary_attr_v1')::text || '|' || \
+                    count(*) FILTER (WHERE tuple_transport_status = 'ready')::text || '|' || \
+                    count(*) FILTER (WHERE status = 'ready')::text \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args})"
+        ))
+        .expect("typed tuple payload composite summary query should succeed")
+        .expect("typed tuple payload composite summary should exist");
+        let left_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args}) \
+              WHERE payload_attnums = ARRAY[1, 2]::int2[] \
+                AND payload_names = ARRAY['id', 'pair']::text[] \
+                AND payload_type_oids = ARRAY[\
+                    'int8'::regtype::oid, \
+                    'ec_spire_typed_pair_only'::regtype::oid]::oid[] \
+                AND payload_nulls = ARRAY[false, false]::boolean[] \
+                AND payload_formats = ARRAY[\
+                    'pg_binary_attr_v1', \
+                    'pg_binary_attr_v1']::text[] \
+                AND payload_values[1] = int8send(1::bigint)::bytea \
+                AND payload_values[2] = record_send(\
+                    ROW(7, 'left')::ec_spire_typed_pair_only)::bytea \
+                AND NOT tuple_payload_missing \
+                AND tuple_transport_status = 'ready' \
+                AND status = 'ready'"
+        ))
+        .expect("typed tuple payload composite-only query should succeed")
+        .expect("typed tuple payload composite-only count should exist");
+
+        assert_eq!(typed_summary, "2|2|2|2|2");
+        assert_eq!(left_count, 1);
     }
 
     #[pg_test]
