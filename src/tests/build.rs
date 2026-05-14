@@ -454,3 +454,305 @@
         assert_eq!(post_insert_rows_returned, 5);
         assert!(post_insert_cleanup_candidate_count > 0);
     }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_ec_spire_aux_store_relcache_disables_autovacuum() {
+        Spi::run(
+            "CREATE TABLE ec_spire_aux_autovacuum_guard \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_aux_autovacuum_guard (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_aux_autovacuum_guard_idx \
+             ON ec_spire_aux_autovacuum_guard USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 2, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store ec_spire index creation should succeed");
+
+        let aux_store_relids = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "SELECT c.oid::int \
+                     FROM pg_class c \
+                     WHERE c.relname LIKE 'ec_spire_store_%' \
+                     AND c.relkind = 'r' \
+                     ORDER BY c.relname",
+                    None,
+                    &[],
+                )
+                .expect("auxiliary store relid query should succeed");
+            rows.into_iter()
+                .map(|row| {
+                    let oid = row["oid"]
+                        .value::<i32>()
+                        .expect("auxiliary store oid should decode")
+                        .expect("auxiliary store oid should be non-null");
+                    u32::try_from(oid).expect("auxiliary store oid should be non-negative")
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(aux_store_relids.len(), 2);
+
+        for relid in aux_store_relids {
+            let autovacuum_enabled = unsafe {
+                let relation = pg_sys::relation_open(
+                    pg_sys::Oid::from(relid),
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                );
+                assert!(
+                    !relation.is_null(),
+                    "auxiliary relation {relid} should open"
+                );
+                let rd_options = (*relation).rd_options;
+                assert!(
+                    !rd_options.is_null(),
+                    "auxiliary relation {relid} should have parsed reloptions"
+                );
+                let enabled = (*rd_options.cast::<pg_sys::StdRdOptions>())
+                    .autovacuum
+                    .enabled;
+                pg_sys::relation_close(relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+                enabled
+            };
+            assert!(
+                !autovacuum_enabled,
+                "auxiliary relation {relid} should be disabled in relcache autovacuum options"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_spire_multistore_large_fixture_routes_all_stores() {
+        Spi::run(
+            "CREATE TABLE ec_spire_multistore_large_fixture \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_multistore_large_fixture (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                     FROM generate_series(1, 384) AS d), \
+               4, 42) \
+             FROM generate_series(1, 256) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_multistore_large_fixture_idx \
+             ON ec_spire_multistore_large_fixture USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 32, \
+                 nprobe = 8, \
+                 rerank_width = 25, \
+                 local_store_count = 4, \
+                 local_store_tablespaces = 'pg_default,pg_default,pg_default,pg_default' \
+             )",
+        )
+        .expect("large multi-store ec_spire index creation should succeed");
+
+        let local_store_count = Spi::get_one::<i64>(
+            "SELECT local_store_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let object_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_object_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("object snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_placement_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let routing_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let routing_object_bytes = Spi::get_one::<i64>(
+            "SELECT routing_object_bytes FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let storage_relation_block_count = Spi::get_one::<i64>(
+            "SELECT relation_block_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM (\
+               SELECT id FROM ec_spire_multistore_large_fixture \
+               ORDER BY embedding <#> \
+                 ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                       FROM generate_series(1, 384) AS d) \
+               LIMIT 10\
+             ) AS ranked",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(local_store_count, 4);
+        assert_eq!(object_store_count, 4);
+        assert_eq!(placement_store_count, 4);
+        assert_eq!(routing_child_count, 32);
+        assert!(routing_object_bytes > 8192);
+        assert!(storage_relation_block_count >= 5);
+        assert_eq!(rows, 10);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_singlestore_reindex_succeeds() {
+        Spi::run(
+            "CREATE TABLE ec_spire_singlestore_reindex \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_singlestore_reindex (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_singlestore_reindex_idx \
+             ON ec_spire_singlestore_reindex USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("single-store ec_spire index creation should succeed");
+
+        Spi::run("REINDEX INDEX ec_spire_singlestore_reindex_idx")
+            .expect("single-store REINDEX should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_singlestore_reindex \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered reindexed ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "ec_spire multi-store REINDEX is not supported yet: auxiliary local store relation"
+    )]
+    fn test_ec_spire_multistore_reindex_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_multistore_reindex \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_multistore_reindex (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_multistore_reindex_idx \
+             ON ec_spire_multistore_reindex USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 2, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store ec_spire index creation should succeed");
+
+        Spi::run("REINDEX INDEX ec_spire_multistore_reindex_idx")
+            .expect("multi-store REINDEX should be rejected explicitly");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_tqvector_populated_build_scans_with_heap_rerank() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tqvector_populated_build \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tqvector_populated_build (id, embedding) VALUES \
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tqvector_populated_build_idx \
+             ON ec_spire_tqvector_populated_build USING ec_spire \
+             (embedding tqvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire tqvector index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_tqvector_populated_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire tqvector query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_relation_two_store_scan_roundtrip() {
+        Spi::run(
+            "CREATE TABLE ec_spire_two_store_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_two_store_scan_root_idx ON ec_spire_two_store_scan \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("root ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_two_store_scan_aux_idx ON ec_spire_two_store_scan \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("auxiliary ec_spire index creation should succeed");
+
+        let (root_store_id, left_store_id, right_store_id, candidate_count, first_vec, second_vec) = unsafe {
+            am::debug_spire_relation_two_store_scan_roundtrip(
+                index_oid("ec_spire_two_store_scan_root_idx"),
+                index_oid("ec_spire_two_store_scan_aux_idx"),
+            )
+        };
+
+        assert_eq!(root_store_id, 1);
+        assert_eq!(left_store_id, 0);
+        assert_eq!(right_store_id, 1);
+        assert_eq!(candidate_count, 2);
+        assert_eq!((first_vec, second_vec), (1, 2));
+    }

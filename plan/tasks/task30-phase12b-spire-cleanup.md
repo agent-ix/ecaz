@@ -181,6 +181,10 @@ Phase 13 will push it past 80k.
   root-control and logical-store hash-routing fixture block; later
   multistore, recursive-fanout, and top-graph build fixtures remain open,
   so the row is still not closed.
+- Packet `31015` extends `src/tests/build.rs` with the auxiliary-store
+  relcache, multistore, reindex, tqvector populated-build, and two-store
+  scan fixture block; later recursive-fanout and top-graph build fixtures
+  remain open, so the row is still not closed.
 - Packet `31009` starts `src/tests/vacuum.rs` by moving the epoch cleanup,
   epoch snapshot, and maintenance-run fixture block with a textual
   include; later SQL VACUUM and concurrent insert/vacuum fixtures remain
