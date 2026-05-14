@@ -8,6 +8,47 @@
             .expect("CustomScan JSON EXPLAIN should contain a root Plan")
     }
 
+    fn custom_scan_json_explain_node<'a>(
+        plan: &'a serde_json::Value,
+        node_type: &str,
+    ) -> &'a serde_json::Value {
+        if plan
+            .get("Node Type")
+            .and_then(|value| value.as_str())
+            .is_some_and(|value| value == node_type)
+        {
+            return plan;
+        }
+        if let Some(children) = plan.get("Plans").and_then(|value| value.as_array()) {
+            for child in children {
+                if let Some(found) = custom_scan_json_explain_node_optional(child, node_type) {
+                    return found;
+                }
+            }
+        }
+        panic!("CustomScan JSON EXPLAIN should contain a {node_type} plan node: {plan:?}");
+    }
+
+    fn custom_scan_json_explain_node_optional<'a>(
+        plan: &'a serde_json::Value,
+        node_type: &str,
+    ) -> Option<&'a serde_json::Value> {
+        if plan
+            .get("Node Type")
+            .and_then(|value| value.as_str())
+            .is_some_and(|value| value == node_type)
+        {
+            return Some(plan);
+        }
+        plan.get("Plans")
+            .and_then(|value| value.as_array())
+            .and_then(|children| {
+                children
+                    .iter()
+                    .find_map(|child| custom_scan_json_explain_node_optional(child, node_type))
+            })
+    }
+
     #[pg_test]
     fn test_ec_spire_customscan_tuple_payload_stores_virtual_slot() {
         Spi::run(
@@ -308,6 +349,28 @@
                 .and_then(|value| value.as_f64())
                 .is_some_and(|value| value > 0.0),
             "CustomScan JSON EXPLAIN should include positive Actual Total Time: {json_plan:?}"
+        );
+        let json_custom_scan_plan = custom_scan_json_explain_node(&json_root_plan, "Custom Scan");
+        assert_eq!(
+            json_custom_scan_plan
+                .get("Actual Rows")
+                .and_then(|value| value.as_u64()),
+            Some(1),
+            "CustomScan JSON EXPLAIN should pin Custom Scan Actual Rows: {json_plan:?}"
+        );
+        assert_eq!(
+            json_custom_scan_plan
+                .get("Actual Loops")
+                .and_then(|value| value.as_u64()),
+            Some(1),
+            "CustomScan JSON EXPLAIN should pin Custom Scan Actual Loops: {json_plan:?}"
+        );
+        assert!(
+            json_custom_scan_plan
+                .get("Actual Total Time")
+                .and_then(|value| value.as_f64())
+                .is_some_and(|value| value > 0.0),
+            "CustomScan JSON EXPLAIN should pin Custom Scan Actual Total Time: {json_plan:?}"
         );
         assert_eq!(row, (10, "remote alpha".to_owned()));
         assert_eq!(expression_row, (10, "remote alpha (boosted)".to_owned()));
