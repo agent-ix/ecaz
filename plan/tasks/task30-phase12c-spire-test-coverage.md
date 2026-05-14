@@ -658,7 +658,7 @@ Source: audit Axis H.
 
 - [x] Build with 3 local stores.
 - [x] Run scan; assert all 3 stores are touched.
-- [ ] Assert per-store counter rows match overall counters
+- [x] Assert per-store counter rows match overall counters
   (route, candidate, byte sums).
 
 ### 12c.15.b: Four-store scan fixture

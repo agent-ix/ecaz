@@ -448,6 +448,28 @@
         ))
         .expect("multi-store empty read-batch query should succeed")
         .expect("multi-store empty read-batch count should exist");
+        let store_counter_summary = Spi::get_one::<String>(&format!(
+            "WITH per_store AS ( \
+                 SELECT local_store_id, route_count, candidate_row_count, prefetched_object_bytes \
+                   FROM ec_spire_index_scan_local_store_read_overlap_harness(\
+                        '{index_name}'::regclass, {query_vector_sql}) \
+             ), placement_totals AS ( \
+                 SELECT sum(route_count)::bigint AS route_count, \
+                        sum(candidate_row_count)::bigint AS candidate_row_count \
+                   FROM ec_spire_index_scan_placement_snapshot(\
+                        '{index_name}'::regclass, {query_vector_sql}) \
+             ) \
+             SELECT count(*)::text || '|' || \
+                    count(*) FILTER (WHERE route_count > 0)::text || '|' || \
+                    count(*) FILTER (WHERE candidate_row_count > 0)::text || '|' || \
+                    count(*) FILTER (WHERE prefetched_object_bytes > 0)::text || '|' || \
+                    (sum(route_count)::bigint = (SELECT route_count FROM placement_totals))::text || '|' || \
+                    (sum(candidate_row_count)::bigint = (SELECT candidate_row_count FROM placement_totals))::text || '|' || \
+                    (sum(prefetched_object_bytes)::bigint > 0)::text \
+               FROM per_store"
+        ))
+        .expect("multi-store counter summary query should succeed")
+        .expect("multi-store counter summary should exist");
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("disable seqscan should succeed");
         let first_id = Spi::get_one::<i64>(&format!(
@@ -461,6 +483,10 @@
         assert_eq!(placement_store_ids, expected_store_ids);
         assert_eq!(harness_store_ids, expected_store_ids);
         assert_eq!(empty_read_batch_count, 0);
+        assert_eq!(
+            store_counter_summary,
+            format!("{store_count}|{store_count}|{store_count}|{store_count}|true|true|true")
+        );
         assert_eq!(first_id, 7);
     }
 
