@@ -412,27 +412,27 @@ Source: audit Axis D.
 Today only the hook-installation row exists (`dml_frontdoor.rs:2`).
 Packet `30980` follow-up.
 
-- [ ] Drive a non-PK predicate SELECT against a SPIRE-fronted table.
-- [ ] Assert the chosen plan is Index Scan or Seq Scan (not a
+- [x] Drive a non-PK predicate SELECT against a SPIRE-fronted table.
+- [x] Assert the chosen plan is Index Scan or Seq Scan (not a
   CustomScan).
-- [ ] Assert returned rows match the expected non-PK predicate.
+- [x] Assert returned rows match the expected non-PK predicate.
 
 ### 12c.9.b: Composite-PK rejection
 
-- [ ] Define a table with a composite PK; attempt SPIRE registration.
-- [ ] Assert rejection with the expected category.
+- [x] Define a table with a composite PK; attempt SPIRE registration.
+- [x] Assert rejection with the expected category.
 
 ### 12c.9.c: Float PK rejection
 
-- [ ] Define a table with `float4`/`float8` PK; attempt SPIRE
+- [x] Define a table with `float4`/`float8` PK; attempt SPIRE
   registration or DML.
-- [ ] Assert rejection.
+- [x] Assert rejection.
 
 ### 12c.9.d: Numeric-out-of-int8 PK rejection
 
-- [ ] Coerce a `numeric` value outside the `int8` range into the
+- [x] Coerce a `numeric` value outside the `int8` range into the
   PK predicate.
-- [ ] Assert rejection at classifier time, not at SPI execution.
+- [x] Assert rejection at classifier time, not at SPI execution.
 
 ### 12c.9.e: Tighten DELETE-idempotent contract shape
 
