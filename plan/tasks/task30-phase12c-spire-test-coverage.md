@@ -371,11 +371,11 @@ Source: audit Axis E.
 
 ### 12c.8.a: Concurrent DELETE collision against same PK
 
-- [ ] Fire two parallel coordinator-routed DELETEs against the same
+- [x] Fire two parallel coordinator-routed DELETEs against the same
   PK; assert exactly one succeeds.
-- [ ] Loser assertion: assert v1 contract (accepted with
+- [x] Loser assertion: assert v1 contract (accepted with
   `deleted_count=0`, or whichever shape ADR-069 documents).
-- [ ] Assert no orphan placement rows or prepared-xact intent
+- [x] Assert no orphan placement rows or prepared-xact intent
   rows remain.
 
 ### 12c.8.b: Long-scan + DROP INDEX (coordinator side)
