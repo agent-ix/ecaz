@@ -1,0 +1,938 @@
+    #[pg_test]
+    fn test_ec_spire_production_candidate_receive_loopback() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_production_candidate_receive_remote_sql; \
+                 CREATE TABLE ec_spire_production_candidate_receive_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_production_candidate_receive_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_production_candidate_receive_remote_idx \
+                     ON ec_spire_production_candidate_receive_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback candidate receive fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_production_candidate_receive_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_production_candidate_receive_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let selected_pid = u64::try_from(selected_pid).expect("leaf pid should fit u64");
+        let requested_epoch = u64::try_from(active_epoch).expect("active epoch should fit u64");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_production_candidate_receive_remote_idx",
+        );
+
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo,
+                remote_index_regclass: "ec_spire_production_candidate_receive_remote_idx"
+                    .to_owned(),
+                remote_index_identity,
+                requested_epoch,
+                query: vec![1.0, 0.0],
+                selected_pids: vec![selected_pid],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let receive = rows.first().expect("receive row should exist");
+        let batch = receive
+            .batch
+            .as_ref()
+            .expect("candidate batch should exist");
+        let candidate = batch
+            .candidates
+            .first()
+            .expect("candidate row should exist");
+
+        assert_eq!(receive.status, "ready");
+        assert_eq!(receive.failure_category, "none");
+        assert_eq!(receive.candidate_count, 1);
+        assert_eq!(batch.node_id, 2);
+        assert_eq!(batch.selected_pids, vec![selected_pid]);
+        assert_eq!(candidate.node_id, 2);
+        assert_eq!(candidate.served_epoch, requested_epoch);
+        assert_eq!(candidate.pid, selected_pid);
+        assert!(!candidate.row_locator.is_empty());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_top_k_zero() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_top_k_zero_sql; \
+                 CREATE TABLE ec_spire_candidate_receive_top_k_zero_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_top_k_zero_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_top_k_zero_idx \
+                     ON ec_spire_candidate_receive_top_k_zero_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback top-k-zero fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_top_k_zero_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_top_k_zero_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_candidate_receive_top_k_zero_idx",
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_top_k_zero_idx".to_owned(),
+                remote_index_identity,
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 0,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let receive = rows.first().expect("top-k-zero row should exist");
+        let batch = receive
+            .batch
+            .as_ref()
+            .expect("top-k-zero ready batch should exist");
+
+        assert_eq!(receive.status, "ready");
+        assert_eq!(receive.failure_category, "none");
+        assert_eq!(receive.candidate_count, 0);
+        assert!(batch.candidates.is_empty());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_remote_stmt_timeout() {
+        Spi::run("SET LOCAL ec_spire.remote_search_statement_timeout_ms = 25")
+            .expect("statement timeout SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_timeout_remote_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_timeout CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_timeout_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_timeout_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_timeout_remote_idx \
+                     ON ec_spire_candidate_receive_timeout_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_timeout; \
+                 CREATE FUNCTION ec_spire_candidate_receive_timeout.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                     FROM pg_sleep(0.30) \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback timeout fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_timeout_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_timeout_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let timeout_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_timeout,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: timeout_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_timeout_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("timeout row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "remote_statement_timeout");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_remote_query_cancelled() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_cancel_remote_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_cancel CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_cancel_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_cancel_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_cancel_remote_idx \
+                     ON ec_spire_candidate_receive_cancel_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_cancel; \
+                 CREATE FUNCTION ec_spire_candidate_receive_cancel.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                     FROM pg_cancel_backend(pg_backend_pid()), pg_sleep(0.30) \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback cancel fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_cancel_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_cancel_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let cancel_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_cancel,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: cancel_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_cancel_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("cancel row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "remote_query_cancelled");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_local_cancel_remote_cancel() {
+        set_remote_governance_test_namespace(6603);
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("global governance cap SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
+            .expect("per-node governance cap SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let (global_class_id, global_object_id) =
+            am::remote_search_libpq_global_governance_advisory_key_for_test(0);
+        let (node_class_id, node_object_id) =
+            am::remote_search_libpq_node_governance_advisory_key_for_test(2, 0);
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_local_cancel_remote_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_local_cancel CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_local_cancel_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_local_cancel_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_local_cancel_remote_idx \
+                     ON ec_spire_candidate_receive_local_cancel_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_local_cancel; \
+                 CREATE FUNCTION ec_spire_candidate_receive_local_cancel.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                     FROM pg_sleep(0.30) \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback local cancel fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_local_cancel_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_local_cancel_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let local_cancel_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_local_cancel,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_with_local_cancel_for_test(
+            vec![am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: local_cancel_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_local_cancel_remote_idx"
+                    .to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            }],
+            25,
+        );
+        let failed = rows.first().expect("local cancel row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "local_query_cancelled");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+        assert_governance_lock_released(
+            &loopback_conninfo,
+            global_class_id,
+            global_object_id,
+            "global receive local-cancel",
+        );
+        assert_governance_lock_released(
+            &loopback_conninfo,
+            node_class_id,
+            node_object_id,
+            "per-node receive local-cancel",
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_governance_overload() {
+        set_remote_governance_test_namespace(6604);
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("global governance cap SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let (class_id, object_id) =
+            am::remote_search_libpq_global_governance_advisory_key_for_test(0);
+        let mut lock_holder = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback lock-holder connection should succeed");
+        lock_holder
+            .batch_execute(&format!("SELECT pg_advisory_lock({class_id}, {object_id})"))
+            .expect("global governance advisory lock should be held by separate backend");
+
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: "invalid_conninfo_before_candidate_receive_open".to_owned(),
+                remote_index_regclass: "ec_spire_missing_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: 1,
+                query: vec![1.0, 0.0],
+                selected_pids: vec![1],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("governance overload row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "remote_executor_overload");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_identity_mismatch() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_identity_remote_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_identity CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_identity_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_identity_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_identity_remote_idx \
+                     ON ec_spire_candidate_receive_identity_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_identity; \
+                 CREATE FUNCTION ec_spire_candidate_receive_identity.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'bb', 'ready' \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback identity mismatch fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_identity_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_identity_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let identity_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_identity,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: identity_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_identity_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("identity mismatch row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "endpoint_identity_mismatch");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_stale_epoch() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_stale_epoch_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_stale_epoch CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_stale_epoch_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_stale_epoch_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_stale_epoch_idx \
+                     ON ec_spire_candidate_receive_stale_epoch_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_stale_epoch; \
+                 CREATE FUNCTION ec_spire_candidate_receive_stale_epoch.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2 - 1, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback stale epoch fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_stale_epoch_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_stale_epoch_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let stale_epoch_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_stale_epoch,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: stale_epoch_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_stale_epoch_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("stale epoch row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "served_epoch_mismatch");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_backend_terminated() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_terminate_remote_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_terminate CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_terminate_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_terminate_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_terminate_remote_idx \
+                     ON ec_spire_candidate_receive_terminate_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_terminate; \
+                 CREATE FUNCTION ec_spire_candidate_receive_terminate.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                     FROM pg_terminate_backend(pg_backend_pid()) \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback terminate fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_terminate_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_terminate_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let terminate_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_terminate,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: terminate_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_terminate_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("termination row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "remote_backend_terminated");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_isolates_node_failures() {
+        Spi::run("SET LOCAL ec_spire.remote_search_connect_timeout_ms = 25")
+            .expect("connect timeout SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_production_candidate_receive_ready_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_decode_fail CASCADE; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_validation_fail CASCADE; \
+                 CREATE TABLE ec_spire_production_candidate_receive_ready_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_production_candidate_receive_ready_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_production_candidate_receive_ready_idx \
+                     ON ec_spire_production_candidate_receive_ready_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_decode_fail; \
+                 CREATE FUNCTION ec_spire_candidate_receive_decode_fail.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score text, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 1::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 'not-a-real'::text, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                 $function$; \
+                 CREATE SCHEMA ec_spire_candidate_receive_validation_fail; \
+                 CREATE FUNCTION ec_spire_candidate_receive_validation_fail.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 999::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback multi-node candidate receive fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_production_candidate_receive_ready_idx'::regclass)",
+                &[],
+            )
+            .expect("ready active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("ready active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_production_candidate_receive_ready_idx'::regclass)",
+                &[],
+            )
+            .expect("ready leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("ready leaf pid should decode");
+        let selected_pid = u64::try_from(selected_pid).expect("ready leaf pid should fit u64");
+        let requested_epoch = u64::try_from(active_epoch).expect("ready epoch should fit u64");
+        let ready_remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_production_candidate_receive_ready_idx",
+        );
+        let decode_fail_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_decode_fail,public'"
+        );
+        let validation_fail_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_validation_fail,public'"
+        );
+
+        let request = |node_id: u32,
+                       conninfo: String,
+                       remote_index_regclass: &str,
+                       remote_index_identity: Vec<u8>,
+                       requested_epoch: u64,
+                       query: Vec<f32>,
+                       selected_pids: Vec<u64>,
+                       consistency_mode: &str| {
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id,
+                conninfo,
+                remote_index_regclass: remote_index_regclass.to_owned(),
+                remote_index_identity,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k: 1,
+                consistency_mode: consistency_mode.to_owned(),
+            }
+        };
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            request(
+                2,
+                loopback_conninfo.clone(),
+                "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![selected_pid],
+                "strict",
+            ),
+            request(
+                3,
+                loopback_conninfo.clone(),
+                "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![u64::MAX],
+                "strict",
+            ),
+            request(
+                4,
+                "port=not-a-number dbname=postgres".to_owned(),
+                "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![selected_pid],
+                "strict",
+            ),
+            request(
+                5,
+                "host=/tmp/ecaz_missing_pg_socket_30729 port=6543 dbname=postgres user=postgres connect_timeout=1"
+                    .to_owned(),
+                "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![selected_pid],
+                "strict",
+            ),
+            request(
+                6,
+                loopback_conninfo.clone(),
+                "ec_spire_missing_candidate_receive_idx",
+                ready_remote_index_identity.clone(),
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![selected_pid],
+                "strict",
+            ),
+            request(
+                7,
+                loopback_conninfo.clone(),
+                "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity,
+                requested_epoch,
+                vec![1.0, 0.0, 0.0],
+                vec![selected_pid],
+                "strict",
+            ),
+            request(
+                8,
+                decode_fail_conninfo,
+                "ec_spire_production_candidate_receive_ready_idx",
+                vec![0xaa],
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![selected_pid],
+                "strict",
+            ),
+            request(
+                9,
+                validation_fail_conninfo,
+                "ec_spire_production_candidate_receive_ready_idx",
+                vec![0xaa],
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![selected_pid],
+                "strict",
+            ),
+        ]);
+        let ready = rows
+            .iter()
+            .find(|row| row.node_id == 2)
+            .expect("ready row should exist");
+        let ready_batch = ready.batch.as_ref().expect("ready batch should exist");
+        let expected_failures = [
+            (3, "candidate_invalid_parameters"),
+            (4, "conninfo_parse_failed"),
+            (5, "connect_failed"),
+            (6, "remote_index_unavailable"),
+            (7, "remote_query_failed"),
+            (8, "candidate_decode_failed"),
+            (9, "candidate_batch_validation_failed"),
+        ];
+
+        assert_eq!(rows.len(), 8);
+        assert_eq!(ready.status, "ready");
+        assert_eq!(ready.failure_category, "none");
+        assert_eq!(ready.candidate_count, 1);
+        assert_eq!(ready_batch.node_id, 2);
+        assert_eq!(ready_batch.selected_pids, vec![selected_pid]);
+        assert_eq!(ready_batch.candidates.len(), 1);
+        assert!(ready_batch
+            .candidates
+            .iter()
+            .all(|candidate| candidate.node_id == 2));
+        for (node_id, failure_category) in expected_failures {
+            let failed = rows
+                .iter()
+                .find(|row| row.node_id == node_id)
+                .expect("failed row should exist");
+            assert_eq!(failed.status, "remote_candidate_receive_failed");
+            assert_eq!(failed.failure_category, failure_category);
+            assert_eq!(failed.candidate_count, 0);
+            assert!(
+                failed.batch.is_none(),
+                "failed node {node_id} should not return a candidate batch"
+            );
+        }
+    }
+

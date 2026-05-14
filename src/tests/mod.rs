@@ -2508,7 +2508,7 @@
 
 
 
-    include!("remote_search.rs");
+    include!("remote_search/mod.rs");
 
 
 
