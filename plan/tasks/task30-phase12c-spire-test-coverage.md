@@ -482,11 +482,11 @@ Today `custom_scan/tests.rs:351-427` uses loose `>` comparisons; a
 flipped-sign fanout regression would slip past `high > low` if the
 constant term dominates.
 
-- [ ] Fanout proportionality: assert `cost(fanout=N) /
+- [x] Fanout proportionality: assert `cost(fanout=N) /
   cost(fanout=1)` is within an expected band proportional to N
   (not just `cost(fanout=N) > cost(fanout=1)`).
-- [ ] Row-count proportionality: same shape across rows.
-- [ ] Payload-width proportionality: same shape across widths.
+- [x] Row-count proportionality: same shape across rows.
+- [x] Payload-width proportionality: same shape across widths.
 
 ### 12c.10.c: Cost-GUC override EXPLAIN reflection
 
