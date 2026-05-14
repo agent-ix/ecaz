@@ -700,10 +700,10 @@ Source: audit "Semantic concerns" section.
 
 `production_summary.rs:234,290`.
 
-- [ ] Add docstring on the fault-matrix contract test stating that
+- [x] Add docstring on the fault-matrix contract test stating that
   it is contract-only and pointing at 12c.2 / 12c.13 for the live
   executor assertions.
-- [ ] Same for the lifecycle-matrix contract test (pointing at
+- [x] Same for the lifecycle-matrix contract test (pointing at
   12c.3).
 
 ## Suggested Packet Sequence
