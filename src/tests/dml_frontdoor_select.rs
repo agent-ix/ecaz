@@ -65,3 +65,51 @@
         .expect("DML non-PK SELECT should return matching rows");
         assert_eq!(rows, "1:keep-alpha,3:keep-gamma");
     }
+
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_composite_pk_rejected_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_composite_pk_sql \
+             (tenant_id bigint not null, id bigint not null, title text not null, \
+              embedding ecvector, primary key (tenant_id, id))",
+        )
+        .expect("DML composite-PK table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_composite_pk_idx \
+             ON ec_spire_dml_composite_pk_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("DML composite-PK ec_spire index creation should succeed");
+
+        let context = "FROM ec_spire_dml_frontdoor_relation_context(\
+            'ec_spire_dml_composite_pk_sql'::regclass)";
+        let status = Spi::get_one::<String>(&format!("SELECT status {context}"))
+            .expect("DML composite-PK relation context status should succeed")
+            .expect("DML composite-PK relation context status should exist");
+        let next_step = Spi::get_one::<String>(&format!("SELECT next_step {context}"))
+            .expect("DML composite-PK relation context next step should succeed")
+            .expect("DML composite-PK relation context next step should exist");
+        let distributed =
+            Spi::get_one::<bool>(&format!("SELECT ec_spire_distributed_table {context}"))
+                .expect("DML composite-PK distributed flag should succeed")
+                .expect("DML composite-PK distributed flag should exist");
+        let pk_column_is_null = Spi::get_one::<bool>(&format!(
+            "SELECT pk_column IS NULL {context}"
+        ))
+        .expect("DML composite-PK pk_column null check should succeed")
+        .expect("DML composite-PK pk_column null check should exist");
+        let pk_type_is_null = Spi::get_one::<bool>(&format!(
+            "SELECT pk_type IS NULL {context}"
+        ))
+        .expect("DML composite-PK pk_type null check should succeed")
+        .expect("DML composite-PK pk_type null check should exist");
+
+        assert_eq!(status, "unsupported_pk_shape");
+        assert_eq!(
+            next_step,
+            "define one bigint primary-key column for ADR-069 v1 routing"
+        );
+        assert!(!distributed);
+        assert!(pk_column_is_null);
+        assert!(pk_type_is_null);
+    }
