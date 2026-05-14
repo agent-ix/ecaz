@@ -2490,6 +2490,7 @@
 
 
     include!("cost_and_planner.rs");
+    include!("spire_cost_tuning.rs");
 
     include!("placement.rs");
 
