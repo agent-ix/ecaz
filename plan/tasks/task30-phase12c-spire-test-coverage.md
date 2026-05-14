@@ -637,10 +637,10 @@ Source: audit Axis J.
 
 ### 12c.14.e: Very-large-string projection (≥1 MB)
 
-- [ ] Insert a row with a 1 MB text projection column.
-- [ ] Read through CustomScan; assert success up to
+- [x] Insert a row with a 1 MB text projection column.
+- [x] Read through CustomScan; assert success up to
   `ec_spire.max_remote_payload_bytes_per_row`.
-- [ ] Insert a row exceeding the cap; assert
+- [x] Insert a row exceeding the cap; assert
   `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE` (boundary
   cross-check with 12c.2.a).
 
