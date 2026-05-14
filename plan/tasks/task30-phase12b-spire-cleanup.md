@@ -123,7 +123,7 @@ Phase 13 will push it past 80k.
   and the pg_test scaffold. Further lib.rs module extraction is a
   follow-up only if a later reviewer asks for it.
 
-- [ ] Create `src/tests/` module tree (or `src/sql_fixtures/` if a name
+- [x] Create `src/tests/` module tree (or `src/sql_fixtures/` if a name
   more accurately reflects content). Subdirectories per concern:
   - [x] `tests/insert.rs`
   - [x] `tests/scan.rs`
@@ -253,6 +253,11 @@ Phase 13 will push it past 80k.
   remaining SPIRE access-method, operator-class, and CustomScan
   planner/hook status registration fixtures; the
   `tests/cost_and_planner.rs` row is closed.
+- Packet `31027` moves the remaining relation object/leaf storage and
+  empty-manifest publish roundtrip fixtures into `src/tests/diagnostics.rs`;
+  `src/tests/mod.rs` now retains shared helpers and concern-file includes,
+  not direct `test_ec_spire_*` fixture bodies, so the test module-tree row
+  is closed.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
