@@ -397,13 +397,13 @@ paths
 The earlier audit reported 1,565 total occurrences, most in tests.
 Post-12b.1/12b.2/12b.3 splits, re-run with proper test exclusion.
 
-- [ ] `rg -n '\.unwrap\(\)|\.expect\(' src/am/ec_spire/ --glob '!**/tests*'`
+- [x] `rg -n '\.unwrap\(\)|\.expect\(' src/am/ec_spire/ --glob '!**/tests*'`
   after the splits land.
-- [ ] For each non-test hit, classify as: (a) infallible by upstream
+- [x] For each non-test hit, classify as: (a) infallible by upstream
   guarantee, leave with a one-line comment naming the invariant;
   (b) replaceable with `?` or explicit error; (c) hot-path panic risk
   on remote-supplied data, fix or add a bounds check.
-- [ ] Category (c) hits must be zero before Phase 13. Record any
+- [x] Category (c) hits must be zero before Phase 13. Record any
   accepted (a)-category exceptions in the packet evidence.
 
 ## Suggested Packet Sequence
