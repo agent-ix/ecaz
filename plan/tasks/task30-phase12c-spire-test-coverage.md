@@ -210,9 +210,9 @@ Source: audit Axis C. Six lifecycle rows at
 
 ### 12c.3.a: `drop_remote_index_in_flight`
 
-- [ ] Strict mode: long-running CustomScan + `DROP INDEX` on remote
+- [x] Strict mode: long-running CustomScan + `DROP INDEX` on remote
   mid-scan; assert matrix-prescribed strict action fires.
-- [ ] Degraded mode: same; assert
+- [x] Degraded mode: same; assert
   `degraded_skipped_dispatch_count` and the skip-category.
 
 ### 12c.3.b: `drop_remote_index_pre_dispatch`
@@ -224,9 +224,9 @@ Source: audit Axis C. Six lifecycle rows at
 
 ### 12c.3.c: `reindex_remote_index_in_flight`
 
-- [ ] Strict mode: long-running CustomScan + `REINDEX INDEX` on
+- [x] Strict mode: long-running CustomScan + `REINDEX INDEX` on
   remote mid-scan; assert matrix action.
-- [ ] Degraded mode: same; assert degraded skip reporting.
+- [x] Degraded mode: same; assert degraded skip reporting.
 
 ### 12c.3.d: `reindex_remote_index_pre_dispatch`
 

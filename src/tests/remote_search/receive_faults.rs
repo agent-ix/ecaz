@@ -274,6 +274,128 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_receive_drop_index_in_flight() {
+        let run_mode = |consistency_mode: &str| {
+            let loopback_conninfo = current_pg_test_loopback_conninfo();
+            let mut loopback_client =
+                postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+                    .expect("loopback client connection should succeed");
+            let fixture_suffix = format!(
+                "ec_spire_lc_drop_flight_{}",
+                consistency_mode
+            );
+            let table_name = format!("{fixture_suffix}_sql");
+            let ready_index_name = format!("{fixture_suffix}_ready_idx");
+            let dropped_index_name = format!("{fixture_suffix}_drop_idx");
+
+            loopback_client
+                .batch_execute(&format!(
+                    "DROP TABLE IF EXISTS {table_name}; \
+                     CREATE TABLE {table_name} \
+                         (id bigint primary key, embedding ecvector); \
+                     INSERT INTO {table_name} (id, embedding) VALUES \
+                         (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                         (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                     CREATE INDEX {ready_index_name} \
+                         ON {table_name} USING ec_spire \
+                         (embedding ecvector_spire_ip_ops) \
+                         WITH (nlists = 2, storage_format = 'rabitq'); \
+                     CREATE INDEX {dropped_index_name} \
+                         ON {table_name} USING ec_spire \
+                         (embedding ecvector_spire_ip_ops) \
+                         WITH (nlists = 2, storage_format = 'rabitq')",
+                ))
+                .expect("loopback drop-in-flight fixture should be created");
+            let active_epoch = loopback_client
+                .query_one(
+                    &format!(
+                        "SELECT active_epoch FROM \
+                         ec_spire_index_hierarchy_snapshot('{ready_index_name}'::regclass)"
+                    ),
+                    &[],
+                )
+                .expect("drop-in-flight active epoch query should succeed")
+                .try_get::<_, i64>(0)
+                .expect("drop-in-flight active epoch should decode");
+            let selected_pid = loopback_client
+                .query_one(
+                    &format!(
+                        "SELECT min(leaf_pid) FROM \
+                         ec_spire_index_leaf_snapshot('{ready_index_name}'::regclass)"
+                    ),
+                    &[],
+                )
+                .expect("drop-in-flight leaf pid query should succeed")
+                .try_get::<_, i64>(0)
+                .expect("drop-in-flight leaf pid should decode");
+            let ready_identity =
+                loopback_remote_index_identity_bytes(&mut loopback_client, &ready_index_name);
+            let dropped_identity =
+                loopback_remote_index_identity_bytes(&mut loopback_client, &dropped_index_name);
+            let request = |node_id: u32, remote_index_regclass: &str, remote_index_identity: Vec<u8>| {
+                am::SpireRemoteProductionCandidateReceiveRequest {
+                    node_id,
+                    conninfo: loopback_conninfo.clone(),
+                    remote_index_regclass: remote_index_regclass.to_owned(),
+                    remote_index_identity,
+                    requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                    query: vec![1.0, 0.0],
+                    selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                    top_k: 1,
+                    consistency_mode: consistency_mode.to_owned(),
+                }
+            };
+            let requests = vec![
+                request(2, &dropped_index_name, dropped_identity),
+                request(3, &ready_index_name, ready_identity),
+            ];
+
+            loopback_client
+                .batch_execute(&format!("DROP INDEX {dropped_index_name}"))
+                .expect("drop-in-flight remote index drop should succeed");
+            let dropped_is_absent = loopback_client
+                .query_one(
+                    &format!("SELECT to_regclass('{dropped_index_name}') IS NULL"),
+                    &[],
+                )
+                .expect("drop-in-flight dropped index check should succeed")
+                .try_get::<_, bool>(0)
+                .expect("drop-in-flight dropped index check should decode");
+            assert!(dropped_is_absent);
+
+            am::spire_remote_search_production_candidate_receive_summary_for_test(
+                requests,
+                consistency_mode,
+            )
+        };
+
+        let strict = run_mode("strict");
+        assert_eq!(strict.candidate_receive_sent_dispatch_count, 2);
+        assert_eq!(strict.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(strict.candidate_receive_failed_dispatch_count, 1);
+        assert_eq!(
+            strict.first_candidate_receive_failure_category,
+            "remote_index_unavailable"
+        );
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(strict.next_executor_step, "compact_candidate_receive");
+        assert_eq!(strict.status, "remote_candidate_receive_failed");
+
+        let degraded = run_mode("degraded");
+        assert_eq!(degraded.candidate_receive_sent_dispatch_count, 1);
+        assert_eq!(degraded.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(degraded.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(degraded.first_candidate_receive_failure_category, "none");
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            degraded.first_degraded_skip_category,
+            "remote_index_unavailable"
+        );
+        assert_eq!(degraded.next_executor_step, "remote_heap_resolution");
+        assert_eq!(degraded.status, "degraded_ready");
+    }
+
+    #[pg_test]
     fn test_ec_spire_prod_receive_reindex_before_dispatch() {
         let loopback_conninfo = current_pg_test_loopback_conninfo();
         let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
@@ -395,6 +517,124 @@
             ],
             "degraded",
         );
+        assert_eq!(degraded.candidate_receive_sent_dispatch_count, 1);
+        assert_eq!(degraded.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(degraded.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(degraded.first_candidate_receive_failure_category, "none");
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            degraded.first_degraded_skip_category,
+            "endpoint_identity_mismatch"
+        );
+        assert_eq!(degraded.next_executor_step, "remote_heap_resolution");
+        assert_eq!(degraded.status, "degraded_ready");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_reindex_in_flight() {
+        let run_mode = |consistency_mode: &str| {
+            let loopback_conninfo = current_pg_test_loopback_conninfo();
+            let mut loopback_client =
+                postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+                    .expect("loopback client connection should succeed");
+            let fixture_suffix = format!(
+                "ec_spire_lc_reindex_flight_{}",
+                consistency_mode
+            );
+            let table_name = format!("{fixture_suffix}_sql");
+            let ready_index_name = format!("{fixture_suffix}_ready_idx");
+            let reindexed_index_name = format!("{fixture_suffix}_re_idx");
+
+            loopback_client
+                .batch_execute(&format!(
+                    "DROP TABLE IF EXISTS {table_name}; \
+                     CREATE TABLE {table_name} \
+                         (id bigint primary key, embedding ecvector); \
+                     INSERT INTO {table_name} (id, embedding) VALUES \
+                         (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                         (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                     CREATE INDEX {ready_index_name} \
+                         ON {table_name} USING ec_spire \
+                         (embedding ecvector_spire_ip_ops) \
+                         WITH (nlists = 2, storage_format = 'rabitq'); \
+                     CREATE INDEX {reindexed_index_name} \
+                         ON {table_name} USING ec_spire \
+                         (embedding ecvector_spire_ip_ops) \
+                         WITH (nlists = 2, storage_format = 'rabitq')",
+                ))
+                .expect("loopback reindex-in-flight fixture should be created");
+            let active_epoch = loopback_client
+                .query_one(
+                    &format!(
+                        "SELECT active_epoch FROM \
+                         ec_spire_index_hierarchy_snapshot('{ready_index_name}'::regclass)"
+                    ),
+                    &[],
+                )
+                .expect("reindex-in-flight active epoch query should succeed")
+                .try_get::<_, i64>(0)
+                .expect("reindex-in-flight active epoch should decode");
+            let selected_pid = loopback_client
+                .query_one(
+                    &format!(
+                        "SELECT min(leaf_pid) FROM \
+                         ec_spire_index_leaf_snapshot('{ready_index_name}'::regclass)"
+                    ),
+                    &[],
+                )
+                .expect("reindex-in-flight leaf pid query should succeed")
+                .try_get::<_, i64>(0)
+                .expect("reindex-in-flight leaf pid should decode");
+            let ready_identity =
+                loopback_remote_index_identity_bytes(&mut loopback_client, &ready_index_name);
+            let stale_reindexed_identity =
+                loopback_remote_index_identity_bytes(&mut loopback_client, &reindexed_index_name);
+            let request = |node_id: u32, remote_index_regclass: &str, remote_index_identity: Vec<u8>| {
+                am::SpireRemoteProductionCandidateReceiveRequest {
+                    node_id,
+                    conninfo: loopback_conninfo.clone(),
+                    remote_index_regclass: remote_index_regclass.to_owned(),
+                    remote_index_identity,
+                    requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                    query: vec![1.0, 0.0],
+                    selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                    top_k: 1,
+                    consistency_mode: consistency_mode.to_owned(),
+                }
+            };
+            let requests = vec![
+                request(2, &reindexed_index_name, stale_reindexed_identity.clone()),
+                request(3, &ready_index_name, ready_identity),
+            ];
+
+            loopback_client
+                .batch_execute(&format!("REINDEX INDEX {reindexed_index_name}"))
+                .expect("reindex-in-flight remote index reindex should succeed");
+            let current_reindexed_identity = loopback_remote_index_identity_bytes(
+                &mut loopback_client,
+                &reindexed_index_name,
+            );
+            assert_ne!(stale_reindexed_identity, current_reindexed_identity);
+
+            am::spire_remote_search_production_candidate_receive_summary_for_test(
+                requests,
+                consistency_mode,
+            )
+        };
+
+        let strict = run_mode("strict");
+        assert_eq!(strict.candidate_receive_sent_dispatch_count, 2);
+        assert_eq!(strict.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(strict.candidate_receive_failed_dispatch_count, 1);
+        assert_eq!(
+            strict.first_candidate_receive_failure_category,
+            "endpoint_identity_mismatch"
+        );
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(strict.next_executor_step, "compact_candidate_receive");
+        assert_eq!(strict.status, "remote_candidate_receive_failed");
+
+        let degraded = run_mode("degraded");
         assert_eq!(degraded.candidate_receive_sent_dispatch_count, 1);
         assert_eq!(degraded.candidate_receive_ready_dispatch_count, 1);
         assert_eq!(degraded.candidate_receive_failed_dispatch_count, 0);
