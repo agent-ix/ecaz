@@ -283,6 +283,10 @@ unsafe fn open_valid_ec_spire_index(
     index_relation
 }
 
+unsafe fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
+    relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
+}
+
 unsafe fn open_valid_ec_diskann_index(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
@@ -1661,6 +1665,9 @@ fn ec_spire_index_allocator_snapshot(
     if warn_within < 0 {
         pgrx::error!("ec_spire allocator warning threshold must be non-negative");
     }
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let warn_within =
         u64::try_from(warn_within).expect("non-negative warning threshold should fit in u64");
     let index_relation =
@@ -1711,6 +1718,9 @@ fn ec_spire_index_placement_snapshot(
         name!(delta_object_bytes, i64),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_placement_snapshot") };
     let rows = unsafe { am::spire_index_placement_snapshot(index_relation) };
@@ -7692,6 +7702,9 @@ fn ec_spire_index_scan_pipeline_snapshot(
         name!(recommendation, &'static str),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_pipeline_snapshot") };
     let routing_rows =
@@ -9149,6 +9162,9 @@ fn ec_spire_index_hierarchy_snapshot(
         name!(recommendation, String),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_hierarchy_snapshot") };
     let snapshot = unsafe { am::spire_index_hierarchy_snapshot(index_relation) };
@@ -9220,6 +9236,9 @@ fn ec_spire_index_top_graph_snapshot(
         name!(recommendation, String),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_top_graph_snapshot") };
     let snapshot = unsafe { am::spire_index_top_graph_snapshot(index_relation) };
@@ -16000,6 +16019,9 @@ fn ec_spire_index_object_snapshot(
         name!(object_readable, bool),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_object_snapshot") };
     let rows = unsafe { am::spire_index_object_snapshot(index_relation) };
@@ -16218,6 +16240,9 @@ fn ec_spire_index_boundary_replica_placement_diagnostics(
         name!(recommendation, String),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation = unsafe {
         open_valid_ec_spire_index(
             index_oid,
@@ -16367,6 +16392,9 @@ fn ec_spire_index_health_snapshot(
         name!(skipped_placement_count, i64),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_health_snapshot") };
     let snapshot = unsafe { am::spire_index_health_snapshot(index_relation) };
@@ -16651,6 +16679,9 @@ fn ec_spire_index_leaf_snapshot(
         name!(delta_object_bytes, i64),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_leaf_snapshot") };
     let rows = unsafe { am::spire_index_leaf_snapshot(index_relation) };
@@ -17015,6 +17046,9 @@ fn ec_spire_index_delta_snapshot(
         name!(object_bytes, i64),
     ),
 > {
+    if unsafe { !relation_oid_exists(index_oid) } {
+        return TableIterator::new(Vec::new().into_iter());
+    }
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_delta_snapshot") };
     let rows = unsafe { am::spire_index_delta_snapshot(index_relation) };

@@ -1576,6 +1576,104 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_dropped_index_snapshots_empty() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dropped_snapshot_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_dropped_snapshot_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dropped_snapshot_sql_idx ON \
+             ec_spire_dropped_snapshot_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let stale_index_oid = u32::from(index_oid("ec_spire_dropped_snapshot_sql_idx"));
+        Spi::run("DROP INDEX ec_spire_dropped_snapshot_sql_idx")
+            .expect("drop index should succeed");
+
+        let snapshot_counts = vec![
+            (
+                "hierarchy",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_hierarchy_snapshot({stale_index_oid}::oid)"
+                ),
+            ),
+            (
+                "object",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_object_snapshot({stale_index_oid}::oid)"
+                ),
+            ),
+            (
+                "delta",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_delta_snapshot({stale_index_oid}::oid)"
+                ),
+            ),
+            (
+                "health",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_health_snapshot({stale_index_oid}::oid)"
+                ),
+            ),
+            (
+                "leaf",
+                format!("SELECT count(*) FROM ec_spire_index_leaf_snapshot({stale_index_oid}::oid)"),
+            ),
+            (
+                "placement",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_placement_snapshot({stale_index_oid}::oid)"
+                ),
+            ),
+            (
+                "scan_pipeline",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_scan_pipeline_snapshot(\
+                     {stale_index_oid}::oid, ARRAY[1.0, 0.0]::real[])"
+                ),
+            ),
+            (
+                "top_graph",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_top_graph_snapshot({stale_index_oid}::oid)"
+                ),
+            ),
+            (
+                "allocator",
+                format!(
+                    "SELECT count(*) FROM ec_spire_index_allocator_snapshot(\
+                     {stale_index_oid}::oid, 1024)"
+                ),
+            ),
+            (
+                "boundary_replica_placement",
+                format!(
+                    "SELECT count(*) FROM \
+                     ec_spire_index_boundary_replica_placement_diagnostics({stale_index_oid}::oid)"
+                ),
+            ),
+        ];
+
+        for (snapshot_name, sql) in snapshot_counts {
+            let row_count = Spi::get_one::<i64>(&sql)
+                .expect("dropped-index diagnostic snapshot query should succeed")
+                .expect("count row should exist");
+            assert_eq!(
+                row_count, 0,
+                "{snapshot_name} snapshot should return no stale rows for a dropped index OID"
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_ec_spire_relation_object_tuple_roundtrip() {
         Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
