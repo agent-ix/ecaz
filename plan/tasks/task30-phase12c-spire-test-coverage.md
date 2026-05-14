@@ -490,13 +490,13 @@ constant term dominates.
 
 ### 12c.10.c: Cost-GUC override EXPLAIN reflection
 
-- [ ] `SET ec_spire.cost_routing_dimension_scale` to 2x default;
+- [x] `SET ec_spire.cost_routing_dimension_scale` to 2x default;
   run EXPLAIN; assert cost increased proportionally.
-- [ ] Same for `cost_leaf_dimension_scale`.
-- [ ] Same for `cost_index_page_scale`.
-- [ ] Same for `cost_local_store_page_fanout_scale`.
-- [ ] Same for `cost_storage_scoring_multiplier`.
-- [ ] Same for `cost_rerank_multiplier`.
+- [x] Same for `cost_leaf_dimension_scale`.
+- [x] Same for `cost_index_page_scale`.
+- [x] Same for `cost_local_store_page_fanout_scale`.
+- [x] Same for `cost_storage_scoring_multiplier`.
+- [x] Same for `cost_rerank_multiplier`.
 
 ### 12c.10.d: Empty-placement planner-refusal positive fixture
 
