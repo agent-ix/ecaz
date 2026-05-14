@@ -133,6 +133,58 @@ mod production_executor_state_tests {
         }
     }
 
+    fn ready_heap_receive_result(
+        node_id: u32,
+        pid: u64,
+    ) -> SpireRemoteProductionHeapReceiveResult {
+        SpireRemoteProductionHeapReceiveResult {
+            node_id,
+            started_after_ms: 3,
+            completed_after_ms: 4,
+            elapsed_ms: 1,
+            candidate_count: 1,
+            status: SPIRE_REMOTE_STATUS_READY,
+            failure_category: SPIRE_REMOTE_NONE,
+            candidates: vec![SpireRemoteSearchLocalHeapCandidateRow {
+                requested_epoch: 7,
+                served_epoch: 7,
+                node_id,
+                pid,
+                object_version: 1,
+                row_index: 0,
+                assignment_flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: storage::SpireVecId::local((u64::from(node_id) << 32) | 1)
+                    .as_bytes()
+                    .to_vec(),
+                row_locator: vec![node_id as u8, 1],
+                heap_block: 10 + node_id,
+                heap_offset: 1,
+                score: 1.0,
+                heap_lookup_owner: SPIRE_REMOTE_HEAP_RESOLUTION,
+                tuple_payload_json: None,
+                typed_tuple_payload: None,
+                tuple_payload_missing: false,
+                status: SPIRE_REMOTE_STATUS_READY,
+            }],
+        }
+    }
+
+    fn failed_heap_receive_result(
+        node_id: u32,
+        failure_category: &'static str,
+    ) -> SpireRemoteProductionHeapReceiveResult {
+        SpireRemoteProductionHeapReceiveResult {
+            node_id,
+            started_after_ms: 3,
+            completed_after_ms: 4,
+            elapsed_ms: 1,
+            candidate_count: 0,
+            status: SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
+            failure_category,
+            candidates: Vec::new(),
+        }
+    }
+
     #[test]
     fn production_fault_matrix_covers_required_categories() {
         let rows = remote_search_production_fault_matrix_rows();
@@ -591,6 +643,95 @@ mod production_executor_state_tests {
         assert_eq!(
             requests[0].tuple_payload_columns.as_deref(),
             Some(requested_columns.as_slice())
+        );
+    }
+
+    #[test]
+    fn production_executor_heap_tuple_transport_retired_matrix_actions() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            ready_candidate_receive_result(2, vec![20], 1),
+            ready_candidate_receive_result(3, vec![30], 1),
+        ];
+        let heap_results = vec![
+            failed_heap_receive_result(2, SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED),
+            ready_heap_receive_result(3, 30),
+        ];
+
+        let mut strict_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        strict_executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("strict transport rows should apply");
+        strict_executor
+            .apply_candidate_receive_results(&receive_results)
+            .expect("strict candidate receive rows should apply");
+        strict_executor
+            .apply_remote_heap_receive_results_with_consistency_mode(&heap_results, "strict")
+            .expect("strict heap receive rows should apply");
+        let (strict_heap_ready, strict_heap_failed, strict_heap_candidates) = strict_executor
+            .remote_heap_resolution_counts()
+            .expect("strict heap counts should build");
+        let strict = strict_executor
+            .summary("test", "strict")
+            .expect("strict heap tuple transport summary should build");
+        let strict_failed_dispatch = strict_executor
+            .dispatches
+            .iter()
+            .find(|dispatch| dispatch.node_id == 2)
+            .expect("strict failed dispatch should exist");
+
+        assert_eq!(strict_heap_ready, 1);
+        assert_eq!(strict_heap_failed, 1);
+        assert_eq!(strict_heap_candidates, 1);
+        assert_eq!(
+            strict_failed_dispatch.remote_heap_failure_category,
+            SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED
+        );
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(strict.next_executor_step, "remote_heap_resolution");
+        assert_eq!(strict.status, "remote_heap_resolution_failed");
+
+        let mut degraded_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        degraded_executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("degraded transport rows should apply");
+        degraded_executor
+            .apply_candidate_receive_results(&receive_results)
+            .expect("degraded candidate receive rows should apply");
+        degraded_executor
+            .apply_remote_heap_receive_results_with_consistency_mode(&heap_results, "degraded")
+            .expect("degraded heap receive rows should apply");
+        let (degraded_heap_ready, degraded_heap_failed, degraded_heap_candidates) = degraded_executor
+            .remote_heap_resolution_counts()
+            .expect("degraded heap counts should build");
+        let degraded = degraded_executor
+            .summary("test", "degraded")
+            .expect("degraded heap tuple transport summary should build");
+        let degraded_report = degraded_executor
+            .degraded_skip_report()
+            .expect("degraded heap tuple transport skip report should build");
+
+        assert_eq!(degraded_heap_ready, 1);
+        assert_eq!(degraded_heap_failed, 0);
+        assert_eq!(degraded_heap_candidates, 1);
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            degraded.first_degraded_skip_category,
+            SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED
+        );
+        assert_eq!(degraded.next_executor_step, "none");
+        assert_eq!(degraded.status, "degraded_ready");
+        assert_eq!(degraded_report.len(), 1);
+        assert_eq!(
+            degraded_report[0].first_skip_category,
+            SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED
+        );
+        assert_eq!(
+            degraded_report[0].first_skip_hint,
+            SPIRE_REMOTE_TUPLE_TRANSPORT_RETIRED_HINT
         );
     }
 
