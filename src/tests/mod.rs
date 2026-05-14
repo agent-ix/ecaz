@@ -2516,6 +2516,8 @@
 
     include!("dml_frontdoor_select.rs");
 
+    include!("dml_frontdoor_delete.rs");
+
     include!("data_shape.rs");
 
 
