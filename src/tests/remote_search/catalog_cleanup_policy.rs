@@ -726,6 +726,200 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_reaper_prepare_acked_vs_commit_local() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_REAPER_IN_DOUBT",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_reaper_in_doubt_remote; \
+                 CREATE TABLE ec_spire_reaper_in_doubt_remote \
+                     (id bigint primary key, embedding ecvector, source_identity bytea not null); \
+                 INSERT INTO ec_spire_reaper_in_doubt_remote \
+                     (id, embedding, source_identity) VALUES \
+                 (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('75767778797a7b7c7d7e7f8081828384', 'hex')); \
+                 CREATE INDEX ec_spire_reaper_in_doubt_remote_idx \
+                     ON ec_spire_reaper_in_doubt_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 DROP TABLE IF EXISTS ec_spire_reaper_in_doubt_payload; \
+                 CREATE TABLE ec_spire_reaper_in_doubt_payload (id bigint primary key)",
+            )
+            .expect("loopback reaper in-doubt fixture should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_reaper_in_doubt_coord \
+             (id bigint primary key, embedding ecvector, source_identity bytea not null)",
+        )
+        .expect("reaper in-doubt coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_reaper_in_doubt_coord \
+                 (id, embedding, source_identity) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('85868788898a8b8c8d8e8f9091929394', 'hex'))",
+        )
+        .expect("reaper in-doubt coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_reaper_in_doubt_coord_idx \
+             ON ec_spire_reaper_in_doubt_coord USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("reaper in-doubt coordinator index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_reaper_in_doubt_coord_idx'::regclass)",
+        )
+        .expect("reaper in-doubt active epoch query should succeed")
+        .expect("reaper in-doubt active epoch should exist");
+        let coord_index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_reaper_in_doubt_coord_idx'::regclass::oid",
+        )
+        .expect("reaper in-doubt index oid query should succeed")
+        .expect("reaper in-doubt index oid should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_reaper_in_doubt_remote_idx'::regclass::oid)",
+        )
+        .expect("reaper in-doubt remote identity query should succeed")
+        .expect("reaper in-doubt remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_reaper_in_doubt_coord_idx'::regclass, \
+                 34, 37, 'spire/remote/reaper_in_doubt', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_reaper_in_doubt_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("reaper in-doubt descriptor registration should succeed");
+
+        let prepare_acked_xid = 987_654_330_u64;
+        let commit_local_xid = 987_654_331_u64;
+        let prepare_acked_gid = format!(
+            "ec_spire_insert_{}_34_{}_{}",
+            u32::from(coord_index_oid),
+            active_epoch,
+            prepare_acked_xid
+        );
+        let commit_local_gid = format!(
+            "ec_spire_insert_{}_34_{}_{}",
+            u32::from(coord_index_oid),
+            active_epoch,
+            commit_local_xid
+        );
+        for gid in [&prepare_acked_gid, &commit_local_gid] {
+            for row in loopback_client
+                .query("SELECT gid FROM pg_prepared_xacts WHERE gid = $1", &[gid])
+                .expect("stale in-doubt prepared lookup should succeed")
+            {
+                let stale_gid = row
+                    .try_get::<_, String>(0)
+                    .expect("stale in-doubt prepared gid should decode");
+                let _ = loopback_client.batch_execute(&format!(
+                    "ROLLBACK PREPARED '{}'",
+                    stale_gid.replace('\'', "''")
+                ));
+            }
+        }
+        loopback_client
+            .batch_execute(&format!(
+                "BEGIN; \
+                 INSERT INTO ec_spire_reaper_in_doubt_payload VALUES (1); \
+                 PREPARE TRANSACTION '{}'; \
+                 BEGIN; \
+                 INSERT INTO ec_spire_reaper_in_doubt_payload VALUES (2); \
+                 PREPARE TRANSACTION '{}'",
+                prepare_acked_gid.replace('\'', "''"),
+                commit_local_gid.replace('\'', "''")
+            ))
+            .expect("in-doubt fixture remote prepares should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_prepared_xact_intent \
+                 (index_oid, node_id, served_epoch, xid, gid, intent_state) \
+             VALUES \
+                 ('{}'::oid, 34, {active_epoch}, {prepare_acked_xid}, '{}', 'prepare_acked'), \
+                 ('{}'::oid, 34, {active_epoch}, {commit_local_xid}, '{}', 'commit_local')",
+            u32::from(coord_index_oid),
+            prepare_acked_gid.replace('\'', "''"),
+            u32::from(coord_index_oid),
+            commit_local_gid.replace('\'', "''")
+        ))
+        .expect("in-doubt fixture intent insert should succeed");
+
+        let prepare_reaper_status = Spi::get_one::<String>(&format!(
+            "SELECT intent_state || ':' || action || ':' || coordinator_xid_live::text \
+               FROM ec_spire_reap_orphaned_remote_prepared_xacts(34) \
+              WHERE gid = '{}'",
+            prepare_acked_gid.replace('\'', "''")
+        ))
+        .expect("in-doubt prepare_acked reaper should run")
+        .expect("in-doubt prepare_acked row should exist");
+        let commit_reaper_status = Spi::get_one::<String>(&format!(
+            "SELECT intent_state || ':' || action || ':' || coordinator_xid_live::text \
+               FROM ec_spire_reap_orphaned_remote_prepared_xacts(34) \
+              WHERE gid = '{}'",
+            commit_local_gid.replace('\'', "''")
+        ))
+        .expect("in-doubt commit_local reaper should run")
+        .expect("in-doubt commit_local row should exist");
+        assert_eq!(prepare_reaper_status, "prepare_acked:rolled_back:false");
+        assert_eq!(
+            commit_reaper_status,
+            "commit_local:skipped_commit_local:false"
+        );
+
+        let prepare_prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
+                &[&prepare_acked_gid],
+            )
+            .expect("prepare_acked prepared count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepare_acked prepared count should decode");
+        let commit_prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
+                &[&commit_local_gid],
+            )
+            .expect("commit_local prepared count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("commit_local prepared count should decode");
+        assert_eq!(prepare_prepared_count, 0);
+        assert_eq!(commit_prepared_count, 1);
+
+        let prepare_intent_state = Spi::get_one::<String>(&format!(
+            "SELECT intent_state \
+               FROM ec_spire_remote_prepared_xact_intent \
+              WHERE gid = '{}'",
+            prepare_acked_gid.replace('\'', "''")
+        ))
+        .expect("prepare_acked intent state query should succeed")
+        .expect("prepare_acked intent state should exist");
+        let commit_intent_state = Spi::get_one::<String>(&format!(
+            "SELECT intent_state \
+               FROM ec_spire_remote_prepared_xact_intent \
+              WHERE gid = '{}'",
+            commit_local_gid.replace('\'', "''")
+        ))
+        .expect("commit_local intent state query should succeed")
+        .expect("commit_local intent state should exist");
+        assert_eq!(prepare_intent_state, "rollback_local");
+        assert_eq!(commit_intent_state, "commit_local");
+
+        loopback_client
+            .batch_execute(&format!(
+                "ROLLBACK PREPARED '{}'",
+                commit_local_gid.replace('\'', "''")
+            ))
+            .expect("commit_local preserved prepared transaction cleanup should succeed");
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_pk_select_isolation_contract_sql() {
         let _env_lock = env_var_test_lock();
         const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_ISOLATION_PK_SELECT";

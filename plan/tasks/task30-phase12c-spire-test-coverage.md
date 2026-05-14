@@ -283,14 +283,14 @@ in-doubt path is not.
 Simulate a coordinator backend exit after `prepare_acked` but before
 `commit_local`.
 
-- [ ] Set up intent row in `prepare_acked` state with a dead
+- [x] Set up intent row in `prepare_acked` state with a dead
   coordinator xid; remote has matching prepared txn.
-- [ ] Invoke `ec_spire_reap_orphaned_remote_prepared_xacts(node_id)`.
-- [ ] Assert orphan in `prepare_acked` with dead coord xid is
+- [x] Invoke `ec_spire_reap_orphaned_remote_prepared_xacts(node_id)`.
+- [x] Assert orphan in `prepare_acked` with dead coord xid is
   rolled back (`ROLLBACK PREPARED` issued).
-- [ ] Set up parallel intent row in `commit_local` state with a
+- [x] Set up parallel intent row in `commit_local` state with a
   dead coordinator xid.
-- [ ] Assert reaper preserves `commit_local` rows (operator
+- [x] Assert reaper preserves `commit_local` rows (operator
   escalation, not silent rollback).
 
 ### 12c.5.b: Intent state-machine invariants
