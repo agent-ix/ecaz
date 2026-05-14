@@ -2497,6 +2497,7 @@
     include!("scan.rs");
     include!("spire_recall.rs");
     include!("insert.rs");
+    include!("insert_remote_trigger.rs");
 
     include!("diagnostics.rs");
 

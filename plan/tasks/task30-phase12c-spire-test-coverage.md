@@ -463,12 +463,16 @@ Today `dml_frontdoor.rs:1672` mixes coord-only and remote-only.
 
 ### 12c.9.g: Tighten descriptor-race test
 
-Today `insert.rs:993` asserts only that the second INSERT succeeds.
+Evidence: `test_ec_spire_insert_descriptor_race_sql` now lives in
+`insert_remote_trigger.rs` to keep `insert.rs` under the test-file
+size target. It records the winning descriptor generation, pins the
+winner/loser placement summary, and asserts no prepared-xact intent
+rows remain in a non-terminal state.
 
-- [ ] Assert which descriptor generation won (record generation
+- [x] Assert which descriptor generation won (record generation
   numbers).
-- [ ] Assert zero orphan placement rows after the race resolves.
-- [ ] Assert zero SPIRE prepared-xact intent rows in non-terminal
+- [x] Assert zero orphan placement rows after the race resolves.
+- [x] Assert zero SPIRE prepared-xact intent rows in non-terminal
   state.
 
 ## Phase 12c.10: EXPLAIN / Cost / Planner Tightening (P2)
