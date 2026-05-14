@@ -545,25 +545,25 @@ Source: audit Axis B.
 
 ### 12c.12.a: Empty projection list typed-payload
 
-- [ ] Pin the zero-attr typed payload bytes layout (today only the
+- [x] Pin the zero-attr typed payload bytes layout (today only the
   JSON column-list path is asserted).
-- [ ] Assert the empty metadata + value arrays are aligned per the
+- [x] Assert the empty metadata + value arrays are aligned per the
   protocol spec.
 
 ### 12c.12.b: Composite-only typed-payload
 
 Today `tuple_heap.rs:280` mixes domain + composite.
 
-- [ ] Add a fixture with a pure composite (no domain wrapper).
-- [ ] Assert round-trip integrity through the typed path.
+- [x] Add a fixture with a pure composite (no domain wrapper).
+- [x] Assert round-trip integrity through the typed path.
 
 ### 12c.12.c: Tighten null-array wire-byte assertion
 
 Today `tuple_heap.rs:202` asserts round-trip success only.
 
-- [ ] Capture the bytes-on-wire for a NULL `text[]`.
-- [ ] Assert the negative-length sentinel encoding (not zero-length).
-- [ ] Add a regression-defense byte-pattern assertion so an encoder
+- [x] Capture the bytes-on-wire for a NULL `text[]`.
+- [x] Assert the negative-length sentinel encoding (not zero-length).
+- [x] Add a regression-defense byte-pattern assertion so an encoder
   that wrote zero-length instead of NULL would fail.
 
 ## Phase 12c.13: Operator-Surface / Diagnostic Snapshot Coverage (P2)
