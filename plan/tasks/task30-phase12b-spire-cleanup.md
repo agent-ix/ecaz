@@ -380,14 +380,14 @@ types, debug).
 Audit-flagged smell: `dml_frontdoor.rs` and `update/` carry `unsafe`
 mixed with business logic.
 
-- [ ] Identify every `unsafe` block in `dml_frontdoor.rs` and `update/`
+- [x] Identify every `unsafe` block in `dml_frontdoor.rs` and `update/`
   (and any other non-FFI module).
-- [ ] For each block, classify: (a) truly FFI/SPI-boundary, move into
+- [x] For each block, classify: (a) truly FFI/SPI-boundary, move into
   an `ffi.rs` sibling; (b) avoidable, replace with safe abstraction.
-- [ ] If any block is genuinely required at the business-logic layer
+- [x] If any block is genuinely required at the business-logic layer
   with no clean abstraction, leave with a one-line `// SAFETY:` comment
   naming the invariant.
-- [ ] Re-run the count: `unsafe`-bearing lines in `src/am/ec_spire/`
+- [x] Re-run the count: `unsafe`-bearing lines in `src/am/ec_spire/`
   should not increase; goal is a small reduction with concentration at
   the FFI surface.
 
