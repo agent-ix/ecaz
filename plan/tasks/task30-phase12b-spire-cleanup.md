@@ -159,6 +159,10 @@ Phase 13 will push it past 80k.
   fixture block; earlier insert-after-build delta, concurrent same-leaf,
   and source-identity fixtures remain open, so the row is still not
   closed.
+- Packet `31020` extends `src/tests/insert.rs` with the earlier
+  post-build delta, same-leaf delta, and PG18 concurrent same-leaf
+  insert fixtures; source-identity fixtures remain open, so the row is
+  still not closed.
 - Packet `31001` starts `src/tests/dml_frontdoor.rs` by moving the main
   DML hook/plan/remote-customscan fixture block with a textual include;
   earlier select-plan and later primitive-plan fixtures remain open, so
