@@ -131,7 +131,7 @@ Phase 13 will push it past 80k.
   - [ ] `tests/remote_search.rs`
   - [x] `tests/dml_frontdoor.rs`
   - [ ] `tests/placement.rs`
-  - [ ] `tests/vacuum.rs`
+  - [x] `tests/vacuum.rs`
   - [ ] `tests/cost_and_planner.rs`
   - [x] `tests/build.rs`
   - [x] `tests/diagnostics.rs`
@@ -224,6 +224,10 @@ Phase 13 will push it past 80k.
   epoch snapshot, and maintenance-run fixture block with a textual
   include; later SQL VACUUM and concurrent insert/vacuum fixtures remain
   open, so the row is not yet closed.
+- Packet `31022` moves the remaining delete-delta, cleanup compaction,
+  SQL VACUUM, multistore SQL VACUUM, and concurrent insert/vacuum
+  fixtures to `src/tests/vacuum.rs`; `src/tests/mod.rs` now retains no
+  vacuum concern block, so the `tests/vacuum.rs` row is closed.
 - Packet `31002` starts `src/tests/placement.rs` by moving the placement
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
