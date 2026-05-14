@@ -436,6 +436,36 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn production_executor_strict_candidate_receive_preserves_12a_failure_categories() {
+        for failure_category in [
+            SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED,
+            SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE,
+        ] {
+            let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+            let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+            let receive_results = vec![
+                failed_candidate_receive_result(2, failure_category),
+                ready_candidate_receive_result(3, vec![30], 1),
+            ];
+            let row = remote_search_production_executor_state_summary_from_candidate_receive_results(
+                7,
+                &dispatch_rows,
+                &transport_rows,
+                &receive_results,
+            )
+            .expect("strict candidate receive summary should preserve 12a category");
+
+            assert_eq!(row.candidate_receive_sent_dispatch_count, 2);
+            assert_eq!(row.candidate_receive_ready_dispatch_count, 1);
+            assert_eq!(row.candidate_receive_failed_dispatch_count, 1);
+            assert_eq!(row.first_candidate_receive_failure_category, failure_category);
+            assert_eq!(row.degraded_skipped_dispatch_count, 0);
+            assert_eq!(row.next_executor_step, "compact_candidate_receive");
+            assert_eq!(row.status, "remote_candidate_receive_failed");
+        }
+    }
+
+    #[test]
     fn production_executor_state_rejects_unplanned_transport_result() {
         let dispatch_rows = vec![planned_dispatch(2, 1)];
         let transport_rows = vec![ready_transport_row(3, 1)];
