@@ -128,7 +128,7 @@ Phase 13 will push it past 80k.
   - [x] `tests/insert.rs`
   - [x] `tests/scan.rs`
   - [x] `tests/custom_scan.rs`
-  - [ ] `tests/remote_search.rs`
+  - [x] `tests/remote_search.rs`
   - [x] `tests/dml_frontdoor.rs`
   - [x] `tests/placement.rs`
   - [x] `tests/vacuum.rs`
@@ -146,6 +146,11 @@ Phase 13 will push it past 80k.
   contiguous remote-search contract fixture block with a textual include;
   later tuple-payload, libpq, remote-node, and degraded-mode fixtures
   remain open, so the `tests/remote_search.rs` row is not yet closed.
+- Packet `31026` moves the remaining reaper, remote PK isolation,
+  tuple-payload, libpq, remote-node, manifest, and degraded-mode fixtures
+  to `src/tests/remote_search.rs`; `src/tests/mod.rs` now retains no
+  remote-search concern block, so the `tests/remote_search.rs` row is
+  closed.
 - Packet `31000` starts `src/tests/insert.rs` by moving the contiguous
   coordinator-insert and insert-trigger fixture block with a textual
   include; later insert-after-build fixtures remain open, so the
