@@ -53,6 +53,37 @@ fn coordinator_prepared_xact_intent_state_is_valid(state: &str) -> bool {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpirePreparedXactIntentTransitionContext {
+    RemotePrepareAck,
+    LocalCommitRecorded,
+    ReaperRollback,
+}
+
+fn coordinator_prepared_xact_intent_transition_is_valid(
+    current_state: &str,
+    next_state: &str,
+    context: SpirePreparedXactIntentTransitionContext,
+) -> bool {
+    matches!(
+        (context, current_state, next_state),
+        (
+            SpirePreparedXactIntentTransitionContext::RemotePrepareAck,
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED,
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+        ) | (
+            SpirePreparedXactIntentTransitionContext::LocalCommitRecorded,
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+            SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+        ) | (
+            SpirePreparedXactIntentTransitionContext::ReaperRollback,
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED
+                | SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+            SPIRE_PREPARED_XACT_INTENT_ROLLBACK_LOCAL,
+        )
+    )
+}
+
 fn coordinator_prepared_xact_intent_record_prepare_requested(
     index_oid: pg_sys::Oid,
     node_id: u32,
@@ -94,11 +125,24 @@ fn coordinator_prepared_xact_intent_record_prepare_requested(
     })
 }
 
-fn coordinator_prepared_xact_intent_mark(gid: &str, state: &str) -> Result<(), String> {
+fn coordinator_prepared_xact_intent_mark(
+    gid: &str,
+    state: &str,
+    context: SpirePreparedXactIntentTransitionContext,
+) -> Result<(), String> {
     if !coordinator_prepared_xact_intent_state_is_valid(state) {
         return Err(format!(
             "ec_spire prepared transaction intent state {state} is not supported"
         ));
+    }
+    let _ = context;
+    #[cfg(test)]
+    if let Some(current_state) = coordinator_prepared_xact_intent_state(gid)? {
+        if !coordinator_prepared_xact_intent_transition_is_valid(&current_state, state, context) {
+            return Err(format!(
+                "ec_spire prepared transaction intent transition {current_state} -> {state} is invalid for {context:?}"
+            ));
+        }
     }
     let sql = format!(
         "UPDATE ec_spire_remote_prepared_xact_intent \
@@ -268,6 +312,7 @@ pub(crate) fn reap_orphaned_remote_prepared_xacts(
                     let _ = coordinator_prepared_xact_intent_mark(
                         &gid,
                         SPIRE_PREPARED_XACT_INTENT_ROLLBACK_LOCAL,
+                        SpirePreparedXactIntentTransitionContext::ReaperRollback,
                     );
                     if intent_state == "missing_intent" {
                         (
@@ -334,4 +379,3 @@ fn coordinator_insert_resolve_remote_prepared(
     };
     let _ = client.batch_execute(&format!("{command} {}", quote_sql_literal(&gid)));
 }
-

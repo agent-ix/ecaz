@@ -537,10 +537,12 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
         coordinator_prepared_xact_intent_mark(
             &result.prepared_gid,
             SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+            SpirePreparedXactIntentTransitionContext::RemotePrepareAck,
         )?;
         coordinator_prepared_xact_intent_mark(
             &result.prepared_gid,
             SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+            SpirePreparedXactIntentTransitionContext::LocalCommitRecorded,
         )?;
     }
 
@@ -754,10 +756,12 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
     coordinator_prepared_xact_intent_mark(
         &prepared_gid,
         SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+        SpirePreparedXactIntentTransitionContext::RemotePrepareAck,
     )?;
     coordinator_prepared_xact_intent_mark(
         &prepared_gid,
         SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+        SpirePreparedXactIntentTransitionContext::LocalCommitRecorded,
     )?;
 
     let commit_conninfo = conninfo.clone();

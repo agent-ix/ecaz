@@ -1123,6 +1123,51 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn prepared_transaction_intent_transitions_cannot_bypass_prepare_ack() {
+        assert!(coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED,
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+            SpirePreparedXactIntentTransitionContext::RemotePrepareAck,
+        ));
+        assert!(coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+            SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+            SpirePreparedXactIntentTransitionContext::LocalCommitRecorded,
+        ));
+        assert!(coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED,
+            SPIRE_PREPARED_XACT_INTENT_ROLLBACK_LOCAL,
+            SpirePreparedXactIntentTransitionContext::ReaperRollback,
+        ));
+        assert!(coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+            SPIRE_PREPARED_XACT_INTENT_ROLLBACK_LOCAL,
+            SpirePreparedXactIntentTransitionContext::ReaperRollback,
+        ));
+
+        assert!(!coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED,
+            SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+            SpirePreparedXactIntentTransitionContext::LocalCommitRecorded,
+        ));
+        assert!(!coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED,
+            SPIRE_PREPARED_XACT_INTENT_ROLLBACK_LOCAL,
+            SpirePreparedXactIntentTransitionContext::LocalCommitRecorded,
+        ));
+        assert!(!coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
+            SPIRE_PREPARED_XACT_INTENT_ROLLBACK_LOCAL,
+            SpirePreparedXactIntentTransitionContext::LocalCommitRecorded,
+        ));
+        assert!(!coordinator_prepared_xact_intent_transition_is_valid(
+            SPIRE_PREPARED_XACT_INTENT_COMMIT_LOCAL,
+            SPIRE_PREPARED_XACT_INTENT_ROLLBACK_LOCAL,
+            SpirePreparedXactIntentTransitionContext::ReaperRollback,
+        ));
+    }
+
+    #[test]
     fn prepare_transaction_capacity_classifier_matches_postgres_errors() {
         assert!(postgres_prepare_transaction_capacity_failure(
             Some("55000"),
