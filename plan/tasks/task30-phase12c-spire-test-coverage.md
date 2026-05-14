@@ -587,16 +587,16 @@ Today `production_summary.rs:234,290` is contract-only.
 Assert each diagnostic snapshot returns empty cleanly when invoked
 against a dropped index (not panic / not stale data).
 
-- [ ] `ec_spire_index_hierarchy_snapshot`.
-- [ ] `ec_spire_index_object_snapshot`.
-- [ ] `ec_spire_index_delta_snapshot`.
-- [ ] `ec_spire_index_health_snapshot`.
-- [ ] `ec_spire_index_leaf_snapshot`.
-- [ ] `ec_spire_index_placement_snapshot`.
-- [ ] `ec_spire_index_scan_pipeline_snapshot`.
-- [ ] `ec_spire_index_top_graph_snapshot`.
-- [ ] `ec_spire_index_allocator_snapshot`.
-- [ ] `ec_spire_index_boundary_replica_placement_snapshot`.
+- [x] `ec_spire_index_hierarchy_snapshot`.
+- [x] `ec_spire_index_object_snapshot`.
+- [x] `ec_spire_index_delta_snapshot`.
+- [x] `ec_spire_index_health_snapshot`.
+- [x] `ec_spire_index_leaf_snapshot`.
+- [x] `ec_spire_index_placement_snapshot`.
+- [x] `ec_spire_index_scan_pipeline_snapshot`.
+- [x] `ec_spire_index_top_graph_snapshot`.
+- [x] `ec_spire_index_allocator_snapshot`.
+- [x] `ec_spire_index_boundary_replica_placement_snapshot`.
 
 ### 12c.13.c: `ec_spire_relation_storage_snapshot` under REINDEX
 
@@ -611,28 +611,28 @@ Source: audit Axis J.
 
 ### 12c.14.a: Single-row corpus scan fixture
 
-- [ ] Build with N=1; run CustomScan; assert the one row is
+- [x] Build with N=1; run CustomScan; assert the one row is
   returned cleanly.
 
 ### 12c.14.b: All-duplicate-vector corpus
 
-- [ ] Build a corpus where all vectors are identical.
-- [ ] Run CustomScan with K=10; assert all top-K rows have
+- [x] Build a corpus where all vectors are identical.
+- [x] Run CustomScan with K=10; assert all top-K rows have
   identical scores.
-- [ ] Assert `recall@k=1.0` against brute-force.
+- [x] Assert `recall@k=1.0` against brute-force.
 
 ### 12c.14.c: Numerical-extreme vector handling
 
-- [ ] Subnormal vector components: assert clean processing
+- [x] Subnormal vector components: assert clean processing
   (no panic, no NaN propagation).
-- [ ] Magnitudes near `f32::MAX`: assert no overflow.
-- [ ] NaN component rejection: AM must refuse insertion.
-- [ ] `+Inf` / `-Inf` component rejection: AM must refuse insertion.
+- [x] Magnitudes near `f32::MAX`: assert no overflow.
+- [x] NaN component rejection: AM must refuse insertion.
+- [x] `+Inf` / `-Inf` component rejection: AM must refuse insertion.
 
 ### 12c.14.d: Text-with-NUL-byte projection round-trip
 
-- [ ] Insert a row with `text` containing an embedded NUL byte.
-- [ ] Read through CustomScan; assert the NUL byte is preserved
+- [x] Insert a row with `text` containing an embedded NUL byte.
+- [x] Read through CustomScan; assert the NUL byte is preserved
   (or documented unsupported with explicit error).
 
 ### 12c.14.e: Very-large-string projection (≥1 MB)
@@ -646,9 +646,9 @@ Source: audit Axis J.
 
 ### 12c.14.f: Wide projection (≥32 columns)
 
-- [ ] Build a table with ≥32 projection columns.
+- [x] Build a table with ≥32 projection columns.
 - [ ] Run CustomScan; assert recall@k matches brute-force.
-- [ ] Assert typed transport handles the width without truncation.
+- [x] Assert typed transport handles the width without truncation.
 
 ## Phase 12c.15: Multi-Store / Multi-NVMe Width (P3)
 
@@ -656,23 +656,23 @@ Source: audit Axis H.
 
 ### 12c.15.a: Three-store scan fixture
 
-- [ ] Build with 3 local stores.
-- [ ] Run scan; assert all 3 stores are touched.
+- [x] Build with 3 local stores.
+- [x] Run scan; assert all 3 stores are touched.
 - [ ] Assert per-store counter rows match overall counters
   (route, candidate, byte sums).
 
 ### 12c.15.b: Four-store scan fixture
 
-- [ ] Build with 4 local stores.
-- [ ] Run scan; assert all 4 stores are touched.
+- [x] Build with 4 local stores.
+- [x] Run scan; assert all 4 stores are touched.
 
 ### 12c.15.c: Sequential-backend label standalone test
 
 Today embedded in larger fixtures.
 
-- [ ] Run scan; capture `local_store_execution_snapshot`.
-- [ ] Assert `local_store_execution_mode = 'sequential_backend'`.
-- [ ] Assert `local_store_parallelism_next_step =
+- [x] Run scan; capture `local_store_execution_snapshot`.
+- [x] Assert `local_store_execution_mode = 'sequential_backend'`.
+- [x] Assert `local_store_parallelism_next_step =
   'async_or_parallel_store_group_executor'`.
 
 ## Phase 12c.16: Semantic Tightening Sweep (P2)
