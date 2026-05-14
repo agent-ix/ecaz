@@ -125,7 +125,7 @@ Phase 13 will push it past 80k.
 
 - [ ] Create `src/tests/` module tree (or `src/sql_fixtures/` if a name
   more accurately reflects content). Subdirectories per concern:
-  - [ ] `tests/insert.rs`
+  - [x] `tests/insert.rs`
   - [ ] `tests/scan.rs`
   - [x] `tests/custom_scan.rs`
   - [ ] `tests/remote_search.rs`
@@ -163,6 +163,10 @@ Phase 13 will push it past 80k.
   post-build delta, same-leaf delta, and PG18 concurrent same-leaf
   insert fixtures; source-identity fixtures remain open, so the row is
   still not closed.
+- Packet `31021` moves the source-identity fixture block to
+  `src/tests/insert.rs` and fixes the shared heap-resolution helper to
+  allow one-key INCLUDE indexes; `src/tests/mod.rs` now retains no
+  insert concern block, so the `tests/insert.rs` row is closed.
 - Packet `31001` starts `src/tests/dml_frontdoor.rs` by moving the main
   DML hook/plan/remote-customscan fixture block with a textual include;
   earlier select-plan and later primitive-plan fixtures remain open, so

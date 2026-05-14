@@ -281,8 +281,8 @@ pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
         pgrx::error!("ec_hnsw {label} received a null IndexInfo");
     }
     let index_info = unsafe { &*index_info };
-    if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {
-        pgrx::error!("ec_hnsw {label} currently supports single-column indexes only");
+    if index_info.ii_NumIndexKeyAttrs != 1 {
+        pgrx::error!("ec_hnsw {label} currently supports single-key indexes only");
     }
     if !index_info.ii_Expressions.is_null() {
         pgrx::error!("ec_hnsw {label} does not support expression indexes yet");
