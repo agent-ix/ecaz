@@ -647,7 +647,7 @@ Source: audit Axis J.
 ### 12c.14.f: Wide projection (≥32 columns)
 
 - [x] Build a table with ≥32 projection columns.
-- [ ] Run CustomScan; assert recall@k matches brute-force.
+- [x] Run CustomScan; assert recall@k matches brute-force.
 - [x] Assert typed transport handles the width without truncation.
 
 ## Phase 12c.15: Multi-Store / Multi-NVMe Width (P3)
