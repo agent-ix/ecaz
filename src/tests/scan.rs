@@ -1025,6 +1025,96 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_numerical_extreme_vector_scan_matches_exact_set() {
+        Spi::run(
+            "CREATE TABLE ec_spire_numerical_extreme_scan \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("numerical-extreme scan table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_numerical_extreme_scan (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.40129846e-45::real, -1.40129846e-45::real], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[3.0e38::real, -3.0e38::real], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[1.0::real, -1.0::real], 4, 42))",
+        )
+        .expect("numerical-extreme scan insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_numerical_extreme_scan_idx \
+             ON ec_spire_numerical_extreme_scan USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 3, nprobe = 3, rerank_width = 10)",
+        )
+        .expect("numerical-extreme ec_spire index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let query = "ARRAY[1.0e-38::real, -1.0e-38::real]";
+        let top_ids = spire_scan_top_ids("ec_spire_numerical_extreme_scan", query, 10);
+        let exact_ids = spire_scan_exact_top_ids("ec_spire_numerical_extreme_scan", query, 10);
+        let scores = Spi::get_one::<Vec<f32>>(&format!(
+            "SELECT array_agg(score ORDER BY id) FROM (\
+                 SELECT id, (embedding <#> {query}::real[])::real AS score \
+                   FROM ec_spire_numerical_extreme_scan \
+                  ORDER BY embedding <#> {query}::real[], id \
+                  LIMIT 10) scored"
+        ))
+        .expect("numerical-extreme score query should succeed")
+        .expect("numerical-extreme scores should exist");
+
+        assert_eq!(top_ids, exact_ids);
+        assert_eq!(top_ids[0], 2);
+        assert_eq!(scores.len(), 3);
+        assert!(
+            scores.iter().all(|score| score.is_finite()),
+            "subnormal and near-f32-max vectors should not produce non-finite scores: {scores:?}"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_non_finite_vector_inserts_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_non_finite_insert \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("non-finite insert table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_non_finite_insert_idx \
+             ON ec_spire_non_finite_insert USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("non-finite insert ec_spire index creation should succeed");
+
+        fn insert_error_message(sql: &str) -> String {
+            let sql = sql.to_owned();
+            pg_sys::PgTryBuilder::new(move || {
+                Spi::run(&sql).expect("non-finite vector insert should fail");
+                "no_error".to_owned()
+            })
+            .catch_others(|cause| match cause {
+                pg_sys::panic::CaughtError::ErrorReport(report)
+                | pg_sys::panic::CaughtError::PostgresError(report) => report.message().to_owned(),
+                pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                    ereport.message().to_owned()
+                }
+            })
+            .execute()
+        }
+
+        for (label, vector) in [
+            ("nan", "ARRAY['NaN'::real, 0.0::real]"),
+            ("positive_inf", "ARRAY['Infinity'::real, 0.0::real]"),
+            ("negative_inf", "ARRAY['-Infinity'::real, 0.0::real]"),
+        ] {
+            let error = insert_error_message(&format!(
+                "INSERT INTO ec_spire_non_finite_insert (id, embedding) \
+                 VALUES (1, encode_to_ecvector({vector}, 4, 42))"
+            ));
+            assert!(
+                error.contains("must be finite"),
+                "{label} insert should reject non-finite vectors explicitly, got {error:?}"
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_ec_spire_flat_recursive_same_candidate() {
         Spi::run("CREATE TABLE ec_spire_flat_compare (id bigint primary key, embedding ecvector)")
             .expect("flat comparison table creation should succeed");
