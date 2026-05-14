@@ -73,6 +73,55 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_transport_network_partition_matrix_actions() {
+        Spi::run("SET LOCAL ec_spire.remote_search_connect_timeout_ms = 25")
+            .expect("connect timeout SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let requests = vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: "host=/tmp/ecaz_missing_pg_socket_network_partition \
+                           dbname=postgres user=postgres"
+                    .to_owned(),
+                sql: "SELECT 1",
+            },
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 3,
+                conninfo: loopback_conninfo,
+                sql: "SELECT 1",
+            },
+        ];
+
+        let strict = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests.clone(),
+            "strict",
+        );
+        assert_eq!(strict.transport_sent_dispatch_count, 2);
+        assert_eq!(strict.transport_ready_dispatch_count, 1);
+        assert_eq!(strict.transport_failed_dispatch_count, 1);
+        assert_eq!(strict.first_transport_failure_category, "connect_failed");
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(
+            strict.next_executor_step,
+            "production_transport_adapter"
+        );
+        assert_eq!(strict.status, "remote_transport_failed");
+
+        let degraded = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests,
+            "degraded",
+        );
+        assert_eq!(degraded.transport_sent_dispatch_count, 1);
+        assert_eq!(degraded.transport_ready_dispatch_count, 1);
+        assert_eq!(degraded.transport_failed_dispatch_count, 0);
+        assert_eq!(degraded.first_transport_failure_category, "none");
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
+        assert_eq!(degraded.first_degraded_skip_category, "connect_failed");
+        assert_eq!(degraded.next_executor_step, "remote_heap_resolution");
+        assert_eq!(degraded.status, "degraded_ready");
+    }
+
+    #[pg_test]
     fn test_ec_spire_prod_transport_remote_stmt_timeout() {
         Spi::run("SET LOCAL ec_spire.remote_search_statement_timeout_ms = 25")
             .expect("statement timeout SET should succeed");
@@ -138,7 +187,7 @@
             strict.next_executor_step,
             "production_transport_adapter"
         );
-        assert_eq!(strict.status, "production_transport_failed");
+        assert_eq!(strict.status, "remote_transport_failed");
 
         let degraded = am::spire_remote_search_production_transport_probe_summary_for_test(
             requests,

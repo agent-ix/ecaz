@@ -195,11 +195,11 @@ Covered by `src/tests/remote_search/transport_faults.rs`.
 
 ### 12c.2.f: `simulated_network_partition`
 
-Today matrix row only.
+Covered by `src/tests/remote_search/transport_faults.rs`.
 
-- [ ] Decide: live fixture or accepted-deferral row.
-- [ ] If live: drive a transport stub that drops all packets after
-  some point; assert detection and matrix-row action.
+- [x] Decide: live fixture or accepted-deferral row.
+- [x] If live: drive an unreachable transport endpoint; assert
+  detection and matrix-row action.
 - [ ] If deferred: record the deferral rationale with reviewer
   acceptance.
 
