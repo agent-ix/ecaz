@@ -285,6 +285,173 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_customscan_empty_remote_result_returns_no_rows() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_CUSTOMSCAN_EMPTY_SELECT",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_customscan_empty_select_remote_sql; \
+                 CREATE TABLE ec_spire_customscan_empty_select_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_customscan_empty_select_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (808, 'remote selected payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('909192939495969798999a9b9c9d9e9f', 'hex')); \
+                 CREATE INDEX ec_spire_customscan_empty_select_remote_idx \
+                     ON ec_spire_customscan_empty_select_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback empty-result remote select target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_empty_select_coord_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_empty_select_coord_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('a0a1a2a3a4a5a6a7a8a9aaabacadaeaf', 'hex'))",
+        )
+        .expect("coordinator insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_empty_select_coord_idx \
+             ON ec_spire_customscan_empty_select_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_customscan_empty_select_coord_idx'::regclass)",
+        )
+        .expect("coordinator active epoch query should succeed")
+        .expect("coordinator active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_customscan_empty_select_remote_idx'::regclass::oid)",
+        )
+        .expect("remote identity query should succeed")
+        .expect("remote identity should exist");
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_customscan_empty_select_coord_idx'::regclass, \
+                     23, 92, 'spire/remote/customscan/empty_select', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_customscan_empty_select_remote_idx', 'active', \
+                     {active_epoch}, {active_epoch}, '{}', 'none')",
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_customscan_empty_select_coord_idx'::regclass, \
+                     int8send(999::bigint)::bytea, 23, 2, {active_epoch}, \
+                     decode('f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff', 'hex'))"
+        ))
+        .expect("empty-result remote placement row should be inserted");
+
+        let remote_select_status = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                     'ec_spire_customscan_empty_select_coord_idx'::regclass, \
+                     'id', \
+                     int8send(999::bigint)::bytea, \
+                     ARRAY['id', 'title']::text[]) \
+             ) \
+             SELECT remote_select_sent::text || '|' || selected_count::text || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("empty-result coordinator select helper query should succeed")
+        .expect("empty-result coordinator select helper should return a row");
+        assert_eq!(
+            remote_select_status,
+            "true|0|remote_select_ready|done"
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("disable seqscan should succeed");
+        Spi::run("SET LOCAL enable_indexscan = off").expect("disable indexscan should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id, title FROM ec_spire_customscan_empty_select_coord_sql \
+                     WHERE id = 999",
+                    None,
+                    &[],
+                )
+                .expect("empty-result CustomScan explain should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("empty-result plan row should decode")
+                        .expect("empty-result plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+        let json_plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (FORMAT JSON, ANALYZE, COSTS OFF) \
+                     SELECT id, title FROM ec_spire_customscan_empty_select_coord_sql \
+                     WHERE id = 999",
+                    None,
+                    &[],
+                )
+                .expect("empty-result CustomScan JSON explain should succeed");
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<pgrx::datum::JsonString>(1)
+                        .expect("empty-result JSON explain row should decode")
+                        .expect("empty-result JSON explain row should not be NULL")
+                        .0,
+                );
+            }
+            lines.join("\n")
+        });
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM (\
+                 SELECT id, title FROM ec_spire_customscan_empty_select_coord_sql \
+                 WHERE id = 999\
+             ) AS empty_remote_result",
+        )
+        .expect("empty-result CustomScan count query should succeed")
+        .expect("empty-result CustomScan count should exist");
+
+        assert!(
+            plan.contains("node: EcSpireDistributedScan"),
+            "expected EcSpireDistributedScan in plan:\n{plan}"
+        );
+        assert_eq!(row_count, 0);
+        assert!(
+            json_plan.contains("\"tuple_transport_status\": \"ready\""),
+            "expected ready tuple transport in CustomScan JSON plan: {json_plan:?}"
+        );
+        assert!(
+            !json_plan.contains("not_applicable"),
+            "empty remote result must not leak not_applicable status: {json_plan:?}"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_spire_customscan_eligibility_no_active_epoch() {
         Spi::run(
             "CREATE TABLE ec_spire_customscan_empty_sql \

@@ -324,9 +324,13 @@ the FFI entry points that today have only shell-fixture coverage.
   Packet `30996` wires the callback and extends the loopback remote
   tuple-payload fixture with `EXPLAIN (FORMAT JSON, ANALYZE, COSTS OFF)`
   assertions for the stable shape.
-- [ ] Empty-remote-result CustomScan fixture: a remote that returns
+- [x] Empty-remote-result CustomScan fixture: a remote that returns
   zero rows for a valid query; assert the CustomScan returns zero rows
-  cleanly with no `not_applicable` status leakage.
+  cleanly with no `not_applicable` status leakage. Packet `31028` adds
+  a loopback CustomScan fixture that probes the remote endpoint returning
+  zero rows, asserts the CustomScan plan stays active, and checks
+  `EXPLAIN (FORMAT JSON, ANALYZE)` for ready tuple transport without
+  `not_applicable`.
 
 ## Phase 12b.4: Standardize test layout
 
