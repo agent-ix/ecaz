@@ -116,6 +116,31 @@ mod tests {
         let score = remote_search_exact_heap_score(&[1.0, 2.0], &[3.0, 4.0])
             .expect("finite equal-dimension vectors should score");
         assert_eq!(score, -11.0);
+
+        let high_dim_query = (1..=128).map(|value| value as f32).collect::<Vec<_>>();
+        let high_dim_source = high_dim_query.clone();
+        let high_dim_score = remote_search_exact_heap_score(&high_dim_query, &high_dim_source)
+            .expect("finite high-dimensional vectors should score");
+        assert_eq!(high_dim_score, -707_264.0);
+
+        let source_nan_error = remote_search_exact_heap_score(&[1.0, 2.0], &[3.0, f32::NAN])
+            .expect_err("source NaN should be rejected");
+        assert_eq!(
+            source_nan_error,
+            "ec_spire remote heap resolution source vector contains a non-finite value"
+        );
+        let query_nan_error = remote_search_exact_heap_score(&[1.0, f32::NAN], &[3.0, 4.0])
+            .expect_err("query NaN should be rejected through non-finite score");
+        assert_eq!(
+            query_nan_error,
+            "ec_spire remote heap resolution produced a non-finite score"
+        );
+        let dimension_error = remote_search_exact_heap_score(&[1.0, 2.0, 3.0], &[4.0, 5.0])
+            .expect_err("dimension mismatch should be rejected");
+        assert_eq!(
+            dimension_error,
+            "ec_spire remote heap resolution dimension mismatch: query dim 3, heap dim 2"
+        );
     }
 
     fn ready_production_scan_heap_summary(
