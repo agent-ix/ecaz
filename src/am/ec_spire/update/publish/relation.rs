@@ -21,17 +21,15 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
         &input,
     )?;
     validate_scheduled_replacement_execution_snapshot(snapshot, decision, publish_plan)?;
-    let replacement_object_placements = unsafe {
-        write_relation_scheduled_replacement_objects(
-            input.epoch,
-            &input.replacement_parent,
-            decision,
-            &input.replacement_children,
-            input.leaf_object_version,
-            input.leaf_inputs,
-            object_store,
-        )?
-    };
+    let replacement_object_placements = write_relation_scheduled_replacement_objects(
+        input.epoch,
+        &input.replacement_parent,
+        decision,
+        &input.replacement_children,
+        input.leaf_object_version,
+        input.leaf_inputs,
+        object_store,
+    )?;
     validate_scheduled_replacement_pid_plan_output(
         decision,
         pid_plan,
@@ -295,7 +293,7 @@ pub(super) fn write_local_replacement_objects(
     )
 }
 
-pub(super) unsafe fn write_relation_replacement_objects(
+pub(super) fn write_relation_replacement_objects(
     epoch: u64,
     replacement_parent: &SpireRoutingPartitionObject,
     replacement_children: &[SpireRoutingReplacementChild],
@@ -333,7 +331,7 @@ pub(super) fn write_local_scheduled_replacement_objects(
     )
 }
 
-pub(super) unsafe fn write_relation_scheduled_replacement_objects(
+pub(super) fn write_relation_scheduled_replacement_objects(
     epoch: u64,
     replacement_parent: &SpireRoutingPartitionObject,
     decision: &SpireLeafReplacementScheduleDecision,
