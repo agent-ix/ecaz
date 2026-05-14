@@ -269,8 +269,10 @@ Phase 13 will push it past 80k.
 - [ ] Verify `cargo pgrx test` passes against PG18 with no fixture name
   changes. Coverage for cited tracker rows must remain at the same
   function names so the Phase 11/12/12a trackers do not require edits.
-- [ ] Spot-check 10 random tracker rows that cite a fixture name; each
+- [x] Spot-check 10 random tracker rows that cite a fixture name; each
   should still resolve via `rg test_ec_spire_<name> src/tests/`.
+  Packet `31029` records the selected tracker strings and their
+  `src/tests/` locations; all ten resolved.
 
 ## Phase 12b.3: Split `custom_scan.rs` and fill RemoteScan test gaps
 
