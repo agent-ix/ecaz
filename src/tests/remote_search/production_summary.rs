@@ -232,6 +232,10 @@
 
     #[pg_test]
     fn test_ec_spire_stage_e_fault_matrix_contract() {
+        // Contract-only pin for the operator-facing Stage E matrix rows.
+        // Live executor coverage belongs in Phase 12c.2 and 12c.13 fixtures;
+        // this test only proves the documented rows and prescribed actions
+        // remain visible through the SQL matrix surface.
         let required_cases = [
             "epoch_mismatch",
             "version_skew",
@@ -288,6 +292,10 @@
 
     #[pg_test]
     fn test_ec_spire_stage_e_lifecycle_matrix_contract() {
+        // Contract-only pin for lifecycle rows around remote index DDL.
+        // Live before-dispatch and in-flight fixtures belong in Phase 12c.3;
+        // this test only proves the documented lifecycle rows stay present
+        // and keep their prescribed detection/action values.
         let required_cases = [
             "drop_remote_index_before_fanout",
             "drop_remote_index_in_flight",
