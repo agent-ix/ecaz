@@ -274,6 +274,58 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_transport_backend_terminated_matrix_actions() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let requests = vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo.clone(),
+                sql: "SELECT pg_terminate_backend(pg_backend_pid())",
+            },
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 3,
+                conninfo: loopback_conninfo,
+                sql: "SELECT 1",
+            },
+        ];
+
+        let strict = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests.clone(),
+            "strict",
+        );
+        assert_eq!(strict.transport_sent_dispatch_count, 2);
+        assert_eq!(strict.transport_ready_dispatch_count, 1);
+        assert_eq!(strict.transport_failed_dispatch_count, 1);
+        assert_eq!(
+            strict.first_transport_failure_category,
+            "remote_backend_terminated"
+        );
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(strict.first_degraded_skip_category, "none");
+        assert_eq!(
+            strict.next_executor_step,
+            "production_transport_adapter"
+        );
+        assert_eq!(strict.status, "remote_transport_failed");
+
+        let degraded = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests,
+            "degraded",
+        );
+        assert_eq!(degraded.transport_sent_dispatch_count, 1);
+        assert_eq!(degraded.transport_ready_dispatch_count, 1);
+        assert_eq!(degraded.transport_failed_dispatch_count, 0);
+        assert_eq!(degraded.first_transport_failure_category, "none");
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            degraded.first_degraded_skip_category,
+            "remote_backend_terminated"
+        );
+        assert_eq!(degraded.next_executor_step, "remote_heap_resolution");
+        assert_eq!(degraded.status, "degraded_ready");
+    }
+
+    #[pg_test]
     fn test_ec_spire_prod_transport_remote_query_cancelled() {
         let loopback_conninfo = current_pg_test_loopback_conninfo();
         let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
@@ -288,6 +340,58 @@
         assert_eq!(failed.status, "remote_transport_failed");
         assert_eq!(failed.failure_category, "remote_query_cancelled");
         assert_eq!(failed.row_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_transport_query_cancel_matrix_actions() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let requests = vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo.clone(),
+                sql: "SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(0.30)",
+            },
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 3,
+                conninfo: loopback_conninfo,
+                sql: "SELECT 1",
+            },
+        ];
+
+        let strict = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests.clone(),
+            "strict",
+        );
+        assert_eq!(strict.transport_sent_dispatch_count, 2);
+        assert_eq!(strict.transport_ready_dispatch_count, 1);
+        assert_eq!(strict.transport_failed_dispatch_count, 1);
+        assert_eq!(
+            strict.first_transport_failure_category,
+            "remote_query_cancelled"
+        );
+        assert_eq!(strict.degraded_skipped_dispatch_count, 0);
+        assert_eq!(strict.first_degraded_skip_category, "none");
+        assert_eq!(
+            strict.next_executor_step,
+            "production_transport_adapter"
+        );
+        assert_eq!(strict.status, "remote_transport_failed");
+
+        let degraded = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests,
+            "degraded",
+        );
+        assert_eq!(degraded.transport_sent_dispatch_count, 1);
+        assert_eq!(degraded.transport_ready_dispatch_count, 1);
+        assert_eq!(degraded.transport_failed_dispatch_count, 0);
+        assert_eq!(degraded.first_transport_failure_category, "none");
+        assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            degraded.first_degraded_skip_category,
+            "remote_query_cancelled"
+        );
+        assert_eq!(degraded.next_executor_step, "remote_heap_resolution");
+        assert_eq!(degraded.status, "degraded_ready");
     }
 
     #[pg_test]
