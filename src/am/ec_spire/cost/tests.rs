@@ -42,6 +42,22 @@ mod tests {
         }
     }
 
+    fn assert_linear_total_cost_scaling(
+        label: &str,
+        baseline: PlannerCostEstimate,
+        doubled: PlannerCostEstimate,
+        tripled: PlannerCostEstimate,
+    ) {
+        let double_delta = doubled.total_cost - baseline.total_cost;
+        let triple_delta = tripled.total_cost - baseline.total_cost;
+
+        assert!(double_delta > 0.0, "{label} should increase total cost");
+        assert!(
+            (triple_delta - (2.0 * double_delta)).abs() < 1e-8,
+            "{label} should scale linearly: baseline={baseline:?} doubled={doubled:?} tripled={tripled:?}"
+        );
+    }
+
     #[test]
     fn cost_increases_with_effective_nprobe() {
         let low = estimate_spire_cost(&inputs(4, 2, 1), default_constants());
@@ -101,6 +117,140 @@ mod tests {
 
         assert!(tuned.startup_cost > baseline.startup_cost);
         assert!(tuned.total_cost > baseline.total_cost);
+    }
+
+    #[test]
+    fn individual_cost_tuning_knobs_scale_modeled_costs_linearly() {
+        let constants = default_constants();
+        let defaults = SpireCostModelTuning::packet_30976_defaults();
+        let multistore_inputs = inputs(8, 2, 4);
+        let mut rerank_inputs = inputs(8, 2, 1);
+        rerank_inputs.relation_rerank_width = 0;
+        rerank_inputs.effective_rerank_width = 0;
+
+        let baseline = estimate_spire_cost_with_tuning(&multistore_inputs, constants, defaults);
+        assert_linear_total_cost_scaling(
+            "routing dimension scale",
+            baseline,
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    routing_dimension_scale: defaults.routing_dimension_scale * 2.0,
+                    ..defaults
+                },
+            ),
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    routing_dimension_scale: defaults.routing_dimension_scale * 3.0,
+                    ..defaults
+                },
+            ),
+        );
+        assert_linear_total_cost_scaling(
+            "leaf dimension scale",
+            baseline,
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    leaf_dimension_scale: defaults.leaf_dimension_scale * 2.0,
+                    ..defaults
+                },
+            ),
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    leaf_dimension_scale: defaults.leaf_dimension_scale * 3.0,
+                    ..defaults
+                },
+            ),
+        );
+        assert_linear_total_cost_scaling(
+            "index page scale",
+            baseline,
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    index_page_scale: defaults.index_page_scale * 2.0,
+                    ..defaults
+                },
+            ),
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    index_page_scale: defaults.index_page_scale * 3.0,
+                    ..defaults
+                },
+            ),
+        );
+        assert_linear_total_cost_scaling(
+            "local store page fanout scale",
+            baseline,
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    local_store_page_fanout_scale: defaults.local_store_page_fanout_scale * 2.0,
+                    ..defaults
+                },
+            ),
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    local_store_page_fanout_scale: defaults.local_store_page_fanout_scale * 3.0,
+                    ..defaults
+                },
+            ),
+        );
+        assert_linear_total_cost_scaling(
+            "storage scoring multiplier",
+            baseline,
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    storage_scoring_multiplier: defaults.storage_scoring_multiplier * 2.0,
+                    ..defaults
+                },
+            ),
+            estimate_spire_cost_with_tuning(
+                &multistore_inputs,
+                constants,
+                SpireCostModelTuning {
+                    storage_scoring_multiplier: defaults.storage_scoring_multiplier * 3.0,
+                    ..defaults
+                },
+            ),
+        );
+
+        let rerank_baseline = estimate_spire_cost_with_tuning(&rerank_inputs, constants, defaults);
+        assert_linear_total_cost_scaling(
+            "rerank multiplier",
+            rerank_baseline,
+            estimate_spire_cost_with_tuning(
+                &rerank_inputs,
+                constants,
+                SpireCostModelTuning {
+                    rerank_multiplier: defaults.rerank_multiplier * 2.0,
+                    ..defaults
+                },
+            ),
+            estimate_spire_cost_with_tuning(
+                &rerank_inputs,
+                constants,
+                SpireCostModelTuning {
+                    rerank_multiplier: defaults.rerank_multiplier * 3.0,
+                    ..defaults
+                },
+            ),
+        );
     }
 
     #[test]
