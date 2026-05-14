@@ -392,6 +392,46 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_scan_local_store_execution_mode_standalone_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_local_store_execution_mode_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("local-store execution mode table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_local_store_execution_mode_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("local-store execution mode insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_local_store_execution_mode_idx \
+             ON ec_spire_local_store_execution_mode_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 1, rerank_width = 10)",
+        )
+        .expect("local-store execution mode ec_spire index creation should succeed");
+
+        let snapshot_from = "FROM ec_spire_index_scan_local_store_execution_snapshot(\
+             'ec_spire_local_store_execution_mode_idx'::regclass, ARRAY[1.0, 0.0]::real[])";
+        let local_store_execution_mode = Spi::get_one::<String>(&format!(
+            "SELECT local_store_execution_mode {snapshot_from}"
+        ))
+        .expect("local-store execution mode query should succeed")
+        .expect("local-store execution mode should exist");
+        let local_store_parallelism_next_step = Spi::get_one::<String>(&format!(
+            "SELECT local_store_parallelism_next_step {snapshot_from}"
+        ))
+        .expect("local-store parallelism next-step query should succeed")
+        .expect("local-store parallelism next-step should exist");
+
+        assert_eq!(local_store_execution_mode, "sequential_backend");
+        assert_eq!(
+            local_store_parallelism_next_step,
+            "async_or_parallel_store_group_executor"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_spire_adaptive_nprobe_routing_snapshot_sql() {
         Spi::run("RESET ec_spire.adaptive_nprobe").expect("adaptive nprobe reset should succeed");
         Spi::run("RESET ec_spire.adaptive_nprobe_score_gap_micros")
