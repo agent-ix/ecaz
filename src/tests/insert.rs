@@ -1762,3 +1762,304 @@
         assert_eq!(failed_remote_count, 0);
         assert_eq!(prepared_count, 0);
     }
+
+    #[pg_test]
+    fn test_ec_spire_schema_drift_fails_before_dispatch_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var(\
+                     'EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_TRIGGER_SCHEMA_DRIFT', \
+                     $1)",
+                &[&loopback_conninfo],
+            )
+            .expect("loopback backend should receive conninfo secret env var");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_trig_schema_drift_remote; \
+                 DROP TABLE IF EXISTS ec_spire_trig_schema_drift_coord; \
+                 CREATE TABLE ec_spire_trig_schema_drift_remote \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_trig_schema_drift_remote_idx \
+                     ON ec_spire_trig_schema_drift_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_trig_schema_drift_coord \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_trig_schema_drift_coord \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'schema drift seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('000102030405060708090a0b0c0d0e0f', 'hex')); \
+                 CREATE INDEX ec_spire_trig_schema_drift_coord_idx \
+                     ON ec_spire_trig_schema_drift_coord USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback schema drift fixtures should be created");
+
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT child_pid \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_trig_schema_drift_coord_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+                  WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+                  ORDER BY scored.score DESC, centroid_index, child_pid \
+                  LIMIT 1",
+                &[],
+            )
+            .expect("selected pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("selected pid should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT tests.ec_spire_test_rewrite_placement_node(\
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass, {selected_pid}, 19)"
+            ))
+            .expect("placement rewrite should succeed");
+        let remote_identity_hex = loopback_client
+            .query_one(
+                "SELECT profile_fingerprint \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_trig_schema_drift_remote_idx'::regclass::oid)",
+                &[],
+            )
+            .expect("remote identity query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote identity should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass, \
+                     19, 17, 'spire/remote/trigger_schema_drift', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_trig_schema_drift_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 SELECT ec_spire_enable_coordinator_insert(\
+                     'ec_spire_trig_schema_drift_coord'::regclass, \
+                     'ec_spire_trig_schema_drift_coord_idx'::regclass, \
+                     'id', 'embedding', 'source_identity'); \
+                 ALTER TABLE ec_spire_trig_schema_drift_coord \
+                     ADD COLUMN coord_only text",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("descriptor, trigger, and coordinator-only DDL should succeed");
+
+        let drift_error = loopback_client
+            .batch_execute(
+                "INSERT INTO ec_spire_trig_schema_drift_coord \
+                     (id, title, embedding, source_identity, coord_only) VALUES \
+                 (601, 'schema drift payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('808182838485868788898a8b8c8d8e8f', 'hex'), 'coordinator-only')",
+            )
+            .expect_err("coordinator-only DDL should trip schema drift guard");
+        let drift_message = drift_error
+            .as_db_error()
+            .map(|db_error| db_error.message().to_owned())
+            .unwrap_or_else(|| drift_error.to_string());
+        let remote_row_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_trig_schema_drift_remote \
+                  WHERE id = 601",
+                &[],
+            )
+            .expect("remote schema drift row count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote schema drift row count should decode");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("prepared xact count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+
+        assert!(drift_message.contains("schema_drift"), "{drift_message}");
+        assert!(
+            drift_message.contains("coordinator side drifted"),
+            "{drift_message}"
+        );
+        assert_eq!(remote_row_count, 0);
+        assert_eq!(prepared_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_schema_fingerprint_pre_dispatch_sql() {
+        let _env_lock = env_var_test_lock();
+        const SECRET_KEY: &str =
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_TRIGGER_REMOTE_SCHEMA_DRIFT";
+        const SECRET_NAME: &str = "spire/remote/trigger_remote_schema_drift";
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(SECRET_KEY, &loopback_conninfo);
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                &[&SECRET_KEY, &loopback_conninfo],
+            )
+            .expect("loopback backend should receive conninfo secret env var");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_trig_remote_schema_drift_remote; \
+                 DROP TABLE IF EXISTS ec_spire_trig_remote_schema_drift_coord; \
+                 CREATE TABLE ec_spire_trig_remote_schema_drift_remote \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_trig_remote_schema_drift_remote_idx \
+                     ON ec_spire_trig_remote_schema_drift_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_trig_remote_schema_drift_coord \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_trig_remote_schema_drift_coord \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'remote schema drift seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('101112131415161718191a1b1c1d1e1f', 'hex')); \
+                 CREATE INDEX ec_spire_trig_remote_schema_drift_coord_idx \
+                     ON ec_spire_trig_remote_schema_drift_coord USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote schema drift fixtures should be created");
+
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_trig_remote_schema_drift_coord_idx'::regclass)",
+                &[],
+            )
+            .expect("remote schema active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote schema active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT child_pid \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_trig_remote_schema_drift_coord_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+                  WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+                  ORDER BY scored.score DESC, centroid_index, child_pid \
+                  LIMIT 1",
+                &[],
+            )
+            .expect("remote schema selected pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote schema selected pid should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT tests.ec_spire_test_rewrite_placement_node(\
+                     'ec_spire_trig_remote_schema_drift_coord_idx'::regclass, {selected_pid}, 20)"
+            ))
+            .expect("remote schema placement rewrite should succeed");
+        let remote_identity_hex = loopback_client
+            .query_one(
+                "SELECT profile_fingerprint \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_trig_remote_schema_drift_remote_idx'::regclass::oid)",
+                &[],
+            )
+            .expect("remote schema identity query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote schema identity should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_trig_remote_schema_drift_coord_idx'::regclass, \
+                     20, 18, '{SECRET_NAME}', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_trig_remote_schema_drift_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 SELECT ec_spire_enable_coordinator_insert(\
+                     'ec_spire_trig_remote_schema_drift_coord'::regclass, \
+                     'ec_spire_trig_remote_schema_drift_coord_idx'::regclass, \
+                     'id', 'embedding', 'source_identity')",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("remote schema descriptor and trigger should succeed");
+        let stored_remote_fingerprint = loopback_client
+            .query_one(
+                "SELECT remote_insert_shape_fingerprint \
+                   FROM ec_spire_remote_node_descriptor \
+                  WHERE coordinator_index_oid = \
+                        'ec_spire_trig_remote_schema_drift_coord_idx'::regclass \
+                    AND node_id = 20",
+                &[],
+            )
+            .expect("stored remote fingerprint query should succeed")
+            .try_get::<_, String>(0)
+            .expect("stored remote fingerprint should decode");
+        assert_ne!(stored_remote_fingerprint, "unset");
+
+        loopback_client
+            .batch_execute(
+                "ALTER TABLE ec_spire_trig_remote_schema_drift_remote \
+                     ALTER COLUMN title TYPE varchar(128)",
+            )
+            .expect("remote-only ALTER TYPE should succeed");
+        let drift_error = loopback_client
+            .batch_execute(
+                "INSERT INTO ec_spire_trig_remote_schema_drift_coord \
+                     (id, title, embedding, source_identity) VALUES \
+                 (611, 'remote schema drift payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('909192939495969798999a9b9c9d9e9f', 'hex'))",
+            )
+            .expect_err("remote-only DDL should trip remote schema drift guard");
+        let drift_message = drift_error
+            .as_db_error()
+            .map(|db_error| db_error.message().to_owned())
+            .unwrap_or_else(|| drift_error.to_string());
+        let remote_row_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_trig_remote_schema_drift_remote \
+                  WHERE id = 611",
+                &[],
+            )
+            .expect("remote schema drift row count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote schema drift row count should decode");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("remote schema prepared xact count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote schema prepared xact count should decode");
+
+        assert!(drift_message.contains("schema_drift"), "{drift_message}");
+        assert!(
+            drift_message.contains("remote side drifted"),
+            "{drift_message}"
+        );
+        assert_eq!(remote_row_count, 0);
+        assert_eq!(prepared_count, 0);
+    }

@@ -150,6 +150,10 @@ Phase 13 will push it past 80k.
   coordinator-insert and insert-trigger fixture block with a textual
   include; later insert-after-build fixtures remain open, so the
   `tests/insert.rs` row is not yet closed.
+- Packet `31018` extends `src/tests/insert.rs` with the coordinator
+  insert schema-drift and remote schema-fingerprint pre-dispatch
+  fixtures; later insert-after-build and source-identity fixtures remain
+  open, so the row is still not closed.
 - Packet `31001` starts `src/tests/dml_frontdoor.rs` by moving the main
   DML hook/plan/remote-customscan fixture block with a textual include;
   earlier select-plan and later primitive-plan fixtures remain open, so
