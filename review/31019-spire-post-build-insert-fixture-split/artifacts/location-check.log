@@ -1,0 +1,10 @@
+Script started on 2026-05-13 17:52:35-07:00 [<not executed on terminal>]
+src/tests/insert.rs
+2068:    fn test_ec_spire_insert_after_build_multi_row_epoch_progression() {
+2131:    fn test_ec_spire_insert_after_build_rejects_dimension_mismatch() {
+2179:    fn test_ec_spire_insert_bootstraps_empty_index_epoch() {
+
+src/tests/mod.rs
+12782:    fn test_ec_spire_srcid_uuid_global_ids() {
+
+Script done on 2026-05-13 17:52:35-07:00 [COMMAND_EXIT_CODE="0"]
