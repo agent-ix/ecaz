@@ -471,10 +471,10 @@ Source: audit Axes A, G.
 
 Today `custom_scan.rs:188-208` uses substring asserts.
 
-- [ ] Add `EXPLAIN (ANALYZE, FORMAT JSON)` run.
-- [ ] Assert `"Actual Rows"` field present and equal to LIMIT.
-- [ ] Assert `"Actual Loops"` field present and equal to 1.
-- [ ] Assert `"Actual Total Time"` field present and > 0.
+- [x] Add `EXPLAIN (ANALYZE, FORMAT JSON)` run.
+- [x] Assert `"Actual Rows"` field present and equal to LIMIT.
+- [x] Assert `"Actual Loops"` field present and equal to 1.
+- [x] Assert `"Actual Total Time"` field present and > 0.
 
 ### 12c.10.b: Tighten cost-monotonicity tests to ratios
 
@@ -503,16 +503,16 @@ constant term dominates.
 Today `custom_scan.rs:455` returns `eligible=false` but no test
 asserts what plan the planner produces in this case.
 
-- [ ] Create a SPIRE-fronted table with no active epoch.
-- [ ] Run a query; capture EXPLAIN.
-- [ ] Assert plan node is Index Scan or Seq Scan, not CustomScan.
+- [x] Create a SPIRE-fronted table with no active epoch.
+- [x] Run a query; capture EXPLAIN.
+- [x] Assert plan node is Index Scan or Seq Scan, not CustomScan.
 
 ### 12c.10.e: EXPLAIN ANALYZE counter contract pin
 
-- [ ] Snapshot the full `EXPLAIN (ANALYZE, FORMAT JSON)` output for
+- [x] Snapshot the full `EXPLAIN (ANALYZE, FORMAT JSON)` output for
   a canonical query.
-- [ ] Pin the set of fields (not values) the CustomScan emits.
-- [ ] Document the field-set contract in a code comment so future
+- [x] Pin the set of fields (not values) the CustomScan emits.
+- [x] Document the field-set contract in a code comment so future
   changes are explicit.
 
 ## Phase 12c.11: Isolation Coverage Completion (P2)
