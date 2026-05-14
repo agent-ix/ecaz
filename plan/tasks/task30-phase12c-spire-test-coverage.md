@@ -184,10 +184,10 @@ Today only contract pinning at `epoch_manifest.rs:78`.
 
 ### 12c.2.e: `remote_oom`
 
-Today matrix row only.
+Covered by `src/tests/remote_search/transport_faults.rs`.
 
-- [ ] Decide: live fixture or accepted-deferral row.
-- [ ] If live: simulate remote OOM (e.g., issue a query that
+- [x] Decide: live fixture or accepted-deferral row.
+- [x] If live: simulate remote OOM (e.g., issue a query that
   exceeds remote `work_mem` deliberately); assert matrix-row
   action fires.
 - [ ] If deferred: record the deferral rationale with reviewer
