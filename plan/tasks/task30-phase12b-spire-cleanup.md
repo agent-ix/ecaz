@@ -167,6 +167,9 @@ Phase 13 will push it past 80k.
   so the row is still not closed.
 - Packet `31012` moves the remaining top-graph snapshot and boundary
   replica placement diagnostics fixtures to `src/tests/diagnostics.rs`;
+  the leaf snapshot fixture remains open, so the row is still not closed.
+- Packet `31013` moves the leaf snapshot fixture to
+  `src/tests/diagnostics.rs`;
   `src/tests/mod.rs` now only retains the diagnostics concern include, so
   the `tests/diagnostics.rs` row is closed.
 - Packet `31008` starts `src/tests/build.rs` by moving the initial
