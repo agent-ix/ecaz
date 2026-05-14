@@ -113,3 +113,60 @@
         assert!(pk_column_is_null);
         assert!(pk_type_is_null);
     }
+
+    fn assert_ec_spire_dml_frontdoor_float_pk_rejected_sql(
+        sql_type: &str,
+        table_name: &str,
+        index_name: &str,
+    ) {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} \
+             (id {sql_type} primary key, title text not null, embedding ecvector)"
+        ))
+        .expect("DML float-PK table creation should succeed");
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} \
+             ON {table_name} USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)"
+        ))
+        .expect("DML float-PK ec_spire index creation should succeed");
+
+        let context =
+            format!("FROM ec_spire_dml_frontdoor_relation_context('{table_name}'::regclass)");
+        let status = Spi::get_one::<String>(&format!("SELECT status {context}"))
+            .expect("DML float-PK relation context status should succeed")
+            .expect("DML float-PK relation context status should exist");
+        let next_step = Spi::get_one::<String>(&format!("SELECT next_step {context}"))
+            .expect("DML float-PK relation context next step should succeed")
+            .expect("DML float-PK relation context next step should exist");
+        let distributed =
+            Spi::get_one::<bool>(&format!("SELECT ec_spire_distributed_table {context}"))
+                .expect("DML float-PK distributed flag should succeed")
+                .expect("DML float-PK distributed flag should exist");
+        let pk_type_is_null = Spi::get_one::<bool>(&format!("SELECT pk_type IS NULL {context}"))
+            .expect("DML float-PK pk_type null check should succeed")
+            .expect("DML float-PK pk_type null check should exist");
+
+        assert_eq!(status, "unsupported_pk_shape", "{sql_type}");
+        assert_eq!(
+            next_step,
+            "define one bigint primary-key column for ADR-069 v1 routing",
+            "{sql_type}"
+        );
+        assert!(!distributed, "{sql_type}");
+        assert!(pk_type_is_null, "{sql_type}");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_float_pk_rejected_sql() {
+        assert_ec_spire_dml_frontdoor_float_pk_rejected_sql(
+            "float4",
+            "ec_spire_dml_float4_pk_sql",
+            "ec_spire_dml_float4_pk_idx",
+        );
+        assert_ec_spire_dml_frontdoor_float_pk_rejected_sql(
+            "float8",
+            "ec_spire_dml_float8_pk_sql",
+            "ec_spire_dml_float8_pk_idx",
+        );
+    }
