@@ -1,0 +1,38 @@
+Script started on 2026-05-13 20:03:04-07:00 [<not executed on terminal>]
+== test_ec_spire_schema_drift_fails_before_dispatch_sql ==
+src/tests/insert.rs
+1767:    fn test_ec_spire_schema_drift_fails_before_dispatch_sql() {
+== test_ec_spire_placement_index_oid_lookup_uses_index_sql ==
+src/tests/placement.rs
+76:    fn test_ec_spire_placement_index_oid_lookup_uses_index_sql() {
+== test_ec_spire_customscan_does_not_replace_local_only_index_plan ==
+src/tests/custom_scan.rs
+722:    fn test_ec_spire_customscan_does_not_replace_local_only_index_plan() {
+== test_ec_spire_enable_coordinator_insert_trigger_sql ==
+src/tests/insert.rs
+773:    fn test_ec_spire_enable_coordinator_insert_trigger_sql() {
+== test_ec_spire_prod_transport_local_cancel_remote_cancel ==
+src/tests/remote_search.rs
+6161:    fn test_ec_spire_prod_transport_local_cancel_remote_cancel() {
+== test_ec_spire_insert_prepare_local_cancel_rolls_back ==
+src/tests/insert.rs
+393:    fn test_ec_spire_insert_prepare_local_cancel_rolls_back() {
+== test_ec_spire_prod_receive_local_cancel_remote_cancel ==
+src/tests/remote_search.rs
+6558:    fn test_ec_spire_prod_receive_local_cancel_remote_cancel() {
+== test_ec_spire_dml_frontdoor_primitive_plan_from_decision ==
+src/tests/dml_frontdoor.rs
+1062:    fn test_ec_spire_dml_frontdoor_primitive_plan_from_decision() {
+== test_ec_spire_srcid ==
+src/tests/insert.rs
+2473:    fn test_ec_spire_srcid_uuid_global_ids() {
+2648:    fn test_ec_spire_srcid_bytea_bootstrap_global() {
+2709:    fn test_ec_spire_srcid_requires_include_column() {
+2748:    fn test_ec_spire_srcid_rejects_bad_type() {
+2768:    fn test_ec_spire_srcid_rejects_null() {
+2793:    fn test_ec_spire_srcid_rejects_bad_bytea_width() {
+== test_ec_spire_update_delete_schema_drift_guard_sql ==
+src/tests/dml_frontdoor.rs
+1672:    fn test_ec_spire_update_delete_schema_drift_guard_sql() {
+
+Script done on 2026-05-13 20:03:05-07:00 [COMMAND_EXIT_CODE="0"]
