@@ -130,7 +130,7 @@ Phase 13 will push it past 80k.
   - [x] `tests/custom_scan.rs`
   - [ ] `tests/remote_search.rs`
   - [x] `tests/dml_frontdoor.rs`
-  - [ ] `tests/placement.rs`
+  - [x] `tests/placement.rs`
   - [x] `tests/vacuum.rs`
   - [ ] `tests/cost_and_planner.rs`
   - [x] `tests/build.rs`
@@ -232,6 +232,10 @@ Phase 13 will push it past 80k.
   catalog and placement-snapshot fixture block with a textual include;
   scan-placement and later contention/diagnostic fixtures remain open, so
   the `tests/placement.rs` row is not yet closed.
+- Packet `31023` moves the remaining placement write-contention fixture to
+  `src/tests/placement.rs`; scan-placement lives in `src/tests/scan.rs`
+  and placement diagnostics live in `src/tests/diagnostics.rs`, so the
+  `tests/placement.rs` row is closed.
 - Packet `31003` starts `src/tests/scan.rs` by moving the scan-placement,
   scan pipeline, routing, and centroid-classification fixture block with
   a textual include; later build/scan fixtures remain open, so the
