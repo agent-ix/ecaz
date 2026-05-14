@@ -899,6 +899,106 @@
     }
 
     #[pg_test]
+    #[should_panic(expected = "canceling statement due to user request")]
+    fn test_ec_spire_customscan_read_cancel_releases_transport() {
+        let _env_lock = env_var_test_lock();
+        set_remote_governance_test_namespace(6606);
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("global governance cap SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
+            .expect("per-node governance cap SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_CUSTOMSCAN_READ_CANCEL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_customscan_read_cancel_remote_sql; \
+                 CREATE TABLE ec_spire_customscan_read_cancel_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector); \
+                 INSERT INTO ec_spire_customscan_read_cancel_remote_sql (id, title, embedding) VALUES \
+                     (10, 'remote alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, 'remote beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_customscan_read_cancel_remote_idx \
+                     ON ec_spire_customscan_read_cancel_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback remote read-cancel fixture should be created");
+        let remote_identity_hex = loopback_remote_index_identity_hex(
+            &mut loopback_client,
+            "ec_spire_customscan_read_cancel_remote_idx",
+        );
+
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_read_cancel_coord_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_read_cancel_coord_sql (id, title, embedding) VALUES \
+             (1, 'coordinator alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, 'coordinator beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("coordinator insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_read_cancel_coord_idx \
+             ON ec_spire_customscan_read_cancel_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
+        )
+        .expect("coordinator index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_customscan_read_cancel_coord_idx'::regclass::oid",
+        )
+        .expect("coordinator index oid query should succeed")
+        .expect("coordinator index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_customscan_read_cancel_coord_idx'::regclass)",
+        )
+        .expect("coordinator active epoch query should succeed")
+        .expect("coordinator active epoch should exist");
+        let coord_leaf_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_customscan_read_cancel_coord_idx'::regclass)",
+        )
+        .expect("coordinator leaf pid query should succeed")
+        .expect("coordinator leaf pids should exist");
+        unsafe {
+            for pid in &coord_leaf_pids {
+                am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
+            }
+        }
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 96, 'spire/remote/customscan/read_cancel', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_customscan_read_cancel_remote_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("disable seqscan should succeed");
+        Spi::run("SET LOCAL enable_indexscan = off").expect("disable indexscan should succeed");
+        let _cancel_flags = unsafe { ScopedPgQueryCancelFlags::set_pending() }
+            .expect("PostgreSQL query-cancel flags should resolve inside pg_test backend");
+        Spi::run(
+            "SELECT id, title FROM ec_spire_customscan_read_cancel_coord_sql \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
+        )
+        .expect("CustomScan read path should be interrupted by local query cancel");
+    }
+
+    #[pg_test]
     #[should_panic(
         expected = "EcSpireDistributedScan tuple payload column \"tags\" has unsupported array type"
     )]

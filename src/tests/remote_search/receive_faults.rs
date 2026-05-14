@@ -379,6 +379,10 @@
             .expect("leaf pid query should succeed")
             .try_get::<_, i64>(0)
             .expect("leaf pid should decode");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_candidate_receive_local_cancel_remote_idx",
+        );
         let local_cancel_conninfo = format!(
             "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_local_cancel,public'"
         );
@@ -388,7 +392,7 @@
                 conninfo: local_cancel_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_local_cancel_remote_idx"
                     .to_owned(),
-                remote_index_identity: vec![0xaa],
+                remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],

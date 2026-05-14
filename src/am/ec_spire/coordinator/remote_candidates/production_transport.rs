@@ -1371,10 +1371,19 @@ impl SpireRemoteFanoutExecutor {
             "ec_spire remote production executor dispatch count exceeds u64".to_owned()
         })?;
         let (next_executor_step, status, recommendation) = if cancelled_dispatch_count > 0 {
+            let cancellation_recommendation = match first_cancellation_category {
+                SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED => {
+                    "release governance and discard retained remote batches after local_query_cancelled"
+                }
+                SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT => {
+                    "release governance and discard retained remote batches after local_statement_timeout"
+                }
+                _ => "release governance and discard retained remote batches after local cancellation",
+            };
             (
                 SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
                 SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
-                "release governance and discard retained remote batches after local cancellation",
+                cancellation_recommendation,
             )
         } else if blocked_before_dispatch_count > 0 {
             (
@@ -1630,4 +1639,3 @@ fn remote_search_production_compact_merge_from_candidate_receive_results_with_co
     )?;
     executor.merge_ready_candidate_batches(limit)
 }
-

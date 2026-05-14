@@ -319,11 +319,15 @@ the FFI entry points that today have only shell-fixture coverage.
     invokes;
   - [x] Verify `outputs`, `next_output`, `loaded_outputs` are reset and
     that the second pass returns the same row set.
-- [ ] Read-path cancellation Rust test: today only the INSERT-side has
+- [x] Read-path cancellation Rust test: today only the INSERT-side has
   one (`test_ec_spire_insert_prepare_local_cancel_rolls_back`). Add a
   symmetric read-path test that drives the CustomScan, sets local
   cancel, and asserts the executor unwinds with
-  `local_query_cancelled` and no leaked transport state.
+  `local_query_cancelled` and no leaked transport state. The CustomScan
+  pg_test asserts the PostgreSQL read query is interrupted at the
+  backend boundary; the existing receive-layer local-cancel fixture
+  covers `local_query_cancelled` categorization and governance lock
+  release.
 - [x] `ExplainCustomScan` contract: implement at least a minimal
   `ExplainCustomScan` callback that emits a stable JSON shape with
   `node = EcSpireDistributedScan`, `remote_fanout`,
