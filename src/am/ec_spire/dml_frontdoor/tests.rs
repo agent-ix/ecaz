@@ -238,6 +238,45 @@ mod tests {
     }
 
     #[test]
+    fn query_layer_rejects_float_and_numeric_pk_predicate_values() {
+        for consttype in [
+            pg_sys::FLOAT4OID,
+            pg_sys::FLOAT8OID,
+            pg_sys::NUMERICOID,
+        ] {
+            let mut const_expr = pg_sys::Const::default();
+            const_expr.xpr.type_ = pg_sys::NodeTag::T_Const;
+            const_expr.consttype = consttype;
+            assert_eq!(
+                unsafe {
+                    dml_frontdoor_value_kind(
+                        (&mut const_expr as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
+                    )
+                },
+                SpireDmlFrontdoorValueKind::Other
+            );
+        }
+
+        for paramtype in [
+            pg_sys::FLOAT4OID,
+            pg_sys::FLOAT8OID,
+            pg_sys::NUMERICOID,
+        ] {
+            let mut param = pg_sys::Param::default();
+            param.xpr.type_ = pg_sys::NodeTag::T_Param;
+            param.paramtype = paramtype;
+            assert_eq!(
+                unsafe {
+                    dml_frontdoor_value_kind(
+                        (&mut param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),
+                    )
+                },
+                SpireDmlFrontdoorValueKind::Other
+            );
+        }
+    }
+
+    #[test]
     fn query_layer_walks_nested_integer_coercion_wrappers() {
         let mut int_param = pg_sys::Param::default();
         int_param.xpr.type_ = pg_sys::NodeTag::T_Param;
