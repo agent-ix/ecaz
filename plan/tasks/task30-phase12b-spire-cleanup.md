@@ -126,7 +126,7 @@ Phase 13 will push it past 80k.
 - [ ] Create `src/tests/` module tree (or `src/sql_fixtures/` if a name
   more accurately reflects content). Subdirectories per concern:
   - [x] `tests/insert.rs`
-  - [ ] `tests/scan.rs`
+  - [x] `tests/scan.rs`
   - [x] `tests/custom_scan.rs`
   - [ ] `tests/remote_search.rs`
   - [x] `tests/dml_frontdoor.rs`
@@ -240,6 +240,10 @@ Phase 13 will push it past 80k.
   scan pipeline, routing, and centroid-classification fixture block with
   a textual include; later build/scan fixtures remain open, so the
   `tests/scan.rs` row is not yet closed.
+- Packet `31024` moves the remaining empty ordered-scan and
+  flat-vs-recursive scan parity fixtures to `src/tests/scan.rs`;
+  `src/tests/mod.rs` now retains no scan concern block, so the
+  `tests/scan.rs` row is closed.
 - [x] Move all `test_ec_spire_*` PG18 fixture functions out of
   `src/lib.rs` into the matching test file. Keep `lib.rs` for
   registration, re-exports, and the actual pgrx extension entry points.
