@@ -438,9 +438,9 @@ Packet `30980` follow-up.
 
 Today `dml_frontdoor.rs:2323` asserts only row counts.
 
-- [ ] Pin the response shape: `accepted=true`, `deleted_count=0`
+- [x] Pin the response shape: `accepted=true`, `deleted_count=0`
   on idempotent re-DELETE.
-- [ ] Assert no remote DML is issued on the second DELETE.
+- [x] Assert no remote DML is issued on the second DELETE.
 
 ### 12c.9.f: Split UPDATE/DELETE schema-drift into 3 variants
 
