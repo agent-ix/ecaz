@@ -513,6 +513,39 @@
         assert_eq!(status, "no_active_epoch");
         assert!(!eligible);
         assert_eq!(remote_placement_count, 0);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("disable seqscan should succeed");
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM ec_spire_customscan_empty_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("empty active-epoch EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("empty active-epoch plan row should decode")
+                        .expect("empty active-epoch plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            !plan.contains("Custom Scan (EcSpireDistributedScan)"),
+            "no-active-epoch plan must not use EcSpireDistributedScan:\n{plan}"
+        );
+        assert!(
+            plan.contains("Index Scan") || plan.contains("Seq Scan"),
+            "no-active-epoch plan should stay on a normal local scan path:\n{plan}"
+        );
     }
 
     #[pg_test]
