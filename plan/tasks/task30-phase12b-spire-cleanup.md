@@ -109,6 +109,20 @@ module so 12a.1/12a.2/12a.6 can land without 3-way merge friction.
 PG18 fixtures. Editor and `rustc` compile time are already painful;
 Phase 13 will push it past 80k.
 
+- Midphase audit decision in packet `31017`: the hard 2,500-line cap in
+  the exit criteria applies to production files under `src/am/ec_spire/`,
+  not to the temporary `src/tests/` fixture sink. `src/tests/` concern
+  files should still be reported in line-count artifacts, and any
+  obviously unreviewable concern file should get a follow-up split row,
+  but Phase 12b.2 should finish fixture evacuation before opening
+  second-order fixture sub-splits.
+- Midphase audit decision in packet `31017`: the original
+  `src/lib.rs <2,000 lines` target is revised. Phase 12b closure now
+  requires `src/lib.rs` to contain no `test_ec_spire_*` fixture bodies
+  and to retain only pgrx registration, re-exports, pg_extern wrappers,
+  and the pg_test scaffold. Further lib.rs module extraction is a
+  follow-up only if a later reviewer asks for it.
+
 - [ ] Create `src/tests/` module tree (or `src/sql_fixtures/` if a name
   more accurately reflects content). Subdirectories per concern:
   - [ ] `tests/insert.rs`
@@ -206,7 +220,9 @@ Phase 13 will push it past 80k.
   registration, re-exports, and the actual pgrx extension entry points.
   Packet `30995` moved the fixture bodies to `src/tests/mod.rs`;
   concern-specific files remain open under the preceding row.
-- [ ] After the move, `src/lib.rs` should be under 2,000 lines.
+- [x] Resolve the `src/lib.rs <2,000 lines` target after the midphase
+  audit: the hard numeric target is replaced by the fixture-body absence
+  requirement above, plus packet-local line-count evidence.
 - [ ] Verify `cargo pgrx test` passes against PG18 with no fixture name
   changes. Coverage for cited tracker rows must remain at the same
   function names so the Phase 11/12/12a trackers do not require edits.
@@ -367,8 +383,13 @@ reduce 12a merge friction.
 
 - No file in `src/am/ec_spire/` exceeds 2,500 lines (modulo
   reviewer-accepted exceptions).
-- `src/lib.rs` is under 2,000 lines and contains no
-  `test_ec_spire_*_sql` fixture bodies.
+- `src/tests/` concern files are exempt from the production-file
+  2,500-line hard cap during Phase 12b fixture evacuation; the final
+  closeout records the largest fixture files and schedules follow-up
+  sub-splits only if reviewability becomes a blocker.
+- `src/lib.rs` contains no `test_ec_spire_*` fixture bodies. It may
+  retain pgrx registration, re-exports, pg_extern wrappers, and the
+  pg_test scaffold even when that keeps the file above 2,000 lines.
 - Every CustomScan entry point (`Begin`, `Exec`, `End`, `ReScan`,
   `Explain`) has at least one Rust-level unit or fixture test asserting
   observable post-call state or output shape.

@@ -30,6 +30,8 @@ unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
             context.remote_fanout,
             es,
         );
+        // Minimal Phase 12b contract: this is a stable shape marker, not a
+        // live transport probe.
         pg_sys::ExplainPropertyText(c"tuple_transport_status".as_ptr(), c"ready".as_ptr(), es);
         pg_sys::ExplainPropertyUInteger(c"nprobe".as_ptr(), std::ptr::null(), context.nprobe, es);
         pg_sys::ExplainPropertyInteger(
