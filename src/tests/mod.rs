@@ -2494,7 +2494,7 @@
     include!("placement.rs");
 
     include!("scan.rs");
-
+    include!("spire_recall.rs");
     include!("insert.rs");
 
     include!("diagnostics.rs");
