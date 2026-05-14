@@ -1,3 +1,25 @@
+    fn spire_scan_top_ids(table_name: &str, query: &str, limit: i64) -> Vec<i64> {
+        Spi::get_one::<Vec<i64>>(&format!(
+            "SELECT array_agg(id ORDER BY id) FROM (\
+                 SELECT id FROM {table_name} \
+                 ORDER BY embedding <#> {query}::real[], id \
+                 LIMIT {limit}) ids"
+        ))
+        .expect("ordered ec_spire scan query should succeed")
+        .expect("ordered ec_spire scan should return ids")
+    }
+
+    fn spire_scan_exact_top_ids(table_name: &str, query: &str, limit: i64) -> Vec<i64> {
+        Spi::get_one::<Vec<i64>>(&format!(
+            "SELECT array_agg(id ORDER BY id) FROM (\
+                 SELECT id FROM {table_name} \
+                 ORDER BY ecvector_negative_query_inner_product(embedding, {query}::real[]), id \
+                 LIMIT {limit}) ids"
+        ))
+        .expect("exact ecvector top-k query should succeed")
+        .expect("exact ecvector top-k should return ids")
+    }
+
     #[pg_test]
     fn test_ec_spire_scan_placement_snapshot_sql() {
         Spi::run(
@@ -884,6 +906,84 @@
 
         assert_eq!(rows, 0);
     }
+
+    #[pg_test]
+    fn test_ec_spire_single_row_corpus_scan_returns_only_row() {
+        Spi::run("CREATE TABLE ec_spire_single_row_scan (id bigint primary key, embedding ecvector)")
+            .expect("single-row scan table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_single_row_scan (id, embedding) VALUES \
+             (42, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("single-row scan insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_single_row_scan_idx \
+             ON ec_spire_single_row_scan USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 1, nprobe = 1, rerank_width = 10)",
+        )
+        .expect("single-row ec_spire index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let top_ids = spire_scan_top_ids("ec_spire_single_row_scan", "ARRAY[1.0, 0.0]", 10);
+        let exact_ids =
+            spire_scan_exact_top_ids("ec_spire_single_row_scan", "ARRAY[1.0, 0.0]", 10);
+        let score = Spi::get_one::<f32>(
+            "SELECT embedding <#> ARRAY[1.0, 0.0]::real[] \
+               FROM ec_spire_single_row_scan \
+              ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+              LIMIT 1",
+        )
+        .expect("single-row score query should succeed")
+        .expect("single-row score should exist");
+
+        assert_eq!(top_ids, vec![42]);
+        assert_eq!(top_ids, exact_ids);
+        assert_eq!(score, -1.0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_duplicate_vector_corpus_scan_matches_exact_set() {
+        Spi::run(
+            "CREATE TABLE ec_spire_duplicate_vector_scan \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("duplicate-vector scan table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_duplicate_vector_scan (id, embedding) \
+             SELECT id, encode_to_ecvector(ARRAY[1.0, 0.0]::real[], 4, 42) \
+               FROM generate_series(1, 6) AS id",
+        )
+        .expect("duplicate-vector scan insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_duplicate_vector_scan_idx \
+             ON ec_spire_duplicate_vector_scan USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 3, nprobe = 3, rerank_width = 10)",
+        )
+        .expect("duplicate-vector ec_spire index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let top_ids = spire_scan_top_ids("ec_spire_duplicate_vector_scan", "ARRAY[1.0, 0.0]", 10);
+        let exact_ids =
+            spire_scan_exact_top_ids("ec_spire_duplicate_vector_scan", "ARRAY[1.0, 0.0]", 10);
+        let scores = Spi::get_one::<Vec<f32>>(
+            "SELECT array_agg(score ORDER BY id) FROM (\
+                 SELECT id, (embedding <#> ARRAY[1.0, 0.0]::real[])::real AS score \
+                   FROM ec_spire_duplicate_vector_scan \
+                  ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[], id \
+                  LIMIT 10) scored",
+        )
+        .expect("duplicate-vector score query should succeed")
+        .expect("duplicate-vector scores should exist");
+
+        assert_eq!(top_ids, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(top_ids, exact_ids);
+        assert_eq!(scores.len(), top_ids.len());
+        assert!(
+            scores.iter().all(|score| *score == scores[0]),
+            "duplicate vectors should produce identical scores: {scores:?}"
+        );
+    }
+
     #[pg_test]
     fn test_ec_spire_flat_recursive_same_candidate() {
         Spi::run("CREATE TABLE ec_spire_flat_compare (id bigint primary key, embedding ecvector)")
