@@ -538,6 +538,104 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_typed_tuple_payload_wide_projection_sql() {
+        let projection_columns = (1..=32)
+            .map(|idx| format!("p{idx:02}"))
+            .collect::<Vec<_>>();
+        let column_defs = projection_columns
+            .iter()
+            .map(|column| format!("{column} text not null"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let insert_columns = projection_columns.join(", ");
+        let first_values = (1..=32)
+            .map(|idx| format!("'wide-{idx:02}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let second_values = (1..=32)
+            .map(|idx| format!("'other-{idx:02}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let requested_columns_sql = format!(
+            "ARRAY[{}]::text[]",
+            projection_columns
+                .iter()
+                .map(|column| format!("'{column}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let expected_values_sql = format!(
+            "ARRAY[{}]::bytea[]",
+            (1..=32)
+                .map(|idx| format!("textsend('wide-{idx:02}'::text)::bytea"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        Spi::run(&format!(
+            "CREATE TABLE ec_spire_tuple_payload_typed_wide_sql \
+             (id bigint primary key, {column_defs}, embedding ecvector)"
+        ))
+        .expect("wide typed tuple payload table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_tuple_payload_typed_wide_sql \
+             (id, {insert_columns}, embedding) VALUES \
+             (1, {first_values}, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, {second_values}, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))"
+        ))
+        .expect("wide typed tuple payload insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tuple_payload_typed_wide_idx \
+             ON ec_spire_tuple_payload_typed_wide_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("wide typed tuple payload ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_tuple_payload_typed_wide_idx'::regclass)",
+        )
+        .expect("wide typed payload hierarchy snapshot should succeed")
+        .expect("wide typed payload active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_tuple_payload_typed_wide_idx'::regclass)",
+        )
+        .expect("wide typed payload leaf snapshot should succeed")
+        .expect("wide typed payload leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let endpoint_args = format!(
+            "'ec_spire_tuple_payload_typed_wide_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 1, 'strict', {requested_columns_sql}",
+            selected_pids[0], selected_pids[1],
+        );
+        let wide_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args}) \
+              WHERE payload_column_count = 32 \
+                AND payload_names = {requested_columns_sql} \
+                AND cardinality(payload_attnums) = 32 \
+                AND cardinality(payload_type_oids) = 32 \
+                AND cardinality(payload_typmods) = 32 \
+                AND cardinality(payload_collations) = 32 \
+                AND payload_nulls = ARRAY(SELECT false FROM generate_series(1, 32)) \
+                AND payload_values = {expected_values_sql} \
+                AND payload_formats = ARRAY(\
+                    SELECT 'pg_binary_attr_v1'::text FROM generate_series(1, 32)) \
+                AND NOT tuple_payload_missing \
+                AND tuple_transport = 'pg_binary_attr_v1' \
+                AND tuple_transport_status = 'ready' \
+                AND status = 'ready'"
+        ))
+        .expect("wide typed tuple payload query should succeed")
+        .expect("wide typed tuple payload count should exist");
+
+        assert_eq!(wide_count, 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_insert_tuple_payload_endpoint_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_remote_insert_payload_sql \
