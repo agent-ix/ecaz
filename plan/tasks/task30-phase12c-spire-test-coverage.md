@@ -114,14 +114,18 @@ the planner-side exclusion.
 `dml_update_value_exprs_from_plan` (`begin_exec.rs:90-92`) is the
 UPDATE branch.
 
-- [ ] Drive UPDATE branch with invalid column metadata.
-- [ ] Assert panic during `Begin` does not leak half-initialized
-  `SpireCustomScanExecState`.
+- [x] Drive UPDATE branch with invalid column metadata. Evidence:
+  `custom_scan_dml_update_metadata_error_releases_half_initialized_state`.
+- [x] Assert panic during `Begin` does not leak half-initialized
+  `SpireCustomScanExecState`. Evidence:
+  `custom_scan_dml_update_metadata_error_releases_half_initialized_state`.
 
 ### 12c.1.f: `BeginCustomScan` DELETE-branch panic recovery
 
-- [ ] Drive DELETE branch with invalid column metadata.
-- [ ] Assert panic does not leak half-initialized state.
+- [x] Drive DELETE branch with invalid column metadata. Evidence:
+  `custom_scan_dml_delete_metadata_error_releases_half_initialized_state`.
+- [x] Assert panic does not leak half-initialized state. Evidence:
+  `custom_scan_dml_delete_metadata_error_releases_half_initialized_state`.
 
 ### 12c.1.g: Retire `#[should_panic]` scaffolds
 

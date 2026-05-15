@@ -113,6 +113,75 @@ mod tests {
         );
     }
 
+    fn assert_released_dml_state(state: &SpireCustomScanExecState) {
+        assert_eq!(state.index_oid, pg_sys::InvalidOid);
+        assert_eq!(state.dml_pk_column.capacity(), 0);
+        assert_eq!(state.dml_pk_value, [0; 8]);
+        assert_eq!(state.dml_updated_columns.capacity(), 0);
+        assert_eq!(state.dml_projected_columns.capacity(), 0);
+        assert_eq!(state.dml_update_value_exprs.capacity(), 0);
+        assert_eq!(state.tuple_payload_columns.capacity(), 0);
+        assert_eq!(state.tuple_payload_inputs.capacity(), 0);
+        assert_eq!(state.outputs.capacity(), 0);
+        assert_eq!(state.next_output, 0);
+        assert!(!state.loaded_outputs);
+        assert!(!state.dml_payload_loaded);
+        assert!(!state.dml_payload_emitted);
+        assert!(state.dml_tuple_payload_json.is_none());
+    }
+
+    #[test]
+    fn custom_scan_dml_update_metadata_error_releases_half_initialized_state() {
+        let mut state = custom_scan_default_exec_state();
+        state.mode = SpireCustomScanPlanMode::DmlUpdateTuplePayload;
+        state.index_oid = pg_sys::Oid::from(42);
+        state.dml_pk_column = "id".to_owned();
+        state.dml_pk_value = [0, 0, 0, 0, 0, 0, 0, 5];
+        state.dml_projected_columns = vec!["title".to_owned()];
+        state.dml_update_value_exprs = vec![std::ptr::null_mut()];
+        state.tuple_payload_columns = vec!["id".to_owned(), "title".to_owned()];
+        state.loaded_outputs = true;
+
+        assert_eq!(
+            custom_scan_validate_dml_column_metadata(
+                state.mode,
+                &state.dml_updated_columns,
+                &state.dml_projected_columns,
+            )
+            .expect_err("malformed UPDATE metadata should fail during BeginCustomScan"),
+            "EcSpireDistributedScan DML UPDATE plan requires updated columns"
+        );
+        custom_scan_release_exec_state_for_end(&mut state);
+
+        assert_released_dml_state(&state);
+    }
+
+    #[test]
+    fn custom_scan_dml_delete_metadata_error_releases_half_initialized_state() {
+        let mut state = custom_scan_default_exec_state();
+        state.mode = SpireCustomScanPlanMode::DmlDeleteTuplePayload;
+        state.index_oid = pg_sys::Oid::from(43);
+        state.dml_pk_column = "id".to_owned();
+        state.dml_pk_value = [0, 0, 0, 0, 0, 0, 0, 6];
+        state.dml_updated_columns = vec!["title".to_owned()];
+        state.dml_projected_columns = vec!["id".to_owned()];
+        state.tuple_payload_columns = vec!["id".to_owned()];
+        state.dml_tuple_payload_json = Some(r#"{"id":6}"#.to_owned());
+
+        assert_eq!(
+            custom_scan_validate_dml_column_metadata(
+                state.mode,
+                &state.dml_updated_columns,
+                &state.dml_projected_columns,
+            )
+            .expect_err("malformed DELETE metadata should fail during BeginCustomScan"),
+            "EcSpireDistributedScan DML DELETE plan must not carry column payload metadata"
+        );
+        custom_scan_release_exec_state_for_end(&mut state);
+
+        assert_released_dml_state(&state);
+    }
+
     #[test]
     fn custom_scan_dml_primitive_invocation_uses_plan_metadata() {
         let pk_value = [0, 0, 0, 0, 0, 0, 0, 5];
