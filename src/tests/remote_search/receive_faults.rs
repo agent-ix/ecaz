@@ -235,6 +235,7 @@
         assert_eq!(strict.candidate_receive_sent_dispatch_count, 2);
         assert_eq!(strict.candidate_receive_ready_dispatch_count, 1);
         assert_eq!(strict.candidate_receive_failed_dispatch_count, 1);
+        assert_eq!(strict.endpoint_identity_query_count, 0);
         assert_eq!(
             strict.first_candidate_receive_failure_category,
             "remote_index_unavailable"
@@ -263,6 +264,7 @@
         assert_eq!(degraded.candidate_receive_sent_dispatch_count, 1);
         assert_eq!(degraded.candidate_receive_ready_dispatch_count, 1);
         assert_eq!(degraded.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(degraded.endpoint_identity_query_count, 0);
         assert_eq!(degraded.first_candidate_receive_failure_category, "none");
         assert_eq!(degraded.degraded_skipped_dispatch_count, 1);
         assert_eq!(

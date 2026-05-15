@@ -255,8 +255,13 @@ Source: audit Axis C. Six lifecycle rows at
 
 - [x] `DROP INDEX` on remote before dispatch; assert
   pre-dispatch validation refuses with the expected category.
-- [ ] Assert no remote SQL is issued (no descriptor refresh
-  attempted against the dropped object).
+- [x] Assert no remote SQL is issued (no descriptor refresh
+  attempted against the dropped object). Evidence:
+  `test_ec_spire_prod_receive_drop_remote_index_before_dispatch`
+  asserts `endpoint_identity_query_count = 0` in strict and
+  degraded mode, pinning that the dropped index is classified as
+  `remote_index_unavailable` before endpoint identity / descriptor
+  refresh work is attempted.
 
 ### 12c.3.c: `reindex_remote_index_in_flight`
 
