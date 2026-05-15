@@ -239,11 +239,11 @@ Source: audit Axis C. Six lifecycle rows at
 
 - [x] `CREATE INDEX CONCURRENTLY` on remote; assert descriptor
   refresh contract picks up the new index without errors.
-- [ ] Assert subsequent CustomScan uses the refreshed descriptor.
+- [x] Assert subsequent CustomScan uses the refreshed descriptor.
 
 ### 12c.3.f: `create_index_concurrently_pre_dispatch`
 
-- [ ] Same as above, with the CIC operation completed before any
+- [x] Same as above, with the CIC operation completed before any
   dispatch attempt; assert the new descriptor is the one used.
 
 ## Phase 12c.4: Schema Drift on the READ Path (P1)

@@ -2528,6 +2528,8 @@
 
     include!("custom_scan_concurrency.rs");
 
+    include!("custom_scan_lifecycle.rs");
+
 
 
 
