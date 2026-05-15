@@ -810,6 +810,11 @@
             Spi::get_one::<String>(&format!("SELECT freshness_status {freshness_from}"))
                 .expect("stale manifest freshness status query should succeed")
                 .expect("stale manifest freshness status should exist");
+        let stale_endpoint_status = Spi::get_one::<String>(&format!(
+            "SELECT freshness_status AS endpoint_status {freshness_from}"
+        ))
+        .expect("stale manifest endpoint status query should succeed")
+        .expect("stale manifest endpoint status should exist");
         let stale_freshness_next_action =
             Spi::get_one::<String>(&format!("SELECT next_action {freshness_from}"))
                 .expect("stale manifest freshness action query should succeed")
@@ -838,6 +843,7 @@
         assert_eq!(stale_publication_status, "stale_remote_epoch_manifest");
         assert!(!stale_publication_entry_matches);
         assert_eq!(stale_freshness_status, "stale_remote_epoch_manifest");
+        assert_eq!(stale_endpoint_status, "stale_remote_epoch_manifest");
         assert_eq!(stale_freshness_next_action, "refresh_remote_epoch_manifest");
         assert!(!stale_freshness_entry_matches);
         assert_eq!(

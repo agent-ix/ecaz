@@ -201,11 +201,14 @@ user-facing query path is untested.
 
 Today only contract pinning at `epoch_manifest.rs:78`.
 
-- [ ] Remote advertises a manifest version behind `active_epoch`.
-- [ ] Strict-mode read: assert
-  `endpoint_status = stale_remote_epoch_manifest`.
-- [ ] Assert the matrix-row action fires (refresh request or
-  fail-closed per matrix).
+- [x] Remote advertises a manifest version behind `active_epoch`.
+  Evidence: `test_ec_spire_remote_epoch_manifest_persist_ready`.
+- [x] Strict-mode read: assert
+  `endpoint_status = stale_remote_epoch_manifest`. Evidence:
+  `test_ec_spire_remote_epoch_manifest_persist_ready`.
+- [x] Assert the matrix-row action fires (refresh request or
+  fail-closed per matrix). Evidence:
+  `test_ec_spire_remote_epoch_manifest_persist_ready`.
 
 ### 12c.2.e: `remote_oom`
 
