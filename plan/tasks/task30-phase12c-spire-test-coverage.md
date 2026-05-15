@@ -125,12 +125,13 @@ UPDATE branch.
 blocked")]`. They prove planner+begin reach a placeholder, not
 positive behaviour.
 
-- [ ] `custom_scan.rs:777` — replace with positive assertion now
+- [x] `custom_scan.rs:777` — replace with positive assertion now
   that the production executor is wired. If still required,
   document why and tighten the panic string to a versioned
-  identifier.
-- [ ] `custom_scan.rs:838` — same treatment for the
-  parameter-query variant.
+  identifier. Evidence: `test_ec_spire_customscan_exec_returns_remote_tuple_payload_sql`.
+- [x] `custom_scan.rs:838` — same treatment for the
+  parameter-query variant. Evidence:
+  `test_ec_spire_customscan_exec_accepts_parameter_query_sql`.
 
 ## Phase 12c.2: Stage E Fault Matrix — Live Coverage (P1)
 

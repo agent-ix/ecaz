@@ -2526,6 +2526,8 @@
 
     include!("data_shape.rs");
 
+    include!("custom_scan_execution.rs");
+
     include!("custom_scan_concurrency.rs");
 
     include!("custom_scan_lifecycle.rs");
