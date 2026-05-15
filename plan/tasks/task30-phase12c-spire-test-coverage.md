@@ -160,9 +160,10 @@ categories have no live coverage at all.
   `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE`. Evidence:
   `test_ec_spire_customscan_large_text_projection_cap_sql` from
   packet `731`, accepted in reviewer feedback `31120`.
-- [ ] Degraded mode: same payload; assert
+- [x] Degraded mode: same payload; assert
   `degraded_skipped_dispatch_count` increments and the matrix-row
-  hint is surfaced.
+  hint is surfaced. Evidence:
+  `degraded_skip_report_hints_remote_payload_cap`.
 - [x] Per-batch cap: payload count exceeds
   `ec_spire.max_remote_payload_rows_per_batch`; assert the same
   category fires before per-row allocation. Evidence:

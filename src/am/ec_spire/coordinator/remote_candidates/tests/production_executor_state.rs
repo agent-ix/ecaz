@@ -528,6 +528,15 @@ mod production_executor_state_tests {
             failed_candidate_receive_result(2, SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE),
             ready_candidate_receive_result(3, vec![30], 1),
         ];
+        let summary =
+            remote_search_production_executor_state_summary_from_candidate_receive_results_with_consistency_mode(
+                7,
+                &dispatch_rows,
+                &transport_rows,
+                &receive_results,
+                "degraded",
+            )
+            .expect("degraded payload-cap summary should include remote payload cap skip");
         let rows =
             remote_search_production_degraded_skip_report_from_candidate_receive_results_with_consistency_mode(
                 7,
@@ -538,6 +547,11 @@ mod production_executor_state_tests {
             )
             .expect("degraded skip report should include remote payload cap");
 
+        assert_eq!(summary.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            summary.first_degraded_skip_category,
+            SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE
+        );
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].first_skip_category, SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE);
         assert_eq!(rows[0].first_skip_hint, SPIRE_REMOTE_PAYLOAD_TOO_LARGE_HINT);
