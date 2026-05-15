@@ -133,6 +133,8 @@ struct SpireCustomScanExecState {
     dml_payload_loaded: bool,
     dml_payload_emitted: bool,
     dml_tuple_payload_json: Option<String>,
+    #[cfg(any(test, feature = "pg_test"))]
+    allocation_context: pg_sys::MemoryContext,
 }
 
 struct SpireCustomScanPayloadAttrIo {
@@ -181,6 +183,15 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
 pub(crate) struct SpireCustomScanCleanupCounters {
     pub(crate) end_custom_scan_count: u64,
     pub(crate) pfree_count: u64,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpireCustomScanMemoryContextSnapshot {
+    pub(crate) baseline_captured: bool,
+    pub(crate) after_end_captured: bool,
+    pub(crate) baseline_used_bytes: u64,
+    pub(crate) after_end_used_bytes: u64,
 }
 
 #[cfg(any(test, feature = "pg_test"))]

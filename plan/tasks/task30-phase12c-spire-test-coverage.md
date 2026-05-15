@@ -82,13 +82,19 @@ not.
 
 Exercises `begin_exec.rs:170` post-cancel cleanup path.
 
-- [ ] Capture `MemoryContextStats` baseline before scan.
+- [x] Capture `MemoryContextStats` baseline before scan. Evidence:
+  `test_ec_spire_customscan_read_cancel_releases_transport` captures
+  `MemoryContextMemConsumed` baseline counters around
+  `CreateCustomScanState`.
 - [x] Cancel mid-`ExecCustomScan` (interrupt). Evidence:
   `test_ec_spire_customscan_read_cancel_releases_transport`.
 - [x] Assert `EndCustomScan` invoked exactly once on the cancel
   unwind path. Evidence:
   `test_ec_spire_customscan_read_cancel_releases_transport`.
-- [ ] Assert `MemoryContextStats` returns to baseline after end.
+- [x] Assert `MemoryContextStats` returns to baseline after end.
+  Evidence: `test_ec_spire_customscan_read_cancel_releases_transport`
+  asserts post-`EndCustomScan` memory-context used bytes are not above
+  the baseline captured before CustomScan state allocation.
 
 ### 12c.1.c: `recheck` callback pin test
 

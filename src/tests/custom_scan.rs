@@ -1275,6 +1275,13 @@
         let cleanup_counters = am::custom_scan_cleanup_counters_for_test();
         assert_eq!(cleanup_counters.end_custom_scan_count, 1);
         assert_eq!(cleanup_counters.pfree_count, 1);
+        let memory_snapshot = am::custom_scan_memory_context_snapshot_for_test();
+        assert!(memory_snapshot.baseline_captured);
+        assert!(memory_snapshot.after_end_captured);
+        assert!(
+            memory_snapshot.after_end_used_bytes <= memory_snapshot.baseline_used_bytes,
+            "{memory_snapshot:?}"
+        );
     }
 
     #[pg_test]

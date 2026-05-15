@@ -3,9 +3,15 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
     _cscan: *mut pg_sys::CustomScan,
 ) -> *mut pg_sys::Node {
     unsafe {
+        let allocation_context = pg_sys::CurrentMemoryContext;
+        custom_scan_note_memory_baseline_for_test(allocation_context);
         let state = pg_sys::palloc0(std::mem::size_of::<SpireCustomScanExecState>())
             .cast::<SpireCustomScanExecState>();
         ptr::write(state, custom_scan_default_exec_state());
+        #[cfg(any(test, feature = "pg_test"))]
+        {
+            (*state).allocation_context = allocation_context;
+        }
         (*state).custom_scan_state.ss.ps.type_ = pg_sys::NodeTag::T_CustomScanState;
         (*state).custom_scan_state.methods = &raw const CUSTOM_EXEC_METHODS;
         state.cast::<pg_sys::Node>()
@@ -32,6 +38,8 @@ fn custom_scan_default_exec_state() -> SpireCustomScanExecState {
         dml_payload_loaded: false,
         dml_payload_emitted: false,
         dml_tuple_payload_json: None,
+        #[cfg(any(test, feature = "pg_test"))]
+        allocation_context: std::ptr::null_mut(),
     }
 }
 
@@ -174,10 +182,14 @@ unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomSc
         }
         custom_scan_note_end_custom_scan_for_test();
         let state = node.cast::<SpireCustomScanExecState>();
+        #[cfg(any(test, feature = "pg_test"))]
+        let allocation_context = (*state).allocation_context;
         custom_scan_release_exec_state_for_end(&mut *state);
         ptr::drop_in_place(state);
         custom_scan_note_pfree_for_test();
         pg_sys::pfree(state.cast());
+        #[cfg(any(test, feature = "pg_test"))]
+        custom_scan_note_memory_after_end_for_test(allocation_context);
     }
 }
 
@@ -187,6 +199,12 @@ static CUSTOM_SCAN_END_CUSTOM_SCAN_COUNT: std::sync::atomic::AtomicU64 =
 #[cfg(any(test, feature = "pg_test"))]
 static CUSTOM_SCAN_PFREE_COUNT: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "pg_test"))]
+static CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
+#[cfg(any(test, feature = "pg_test"))]
+static CUSTOM_SCAN_MEMORY_AFTER_END_USED_BYTES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
 #[cfg(any(test, feature = "pg_test"))]
 static CUSTOM_SCAN_RESCAN_COUNT: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -217,9 +235,45 @@ fn custom_scan_note_pfree_for_test() {
 fn custom_scan_note_pfree_for_test() {}
 
 #[cfg(any(test, feature = "pg_test"))]
+fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext) -> u64 {
+    if context.is_null() {
+        return u64::MAX;
+    }
+    let mut counters = pg_sys::MemoryContextCounters::default();
+    unsafe {
+        pg_sys::MemoryContextMemConsumed(context, &mut counters);
+    }
+    u64::try_from(counters.totalspace.saturating_sub(counters.freespace)).unwrap_or(u64::MAX)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn custom_scan_note_memory_baseline_for_test(context: pg_sys::MemoryContext) {
+    CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.store(
+        custom_scan_memory_context_used_bytes_for_test(context),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn custom_scan_note_memory_baseline_for_test(_context: pg_sys::MemoryContext) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn custom_scan_note_memory_after_end_for_test(context: pg_sys::MemoryContext) {
+    CUSTOM_SCAN_MEMORY_AFTER_END_USED_BYTES.store(
+        custom_scan_memory_context_used_bytes_for_test(context),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn custom_scan_note_memory_after_end_for_test(_context: pg_sys::MemoryContext) {}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn custom_scan_reset_cleanup_counters_for_test() {
     CUSTOM_SCAN_END_CUSTOM_SCAN_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
     CUSTOM_SCAN_PFREE_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_MEMORY_AFTER_END_USED_BYTES.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -228,6 +282,21 @@ pub(crate) fn custom_scan_cleanup_counters_for_test() -> SpireCustomScanCleanupC
         end_custom_scan_count: CUSTOM_SCAN_END_CUSTOM_SCAN_COUNT
             .load(std::sync::atomic::Ordering::Relaxed),
         pfree_count: CUSTOM_SCAN_PFREE_COUNT.load(std::sync::atomic::Ordering::Relaxed),
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn custom_scan_memory_context_snapshot_for_test(
+) -> SpireCustomScanMemoryContextSnapshot {
+    let baseline_used_bytes =
+        CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.load(std::sync::atomic::Ordering::Relaxed);
+    let after_end_used_bytes =
+        CUSTOM_SCAN_MEMORY_AFTER_END_USED_BYTES.load(std::sync::atomic::Ordering::Relaxed);
+    SpireCustomScanMemoryContextSnapshot {
+        baseline_captured: baseline_used_bytes != u64::MAX,
+        after_end_captured: after_end_used_bytes != u64::MAX,
+        baseline_used_bytes,
+        after_end_used_bytes,
     }
 }
 
