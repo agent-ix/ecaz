@@ -1028,6 +1028,8 @@
             "{plan_lines}"
         );
 
+        // Cross-reference begin_exec.rs:420-428: the CustomScan recheck
+        // callback intentionally allows stale remote payload rows for v1.
         for (isolation_level, after_title) in [
             ("READ COMMITTED", "isolation after read committed"),
             ("REPEATABLE READ", "isolation after repeatable read"),

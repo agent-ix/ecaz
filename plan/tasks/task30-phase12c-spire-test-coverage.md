@@ -598,8 +598,9 @@ Pin the documented contract from `begin_exec.rs:336-338`.
 - [ ] Session B: UPDATE the same row, commit.
 - [ ] Session A: resume; assert the documented stale-read outcome
   (recheck returns true, stale row surfaced).
-- [ ] Cross-reference the contract comment from
-  `begin_exec.rs:336-338` in the test.
+- [x] Cross-reference the contract comment from
+  `begin_exec.rs:420-428` in the test. Evidence:
+  `test_ec_spire_remote_pk_select_isolation_contract_sql`.
 
 ## Phase 12c.12: Typed Tuple Transport Coverage (P2)
 
