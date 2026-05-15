@@ -714,8 +714,8 @@ Source: audit "Semantic concerns" section.
 
 `custom_scan.rs:288` pins JSON status but not invocation counts.
 
-- [ ] Add assertion that `EndCustomScan` was invoked exactly once.
-- [ ] Add assertion that pfree counters returned to baseline.
+- [x] Add assertion that `EndCustomScan` was invoked exactly once.
+- [x] Add assertion that pfree counters returned to baseline.
 
 ### 12c.16.c: Document Stage E contract-only status
 

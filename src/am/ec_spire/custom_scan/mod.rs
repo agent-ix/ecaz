@@ -176,6 +176,13 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
     }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpireCustomScanCleanupCounters {
+    pub(crate) end_custom_scan_count: u64,
+    pub(crate) pfree_count: u64,
+}
+
 include!("planner.rs");
 include!("cost_helpers.rs");
 include!("plan_private.rs");

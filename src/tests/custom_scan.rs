@@ -777,6 +777,7 @@
             }
             lines.join("\n")
         });
+        am::custom_scan_reset_cleanup_counters_for_test();
         let row_count = Spi::get_one::<i64>(
             "SELECT count(*) FROM (\
                  SELECT id, title FROM ec_spire_customscan_empty_select_coord_sql \
@@ -785,12 +786,15 @@
         )
         .expect("empty-result CustomScan count query should succeed")
         .expect("empty-result CustomScan count should exist");
+        let cleanup_counters = am::custom_scan_cleanup_counters_for_test();
 
         assert!(
             plan.contains("node: EcSpireDistributedScan"),
             "expected EcSpireDistributedScan in plan:\n{plan}"
         );
         assert_eq!(row_count, 0);
+        assert_eq!(cleanup_counters.end_custom_scan_count, 1);
+        assert_eq!(cleanup_counters.pfree_count, 1);
         assert!(
             json_plan.contains("\"tuple_transport_status\": \"ready\""),
             "expected ready tuple transport in CustomScan JSON plan: {json_plan:?}"

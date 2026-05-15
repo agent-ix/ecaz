@@ -28,6 +28,10 @@ pub(crate) use self::cost::{index_cost_snapshot, index_cost_tuning_snapshot};
 pub(crate) use self::custom_scan::custom_scan_dml_plan_private_copy_roundtrip_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::custom_scan::custom_scan_store_tuple_payload_json_for_test;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::custom_scan::{
+    custom_scan_cleanup_counters_for_test, custom_scan_reset_cleanup_counters_for_test,
+};
 pub(crate) use self::custom_scan::{
     custom_scan_index_eligibility_row, custom_scan_status_row, register_custom_scan,
 };
