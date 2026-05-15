@@ -235,7 +235,11 @@
         // Contract-only pin for the operator-facing Stage E matrix rows.
         // Live executor coverage belongs in Phase 12c.2 and 12c.13 fixtures;
         // this test only proves the documented rows and prescribed actions
-        // remain visible through the SQL matrix surface.
+        // remain visible through the SQL matrix surface. Executor-action
+        // cross-checks live in transport_faults.rs, receive_faults.rs,
+        // custom_scan_timeout.rs, custom_scan_concurrency.rs,
+        // custom_scan_tuple_transport.rs, data_shape.rs, and
+        // custom_scan/tests/production_executor_state.rs.
         let required_cases = [
             "epoch_mismatch",
             "version_skew",

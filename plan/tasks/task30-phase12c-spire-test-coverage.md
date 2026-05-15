@@ -632,13 +632,37 @@ Source: audit Axis K.
 
 Today `production_summary.rs:234,290` is contract-only.
 
-- [ ] For each fault-matrix row prescribing a `fail_closed` action,
+- [x] For each fault-matrix row prescribing a `fail_closed` action,
   drive a fixture that triggers the fault and assert
-  `fail_closed` actually fires.
-- [ ] For each row prescribing `skip_and_report`, drive a fixture
-  and assert the degraded skip path is taken.
-- [ ] Cross-reference the executor test from the contract-pin
-  comment so a reader sees both.
+  `fail_closed` actually fires. Evidence:
+  `test_ec_spire_prod_transport_network_partition_matrix_actions`,
+  `test_ec_spire_prod_transport_remote_stmt_timeout_matrix_actions`,
+  `test_ec_spire_prod_transport_remote_oom_matrix_actions`,
+  `test_ec_spire_prod_transport_backend_terminated_matrix_actions`,
+  `test_ec_spire_prod_transport_query_cancel_matrix_actions`,
+  `test_ec_spire_prod_receive_drop_index_in_flight`,
+  `test_ec_spire_prod_receive_reindex_in_flight`,
+  `test_ec_spire_customscan_local_statement_timeout_sql`,
+  `test_ec_spire_customscan_remote_backend_termination_rejoin_sql`,
+  `test_ec_spire_customscan_tuple_transport_retired_live_sql`,
+  `test_ec_spire_customscan_large_text_projection_cap_sql`, and
+  `production_executor_heap_tuple_transport_retired_matrix_actions`.
+- [x] For each row prescribing `skip_and_report`, drive a fixture
+  and assert the degraded skip path is taken. Evidence:
+  `test_ec_spire_prod_transport_network_partition_matrix_actions`,
+  `test_ec_spire_prod_transport_remote_stmt_timeout_matrix_actions`,
+  `test_ec_spire_prod_transport_remote_oom_matrix_actions`,
+  `test_ec_spire_prod_transport_backend_terminated_matrix_actions`,
+  `test_ec_spire_prod_transport_query_cancel_matrix_actions`,
+  `test_ec_spire_prod_receive_drop_index_in_flight`,
+  `test_ec_spire_prod_receive_reindex_in_flight`,
+  `test_ec_spire_customscan_remote_backend_termination_rejoin_sql`,
+  `test_ec_spire_customscan_tuple_transport_retired_live_sql`, and
+  `production_executor_heap_tuple_transport_retired_matrix_actions`.
+- [x] Cross-reference the executor test from the contract-pin
+  comment so a reader sees both. Evidence:
+  `test_ec_spire_stage_e_fault_matrix_contract` now names the
+  executor-action fixture files.
 
 ### 12c.13.b: Diagnostic snapshot survival under DROP INDEX
 
