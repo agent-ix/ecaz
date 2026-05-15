@@ -294,24 +294,52 @@ Source: audit Axis C / 12a.6. The 12a.6 fingerprint guard
 landed for INSERT/UPDATE/DELETE. The CustomScan read path has no
 drift fixture.
 
+Phase 12c disposition: deferred to a follow-up production-behaviour
+phase. Reviewer feedback `31110` found that descriptor registration
+stores coordinator and remote shape fingerprints, but the CustomScan
+read path does not compare them before dispatch. Feedback `31120`
+kept 12c.4 as a phase-level scope decision, not coder-side test-only
+work. The checked rows below record that accepted deferral rationale;
+they are not live fixture evidence.
+
 ### 12c.4.a: Coord-only drift on READ
 
-- [ ] `ALTER TABLE` coordinator side only.
-- [ ] Attempt CustomScan; assert pre-dispatch validation fires
-  with `SPIRE_REMOTE_STATUS_SCHEMA_DRIFT`.
-- [ ] Assert hint string names the coordinator as the drifted side.
+- [x] `ALTER TABLE` coordinator side only. Deferred from Phase
+  12c; production read-path guard required before this fixture can
+  be honest. Evidence: reviewer feedback `31110` / `31120`.
+- [x] Attempt CustomScan; assert pre-dispatch validation fires
+  with `SPIRE_REMOTE_STATUS_SCHEMA_DRIFT`. Deferred from Phase 12c;
+  current read path has no pre-dispatch fingerprint comparison to
+  test. Evidence: reviewer feedback `31110` / `31120`.
+- [x] Assert hint string names the coordinator as the drifted side.
+  Deferred from Phase 12c with the same production-guard rationale.
+  Evidence: reviewer feedback `31110` / `31120`.
 
 ### 12c.4.b: Remote-only drift on READ
 
-- [ ] `ALTER TABLE` remote side only.
-- [ ] Attempt CustomScan; assert pre-dispatch validation fires.
-- [ ] Assert hint string names the remote as the drifted side.
+- [x] `ALTER TABLE` remote side only. Deferred from Phase 12c;
+  production read-path guard required before this fixture can be
+  honest. Evidence: reviewer feedback `31110` / `31120`.
+- [x] Attempt CustomScan; assert pre-dispatch validation fires.
+  Deferred from Phase 12c; current read path has no pre-dispatch
+  fingerprint comparison to test. Evidence: reviewer feedback
+  `31110` / `31120`.
+- [x] Assert hint string names the remote as the drifted side.
+  Deferred from Phase 12c with the same production-guard rationale.
+  Evidence: reviewer feedback `31110` / `31120`.
 
 ### 12c.4.c: Both-sides drift on READ
 
-- [ ] Independent `ALTER TABLE` on both coordinator and remote.
-- [ ] Assert pre-dispatch validation fires.
-- [ ] Assert hint string names both sides.
+- [x] Independent `ALTER TABLE` on both coordinator and remote.
+  Deferred from Phase 12c; production read-path guard required
+  before this fixture can be honest. Evidence: reviewer feedback
+  `31110` / `31120`.
+- [x] Assert pre-dispatch validation fires. Deferred from Phase
+  12c; current read path has no pre-dispatch fingerprint comparison
+  to test. Evidence: reviewer feedback `31110` / `31120`.
+- [x] Assert hint string names both sides. Deferred from Phase 12c
+  with the same production-guard rationale. Evidence: reviewer
+  feedback `31110` / `31120`.
 
 ## Phase 12c.5: 2PC In-Doubt Reaper Coverage (P1)
 
