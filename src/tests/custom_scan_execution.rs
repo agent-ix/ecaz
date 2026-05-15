@@ -103,6 +103,122 @@
         assert!(register_result);
     }
 
+    fn fetch_cursor_payload_rows(
+        client: &mut postgres::Client,
+        sql: &str,
+    ) -> Vec<(i64, String)> {
+        client
+            .query(sql, &[])
+            .expect("cursor payload fetch should succeed")
+            .into_iter()
+            .map(|row| {
+                (
+                    row.try_get::<_, i64>(0)
+                        .expect("cursor payload id should decode"),
+                    row.try_get::<_, String>(1)
+                        .expect("cursor payload title should decode"),
+                )
+            })
+            .collect()
+    }
+
+    #[pg_test]
+    fn test_ec_spire_customscan_cursor_move_first_rescans_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_CUSTOMSCAN_CURSOR_RESCAN",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback CustomScan cursor-rescan connection should succeed");
+        let fixture = setup_custom_scan_execution_fixture(
+            &mut loopback_client,
+            "ec_spire_customscan_cursor_rescan",
+            "(5301, 'remote cursor alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (5302, 'remote cursor beta', encode_to_ecvector(ARRAY[0.7, 0.3], 4, 42)), \
+             (5303, 'remote cursor gamma', encode_to_ecvector(ARRAY[0.3, 0.7], 4, 42)), \
+             (5304, 'remote cursor delta', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+            "(1, 'coordinator cursor alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, 'coordinator cursor beta', encode_to_ecvector(ARRAY[0.7, 0.3], 4, 42)), \
+             (3, 'coordinator cursor gamma', encode_to_ecvector(ARRAY[0.3, 0.7], 4, 42)), \
+             (4, 'coordinator cursor delta', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        );
+        route_custom_scan_fixture_to_remote(
+            &fixture,
+            2,
+            1,
+            "spire/remote/customscan/cursor_rescan",
+            "ec_spire_customscan_cursor_rescan_remote_idx",
+        );
+
+        am::custom_scan_reset_rescan_snapshot_for_test();
+        let mut cursor_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("cursor-rescan client connection should succeed");
+        cursor_client
+            .batch_execute(
+                "BEGIN; \
+                 SET LOCAL enable_seqscan = off; \
+                 SET LOCAL enable_indexscan = off; \
+                 DECLARE ec_spire_cursor_rescan_cursor SCROLL CURSOR FOR \
+                     SELECT id, title \
+                       FROM ec_spire_customscan_cursor_rescan_coord_sql \
+                      ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[], id \
+                      LIMIT 4",
+            )
+            .expect("scroll cursor over CustomScan should open");
+
+        let first_half = fetch_cursor_payload_rows(
+            &mut cursor_client,
+            "FETCH FORWARD 2 FROM ec_spire_cursor_rescan_cursor",
+        );
+        let first_tail = fetch_cursor_payload_rows(
+            &mut cursor_client,
+            "FETCH FORWARD ALL FROM ec_spire_cursor_rescan_cursor",
+        );
+        let mut first_pass = first_half.clone();
+        first_pass.extend(first_tail);
+        assert_eq!(first_half.len(), 2);
+        assert_eq!(first_pass.len(), 4);
+
+        let moved = cursor_client
+            .execute("MOVE FIRST FROM ec_spire_cursor_rescan_cursor", &[])
+            .expect("MOVE FIRST over CustomScan cursor should succeed")
+            ;
+        assert_eq!(moved, 1);
+        let mut second_pass = fetch_cursor_payload_rows(
+            &mut cursor_client,
+            "FETCH RELATIVE 0 FROM ec_spire_cursor_rescan_cursor",
+        );
+        second_pass.extend(fetch_cursor_payload_rows(
+            &mut cursor_client,
+            "FETCH FORWARD ALL FROM ec_spire_cursor_rescan_cursor",
+        ));
+        cursor_client
+            .batch_execute("CLOSE ec_spire_cursor_rescan_cursor; COMMIT")
+            .expect("cursor-rescan transaction should close cleanly");
+
+        assert_eq!(second_pass, first_pass);
+        assert_eq!(
+            first_pass,
+            vec![
+                (5301, "remote cursor alpha".to_owned()),
+                (5302, "remote cursor beta".to_owned()),
+                (5303, "remote cursor gamma".to_owned()),
+                (5304, "remote cursor delta".to_owned()),
+            ]
+        );
+
+        let rescan = am::custom_scan_rescan_snapshot_for_test();
+        assert!(
+            rescan.rescan_count >= 1,
+            "MOVE FIRST should drive ReScanCustomScan at least once: {rescan:?}"
+        );
+        assert_eq!(rescan.outputs_len_after_reset, 0);
+        assert_eq!(rescan.next_output_after_reset, 0);
+        assert!(!rescan.loaded_outputs_after_reset);
+    }
+
     #[pg_test]
     fn test_ec_spire_customscan_exec_returns_remote_tuple_payload_sql() {
         let _env_lock = env_var_test_lock();

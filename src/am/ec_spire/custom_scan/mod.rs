@@ -183,6 +183,15 @@ pub(crate) struct SpireCustomScanCleanupCounters {
     pub(crate) pfree_count: u64,
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpireCustomScanRescanSnapshot {
+    pub(crate) rescan_count: u64,
+    pub(crate) outputs_len_after_reset: usize,
+    pub(crate) next_output_after_reset: usize,
+    pub(crate) loaded_outputs_after_reset: bool,
+}
+
 include!("planner.rs");
 include!("cost_helpers.rs");
 include!("plan_private.rs");

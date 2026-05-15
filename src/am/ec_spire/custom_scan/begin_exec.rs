@@ -187,6 +187,18 @@ static CUSTOM_SCAN_END_CUSTOM_SCAN_COUNT: std::sync::atomic::AtomicU64 =
 #[cfg(any(test, feature = "pg_test"))]
 static CUSTOM_SCAN_PFREE_COUNT: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "pg_test"))]
+static CUSTOM_SCAN_RESCAN_COUNT: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "pg_test"))]
+static CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+#[cfg(any(test, feature = "pg_test"))]
+static CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+#[cfg(any(test, feature = "pg_test"))]
+static CUSTOM_SCAN_RESCAN_LOADED_OUTPUTS_AFTER_RESET: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(any(test, feature = "pg_test"))]
 fn custom_scan_note_end_custom_scan_for_test() {
@@ -219,11 +231,47 @@ pub(crate) fn custom_scan_cleanup_counters_for_test() -> SpireCustomScanCleanupC
     }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+fn custom_scan_note_rescan_for_test(state: &SpireCustomScanExecState) {
+    CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET
+        .store(state.outputs.len(), std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET
+        .store(state.next_output, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_LOADED_OUTPUTS_AFTER_RESET
+        .store(state.loaded_outputs, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn custom_scan_note_rescan_for_test(_state: &SpireCustomScanExecState) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn custom_scan_reset_rescan_snapshot_for_test() {
+    CUSTOM_SCAN_RESCAN_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET.store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET.store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_LOADED_OUTPUTS_AFTER_RESET.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn custom_scan_rescan_snapshot_for_test() -> SpireCustomScanRescanSnapshot {
+    SpireCustomScanRescanSnapshot {
+        rescan_count: CUSTOM_SCAN_RESCAN_COUNT.load(std::sync::atomic::Ordering::Relaxed),
+        outputs_len_after_reset: CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET
+            .load(std::sync::atomic::Ordering::Relaxed),
+        next_output_after_reset: CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET
+            .load(std::sync::atomic::Ordering::Relaxed),
+        loaded_outputs_after_reset: CUSTOM_SCAN_RESCAN_LOADED_OUTPUTS_AFTER_RESET
+            .load(std::sync::atomic::Ordering::Relaxed),
+    }
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
     unsafe {
         let state = node.cast::<SpireCustomScanExecState>();
         custom_scan_reset_exec_state_for_rescan(&mut *state);
+        custom_scan_note_rescan_for_test(&*state);
     }
 }
 

@@ -66,12 +66,17 @@ Drives `ec_spire_rescan_custom_scan` (`begin_exec.rs:183`)
 end-to-end — the helper unit test at `custom_scan/tests.rs:316` does
 not.
 
-- [ ] Open cursor over CustomScan, fetch N/2 rows.
-- [ ] Issue `MOVE FIRST`, fetch all remaining rows.
-- [ ] Assert second-pass row set equals first-pass row set.
-- [ ] Assert `outputs` / `next_output` / `loaded_outputs` state
+- [x] Open cursor over CustomScan, fetch N/2 rows. Evidence:
+  `test_ec_spire_customscan_cursor_move_first_rescans_sql`.
+- [x] Issue `MOVE FIRST`, fetch all remaining rows. Evidence:
+  `test_ec_spire_customscan_cursor_move_first_rescans_sql`.
+- [x] Assert second-pass row set equals first-pass row set. Evidence:
+  `test_ec_spire_customscan_cursor_move_first_rescans_sql`.
+- [x] Assert `outputs` / `next_output` / `loaded_outputs` state
   fields are reset (instrument via diagnostic snapshot or
-  `#[cfg(test)]` getter).
+  `#[cfg(test)]` getter). Evidence:
+  `custom_scan_rescan_snapshot_for_test` in
+  `test_ec_spire_customscan_cursor_move_first_rescans_sql`.
 
 ### 12c.1.b: `EndCustomScan` palloc/pfree pairing fixture
 
