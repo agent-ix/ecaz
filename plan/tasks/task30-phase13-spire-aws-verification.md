@@ -1,6 +1,6 @@
 # Task 30 Phase 13: SPIRE AWS Verification
 
-Status: blocked on Phase 12 reviewer acceptance and final local readiness
+Status: blocked on final local readiness
 Owner: coder1 / SPIRE AWS verification track
 Priority: after Phase 12 exit criteria are met
 
@@ -12,7 +12,7 @@ not a place to discover known local hardening gaps.
 
 ## Entry Gate
 
-- [ ] Phase 12 is complete or every remaining Phase 12 item has an accepted
+- [x] Phase 12 is complete or every remaining Phase 12 item has an accepted
   reviewer deferral.
 - [x] Phase 12c.4 READ schema-drift guard has landed with coord-only,
   remote-only, and both-sides CustomScan fixtures. Evidence: Phase 12c

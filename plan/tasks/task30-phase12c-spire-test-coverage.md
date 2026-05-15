@@ -1,7 +1,8 @@
 # Task 30 Phase 12c: SPIRE Test Coverage
 
-Status: coder-complete; pending reviewer acceptance of the live 12c.4
-READ schema-drift guard and closeout audit
+Status: CLOSED on `task-30-spire` (2026-05-15). Final closeout packet:
+`764-c1-spire-phase12c-final-closeout`; live 12c.4 READ schema-drift guard:
+`763-c1-spire-read-schema-drift-guard`.
 Owner: coder1 / SPIRE distributed production-hardening track
 Priority: 1 before Phase 13 AWS verification opens new fault surface;
 should land after Phase 12b cleanup and before Phase 13 entry.
