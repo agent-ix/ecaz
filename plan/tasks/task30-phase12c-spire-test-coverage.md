@@ -1,7 +1,7 @@
 # Task 30 Phase 12c: SPIRE Test Coverage
 
-Status: coder-complete; pending reviewer acceptance of the 12c.4 READ
-schema-drift deferral and closeout audit
+Status: coder-complete; pending reviewer acceptance of the live 12c.4
+READ schema-drift guard and closeout audit
 Owner: coder1 / SPIRE distributed production-hardening track
 Priority: 1 before Phase 13 AWS verification opens new fault surface;
 should land after Phase 12b cleanup and before Phase 13 entry.
@@ -47,8 +47,9 @@ found:
 
 ## Non-Goals
 
-- Production code changes beyond minimum testability hooks. New
-  behaviour belongs in Phase 13 or a follow-up phase, not here.
+- Production code changes beyond minimum testability hooks, except the
+  12c.4 READ schema-drift guard explicitly pulled into this closeout
+  to avoid carrying a known local hardening gap into Phase 13.
 - AWS/RDS verification. Still Phase 13.
 - Re-running Phase 11/12/12a/12b fixtures. Those gates stand.
 - Performance benchmarking. Phase 13 owns AWS-scale perf measurement;
@@ -295,52 +296,48 @@ Source: audit Axis C / 12a.6. The 12a.6 fingerprint guard
 landed for INSERT/UPDATE/DELETE. The CustomScan read path has no
 drift fixture.
 
-Phase 12c disposition: proposed deferral to a follow-up production-behaviour
-phase. Reviewer feedback `31110` found that descriptor registration
-stores coordinator and remote shape fingerprints, but the CustomScan
-read path does not compare them before dispatch. Feedback `31120`
-kept 12c.4 as a phase-level scope decision, not coder-side test-only
-work. The checked rows below record the deferral rationale for reviewer
-confirmation; they are not live fixture evidence.
+Phase 12c disposition: live production guard plus fixture. Reviewer
+feedback `31110` found that descriptor registration stores coordinator
+and remote shape fingerprints, but the CustomScan read path did not
+compare them before dispatch. Feedback `31120` kept 12c.4 as the final
+phase-level scope decision. The closeout decision was to land the narrow
+READ guard now: the libpq connection plan validates descriptor-bound
+coordinator and remote fingerprints before READ dispatch, strict mode
+fails closed with side-specific `schema_drift` detail, and degraded mode
+blocks/skips the drifted remote before dispatch. Evidence: packet `763`.
 
 ### 12c.4.a: Coord-only drift on READ
 
-- [x] `ALTER TABLE` coordinator side only. Deferred from Phase
-  12c; production read-path guard required before this fixture can
-  be honest. Evidence: reviewer feedback `31110` / `31120`.
+- [x] `ALTER TABLE` coordinator side only. Live fixture:
+  `test_ec_spire_customscan_read_schema_drift_variants_sql` in
+  `src/tests/custom_scan_schema_drift.rs`. Evidence: packet `763`.
 - [x] Attempt CustomScan; assert pre-dispatch validation fires
-  with `SPIRE_REMOTE_STATUS_SCHEMA_DRIFT`. Deferred from Phase 12c;
-  current read path has no pre-dispatch fingerprint comparison to
-  test. Evidence: reviewer feedback `31110` / `31120`.
+  with `SPIRE_REMOTE_STATUS_SCHEMA_DRIFT`. The fixture checks strict
+  CustomScan failure and degraded skip reporting. Evidence: packet
+  `763`.
 - [x] Assert hint string names the coordinator as the drifted side.
-  Deferred from Phase 12c with the same production-guard rationale.
-  Evidence: reviewer feedback `31110` / `31120`.
+  Evidence: packet `763`.
 
 ### 12c.4.b: Remote-only drift on READ
 
-- [x] `ALTER TABLE` remote side only. Deferred from Phase 12c;
-  production read-path guard required before this fixture can be
-  honest. Evidence: reviewer feedback `31110` / `31120`.
+- [x] `ALTER TABLE` remote side only. Live fixture:
+  `test_ec_spire_customscan_read_schema_drift_variants_sql` in
+  `src/tests/custom_scan_schema_drift.rs`. Evidence: packet `763`.
 - [x] Attempt CustomScan; assert pre-dispatch validation fires.
-  Deferred from Phase 12c; current read path has no pre-dispatch
-  fingerprint comparison to test. Evidence: reviewer feedback
-  `31110` / `31120`.
+  The fixture checks strict CustomScan failure and degraded skip
+  reporting. Evidence: packet `763`.
 - [x] Assert hint string names the remote as the drifted side.
-  Deferred from Phase 12c with the same production-guard rationale.
-  Evidence: reviewer feedback `31110` / `31120`.
+  Evidence: packet `763`.
 
 ### 12c.4.c: Both-sides drift on READ
 
 - [x] Independent `ALTER TABLE` on both coordinator and remote.
-  Deferred from Phase 12c; production read-path guard required
-  before this fixture can be honest. Evidence: reviewer feedback
-  `31110` / `31120`.
-- [x] Assert pre-dispatch validation fires. Deferred from Phase
-  12c; current read path has no pre-dispatch fingerprint comparison
-  to test. Evidence: reviewer feedback `31110` / `31120`.
-- [x] Assert hint string names both sides. Deferred from Phase 12c
-  with the same production-guard rationale. Evidence: reviewer
-  feedback `31110` / `31120`.
+  Live fixture: `test_ec_spire_customscan_read_schema_drift_variants_sql`
+  in `src/tests/custom_scan_schema_drift.rs`. Evidence: packet `763`.
+- [x] Assert pre-dispatch validation fires. The fixture checks strict
+  CustomScan failure and degraded skip reporting. Evidence: packet
+  `763`.
+- [x] Assert hint string names both sides. Evidence: packet `763`.
 
 ## Phase 12c.5: 2PC In-Doubt Reaper Coverage (P1)
 
@@ -880,10 +877,8 @@ where the same file is being edited.
 - Every row in the Stage E fault matrix and Stage E lifecycle matrix
   has either a live fixture or a reviewer-accepted deferral row
   with rationale.
-- Schema-drift coverage exists for write paths with coord-only /
-  remote-only / both-sides variants. READ-path schema drift has either
-  live CustomScan fingerprint-guard fixtures, or a reviewer-accepted
-  deferral tracked in the Phase 13 entry gate.
+- Schema-drift coverage exists for write paths and the CustomScan READ
+  path with coord-only / remote-only / both-sides variants.
 - 2PC reaper coverage includes the in-doubt `prepare_acked →
   commit_local` window, not just the lost-ack window.
 - SPIRE recall has at least one CI-runnable assertion at

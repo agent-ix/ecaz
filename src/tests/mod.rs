@@ -2409,6 +2409,8 @@
 
     include!("custom_scan_execution.rs");
 
+    include!("custom_scan_schema_drift.rs");
+
     include!("custom_scan_tuple_transport.rs");
 
     include!("custom_scan_timeout.rs");

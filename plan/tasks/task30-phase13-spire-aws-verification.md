@@ -1,6 +1,6 @@
 # Task 30 Phase 13: SPIRE AWS Verification
 
-Status: blocked on Phase 12 production hardening
+Status: blocked on Phase 12 reviewer acceptance and final local readiness
 Owner: coder1 / SPIRE AWS verification track
 Priority: after Phase 12 exit criteria are met
 
@@ -14,10 +14,9 @@ not a place to discover known local hardening gaps.
 
 - [ ] Phase 12 is complete or every remaining Phase 12 item has an accepted
   reviewer deferral.
-- [ ] Phase 12c.4 READ schema-drift disposition is accepted: either the
-  CustomScan read-path fingerprint guard has landed with coord-only,
-  remote-only, and both-sides drift fixtures, or the reviewer-accepted deferral
-  from Phase 12c is repeated in the AWS report with operator impact.
+- [x] Phase 12c.4 READ schema-drift guard has landed with coord-only,
+  remote-only, and both-sides CustomScan fixtures. Evidence: Phase 12c
+  packet `763`.
 - [ ] The final local production-readiness bundle passes from clean setup.
 - [ ] Operator runbook covers typed tuple transport, 2PC recovery,
   `max_prepared_transactions`, strict/degraded behavior, local capacity

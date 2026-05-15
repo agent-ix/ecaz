@@ -350,8 +350,13 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
         .iter()
         .map(|row| {
             let descriptor = descriptors.get(&row.node_id);
-            let pipeline_ready =
-                descriptor.is_some() && row.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ;
+            let status =
+                remote_search_libpq_read_shape_status(index_relid, row, descriptor)?
+                    .unwrap_or(row.status);
+            let read_shape_drift = status == SPIRE_REMOTE_STATUS_SCHEMA_DRIFT;
+            let pipeline_ready = descriptor.is_some()
+                && row.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+                && !read_shape_drift;
             Ok(SpireRemoteSearchLibpqConnectionPlanRow {
                 requested_epoch: row.requested_epoch,
                 node_id: row.node_id,
@@ -386,10 +391,42 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
                 } else {
                     SPIRE_REMOTE_NONE
                 },
-                status: row.status,
+                status,
             })
         })
         .collect::<Result<Vec<_>, String>>()
+}
+
+fn remote_search_libpq_read_shape_status(
+    index_relid: pg_sys::Oid,
+    row: &SpireRemoteSearchLibpqRequestPlanRow,
+    descriptor: Option<&SpireRemoteLibpqConnectionDescriptorRow>,
+) -> Result<Option<&'static str>, String> {
+    if row.status != SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ {
+        return Ok(None);
+    }
+    let Some(descriptor) = descriptor else {
+        return Ok(None);
+    };
+    let Ok(conninfo) = remote_conninfo_secret_value(&descriptor.conninfo_secret_name) else {
+        return Ok(None);
+    };
+
+    if let Err(error) = validate_read_shape_fingerprints_before_remote_dispatch(
+        index_relid,
+        row.node_id,
+        &conninfo,
+        &descriptor.remote_index_regclass,
+        &descriptor.coordinator_insert_shape_fingerprint,
+        &descriptor.remote_insert_shape_fingerprint,
+    ) {
+        if row.consistency_mode == "strict" {
+            return Err(error);
+        }
+        return Ok(Some(SPIRE_REMOTE_STATUS_SCHEMA_DRIFT));
+    }
+
+    Ok(None)
 }
 
 pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
@@ -651,4 +688,3 @@ pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
 
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
-

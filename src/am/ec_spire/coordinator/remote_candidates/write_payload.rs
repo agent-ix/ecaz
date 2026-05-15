@@ -434,6 +434,63 @@ fn validate_remote_write_shape_fingerprint(
     Ok(())
 }
 
+pub(crate) fn validate_read_shape_fingerprints_before_remote_dispatch(
+    index_oid: pg_sys::Oid,
+    node_id: u32,
+    conninfo: &str,
+    remote_index_regclass: &str,
+    descriptor_coordinator_fingerprint: &str,
+    descriptor_remote_fingerprint: &str,
+) -> Result<(), String> {
+    let operation = "read";
+    if descriptor_coordinator_fingerprint == SPIRE_REMOTE_NONE
+        || descriptor_coordinator_fingerprint == "unset"
+    {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: schema drift guard is missing coordinator descriptor fingerprint; hint: refresh remote node descriptors before coordinator-routed reads"
+        ));
+    }
+    if descriptor_remote_fingerprint == SPIRE_REMOTE_NONE || descriptor_remote_fingerprint == "unset"
+    {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: schema drift guard is missing remote descriptor fingerprint for node_id {node_id}; hint: refresh the remote node descriptor after verifying coordinator and remote DDL match"
+        ));
+    }
+
+    let current_coordinator_fingerprint = coordinator_write_current_shape_fingerprint(index_oid)?;
+    let current_remote_fingerprint =
+        remote_write_current_shape_fingerprint(conninfo, node_id, remote_index_regclass)?;
+    let coordinator_drifted =
+        current_coordinator_fingerprint != descriptor_coordinator_fingerprint;
+    let remote_drifted = current_remote_fingerprint != descriptor_remote_fingerprint;
+
+    if coordinator_drifted && remote_drifted {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: coordinator and remote schema fingerprints differ for node_id {node_id}: descriptor coordinator fingerprint {descriptor_coordinator_fingerprint}, current coordinator fingerprint {current_coordinator_fingerprint}, descriptor remote fingerprint {descriptor_remote_fingerprint}, current remote fingerprint {current_remote_fingerprint}; hint: pause reads, apply matching DDL on both sides, refresh descriptors, then retry"
+        ));
+    }
+    if coordinator_drifted {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: coordinator side drifted for index_oid {}: descriptor coordinator fingerprint {} does not match current coordinator fingerprint {}; hint: pause reads, apply matching DDL on every remote, refresh descriptors, then retry",
+            u32::from(index_oid),
+            descriptor_coordinator_fingerprint,
+            current_coordinator_fingerprint
+        ));
+    }
+    if remote_drifted {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: remote side drifted for node_id {node_id}: descriptor remote fingerprint {descriptor_remote_fingerprint} does not match current remote fingerprint {current_remote_fingerprint}; hint: pause reads, apply matching DDL on the remote, refresh the descriptor, then retry"
+        ));
+    }
+    if current_remote_fingerprint != current_coordinator_fingerprint {
+        return Err(format!(
+            "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: coordinator and remote schema fingerprints differ for node_id {node_id}: coordinator fingerprint {current_coordinator_fingerprint}, remote fingerprint {current_remote_fingerprint}; hint: pause reads, apply matching DDL on the side that drifted, refresh descriptors, then retry"
+        ));
+    }
+
+    Ok(())
+}
+
 fn validate_write_shape_fingerprints_before_remote_dispatch(
     operation: &str,
     dispatch: &SpireCoordinatorInsertDispatchPlanRow,

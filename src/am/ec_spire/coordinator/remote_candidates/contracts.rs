@@ -70,6 +70,7 @@ fn remote_search_pre_dispatch_blocker_step(status: &str) -> &'static str {
         SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
             SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION
         }
+        SPIRE_REMOTE_STATUS_SCHEMA_DRIFT => "refresh_remote_node_descriptor",
         SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD => SPIRE_REMOTE_EXECUTOR_STEP_BUDGET,
         _ => SPIRE_REMOTE_NONE,
     }
@@ -85,6 +86,9 @@ fn remote_search_pre_dispatch_blocker_recommendation(status: &str) -> &'static s
         }
         SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
             "upgrade remote node extension before libpq fanout execution"
+        }
+        SPIRE_REMOTE_STATUS_SCHEMA_DRIFT => {
+            "pause coordinator-routed reads, apply matching DDL on coordinator and remote indexes, then refresh remote node descriptors"
         }
         SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD => {
             "raise ec_spire remote-search executor budgets or reduce remote fanout before libpq dispatch"
@@ -652,4 +656,3 @@ impl SpireRemoteCountRollup {
         }
     }
 }
-
