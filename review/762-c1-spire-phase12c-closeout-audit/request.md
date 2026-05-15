@@ -31,6 +31,11 @@ changes.
   test modules, and `#[cfg(test)]` / testability hooks. The only remaining
   non-live coverage item is 12c.4 READ schema drift, explicitly marked as a
   proposed production-behavior deferral rather than a test fixture.
+- Production-scope audit: the non-test SPIRE files changed under
+  `src/am/ec_spire/` are testability hooks and helper exposure. The
+  CustomScan counters/snapshots are `#[cfg(any(test, feature = "pg_test"))]`
+  or no-op outside tests; the prepared-xact transition context is passed on
+  production paths but only enforced under `#[cfg(test)]`.
 - 12c.4 READ schema drift: packet `758` records the Phase 12c deferral
   rationale from reviewer feedback `31110`/`31120`; packet `759` adds the
   explicit Phase 13 entry-gate row requiring either live READ-path fingerprint
