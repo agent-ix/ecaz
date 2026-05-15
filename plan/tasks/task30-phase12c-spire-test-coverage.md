@@ -107,9 +107,11 @@ rows during EvalPlanQual rerun.
 Today the callbacks are `None` (`mod.rs:106-107`) but no test pins
 the planner-side exclusion.
 
-- [ ] Assert planner refuses a `MergeAppend` plan over CustomScan.
-- [ ] Assert planner refuses an inner-rescan nested-loop above
-  CustomScan (where MarkPos/RestrPos would be required).
+- [x] Assert planner refuses a `MergeAppend` plan over CustomScan.
+  Evidence: `test_ec_spire_customscan_not_below_mergeappend_sql`.
+- [x] Assert planner refuses an inner-rescan nested-loop above
+  CustomScan (where MarkPos/RestrPos would be required). Evidence:
+  `test_ec_spire_customscan_not_inner_rescan_nested_loop_sql`.
 
 ### 12c.1.e: `BeginCustomScan` UPDATE-branch panic recovery
 

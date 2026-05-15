@@ -2561,6 +2561,7 @@
     }
 
     include!("custom_scan.rs");
+    include!("custom_scan_planner.rs");
     include!("custom_scan_fanout.rs");
 
 
