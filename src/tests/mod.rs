@@ -2500,6 +2500,7 @@
     include!("insert_remote_trigger.rs");
 
     include!("diagnostics.rs");
+    include!("diagnostics_reindex.rs");
 
     include!("build.rs");
 

@@ -658,10 +658,13 @@ against a dropped index (not panic / not stale data).
 
 ### 12c.13.c: `ec_spire_relation_storage_snapshot` under REINDEX
 
-- [ ] Start REINDEX in one session.
-- [ ] Call snapshot mid-REINDEX from another session.
-- [ ] Assert sane behaviour (no panic, returns either pre-REINDEX
-  state or `not_available` per documented contract).
+- [x] Start REINDEX in one session. Evidence:
+  `test_ec_spire_relation_storage_snapshot_during_reindex_sql`.
+- [x] Call snapshot mid-REINDEX from another session. Evidence:
+  `test_ec_spire_relation_storage_snapshot_during_reindex_sql`.
+- [x] Assert sane behaviour (no panic, returns either pre-REINDEX
+  state or `not_available` per documented contract). Evidence:
+  `test_ec_spire_relation_storage_snapshot_during_reindex_sql`.
 
 ## Phase 12c.14: Data-Shape Edge Cases (P3)
 
