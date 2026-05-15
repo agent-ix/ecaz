@@ -1,6 +1,7 @@
 # Task 30 Phase 12c: SPIRE Test Coverage
 
-Status: planned
+Status: coder-complete; pending reviewer acceptance of the 12c.4 READ
+schema-drift deferral and closeout audit
 Owner: coder1 / SPIRE distributed production-hardening track
 Priority: 1 before Phase 13 AWS verification opens new fault surface;
 should land after Phase 12b cleanup and before Phase 13 entry.
@@ -294,13 +295,13 @@ Source: audit Axis C / 12a.6. The 12a.6 fingerprint guard
 landed for INSERT/UPDATE/DELETE. The CustomScan read path has no
 drift fixture.
 
-Phase 12c disposition: deferred to a follow-up production-behaviour
+Phase 12c disposition: proposed deferral to a follow-up production-behaviour
 phase. Reviewer feedback `31110` found that descriptor registration
 stores coordinator and remote shape fingerprints, but the CustomScan
 read path does not compare them before dispatch. Feedback `31120`
 kept 12c.4 as a phase-level scope decision, not coder-side test-only
-work. The checked rows below record that accepted deferral rationale;
-they are not live fixture evidence.
+work. The checked rows below record the deferral rationale for reviewer
+confirmation; they are not live fixture evidence.
 
 ### 12c.4.a: Coord-only drift on READ
 
@@ -879,8 +880,10 @@ where the same file is being edited.
 - Every row in the Stage E fault matrix and Stage E lifecycle matrix
   has either a live fixture or a reviewer-accepted deferral row
   with rationale.
-- Schema-drift coverage exists for both write and read paths,
-  with coord-only / remote-only / both-sides variants.
+- Schema-drift coverage exists for write paths with coord-only /
+  remote-only / both-sides variants. READ-path schema drift has either
+  live CustomScan fingerprint-guard fixtures, or a reviewer-accepted
+  deferral tracked in the Phase 13 entry gate.
 - 2PC reaper coverage includes the in-doubt `prepare_acked →
   commit_local` window, not just the lost-ack window.
 - SPIRE recall has at least one CI-runnable assertion at
