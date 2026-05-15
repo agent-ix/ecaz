@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Phase 13b.5 — install PostgreSQL 18 and the ecaz extension on every node.
+# Args:
+#   $1  Path to topology JSON (from `terraform output -json topology`)
+#   $2  Artifact directory for logs
+#
+# Uses AWS Session Manager (`aws ssm send-command`) to run the bootstrap
+# script on every instance in parallel. Each node receives the ecaz tarball
+# from S3 and writes its install transcript back to the artifact bucket.
+
+set -euo pipefail
+
+TOPOLOGY="${1:?topology JSON path required}"
+ARTIFACT_DIR="${2:?artifact directory required}"
+mkdir -p "$ARTIFACT_DIR"
+
+REGION=$(jq -r '.region' "$TOPOLOGY")
+BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
+COORD_ID=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
+REMOTE_IDS=$(jq -r '.remotes[].instance_id' "$TOPOLOGY")
+
+ALL_IDS=("$COORD_ID")
+while IFS= read -r id; do ALL_IDS+=("$id"); done <<< "$REMOTE_IDS"
+
+CMD_ID=$(aws ssm send-command \
+  --region "$REGION" \
+  --document-name "AWS-RunShellScript" \
+  --instance-ids "${ALL_IDS[@]}" \
+  --parameters "commands=[\"sudo aws s3 cp s3://${BUCKET}/bootstrap-node.sh /tmp/bootstrap-node.sh\",\"sudo bash /tmp/bootstrap-node.sh\"]" \
+  --output-s3-bucket-name "$BUCKET" \
+  --output-s3-key-prefix "spire-aws/install" \
+  --comment "ecaz Phase 13b.5 install" \
+  --query "Command.CommandId" --output text)
+
+echo "ssm command id: $CMD_ID" | tee "$ARTIFACT_DIR/install.log"
+
+for id in "${ALL_IDS[@]}"; do
+  aws ssm wait command-executed --region "$REGION" --command-id "$CMD_ID" --instance-id "$id"
+  aws ssm get-command-invocation \
+    --region "$REGION" --command-id "$CMD_ID" --instance-id "$id" \
+    > "$ARTIFACT_DIR/install-${id}.log"
+done

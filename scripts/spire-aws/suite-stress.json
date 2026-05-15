@@ -1,0 +1,29 @@
+{
+  "name": "spire-aws-stress",
+  "schema_version": 1,
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "13a3a-stress-recall-k10",
+      "prefix": "ec_spire_aws_synth_10m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "queries_limit": 10000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-stress-latency-k10-c1",
+      "prefix": "ec_spire_aws_synth_10m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 1,
+      "iterations": 2000
+    }
+  ]
+}
