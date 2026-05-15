@@ -37,9 +37,9 @@ Acceptance:
 - [x] `rg` finds no direct production `NoTls` call sites outside the shared
   TLS helper under `src/am/ec_spire/coordinator/remote_candidates/`.
 - [x] `sslmode=disable` continues to use non-TLS local connections.
-- [ ] `sslmode=require` opens an encrypted connection when the server supports
+- [x] `sslmode=require` opens an encrypted connection when the server supports
   TLS.
-- [ ] `sslmode=verify-full sslrootcert=...` verifies the remote certificate
+- [x] `sslmode=verify-full sslrootcert=...` verifies the remote certificate
   chain and hostname.
 
 ## 13c.2: PK SELECT read schema-drift guard (P1)

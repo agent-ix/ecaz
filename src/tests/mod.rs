@@ -902,6 +902,56 @@
         conninfo
     }
 
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_remote_conninfo_tls_probe(
+        conninfo: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(connection_status, String),
+            name!(ssl, bool),
+            name!(tls_version, String),
+            name!(error, String),
+        ),
+    > {
+        let mut client = match am::spire_remote_search_libpq_connect_with_session_timeouts(
+            &conninfo,
+            1,
+            "test remote TLS probe",
+        ) {
+            Ok(client) => client,
+            Err(error) => {
+                return TableIterator::once((
+                    "connect_failed".to_owned(),
+                    false,
+                    String::new(),
+                    error,
+                ));
+            }
+        };
+        let row = match client.query_one(
+            "SELECT ssl, coalesce(version, '') \
+               FROM pg_stat_ssl \
+              WHERE pid = pg_backend_pid()",
+            &[],
+        ) {
+            Ok(row) => row,
+            Err(error) => {
+                return TableIterator::once((
+                    "probe_failed".to_owned(),
+                    false,
+                    String::new(),
+                    error.to_string(),
+                ));
+            }
+        };
+
+        let ssl = row.try_get::<_, bool>(0).unwrap_or(false);
+        let tls_version = row.try_get::<_, String>(1).unwrap_or_default();
+        TableIterator::once(("connected".to_owned(), ssl, tls_version, String::new()))
+    }
+
     fn ec_spire_test_run_remote_sql_after_request_build(
         function_name: &str,
         conninfo_secret_name: &str,
