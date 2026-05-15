@@ -1,6 +1,6 @@
 # Task 30 Phase 13c: SPIRE AWS Readiness Follow-ups
 
-Status: implemented locally; review pending
+Status: implemented locally; review refreshed
 Owner: coder1 / SPIRE AWS verification track
 Priority: P1 before Phase 13b AWS execution
 
@@ -41,6 +41,9 @@ Acceptance:
   TLS.
 - [x] `sslmode=verify-full sslrootcert=...` verifies the remote certificate
   chain and hostname.
+- [x] Conninfo without `sslmode` remains non-TLS for local/dev fixtures, while
+  AWS/prod TLS remains config-driven through explicit `sslmode=require` or
+  `sslmode=verify-full`.
 
 ## 13c.2: PK SELECT read schema-drift guard (P1)
 
@@ -48,14 +51,28 @@ Acceptance:
   `coordinator_select_remote_tuple_payload` before remote SQL dispatch.
 - [x] Treat PK SELECT as strict for v1 because the primitive has no degraded
   consistency-mode argument.
-- [ ] Add or cite focused coverage that exercises coordinator-only,
+- [x] Add or cite focused coverage that exercises coordinator-only,
   remote-only, and both-sides PK SELECT drift before remote dispatch.
 
 Acceptance:
 
-- [ ] PK SELECT with stale descriptor fingerprints fails with
+- [x] PK SELECT with stale descriptor fingerprints fails with
   `schema_drift` before opening the remote SELECT.
-- [ ] Existing vector-read drift behavior remains unchanged.
+- [x] Existing vector-read drift behavior remains unchanged.
+
+Evidence:
+
+- `test_ec_spire_select_schema_drift_variants_sql` covers coordinator-only,
+  remote-only, and both-sides PK SELECT drift through the existing DML
+  schema-drift fixture.
+- `scripts/run_spire_phase13c_drift_pg18.sh` is the packet-local PG18 SQL smoke
+  for PK SELECT drift. The successful artifact is
+  `review/765-c1-spire-phase13c-aws-readiness/artifacts/phase13c-drift-success.log`.
+- `scripts/run_spire_multicluster_customscan_read_pg18.sh` was rerun after the
+  TLS parser default fix and still plans
+  `Custom Scan (EcSpireDistributedScan)` with typed tuple payload transport.
+  Existing drift-specific CustomScan coverage remains in
+  `test_ec_spire_customscan_read_schema_drift_variants_sql`.
 
 ## Deferred Follow-ups
 
