@@ -513,40 +513,33 @@ impl SpireRemoteProductionTransportAdapter {
                     );
                 }
             };
-        let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
-            Ok(config) => config,
-            Err(_) => {
-                return failed_production_transport_probe_row(
-                    request.node_id,
-                    batch_start,
-                    request_start,
-                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
-                );
-            }
-        };
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
-        if limits.connect_timeout_ms > 0 {
-            config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
-        }
-
-        let (client, connection) = match config.connect(tokio_postgres::NoTls).await {
+        let SpireRemoteAsyncConnection {
+            client,
+            connection_task,
+            tls_config,
+        } = match remote_search_libpq_connect_async_with_session_timeouts(
+            &request.conninfo,
+            request.node_id,
+            "production transport probe",
+        )
+        .await
+        {
             Ok(connection) => connection,
-            Err(_) => {
+            Err(error) => {
                 return failed_production_transport_probe_row(
                     request.node_id,
                     batch_start,
                     request_start,
-                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+                    error.category,
                 );
             }
         };
-        let connection_task = tokio::spawn(async move {
-            let _ = connection.await;
-        });
 
         let cancel_token = client.cancel_token();
         let query_result = Self::run_query_with_optional_local_cancel(
             cancel_token,
+            tls_config,
             async {
                 if limits.statement_timeout_ms > 0 {
                     client
@@ -660,40 +653,33 @@ impl SpireRemoteProductionTransportAdapter {
                     );
                 }
             };
-        let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
-            Ok(config) => config,
-            Err(_) => {
-                return failed_production_candidate_receive_result(
-                    request.node_id,
-                    batch_start,
-                    request_start,
-                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
-                );
-            }
-        };
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
-        if limits.connect_timeout_ms > 0 {
-            config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
-        }
-
-        let (client, connection) = match config.connect(tokio_postgres::NoTls).await {
+        let SpireRemoteAsyncConnection {
+            client,
+            connection_task,
+            tls_config,
+        } = match remote_search_libpq_connect_async_with_session_timeouts(
+            &request.conninfo,
+            request.node_id,
+            "production candidate receive",
+        )
+        .await
+        {
             Ok(connection) => connection,
-            Err(_) => {
+            Err(error) => {
                 return failed_production_candidate_receive_result(
                     request.node_id,
                     batch_start,
                     request_start,
-                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+                    error.category,
                 );
             }
         };
-        let connection_task = tokio::spawn(async move {
-            let _ = connection.await;
-        });
 
         let cancel_token = client.cancel_token();
         let result_rows = Self::run_query_with_optional_local_cancel(
             cancel_token,
+            tls_config,
             async {
                 if limits.statement_timeout_ms > 0 {
                     client
@@ -904,40 +890,33 @@ impl SpireRemoteProductionTransportAdapter {
                     );
                 }
             };
-        let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
-            Ok(config) => config,
-            Err(_) => {
-                return failed_production_heap_receive_result(
-                    request.node_id,
-                    batch_start,
-                    request_start,
-                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
-                );
-            }
-        };
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
-        if limits.connect_timeout_ms > 0 {
-            config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
-        }
-
-        let (client, connection) = match config.connect(tokio_postgres::NoTls).await {
+        let SpireRemoteAsyncConnection {
+            client,
+            connection_task,
+            tls_config,
+        } = match remote_search_libpq_connect_async_with_session_timeouts(
+            &request.conninfo,
+            request.node_id,
+            "production heap receive",
+        )
+        .await
+        {
             Ok(connection) => connection,
-            Err(_) => {
+            Err(error) => {
                 return failed_production_heap_receive_result(
                     request.node_id,
                     batch_start,
                     request_start,
-                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+                    error.category,
                 );
             }
         };
-        let connection_task = tokio::spawn(async move {
-            let _ = connection.await;
-        });
 
         let cancel_token = client.cancel_token();
         let result_rows = Self::run_query_with_optional_local_cancel(
             cancel_token,
+            tls_config,
             async {
                 if limits.statement_timeout_ms > 0 {
                     client
@@ -1111,32 +1090,20 @@ impl SpireRemoteProductionTransportAdapter {
     ) -> Result<SpireCoordinatorInsertRemotePrepareResult, String> {
         let _governance_permit =
             remote_search_libpq_executor_governance_permit_for_node(request.node_id)?;
-        let mut config = request
-            .conninfo
-            .parse::<tokio_postgres::Config>()
-            .map_err(|_| {
-                format!(
-                    "ec_spire coordinator insert remote prepare conninfo parse failed for node_id {}",
-                    request.node_id
-                )
-            })?;
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
-        if limits.connect_timeout_ms > 0 {
-            config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
-        }
-
-        let (client, connection) = config
-            .connect(tokio_postgres::NoTls)
+        let SpireRemoteAsyncConnection {
+            client,
+            connection_task,
+            tls_config,
+        } = remote_search_libpq_connect_async_with_session_timeouts(
+            &request.conninfo,
+            request.node_id,
+            "coordinator insert remote prepare",
+        )
             .await
-            .map_err(|_| {
-                format!(
-                    "ec_spire coordinator insert remote prepare failed to open connection for node_id {}",
-                    request.node_id
-                )
+            .map_err(|error| {
+                format!("{}: {}", error.category, error.message)
             })?;
-        let connection_task = tokio::spawn(async move {
-            let _ = connection.await;
-        });
         let cancel_token = client.cancel_token();
 
         let result = async {
@@ -1163,6 +1130,7 @@ impl SpireRemoteProductionTransportAdapter {
 
             let remote_sql_result = Self::run_insert_step_with_optional_local_cancel(
                 cancel_token.clone(),
+                tls_config.clone(),
                 async {
                     client.batch_execute(&request.remote_sql).await.map_err(|error| {
                         format!(
@@ -1190,6 +1158,7 @@ impl SpireRemoteProductionTransportAdapter {
 
             let metadata_result = Self::run_insert_step_with_optional_local_cancel(
                 cancel_token.clone(),
+                tls_config.clone(),
                 async {
                     coordinator_insert_remote_descriptor_metadata_async(
                         &client,
@@ -1224,6 +1193,7 @@ impl SpireRemoteProductionTransportAdapter {
             );
             let prepare_result = Self::run_insert_step_with_optional_local_cancel(
                 cancel_token,
+                tls_config,
                 async {
                     client.batch_execute(&prepare_sql).await.map_err(|error| {
                         spire_remote_prepare_transaction_async_error(
@@ -1272,6 +1242,7 @@ impl SpireRemoteProductionTransportAdapter {
 
     async fn run_insert_step_with_optional_local_cancel<T, F>(
         cancel_token: tokio_postgres::CancelToken,
+        tls_config: SpireRemoteTlsConfig,
         query_future: F,
         local_cancel_source: SpireRemoteLocalCancelSource,
     ) -> Result<SpireCoordinatorInsertAsyncStep<T>, String>
@@ -1294,7 +1265,7 @@ impl SpireRemoteProductionTransportAdapter {
                 })
             }
             futures_util::future::Either::Right((failure_category, _)) => {
-                let _ = cancel_token.cancel_query(tokio_postgres::NoTls).await;
+                remote_search_libpq_cancel_query(cancel_token, &tls_config).await;
                 match query_future.await {
                     Ok(value) => Ok(SpireCoordinatorInsertAsyncStep {
                         value,
@@ -1308,6 +1279,7 @@ impl SpireRemoteProductionTransportAdapter {
 
     async fn run_query_with_optional_local_cancel<T, F>(
         cancel_token: tokio_postgres::CancelToken,
+        tls_config: SpireRemoteTlsConfig,
         query_future: F,
         local_cancel_source: SpireRemoteLocalCancelSource,
     ) -> Result<T, &'static str>
@@ -1321,7 +1293,7 @@ impl SpireRemoteProductionTransportAdapter {
         match futures_util::future::select(Box::pin(query_future), Box::pin(cancel_signal)).await {
             futures_util::future::Either::Left((query_result, _)) => query_result,
             futures_util::future::Either::Right((failure_category, _query_future)) => {
-                let _ = cancel_token.cancel_query(tokio_postgres::NoTls).await;
+                remote_search_libpq_cancel_query(cancel_token, &tls_config).await;
                 Err(failure_category)
             }
         }
@@ -1485,4 +1457,3 @@ fn production_remote_heap_decode_failure_category(error: &str) -> &'static str {
         SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED
     }
 }
-

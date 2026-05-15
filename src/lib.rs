@@ -6067,7 +6067,11 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
                 }
             };
 
-            let mut client = match postgres::Client::connect(&conninfo, postgres::NoTls) {
+            let mut client = match am::spire_remote_search_libpq_connect_with_session_timeouts(
+                &conninfo,
+                u32::try_from(row.node_id).expect("node_id should fit u32"),
+                "manifest executor remote validation",
+            ) {
                 Ok(client) => client,
                 Err(_) => {
                     return SpireManifestExecutorResultRow {

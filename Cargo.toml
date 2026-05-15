@@ -32,6 +32,10 @@ hashbrown = "0.15"
 postgres = "0.19"
 tokio = { version = "1.51", features = ["rt", "time", "net"] }
 tokio-postgres = "0.7"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+url = "2.5"
 futures-util = "0.3"
 serde_json = "1"
 

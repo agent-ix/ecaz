@@ -66,30 +66,6 @@ pub(crate) fn remote_prepared_transaction_registration_warning(
     }
 }
 
-pub(crate) fn remote_search_libpq_connect_with_session_timeouts(
-    conninfo: &str,
-    node_id: u32,
-    context: &str,
-) -> Result<postgres::Client, String> {
-    let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
-    let mut config = conninfo
-        .parse::<postgres::Config>()
-        .map_err(|_| format!("ec_spire {context} conninfo parse failed for node_id {node_id}"))?;
-    if limits.connect_timeout_ms > 0 {
-        config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
-    }
-    let mut client = config
-        .connect(postgres::NoTls)
-        .map_err(|_| format!("ec_spire {context} failed to open connection for node_id {node_id}"))?;
-    if limits.statement_timeout_ms > 0 {
-        let sql = format!("SET statement_timeout = {}", limits.statement_timeout_ms);
-        client.batch_execute(&sql).map_err(|_| {
-            format!("ec_spire {context} failed to configure statement_timeout for node_id {node_id}")
-        })?;
-    }
-    Ok(client)
-}
-
 const SPIRE_REMOTE_SEARCH_LIBPQ_GLOBAL_LOCK_CLASS_BASE: i32 = 730_000_000;
 const SPIRE_REMOTE_SEARCH_LIBPQ_NODE_LOCK_CLASS_BASE: i32 = 731_000_000;
 #[cfg(any(test, feature = "pg_test"))]
@@ -428,4 +404,3 @@ fn validate_remote_search_libpq_endpoint_identity_for_dispatch(
     executor_state.insert_endpoint_identity(cache_key, endpoint_identity);
     Ok(())
 }
-

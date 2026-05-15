@@ -871,6 +871,14 @@ pub(crate) unsafe fn coordinator_select_remote_tuple_payload(
             "ec_spire coordinator select conninfo secret for node_id {node_id} is not resolved: {status}"
         )
     })?;
+    validate_read_shape_fingerprints_before_remote_dispatch(
+        dispatch.index_oid,
+        dispatch.node_id,
+        &conninfo,
+        &dispatch.remote_index_regclass,
+        &dispatch.coordinator_insert_shape_fingerprint,
+        &dispatch.remote_insert_shape_fingerprint,
+    )?;
     let mut client = remote_search_libpq_connect_with_session_timeouts(
         &conninfo,
         node_id,

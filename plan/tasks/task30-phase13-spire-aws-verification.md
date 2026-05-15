@@ -6,14 +6,16 @@ Priority: after Phase 12 exit criteria are met
 
 ## Sub-phases
 
-Phase 13 is decomposed into a design phase and a runbook phase. The
-entry/exit gate below stays in this file; topology, datasets, workload
-matrix, thresholds, observability surface, fault drills, packet
-skeleton, and operator surface live in 13a; the executable runbook,
-Terraform module, and helper scripts live in 13b.
+Phase 13 is decomposed into a design phase, a runbook phase, and a
+final local AWS-readiness follow-up phase. The entry/exit gate below
+stays in this file; topology, datasets, workload matrix, thresholds,
+observability surface, fault drills, packet skeleton, and operator
+surface live in 13a; the executable runbook, Terraform module, and
+helper scripts live in 13b; final local blocker fixes live in 13c.
 
 - [Phase 13a — SPIRE AWS Verification Design](task30-phase13a-spire-aws-verification-design.md)
 - [Phase 13b — SPIRE AWS Verification Runbook](task30-phase13b-spire-aws-verification-runbook.md)
+- [Phase 13c — SPIRE AWS Readiness Follow-ups](task30-phase13c-spire-aws-readiness-followups.md)
 
 ## Goal
 
@@ -43,6 +45,9 @@ permit loading the ecaz extension's custom AM / CustomScan.
 - [ ] Phase 13b.1 deliverables are committed: `infra/spire-aws/`
   (Terraform module + Makefile) and `scripts/spire-aws/` (orchestration
   shell scripts, SQL helpers, suite configurations).
+- [ ] Phase 13c.1 and 13c.2 have landed or carry reviewer-accepted
+  deferrals; AWS remotes must not be opened with the old `NoTls`
+  production path.
 - [ ] Phase 13.0 counter prerequisites (Phase 13a.5.1..4) are landed or
   each deferral carries the operator-impact note that Phase 13b will
   repeat.

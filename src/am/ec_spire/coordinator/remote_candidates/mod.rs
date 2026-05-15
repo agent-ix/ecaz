@@ -1,6 +1,7 @@
 include!("sort.rs");
 include!("vocab.rs");
 include!("contracts.rs");
+include!("tls.rs");
 include!("fanout.rs");
 include!("libpq_plan.rs");
 include!("resolve.rs");
