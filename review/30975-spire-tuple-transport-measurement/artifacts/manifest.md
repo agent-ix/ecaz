@@ -142,3 +142,25 @@
   for the tuple payload path. On this small local scalar loopback fixture,
   typed transport was slower than JSON fallback; this packet does not claim a
   typed speedup.
+
+## Additional Published Logs
+
+These uncited setup/attempt logs were present locally with the packet and are
+published for visibility: `bench-json-cli-q1.log`, `bench-json-cli.log`,
+`bench-tuple-transport-summary.log`, `create-extension-rabitq.log`,
+`create-extension.log`, `create-measure-db-rabitq.log`,
+`create-measure-db-rebuild.log`, `create-measure-db-twoindex.log`,
+`create-measure-db.log`, `create-rabitq-fixture.sql.log`,
+`create-twoindex-fixture.sql.log`, `customscan-json-smoke-prepare.sql.log`,
+`customscan-json-smoke.sql.log`, `drop-measure-db-rabitq.log`,
+`drop-measure-db-rebuild.log`, `drop-measure-db-scalar.log`,
+`drop-measure-db-twoindex.log`, `drop-measure-db.log`, `generate-corpus.log`,
+`generate-queries.log`, `load-corpus.log`, `measure_corpus.tsv`,
+`measure_queries.tsv`, `payload-probes-rabitq.sql.log`,
+`payload-probes-twoindex.sql.log`, `register-loopback-rabitq.sql.log`,
+`register-loopback-twoindex.sql.log`,
+`restart-pg18-loopback-secret-after-install.log`,
+`restart-pg18-loopback-secret.log`, `run-tuple-transport-bench.sql`,
+`setup-loopback-remote-rabitq.sql.log`,
+`setup-loopback-remote-rebuild.sql.log`, `setup-loopback-remote.sql.log`,
+`verify-functions-rabitq.log`, and `verify-functions.log`.

@@ -97,3 +97,8 @@ remote placement count, and projected width monotonic in unit coverage.
   fail-closed guard for this remote-placement KNN shape. It is not cited as
   evidence for the calibrated constants; the actual SELECT calibration path and
   the eligibility/cost-model SQL are the cited evidence.
+- Additional uncited local logs are now published for visibility:
+  `calibrate-spire-cost-baseline.log`, `explain-customscan-after.log`,
+  `explain-customscan-after.sql`, `install-ecaz-pg18-pg-test.log`,
+  `restart-pg18-loopback-secret-final.log`, and
+  `restart-pg18-loopback-secret.log`.

@@ -1,0 +1,8 @@
+SET
+SET
+SET
+SET
+SET
+1	3	1	1	16	16	0	t	t	customscan_candidate	planner path generation must also verify ORDER BY vector distance LIMIT query shape
+psql:review/30976-spire-cost-calibration/artifacts/explain-customscan-after.sql:14: ERROR:  ec_spire_distributed: DML requires a bigint primary-key equality predicate in v1
+HINT:  See ADR-069 for the v1 SPIRE distributed DML shape.

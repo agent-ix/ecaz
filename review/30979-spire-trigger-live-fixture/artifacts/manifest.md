@@ -28,3 +28,8 @@ distributed PK-select shape. That query can see the remote row through
 CustomScan, so it is not a heap-only assertion. The updated fixture uses
 `WHERE id + 0 = 303` only for the coordinator heap suppression assertion; the
 readback assertion still uses the normal CustomScan KNN path.
+
+Additional uncited local logs from the earlier trigger attempt are now
+published for visibility: `insert-read-trigger-cli.log`,
+`insert-read-trigger.log`, `insert-read-trigger/coord-postgres.log`, and
+`insert-read-trigger/remote-postgres.log`.

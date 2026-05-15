@@ -1,0 +1,1 @@
+ERROR:  ec_spire local heap tuple delivery requires custom_scan_tuple_delivery before consuming 16 remote placement(s); first remote pid 1 is on node_id 2
