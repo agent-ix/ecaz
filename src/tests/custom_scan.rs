@@ -1160,7 +1160,6 @@
     }
 
     #[pg_test]
-    #[should_panic(expected = "canceling statement due to user request")]
     fn test_ec_spire_customscan_read_cancel_releases_transport() {
         let _env_lock = env_var_test_lock();
         set_remote_governance_test_namespace(6606);
@@ -1250,13 +1249,32 @@
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("disable seqscan should succeed");
         Spi::run("SET LOCAL enable_indexscan = off").expect("disable indexscan should succeed");
-        let _cancel_flags = unsafe { ScopedPgQueryCancelFlags::set_pending() }
-            .expect("PostgreSQL query-cancel flags should resolve inside pg_test backend");
-        Spi::run(
-            "SELECT id, title FROM ec_spire_customscan_read_cancel_coord_sql \
-             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
-        )
-        .expect("CustomScan read path should be interrupted by local query cancel");
+        am::custom_scan_reset_cleanup_counters_for_test();
+        let cancel_error = pg_sys::PgTryBuilder::new(|| {
+            let _cancel_flags = unsafe { ScopedPgQueryCancelFlags::set_pending() }
+                .expect("PostgreSQL query-cancel flags should resolve inside pg_test backend");
+            Spi::run(
+                "SELECT id, title FROM ec_spire_customscan_read_cancel_coord_sql \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
+            )
+            .expect("CustomScan read path should be interrupted by local query cancel");
+            "no_error".to_owned()
+        })
+        .catch_others(|cause| match cause {
+            pg_sys::panic::CaughtError::ErrorReport(report)
+            | pg_sys::panic::CaughtError::PostgresError(report) => report.message().to_owned(),
+            pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                ereport.message().to_owned()
+            }
+        })
+        .execute();
+        assert!(
+            cancel_error.contains("canceling statement due to user request"),
+            "{cancel_error}"
+        );
+        let cleanup_counters = am::custom_scan_cleanup_counters_for_test();
+        assert_eq!(cleanup_counters.end_custom_scan_count, 1);
+        assert_eq!(cleanup_counters.pfree_count, 1);
     }
 
     #[pg_test]

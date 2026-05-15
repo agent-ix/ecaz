@@ -83,9 +83,11 @@ not.
 Exercises `begin_exec.rs:170` post-cancel cleanup path.
 
 - [ ] Capture `MemoryContextStats` baseline before scan.
-- [ ] Cancel mid-`ExecCustomScan` (interrupt).
-- [ ] Assert `EndCustomScan` invoked exactly once on the cancel
-  unwind path.
+- [x] Cancel mid-`ExecCustomScan` (interrupt). Evidence:
+  `test_ec_spire_customscan_read_cancel_releases_transport`.
+- [x] Assert `EndCustomScan` invoked exactly once on the cancel
+  unwind path. Evidence:
+  `test_ec_spire_customscan_read_cancel_releases_transport`.
 - [ ] Assert `MemoryContextStats` returns to baseline after end.
 
 ### 12c.1.c: `recheck` callback pin test
