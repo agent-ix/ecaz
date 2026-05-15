@@ -1097,4 +1097,78 @@
                 .batch_execute("COMMIT")
                 .expect("isolation reader transaction should commit");
         }
+
+        let for_update_plan_lines = plan_client
+            .query(
+                "EXPLAIN (COSTS OFF) \
+                 SELECT id, title \
+                   FROM ec_spire_remote_pk_select_isolation_coord_sql \
+                  WHERE id = 2606 \
+                  FOR UPDATE",
+                &[],
+            )
+            .expect("remote PK SELECT FOR UPDATE isolation EXPLAIN should succeed")
+            .into_iter()
+            .map(|row| {
+                row.try_get::<_, String>(0)
+                    .expect("remote PK SELECT FOR UPDATE plan row should decode")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            for_update_plan_lines.contains("Custom Scan (EcSpireDistributedScan)"),
+            "{for_update_plan_lines}"
+        );
+
+        let mut reset_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback FOR UPDATE reset connection should succeed");
+        reset_client
+            .execute(
+                "UPDATE ec_spire_remote_pk_select_isolation_remote_sql \
+                    SET title = 'isolation before' \
+                  WHERE id = 2606",
+                &[],
+            )
+            .expect("remote FOR UPDATE fixture reset should succeed");
+
+        let mut locker = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback FOR UPDATE reader connection should succeed");
+        locker
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                &[&SECRET_KEY, &loopback_conninfo],
+            )
+            .expect("FOR UPDATE reader backend should receive conninfo secret env var");
+        locker
+            .batch_execute(
+                "BEGIN ISOLATION LEVEL READ COMMITTED; \
+                 DECLARE spire_epq_stale_row CURSOR FOR \
+                 SELECT title \
+                   FROM ec_spire_remote_pk_select_isolation_coord_sql \
+                  WHERE id = 2606 \
+                  FOR UPDATE",
+            )
+            .expect("FOR UPDATE cursor should begin before concurrent remote update");
+
+        let mut writer = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback FOR UPDATE writer connection should succeed");
+        writer
+            .execute(
+                "UPDATE ec_spire_remote_pk_select_isolation_remote_sql \
+                    SET title = 'isolation after for update' \
+                  WHERE id = 2606",
+                &[],
+            )
+            .expect("remote concurrent FOR UPDATE update should commit");
+
+        let locked_title = locker
+            .query_one("FETCH 1 FROM spire_epq_stale_row", &[])
+            .expect("FOR UPDATE cursor fetch should succeed")
+            .try_get::<_, String>(0)
+            .expect("FOR UPDATE cursor title should decode");
+        assert_eq!(locked_title, "isolation before");
+
+        locker
+            .batch_execute("COMMIT")
+            .expect("FOR UPDATE reader transaction should commit");
     }

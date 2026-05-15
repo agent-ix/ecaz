@@ -600,10 +600,17 @@ Today `catalog_cleanup_policy.rs:839-840` covers only
 
 Pin the documented contract from `begin_exec.rs:336-338`.
 
-- [ ] Session A: `SELECT FOR UPDATE` over CustomScan; pause.
-- [ ] Session B: UPDATE the same row, commit.
-- [ ] Session A: resume; assert the documented stale-read outcome
-  (recheck returns true, stale row surfaced).
+- [x] Session A: `SELECT FOR UPDATE` over CustomScan; pause.
+  Evidence: `test_ec_spire_remote_pk_select_isolation_contract_sql`
+  declares a cursor over `SELECT ... FOR UPDATE` after asserting the
+  plan contains `Custom Scan (EcSpireDistributedScan)`.
+- [x] Session B: UPDATE the same row, commit. Evidence:
+  `test_ec_spire_remote_pk_select_isolation_contract_sql`.
+- [x] Session A: resume; assert the documented stale-read outcome
+  (recheck returns true, stale row surfaced). Evidence:
+  `test_ec_spire_remote_pk_select_isolation_contract_sql` fetches
+  from the pre-update cursor and asserts the pre-update remote title
+  is surfaced.
 - [x] Cross-reference the contract comment from
   `begin_exec.rs:420-428` in the test. Evidence:
   `test_ec_spire_remote_pk_select_isolation_contract_sql`.
