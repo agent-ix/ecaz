@@ -1,0 +1,1 @@
+ '--prefix=/home/peter/.pgrx/18.3/pgrx-install' '--with-pgport=28818' '--enable-debug' '--enable-cassert' 'CPPFLAGS= -DUSE_ASSERT_CHECKING=1 -DRANDOMIZE_ALLOCATED_MEMORY=1 '
