@@ -157,9 +157,11 @@ categories have no live coverage at all.
 - [ ] Degraded mode: same payload; assert
   `degraded_skipped_dispatch_count` increments and the matrix-row
   hint is surfaced.
-- [ ] Per-batch cap: payload count exceeds
+- [x] Per-batch cap: payload count exceeds
   `ec_spire.max_remote_payload_rows_per_batch`; assert the same
-  category fires before per-row allocation.
+  category fires before per-row allocation. Evidence:
+  `production_receive_adapters_reject_selected_pid_batches_before_connection`
+  accepted in reviewer feedback `31090`.
 
 ### 12c.2.b: `tuple_transport_retired` (12a.5)
 
@@ -200,8 +202,9 @@ Covered by `src/tests/remote_search/transport_faults.rs`.
 - [x] If live: simulate remote OOM (e.g., issue a query that
   exceeds remote `work_mem` deliberately); assert matrix-row
   action fires.
-- [ ] If deferred: record the deferral rationale with reviewer
-  acceptance.
+- [x] If deferred: record the deferral rationale with reviewer
+  acceptance. Not applicable: the row was not deferred; live fixture
+  evidence in packet `707` was accepted by reviewer feedback `31090`.
 
 ### 12c.2.f: `simulated_network_partition`
 
@@ -210,8 +213,9 @@ Covered by `src/tests/remote_search/transport_faults.rs`.
 - [x] Decide: live fixture or accepted-deferral row.
 - [x] If live: drive an unreachable transport endpoint; assert
   detection and matrix-row action.
-- [ ] If deferred: record the deferral rationale with reviewer
-  acceptance.
+- [x] If deferred: record the deferral rationale with reviewer
+  acceptance. Not applicable: the row was not deferred; live fixture
+  evidence in packet `709` was accepted by reviewer feedback `31100`.
 
 ## Phase 12c.3: Stage E Lifecycle Matrix — Live Coverage (P1)
 
