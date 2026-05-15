@@ -17,7 +17,6 @@ enum SpireRemoteSslMode {
     Disable,
     Prefer,
     Require,
-    VerifyCa,
     VerifyFull,
 }
 
@@ -105,7 +104,7 @@ impl SpireRemoteTlsConfig {
                     None => builder.with_no_client_auth(),
                 }
             }
-            SpireRemoteSslMode::VerifyCa | SpireRemoteSslMode::VerifyFull => {
+            SpireRemoteSslMode::VerifyFull => {
                 let roots = spire_remote_tls_root_store(self.sslrootcert.as_deref())?;
                 let builder = builder.with_root_certificates(roots);
                 match client_auth {
@@ -442,7 +441,10 @@ fn spire_remote_parse_sslmode(value: &str) -> Result<SpireRemoteSslMode, String>
         "disable" => Ok(SpireRemoteSslMode::Disable),
         "allow" | "prefer" => Ok(SpireRemoteSslMode::Prefer),
         "require" => Ok(SpireRemoteSslMode::Require),
-        "verify-ca" => Ok(SpireRemoteSslMode::VerifyCa),
+        "verify-ca" => Err(
+            "ec_spire remote conninfo sslmode=verify-ca is not supported; use sslmode=verify-full"
+                .to_owned(),
+        ),
         "verify-full" => Ok(SpireRemoteSslMode::VerifyFull),
         _ => Err("ec_spire remote conninfo has unsupported sslmode".to_owned()),
     }
@@ -452,9 +454,7 @@ fn spire_remote_normalized_base_sslmode(sslmode: SpireRemoteSslMode) -> Option<&
     match sslmode {
         SpireRemoteSslMode::Disable => Some("disable"),
         SpireRemoteSslMode::Prefer => None,
-        SpireRemoteSslMode::Require | SpireRemoteSslMode::VerifyCa | SpireRemoteSslMode::VerifyFull => {
-            Some("require")
-        }
+        SpireRemoteSslMode::Require | SpireRemoteSslMode::VerifyFull => Some("require"),
     }
 }
 
