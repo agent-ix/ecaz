@@ -2516,6 +2516,8 @@
 
     include!("dml_frontdoor.rs");
 
+    include!("dml_schema_drift.rs");
+
     include!("dml_frontdoor_select.rs");
 
     include!("dml_frontdoor_delete.rs");

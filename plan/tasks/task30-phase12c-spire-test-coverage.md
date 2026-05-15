@@ -458,14 +458,17 @@ Today `dml_frontdoor.rs:2323` asserts only row counts.
 
 ### 12c.9.f: Split UPDATE/DELETE schema-drift into 3 variants
 
-Today `dml_frontdoor.rs:1672` mixes coord-only and remote-only.
+Evidence: `test_ec_spire_update_schema_drift_variants_sql` and
+`test_ec_spire_delete_schema_drift_variants_sql` cover the split
+matrix in `dml_schema_drift.rs`, keeping `dml_frontdoor.rs` under the
+test-file size target.
 
-- [ ] UPDATE coord-only drift: assert hint names coordinator.
-- [ ] UPDATE remote-only drift: assert hint names remote.
-- [ ] UPDATE both-sides drift: assert hint names both.
-- [ ] DELETE coord-only drift.
-- [ ] DELETE remote-only drift.
-- [ ] DELETE both-sides drift.
+- [x] UPDATE coord-only drift: assert hint names coordinator.
+- [x] UPDATE remote-only drift: assert hint names remote.
+- [x] UPDATE both-sides drift: assert hint names both.
+- [x] DELETE coord-only drift.
+- [x] DELETE remote-only drift.
+- [x] DELETE both-sides drift.
 
 ### 12c.9.g: Tighten descriptor-race test
 
