@@ -168,11 +168,13 @@ categories have no live coverage at all.
 Stub remote advertises only `json_tuple_payload_v1` with a valid
 identity envelope.
 
-- [ ] Strict mode: assert production path returns
-  `SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED`.
-- [ ] Degraded mode: assert the upgrade hint is readable through
+- [x] Strict mode: assert production path returns
+  `SPIRE_REMOTE_STATUS_TUPLE_TRANSPORT_RETIRED`. Evidence:
+  `test_ec_spire_customscan_tuple_transport_retired_live_sql`.
+- [x] Degraded mode: assert the upgrade hint is readable through
   `ec_spire_remote_search_degraded_skip_report` with the expected
-  capability name (`pg_binary_attr_v1`).
+  capability name (`pg_binary_attr_v1`). Evidence:
+  `test_ec_spire_customscan_tuple_transport_retired_live_sql`.
 
 ### 12c.2.c: `local_statement_timeout` end-to-end
 
