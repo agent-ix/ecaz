@@ -311,20 +311,31 @@ spot check from packet `30980`; no SPIRE-side test pins recall in CI.
 
 ### 12c.6.a: SPIRE `recall@k=1.0` baseline fixture
 
-- [ ] Build a small corpus (e.g., N=64) with embeddings + brute-force
+Evidence: packet `705`, accepted in reviewer feedback `31090`.
+`test_ec_spire_recall_at_10_matches_exact_on_full_probe` builds a
+deterministic 64-row corpus, runs the indexed top-10 query with
+`nprobe = nlists`, compares it with the exact top-10 reference, and
+asserts returned ids are unique.
+
+- [x] Build a small corpus (e.g., N=64) with embeddings + brute-force
   reference.
-- [ ] Run CustomScan with K=10; capture predicted set.
-- [ ] Assert predicted set equals brute-force set
+- [x] Run CustomScan with K=10; capture predicted set.
+- [x] Assert predicted set equals brute-force set
   (recall@10 = 1.0).
-- [ ] Assert returned PIDs are unique (no duplicates from fanout).
+- [x] Assert returned PIDs are unique (no duplicates from fanout).
 
 ### 12c.6.b: `nprobe` sweep recall fixture
 
-- [ ] Run the same corpus with `nprobe = 1`.
-- [ ] Run with `nprobe = 4`.
-- [ ] Run with `nprobe = 8`.
-- [ ] Run with `nprobe = 16`.
-- [ ] Assert recall is monotonically non-decreasing across the
+Evidence: packet `705`, accepted in reviewer feedback `31090`.
+`test_ec_spire_nprobe_sweep_recall_is_monotonic` uses the same
+deterministic 64-row corpus shape and sweeps session `ec_spire.nprobe`
+over `1, 4, 8, 16`.
+
+- [x] Run the same corpus with `nprobe = 1`.
+- [x] Run with `nprobe = 4`.
+- [x] Run with `nprobe = 8`.
+- [x] Run with `nprobe = 16`.
+- [x] Assert recall is monotonically non-decreasing across the
   sweep (or pin acceptable plateau with reviewer-accepted threshold).
 
 ### 12c.6.c: Sign convention pin extension
