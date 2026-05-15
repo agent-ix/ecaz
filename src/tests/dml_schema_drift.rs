@@ -2,6 +2,7 @@
     enum EcSpireDmlSchemaDriftOperation {
         Update,
         Delete,
+        Select,
     }
 
     impl EcSpireDmlSchemaDriftOperation {
@@ -9,6 +10,7 @@
             match self {
                 Self::Update => "update",
                 Self::Delete => "delete",
+                Self::Select => "read",
             }
         }
 
@@ -27,6 +29,13 @@
                          '{coord_index}'::regclass, \
                          'id', \
                          int8send({pk}::bigint)::bytea)"
+                ),
+                Self::Select => format!(
+                    "SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                         '{coord_index}'::regclass, \
+                         'id', \
+                         int8send({pk}::bigint)::bytea, \
+                         ARRAY['id', 'title']::text[])"
                 ),
             }
         }
@@ -167,15 +176,21 @@
                          ALTER TABLE {remote_table} ADD COLUMN remote_side integer"
                     ))
                     .expect("both-sides DDL should succeed");
-                register_ec_spire_dml_schema_drift_descriptor(
-                    loopback_client,
-                    &coord_index,
-                    &remote_index,
-                    &remote_identity_hex,
-                    active_epoch,
-                    node_id,
-                    32,
-                );
+                match operation {
+                    EcSpireDmlSchemaDriftOperation::Update
+                    | EcSpireDmlSchemaDriftOperation::Delete => {
+                        register_ec_spire_dml_schema_drift_descriptor(
+                            loopback_client,
+                            &coord_index,
+                            &remote_index,
+                            &remote_identity_hex,
+                            active_epoch,
+                            node_id,
+                            32,
+                        );
+                    }
+                    EcSpireDmlSchemaDriftOperation::Select => {}
+                }
             }
         }
 
@@ -330,5 +345,41 @@
             EcSpireDmlSchemaDriftVariant::BothSides,
             7803,
             83,
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_select_schema_drift_variants_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var($1, $2)",
+                &[&DML_SCHEMA_DRIFT_SECRET_ENV, &loopback_conninfo],
+            )
+            .expect("loopback backend should receive DML schema drift conninfo secret env var");
+
+        assert_ec_spire_dml_schema_drift_variant_sql(
+            &mut loopback_client,
+            EcSpireDmlSchemaDriftOperation::Select,
+            EcSpireDmlSchemaDriftVariant::CoordinatorOnly,
+            7901,
+            91,
+        );
+        assert_ec_spire_dml_schema_drift_variant_sql(
+            &mut loopback_client,
+            EcSpireDmlSchemaDriftOperation::Select,
+            EcSpireDmlSchemaDriftVariant::RemoteOnly,
+            7902,
+            92,
+        );
+        assert_ec_spire_dml_schema_drift_variant_sql(
+            &mut loopback_client,
+            EcSpireDmlSchemaDriftOperation::Select,
+            EcSpireDmlSchemaDriftVariant::BothSides,
+            7903,
+            93,
         );
     }

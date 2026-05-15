@@ -361,7 +361,7 @@ fn spire_remote_parse_conninfo(conninfo: &str) -> Result<SpireRemoteParsedConnin
 
 fn spire_remote_default_tls_config() -> SpireRemoteTlsConfig {
     SpireRemoteTlsConfig {
-        sslmode: SpireRemoteSslMode::Prefer,
+        sslmode: SpireRemoteSslMode::Disable,
         sslrootcert: None,
         sslcert: None,
         sslkey: None,
@@ -618,5 +618,16 @@ mod spire_remote_tls_tests {
 
         assert!(parsed.tls_config.no_tls());
         assert!(parsed.base_conninfo.contains("sslmode='disable'"));
+    }
+
+    #[test]
+    fn conninfo_parser_defaults_to_disable_for_unspecified_sslmode() {
+        let parsed =
+            spire_remote_parse_conninfo("host=/tmp dbname=postgres target_session_attrs=read-write")
+                .expect("conninfo should parse");
+
+        assert!(parsed.tls_config.no_tls());
+        assert!(parsed.base_conninfo.contains("sslmode='disable'"));
+        assert!(parsed.base_conninfo.contains("target_session_attrs='read-write'"));
     }
 }
