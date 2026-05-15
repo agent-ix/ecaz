@@ -12641,6 +12641,166 @@ fn ec_spire_remote_search_production_scan_heap_resolution_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_read_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: i32,
+) -> TableIterator<'static, (name!(metric, String), name!(value, String))> {
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_production_read_profile top_k must be non-negative");
+    }
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_production_read_profile")
+    };
+    let row = unsafe {
+        am::spire_remote_search_production_read_profile_row(index_relation, query, top_k)
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    macro_rules! metric {
+        ($rows:expr, $name:literal, $value:expr) => {
+            $rows.push(($name.to_owned(), $value.to_string()));
+        };
+    }
+    let mut rows = Vec::new();
+
+    metric!(rows, "requested_epoch", row.requested_epoch);
+    metric!(rows, "consistency_mode_source", row.consistency_mode_source);
+    metric!(rows, "consistency_mode", row.consistency_mode);
+    metric!(rows, "effective_nprobe", row.effective_nprobe);
+    metric!(rows, "selected_pid_count", row.selected_pid_count);
+    metric!(rows, "local_pid_count", row.local_pid_count);
+    metric!(rows, "remote_pid_count", row.remote_pid_count);
+    metric!(rows, "skipped_pid_count", row.skipped_pid_count);
+    metric!(rows, "dispatch_count", row.dispatch_count);
+    metric!(rows, "compact_candidate_count", row.compact_candidate_count);
+    metric!(
+        rows,
+        "remote_heap_ready_dispatch_count",
+        row.remote_heap_ready_dispatch_count
+    );
+    metric!(
+        rows,
+        "remote_heap_failed_dispatch_count",
+        row.remote_heap_failed_dispatch_count
+    );
+    metric!(
+        rows,
+        "remote_heap_candidate_count",
+        row.remote_heap_candidate_count
+    );
+    metric!(
+        rows,
+        "local_heap_candidate_count",
+        row.local_heap_candidate_count
+    );
+    metric!(
+        rows,
+        "returned_candidate_count",
+        row.returned_candidate_count
+    );
+    metric!(rows, "result_source", row.result_source);
+    metric!(rows, "final_heap_fetch_status", row.final_heap_fetch_status);
+    metric!(rows, "next_blocker", row.next_blocker);
+    metric!(rows, "status", row.status);
+    metric!(rows, "recommendation", row.recommendation);
+    metric!(rows, "planning_elapsed_ms", row.planning_elapsed_ms);
+    metric!(
+        rows,
+        "fingerprint_guard_elapsed_ms",
+        row.fingerprint_guard_elapsed_ms
+    );
+    metric!(
+        rows,
+        "conninfo_secret_lookup_elapsed_ms",
+        row.conninfo_secret_lookup_elapsed_ms
+    );
+    metric!(rows, "connect_elapsed_ms", row.connect_elapsed_ms);
+    metric!(
+        rows,
+        "statement_timeout_setup_elapsed_ms",
+        row.statement_timeout_setup_elapsed_ms
+    );
+    metric!(
+        rows,
+        "regclass_probe_elapsed_ms",
+        row.regclass_probe_elapsed_ms
+    );
+    metric!(
+        rows,
+        "endpoint_identity_elapsed_ms",
+        row.endpoint_identity_elapsed_ms
+    );
+    metric!(
+        rows,
+        "candidate_receive_elapsed_ms",
+        row.candidate_receive_elapsed_ms
+    );
+    metric!(rows, "heap_receive_elapsed_ms", row.heap_receive_elapsed_ms);
+    metric!(
+        rows,
+        "payload_decode_elapsed_ms",
+        row.payload_decode_elapsed_ms
+    );
+    metric!(rows, "merge_elapsed_ms", row.merge_elapsed_ms);
+    metric!(rows, "total_elapsed_ms", row.total_elapsed_ms);
+    metric!(
+        rows,
+        "conninfo_secret_lookup_count",
+        row.conninfo_secret_lookup_count
+    );
+    metric!(rows, "socket_open_count", row.socket_open_count);
+    metric!(rows, "tls_disable_count", row.tls_disable_count);
+    metric!(rows, "tls_require_count", row.tls_require_count);
+    metric!(rows, "tls_verify_full_count", row.tls_verify_full_count);
+    metric!(
+        rows,
+        "statement_timeout_setup_count",
+        row.statement_timeout_setup_count
+    );
+    metric!(rows, "regclass_probe_count", row.regclass_probe_count);
+    metric!(
+        rows,
+        "endpoint_identity_query_count",
+        row.endpoint_identity_query_count
+    );
+    metric!(
+        rows,
+        "candidate_receive_query_count",
+        row.candidate_receive_query_count
+    );
+    metric!(
+        rows,
+        "heap_receive_query_count",
+        row.heap_receive_query_count
+    );
+    metric!(
+        rows,
+        "payload_decode_row_count",
+        row.payload_decode_row_count
+    );
+    metric!(rows, "payload_decode_bytes", row.payload_decode_bytes);
+    metric!(rows, "merge_input_count", row.merge_input_count);
+    metric!(
+        rows,
+        "merge_duplicate_vec_id_count",
+        row.merge_duplicate_vec_id_count
+    );
+    metric!(rows, "merge_output_count", row.merge_output_count);
+    metric!(rows, "strict_fail_count", row.strict_fail_count);
+    metric!(rows, "remote_timeout_count", row.remote_timeout_count);
+    metric!(rows, "remote_cancel_count", row.remote_cancel_count);
+    metric!(
+        rows,
+        "degraded_skipped_dispatch_count",
+        row.degraded_skipped_dispatch_count
+    );
+    TableIterator::new(rows)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_operator_diagnostics(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,

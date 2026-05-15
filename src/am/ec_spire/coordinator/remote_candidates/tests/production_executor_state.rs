@@ -185,6 +185,78 @@ mod production_executor_state_tests {
         }
     }
 
+    fn profile_summary_for_test() -> SpireRemoteProductionScanHeapResolutionSummaryRow {
+        SpireRemoteProductionScanHeapResolutionSummaryRow {
+            requested_epoch: 7,
+            consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+            consistency_mode: "strict",
+            effective_nprobe: 2,
+            selected_pid_count: 3,
+            local_pid_count: 1,
+            remote_pid_count: 2,
+            skipped_pid_count: 0,
+            dispatch_count: 1,
+            compact_candidate_count: 4,
+            remote_heap_ready_dispatch_count: 1,
+            remote_heap_failed_dispatch_count: 0,
+            remote_heap_candidate_count: 2,
+            local_heap_candidate_count: 1,
+            returned_candidate_count: 3,
+            result_source: SPIRE_REMOTE_RESULT_SOURCE_REMOTE_HEAP_CANDIDATES,
+            final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_REMOTE_READY,
+            next_blocker: SPIRE_REMOTE_NONE,
+            status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
+        }
+    }
+
+    #[test]
+    fn production_read_profile_row_preserves_metric_rollup() {
+        let mut metrics = SpireRemoteProductionReadMetrics {
+            planning_elapsed_ms: 11,
+            fingerprint_guard_elapsed_ms: 3,
+            conninfo_secret_lookup_elapsed_ms: 2,
+            connect_elapsed_ms: 5,
+            statement_timeout_setup_elapsed_ms: 7,
+            regclass_probe_elapsed_ms: 13,
+            endpoint_identity_elapsed_ms: 17,
+            candidate_receive_elapsed_ms: 19,
+            heap_receive_elapsed_ms: 23,
+            payload_decode_elapsed_ms: 29,
+            merge_elapsed_ms: 31,
+            total_elapsed_ms: 37,
+            conninfo_secret_lookup_count: 1,
+            socket_open_count: 1,
+            tls_disable_count: 0,
+            tls_require_count: 1,
+            tls_verify_full_count: 0,
+            statement_timeout_setup_count: 1,
+            regclass_probe_count: 1,
+            endpoint_identity_query_count: 1,
+            candidate_receive_query_count: 1,
+            heap_receive_query_count: 1,
+            payload_decode_row_count: 2,
+            payload_decode_bytes: 128,
+            merge_input_count: 5,
+            merge_duplicate_vec_id_count: 2,
+            merge_output_count: 3,
+            strict_fail_count: 0,
+            remote_timeout_count: 0,
+            remote_cancel_count: 0,
+            degraded_skipped_dispatch_count: 0,
+        };
+        metrics.record_failure_category("strict", SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT);
+
+        let row = production_read_profile_row(&profile_summary_for_test(), &metrics);
+
+        assert_eq!(row.requested_epoch, 7);
+        assert_eq!(row.socket_open_count, 1);
+        assert_eq!(row.tls_require_count, 1);
+        assert_eq!(row.merge_duplicate_vec_id_count, 2);
+        assert_eq!(row.strict_fail_count, 1);
+        assert_eq!(row.remote_timeout_count, 1);
+    }
+
     #[test]
     fn production_fault_matrix_covers_required_categories() {
         let rows = remote_search_production_fault_matrix_rows();

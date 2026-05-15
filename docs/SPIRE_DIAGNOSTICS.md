@@ -31,6 +31,10 @@ Start with:
 - `ec_spire_remote_search_production_executor_state_summary(...)` when you need
   the dry production fanout state and C0/C1 counters without conninfo secret
   lookup or socket opens.
+- `ec_spire_remote_search_production_read_profile(...)` when you explicitly
+  want to execute the live production read path and attribute elapsed time to
+  planning, secret lookup, TLS/connect, remote receive, payload decode, and
+  merge stages.
 - `ec_spire_remote_search_degraded_skip_report(...)` when degraded mode needs
   one row per skipped remote node with node ID, skipped PID count, and first
   skip category.
@@ -70,6 +74,7 @@ Start with:
 | `ec_spire_index_maintenance_scheduler_run(index_oid)` | operator | You need a periodic-job entrypoint that reuses the normal maintenance publish path. |
 | `ec_spire_index_allocator_snapshot(index_oid, warn_within)` | operator | You need PID and local vec_id cursor distance-to-exhaustion warnings. |
 | `ec_spire_remote_search_production_executor_state_summary(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need the planned production fanout state plus dry C0/C1 counters without resolving conninfo secrets or opening remote libpq sockets. |
+| `ec_spire_remote_search_production_read_profile(index_oid, query, top_k)` | operator/perf | You have already chosen to run the live production read path and need key/value timing and count rows for Phase 13d/AWS bottleneck attribution. |
 | `ec_spire_remote_search_degraded_skip_report(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need every degraded-skipped remote node with node ID, skipped PID count, first skip category, operator hint, and status. |
 | `ec_spire_remote_pipeline_steps(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need one consolidated remote-search pipeline row per dispatch, connection, candidate, heap, manifest, and result step without opening remote libpq connections. |
 | `ec_spire_remote_pipeline_steps_live(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You have already inspected the dry pipeline row and explicitly want live libpq connection, candidate, heap, and coordinator-result probes. |
@@ -78,6 +83,22 @@ Start with:
 
 Diagnostic label strings are part of the operator-facing contract. Do not reuse
 an existing label for a new meaning; add a new label instead.
+
+## Production Read Profiling
+
+`ec_spire_remote_search_operator_diagnostics(...)` is a default triage surface;
+it should stay cheap enough for routine operator use and no longer performs full
+remote heap resolution as a side effect. Use
+`ec_spire_remote_search_production_scan_heap_resolution_summary(...)` for the
+live heap-resolution summary, or
+`ec_spire_remote_search_production_read_profile(...)` when the goal is
+bottleneck attribution.
+
+The profile function returns `(metric, value)` rows so new Phase 13d metrics can
+be added without changing tuple-width limits. It uses the production
+candidate/heap read path and therefore performs conninfo lookup, remote
+socket/TLS setup, endpoint identity validation, candidate receive, heap receive,
+payload decode, and final merge work. It does not expose raw conninfo secrets.
 
 ## Cost Tuning
 

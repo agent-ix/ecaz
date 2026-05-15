@@ -19,6 +19,147 @@ fn elapsed_millis_u64(start: std::time::Instant) -> u64 {
     u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
+fn add_profile_count(counter: &mut u64, delta: u64) {
+    *counter = counter.saturating_add(delta);
+}
+
+fn add_profile_elapsed(counter: &mut u64, start: std::time::Instant) {
+    add_profile_count(counter, elapsed_millis_u64(start));
+}
+
+fn is_remote_timeout_failure_category(failure_category: &str) -> bool {
+    failure_category == SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT
+}
+
+fn is_remote_cancel_failure_category(failure_category: &str) -> bool {
+    failure_category == SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SpireRemoteProductionReadMetrics {
+    planning_elapsed_ms: u64,
+    fingerprint_guard_elapsed_ms: u64,
+    conninfo_secret_lookup_elapsed_ms: u64,
+    connect_elapsed_ms: u64,
+    statement_timeout_setup_elapsed_ms: u64,
+    regclass_probe_elapsed_ms: u64,
+    endpoint_identity_elapsed_ms: u64,
+    candidate_receive_elapsed_ms: u64,
+    heap_receive_elapsed_ms: u64,
+    payload_decode_elapsed_ms: u64,
+    merge_elapsed_ms: u64,
+    total_elapsed_ms: u64,
+    conninfo_secret_lookup_count: u64,
+    socket_open_count: u64,
+    tls_disable_count: u64,
+    tls_require_count: u64,
+    tls_verify_full_count: u64,
+    statement_timeout_setup_count: u64,
+    regclass_probe_count: u64,
+    endpoint_identity_query_count: u64,
+    candidate_receive_query_count: u64,
+    heap_receive_query_count: u64,
+    payload_decode_row_count: u64,
+    payload_decode_bytes: u64,
+    merge_input_count: u64,
+    merge_duplicate_vec_id_count: u64,
+    merge_output_count: u64,
+    strict_fail_count: u64,
+    remote_timeout_count: u64,
+    remote_cancel_count: u64,
+    degraded_skipped_dispatch_count: u64,
+}
+
+impl SpireRemoteProductionReadMetrics {
+    fn add_transport_metrics(&mut self, other: &Self) {
+        self.conninfo_secret_lookup_elapsed_ms = self
+            .conninfo_secret_lookup_elapsed_ms
+            .saturating_add(other.conninfo_secret_lookup_elapsed_ms);
+        self.connect_elapsed_ms = self.connect_elapsed_ms.saturating_add(other.connect_elapsed_ms);
+        self.statement_timeout_setup_elapsed_ms = self
+            .statement_timeout_setup_elapsed_ms
+            .saturating_add(other.statement_timeout_setup_elapsed_ms);
+        self.regclass_probe_elapsed_ms = self
+            .regclass_probe_elapsed_ms
+            .saturating_add(other.regclass_probe_elapsed_ms);
+        self.endpoint_identity_elapsed_ms = self
+            .endpoint_identity_elapsed_ms
+            .saturating_add(other.endpoint_identity_elapsed_ms);
+        self.candidate_receive_elapsed_ms = self
+            .candidate_receive_elapsed_ms
+            .saturating_add(other.candidate_receive_elapsed_ms);
+        self.heap_receive_elapsed_ms = self
+            .heap_receive_elapsed_ms
+            .saturating_add(other.heap_receive_elapsed_ms);
+        self.payload_decode_elapsed_ms = self
+            .payload_decode_elapsed_ms
+            .saturating_add(other.payload_decode_elapsed_ms);
+        self.conninfo_secret_lookup_count = self
+            .conninfo_secret_lookup_count
+            .saturating_add(other.conninfo_secret_lookup_count);
+        self.socket_open_count = self.socket_open_count.saturating_add(other.socket_open_count);
+        self.tls_disable_count = self.tls_disable_count.saturating_add(other.tls_disable_count);
+        self.tls_require_count = self.tls_require_count.saturating_add(other.tls_require_count);
+        self.tls_verify_full_count = self
+            .tls_verify_full_count
+            .saturating_add(other.tls_verify_full_count);
+        self.statement_timeout_setup_count = self
+            .statement_timeout_setup_count
+            .saturating_add(other.statement_timeout_setup_count);
+        self.regclass_probe_count = self
+            .regclass_probe_count
+            .saturating_add(other.regclass_probe_count);
+        self.endpoint_identity_query_count = self
+            .endpoint_identity_query_count
+            .saturating_add(other.endpoint_identity_query_count);
+        self.candidate_receive_query_count = self
+            .candidate_receive_query_count
+            .saturating_add(other.candidate_receive_query_count);
+        self.heap_receive_query_count = self
+            .heap_receive_query_count
+            .saturating_add(other.heap_receive_query_count);
+        self.payload_decode_row_count = self
+            .payload_decode_row_count
+            .saturating_add(other.payload_decode_row_count);
+        self.payload_decode_bytes = self
+            .payload_decode_bytes
+            .saturating_add(other.payload_decode_bytes);
+        self.strict_fail_count = self
+            .strict_fail_count
+            .saturating_add(other.strict_fail_count);
+        self.remote_timeout_count = self
+            .remote_timeout_count
+            .saturating_add(other.remote_timeout_count);
+        self.remote_cancel_count = self
+            .remote_cancel_count
+            .saturating_add(other.remote_cancel_count);
+    }
+
+    fn record_tls_config(&mut self, tls_config: &SpireRemoteTlsConfig) {
+        match tls_config.sslmode_name() {
+            "disable" => add_profile_count(&mut self.tls_disable_count, 1),
+            "require" | "prefer" => add_profile_count(&mut self.tls_require_count, 1),
+            "verify-full" => add_profile_count(&mut self.tls_verify_full_count, 1),
+            _ => {}
+        }
+    }
+
+    fn record_failure_category(&mut self, consistency_mode: &str, failure_category: &str) {
+        if consistency_mode == "strict"
+            && failure_category != SPIRE_REMOTE_NONE
+            && !is_local_cancellation_failure_category(failure_category)
+        {
+            add_profile_count(&mut self.strict_fail_count, 1);
+        }
+        if is_remote_timeout_failure_category(failure_category) {
+            add_profile_count(&mut self.remote_timeout_count, 1);
+        }
+        if is_remote_cancel_failure_category(failure_category) {
+            add_profile_count(&mut self.remote_cancel_count, 1);
+        }
+    }
+}
+
 fn failed_production_candidate_receive_result(
     node_id: u32,
     batch_start: std::time::Instant,
@@ -735,6 +876,16 @@ impl SpireRemoteFanoutExecutor {
         top_k: usize,
         consistency_mode: &str,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
+        self.compact_candidate_receive_requests_with_metrics(query, top_k, consistency_mode, None)
+    }
+
+    fn compact_candidate_receive_requests_with_metrics(
+        &mut self,
+        query: &[f32],
+        top_k: usize,
+        consistency_mode: &str,
+        mut metrics: Option<&mut SpireRemoteProductionReadMetrics>,
+    ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
         let degraded =
             parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
         let mut requests = Vec::new();
@@ -749,7 +900,15 @@ impl SpireRemoteFanoutExecutor {
                 "remote production executor compact receive request build",
                 "conninfo secret lookup",
             )?;
-            match remote_conninfo_secret_value(&dispatch.conninfo_secret_name) {
+            if let Some(metrics) = metrics.as_deref_mut() {
+                add_profile_count(&mut metrics.conninfo_secret_lookup_count, 1);
+            }
+            let secret_start = std::time::Instant::now();
+            let conninfo_result = remote_conninfo_secret_value(&dispatch.conninfo_secret_name);
+            if let Some(metrics) = metrics.as_deref_mut() {
+                add_profile_elapsed(&mut metrics.conninfo_secret_lookup_elapsed_ms, secret_start);
+            }
+            match conninfo_result {
                 Ok(conninfo) => requests.push(SpireRemoteProductionCandidateReceiveRequest {
                     node_id: dispatch.node_id,
                     conninfo,
@@ -782,6 +941,48 @@ impl SpireRemoteFanoutExecutor {
         let results =
             SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(requests)?;
         self.apply_candidate_receive_results_with_consistency_mode(&results, consistency_mode)
+    }
+
+    fn run_candidate_and_heap_receive_reusing_sessions(
+        &mut self,
+        query: &[f32],
+        top_k: usize,
+        consistency_mode: &str,
+        tuple_payload_columns: Option<&[String]>,
+        metrics: &mut SpireRemoteProductionReadMetrics,
+    ) -> Result<(), String> {
+        let requests = self.compact_candidate_receive_requests_with_metrics(
+            query,
+            top_k,
+            consistency_mode,
+            Some(metrics),
+        )?;
+        if requests.is_empty() {
+            return Ok(());
+        }
+        let result = SpireRemoteProductionTransportAdapter::run_candidate_and_heap_receive_requests(
+            requests,
+            tuple_payload_columns.map(<[String]>::to_vec),
+            consistency_mode,
+        )?;
+        self.socket_open_count = self
+            .socket_open_count
+            .saturating_add(result.metrics.socket_open_count);
+        self.endpoint_identity_query_count = self
+            .endpoint_identity_query_count
+            .saturating_add(result.metrics.endpoint_identity_query_count);
+        metrics.add_transport_metrics(&result.metrics);
+        self.apply_candidate_receive_results_with_consistency_mode(
+            &result.candidate_results,
+            consistency_mode,
+        )?;
+        if !result.heap_results.is_empty() {
+            self.apply_remote_heap_receive_results_with_consistency_mode(
+                &result.heap_results,
+                consistency_mode,
+            )?;
+        }
+        Ok(())
     }
 
     fn remote_heap_receive_requests(

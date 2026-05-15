@@ -77,6 +77,15 @@ impl SpireRemoteConnectError {
 }
 
 impl SpireRemoteTlsConfig {
+    fn sslmode_name(&self) -> &'static str {
+        match self.sslmode {
+            SpireRemoteSslMode::Disable => "disable",
+            SpireRemoteSslMode::Prefer => "prefer",
+            SpireRemoteSslMode::Require => "require",
+            SpireRemoteSslMode::VerifyFull => "verify-full",
+        }
+    }
+
     fn no_tls(&self) -> bool {
         self.sslmode == SpireRemoteSslMode::Disable
     }

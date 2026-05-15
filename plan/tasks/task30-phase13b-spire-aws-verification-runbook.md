@@ -132,6 +132,7 @@ Phase 13b.1 is reviewer-acceptable when:
 - [ ] Phase 13.0 counter prerequisites (Phase 13a.5.1..4) are landed
   *or* the deferral is recorded in this run's parent packet
   `request.md`.
+- [ ] Phase 13d read-profile surface is landed and reviewer-accepted.
 - [ ] Parent packet `review/<NN>-phase13-spire-aws-verification/` exists
   with `request.md` and `artifacts/manifest.md` on a feature branch.
 - [ ] AWS account quota for `r6i.4xlarge` + 3× `r6i.2xlarge` confirmed
@@ -250,6 +251,9 @@ What it does:
 
 - Runs `smoke-customscan-read.sql` (EXPLAIN ANALYZE + remote-node and
   handoff-summary checks).
+- Captures one
+  `ec_spire_remote_search_production_read_profile(index_oid, query, 10)`
+  rowset as `production-read-profile-smoke.log`.
 - Runs `ecaz bench spire-pipeline --include-remote` against the
   Correctness corpus.
 
@@ -258,6 +262,9 @@ Verification:
 - [ ] The EXPLAIN plan contains `EcSpireDistributedScan`.
 - [ ] `remote_fanout` equals 3 (the registered remote count).
 - [ ] `tuple_transport_status` is `ready`.
+- [ ] The production read profile reports one socket open, one regclass
+  probe, one endpoint-identity query, one candidate receive, and one heap
+  receive per successful remote dispatch.
 
 If the smoke fails, do not proceed to the matrix. File a child packet
 with the failing logs and the install / register transcripts.
@@ -277,6 +284,10 @@ Each invocation produces `suite-manifest-<tier>.json` and
 `suite-results-<tier>.jsonl` under the artifact directory. The suite
 configurations cover the read rows from **13a.3.a** (k=10 and k=100,
 concurrency 1/4/8) and **13a.3.f** (PK SELECT at concurrency 32).
+Every read sub-packet also captures a packet-local
+`production-read-profile-<tier>-k<k>-c<concurrency>.log` rowset for at
+least the representative query sample used to explain any latency
+regression.
 
 Rows that the suite schema does not cover today are driven directly:
 

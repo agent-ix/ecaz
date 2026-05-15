@@ -537,6 +537,53 @@ mod tests {
     }
 
     #[test]
+    fn remote_heap_candidate_result_merge_reports_duplicates_before_top_k() {
+        let duplicate = remote_global_vec_id(b"global-heap-stats");
+        let best = remote_heap_candidate(
+            2,
+            10,
+            0,
+            &duplicate,
+            0.1,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let duplicate_worse = remote_heap_candidate(
+            3,
+            20,
+            0,
+            &duplicate,
+            0.9,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let second = remote_heap_candidate(
+            4,
+            30,
+            0,
+            remote_global_vec_id(b"second-heap-stats"),
+            0.2,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let truncated = remote_heap_candidate(
+            5,
+            40,
+            0,
+            remote_global_vec_id(b"truncated-heap-stats"),
+            0.3,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+
+        let merged = merge_remote_search_heap_candidates_for_result_with_stats(
+            vec![duplicate_worse, truncated, second.clone(), best.clone()],
+            2,
+        )
+        .expect("heap candidates should merge");
+
+        assert_eq!(merged.input_count, 4);
+        assert_eq!(merged.duplicate_vec_id_count, 1);
+        assert_eq!(merged.candidates, vec![best, second]);
+    }
+
+    #[test]
     fn production_scan_result_outputs_preserve_heap_resolution_origin() {
         let local_vec = remote_local_vec_id(7);
         let remote_vec = remote_global_vec_id(b"remote-stream");

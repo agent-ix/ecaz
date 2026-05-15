@@ -215,6 +215,7 @@ AWS run. The local baseline is part of the Phase 13 packet (filed under
   `ec_spire_remote_search_degraded_skip_report(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)`,
   `ec_spire_remote_search_production_executor_session_summary(index_oid, requested_epoch, query, selected_pids, top_k)`,
   `ec_spire_remote_search_production_scan_handoff_summary(index_oid, query, top_k)`,
+  `ec_spire_remote_search_production_read_profile(index_oid, query, top_k)`,
   `ec_spire_reap_orphaned_remote_prepared_xacts(node_id)`,
   `ec_spire_index_active_snapshot_diagnostics(index_oid)`,
   `ec_spire_index_placement_snapshot(index_oid)`,

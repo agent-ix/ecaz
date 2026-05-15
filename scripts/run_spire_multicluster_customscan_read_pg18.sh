@@ -241,6 +241,30 @@ plan="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" "${coord_psql[
 read_row="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" "${coord_psql[@]}" -At -F '|' -c "SELECT id, title, tags, label::text, pair::text FROM ec_spire_customscan_coord_sql ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1")"
 payload_probe="$("${remote_psql[@]}" -At -F ',' -c "SELECT status, payload_column_count::text, tuple_payload::text FROM ec_spire_remote_search_tuple_payload('ec_spire_customscan_remote_idx'::regclass::oid, ${remote_epoch}::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[${remote_pids}]::bigint[], 1, 'strict', ARRAY['id','title']::text[]) LIMIT 1")"
 typed_payload_probe="$("${remote_psql[@]}" -At -F ',' -c "SELECT status, tuple_transport, payload_formats = ARRAY['pg_binary_attr_v1','pg_binary_attr_v1','pg_binary_attr_v1']::text[], payload_values[3] = array_send(ARRAY['red','blue']::text[])::bytea FROM ec_spire_remote_search_tuple_payload_typed('ec_spire_customscan_remote_idx'::regclass::oid, ${remote_epoch}::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[${remote_pids}]::bigint[], 1, 'strict', ARRAY['id','title','tags']::text[]) LIMIT 1")"
+profile_summary="$("${coord_psql[@]}" -At -F '|' -c "
+WITH profile AS (
+    SELECT metric, value
+    FROM ec_spire_remote_search_production_read_profile(
+        'ec_spire_customscan_coord_idx'::regclass::oid,
+        ARRAY[1.0, 0.0]::real[],
+        1
+    )
+)
+SELECT max(value) FILTER (WHERE metric = 'status') || '|'
+       || max(value) FILTER (WHERE metric = 'final_heap_fetch_status') || '|'
+       || max(value) FILTER (WHERE metric = 'socket_open_count') || '|'
+       || max(value) FILTER (WHERE metric = 'conninfo_secret_lookup_count') || '|'
+       || max(value) FILTER (WHERE metric = 'regclass_probe_count') || '|'
+       || max(value) FILTER (WHERE metric = 'endpoint_identity_query_count') || '|'
+       || max(value) FILTER (WHERE metric = 'candidate_receive_query_count') || '|'
+       || max(value) FILTER (WHERE metric = 'heap_receive_query_count') || '|'
+       || max(value) FILTER (WHERE metric = 'returned_candidate_count')
+FROM profile
+")"
+IFS='|' read -r profile_status profile_heap_status profile_socket_count \
+  profile_secret_count profile_regclass_count profile_identity_count \
+  profile_candidate_count profile_heap_count profile_returned_count \
+  <<< "$profile_summary"
 
 echo "remote_epoch=$remote_epoch"
 echo "coord_epoch=$coord_epoch"
@@ -251,11 +275,21 @@ echo "plan=$plan"
 echo "read_row=$read_row"
 echo "payload_probe=$payload_probe"
 echo "typed_payload_probe=$typed_payload_probe"
+echo "profile_summary=$profile_summary"
 
 [[ "$plan" == *"Custom Scan (EcSpireDistributedScan)"* ]]
 [[ "$read_row" == '10|remote alpha|{red,blue}|domain alpha|(7,left)' ]]
 [[ "$payload_probe" == ready,2,*'"id": 10'* ]]
 [[ "$payload_probe" == ready,2,*'"title": "remote alpha"'* ]]
 [[ "$typed_payload_probe" == "ready,pg_binary_attr_v1,t,t" ]]
+[[ "$profile_status" == "ready" ]]
+[[ "$profile_heap_status" == "remote_ready" ]]
+[[ "$profile_socket_count" == "1" ]]
+[[ "$profile_secret_count" == "1" ]]
+[[ "$profile_regclass_count" == "1" ]]
+[[ "$profile_identity_count" == "1" ]]
+[[ "$profile_candidate_count" == "1" ]]
+[[ "$profile_heap_count" == "1" ]]
+[[ "$profile_returned_count" == "1" ]]
 
 echo "SPIRE multicluster CustomScan read passed"

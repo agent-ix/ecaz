@@ -412,6 +412,12 @@ where
     }
 
     let mut candidates = best_by_vec_id.into_values().collect::<Vec<_>>();
+    if let Some(limit) = limit {
+        if candidates.len() > limit {
+            candidates.select_nth_unstable_by(limit, remote_search_candidate_cmp);
+            candidates.truncate(limit);
+        }
+    }
     candidates.sort_by(remote_search_candidate_cmp);
     if let Some(limit) = limit {
         candidates.truncate(limit);
@@ -447,4 +453,3 @@ pub(crate) fn merge_validated_remote_search_candidate_batches(
         limit,
     )
 }
-

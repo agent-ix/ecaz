@@ -280,6 +280,39 @@ pub(crate) struct SpireRemoteProductionHeapReceiveResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+struct SpireRemoteProductionCandidateAndHeapResult {
+    candidate_results: Vec<SpireRemoteProductionCandidateReceiveResult>,
+    heap_results: Vec<SpireRemoteProductionHeapReceiveResult>,
+    metrics: SpireRemoteProductionReadMetrics,
+}
+
+struct SpireRemoteProductionCandidateSession {
+    request: SpireRemoteProductionCandidateReceiveRequest,
+    _governance_permit: SpireRemoteSearchLibpqGovernancePermit,
+    client: tokio_postgres::Client,
+    connection_task: tokio::task::JoinHandle<()>,
+    tls_config: SpireRemoteTlsConfig,
+    remote_index_oid: u32,
+    endpoint_identity: SpireRemoteValidatedEndpointIdentity,
+    selected_pids: Vec<i64>,
+    requested_epoch: i64,
+    top_k: i32,
+    started_after_ms: u64,
+    request_start: std::time::Instant,
+}
+
+struct SpireRemoteProductionCandidateSessionResult {
+    candidate_result: SpireRemoteProductionCandidateReceiveResult,
+    session: Option<SpireRemoteProductionCandidateSession>,
+    metrics: SpireRemoteProductionReadMetrics,
+}
+
+struct SpireRemoteProductionHeapSessionResult {
+    heap_result: SpireRemoteProductionHeapReceiveResult,
+    metrics: SpireRemoteProductionReadMetrics,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct SpireCoordinatorInsertRemotePrepareRequest {
     node_id: u32,
     conninfo: String,
@@ -410,6 +443,83 @@ impl SpireRemoteProductionTransportAdapter {
                 .await
             });
             Ok(futures_util::future::join_all(futures).await)
+        })
+    }
+
+    fn run_candidate_and_heap_receive_requests(
+        requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+        tuple_payload_columns: Option<Vec<String>>,
+        consistency_mode: &str,
+    ) -> Result<SpireRemoteProductionCandidateAndHeapResult, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .map_err(|_| {
+                "ec_spire production candidate/heap receive adapter failed to build runtime"
+                    .to_owned()
+            })?;
+        let consistency_mode = consistency_mode.to_owned();
+
+        runtime.block_on(async move {
+            let batch_start = std::time::Instant::now();
+            let futures = requests.into_iter().map(|request| async move {
+                Self::run_one_candidate_session_request(
+                    request,
+                    batch_start,
+                    SpireRemoteLocalCancelSource::production(),
+                )
+                .await
+            });
+            let mut session_results = futures_util::future::join_all(futures).await;
+            let mut metrics = SpireRemoteProductionReadMetrics::default();
+            let candidate_results = session_results
+                .iter()
+                .map(|result| result.candidate_result.clone())
+                .collect::<Vec<_>>();
+            for result in &session_results {
+                metrics.add_transport_metrics(&result.metrics);
+            }
+
+            let allow_heap = Self::candidate_results_allow_heap(
+                &candidate_results,
+                consistency_mode.as_str(),
+            )?;
+            let mut heap_results = Vec::new();
+            if allow_heap {
+                let futures = session_results
+                    .drain(..)
+                    .filter_map(|session_result| session_result.session)
+                    .map(|session| {
+                        let tuple_payload_columns = tuple_payload_columns.clone();
+                        let consistency_mode = consistency_mode.clone();
+                        async move {
+                            Self::run_heap_receive_on_candidate_session(
+                                session,
+                                tuple_payload_columns.as_deref(),
+                                consistency_mode.as_str(),
+                                batch_start,
+                            )
+                            .await
+                        }
+                    });
+                for heap_result in futures_util::future::join_all(futures).await {
+                    metrics.add_transport_metrics(&heap_result.metrics);
+                    heap_results.push(heap_result.heap_result);
+                }
+            } else {
+                for session_result in session_results.drain(..) {
+                    if let Some(session) = session_result.session {
+                        session.connection_task.abort();
+                    }
+                }
+            }
+
+            Ok(SpireRemoteProductionCandidateAndHeapResult {
+                candidate_results,
+                heap_results,
+                metrics,
+            })
         })
     }
 
@@ -580,6 +690,557 @@ impl SpireRemoteProductionTransportAdapter {
                 request_start,
                 failure_category,
             ),
+        }
+    }
+
+    fn candidate_results_allow_heap(
+        results: &[SpireRemoteProductionCandidateReceiveResult],
+        consistency_mode: &str,
+    ) -> Result<bool, String> {
+        if results.iter().any(|result| {
+            is_local_cancellation_failure_category(result.failure_category)
+        }) {
+            return Ok(false);
+        }
+        let ready_count = results
+            .iter()
+            .filter(|result| result.status == SPIRE_REMOTE_STATUS_READY)
+            .count();
+        if ready_count == 0 {
+            return Ok(false);
+        }
+        let failed_count = results
+            .iter()
+            .filter(|result| result.status != SPIRE_REMOTE_STATUS_READY)
+            .count();
+        let degraded =
+            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        Ok(degraded || failed_count == 0)
+    }
+
+    fn candidate_request_parameters(
+        request: &SpireRemoteProductionCandidateReceiveRequest,
+    ) -> Result<(Vec<i64>, i64, i32), &'static str> {
+        validate_remote_payload_batch_row_count(
+            request.selected_pids.len(),
+            "remote candidate receive selected_pids",
+        )
+        .map_err(|_| SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE)?;
+        let selected_pids = request
+            .selected_pids
+            .iter()
+            .map(|pid| i64::try_from(*pid))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS)?;
+        let requested_epoch = i64::try_from(request.requested_epoch)
+            .map_err(|_| SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS)?;
+        let top_k = i32::try_from(request.top_k)
+            .map_err(|_| SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS)?;
+        Ok((selected_pids, requested_epoch, top_k))
+    }
+
+    async fn run_one_candidate_session_request(
+        request: SpireRemoteProductionCandidateReceiveRequest,
+        batch_start: std::time::Instant,
+        local_cancel_source: SpireRemoteLocalCancelSource,
+    ) -> SpireRemoteProductionCandidateSessionResult {
+        let mut metrics = SpireRemoteProductionReadMetrics::default();
+        let started_after_ms = elapsed_millis_u64(batch_start);
+        let request_start = std::time::Instant::now();
+        let (selected_pids, requested_epoch, top_k) =
+            match Self::candidate_request_parameters(&request) {
+                Ok(parameters) => parameters,
+                Err(failure_category) => {
+                    metrics.record_failure_category(&request.consistency_mode, failure_category);
+                    return SpireRemoteProductionCandidateSessionResult {
+                        candidate_result: failed_production_candidate_receive_result(
+                            request.node_id,
+                            batch_start,
+                            request_start,
+                            failure_category,
+                        ),
+                        session: None,
+                        metrics,
+                    };
+                }
+            };
+        let governance_permit =
+            match remote_search_libpq_executor_governance_permit_for_node(request.node_id) {
+                Ok(permit) => permit,
+                Err(error) => {
+                    let failure_category = production_governance_failure_category(&error);
+                    metrics.record_failure_category(&request.consistency_mode, failure_category);
+                    return SpireRemoteProductionCandidateSessionResult {
+                        candidate_result: failed_production_candidate_receive_result(
+                            request.node_id,
+                            batch_start,
+                            request_start,
+                            failure_category,
+                        ),
+                        session: None,
+                        metrics,
+                    };
+                }
+            };
+        let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+        let connect_start = std::time::Instant::now();
+        let SpireRemoteAsyncConnection {
+            client,
+            connection_task,
+            tls_config,
+        } = match remote_search_libpq_connect_async_with_session_timeouts(
+            &request.conninfo,
+            request.node_id,
+            "production candidate/heap receive",
+        )
+        .await
+        {
+            Ok(connection) => {
+                add_profile_elapsed(&mut metrics.connect_elapsed_ms, connect_start);
+                add_profile_count(&mut metrics.socket_open_count, 1);
+                metrics.record_tls_config(&connection.tls_config);
+                connection
+            }
+            Err(error) => {
+                add_profile_elapsed(&mut metrics.connect_elapsed_ms, connect_start);
+                metrics.record_failure_category(&request.consistency_mode, error.category);
+                return SpireRemoteProductionCandidateSessionResult {
+                    candidate_result: failed_production_candidate_receive_result(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        error.category,
+                    ),
+                    session: None,
+                    metrics,
+                };
+            }
+        };
+
+        let cancel_token = client.cancel_token();
+        let cancel_tls_config = tls_config.clone();
+        let result_rows = Self::run_query_with_optional_local_cancel(
+            cancel_token,
+            cancel_tls_config,
+            async {
+                let mut query_metrics = SpireRemoteProductionReadMetrics::default();
+                if limits.statement_timeout_ms > 0 {
+                    let timeout_start = std::time::Instant::now();
+                    add_profile_count(&mut query_metrics.statement_timeout_setup_count, 1);
+                    client
+                        .batch_execute(&format!(
+                            "SET statement_timeout = {}",
+                            limits.statement_timeout_ms
+                        ))
+                        .await
+                        .map_err(|_| {
+                            SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
+                        })?;
+                    add_profile_elapsed(
+                        &mut query_metrics.statement_timeout_setup_elapsed_ms,
+                        timeout_start,
+                    );
+                }
+                let regclass_start = std::time::Instant::now();
+                add_profile_count(&mut query_metrics.regclass_probe_count, 1);
+                let remote_index_oid = client
+                    .query_one(
+                        "SELECT to_regclass($1)::oid",
+                        &[&request.remote_index_regclass.as_str()],
+                    )
+                    .await
+                    .map_err(|error| {
+                        let category = production_remote_query_failure_category(&error);
+                        if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
+                            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
+                        } else {
+                            category
+                        }
+                    })?
+                    .try_get::<_, Option<u32>>(0)
+                    .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                    .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
+                add_profile_elapsed(&mut query_metrics.regclass_probe_elapsed_ms, regclass_start);
+
+                let identity_start = std::time::Instant::now();
+                add_profile_count(&mut query_metrics.endpoint_identity_query_count, 1);
+                let endpoint_identity_row = client
+                    .query_one(
+                        SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
+                        &[&remote_index_oid],
+                    )
+                    .await
+                    .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                let endpoint_identity =
+                    validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
+                        .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                if endpoint_identity.profile_fingerprint_bytes.as_slice()
+                    != request.remote_index_identity.as_slice()
+                {
+                    return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
+                }
+                add_profile_elapsed(
+                    &mut query_metrics.endpoint_identity_elapsed_ms,
+                    identity_start,
+                );
+
+                let candidate_start = std::time::Instant::now();
+                add_profile_count(&mut query_metrics.candidate_receive_query_count, 1);
+                let result_rows = client
+                    .query(
+                        SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                        &[
+                            &remote_index_oid,
+                            &requested_epoch,
+                            &request.query,
+                            &selected_pids,
+                            &top_k,
+                            &request.consistency_mode,
+                        ],
+                    )
+                    .await
+                    .map_err(|error| production_remote_query_failure_category(&error))?;
+                add_profile_elapsed(
+                    &mut query_metrics.candidate_receive_elapsed_ms,
+                    candidate_start,
+                );
+
+                Ok((result_rows, remote_index_oid, endpoint_identity, query_metrics))
+            },
+            local_cancel_source,
+        )
+        .await;
+
+        let (result_rows, remote_index_oid, endpoint_identity, query_metrics) = match result_rows {
+            Ok(value) => value,
+            Err(failure_category) => {
+                connection_task.abort();
+                metrics.record_failure_category(&request.consistency_mode, failure_category);
+                return SpireRemoteProductionCandidateSessionResult {
+                    candidate_result: failed_production_candidate_receive_result(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        failure_category,
+                    ),
+                    session: None,
+                    metrics,
+                };
+            }
+        };
+        metrics.add_transport_metrics(&query_metrics);
+
+        if validate_remote_payload_batch_row_count(
+            result_rows.len(),
+            "remote candidate receive result rows",
+        )
+        .is_err()
+        {
+            connection_task.abort();
+            let failure_category = SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE;
+            metrics.record_failure_category(&request.consistency_mode, failure_category);
+            return SpireRemoteProductionCandidateSessionResult {
+                candidate_result: failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    failure_category,
+                ),
+                session: None,
+                metrics,
+            };
+        }
+        let candidates = match result_rows
+            .iter()
+            .map(|candidate_row| {
+                decode_remote_search_candidate_pg_row(
+                    candidate_row,
+                    request.node_id,
+                    true,
+                    Some(&request.remote_index_identity),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                connection_task.abort();
+                let failure_category = production_candidate_decode_failure_category(&error);
+                metrics.record_failure_category(&request.consistency_mode, failure_category);
+                return SpireRemoteProductionCandidateSessionResult {
+                    candidate_result: failed_production_candidate_receive_result(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        failure_category,
+                    ),
+                    session: None,
+                    metrics,
+                };
+            }
+        };
+        if let Err(error) = validate_remote_search_candidate_batch(
+            request.requested_epoch,
+            request.node_id,
+            &request.selected_pids,
+            &candidates,
+        ) {
+            connection_task.abort();
+            let failure_category = production_candidate_validation_failure_category(&error);
+            metrics.record_failure_category(&request.consistency_mode, failure_category);
+            return SpireRemoteProductionCandidateSessionResult {
+                candidate_result: failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    failure_category,
+                ),
+                session: None,
+                metrics,
+            };
+        }
+        let candidate_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
+        let candidate_result = SpireRemoteProductionCandidateReceiveResult {
+            node_id: request.node_id,
+            started_after_ms,
+            completed_after_ms: elapsed_millis_u64(batch_start),
+            elapsed_ms: elapsed_millis_u64(request_start),
+            candidate_count,
+            status: SPIRE_REMOTE_STATUS_READY,
+            failure_category: SPIRE_REMOTE_NONE,
+            batch: Some(SpireRemoteSearchCandidateBatch {
+                node_id: request.node_id,
+                selected_pids: request.selected_pids.clone(),
+                candidates,
+            }),
+        };
+        let session = SpireRemoteProductionCandidateSession {
+            request,
+            _governance_permit: governance_permit,
+            client,
+            connection_task,
+            tls_config,
+            remote_index_oid,
+            endpoint_identity,
+            selected_pids,
+            requested_epoch,
+            top_k,
+            started_after_ms,
+            request_start,
+        };
+        SpireRemoteProductionCandidateSessionResult {
+            candidate_result,
+            session: Some(session),
+            metrics,
+        }
+    }
+
+    async fn run_heap_receive_on_candidate_session(
+        session: SpireRemoteProductionCandidateSession,
+        tuple_payload_columns: Option<&[String]>,
+        consistency_mode: &str,
+        batch_start: std::time::Instant,
+    ) -> SpireRemoteProductionHeapSessionResult {
+        let mut metrics = SpireRemoteProductionReadMetrics::default();
+        let SpireRemoteProductionCandidateSession {
+            request,
+            _governance_permit,
+            client,
+            connection_task,
+            tls_config,
+            remote_index_oid,
+            endpoint_identity,
+            selected_pids,
+            requested_epoch,
+            top_k,
+            started_after_ms,
+            request_start,
+        } = session;
+        let cancel_token = client.cancel_token();
+        let cancel_tls_config = tls_config.clone();
+        let result_rows = Self::run_query_with_optional_local_cancel(
+            cancel_token,
+            cancel_tls_config,
+            async {
+                let mut query_metrics = SpireRemoteProductionReadMetrics::default();
+                let heap_start = std::time::Instant::now();
+                add_profile_count(&mut query_metrics.heap_receive_query_count, 1);
+                let result = match tuple_payload_columns {
+                    Some(tuple_payload_columns) => {
+                        let sql = remote_tuple_payload_production_sql(&endpoint_identity)?;
+                        client
+                            .query(
+                                sql,
+                                &[
+                                    &remote_index_oid,
+                                    &requested_epoch,
+                                    &request.query,
+                                    &selected_pids,
+                                    &top_k,
+                                    &request.consistency_mode,
+                                    &tuple_payload_columns,
+                                ],
+                            )
+                            .await
+                            .map_err(|error| production_remote_query_failure_category(&error))
+                    }
+                    None => {
+                        client
+                            .query(
+                                SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
+                                &[
+                                    &remote_index_oid,
+                                    &requested_epoch,
+                                    &request.query,
+                                    &selected_pids,
+                                    &top_k,
+                                    &request.consistency_mode,
+                                ],
+                            )
+                            .await
+                            .map_err(|error| production_remote_query_failure_category(&error))
+                    }
+                }?;
+                add_profile_elapsed(&mut query_metrics.heap_receive_elapsed_ms, heap_start);
+                Ok((result, query_metrics))
+            },
+            SpireRemoteLocalCancelSource::production(),
+        )
+        .await;
+
+        connection_task.abort();
+        let result_rows = match result_rows {
+            Ok((rows, query_metrics)) => {
+                metrics.add_transport_metrics(&query_metrics);
+                rows
+            }
+            Err(failure_category) => {
+                metrics.record_failure_category(consistency_mode, failure_category);
+                return SpireRemoteProductionHeapSessionResult {
+                    heap_result: failed_production_heap_receive_result(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        failure_category,
+                    ),
+                    metrics,
+                };
+            }
+        };
+        if validate_remote_payload_batch_row_count(result_rows.len(), "remote heap result rows")
+            .is_err()
+        {
+            let failure_category = SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE;
+            metrics.record_failure_category(consistency_mode, failure_category);
+            return SpireRemoteProductionHeapSessionResult {
+                heap_result: failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    failure_category,
+                ),
+                metrics,
+            };
+        }
+        let decode_start = std::time::Instant::now();
+        let candidates = match result_rows
+            .iter()
+            .map(|candidate_row| {
+                decode_remote_search_heap_candidate_pg_row(
+                    candidate_row,
+                    request.requested_epoch,
+                    request.node_id,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                pgrx::warning!("ec_spire remote heap receive decode failed: {error}");
+                let failure_category = production_remote_heap_decode_failure_category(&error);
+                metrics.record_failure_category(consistency_mode, failure_category);
+                return SpireRemoteProductionHeapSessionResult {
+                    heap_result: failed_production_heap_receive_result(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        failure_category,
+                    ),
+                    metrics,
+                };
+            }
+        };
+        add_profile_elapsed(&mut metrics.payload_decode_elapsed_ms, decode_start);
+        add_profile_count(
+            &mut metrics.payload_decode_row_count,
+            u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+        );
+        for candidate in &candidates {
+            if let Some(payload) = candidate.typed_tuple_payload.as_ref() {
+                let row_bytes = payload
+                    .payload_values
+                    .iter()
+                    .map(Vec::len)
+                    .try_fold(0_u64, |acc, len| {
+                        u64::try_from(len)
+                            .ok()
+                            .and_then(|len| acc.checked_add(len))
+                    })
+                    .unwrap_or(u64::MAX);
+                add_profile_count(&mut metrics.payload_decode_bytes, row_bytes);
+            }
+            if let Some(payload_json) = candidate.tuple_payload_json.as_ref() {
+                add_profile_count(
+                    &mut metrics.payload_decode_bytes,
+                    u64::try_from(payload_json.len()).unwrap_or(u64::MAX),
+                );
+            }
+        }
+        let merge_candidates = candidates
+            .iter()
+            .map(|candidate| SpireRemoteSearchCandidateRow {
+                served_epoch: candidate.served_epoch,
+                node_id: candidate.node_id,
+                pid: candidate.pid,
+                object_version: candidate.object_version,
+                row_index: candidate.row_index,
+                assignment_flags: candidate.assignment_flags,
+                vec_id: candidate.vec_id.clone(),
+                row_locator: candidate.row_locator.clone(),
+                score: candidate.score,
+            })
+            .collect::<Vec<_>>();
+        if let Err(error) = validate_remote_search_candidate_batch(
+            request.requested_epoch,
+            request.node_id,
+            &request.selected_pids,
+            &merge_candidates,
+        ) {
+            let failure_category = production_remote_heap_decode_failure_category(&error);
+            metrics.record_failure_category(consistency_mode, failure_category);
+            return SpireRemoteProductionHeapSessionResult {
+                heap_result: failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    failure_category,
+                ),
+                metrics,
+            };
+        }
+        let candidate_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
+        SpireRemoteProductionHeapSessionResult {
+            heap_result: SpireRemoteProductionHeapReceiveResult {
+                node_id: request.node_id,
+                started_after_ms,
+                completed_after_ms: elapsed_millis_u64(batch_start),
+                elapsed_ms: elapsed_millis_u64(request_start),
+                candidate_count,
+                status: SPIRE_REMOTE_STATUS_READY,
+                failure_category: SPIRE_REMOTE_NONE,
+                candidates,
+            },
+            metrics,
         }
     }
 

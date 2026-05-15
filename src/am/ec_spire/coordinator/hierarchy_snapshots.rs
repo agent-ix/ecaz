@@ -935,10 +935,20 @@ fn remote_search_heap_candidate_dedupe_key_for_result(
     })
 }
 
-fn merge_remote_search_heap_candidates_for_result(
+#[derive(Debug, Clone, PartialEq)]
+struct SpireRemoteSearchHeapCandidateMergeResult {
+    candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
+    input_count: u64,
+    duplicate_vec_id_count: u64,
+}
+
+fn merge_remote_search_heap_candidates_for_result_with_stats(
     candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
     top_k: usize,
-) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+) -> Result<SpireRemoteSearchHeapCandidateMergeResult, String> {
+    let input_count = u64::try_from(candidates.len())
+        .map_err(|_| "ec_spire remote heap candidate merge input count exceeds u64")?;
+    let mut duplicate_vec_id_count = 0_u64;
     let mut best_by_vec_id = HashMap::<Vec<u8>, SpireRemoteSearchLocalHeapCandidateRow>::new();
     for candidate in candidates {
         if candidate.status != SPIRE_REMOTE_STATUS_READY {
@@ -947,6 +957,12 @@ fn merge_remote_search_heap_candidates_for_result(
         let dedupe_key = remote_search_heap_candidate_dedupe_key_for_result(&candidate)?;
         match best_by_vec_id.entry(dedupe_key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
+                add_remote_count(
+                    &mut duplicate_vec_id_count,
+                    1,
+                    "remote heap candidate result merge",
+                    "duplicate vec_id",
+                )?;
                 if remote_search_heap_candidate_cmp_for_result(&candidate, entry.get()).is_lt() {
                     *entry.get_mut() = candidate;
                 }
@@ -958,9 +974,25 @@ fn merge_remote_search_heap_candidates_for_result(
     }
 
     let mut candidates = best_by_vec_id.into_values().collect::<Vec<_>>();
+    if candidates.len() > top_k {
+        candidates.select_nth_unstable_by(top_k, remote_search_heap_candidate_cmp_for_result);
+        candidates.truncate(top_k);
+    }
     candidates.sort_by(remote_search_heap_candidate_cmp_for_result);
     candidates.truncate(top_k);
-    Ok(candidates)
+    Ok(SpireRemoteSearchHeapCandidateMergeResult {
+        candidates,
+        input_count,
+        duplicate_vec_id_count,
+    })
+}
+
+fn merge_remote_search_heap_candidates_for_result(
+    candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
+    top_k: usize,
+) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+    merge_remote_search_heap_candidates_for_result_with_stats(candidates, top_k)
+        .map(|result| result.candidates)
 }
 
 pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
