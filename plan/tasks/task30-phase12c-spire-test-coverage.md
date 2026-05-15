@@ -151,9 +151,11 @@ categories have no live coverage at all.
 
 ### 12c.2.a: `payload_too_large` (12a.2)
 
-- [ ] Strict mode: encoder emits a payload exceeding
+- [x] Strict mode: encoder emits a payload exceeding
   `ec_spire.max_remote_payload_bytes_per_row`; assert
-  `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE`.
+  `SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE`. Evidence:
+  `test_ec_spire_customscan_large_text_projection_cap_sql` from
+  packet `731`, accepted in reviewer feedback `31120`.
 - [ ] Degraded mode: same payload; assert
   `degraded_skipped_dispatch_count` increments and the matrix-row
   hint is surfaced.
