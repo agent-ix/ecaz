@@ -185,10 +185,14 @@ identity envelope.
 Today only `transport_faults.rs:217` covers the probe; the
 user-facing query path is untested.
 
-- [ ] `SET statement_timeout` to a value below expected scan
-  duration; run CustomScan query; assert cancel error.
-- [ ] Assert no leaked transport state (libpq connection returned
-  to pool, no orphaned prepared rows on remote).
+- [x] `SET statement_timeout` to a value below expected scan
+  duration; run CustomScan query; assert cancel error. Evidence:
+  `test_ec_spire_customscan_local_statement_timeout_sql`.
+- [x] Assert no leaked transport state (libpq connection returned
+  to pool, no orphaned prepared rows on remote). Evidence:
+  `test_ec_spire_customscan_local_statement_timeout_sql` clears the
+  timeout, routes the descriptor back to the normal loopback
+  endpoint, and asserts the next CustomScan succeeds.
 
 ### 12c.2.d: `stale_remote_epoch_manifest` end-to-end
 

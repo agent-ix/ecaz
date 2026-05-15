@@ -2530,6 +2530,8 @@
 
     include!("custom_scan_tuple_transport.rs");
 
+    include!("custom_scan_timeout.rs");
+
     include!("custom_scan_concurrency.rs");
 
     include!("custom_scan_lifecycle.rs");
