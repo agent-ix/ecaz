@@ -70,6 +70,7 @@ These pre-lane task files are retained only for historical context under
 31. `31-ivf-m5-optimization.md` — first-priority M5 optimization lane for landed IVF: refresh local baselines, classify the dominant bottleneck, and land one measured scan/scoring/churn optimization at a time.
 32. `32-diskann-m5-optimization.md` — second-priority M5 optimization lane for landed DiskANN: refresh Task 29d baselines, profile low-L scan latency, and pursue targeted constant-factor wins without lowering recall floors.
 33. `33-hnsw-m5-optimization.md` — third-priority M5 optimization lane for HNSW: refresh reference worker curves, then decide between direct DSM ingestion, offline/staged build, or narrow scan/build hot-path work.
+34. `34-comprehensive-hardening.md` — local-first expansion of the ECAZ/SPIRE hardening stack: cargo-audit/deny/vet, Miri, cargo-careful, sanitizers, fuzzing, SQLsmith, Loom/Shuttle, Kani/Flux/MIRAI, Rudra, and unsafe-surface reporting.
 
 ## Coordination rules
 
