@@ -54,6 +54,35 @@ Leaf V2 segment tuples use `kind = leaf`, `format_version = 2`, and
 8. `gammas[row_count]: float4[]`
 9. `payloads[row_count * payload_stride]: bytea`
 
+## Canonical Segment Encoding
+
+Leaf V2 segment payload bytes SHALL be decoded as a packed logical stream after
+the `FR-049` common header. The logical stream uses no implicit padding. All
+multi-byte integers and `float4` values SHALL be little-endian IEEE-compatible
+encodings.
+
+| Offset expression | Field | Encoding |
+| --- | --- | --- |
+| `0` | `segment_no` | `u32le` |
+| `4` | `row_base` | `u32le` |
+| `8` | `row_count` | `u32le` |
+| `12` | `next_segment_locator` | `item_pointer_v1` |
+| `18` | `flags` | `row_count` `u16le` values |
+| `18 + 2*row_count` | `vec_ids` | `row_count * vec_id_stride` bytes |
+| previous end | `heap_tids` | `row_count` `item_pointer_v1` values |
+| previous end | `gammas` | `row_count` `float4le` values |
+| previous end | `payloads` | `row_count * payload_stride` bytes |
+
+`item_pointer_v1` is the canonical six-byte PostgreSQL heap locator encoding
+`block_number: u32le` followed by `offset_number: u16le`. A zero block with zero
+offset is invalid except where a locator field is explicitly marked invalid for
+an empty object.
+
+The `payloads` byte region SHALL be row-major: row `i` occupies bytes
+`i * payload_stride .. (i + 1) * payload_stride`. Format-specific payload
+decoders SHALL reject trailing bytes, short rows, and payload-format tags that
+do not match `payload_stride`.
+
 ## Vector Identity
 
 | Form | Bytes | Dedupe scope |
@@ -97,7 +126,8 @@ flags are reserved for delta objects.
 ### FR-050-AC-1
 
 An independent implementation can decode a Leaf V2 meta tuple and follow its
-segment chain without consulting Rust-specific structures.
+segment chain without consulting Rust-specific structures, host pointer layout,
+or PostgreSQL in-memory struct alignment.
 
 ### FR-050-AC-2
 

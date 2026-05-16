@@ -28,13 +28,16 @@ routing do not depend on transient builder state.
 
 Routing objects use `format_version = 1` and `kind = root` or `internal`.
 
-Payload:
+Payload bytes after the `FR-049` common header use no implicit padding:
 
-| Field | Type | Rule |
-| --- | --- | --- |
-| dimensions | `u16` | Positive vector dimension. |
-| reserved | `u16` | zero |
-| repeated child entries | `child_count` entries | each entry is `centroid_ordinal: u32`, `child_pid: u64`, `centroid: float4[dimensions]` |
+| Offset expression | Field | Encoding | Rule |
+| --- | --- | --- | --- |
+| `0` | `dimensions` | `u16le` | Positive vector dimension. |
+| `2` | `reserved` | `u16le` | zero |
+| `4 + n * child_stride` | child entry `n` | `centroid_ordinal: u32le`, `child_pid: u64le`, `centroid: float4le[dimensions]` | `n < child_count` |
+
+`child_stride` SHALL equal `12 + 4 * dimensions`. Decode SHALL reject payloads
+whose byte length is not exactly `4 + child_count * child_stride`.
 
 Root objects SHALL have `parent_pid = 0`. Internal routing objects SHALL have a
 nonzero parent PID. Routing object child PIDs SHALL refer to internal or leaf
@@ -43,8 +46,9 @@ partition objects in the same epoch manifest.
 ## Delta Object Format
 
 Delta objects use `format_version = 1`, `kind = delta`, `level = 0`, and a
-nonzero parent leaf PID. A delta object contains assignment rows encoded with
-the same row fields as leaf assignments, but:
+nonzero parent leaf PID. A delta object contains a Leaf V2 segment payload as
+defined by `FR-050` with `segment_no = 0`, `row_base = 0`, and no segment chain,
+but:
 
 - insert rows SHALL set `delta_insert` and a primary or boundary-replica role;
 - delete rows SHALL set `delta_delete` and tombstone semantics;
@@ -58,18 +62,24 @@ the same row fields as leaf assignments, but:
 Top graph objects use `format_version = 1`, `kind = top_graph`, and
 `assignment_count = 0`.
 
-Payload:
+Payload bytes after the `FR-049` common header use no implicit padding:
 
-| Field | Type | Rule |
-| --- | --- | --- |
-| root_pid | `u64` | PID of the active root/top routing object. |
-| dimensions | `u16` | Positive vector dimension. |
-| reserved | `u16` | zero |
-| graph_degree | `u32` | positive |
-| build_list_size | `u32` | positive |
-| alpha | `float4` | finite and `>= 1.0` |
-| entry_node | `u32` | `< node_count` |
-| repeated nodes | `child_count` entries | each entry is `child_pid: u64`, `centroid_ordinal: u32`, `neighbor_count: u32`, `neighbors: u32[]` |
+| Offset expression | Field | Encoding | Rule |
+| --- | --- | --- | --- |
+| `0` | `root_pid` | `u64le` | PID of the active root/top routing object. |
+| `8` | `dimensions` | `u16le` | Positive vector dimension. |
+| `10` | `reserved` | `u16le` | zero |
+| `12` | `graph_degree` | `u32le` | positive |
+| `16` | `build_list_size` | `u32le` | positive |
+| `20` | `alpha` | `float4le` | finite and `>= 1.0` |
+| `24` | `entry_node` | `u32le` | `< child_count` |
+| `28` | repeated nodes | variable | see below |
+
+Each top-graph node is encoded as `child_pid: u64le`,
+`centroid_ordinal: u32le`, `neighbor_count: u32le`, followed by
+`neighbor_count` `u32le` neighbor ordinals. Decode SHALL reject neighbor
+ordinals `>= child_count`, self-neighbor duplicates, duplicate child PIDs, and
+payloads with trailing bytes.
 
 The top graph node set SHALL equal the active root/top routing object's child
 frontier. Diagnostics SHALL distinguish root child count, graph node count,

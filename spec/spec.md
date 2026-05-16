@@ -24,6 +24,9 @@ relationships:
 standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
+  - iso-iec-ieee-42010
+  - iso-iec-25010
+  - iso-iec-ieee-15939
 ---
 # Master Requirements Specification
 ## Ecaz - PostgreSQL Extension for Compressed Vector Search
@@ -266,7 +269,21 @@ Benchmark result tables use the shared reporting standard in `NFR-015` so
 access methods, quantizers, storage formats, trained formats, and option sets
 can be compared with stable candidate identity fields.
 
-## 8. Requirement Architecture
+## 8. Standards Alignment Targets
+
+The following standards are alignment targets for requirements quality,
+architecture description, configuration control, quality attributes, and
+measurement. They are not certification claims.
+
+| Standard | Ecaz interpretation | Required spec evidence |
+| --- | --- | --- |
+| ISO/IEC/IEEE 29148 | Requirements quality, traceability, verifiability, and scope control. | Atomic StR/US/FR/NFR artifacts, stable IDs, acceptance criteria, and AC-to-TC or gap traceability in `spec/tests.md`. |
+| IEEE 828 | Configuration management for requirement and ADR artifacts. | Immutable IDs, lifecycle statuses, supersession/tombstone history, and review-packet provenance for accepted changes. |
+| ISO/IEC/IEEE 42010 | Architecture description discipline for the PostgreSQL extension, operator CLI, SPIRE distributed topology, and external integrations. | Architecture views, component boundaries, sequence/flow diagrams for processes, and explicit relationships between architectural decisions and requirements. |
+| ISO/IEC 25010 | Quality model for non-functional requirements. | NFRs scoped to a primary quality attribute such as performance efficiency, reliability, security, maintainability, portability, or scalability. |
+| ISO/IEC/IEEE 15939 | Measurement process for benchmark, recall, storage, memory, hardening, and operational claims. | Metric definitions, measurement context, candidate identity fields, hardening-lane command provenance, artifact provenance, and documented decision thresholds or explicit gaps. |
+
+## 9. Requirement Architecture
 
 ```
 spec/
@@ -296,7 +313,17 @@ Requirement identifiers are immutable once assigned:
 | Acceptance criterion | `{PARENT}-AC-N` |
 | Test case | `TC-XXX` |
 
-## 9. Lifecycle Status
+New or substantially rewritten artifacts SHALL use `relationships:` YAML
+frontmatter with semantic relationship types. Legacy artifacts that still use
+`traces:` remain readable historical inputs, but they are not considered fully
+migrated until their dependency and verification links are represented through
+structured relationships or the test matrix.
+
+Acceptance criteria SHALL be traceable at AC granularity. Grouped ranges are
+allowed only as summary rows when the same section also records individual FR or
+AC-level evidence rows or an explicit gap.
+
+## 10. Lifecycle Status
 
 Requirement and ADR statuses use:
 
@@ -308,7 +335,12 @@ Requirement and ADR statuses use:
 - `DEPRECATED`: retained for history but no longer part of the current product surface
 - `SUPERSEDED`: replaced by a newer artifact
 
-## 10. Known Deferrals
+Identifier gaps SHALL be represented by a retained artifact or an explicit
+tombstone entry when the assigned ID reached review or task planning. Tombstones
+SHALL state whether the requirement was `DEPRECATED`, `SUPERSEDED`, or folded
+into another artifact.
+
+## 11. Known Deferrals
 
 - Parallel index scan is shelved indefinitely; it is not the current scaling frontier.
 - Symphony is shelved indefinitely; RaBitQ remains landed as a reusable quantizer and IVF storage/profile option.
@@ -317,17 +349,19 @@ Requirement and ADR statuses use:
 - IVF and DiskANN local evidence is landed, but larger product claims require controlled benchmark hardware.
 - SPIRE distributed v1 is specified for PostgreSQL-node deployments with typed
   transport and CustomScan reads; AWS/RDS-class product claims remain deferred
-  until Phase 13-style controlled multi-node evidence is packeted.
+  until controlled multi-node evidence is packeted under `NFR-015` and the
+  ISO/IEC/IEEE 15939 measurement target.
 - SPIRE true parallel local-store execution, cross-shard non-vector query
   planning, cross-shard embedding UPDATE-as-move, automatic DDL propagation, and
   background prepared-xact recovery remain deferred.
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, and additional distance metrics remain outside the current implemented surface.
 
-## 11. References
+## 12. References
 
 - README: `README.md`
 - Usage docs: `docs/usage.md`
 - Benchmarks: `docs/benchmarks.md`
+- Hardening lanes: `docs/hardening.md`
 - Operator CLI: `crates/ecaz-cli/README.md`
 - Architecture docs: `docs/architecture.md`
 - ADR index: `spec/adr/index.md`

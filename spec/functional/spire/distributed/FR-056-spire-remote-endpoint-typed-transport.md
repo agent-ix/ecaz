@@ -25,6 +25,7 @@ for the production distributed read path.
 
 | Field | Type | Rule |
 | --- | --- | --- |
+| `transport_version` | `integer` | `1` for this contract |
 | `index_oid` | `oid` | remote SPIRE index |
 | `requested_epoch` | `bigint` | positive coordinator-requested epoch |
 | `query` | `real[]` or equivalent vector bytes | query vector |
@@ -32,6 +33,7 @@ for the production distributed read path.
 | `top_k` | `integer` | positive result budget |
 | `consistency_mode` | `text` | `strict` or `degraded` |
 | `requested_columns` | `text[]` | heap columns required by CustomScan projection |
+| `request_id` | `uuid` or 16 opaque bytes | coordinator-generated request identity for logs and cancellation |
 
 ## Candidate Envelope
 
@@ -47,6 +49,7 @@ Remote responses SHALL preserve candidate identity fields:
 | `score` | finite score using SPIRE sign convention |
 | `flags` | assignment role and status flags |
 | `status` | stable receive/fault label |
+| `request_id` | request identity echoed from the request |
 
 ## Typed Tuple Payload
 
@@ -68,6 +71,18 @@ The production read transport SHALL be `pg_binary_attr_v1` with aligned arrays:
 For non-null attributes, the remote SHALL encode values with the attribute
 type's binary send function. For SQL NULL attributes, `payload_nulls[i]` SHALL
 be true and the coordinator SHALL ignore `payload_values[i]`.
+
+All payload arrays SHALL have identical length equal to the number of requested
+attributes for the candidate row. `payload_attnums` SHALL match the remote heap
+tuple descriptor. `payload_names`, `payload_type_oids`, `payload_typmods`, and
+`payload_collations` SHALL match the coordinator's expected CustomScan output
+descriptor before any binary value is decoded.
+
+`payload_formats[i]` SHALL be `pg_binary_send` for every non-null value.
+Unsupported binary send functions, by-value/by-reference layout differences,
+domain/base-type mismatches, and collation mismatches SHALL fail closed with a
+stable typed-transport status. The coordinator SHALL NOT decode `bytea` payload
+bytes with text I/O, JSON, or Rust-specific struct layout assumptions.
 
 ## Transport Flow
 

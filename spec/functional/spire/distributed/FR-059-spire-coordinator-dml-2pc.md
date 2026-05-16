@@ -64,11 +64,19 @@ sequenceDiagram
 SPIRE prepared transaction GIDs SHALL use:
 
 ```text
-ec_spire_insert_<index_oid>_<node_id>_<served_epoch>_<top_xid>
+ec_spire_<operation>_<index_oid>_<node_id>_<served_epoch>_<top_xid>_<branch_seq>
 ```
 
-The prefix is historical and covers current INSERT and DELETE remote prepares.
-Operators SHALL NOT infer operation type from the prefix.
+`operation` SHALL be `insert`, `update`, or `delete`. `branch_seq` SHALL be a
+positive coordinator-local sequence number allocated per remote mutation branch
+inside the top transaction. The tuple
+`(index_oid, node_id, served_epoch, top_xid, branch_seq)` SHALL be unique for
+every prepared remote transaction, including repeated row mutations against the
+same index, node, and epoch in one coordinator transaction.
+
+Legacy single-branch GIDs with the historical `ec_spire_insert_...` prefix MAY
+be recognized by recovery tooling only for migration or diagnostic
+compatibility. New prepares SHALL use the operation-bearing form above.
 
 `ec_spire_remote_prepared_xact_intent` SHALL record:
 
@@ -78,6 +86,8 @@ Operators SHALL NOT infer operation type from the prefix.
 | `node_id` | remote node |
 | `served_epoch` | epoch used for the remote prepare |
 | `xid` | coordinator top transaction ID |
+| `operation` | `insert`, `update`, or `delete` |
+| `branch_seq` | positive branch sequence unique within the coordinator top transaction |
 | `gid` | SPIRE GID |
 | `intent_state` | `prepare_requested`, `prepare_acked`, `commit_local`, or `rollback_local` |
 
@@ -101,7 +111,8 @@ silently executing unsupported distributed semantics.
 ### FR-059-AC-3
 
 The prepared-xact GID, intent states, lost-ack recovery window, and reaper
-decision rule are defined well enough for operator recovery.
+decision rule are defined well enough for operator recovery and repeated
+branches cannot collide in one coordinator transaction.
 
 ### FR-059-AC-4
 
