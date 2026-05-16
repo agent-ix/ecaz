@@ -19,13 +19,14 @@ of quantization and index options rather than a single fixed architecture.
 
 - `turboquant` — default; simplest operational path
 - `pq_fastscan` — grouped PQ with a hot path and colder rerank payload; for latency-critical workloads
-- `rabitq` — binary quantization with float correction; IVF only
+- `rabitq` — binary quantization with float correction; IVF and SPIRE serving paths
 
 #### Index Families
 
 - `ec_hnsw` — HNSW graph index (general-purpose default)
 - `ec_ivf` — IVF posting-list index
 - `ec_diskann` — DiskANN/Vamana-style graph index
+- `ec_spire` — partitioned local/distributed IVF-family index
 
 ## Quick Start
 
@@ -105,8 +106,10 @@ The detailed guide is [docs/build-from-source.md](docs/build-from-source.md).
 
 All results are local engineering measurements on 1536-dimensional DBpedia
 OpenAI embeddings. Corpus sizes differ across index families; comprehensive
-cross-index benchmarks are in progress. See [Benchmarks](docs/benchmarks.md)
-for full results, source packets, and methodology.
+cross-index benchmarks are in progress. See [Benchmarks](docs/benchmarks.md),
+[Benchmark Index](docs/benchmark-index.md), and
+[Benchmark Reporting Standard](docs/benchmark-reporting-standard.md) for full
+results, source packets, and reporting rules.
 
 ### Compression And Storage Format
 
@@ -147,7 +150,9 @@ Source: `review/30145-task28-ivf-a10-current-closure/`
 
 For high-dimensional 100K IVF surfaces, the measured recommendation is explicit
 `storage_format = 'pq_fastscan', pq_group_size = 8`; smaller 10K/25K workloads
-may prefer the higher recall@100 behavior of `turboquant`.
+may prefer the higher recall@100 behavior of `turboquant`. RaBitQ is the first
+SPIRE remote-serving storage profile and remains an IVF optimization lane until
+new packeted evidence improves current scan latency.
 
 ### Index Family Snapshot
 
@@ -171,14 +176,18 @@ Sources: `review/11109-task29d-final-readiness/`,
 Each index family implements a different search algorithm. Quantization
 (`storage_format`) is a separate concern — it controls how vectors are
 compressed inside the index and is independent of the index family. See
-[Usage Guide](docs/usage.md) for full SQL examples and [Benchmarks](docs/benchmarks.md)
-for measured recall, latency, and index size comparisons.
+[Usage Guide](docs/usage.md) for full SQL examples,
+[Benchmarks](docs/benchmarks.md) for selected results, and
+[Benchmark Reporting Standard](docs/benchmark-reporting-standard.md) for the
+fields required in new AM, quantizer, storage-format, and option-set
+comparisons.
 
 | Access method | Best fit | Storage formats | Notes |
 | --- | --- | --- | --- |
 | `ec_hnsw` | General-purpose ANN graph search | `turboquant`, `pq_fastscan` | Lowest local latency, larger index footprint |
 | `ec_ivf` | Posting-list experiments and high-ingest tradeoffs | `turboquant`, `pq_fastscan`, `rabitq` | Recall controlled by `nprobe`/`nlists`; Apple M5 tuning is active |
 | `ec_diskann` | DiskANN/Vamana research and compact graph indexes | `pq_fastscan` | Requires unit-normalized source vectors; Apple M5 tuning is active |
+| `ec_spire` | Partitioned local and distributed search | `turboquant`, `rabitq`; `pq_fastscan` deferred for serving | RaBitQ is the first remote-serving storage profile; product-scale evidence remains gated |
 
 Changing an index storage format requires `REINDEX`; there is no in-place
 format upgrade.
@@ -209,6 +218,7 @@ make pg-test-pg17
 | [Usage Guide](docs/usage.md) | Encoding parameters, index tuning, query patterns |
 | [Benchmarks](docs/benchmarks.md) | Measured performance results and methodology |
 | [Benchmark Index](docs/benchmark-index.md) | Packet directory for benchmark lanes and source artifacts |
+| [Benchmark Reporting Standard](docs/benchmark-reporting-standard.md) | Required fields for AM, quantizer, storage-format, and option-set comparisons |
 | [Operator CLI](crates/ecaz-cli/README.md) | `ecaz` corpus, benchmark, compare, stress, and dev command surface |
 | [Architecture](docs/architecture.md) | Compression pipeline, index layout, page format |
 | [PG18 Features](docs/pg18.md) | ReadStream, EXPLAIN hooks, AM callbacks |

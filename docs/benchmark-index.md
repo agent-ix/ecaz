@@ -3,7 +3,9 @@
 This page is a directory of packet-backed benchmark surfaces.
 
 Use [benchmarks.md](benchmarks.md) for the current benchmark tables and selected
-results. Use this page when you need to find the underlying packet quickly.
+results. Use [Benchmark Reporting Standard](benchmark-reporting-standard.md) for
+the required fields in new AM, quantizer, storage-format, and option-set
+comparisons. Use this page when you need to find the underlying packet quickly.
 
 Only link measured or intentionally scaffolded benchmark packets here. If a
 benchmark lane does not yet have a packet, leave it out of this index rather
@@ -30,6 +32,16 @@ than inventing an empty result.
 | 100K current build | 100K selected point | `review/30119-task28-ivf-a9-100k-current-build/` |
 | M5 current candidate decision | 100K balanced + quality points | `review/30203-task31-current-m5-candidate-decision/` |
 
+## Quantizer And Storage Candidates
+
+| Lane | Corpus / fixture | Packet |
+| --- | --- | --- |
+| IVF TurboQuant / PQ-FastScan / RaBitQ head-to-head | 10K smoke | `review/30084-task28-ivf-quantizer-headtohead-smoke/` |
+| IVF current auto recommendation | packet synthesis over 10K and 100K evidence | `review/30096-task28-ivf-current-auto-recommendation/` |
+| IVF RaBitQ A10 fill | 10K / 25K local RaBitQ rows | `review/30144-task28-ivf-a10-rabitq-fill/` |
+| SPIRE RaBitQ remote endpoint gate | PG18 loopback remote-serving readiness | `review/30709-spire-remote-heap-endpoint-gate/` |
+| SPIRE tuple transport measurement | PG18 loopback, `storage_format=rabitq` | `review/30975-spire-tuple-transport-measurement/` |
+
 ## HNSW
 
 | Lane | Corpus / fixture | Packet |
@@ -42,3 +54,5 @@ than inventing an empty result.
   commands, SHAs, hardware, cache state, and cited result lines.
 - When adding a new benchmark packet, update this index and
   [benchmarks.md](benchmarks.md) together.
+- Candidate comparison packets should follow
+  [Benchmark Reporting Standard](benchmark-reporting-standard.md).

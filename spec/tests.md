@@ -28,7 +28,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | StR-004 | US-006..US-011, FR-019..FR-027, FR-030 | TC-005, TC-006, TC-017 | Partial: ReadStream/product speedup measurements remain deferred |
 | StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Complete for local implementation surface; product scale evidence deferred |
 | StR-005 SPIRE extension | US-018..US-020, US-022, FR-048..FR-060, NFR-013, NFR-014 | TC-020 SPIRE, TC-021..TC-025 | Complete for local and distributed v1 spec traceability; product-scale AWS evidence and deferred shard SQL remain gaps |
-| StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009 | TC-015, TC-016, TC-019, TC-020 benchmark suites | Partial: product hardware gates are explicit gaps |
+| StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009, NFR-015 | TC-015, TC-016, TC-019, TC-020 benchmark suites, TC-033 | Partial: product hardware gates are explicit gaps |
 | StR-007 cloud | US-021, FR-044..FR-047, NFR-010, NFR-011 | TC-026..TC-032 | Planned: cloud harness implementation begins on `feat/cloud-test-harness` |
 
 ### User Story Coverage
@@ -49,9 +49,9 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | US-012 | US-012-AC-1..3 | TC-002, TC-003, TC-004, TC-007, TC-010 | Complete for current SQL surface |
 | US-013 | US-013-AC-1..3 | TC-007, TC-008, TC-009, TC-015 | Complete for local IVF v1; product claims deferred |
 | US-014 | US-014-AC-1..3 | TC-010, TC-011, TC-012, TC-015 | Complete for local DiskANN v1; product claims deferred |
-| US-015 | US-015-AC-1..3 | TC-015, TC-016 | Partial: product benchmark claim lane is a planned gate |
+| US-015 | US-015-AC-1..4 | TC-015, TC-016, TC-033 | Partial: product benchmark claim lane is a planned gate |
 | US-016 | US-016-AC-1..3 | TC-019 | Complete for docs/spec traceability; command execution tests run on demand |
-| US-017 benchmark suites | US-017-AC-1..4 | TC-020 benchmark suites | Complete for first auto-runner surface; tags/resume/results extraction implemented, richer thresholds deferred |
+| US-017 benchmark suites | US-017-AC-1..5 | TC-020 benchmark suites, TC-033 | Complete for first auto-runner surface; tags/resume/results extraction implemented, richer thresholds deferred |
 | US-018 | US-018-AC-1..6 | TC-021, TC-022, TC-023 | Implemented for relation-backed local stores, PID hash placement, store diagnostics, strict/degraded handling, and sequential backend read scheduling; true parallel local-store execution deferred |
 | US-019 | US-019-AC-1..6 | TC-023, TC-024 | Implemented for CustomScan distributed reads, placement-aware dispatch, typed remote tuple payloads, and origin-node visibility; AWS product evidence deferred |
 | US-020 | US-020-AC-1..6 | TC-023, TC-025 | Implemented for epoch publication, delta/replacement maintenance, split/merge/vacuum hooks, diagnostics, and coordinator DML/2PC recovery; background prepared-xact recovery deferred |
@@ -83,7 +83,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | FR-035 | FR-035-AC-1..3 | TC-011 | Complete for local DiskANN scan/prefilter/rerank behavior |
 | FR-036 | FR-036-AC-1..3 | TC-012 | Complete for local DiskANN insert/vacuum/diagnostics behavior |
 | FR-037 | FR-037-AC-1..4 | TC-019 | Complete for docs/spec traceability; CLI unit execution not run in this docs checkpoint |
-| FR-038 benchmark suites | FR-038-AC-1..7 | TC-020 benchmark suites | Complete for first auto-runner surface |
+| FR-038 benchmark suites | FR-038-AC-1..8 | TC-020 benchmark suites, TC-033 | Complete for first auto-runner surface; full schema-driven report generation remains iterative |
 | FR-048 | FR-048-AC-1..8 | TC-020 SPIRE, TC-021, TC-024, TC-025 | Complete for domain model, identities, epochs, placement, and read/write boundary definitions |
 | FR-049..FR-051 | Storage object format ACs | TC-020 SPIRE, TC-022, TC-023 | Complete for common header, Leaf V2, routing, delta, and top-graph format specs; binary compatibility tests should pin before format freeze |
 | FR-052..FR-054 | Local build/search/maintenance ACs | TC-020 SPIRE, TC-021, TC-022, TC-023, TC-025 | Complete for local v1 traceability; product-scale maintenance evidence deferred |
@@ -113,6 +113,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | NFR-012 | Cloud throughput targets | TC-016, TC-032 | Partial: targets are specified; product evidence is gated on controlled cloud runs |
 | NFR-013 | SPIRE local readiness and capacity | TC-020 SPIRE, TC-021, TC-022, TC-023, TC-025 | Partial: implementation traceability exists; full capacity envelope needs controlled local storage evidence |
 | NFR-014 | SPIRE transport security and operations | TC-024, TC-025 | Partial: v1 contract specifies TLS, timeout, cancellation, and observability behavior; deployment evidence deferred |
+| NFR-015 | Benchmark reporting standard | TC-033 | Complete for docs/spec standard; existing benchmark rows migrate as packets refresh |
 
 ## Test Case Summary
 
@@ -151,6 +152,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | TC-030 | Pause/resume preserves data; snapshot + `--from-snapshot` skips re-load | Integration | P1 | US-021, FR-044, NFR-010 | Planned: implementation in progress |
 | TC-031 | `--confirm-cost` gate, status `$/hr` and `$/mo` reporting, S3 lifecycle rule | Unit / static | P1 | NFR-010 | Planned: implementation in progress |
 | TC-032 | Corpus load throughput meets per-profile NFR-011 targets | Benchmark | P1 | NFR-011, FR-047 | Planned: baseline once first `1m` run lands |
+| TC-033 | Benchmark reporting standard docs/spec audit | Docs / spec audit | P1 | US-015, US-017, FR-038, NFR-015 | Implemented for the standard; future benchmark packets apply it row-by-row |
 
 ## Option Permutation Matrix
 

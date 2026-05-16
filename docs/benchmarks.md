@@ -6,6 +6,11 @@ review packets, but they are not product benchmark claims. Product claims need
 dedicated benchmark hardware with controlled cache state, memory, storage, and
 repeatability.
 
+New benchmark rows should follow the
+[Benchmark Reporting Standard](benchmark-reporting-standard.md). That standard
+defines the common fields for comparing access methods, quantizers, storage
+formats, trained formats, and option sets.
+
 ## HNSW Baseline
 
 Measured on the [DBpedia OpenAI embeddings corpus](recall-methodology.md)
@@ -36,7 +41,10 @@ NFR-001 latency targets for top-10 query on 50K vectors:
 Task 28 landed the local IVF v1 access method and competitive-substrate lane.
 The current recommendation keeps `storage_format = 'auto'` unchanged, while
 using explicit `storage_format = 'pq_fastscan', pq_group_size = 8` for larger
-high-dimensional IVF surfaces where speed and index size dominate.
+high-dimensional IVF surfaces where speed and index size dominate. RaBitQ is a
+SPIRE-facing serving candidate with strong local recall rows, but current IVF
+RaBitQ latency is not competitive and should be reported as an optimization
+lane rather than a current IVF latency default.
 
 10K and 25K matched shape:
 `nlists = 64`, `nprobe = 48`, `rerank = 'heap_f32'`,
@@ -154,6 +162,11 @@ packet-local number exists yet.
 | Compression ratio | 7.85x |
 | Tuples per 8KB page | about 9 vs about 1 for fp32 |
 
+Storage-format comparisons should use
+[Benchmark Reporting Standard](benchmark-reporting-standard.md) candidate
+identity fields, including payload format, model metadata, sidecar bytes, and
+serving readiness.
+
 ## Running Benchmarks
 
 ### Criterion microbenchmarks
@@ -197,6 +210,7 @@ groups and profile behavior.
 
 ## Methodology
 
-See [Recall Methodology](recall-methodology.md) and
-[Real Corpus Recall](RECALL_REAL_CORPUS.md) for the dataset contracts, corpus
-selection rules, and reproduction instructions.
+See [Benchmark Reporting Standard](benchmark-reporting-standard.md),
+[Recall Methodology](recall-methodology.md), and
+[Real Corpus Recall](RECALL_REAL_CORPUS.md) for the reporting schema, dataset
+contracts, corpus selection rules, and reproduction instructions.

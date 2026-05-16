@@ -12,6 +12,9 @@ relationships:
   - target: "ix://agent-ix/tqvector/FR-037"
     type: "extends"
     cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/NFR-015"
+    type: "supports"
+    cardinality: "N:1"
 ---
 # FR-038: Configured Benchmark Suite Runner
 
@@ -35,6 +38,7 @@ Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` 
 12. `status --manifest <path>` SHALL summarize completed, failed, skipped, dry-run, stale, and missing-artifact state.
 13. `report --manifest <path>` SHALL emit a markdown report from manifest metadata and parsed result rows.
 14. The legacy `ecaz bench suite --config <path> --dry-run` form SHALL remain accepted as a compatibility alias for the first dry-run slice.
+15. Suite reports SHOULD preserve the access-method, quantizer/storage-format, option-set, dataset, environment, and metric fields required by `NFR-015`.
 
 ## Acceptance Criteria
 
@@ -65,3 +69,8 @@ Configured thresholds are recorded in the manifest and can fail an otherwise com
 ### FR-038-AC-7
 
 Thresholds can target a specific row from a multi-row sweep, and resume rejects stale manifests whose config hash or expanded command differs.
+
+### FR-038-AC-8
+
+Suite reports include enough candidate identity and metric metadata to populate
+the benchmark reporting standard without hand-editing result semantics.

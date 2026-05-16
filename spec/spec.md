@@ -262,6 +262,10 @@ The supported operator surface for repeatable corpus setup, benchmarking, compar
 
 Product benchmark claims require controlled cache state, hardware, storage, PostgreSQL settings, command provenance, and packet-local raw logs.
 
+Benchmark result tables use the shared reporting standard in `NFR-015` so
+access methods, quantizers, storage formats, trained formats, and option sets
+can be compared with stable candidate identity fields.
+
 ## 8. Requirement Architecture
 
 ```
