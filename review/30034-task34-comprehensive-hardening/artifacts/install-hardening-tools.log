@@ -1,0 +1,229 @@
+Cloning into '/Users/peter/.ecaz/hardening-tools/Rudra'...
+rudra docker helper ready: /Users/peter/.ecaz/hardening-tools/Rudra/docker-helper/docker-cargo-rudra
+Cloning into '/Users/peter/.ecaz/hardening-tools/MIRAI'...
+error: package ID specification `mirai` did not match any packages
+  Installing mirai v1.1.12 (/Users/peter/.ecaz/hardening-tools/MIRAI/checker)
+    Updating crates.io index
+    Updating git repository `https://github.com/prove-rs/z3.rs.git`
+    Updating git submodule `https://github.com/Z3Prover/z3.git`
+ Downloading crates ...
+  Downloaded anstyle-parse v0.2.6
+  Downloaded anstyle v1.0.10
+  Downloaded cfg-if v1.0.0
+  Downloaded anstyle-query v1.1.2
+  Downloaded cargo_metadata v0.19.1
+  Downloaded colorchoice v1.0.3
+  Downloaded darling_macro v0.10.2
+  Downloaded fs2 v0.4.3
+  Downloaded equivalent v1.0.1
+  Downloaded itoa v1.0.14
+  Downloaded strsim v0.9.3
+  Downloaded instant v0.1.13
+  Downloaded autocfg v1.4.0
+  Downloaded clap_lex v0.7.4
+  Downloaded anstream v0.6.18
+  Downloaded fxhash v0.2.1
+  Downloaded camino v1.1.9
+  Downloaded filetime v0.2.25
+  Downloaded xattr v1.4.0
+  Downloaded darling v0.10.2
+  Downloaded triomphe v0.1.14
+  Downloaded env_logger v0.11.6
+  Downloaded env_filter v0.1.3
+  Downloaded either v1.13.0
+  Downloaded archery v1.2.1
+  Downloaded semver v1.0.25
+  Downloaded thiserror-impl v2.0.11
+  Downloaded zerocopy-derive v0.7.35
+  Downloaded unicode-ident v1.0.16
+  Downloaded shellwords v1.1.0
+  Downloaded serde_derive v1.0.217
+  Downloaded serde v1.0.217
+  Downloaded memchr v2.7.4
+  Downloaded rpds v1.1.0
+  Downloaded rand v0.9.0
+  Downloaded zerocopy v0.7.35
+  Downloaded serde_json v1.0.138
+  Downloaded clap_builder v4.5.27
+  Downloaded clap v4.5.28
+  Downloaded bindgen v0.70.1
+  Downloaded zerocopy v0.8.17
+  Downloaded rustc_tools_util v0.4.0
+  Downloaded regex v1.11.1
+  Downloaded syn v2.0.98
+  Downloaded rayon v1.10.0
+  Downloaded hashbrown v0.15.2
+  Downloaded cc v1.2.12
+  Downloaded indexmap v2.7.1
+  Downloaded regex-syntax v0.8.5
+  Downloaded cmake v0.1.53
+  Downloaded log-derive v0.4.1
+  Downloaded rayon-core v1.12.1
+  Downloaded proc-macro2 v1.0.93
+  Downloaded sled v0.34.7
+  Downloaded log v0.4.25
+  Downloaded thiserror v2.0.11
+  Downloaded tar v0.4.43
+  Downloaded once_cell v1.20.3
+  Downloaded glob v0.3.2
+  Downloaded regex-automata v0.4.9
+  Downloaded getrandom v0.3.1
+  Downloaded bitflags v2.8.0
+  Downloaded tempfile v3.16.0
+  Downloaded ryu v1.0.19
+  Downloaded rand_core v0.9.0
+  Downloaded smallvec v1.13.2
+  Downloaded ppv-lite86 v0.2.20
+  Downloaded parking_lot v0.11.2
+  Downloaded libc v0.2.169
+  Downloaded lock_api v0.4.12
+  Downloaded libloading v0.8.6
+  Downloaded darling_core v0.10.2
+  Downloaded crc32fast v1.4.2
+  Downloaded quote v1.0.38
+  Downloaded pkg-config v0.3.31
+  Downloaded parking_lot_core v0.8.6
+  Downloaded humantime v2.1.0
+  Downloaded errno v0.3.10
+   Compiling proc-macro2 v1.0.93
+   Compiling unicode-ident v1.0.16
+   Compiling libc v0.2.169
+   Compiling cfg-if v1.0.0
+   Compiling serde v1.0.217
+   Compiling glob v0.3.2
+   Compiling memchr v2.7.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling minimal-lexical v0.2.1
+   Compiling regex-syntax v0.8.5
+   Compiling shlex v1.3.0
+   Compiling getrandom v0.3.1
+   Compiling byteorder v1.5.0
+   Compiling bindgen v0.70.1
+   Compiling syn v1.0.109
+   Compiling either v1.13.0
+   Compiling libloading v0.8.6
+   Compiling bitflags v2.8.0
+   Compiling cc v1.2.12
+   Compiling itertools v0.13.0
+   Compiling rustix v0.38.44
+   Compiling autocfg v1.4.0
+   Compiling rustc-hash v1.1.0
+   Compiling zerocopy v0.8.17
+   Compiling clang-sys v1.8.1
+   Compiling utf8parse v0.2.2
+   Compiling nom v7.1.3
+   Compiling anstyle-parse v0.2.6
+   Compiling aho-corasick v1.1.3
+   Compiling lock_api v0.4.12
+   Compiling anstyle v1.0.10
+   Compiling ident_case v1.0.1
+   Compiling fnv v1.0.7
+   Compiling colorchoice v1.0.3
+   Compiling pkg-config v0.3.31
+   Compiling cmake v0.1.53
+   Compiling anstyle-query v1.1.2
+   Compiling regex-automata v0.4.9
+   Compiling is_terminal_polyfill v1.70.1
+   Compiling strsim v0.9.3
+   Compiling parking_lot_core v0.8.6
+   Compiling anstream v0.6.18
+   Compiling instant v0.1.13
+   Compiling semver v1.0.25
+   Compiling scopeguard v1.2.0
+   Compiling camino v1.1.9
+   Compiling smallvec v1.13.2
+   Compiling log v0.4.25
+   Compiling cexpr v0.6.0
+   Compiling thiserror v2.0.11
+   Compiling serde_json v1.0.138
+   Compiling rayon-core v1.12.1
+   Compiling quote v1.0.38
+   Compiling regex v1.11.1
+   Compiling syn v2.0.98
+   Compiling crossbeam-epoch v0.9.18
+   Compiling triomphe v0.1.14
+   Compiling crossbeam-deque v0.8.6
+   Compiling equivalent v1.0.1
+   Compiling strsim v0.11.1
+   Compiling ryu v1.0.19
+   Compiling hashbrown v0.15.2
+   Compiling errno v0.3.10
+   Compiling itoa v1.0.14
+   Compiling clap_lex v0.7.4
+   Compiling env_filter v0.1.3
+   Compiling rand_core v0.9.0
+   Compiling darling_core v0.10.2
+   Compiling clap_builder v4.5.27
+   Compiling parking_lot v0.11.2
+   Compiling xattr v1.4.0
+   Compiling indexmap v2.7.1
+   Compiling serde_derive v1.0.217
+   Compiling zerocopy-derive v0.7.35
+   Compiling thiserror-impl v2.0.11
+   Compiling filetime v0.2.25
+   Compiling fs2 v0.4.3
+   Compiling archery v1.2.1
+   Compiling fxhash v0.2.1
+   Compiling crc32fast v1.4.2
+   Compiling lazy_static v1.5.0
+   Compiling humantime v2.1.0
+   Compiling darling_macro v0.10.2
+   Compiling fastrand v2.3.0
+   Compiling once_cell v1.20.3
+   Compiling mirai v1.1.12 (/Users/peter/.ecaz/hardening-tools/MIRAI/checker)
+   Compiling zerocopy v0.7.35
+   Compiling fixedbitset v0.5.7
+   Compiling tempfile v3.16.0
+   Compiling env_logger v0.11.6
+   Compiling sled v0.34.7
+   Compiling darling v0.10.2
+   Compiling shellwords v1.1.0
+   Compiling rayon v1.10.0
+   Compiling tar v0.4.43
+   Compiling petgraph v0.7.1
+   Compiling clap v4.5.28
+   Compiling rustc_tools_util v0.4.0
+   Compiling mirai-annotations v1.12.1 (/Users/peter/.ecaz/hardening-tools/MIRAI/annotations)
+   Compiling log-derive v0.4.1
+   Compiling ppv-lite86 v0.2.20
+   Compiling rand_chacha v0.9.0
+   Compiling rand v0.9.0
+   Compiling z3-sys v0.8.1 (https://github.com/prove-rs/z3.rs.git?rev=cb10013a2a0a017048b1d218bc734afa390f34ff#cb10013a)
+   Compiling cargo-platform v0.1.9
+   Compiling bincode v1.3.3
+   Compiling rpds v1.1.0
+error: failed to run custom build command for `z3-sys v0.8.1 (https://github.com/prove-rs/z3.rs.git?rev=cb10013a2a0a017048b1d218bc734afa390f34ff#cb10013a)`
+
+Caused by:
+  process didn't exit successfully: `/Users/peter/.ecaz/hardening-tools/MIRAI/target/release/build/z3-sys-0a048360fc9389f9/build-script-build` (exit status: 101)
+  --- stdout
+  CMAKE_TOOLCHAIN_FILE_aarch64-apple-darwin = None
+  CMAKE_TOOLCHAIN_FILE_aarch64_apple_darwin = None
+  HOST_CMAKE_TOOLCHAIN_FILE = None
+  CMAKE_TOOLCHAIN_FILE = None
+  CMAKE_GENERATOR_aarch64-apple-darwin = None
+  CMAKE_GENERATOR_aarch64_apple_darwin = None
+  HOST_CMAKE_GENERATOR = None
+  CMAKE_GENERATOR = None
+  CMAKE_PREFIX_PATH_aarch64-apple-darwin = None
+  CMAKE_PREFIX_PATH_aarch64_apple_darwin = None
+  HOST_CMAKE_PREFIX_PATH = None
+  CMAKE_PREFIX_PATH = None
+  CMAKE_aarch64-apple-darwin = None
+  CMAKE_aarch64_apple_darwin = None
+  HOST_CMAKE = None
+  CMAKE = None
+  running: cd "/Users/peter/.ecaz/hardening-tools/MIRAI/target/release/build/z3-sys-5c85a68dc9c205b2/out/build" && CMAKE_PREFIX_PATH="" LC_ALL="C" "cmake" "/Users/peter/.cargo/git/checkouts/z3.rs-7b241e2d72be5c77/cb10013/z3-sys/z3" "-DCMAKE_OSX_ARCHITECTURES=arm64" "-DZ3_BUILD_LIBZ3_SHARED=false" "-DZ3_BUILD_EXECUTABLE=false" "-DZ3_BUILD_TEST_EXECUTABLES=false" "-DCMAKE_INSTALL_PREFIX=/Users/peter/.ecaz/hardening-tools/MIRAI/target/release/build/z3-sys-5c85a68dc9c205b2/out" "-DCMAKE_C_FLAGS= -ffunction-sections -fdata-sections -fPIC -arch arm64 -mmacosx-version-min=26.4.1" "-DCMAKE_C_COMPILER=/usr/bin/cc" "-DCMAKE_CXX_FLAGS= -ffunction-sections -fdata-sections -fPIC -arch arm64 -mmacosx-version-min=26.4.1" "-DCMAKE_CXX_COMPILER=/usr/bin/c++" "-DCMAKE_ASM_FLAGS= -ffunction-sections -fdata-sections -fPIC -arch arm64 -mmacosx-version-min=26.4.1" "-DCMAKE_ASM_COMPILER=/usr/bin/cc" "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+
+  --- stderr
+
+  thread 'main' (3286258) panicked at /Users/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cmake-0.1.53/src/lib.rs:1121:5:
+
+  failed to execute command: No such file or directory (os error 2)
+  is `cmake` not installed?
+
+  build script failed, must exit now
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...
+error: failed to compile `mirai v1.1.12 (/Users/peter/.ecaz/hardening-tools/MIRAI/checker)`, intermediate artifacts can be found at `/Users/peter/.ecaz/hardening-tools/MIRAI/target`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_BUILD_BUILD_DIR` to that path.

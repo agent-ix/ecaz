@@ -1,0 +1,3 @@
+^D    Checking ecaz-flux-hardening v0.1.0 (/Users/peter/dev/tqvector/hardening/flux)
+summary. 3 functions processed: 3 checked; 0 trusted; 0 ignored. 3 constraints solved. Finished in 44.85ms
+    Finished `flux` profile [unoptimized + debuginfo] target(s) in 0.09s
