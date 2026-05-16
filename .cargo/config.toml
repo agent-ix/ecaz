@@ -1,17 +1,32 @@
 [build]
-# Native SIMD for AVX2 (turbo-quant uses it; safe to require on dev machines)
-# Remove or change to "x86-64" for cross-compilation targets.
+# Default for cross-compile / non-Linux / non-macOS targets only.
+# NOTE: cargo's rustflags do NOT merge across tables — a matching
+# [target.<cfg>] table fully replaces [build].rustflags. So target-cpu
+# must be repeated in every target table below, or it silently gets
+# dropped (which is what was happening: Linux + macOS builds were
+# compiling for generic aarch64/x86-64, not the host ISA).
 rustflags = ["-C", "target-cpu=native"]
 
 [target.'cfg(target_os="linux")']
-# pgrx test binaries link extension code directly; Postgres symbols resolve only
-# when the extension is loaded by the backend at runtime.
-rustflags = ["-C", "link-arg=-Wl,--unresolved-symbols=ignore-all"]
+# target-cpu=native: Neoverse-V2 on Graviton 4, native ISA on dev hosts.
+# link-arg: pgrx test binaries link extension code directly; Postgres
+# symbols resolve only when the extension is loaded by the backend at
+# runtime.
+rustflags = [
+    "-C", "target-cpu=native",
+    "-C", "link-arg=-Wl,--unresolved-symbols=ignore-all",
+]
 
 [target.'cfg(target_os="macos")']
-# pgrx extension dylibs reference PostgreSQL backend symbols that resolve only
-# when Postgres loads the extension.
-rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+# target-cpu=native: Apple Silicon ISA features (i8mm, dotprod, fp16,
+# bf16) on M-series; native x86_64 features on Intel Macs.
+# link-args: pgrx extension dylibs reference PostgreSQL backend symbols
+# that resolve only when Postgres loads the extension.
+rustflags = [
+    "-C", "target-cpu=native",
+    "-C", "link-arg=-undefined",
+    "-C", "link-arg=dynamic_lookup",
+]
 
 [alias]
 lint = "clippy --all-targets --all-features -- -D warnings"

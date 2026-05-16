@@ -74,6 +74,22 @@ bench-iai:
 	cargo bench --features bench --bench iai_hadamard
 	cargo bench --features bench --bench iai_bitpack
 
+## Generate line-level flamegraph for the quant_score criterion bench.
+## Requires `cargo install flamegraph` and Linux `perf` (or DTrace on macOS).
+## Output: flamegraph.svg in the repo root.
+flamegraph-quant_score:
+	cargo flamegraph --features bench --bench quant_score -- --bench
+	@echo "Open flamegraph.svg"
+
+## Generate flamegraph for an end-to-end ecaz bench latency run against a
+## given corpus prefix. Pass PREFIX=... PROFILE=... ITERATIONS=... K=... .
+## Example: make flamegraph-bench PREFIX=ec_hnsw_real_10k PROFILE=ec_ivf
+flamegraph-bench:
+	cargo flamegraph --bin ecaz -- bench latency \
+		--prefix $(PREFIX) --profile $(PROFILE) \
+		--k $${K:-10} --iterations $${ITERATIONS:-2000} --concurrency 1
+	@echo "Open flamegraph.svg"
+
 ## Run dhat heap profiler on encode path
 dhat-encode:
 	cargo run --release --features bench,dhat-heap --bin dhat_encode
