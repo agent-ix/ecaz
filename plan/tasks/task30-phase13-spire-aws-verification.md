@@ -41,8 +41,9 @@ permit loading the ecaz extension's custom AM / CustomScan.
 - [ ] Operator runbook covers typed tuple transport, 2PC recovery,
   `max_prepared_transactions`, strict/degraded behavior, local capacity
   targets, and known v1 limitations.
-- [ ] AWS packet manifest is prepared before allocating or running external
-  infrastructure.
+- [x] AWS packet manifest is prepared before allocating or running external
+  infrastructure. Evidence: parent packet
+  `review/768-c1-spire-phase13-aws-verification/`.
 - [ ] Phase 13a (design) is reviewer-accepted; every box in 13a.1..10
   is decided or recorded as a deferral.
 - [ ] Phase 13b.1 deliverables are committed: `infra/spire-aws/`
