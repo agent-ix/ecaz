@@ -52,12 +52,14 @@ fi
 cat > "$PGDATA/postgresql.auto.conf" <<EOF
 listen_addresses = '*'
 port = 5432
-shared_preload_libraries = 'ecaz'
 max_parallel_workers_per_gather = 4
 max_parallel_workers = 8
 work_mem = '64MB'
 maintenance_work_mem = '512MB'
 EOF
+# shared_preload_libraries = 'ecaz' is appended below, AFTER the pgrx
+# build installs ecaz.so. Setting it before the .so exists makes
+# postgresql.service fail to start.
 
 cat > "$PGDATA/pg_hba.conf" <<EOF
 local all all                     trust
@@ -98,7 +100,12 @@ sudo -u postgres bash -lc "
   cargo pgrx install --release --pg-config /usr/bin/pg_config
 "
 
+# Now safe to enable shared_preload_libraries.
+cat >> "$PGDATA/postgresql.auto.conf" <<EOF
+shared_preload_libraries = 'ecaz'
+EOF
 systemctl restart postgresql
+sleep 3
 
 sudo -u postgres psql -c 'CREATE EXTENSION IF NOT EXISTS ecaz;'
 
