@@ -98,8 +98,12 @@ async fn list(json: bool) -> Result<()> {
 
 impl StageArgs {
     pub async fn run(self, repo_root: PathBuf) -> Result<()> {
-        let dataset = datasets::lookup(&self.dataset)
-            .ok_or_else(|| eyre!("unknown dataset {:?}; try `ecaz cloud corpus list-datasets`", self.dataset))?;
+        let dataset = datasets::lookup(&self.dataset).ok_or_else(|| {
+            eyre!(
+                "unknown dataset {:?}; try `ecaz cloud corpus list-datasets`",
+                self.dataset
+            )
+        })?;
 
         if self.dry_run {
             println!(

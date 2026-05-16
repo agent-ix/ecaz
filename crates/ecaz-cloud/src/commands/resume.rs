@@ -23,11 +23,7 @@ impl ResumeArgs {
             return Err(eyre!("no stack to resume for profile {}", self.profile));
         }
         let out = tf.outputs().await?;
-        aws::start_instances(
-            &out.region,
-            &[&out.db_instance_id, &out.loader_instance_id],
-        )
-        .await?;
+        aws::start_instances(&out.region, &[&out.db_instance_id, &out.loader_instance_id]).await?;
 
         let deadline = std::time::Instant::now() + Duration::from_secs(self.wait_secs);
         loop {

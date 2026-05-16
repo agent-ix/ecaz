@@ -25,12 +25,7 @@ pub async fn run_shell(
     poll(region, instance_id, &command_id, timeout_secs).await
 }
 
-async fn send(
-    region: &str,
-    instance_id: &str,
-    script: &str,
-    timeout_secs: u64,
-) -> Result<String> {
+async fn send(region: &str, instance_id: &str, script: &str, timeout_secs: u64) -> Result<String> {
     // Pass the script as a single quoted JSON string for the
     // `commands` parameter. Indirection via a heredoc would be cleaner
     // but this keeps the call shape compatible with `aws ssm` defaults.
@@ -107,8 +102,8 @@ async fn poll(
             .await
             .wrap_err("invoke aws ssm get-command-invocation")?;
         if output.status.success() {
-            let inv: Invocation = serde_json::from_slice(&output.stdout)
-                .wrap_err("parse ssm invocation document")?;
+            let inv: Invocation =
+                serde_json::from_slice(&output.stdout).wrap_err("parse ssm invocation document")?;
             match inv.status.as_str() {
                 "Success" => return Ok(inv.stdout),
                 "Failed" | "Cancelled" | "TimedOut" => {

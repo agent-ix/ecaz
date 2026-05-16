@@ -56,7 +56,6 @@ pub fn terraform_state_path(profile: Profile) -> Result<PathBuf> {
 }
 
 pub fn ensure_dir(path: &Path) -> Result<()> {
-    std::fs::create_dir_all(path)
-        .wrap_err_with(|| format!("create {}", path.display()))?;
+    std::fs::create_dir_all(path).wrap_err_with(|| format!("create {}", path.display()))?;
     Ok(())
 }

@@ -310,6 +310,41 @@ mod tests {
     }
 
     #[test]
+    fn miri_data_page_chain_preserves_tuple_lookup_across_pages() {
+        let mut chain = DataPageChain::new(128);
+        let first = chain.insert_raw_tuple(vec![1; 32]).unwrap();
+        let second = chain.insert_raw_tuple(vec![2; 32]).unwrap();
+        let third = chain.insert_raw_tuple(vec![3; 32]).unwrap();
+
+        assert_eq!(first.block_number, FIRST_DATA_BLOCK_NUMBER);
+        assert_eq!(third.block_number, FIRST_DATA_BLOCK_NUMBER + 1);
+        assert_eq!(
+            chain
+                .get_page(first.block_number)
+                .unwrap()
+                .raw_tuple(first)
+                .unwrap(),
+            &[1; 32]
+        );
+        assert_eq!(
+            chain
+                .get_page(second.block_number)
+                .unwrap()
+                .raw_tuple(second)
+                .unwrap(),
+            &[2; 32]
+        );
+        assert_eq!(
+            chain
+                .get_page(third.block_number)
+                .unwrap()
+                .raw_tuple(third)
+                .unwrap(),
+            &[3; 32]
+        );
+    }
+
+    #[test]
     fn data_page_raw_round_trip() {
         let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
         let payload = vec![0x42; 64];

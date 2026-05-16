@@ -104,7 +104,8 @@ pub mod bench_api {
     pub use crate::am::{
         approximate_medoid, bfs_reachable, build_vamana_graph_with_pass1_extra_candidates,
         build_vamana_graph_with_stats, greedy_search, MetricSummary, VamanaBuildPassStats,
-        VamanaBuildStats, VamanaGraph,
+        VamanaBuildStats, VamanaGraph, VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN,
+        VAMANA_METADATA_BYTES,
     };
     pub use crate::storage::page::{
         DataPage, DataPageChain, ItemPointer, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,

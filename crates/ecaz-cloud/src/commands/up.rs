@@ -75,7 +75,10 @@ impl UpArgs {
         st.paused_at = None;
         state::save(self.profile, &st).await?;
 
-        println!("up: profile={} db={} bucket={}", self.profile, outputs.db_private_ip, outputs.s3_bucket);
+        println!(
+            "up: profile={} db={} bucket={}",
+            self.profile, outputs.db_private_ip, outputs.s3_bucket
+        );
         println!(
             "next: ecaz cloud install --profile {} (or `ecaz cloud corpus stage`)",
             self.profile

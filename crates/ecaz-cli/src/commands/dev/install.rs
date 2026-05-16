@@ -159,10 +159,7 @@ async fn run_vectorscale(args: InstallVectorscaleArgs) -> Result<()> {
         bail!("pgvectorscale repo not found: {}", args.repo.display());
     }
     if !args.cargo_pgrx.is_file() {
-        bail!(
-            "cargo-pgrx binary not found: {}",
-            args.cargo_pgrx.display()
-        );
+        bail!("cargo-pgrx binary not found: {}", args.cargo_pgrx.display());
     }
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = resolve_install(args.pg, args.pg_config, &pgrx_home)?;

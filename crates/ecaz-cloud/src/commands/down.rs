@@ -18,7 +18,10 @@ impl DownArgs {
     pub async fn run(self, repo_root: PathBuf) -> Result<()> {
         let tf = Terraform::new(self.profile, &repo_root)?;
         if !tf.state_exists() {
-            println!("down: no terraform state for {}; nothing to do.", self.profile);
+            println!(
+                "down: no terraform state for {}; nothing to do.",
+                self.profile
+            );
             return Ok(());
         }
         if !self.yes {

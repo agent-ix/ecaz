@@ -79,16 +79,16 @@ impl Profile {
     pub fn estimated_hourly_usd(self) -> f64 {
         // Rough Graviton on-demand list price, us-east-1.
         let db = match self {
-            Profile::P10k | Profile::Dev => 0.0816,   // m7g.large
-            Profile::P1m => 0.1632,                    // m7g.xlarge
-            Profile::P10m => 0.6528,                   // m7g.4xlarge
-            Profile::P100m => 0.8568,                  // r7g.4xlarge
-            Profile::P1b => 1.7136,                    // r7g.8xlarge
+            Profile::P10k | Profile::Dev => 0.0816, // m7g.large
+            Profile::P1m => 0.1632,                 // m7g.xlarge
+            Profile::P10m => 0.6528,                // m7g.4xlarge
+            Profile::P100m => 0.8568,               // r7g.4xlarge
+            Profile::P1b => 1.7136,                 // r7g.8xlarge
         };
         let loader = match self {
-            Profile::P10k | Profile::Dev => 0.0725,    // c7g.large
-            Profile::P1m | Profile::P10m => 0.29,      // c7g.2xlarge
-            Profile::P100m | Profile::P1b => 0.58,     // c7g.4xlarge
+            Profile::P10k | Profile::Dev => 0.0725, // c7g.large
+            Profile::P1m | Profile::P10m => 0.29,   // c7g.2xlarge
+            Profile::P100m | Profile::P1b => 0.58,  // c7g.4xlarge
         };
         db + loader
     }

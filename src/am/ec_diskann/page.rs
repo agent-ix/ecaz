@@ -171,6 +171,27 @@ mod tests {
         assert_eq!(metadata, decoded);
     }
 
+    #[test]
+    fn miri_vamana_metadata_roundtrip_with_codebook_head() {
+        let mut metadata = VamanaMetadataPage::empty(64, 250, 1.4, 768, 99);
+        metadata.entry_point = ItemPointer {
+            block_number: 12,
+            offset_number: 3,
+        };
+        metadata.grouped_codebook_head = ItemPointer {
+            block_number: 20,
+            offset_number: 1,
+        };
+        metadata.search_subvector_count = 96;
+        metadata.search_subvector_dim = 8;
+
+        let encoded = metadata.encode();
+        let decoded = VamanaMetadataPage::decode(&encoded).expect("decode");
+
+        assert_eq!(decoded, metadata);
+        assert_eq!(encoded.len(), VAMANA_METADATA_BYTES);
+    }
+
     // LA-002: the wire-format tag is exactly 3 (distinct from V1=1, V2=2).
     #[test]
     fn la_002_format_version_tag_is_three() {

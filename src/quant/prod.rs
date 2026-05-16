@@ -81,7 +81,8 @@ impl ProdQuantizer {
 
         let transform_dim = rotation::effective_transform_dim(dim);
         let qjl_active = qjl_enabled(dim, bits);
-        let codebook = codebook::lloyd_max(mse_bits(dim, bits) as usize, dim, 20_000)
+        let codebook_iterations = if cfg!(miri) { 128 } else { 20_000 };
+        let codebook = codebook::lloyd_max(mse_bits(dim, bits) as usize, dim, codebook_iterations)
             .into_iter()
             .map(|value| value as f32)
             .collect();
@@ -458,6 +459,10 @@ impl ProdQuantizer {
             return self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed);
         }
 
+        if cfg!(miri) {
+            return self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed);
+        }
+
         match backend() {
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx2Fma => unsafe {
@@ -683,6 +688,9 @@ impl ProdQuantizer {
     }
 
     fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
+        if cfg!(miri) {
+            return self.score_ip_mse_codes_scalar(mse_a, mse_b);
+        }
         if mse_bits(self.original_dim, self.bits) == 3 {
             match backend() {
                 #[cfg(target_arch = "x86_64")]

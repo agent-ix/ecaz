@@ -253,8 +253,7 @@ where
     // PG can start populating shared buffers concurrently with the
     // first few rerank rows. Same shape as the IVF prefetch in
     // `3ef44426`.
-    let prefetch_tids: Vec<ItemPointer> =
-        to_rerank.iter().map(|c| c.primary_heaptid).collect();
+    let prefetch_tids: Vec<ItemPointer> = to_rerank.iter().map(|c| c.primary_heaptid).collect();
     prefetch(&prefetch_tids);
     let mut reranked: Vec<ScanResult> = to_rerank
         .into_iter()
@@ -689,8 +688,7 @@ mod tests {
         // Fixture-shape sanity: there really are multiple candidates
         // per block, so a block_number-only sort would not be enough
         // to satisfy the assertion above.
-        let unique_blocks: HashSet<u32> =
-            observed.iter().map(|tid| tid.block_number).collect();
+        let unique_blocks: HashSet<u32> = observed.iter().map(|tid| tid.block_number).collect();
         assert!(
             unique_blocks.len() < observed.len(),
             "fixture must include multiple candidates per block to exercise \

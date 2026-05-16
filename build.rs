@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(kani)");
+    println!("cargo:rustc-check-cfg=cfg(miri)");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=csrc/standalone_pg_backend_stubs.c");
     println!("cargo:rerun-if-changed=csrc/pg18_pgstat_shim.c");

@@ -57,9 +57,10 @@ impl StatusArgs {
                     report.db_instance_id = Some(out.db_instance_id.clone());
                     report.db_private_ip = Some(out.db_private_ip);
                     report.s3_bucket = Some(out.s3_bucket);
-                    report.db_instance_state = aws::describe_instance_state(&out.region, &out.db_instance_id)
-                        .await
-                        .ok();
+                    report.db_instance_state =
+                        aws::describe_instance_state(&out.region, &out.db_instance_id)
+                            .await
+                            .ok();
                     report.state = match report.db_instance_state.as_deref() {
                         Some("running") => {
                             report.estimated_hourly_usd = self.profile.estimated_hourly_usd();
@@ -92,9 +93,11 @@ impl StatusArgs {
             println!("profile:  {}", report.profile);
             println!("state:    {}", report.state);
             if let Some(id) = &report.db_instance_id {
-                println!("db:       {} ({})",
+                println!(
+                    "db:       {} ({})",
                     report.db_private_ip.as_deref().unwrap_or("?"),
-                    id);
+                    id
+                );
             }
             if let Some(b) = &report.s3_bucket {
                 println!("bucket:   {b}");
