@@ -3593,13 +3593,12 @@ fn ec_spire_remote_epoch_manifest_publication_summary(
         name!(recommendation, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_publication_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let (active_epoch, current_manifest_decision, catalog_status, catalog_recommendation) =
         Spi::connect(|client| {
@@ -3841,13 +3840,12 @@ fn ec_spire_remote_epoch_manifest_libpq_request_plan(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_request_plan",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let rows = Spi::connect(|client| {
         client
@@ -3946,13 +3944,12 @@ fn ec_spire_remote_epoch_manifest_libpq_request_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_request_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
@@ -4091,10 +4088,12 @@ fn ec_spire_remote_epoch_manifest_payload_plan(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_payload_plan")
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_payload_plan",
+        );
+    }
 
     let rows = Spi::connect(|client| {
         client
@@ -4185,10 +4184,12 @@ fn ec_spire_remote_epoch_manifest_payload_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_payload_summary")
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_payload_summary",
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
