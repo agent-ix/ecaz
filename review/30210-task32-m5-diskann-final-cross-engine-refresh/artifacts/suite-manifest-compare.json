@@ -1,0 +1,240 @@
+{
+  "suite": "task32-m5-diskann-final-cross-engine-refresh",
+  "schema_version": 1,
+  "config": "review/30210-task32-m5-diskann-final-cross-engine-refresh/task32-m5-diskann-final-cross-engine.packet.json",
+  "config_sha256": "545e6a21fc6c5cbbef0e3377017b14ff9c70f94b9ad6b49fd355bc81a6de3f67",
+  "dry_run": false,
+  "generated_at_unix_ms": 1778365303377,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-diskann-real10k-final",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "diskann",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/load-diskann-real10k-final.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-diskann-real10k-final",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "diskann",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/recall-diskann-real10k-final-table.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-diskann-real10k-final",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "diskann",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/latency-diskann-real10k-final-table.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-diskann-real10k-final",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "diskann",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/storage-diskann-real10k-final.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "compare-vectorscale-real10k-final",
+      "kind": "compare-vectorscale",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-vectorscale-real10k-final.log",
+        "compare",
+        "vectorscale",
+        "--prefix",
+        "task32_m5_diskann_final",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--vectorscale-num-neighbors",
+        "32",
+        "--vectorscale-build-search-list-size",
+        "100",
+        "--vectorscale-max-alpha",
+        "1.2",
+        "--queries-limit",
+        "200",
+        "--rebuild"
+      ],
+      "selected": true,
+      "tags": [
+        "compare",
+        "vectorscale",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-vectorscale-real10k-final.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778365303377,
+      "finished_at_unix_ms": 1778365317834,
+      "duration_ms": 14456,
+      "exit_code": 0
+    },
+    {
+      "name": "load-hnsw-real10k-final",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "hnsw",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/load-hnsw-real10k-final.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-hnsw-real10k-final",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "hnsw",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/recall-hnsw-real10k-final-table.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-hnsw-real10k-final",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "hnsw",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/latency-hnsw-real10k-final-table.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-hnsw-real10k-final",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "hnsw",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/storage-hnsw-real10k-final.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "compare-pgvector-real10k-hnsw-final",
+      "kind": "compare-pgvector",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-pgvector-real10k-hnsw-final.log",
+        "compare",
+        "pgvector",
+        "--prefix",
+        "task32_m5_hnsw_final",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--pgvector-m",
+        "32",
+        "--pgvector-ef-construction",
+        "100",
+        "--queries-limit",
+        "200",
+        "--rebuild"
+      ],
+      "selected": true,
+      "tags": [
+        "compare",
+        "pgvector",
+        "hnsw",
+        "real10k",
+        "final"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-pgvector-real10k-hnsw-final.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1778365317835,
+      "finished_at_unix_ms": 1778365338547,
+      "duration_ms": 20711,
+      "exit_code": 0
+    }
+  ]
+}

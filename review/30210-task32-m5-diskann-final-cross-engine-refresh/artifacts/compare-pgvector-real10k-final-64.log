@@ -1,0 +1,16 @@
+[compare] --rebuild: dropping task32_m5_diskann_final_corpus_pgvector (and dependent index)
+[compare] populating task32_m5_diskann_final_corpus_pgvector: 10000 rows missing from 10000
+[compare] building pgvector HNSW index task32_m5_diskann_final_corpus_pgvector_hnsw_idx
+[compare] built task32_m5_diskann_final_corpus_pgvector_hnsw_idx in 3.04s
+[compare] fetching corpus + queries for ground truth ...
+[compare] computing ground truth ...
+[compare] ground truth in 54.23ms
+┌────────────────────────────────────────────────────────┬──────────┬────────┬─────────┬─────────┬─────────┬─────────┐
+│ engine                                                 ┆ recall@k ┆ ndcg@k ┆ p50     ┆ p95     ┆ p99     ┆ mean    │
+╞════════════════════════════════════════════════════════╪══════════╪════════╪═════════╪═════════╪═════════╪═════════╡
+│ ec_diskann[list_size=64]                               ┆ 0.9965   ┆ 0.9999 ┆ 1.87 ms ┆ 2.09 ms ┆ 2.30 ms ┆ 1.91 ms │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ pgvector[ef_search=64]                                 ┆ 0.9975   ┆ 0.9999 ┆ 0.26 ms ┆ 0.47 ms ┆ 0.56 ms ┆ 0.28 ms │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Δ (pgvector[ef_search=64] vs ec_diskann[list_size=64]) ┆ +0.1%    ┆ +0.0%  ┆ -86.1%  ┆ -77.6%  ┆ -75.6%  ┆ -85.3%  │
+└────────────────────────────────────────────────────────┴──────────┴────────┴─────────┴─────────┴─────────┴─────────┘

@@ -1,0 +1,16 @@
+[compare] --rebuild: dropping task32_m5_hnsw_final_corpus_pgvector (and dependent index)
+[compare] populating task32_m5_hnsw_final_corpus_pgvector: 10000 rows missing from 10000
+[compare] building pgvector HNSW index task32_m5_hnsw_final_corpus_pgvector_hnsw_idx
+[compare] built task32_m5_hnsw_final_corpus_pgvector_hnsw_idx in 6.27s
+[compare] fetching corpus + queries for ground truth ...
+[compare] computing ground truth ...
+[compare] ground truth in 53.74ms
+┌─────────────────────────────────────────────────────┬──────────┬────────┬─────────┬─────────┬─────────┬─────────┐
+│ engine                                              ┆ recall@k ┆ ndcg@k ┆ p50     ┆ p95     ┆ p99     ┆ mean    │
+╞═════════════════════════════════════════════════════╪══════════╪════════╪═════════╪═════════╪═════════╪═════════╡
+│ ec_hnsw[ef_search=64]                               ┆ 0.9695   ┆ 0.9991 ┆ 1.08 ms ┆ 1.80 ms ┆ 3.87 ms ┆ 1.23 ms │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ pgvector[ef_search=64]                              ┆ 0.9965   ┆ 0.9997 ┆ 0.32 ms ┆ 0.73 ms ┆ 0.82 ms ┆ 0.38 ms │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ Δ (pgvector[ef_search=64] vs ec_hnsw[ef_search=64]) ┆ +2.8%    ┆ +0.1%  ┆ -70.5%  ┆ -59.5%  ┆ -78.7%  ┆ -69.3%  │
+└─────────────────────────────────────────────────────┴──────────┴────────┴─────────┴─────────┴─────────┴─────────┘
