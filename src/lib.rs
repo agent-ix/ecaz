@@ -218,96 +218,133 @@ fn ec_diskann_access_method_oid() -> pg_sys::Oid {
         .expect("ec_diskann access method should exist")
 }
 
+struct AccessShareIndexRelation {
+    relation: pg_sys::Relation,
+}
+
+impl AccessShareIndexRelation {
+    fn open(index_oid: pg_sys::Oid) -> Self {
+        // SAFETY: PostgreSQL owns the relation cache entry returned by
+        // `index_open`; this guard owns the matching AccessShareLock close.
+        let relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            pgrx::error!("failed to open index relation");
+        }
+        Self { relation }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+
+    fn into_raw(self) -> pg_sys::Relation {
+        let relation = self.relation;
+        std::mem::forget(self);
+        relation
+    }
+}
+
+impl Drop for AccessShareIndexRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `index_open` in
+        // `AccessShareIndexRelation::open`; this guard owns the matching close.
+        unsafe { pg_sys::index_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+}
+
+fn open_valid_ec_index_guard(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+    expected_am_oid: pg_sys::Oid,
+    expected_am_name: &'static str,
+) -> AccessShareIndexRelation {
+    let index_relation = AccessShareIndexRelation::open(index_oid);
+    // SAFETY: `index_relation` is live while the guard is in scope.
+    let rd_rel = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() }
+        .expect("opened index relation should expose pg_class metadata");
+    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+        pgrx::error!("{caller_name} requires an index relation");
+    }
+    if rd_rel.relam != expected_am_oid {
+        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
+        // field is PostgreSQL's fixed-size C string.
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        pgrx::error!(
+            "{caller_name} requires a {expected_am_name} index, got relation \"{relation_name}\""
+        );
+    }
+    index_relation
+}
+
+fn open_valid_ec_hnsw_index_guard(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> AccessShareIndexRelation {
+    open_valid_ec_index_guard(
+        index_oid,
+        caller_name,
+        ec_hnsw_access_method_oid(),
+        "ec_hnsw",
+    )
+}
+
 unsafe fn open_valid_ec_hnsw_index(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
 ) -> pg_sys::Relation {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
-        .expect("opened index relation should expose pg_class metadata");
-    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires an index relation");
-    }
-    if rd_rel.relam != ec_hnsw_access_method_oid() {
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires a ec_hnsw index, got relation \"{relation_name}\"");
-    }
-    index_relation
+    open_valid_ec_hnsw_index_guard(index_oid, caller_name).into_raw()
+}
+
+fn open_valid_ec_ivf_index_guard(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> AccessShareIndexRelation {
+    open_valid_ec_index_guard(index_oid, caller_name, ec_ivf_access_method_oid(), "ec_ivf")
 }
 
 unsafe fn open_valid_ec_ivf_index(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
 ) -> pg_sys::Relation {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
-        .expect("opened index relation should expose pg_class metadata");
-    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires an index relation");
-    }
-    if rd_rel.relam != ec_ivf_access_method_oid() {
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires a ec_ivf index, got relation \"{relation_name}\"");
-    }
-    index_relation
+    open_valid_ec_ivf_index_guard(index_oid, caller_name).into_raw()
+}
+
+fn open_valid_ec_spire_index_guard(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> AccessShareIndexRelation {
+    open_valid_ec_index_guard(
+        index_oid,
+        caller_name,
+        ec_spire_access_method_oid(),
+        "ec_spire",
+    )
 }
 
 unsafe fn open_valid_ec_spire_index(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
 ) -> pg_sys::Relation {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
-        .expect("opened index relation should expose pg_class metadata");
-    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires an index relation");
-    }
-    if rd_rel.relam != ec_spire_access_method_oid() {
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires a ec_spire index, got relation \"{relation_name}\"");
-    }
-    index_relation
+    open_valid_ec_spire_index_guard(index_oid, caller_name).into_raw()
 }
 
 unsafe fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
     relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
 }
 
-unsafe fn open_valid_ec_diskann_index(
+fn open_valid_ec_diskann_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
-) -> pg_sys::Relation {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
-        .expect("opened index relation should expose pg_class metadata");
-    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires an index relation");
-    }
-    if rd_rel.relam != ec_diskann_access_method_oid() {
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires a ec_diskann index, got relation \"{relation_name}\"");
-    }
-    index_relation
+) -> AccessShareIndexRelation {
+    open_valid_ec_index_guard(
+        index_oid,
+        caller_name,
+        ec_diskann_access_method_oid(),
+        "ec_diskann",
+    )
 }
 
 pub fn parse_text(s: &str) -> Result<(u16, u8, u64, f32, Vec<u8>), String> {
@@ -762,10 +799,8 @@ fn ec_hnsw_index_admin_snapshot(
         name!(planner_scan_enabled, bool),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_index_admin_snapshot") };
-    let snapshot = unsafe { am::index_admin_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_index_admin_snapshot");
+    let snapshot = unsafe { am::index_admin_snapshot(index_relation.as_ptr()) };
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -786,17 +821,13 @@ fn ec_diskann_index_graph_summary(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<'static, (name!(metric, String), name!(value, String))> {
     let index_relation =
-        unsafe { open_valid_ec_diskann_index(index_oid, "ec_diskann_index_graph_summary") };
-    let summary = match unsafe { am::diskann_graph_summary(index_relation) } {
+        open_valid_ec_diskann_index_guard(index_oid, "ec_diskann_index_graph_summary");
+    let summary = match unsafe { am::diskann_graph_summary(index_relation.as_ptr()) } {
         Ok(summary) => summary,
         Err(e) => {
-            unsafe {
-                pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            }
             pgrx::error!("ec_diskann_index_graph_summary failed: {e}");
         }
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     let rows = vec![
         ("block_count".to_owned(), summary.block_count.to_string()),
