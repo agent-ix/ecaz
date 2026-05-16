@@ -94,8 +94,12 @@ fi
 
 case "$PROFILE" in
   small)
+    # 2-vCPU host (m8g.large class). Pin to a single core so the other
+    # vCPU stays available for the OS / SSM agent. Without taskset the
+    # SSM agent reliably gets starved during criterion + perf runs and
+    # the only recovery is a forced EC2 stop/start.
     CRIT_FLAGS="--sample-size 30 --warm-up-time 1 --measurement-time 2"
-    NICE="nice -n 10 ionice -c 3 --"
+    NICE="taskset -c 0 nice -n 10 ionice -c 3 --"
     INTER_RUN_SLEEP=30
     ;;
   large)
