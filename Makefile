@@ -150,6 +150,22 @@ flamegraph-bench:
 		--k $${K:-10} --iterations $${ITERATIONS:-2000} --concurrency 1
 	@echo "Open flamegraph.svg"
 
+## Run the full kernel attribution battery (criterion, perf-stat groups,
+## iai, flamegraph, asm, dhat, STREAM) into OUT. Specify HOST_PROFILE=
+## (small|large|local) so external reviewers can reproduce the same
+## settings on the same class of host. See docs/benchmarks.md.
+## Example: make kernel-battery OUT=/tmp/artifacts/kernels HOST_PROFILE=small
+KERNEL_BATTERY_FLAGS ?=
+kernel-battery:
+	@if [ -z "$(OUT)" ]; then echo "error: OUT=... is required (e.g. OUT=/tmp/artifacts/kernels)"; exit 1; fi
+	scripts/run_kernel_battery.sh --out $(OUT) --profile $${HOST_PROFILE:-local} $(KERNEL_BATTERY_FLAGS)
+
+## Shorthand: run the kernel battery sized for a 2-vCPU cloud host
+## (m8g.large class). Skips iai-callgrind by default since valgrind on
+## aarch64 is very slow. Override with KERNEL_BATTERY_FLAGS=.
+kernel-battery-cloud-small:
+	$(MAKE) kernel-battery HOST_PROFILE=small KERNEL_BATTERY_FLAGS="--skip-iai $(KERNEL_BATTERY_FLAGS)" OUT=$(OUT)
+
 ## Run dhat heap profiler on encode path
 dhat-encode:
 	cargo run --release --features bench,dhat-heap --bin dhat_encode
