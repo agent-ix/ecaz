@@ -12,7 +12,10 @@
 set -euxo pipefail
 
 PGDATA=/var/lib/pgsql/18/data
-PG_BIN_DIR=/usr/pgsql-18/bin
+# AL2023 installs PG18 binaries to /usr/bin (not the postgresql.org RPM
+# /usr/pgsql-18/bin layout).
+PG_BIN_DIR=/usr/bin
+PG_CONFIG=/usr/bin/pg_config
 DATA_DEV=/dev/nvme1n1   # EBS /dev/sdf maps to nvme1n1 on Nitro
 ECAZ_REF='${ecaz_git_ref}'
 ECAZ_URL='${ecaz_git_url}'
@@ -28,10 +31,9 @@ dnf -y install --allowerasing \
 # `parquet-tools` is not available in AL2023; the bootstrap flow does not use it.
 
 # --- Postgres 18 -----------------------------------------------------------
-# AL2023 ships PG via the postgresql packages in the dnf module; pinning
-# specifically to 18 here. Adjust if AL2023 lags upstream PG18 GA.
-dnf -y module enable postgresql:18 || true
-dnf -y install postgresql18-server postgresql18-contrib postgresql18-devel
+# AL2023 ships PG18 as regular RPMs (not a dnf module). server-devel
+# provides /usr/bin/pg_config which pgrx needs.
+dnf -y install postgresql18-server postgresql18-contrib postgresql18-server-devel
 
 # --- Mount data volume -----------------------------------------------------
 if ! blkid "$DATA_DEV" >/dev/null 2>&1; then
@@ -72,7 +74,7 @@ sudo -u postgres bash -c '
     | sh -s -- -y --default-toolchain stable --profile minimal
   source $HOME/.cargo/env
   cargo install --locked cargo-pgrx@0.17 --features pg18
-  cargo pgrx init --pg18 /usr/pgsql-18/bin/pg_config
+  cargo pgrx init --pg18 /usr/bin/pg_config
 '
 
 # --- Build & install ecaz extension at the requested ref ------------------
@@ -85,7 +87,7 @@ sudo -u postgres bash -lc "
   git clone $ECAZ_URL ecaz
   cd ecaz
   git checkout $ECAZ_REF
-  cargo pgrx install --release --pg-config /usr/pgsql-18/bin/pg_config
+  cargo pgrx install --release --pg-config /usr/bin/pg_config
 "
 
 systemctl restart postgresql-18
