@@ -5342,13 +5342,12 @@ fn ec_spire_remote_epoch_manifest_libpq_dispatch_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_dispatch_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
@@ -5470,13 +5469,12 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_readiness(
         name!(recommendation, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_executor_readiness",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let (
         active_epoch,
@@ -5620,13 +5618,12 @@ fn ec_spire_remote_epoch_manifest_libpq_receive_plan(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_receive_plan",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let rows = Spi::connect(|client| {
         client
@@ -5727,13 +5724,12 @@ fn ec_spire_remote_epoch_manifest_libpq_receive_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_receive_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
@@ -6017,13 +6013,12 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
         name!(recommendation, &'static str),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_executor_results",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let dispatch_rows = load_spire_manifest_executor_dispatch_rows(index_oid)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -6225,13 +6220,12 @@ fn ec_spire_remote_epoch_manifest_publication_gate_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_publication_gate_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
@@ -6436,13 +6430,12 @@ fn ec_spire_remote_epoch_manifest_publication_result_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_publication_result_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
