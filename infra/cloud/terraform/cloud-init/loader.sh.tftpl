@@ -33,7 +33,9 @@ sudo -u loader bash -lc "
   cd \$HOME/ecaz
   git checkout $ECAZ_REF
   cargo build --release -p ecaz-cli
-  install -Dm755 target/release/ecaz /usr/local/bin/ecaz
 "
+# Install the binary as root (the loader user can't write to
+# /usr/local/bin); the build runs as the loader user above.
+install -Dm755 /home/loader/ecaz/target/release/ecaz /usr/local/bin/ecaz
 
 aws s3 cp - "s3://$S3_BUCKET/state/loader/ready" <<<"$(date -Is)"
