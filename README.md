@@ -219,6 +219,7 @@ make pg-test-pg17
 | [Benchmarks](docs/benchmarks.md) | Measured performance results and methodology |
 | [Benchmark Index](docs/benchmark-index.md) | Packet directory for benchmark lanes and source artifacts |
 | [Benchmark Reporting Standard](docs/benchmark-reporting-standard.md) | Required fields for AM, quantizer, storage-format, and option-set comparisons |
+| [Rust Safety And Quality](docs/hardening.md) | Hardening lanes for linting, unsafe audit, Miri, fuzzing, model checking, sanitizers, and supply-chain checks |
 | [Operator CLI](crates/ecaz-cli/README.md) | `ecaz` corpus, benchmark, compare, stress, and dev command surface |
 | [Architecture](docs/architecture.md) | Compression pipeline, index layout, page format |
 | [PG18 Features](docs/pg18.md) | ReadStream, EXPLAIN hooks, AM callbacks |
@@ -246,8 +247,8 @@ architecture and navigate the many design decisions, but 100% of the code was
 written by GPT >=5.4 and Claude Opus >=4.6.
 
 **The ethos is to pursue quality, testing,
-and benchmarking rigorously, but the project should not yet be considered
-production-ready.**
+[Rust safety and hardening](docs/hardening.md), and benchmarking rigorously, but
+the project should not yet be considered production-ready.**
 
 Having achieved the initial goal of support for well-known index
 families, the project now aims to build proof-of-concept implementations for
