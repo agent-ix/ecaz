@@ -1,8 +1,30 @@
 # Task 41: FFI Safety Boundary (Panic, `pg_guard`, Memory Context Lifetimes)
 
-Status: **proposed** — closes a class of latent bugs that no existing lane
+Status: **in progress** — closes a class of latent bugs that no existing lane
 catches: Rust code crossing the C boundary into PostgreSQL in a way that is
 formally UB or that leaks Postgres-side resources.
+
+## Current PG Resource Wrapper Track
+
+The active first subtrack is structural removal of PostgreSQL relation-resource
+unsafe sites. `AccessShareIndexRelation` is the current RAII wrapper for
+`index_open(... AccessShareLock)` / `index_close`. It depends on the pgrx ERROR
+contract that `pgrx::error!` unwinds Rust frames under `pg_guard`, so destructors
+run before PostgreSQL observes the ERROR. Re-audit this assumption on every pgrx
+bump or `pg_guard` behavior change.
+
+Closeout requirements for this subtrack:
+
+- migrate all raw `open_valid_ec_*_index` callers to guard-owning code,
+- delete the compatibility helpers
+  (`open_valid_ec_hnsw_index`, `open_valid_ec_ivf_index`,
+  `open_valid_ec_spire_index`, `open_valid_ec_diskann_index`) once their last
+  callers are gone,
+- consolidate validation-only callsites behind a small helper that opens,
+  validates, and drops when no AM read is needed,
+- keep AM helper calls scoped so raw relation pointers never escape the guard,
+- keep SPI and local heap helper work outside relation-guard scopes unless the
+  AM explicitly requires the relation to remain open.
 
 ## Scope
 

@@ -229,6 +229,9 @@ impl AccessShareIndexRelation {
         let relation =
             unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         if relation.is_null() {
+            // `index_open` normally raises ERROR before returning a null
+            // relation. Keep this defensive guard for tests/stubs and future
+            // PostgreSQL API changes.
             pgrx::error!("failed to open index relation");
         }
         Self { relation }
@@ -249,6 +252,8 @@ impl Drop for AccessShareIndexRelation {
     fn drop(&mut self) {
         // SAFETY: `relation` was returned by `index_open` in
         // `AccessShareIndexRelation::open`; this guard owns the matching close.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
         unsafe { pg_sys::index_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     }
 }
@@ -264,7 +269,12 @@ fn open_valid_ec_index_guard(
     let rd_rel = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() }
         .expect("opened index relation should expose pg_class metadata");
     if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
-        pgrx::error!("{caller_name} requires an index relation");
+        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
+        // field is PostgreSQL's fixed-size C string.
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        pgrx::error!("{caller_name} requires an index relation, got \"{relation_name}\"");
     }
     if rd_rel.relam != expected_am_oid {
         // SAFETY: `rd_rel` belongs to the live opened relation and its relname
@@ -2010,6 +2020,8 @@ fn ec_spire_register_remote_node_descriptor(
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_register_remote_node_descriptor");
     }
 
+    // `index_relation` must remain live through this SPI block: the active
+    // epoch recheck still calls back into the AM with `as_ptr()`.
     let result = Spi::connect_mut(|client| {
         client
             .update(
