@@ -49,8 +49,7 @@ lint-hardening:
 	cargo clippy --all-targets --no-default-features --features pg18,bench -- -D warnings $(CLIPPY_HARDENING_BASELINE_ALLOW)
 
 ## Run unit tests (no Postgres required)
-test:
-	cargo test
+test: test-hardening-local
 
 ## Run local unit lanes that avoid pgrx callback symbol loading
 test-hardening-local:
