@@ -15,7 +15,8 @@ dnf -y update
 dnf -y install --allowerasing \
   git gcc gcc-c++ make clang \
   openssl-devel zlib-devel \
-  postgresql18 awscli2 jq
+  postgresql18 jq
+# Note: awscli v2 (`aws`) ships in the AL2023 base image; no dnf install needed.
 
 useradd -m loader || true
 

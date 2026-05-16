@@ -23,7 +23,9 @@ dnf -y update
 dnf -y install --allowerasing \
   git gcc gcc-c++ make clang clang-devel llvm llvm-devel \
   openssl-devel readline-devel zlib-devel bzip2-devel \
-  parquet-tools jq awscli2 cmake pkgconfig perl
+  jq cmake pkgconfig perl
+# Note: awscli v2 (`aws`) ships in the AL2023 base image; no dnf install needed.
+# `parquet-tools` is not available in AL2023; the bootstrap flow does not use it.
 
 # --- Postgres 18 -----------------------------------------------------------
 # AL2023 ships PG via the postgresql packages in the dnf module; pinning
