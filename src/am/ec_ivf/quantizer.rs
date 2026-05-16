@@ -419,6 +419,9 @@ pub(super) unsafe fn load_pq_fastscan_model(
                 "ec_ivf pq_fastscan codebook chain ended at group {expected_group_index}"
             ));
         }
+        // The caller provides a live IVF index relation.
+        // SAFETY: `next_tid` comes from the metadata/codebook chain and is
+        // checked against `ItemPointer::INVALID` before each read.
         let tuple =
             unsafe { page::read_ivf_pq_codebook(index_relation, next_tid, centroid_count)? };
         if usize::from(tuple.group_index) != expected_group_index {

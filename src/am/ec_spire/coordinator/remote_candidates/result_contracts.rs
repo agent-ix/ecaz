@@ -172,6 +172,8 @@ pub(crate) unsafe fn remote_search_finalization_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchFinalizationSummaryRow {
+    // SAFETY: The caller guarantees `index_relation` is a live SPIRE index
+    // relation for the duration of this diagnostic summary construction.
     let merge_summary = unsafe {
         remote_search_merge_input_summary_row(
             index_relation,
@@ -230,4 +232,3 @@ fn remote_search_finalization_summary_from_merge(
         recommendation,
     }
 }
-

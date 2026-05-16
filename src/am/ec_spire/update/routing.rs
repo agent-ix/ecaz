@@ -554,6 +554,9 @@ pub(super) unsafe fn build_relation_selected_scheduled_split_replacement_executi
 ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
     let replacement_rows =
         collect_selected_scheduled_replacement_leaf_rows(snapshot, object_store, selected)?;
+    // SAFETY: This function's caller supplies the live heap relation, snapshot,
+    // and tuple slot used throughout replacement materialization; the collected
+    // rows are from the selected replacement plan for that heap/index pair.
     let fetched_sources = unsafe {
         fetch_split_replacement_source_vectors(
             heap_relation,

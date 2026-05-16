@@ -286,6 +286,9 @@ pub(super) unsafe fn fetch_split_replacement_source_vectors(
     let mut fetched_sources = Vec::with_capacity(row_count);
     for row_group in replacement_rows {
         for assignment in &row_group.rows {
+            // SAFETY: The caller provides a live heap relation, snapshot, and
+            // reusable slot; `assignment.heap_tid` came from the selected
+            // replacement rows being materialized for this same heap.
             let Some(source_vector) = unsafe {
                 load_indexed_source_vector_from_heap_row(
                     heap_relation,

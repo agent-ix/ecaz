@@ -2452,7 +2452,6 @@ src/am/ec_ivf/page.rs:907
 src/am/ec_ivf/page.rs:950
 src/am/ec_ivf/page.rs:980
 src/am/ec_ivf/page.rs:993
-src/am/ec_ivf/quantizer.rs:423
 src/am/ec_ivf/routine.rs:72
 src/am/ec_ivf/routine.rs:78
 src/am/ec_ivf/scan.rs:1012
@@ -2914,8 +2913,6 @@ src/am/ec_spire/coordinator/remote_candidates/pipeline.rs:203
 src/am/ec_spire/coordinator/remote_candidates/pipeline.rs:22
 src/am/ec_spire/coordinator/remote_candidates/pipeline.rs:45
 src/am/ec_spire/coordinator/remote_candidates/pipeline.rs:86
-src/am/ec_spire/coordinator/remote_candidates/resolve.rs:10
-src/am/ec_spire/coordinator/remote_candidates/result_contracts.rs:175
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:10
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:123
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:131
@@ -3541,7 +3538,6 @@ src/am/ec_spire/scan/relation.rs:49
 src/am/ec_spire/scan/relation.rs:51
 src/am/ec_spire/scan/relation.rs:53
 src/am/ec_spire/scan/relation.rs:55
-src/am/ec_spire/scan/types.rs:569
 src/am/ec_spire/storage/relation_plan.rs:135
 src/am/ec_spire/storage/relation_plan.rs:140
 src/am/ec_spire/storage/relation_plan.rs:141
@@ -3626,7 +3622,6 @@ src/am/ec_spire/storage/relation_store.rs:727
 src/am/ec_spire/storage/relation_store.rs:808
 src/am/ec_spire/storage/relation_store.rs:820
 src/am/ec_spire/storage/relation_store.rs:842
-src/am/ec_spire/update/materialization.rs:289
 src/am/ec_spire/update/publish/relation.rs:133
 src/am/ec_spire/update/publish/relation.rs:144
 src/am/ec_spire/update/publish/relation.rs:152
@@ -3636,7 +3631,6 @@ src/am/ec_spire/update/publish/relation.rs:64
 src/am/ec_spire/update/publish/relation.rs:72
 src/am/ec_spire/update/publish/relation.rs:73
 src/am/ec_spire/update/publish/relation.rs:97
-src/am/ec_spire/update/routing.rs:557
 src/am/ec_spire/update/types.rs:363
 src/am/ec_spire/update/types.rs:374
 src/am/ec_spire/vacuum/mod.rs:100
@@ -4274,7 +4268,6 @@ src/quant/prod.rs:468
 src/quant/prod.rs:472
 src/quant/prod.rs:697
 src/quant/prod.rs:699
-src/standalone_pg_backend_stubs.rs:16
 src/tests/build.rs:251
 src/tests/build.rs:252
 src/tests/build.rs:510

@@ -7,6 +7,8 @@ fn coordinator_insert_prepared_gid(
     node_id: u32,
     served_epoch: u64,
 ) -> String {
+    // SAFETY: This helper is called while executing inside a PostgreSQL backend
+    // transaction; `GetTopTransactionId` only reads/assigns the current top XID.
     let transaction_id = unsafe { pg_sys::GetTopTransactionId() };
     format!(
         "ec_spire_insert_{}_{}_{}_{}",
