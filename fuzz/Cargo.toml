@@ -4,6 +4,8 @@ version = "0.0.0"
 publish = false
 edition = "2021"
 
+[workspace]
+
 [package.metadata]
 cargo-fuzz = true
 
@@ -29,4 +31,19 @@ doc = false
 [[bin]]
 name = "fuzz_neighbor_tuple_decode"
 path = "fuzz_targets/neighbor_tuple_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_diskann_metadata_decode"
+path = "fuzz_targets/diskann_metadata_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_item_pointer_decode"
+path = "fuzz_targets/item_pointer_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_vector_normalize"
+path = "fuzz_targets/vector_normalize.rs"
 doc = false

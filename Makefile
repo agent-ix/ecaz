@@ -1,6 +1,8 @@
-.PHONY: fmt fmt-check lint lint-pg17 test pg-test pg-test-pg17 deny audit-unsafe build install clean
-.PHONY: bench bench-iai dhat-encode dhat-score proptest layout-check miri
-.PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode
+.PHONY: fmt fmt-check lint lint-pg17 test pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe cargo-geiger rudra mirai flux build install clean
+.PHONY: bench bench-iai dhat-encode dhat-score proptest layout-check miri miri-expanded careful
+.PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
+.PHONY: kani loom shuttle sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
+.PHONY: hardening-local hardening-nightly-local
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 
 ## Format all source files
@@ -42,9 +44,32 @@ spire-multicluster-transport-overlap:
 deny:
 	cargo deny check licenses
 
+deny-full:
+	bash scripts/hardening.sh cargo-deny-full
+
+cargo-audit:
+	bash scripts/hardening.sh cargo-audit
+
+audit: cargo-audit deny-full
+
+cargo-vet:
+	bash scripts/hardening.sh cargo-vet
+
 ## Verify all unsafe blocks have nearby SAFETY comments
 audit-unsafe:
 	bash scripts/check_unsafe_comments.sh
+
+cargo-geiger:
+	bash scripts/hardening.sh cargo-geiger
+
+rudra:
+	bash scripts/hardening.sh rudra
+
+mirai:
+	bash scripts/hardening.sh mirai
+
+flux:
+	bash scripts/hardening.sh flux
 
 ## Build release shared library
 build:
@@ -102,6 +127,12 @@ layout-check:
 miri:
 	cargo +nightly miri test --lib -- miri_
 
+miri-expanded:
+	bash scripts/hardening.sh miri-expanded
+
+careful:
+	bash scripts/hardening.sh cargo-careful
+
 # --- Fuzzing (requires cargo-fuzz + nightly) ---
 
 ## Run parse_text fuzzer (10 min)
@@ -119,6 +150,55 @@ fuzz-element-decode:
 ## Run neighbor tuple decode fuzzer (10 min)
 fuzz-neighbor-decode:
 	cd fuzz && cargo +nightly fuzz run fuzz_neighbor_tuple_decode -- -max_total_time=600
+
+fuzz-diskann-metadata:
+	cd fuzz && cargo +nightly fuzz run fuzz_diskann_metadata_decode -- -max_total_time=600
+
+fuzz-item-pointer:
+	cd fuzz && cargo +nightly fuzz run fuzz_item_pointer_decode -- -max_total_time=600
+
+fuzz-vector-normalize:
+	cd fuzz && cargo +nightly fuzz run fuzz_vector_normalize -- -max_total_time=600
+
+fuzz-all-short:
+	bash scripts/hardening.sh fuzz-all-short
+
+afl-decoders:
+	bash scripts/hardening.sh afl-decoders
+
+# --- Formal / concurrency pilots ---
+
+kani:
+	bash scripts/hardening.sh kani
+
+loom:
+	bash scripts/hardening.sh loom
+
+shuttle:
+	bash scripts/hardening.sh shuttle
+
+# --- Sanitizers / live-cluster hardening ---
+
+sanitizer-asan:
+	bash scripts/hardening.sh sanitizer-asan
+
+sanitizer-lsan:
+	bash scripts/hardening.sh sanitizer-lsan
+
+sanitizer-tsan:
+	bash scripts/hardening.sh sanitizer-tsan
+
+sanitizer-msan:
+	bash scripts/hardening.sh sanitizer-msan
+
+sanitizer-pg18-asan:
+	bash scripts/hardening.sh sanitizer-pg18-asan
+
+sanitizer-pg18-tsan:
+	bash scripts/hardening.sh sanitizer-pg18-tsan
+
+sqlsmith-pg18:
+	bash scripts/hardening.sh sqlsmith-pg18
 
 # --- Recall ---
 
@@ -144,3 +224,9 @@ ci-quick: fmt-check lint test layout-check audit-unsafe
 
 ## Full benchmark suite (nightly)
 ci-nightly: ci-quick bench bench-iai proptest miri
+
+# --- Hardening aggregates ---
+
+hardening-local: fmt-check lint test proptest layout-check audit-unsafe deny-full cargo-audit
+
+hardening-nightly-local: hardening-local miri-expanded careful fuzz-all-short kani loom shuttle cargo-geiger sanitizer-asan sanitizer-lsan

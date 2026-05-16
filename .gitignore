@@ -1,4 +1,6 @@
 /target
+/fuzz/target
+/hardening/*/target
 /.pgrx
 Cargo.lock
 __pycache__/

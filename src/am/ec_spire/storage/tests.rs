@@ -10,13 +10,13 @@ mod tests {
         encode_relation_object_chain_segment, is_delete_delta_assignment,
         is_visible_primary_assignment, is_visible_primary_assignment_ref,
         is_visible_scored_assignment, local_store_config_from_relation_plan,
-        plan_local_store_relations,
-        relation_object_prefetch_groups,
+        plan_local_store_relations, relation_object_prefetch_groups,
         spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
-        SpireLeafPartitionObject, SpireLocalObjectStore, SpireLocalObjectStoreSet,
+        SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
+        SpireLeafPartitionObjectV2Segment, SpireLocalObjectStore, SpireLocalObjectStoreSet,
         SpireObjectReader, SpirePartitionObjectHeader, SpirePartitionObjectKind,
-        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
-        SpireTopGraphNodeRecord, SpireTopGraphPartitionObject, SpireVecIdKind,
+        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireTopGraphNodeRecord,
+        SpireTopGraphPartitionObject, SpireVecId, SpireVecIdKind, LEAF_V2_LOCAL_VEC_ID_STRIDE,
         PARTITION_OBJECT_V2_CHAIN_META_FLAG, PARTITION_OBJECT_V2_CHAIN_SEGMENT_FLAG,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
@@ -74,7 +74,6 @@ mod tests {
             encoded_payload: vec![heap_offset_number as u8; payload_len],
         }
     }
-
 
     include!("tests/vec_and_routing.rs");
     include!("tests/top_graph.rs");

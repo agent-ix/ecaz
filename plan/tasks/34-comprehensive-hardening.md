@@ -1,6 +1,7 @@
 # Task 34: Comprehensive Hardening
 
-Status: **planned** — local-first hardening expansion for ECAZ and SPIRE.
+Status: **implemented** — local-first hardening surface, docs, and seed
+harnesses landed; optional/manual lanes remain local-reporting until burn-in.
 
 ## Scope
 
