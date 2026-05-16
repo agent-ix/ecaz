@@ -61,6 +61,7 @@ pub struct ScanParams {
 pub struct ScanResult {
     pub tid: ItemPointer,
     pub primary_heaptid: ItemPointer,
+    pub has_overflow_heaptids: bool,
     pub distance: f32,
 }
 
@@ -99,6 +100,7 @@ pub struct ScanProfile {
 pub struct ScanCandidate {
     pub tid: ItemPointer,
     pub primary_heaptid: ItemPointer,
+    pub has_overflow_heaptids: bool,
     pub score: f32,
     pub emittable: bool,
 }
@@ -312,6 +314,7 @@ where
             ScanResult {
                 tid: c.tid,
                 primary_heaptid: c.primary_heaptid,
+                has_overflow_heaptids: c.has_overflow_heaptids,
                 distance: exact,
             }
         })
@@ -391,6 +394,7 @@ where
     let entry = ScanCandidate {
         tid: entry_point,
         primary_heaptid: entry_tuple.primary_heaptid,
+        has_overflow_heaptids: entry_tuple.has_overflow_heaptids,
         score: entry_score,
         emittable: entry_tuple.is_live(),
     };
@@ -437,6 +441,7 @@ where
             let candidate = ScanCandidate {
                 tid: nbr,
                 primary_heaptid: nbr_tuple.primary_heaptid,
+                has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
                 score,
                 emittable: nbr_tuple.is_live(),
             };
@@ -529,6 +534,7 @@ fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanC
 fn same_candidate(left: ScanCandidate, right: ScanCandidate) -> bool {
     left.tid == right.tid
         && left.primary_heaptid == right.primary_heaptid
+        && left.has_overflow_heaptids == right.has_overflow_heaptids
         && left.score.to_bits() == right.score.to_bits()
         && left.emittable == right.emittable
 }
