@@ -60,7 +60,10 @@
         "ec2:ModifyVolume",
         "ec2:CreateKeyPair",
         "ec2:DeleteKeyPair",
-        "ec2:ImportKeyPair"
+        "ec2:ImportKeyPair",
+        "ec2:CreateSnapshot",
+        "ec2:DeleteSnapshot",
+        "ec2:CopySnapshot"
       ],
       "Resource": "*",
       "Condition": {
@@ -106,7 +109,7 @@
         "s3:PutBucketNotification"
       ],
       "Resource": [
-        "arn:aws:s3:::ecaz-spire-aws-*"
+        "arn:aws:s3:::ecaz-*"
       ],
       "Condition": {
         "StringEquals": {
@@ -129,7 +132,7 @@
         "s3:ListMultipartUploadParts"
       ],
       "Resource": [
-        "arn:aws:s3:::ecaz-spire-aws-*/*"
+        "arn:aws:s3:::ecaz-*/*"
       ],
       "Condition": {
         "StringEquals": {
@@ -161,7 +164,7 @@
         "secretsmanager:GetResourcePolicy"
       ],
       "Resource": [
-        "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-*"
+        "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-*"
       ],
       "Condition": {
         "StringEquals": {
@@ -211,8 +214,8 @@
         "iam:UntagInstanceProfile"
       ],
       "Resource": [
-        "arn:aws:iam::932658697181:role/ecaz-spire-aws-*",
-        "arn:aws:iam::932658697181:instance-profile/ecaz-spire-aws-*"
+        "arn:aws:iam::932658697181:role/ecaz-*",
+        "arn:aws:iam::932658697181:instance-profile/ecaz-*"
       ]
     },
     {
@@ -222,7 +225,7 @@
         "iam:AttachRolePolicy",
         "iam:DetachRolePolicy"
       ],
-      "Resource": "arn:aws:iam::932658697181:role/ecaz-spire-aws-*",
+      "Resource": "arn:aws:iam::932658697181:role/ecaz-*",
       "Condition": {
         "ArnEquals": {
           "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
@@ -233,7 +236,7 @@
       "Sid": "IamPassNodeRoleToEc2",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::932658697181:role/ecaz-spire-aws-*",
+      "Resource": "arn:aws:iam::932658697181:role/ecaz-*",
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": "ec2.amazonaws.com"
