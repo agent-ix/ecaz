@@ -4291,13 +4291,12 @@ fn ec_spire_validate_remote_epoch_manifest_payload(
             "ec_spire_validate_remote_epoch_manifest_payload active_epoch must be greater than 0"
         );
     }
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             remote_index_oid,
             "ec_spire_validate_remote_epoch_manifest_payload",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let payload = manifest_payload.0;
     let Some(object) = payload.as_object() else {
@@ -4385,13 +4384,12 @@ fn ec_spire_apply_remote_epoch_manifest_payload(
             "ec_spire_apply_remote_epoch_manifest_payload active_epoch must be greater than 0"
         );
     }
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             remote_index_oid,
             "ec_spire_apply_remote_epoch_manifest_payload",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let payload = manifest_payload.0;
     let Some(object) = payload.as_object() else {
@@ -4645,13 +4643,12 @@ fn ec_spire_remote_epoch_manifest_libpq_dispatch_plan(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_dispatch_plan",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let rows = Spi::connect(|client| {
         client
@@ -4800,10 +4797,12 @@ fn ec_spire_remote_epoch_manifest_libpq_bind_plan(
         name!(element_count, i64),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_libpq_bind_plan")
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_bind_plan",
+        );
+    }
 
     let rows = Spi::connect(|client| {
         client
@@ -4928,13 +4927,12 @@ fn ec_spire_remote_epoch_manifest_libpq_bind_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_bind_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
@@ -5071,13 +5069,12 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_work_plan(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_executor_work_plan",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let rows = Spi::connect(|client| {
         client
@@ -5195,13 +5192,12 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_work_summary(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_remote_epoch_manifest_libpq_executor_work_summary",
-        )
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        );
+    }
 
     let row = Spi::connect(|client| {
         client
