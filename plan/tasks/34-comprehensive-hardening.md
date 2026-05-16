@@ -1,7 +1,8 @@
 # Task 34: Comprehensive Hardening
 
-Status: **implemented** — local-first hardening surface, docs, and seed
-harnesses landed; optional/manual lanes remain local-reporting until burn-in.
+Status: **implemented** — local-first hardening surface, reusable optional-tool
+installer, docs, seed harnesses, and packet-local audit artifacts landed;
+optional/manual lanes remain standalone/reporting until burn-in.
 
 ## Scope
 

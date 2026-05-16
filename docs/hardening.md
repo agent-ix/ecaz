@@ -5,6 +5,18 @@ low-noise. The Makefile is the entrypoint; optional tools are checked by
 `scripts/hardening.sh` so missing tools fail with setup text instead of cargo
 subcommand errors.
 
+Reusable optional-tool setup lives outside the repository:
+
+```sh
+bash scripts/install_hardening_tools.sh --all
+bash scripts/install_hardening_tools.sh --check
+```
+
+The installer keeps upstream source checkouts under `~/.ecaz/hardening-tools`
+and puts reusable binaries or shims on the normal user tool path. Use
+`--log-file review/.../artifacts/name.log` when an install/update log needs to
+be attached to a review packet.
+
 ## Aggregates
 
 - `make hardening-local` runs stable local checks that do not need a live
@@ -51,20 +63,17 @@ imports and criteria are reviewed.
 ## Unsafe And Static Hygiene
 
 - `make cargo-geiger`: install with `cargo install cargo-geiger`.
-- `make rudra`: install Rudra and keep the one-shot output under
-  `review/30034-task34-comprehensive-hardening/artifacts/rudra.log`.
-- `make mirai`: deferred/manual. The crates.io `mirai` package is not the
-  MIRAI analyzer; build the archived analyzer from
-  <https://github.com/endorlabs/MIRAI> and put `cargo-mirai` on `PATH` before
-  running this lane.
-- `make flux`: deferred/manual. Install Flux from the upstream guide at
-  <https://flux-rs.github.io/flux/guide/install.html> and put `flux` on
-  `PATH` before running this lane.
+- `make rudra`: runs the reusable Rudra Docker helper against
+  `hardening/rudra/`. Override with `RUDRA_MANIFEST=...` for manual audits.
+- `make mirai`: runs the archived MIRAI analyzer against
+  `hardening/careful/` with its pinned nightly toolchain.
+- `make flux`: runs Flux against `hardening/flux/`, a small
+  dimension/index-invariant pilot harness.
 
 Policy: new unsafe blocks need a nearby `SAFETY` comment and, when the unsafe
 surface is non-trivial, the review packet should call out why the boundary is
-valid. Rudra, MIRAI, and Flux stay manual while their false-positive profile is
-unknown for pgrx-heavy code.
+valid. Rudra, MIRAI, and Flux stay standalone/manual rather than aggregate
+targets while their false-positive profile is unknown for pgrx-heavy code.
 
 ## Miri And Cargo-Careful
 
@@ -109,6 +118,7 @@ under the relevant review packet before citing findings.
 ## Concurrency And Formal Pilots
 
 - `make kani`: bounded proof for `ItemPointer` decode length behavior.
+- `make flux`: Flux proof for bounded payload dimension/index arithmetic.
 - `make loom`: small atomic worker-slot claim/release model.
 - `make shuttle`: small deterministic coordinator merge-order model.
 

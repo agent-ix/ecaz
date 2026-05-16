@@ -4,6 +4,7 @@ set -euo pipefail
 export PATH="${HOME}/.cargo/bin:${PATH}"
 RUSTUP_CARGO="${RUSTUP_CARGO:-/opt/homebrew/opt/rustup/bin/cargo}"
 RUSTUP_BIN="${RUSTUP_BIN:-/opt/homebrew/opt/rustup/bin/rustup}"
+ECAZ_HARDENING_TOOLS_DIR="${ECAZ_HARDENING_TOOLS_DIR:-$HOME/.ecaz/hardening-tools}"
 
 usage() {
   cat <<'EOF'
@@ -13,8 +14,10 @@ Local-first hardening lanes. Each lane checks for optional tooling before it
 runs and prints install/setup guidance when the tool is missing.
 
 lane flags:
+  rudra --manifest-path CARGO_TOML
   fuzz-all-short --seconds N
   sqlsmith-pg18 --dsn LIBPQ_DSN
+  any lane --log-file FILE
 EOF
 }
 
@@ -130,6 +133,39 @@ if [ -z "$lane" ]; then
 fi
 shift
 
+log_file=""
+remaining_args=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --log-file)
+      log_file="${2:-}"
+      if [ -z "$log_file" ]; then
+        echo "missing value for --log-file" >&2
+        exit 2
+      fi
+      shift 2
+      ;;
+    *)
+      remaining_args+=("$1")
+      shift
+      ;;
+  esac
+done
+if [ "${#remaining_args[@]}" -gt 0 ]; then
+  set -- "${remaining_args[@]}"
+else
+  set --
+fi
+
+if [ -n "$log_file" ]; then
+  mkdir -p "$(dirname "$log_file")"
+  if [ "${ECAZ_HARDENING_LOG_ACTIVE:-}" != "1" ]; then
+    ECAZ_HARDENING_LOG_ACTIVE=1
+    export ECAZ_HARDENING_LOG_ACTIVE
+    exec script -q "$log_file" bash "$0" "$lane" "$@"
+  fi
+fi
+
 case "$lane" in
   cargo-audit)
     need_cmd cargo-audit "cargo install cargo-audit"
@@ -166,17 +202,77 @@ EOF
     exit "$status"
     ;;
   rudra)
-    need_cmd cargo-rudra "Install Rudra from https://github.com/sslab-gatech/Rudra and ensure cargo-rudra is on PATH"
     mkdir -p review/30034-task34-comprehensive-hardening/artifacts
-    cargo rudra | tee review/30034-task34-comprehensive-hardening/artifacts/rudra.log
+    rudra_manifest="Cargo.toml"
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --manifest-path)
+          rudra_manifest="${2:-}"
+          if [ -z "$rudra_manifest" ]; then
+            echo "missing value for --manifest-path" >&2
+            exit 2
+          fi
+          shift 2
+          ;;
+        *)
+          echo "unknown rudra flag: $1" >&2
+          exit 2
+          ;;
+      esac
+    done
+    if command -v cargo-rudra >/dev/null 2>&1; then
+      (
+        cd "$(dirname "$rudra_manifest")"
+        cargo rudra
+      ) 2>&1 | tee review/30034-task34-comprehensive-hardening/artifacts/rudra.log
+    else
+      rudra_checkout="$ECAZ_HARDENING_TOOLS_DIR/Rudra"
+      rudra_home="$ECAZ_HARDENING_TOOLS_DIR/rudra-home"
+      if [ -x "$rudra_checkout/docker-helper/docker-cargo-rudra" ] && [ -d "$rudra_home" ]; then
+        PATH="$rudra_checkout/docker-helper:$PATH"
+        export PATH
+        RUDRA_RUNNER_HOME="$rudra_home"
+        export RUDRA_RUNNER_HOME
+        CARGO_ARGS=""
+        export CARGO_ARGS
+        rudra_source="$PWD"
+        if [ "$rudra_manifest" != "Cargo.toml" ]; then
+          rudra_workspace="$PWD/target/rudra-work-$$"
+          mkdir -p "$rudra_workspace"
+          tar \
+            --exclude .git \
+            --exclude target \
+            --exclude Cargo.lock \
+            -cf - . | tar -C "$rudra_workspace" -xf -
+          rudra_source="$rudra_workspace/$(dirname "$rudra_manifest")"
+        fi
+        script -q review/30034-task34-comprehensive-hardening/artifacts/rudra.log docker-cargo-rudra "$rudra_source"
+        cat review/30034-task34-comprehensive-hardening/artifacts/rudra.log
+      else
+        cat >&2 <<EOF
+missing optional hardening tool: cargo-rudra or docker-cargo-rudra
+install/setup:
+  bash scripts/install_hardening_tools.sh --rudra
+EOF
+        exit 127
+      fi
+    fi
     ;;
   mirai)
     need_cmd cargo-mirai "Build MIRAI from https://github.com/endorlabs/MIRAI and ensure cargo-mirai is on PATH; the crates.io mirai package is not the analyzer"
-    cargo mirai
+    PATH="$(dirname "$RUSTUP_BIN"):$PATH"
+    export PATH
+    RUSTUP_TOOLCHAIN=nightly-2025-01-10
+    export RUSTUP_TOOLCHAIN
+    cargo mirai --manifest-path hardening/careful/Cargo.toml
     ;;
   flux)
-    need_cmd flux "Install Flux from https://flux-rs.github.io/flux/guide/install.html and ensure flux is on PATH"
-    flux check
+    need_cmd cargo-flux "Install Flux from https://flux-rs.github.io/flux/guide/install.html and ensure cargo-flux is on PATH"
+    PATH="$(dirname "$RUSTUP_BIN"):$PATH"
+    export PATH
+    RUSTUP_TOOLCHAIN=nightly-2025-11-25
+    export RUSTUP_TOOLCHAIN
+    cargo flux --manifest-path hardening/flux/Cargo.toml
     ;;
   miri-expanded)
     need_nightly_miri

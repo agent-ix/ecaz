@@ -95,8 +95,11 @@ audit-unsafe:
 cargo-geiger:
 	bash scripts/hardening.sh cargo-geiger
 
+RUDRA_MANIFEST ?= hardening/rudra/Cargo.toml
+RUDRA_FLAGS ?= --manifest-path $(RUDRA_MANIFEST)
+
 rudra:
-	bash scripts/hardening.sh rudra
+	bash scripts/hardening.sh rudra $(RUDRA_FLAGS)
 
 mirai:
 	bash scripts/hardening.sh mirai
