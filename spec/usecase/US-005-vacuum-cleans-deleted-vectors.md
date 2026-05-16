@@ -2,9 +2,12 @@
 id: US-005
 title: VACUUM Cleans Up Deleted Vectors
 type: user-story
+artifact_type: US
 status: APPROVED
-traces:
-  - StR-001
+relationships:
+  - target: "ix://agent-ix/ecaz/StR-001"
+    type: "derives_from"
+    cardinality: "N:1"
 ---
 # US-005: VACUUM Cleans Up Deleted Vectors
 
@@ -14,6 +17,16 @@ traces:
 
 ## Acceptance Criteria
 
-1. After DELETE + VACUUM, the deleted vector no longer appears in search results
-2. The HNSW graph is repaired — neighbors of deleted nodes get replacement connections
-3. No crash or corruption occurs if VACUUM runs concurrently with INSERT or SELECT
+### US-005-AC-1
+
+After DELETE + VACUUM, the deleted vector no longer appears in search results.
+
+### US-005-AC-2
+
+The HNSW graph is repaired: neighbors of deleted nodes get replacement
+connections.
+
+### US-005-AC-3
+
+No crash or corruption occurs if VACUUM runs concurrently with INSERT or
+SELECT.

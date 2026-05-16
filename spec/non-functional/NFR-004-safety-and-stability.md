@@ -8,10 +8,52 @@ relationships:
   - target: "ix://agent-ix/ecaz/StR-002"
     type: "constrains"
     cardinality: "N:1"
+  - target: "ix://agent-ix/ecaz/FR-011"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-049"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-050"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-051"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-052"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-053"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-054"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-055"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-056"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-057"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-058"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-059"
+    type: "constrains"
+    cardinality: "1:N"
 ---
 # NFR-004: Safety and Stability
 
 ## Requirement
+
+Primary quality attribute: reliability. This requirement is the safety umbrella
+for backend crash prevention, memory/resource lifetime, WAL recovery, and the
+analysis evidence needed before production-hardening claims. Licensing and
+supply-chain checks are included here only as safety gate inputs; they are not
+separate product certification claims.
 
 ### No Backend Crashes
 
@@ -85,6 +127,11 @@ The Task 34 hardening surface applies the analysis rules as follows:
 | Parser and decoder robustness | `make fuzz-all-short`, individual cargo-fuzz/AFL targets | nightly/manual | fuzzer logs and crash artifacts | Any reproducible crash becomes a P0/P1 follow-up with minimized input attached. |
 | Bounded invariants and concurrency | `make kani`, `make flux`, `make loom`, `make shuttle` | nightly/report-only | proof/model-check logs | Proofs apply only to the bounded harnesses named in the log. |
 | PostgreSQL/live callback safety | `make pg-test`, PG18 sanitizer lanes, SQLsmith | PG18/manual until stable | pg_test, sanitizer, SQLsmith logs | Required before promoting claims about executor, CustomScan, SPI, libpq, or memory-context behavior. |
+
+Only lanes with packet-local raw logs may be cited as completed evidence for
+`TC-034`. Lanes documented in `docs/hardening.md` but not packeted remain
+coverage gaps until a review packet stores their raw logs and records pass,
+skip, or manual-gate interpretation.
 
 ## Measurement
 

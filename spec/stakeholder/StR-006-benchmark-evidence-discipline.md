@@ -5,13 +5,13 @@ type: stakeholder-requirement
 artifact_type: StR
 status: APPROVED
 relationships:
-  - target: "ix://agent-ix/tqvector/NFR-007"
+  - target: "ix://agent-ix/ecaz/NFR-007"
     type: "derives"
     cardinality: "1:1"
-  - target: "ix://agent-ix/tqvector/NFR-008"
+  - target: "ix://agent-ix/ecaz/NFR-008"
     type: "derives"
     cardinality: "1:1"
-  - target: "ix://agent-ix/tqvector/NFR-015"
+  - target: "ix://agent-ix/ecaz/NFR-015"
     type: "derives"
     cardinality: "1:1"
 ---

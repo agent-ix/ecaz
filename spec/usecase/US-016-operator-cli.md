@@ -5,13 +5,13 @@ type: user-story
 artifact_type: US
 status: IMPLEMENTED
 relationships:
-  - target: "ix://agent-ix/tqvector/StR-006"
+  - target: "ix://agent-ix/ecaz/StR-006"
     type: "derives_from"
     cardinality: "N:1"
-  - target: "ix://agent-ix/tqvector/FR-037"
+  - target: "ix://agent-ix/ecaz/FR-037"
     type: "derives_into"
     cardinality: "1:N"
-  - target: "ix://agent-ix/tqvector/NFR-009"
+  - target: "ix://agent-ix/ecaz/NFR-009"
     type: "derives_into"
     cardinality: "1:N"
 ---

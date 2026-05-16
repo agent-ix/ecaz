@@ -340,6 +340,10 @@ tombstone entry when the assigned ID reached review or task planning. Tombstones
 SHALL state whether the requirement was `DEPRECATED`, `SUPERSEDED`, or folded
 into another artifact.
 
+Historical ADR numbers that were reused before this policy SHALL be referenced
+by filename or canonical topic in addition to numeric ID. Numeric-only
+references are not sufficient when the ADR index marks a duplicate identifier.
+
 ## 11. Known Deferrals
 
 - Parallel index scan is shelved indefinitely; it is not the current scaling frontier.

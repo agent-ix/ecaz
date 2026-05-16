@@ -5,16 +5,16 @@ type: user-story
 artifact_type: US
 status: APPROVED
 relationships:
-  - target: "ix://agent-ix/tqvector/StR-006"
+  - target: "ix://agent-ix/ecaz/StR-006"
     type: "derives_from"
     cardinality: "N:1"
-  - target: "ix://agent-ix/tqvector/NFR-007"
+  - target: "ix://agent-ix/ecaz/NFR-007"
     type: "derives_into"
     cardinality: "1:N"
-  - target: "ix://agent-ix/tqvector/NFR-008"
+  - target: "ix://agent-ix/ecaz/NFR-008"
     type: "derives_into"
     cardinality: "1:N"
-  - target: "ix://agent-ix/tqvector/NFR-015"
+  - target: "ix://agent-ix/ecaz/NFR-015"
     type: "derives_into"
     cardinality: "1:N"
 ---

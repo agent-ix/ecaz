@@ -26,7 +26,7 @@ that a similarly named test exists.
 | --- | --- | --- |
 | Rust unit and pg_test inventory | SPIRE has broad pure-Rust and PG18 fixture coverage across assignment, metadata, storage, options, scan, coordinator, CustomScan, DML, update, vacuum, and diagnostics modules. | Strong implementation baseline; still requires AC-level trace rows for any "Complete" claim. |
 | `review/31070-spire-phase12c-coverage-audit` | Independent audit inventoried SPIRE tests, read representative tests for assertion quality, and identified weak or indirect areas such as CustomScan lifecycle, Stage E live coverage, matrix string-only tests, DML row-state assertions, and operator surface coverage. | Treat SPIRE distributed and CustomScan coverage as `Partial` until the named weak areas are closed or explicitly accepted as gaps. |
-| `plan/tasks/34-comprehensive-hardening.md`, `docs/hardening.md`, and `review/30034-task34-comprehensive-hardening` | Task 34 landed hardening lanes for supply chain, unsafe/static hygiene, Miri, cargo-careful, fuzzing, Kani, Flux, Loom, Shuttle, sanitizers, SQLsmith, Rudra, MIRAI, and aggregate local/nightly targets. | Adds `TC-034` as the hardening evidence lane for `NFR-004`; live PG18 sanitizer and SQLsmith lanes remain manually gated gaps. |
+| `plan/tasks/34-comprehensive-hardening.md`, `docs/hardening.md`, and `review/30034-task34-comprehensive-hardening` | Task 34 documented hardening lanes for supply chain, unsafe/static hygiene, Miri, cargo-careful, fuzzing, Kani, Flux, Loom, Shuttle, sanitizers, SQLsmith, Rudra, MIRAI, and aggregate local/nightly targets. Packet-local raw logs in `review/30034` currently support only the installer, MIRAI, Flux, and Rudra-family evidence that appears in that packet manifest. | Adds `TC-034` as the hardening evidence lane for `NFR-004`, but unpacketed local aggregate, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, and AFL claims remain explicit evidence gaps until logs are packeted. Live PG18 sanitizer and SQLsmith lanes remain manually gated gaps. |
 | Benchmark reporting standard | `NFR-015` defines identity fields and metric families across AMs, quantizers, storage formats, option sets, and product evidence classes. | The standard itself is implemented, but benchmark rows are only complete after each packet conforms row-by-row. |
 
 ## Analysis Requirement Coverage Rules
@@ -50,7 +50,7 @@ presence alone.
 | Stakeholder Req | Trace to US/FR/NFR | Test/Validation | Coverage Status |
 | --- | --- | --- | --- |
 | StR-001 | US-001..US-005, FR-001..FR-018, FR-028..FR-030 | TC-001, TC-002, TC-003, TC-004, TC-013, TC-015 | Partial: legacy HNSW targets need updated product benchmark evidence |
-| StR-002 | US-004, NFR-004, NFR-005 | TC-013, TC-014, TC-034 | Partial: Task 34 local hardening baseline exists; PG18 live sanitizer and SQLsmith lanes remain manual |
+| StR-002 | US-004, NFR-004, NFR-005 | TC-013, TC-014, TC-034 | Partial: Task 34 hardening docs exist, but only packet-local Task 34 logs count as completed evidence; unpacketed local lanes plus PG18 live sanitizer and SQLsmith lanes remain gaps |
 | StR-003 | US-003, US-005, FR-008..FR-010, FR-030 | TC-004 | Partial: partition-specific evidence should be refreshed when next HNSW benchmark packet is opened |
 | StR-004 | US-006..US-011, FR-019..FR-027, FR-030 | TC-005, TC-006, TC-017 | Partial: ReadStream/product speedup measurements remain deferred |
 | StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Complete for local implementation surface; product scale evidence deferred |
@@ -62,17 +62,17 @@ presence alone.
 
 | User Story | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
-| US-001 | Existing `tqvector` storage ACs | TC-001 | Complete for artifact/debug surface |
-| US-002 | SQL nearest-neighbor query | TC-004, TC-007, TC-010 | Complete for local AM smoke/behavior tests |
-| US-003 | Build HNSW index | TC-004, TC-006 | Partial: larger parallel build speedups deferred |
-| US-004 | Extension lifecycle | TC-003, TC-014 | Complete for catalog/build surface |
-| US-005 | HNSW vacuum cleanup | TC-004 | Partial: product recall-after-vacuum measurements deferred |
-| US-006 | Async I/O scan | TC-005, TC-017 | Partial: live surface exists; cold-cache speedup measurement deferred |
-| US-007 | Planner-visible cost model | TC-005 | Complete for local callback/cost behavior |
-| US-008 | Parallel index build | TC-006, TC-016 | Partial: local implementation landed; AWS/RDS scale evidence deferred |
-| US-009 | EXPLAIN diagnostics | TC-005, TC-008 | Complete for HNSW/IVF local diagnostics |
-| US-010 | Vacuum removes deleted vectors | TC-004, TC-009, TC-012 | Complete for local AM behavior tests |
-| US-011 | Operational statistics | TC-005 | Partial: reset for custom kind remains blocked upstream/local PG18 tree |
+| US-001 | US-001-AC-1..4 | TC-001 | Complete for artifact/debug behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-002 | US-002-AC-1..4 | TC-004, TC-007, TC-010 | Complete for local AM smoke/behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-003 | US-003-AC-1..4 | TC-004, TC-006 | Partial: larger parallel build speedups deferred; strict per-AC evidence inventory remains `GAP-018` |
+| US-004 | US-004-AC-1..4 | TC-003, TC-014 | Complete for catalog/build behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-005 | US-005-AC-1..3 | TC-004 | Partial: product recall-after-vacuum measurements deferred; strict per-AC evidence inventory remains `GAP-018` |
+| US-006 | US-006-AC-1..5 | TC-005, TC-017 | Partial: live surface exists; cold-cache speedup measurement deferred |
+| US-007 | US-007-AC-1..4 | TC-005 | Complete for local callback/cost behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-008 | US-008-AC-1..4 | TC-006, TC-016 | Partial: local implementation landed; AWS/RDS scale evidence deferred |
+| US-009 | US-009-AC-1..4 | TC-005, TC-008 | Complete for HNSW/IVF local diagnostics group; strict per-AC evidence inventory remains `GAP-018` |
+| US-010 | US-010-AC-1..4 | TC-004, TC-009, TC-012 | Complete for local AM behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-011 | US-011-AC-1..4 | TC-005 | Partial: reset for custom kind remains blocked upstream/local PG18 tree |
 | US-012 | US-012-AC-1..3 | TC-002, TC-003, TC-004, TC-007, TC-010 | Complete for current SQL surface |
 | US-013 | US-013-AC-1..3 | TC-007, TC-008, TC-009, TC-015 | Complete for local IVF v1; product claims deferred |
 | US-014 | US-014-AC-1..3 | TC-010, TC-011, TC-012, TC-015 | Complete for local DiskANN v1; product claims deferred |
@@ -83,7 +83,7 @@ presence alone.
 | US-019 | US-019-AC-1..6 | TC-023, TC-024 | Implemented for CustomScan distributed reads, placement-aware dispatch, typed remote tuple payloads, and origin-node visibility; AWS product evidence deferred |
 | US-020 | US-020-AC-1..6 | TC-023, TC-025 | Implemented for epoch publication, delta/replacement maintenance, split/merge/vacuum hooks, diagnostics, and coordinator DML/2PC recovery; background prepared-xact recovery deferred |
 | US-022 | US-022-AC-1..6 | TC-020 SPIRE, TC-021, TC-022, TC-025 | Implemented for local build/publish/search lifecycle and operator-visible maintenance; long-running scale evidence deferred |
-| US-021 | Cloud benchmark cycle main and alternate flows | TC-026, TC-029, TC-030 | Planned: implementation in progress on cloud branch |
+| US-021 | US-021-AC-1..5 | TC-026, TC-029, TC-030 | Planned: implementation in progress on cloud branch |
 
 ### Functional Requirement Coverage
 
@@ -111,6 +111,7 @@ presence alone.
 | FR-036 | FR-036-AC-1..3 | TC-012 | Complete for local DiskANN insert/vacuum/diagnostics behavior |
 | FR-037 | FR-037-AC-1..4 | TC-019 | Complete for docs/spec traceability; CLI unit execution not run in this docs checkpoint |
 | FR-038 benchmark suites | FR-038-AC-1..8 | TC-020 benchmark suites, TC-033 | Complete for first auto-runner surface; full schema-driven report generation remains iterative |
+| FR-039..FR-043 tombstones | No active ACs | Spec inspection | Superseded: retained tombstone files preserve immutable ID history and point to `FR-048..FR-060` replacements |
 | FR-048 | FR-048-AC-1..8 | TC-020 SPIRE, TC-021, TC-024, TC-025 | Complete for domain model, identities, epochs, placement, and read/write boundary definitions |
 | FR-049 | FR-049-AC-1..3 | TC-020 SPIRE, TC-022, TC-034 | Partial: common header decode and rejection paths exist; external fixture compatibility remains a gap before format freeze |
 | FR-050 | FR-050-AC-1..3 | TC-020 SPIRE, TC-022, TC-034 | Partial: Leaf V2 round-trips and invariants exist; byte-for-byte compatibility fixtures remain a gap before format freeze |
@@ -136,7 +137,7 @@ presence alone.
 | NFR-001 | SQL latency benchmarks | TC-015, TC-016 | Partial: local rows exist; product latency claims need controlled hardware |
 | NFR-002 | Storage-size measurement | TC-015 | Partial: local HNSW/IVF/DiskANN rows exist; full product accounting deferred |
 | NFR-003 | Recall measurement | TC-015 | Partial: local recall rows exist; product claim gate deferred |
-| NFR-004 | Safety, WAL, fuzz, hardening, and static/dynamic analysis | TC-013, TC-034 | Partial: Task 34 local lanes landed; live PG18 sanitizer and SQLsmith lanes remain manual |
+| NFR-004 | NFR-004-AC-1..5 | TC-013, TC-034 | Partial: Task 34 documents the lane surface, but only packet-local raw logs count as completed evidence; unpacketed local lanes, PG18 sanitizer, and SQLsmith remain gaps |
 | NFR-005 | Build and CI | TC-014 | Partial: static docs checkpoint did not run build/test commands |
 | NFR-006 | Async I/O cold-cache performance | TC-017 | Gap: measurement deferred |
 | NFR-007 | Benchmark provenance | TC-015 | Complete for current docs/review-packet citations |
@@ -187,7 +188,7 @@ presence alone.
 | TC-031 | `--confirm-cost` gate, status `$/hr` and `$/mo` reporting, S3 lifecycle rule | Unit / static | P1 | NFR-010 | Planned: implementation in progress |
 | TC-032 | Corpus load throughput meets per-profile NFR-011 targets | Benchmark | P1 | NFR-011, FR-047 | Planned: baseline once first `1m` run lands |
 | TC-033 | Benchmark reporting standard docs/spec audit | Docs / spec audit | P1 | US-015, US-017, FR-038, NFR-015 | Implemented for the standard; future benchmark packets apply it row-by-row |
-| TC-034 | Task 34 hardening and analysis lanes | Static analysis / fuzz / model checking / sanitizer / supply-chain audit | P0 | NFR-004, FR-011, FR-049, FR-050, FR-051, FR-052, FR-053, FR-054, FR-055, FR-056, FR-057, FR-058, FR-059 | Implemented for local-first baseline; PG18 live sanitizer and SQLsmith evidence remain manual gates |
+| TC-034 | Task 34 hardening and analysis lanes | Static analysis / fuzz / model checking / sanitizer / supply-chain audit | P0 | NFR-004, FR-011, FR-049, FR-050, FR-051, FR-052, FR-053, FR-054, FR-055, FR-056, FR-057, FR-058, FR-059 | Partial: packeted Task 34 evidence currently covers installer, MIRAI, Flux, and Rudra-family logs; aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, AFL, PG18 sanitizer, and SQLsmith evidence remain gaps until packeted |
 
 ## Option Permutation Matrix
 
@@ -211,7 +212,7 @@ presence alone.
 | TC-022 | SPIRE scan options | `ec_spire.nprobe`, recursive fanout, rerank width, max candidate rows | Effective route budget and candidate limits are visible in diagnostics and bounded in scans |
 | TC-023 | SPIRE consistency mode | local strict default, explicit degraded, remote strict | Strict fails closed; degraded reports skipped placements and remote failure metadata |
 | TC-024 | SPIRE remote transport | TLS required/disabled for dev, timeout, cancellation, tuple payload shape, version mismatch, remote fanout and payload caps | Remote executor validates endpoint identity, wire version, payload arity/types, cancellation, capacity limits, and fail-closed behavior |
-| TC-034 | Hardening analysis lanes | `hardening-local`, `hardening-nightly-local`, cargo-audit/deny/vet, unsafe audit, Miri, careful, fuzz, Kani, Flux, Loom, Shuttle, sanitizers, SQLsmith, Rudra, MIRAI | Each lane records command, gate level, prerequisites, artifact, interpretation rule, and model boundary |
+| TC-034 | Hardening analysis lanes | Packeted evidence currently includes installer, MIRAI, Flux, and Rudra-family logs; documented but unpacketed lanes include `hardening-local`, `hardening-nightly-local`, cargo-audit/deny/vet, unsafe audit, Miri, careful, fuzz, Kani, Loom, Shuttle, sanitizers, SQLsmith, cargo-geiger, and AFL | Each lane must record command, gate level, prerequisites, artifact, interpretation rule, and model boundary before it is promoted from gap to completed evidence |
 
 ## Constraint Boundary Tests
 
@@ -286,6 +287,8 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-015 | Stage E executor-live fault coverage | High | Convert matrix/string contract rows into live executor tests for each strict/degraded fault category |
 | GAP-016 | Task 34 live PG18 hardening lanes | Medium | Packet PG18 sanitizer and SQLsmith runs once a stable PG18 cluster lane is available |
 | GAP-017 | Analysis lane promotion criteria | Medium | Define explicit burn-in thresholds before moving report-only Task 34 lanes into PR or nightly gates |
+| GAP-018 | Strict per-AC evidence inventory for grouped summary rows | Medium | Split completed summary rows into individual AC-to-TC rows before claiming standards-complete ISO/IEC/IEEE 29148 traceability |
+| GAP-019 | Task 34 unpacketed local hardening lane logs | Medium | Packet raw logs for aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, and AFL lanes before marking `TC-034` complete |
 
 ## Test Execution Summary
 
@@ -295,5 +298,5 @@ This checkpoint is a docs/spec cleanup. Tests were not run by default under the 
 | --- | ---: | ---: | ---: | ---: |
 | Unit / pg_test behavior groups | 21 | 15 | 6 | 0 |
 | Benchmark / measurement groups | 4 | 1 | 1 | 2 |
-| Hardening / analysis groups | 1 | 1 local-first baseline | 1 live PG18/manual lane set | 0 |
+| Hardening / analysis groups | 1 | 1 packeted subset | 1 documented-but-unpacketed local lane set plus 1 live PG18/manual lane set | 1 |
 | Integration groups | 6 | 0 | 6 | 0 |

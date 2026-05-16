@@ -6,7 +6,7 @@ artifact_type: FR
 status: IMPLEMENTED
 object_type: interface
 relationships:
-  - target: "ix://agent-ix/tqvector/US-016"
+  - target: "ix://agent-ix/ecaz/US-016"
     type: "implements"
     cardinality: "N:1"
 ---

@@ -6,13 +6,13 @@ artifact_type: FR
 status: APPROVED
 object_type: interface
 relationships:
-  - target: "ix://agent-ix/tqvector/US-017"
+  - target: "ix://agent-ix/ecaz/US-017"
     type: "implements"
     cardinality: "N:1"
-  - target: "ix://agent-ix/tqvector/FR-037"
+  - target: "ix://agent-ix/ecaz/FR-037"
     type: "extends"
     cardinality: "N:1"
-  - target: "ix://agent-ix/tqvector/NFR-015"
+  - target: "ix://agent-ix/ecaz/NFR-015"
     type: "supports"
     cardinality: "N:1"
 ---

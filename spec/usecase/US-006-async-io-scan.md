@@ -2,10 +2,13 @@
 id: US-006
 title: Async I/O Accelerated Scan
 type: user-story
+artifact_type: US
 status: DRAFT
 priority: P1-critical
-traces:
-  - StR-004
+relationships:
+  - target: "ix://agent-ix/ecaz/StR-004"
+    type: "derives_from"
+    cardinality: "N:1"
 ---
 # US-006: Async I/O Accelerated Scan
 
@@ -15,8 +18,27 @@ traces:
 
 ## Acceptance Criteria
 
-1. On PG18 with `io_method=worker` or `io_method=io_uring`, HNSW scan uses the `read_stream` API — not single-page `ReadBufferExtended` calls
-2. During bootstrap graph traversal, neighbor element pages are prefetched via a graph-mode `ReadStream` before being scored
-3. During linear scan fallback, consecutive index pages are prefetched via a sequential-mode `ReadStream`
-4. On PG17, the scan falls back to the existing synchronous `ReadBufferExtended` path with no behavior change
-5. Cold-cache query latency at `effective_io_concurrency=16` is measurably lower than at `effective_io_concurrency=0`
+### US-006-AC-1
+
+On PG18 with `io_method=worker` or `io_method=io_uring`, HNSW scan uses the
+`read_stream` API, not single-page `ReadBufferExtended` calls.
+
+### US-006-AC-2
+
+During bootstrap graph traversal, neighbor element pages are prefetched via a
+graph-mode `ReadStream` before being scored.
+
+### US-006-AC-3
+
+During linear scan fallback, consecutive index pages are prefetched via a
+sequential-mode `ReadStream`.
+
+### US-006-AC-4
+
+On PG17, the scan falls back to the existing synchronous `ReadBufferExtended`
+path with no behavior change.
+
+### US-006-AC-5
+
+Cold-cache query latency at `effective_io_concurrency=16` is measurably lower
+than at `effective_io_concurrency=0`.
