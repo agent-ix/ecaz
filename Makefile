@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe cargo-geiger rudra mirai flux build install clean
+.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report cargo-geiger rudra mirai flux build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani loom shuttle sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
@@ -90,6 +90,9 @@ cargo-vet:
 ## Verify all unsafe blocks have nearby SAFETY comments
 audit-unsafe:
 	bash scripts/check_unsafe_comments.sh
+
+unsafe-baseline-report:
+	bash scripts/unsafe_baseline_report.sh
 
 cargo-geiger:
 	bash scripts/hardening.sh cargo-geiger

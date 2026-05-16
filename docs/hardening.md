@@ -75,6 +75,19 @@ surface is non-trivial, the review packet should call out why the boundary is
 valid. Rudra, MIRAI, and Flux stay standalone/manual rather than aggregate
 targets while their false-positive profile is unknown for pgrx-heavy code.
 
+### Unsafe Quality Burndown
+
+Task 34 introduced `scripts/unsafe_comment_baseline.txt` only as a temporary
+grandfathering mechanism so new checks could land without hiding new debt. Task
+35 owns burning that baseline down to zero.
+
+Use `make unsafe-baseline-report` before and after each unsafe-burndown packet.
+Review packets should cite the before/after counts, include the raw report logs
+under packet-local artifacts when making count claims, and explain whether each
+covered unsafe was removed, wrapped behind a safer boundary, or documented with
+a specific invariant. Baseline growth is a blocker unless the packet calls out
+the temporary exception and a reviewer accepts it.
+
 ## Miri And Cargo-Careful
 
 - `make miri-expanded`: runs the expanded `miri_` pure-Rust test set through

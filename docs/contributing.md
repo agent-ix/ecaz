@@ -26,6 +26,7 @@ make fmt-check           # check formatting (CI)
 make lint                # clippy, deny warnings (default: pg18)
 make lint-pg17           # clippy against pg17
 make audit-unsafe        # verify SAFETY comments on unsafe blocks
+make unsafe-baseline-report # summarize grandfathered unsafe-comment debt
 ```
 
 ### Testing

@@ -1,6 +1,9 @@
 # Task 09: CI Pipeline and Safety
 
-Status: **mostly complete** — fuzz harness, CI pipeline, Makefile targets, clippy.toml, property tests, miri tests all landed. Formal unsafe audit enforcement remaining.
+Status: **mostly complete** — fuzz harness, CI pipeline, Makefile targets,
+clippy.toml, property tests, miri tests all landed. Formal unsafe audit
+enforcement is active for new unsafe sites; legacy unsafe debt is tracked under
+Task 35.
 
 ## Scope
 
@@ -10,7 +13,9 @@ Wire existing build/test/lint targets into automated CI. Add fuzz harness and un
 
 - [x] **CI pipeline.** GitHub Actions running: cargo fmt --check, cargo clippy -D warnings, cargo test, layout assertions, property tests (256 cases). Criterion + benchmark-action (110% alert threshold) on main push. Miri on main push. Fuzz on nightly.
 - [x] **Fuzz harness.** 4 fuzz targets: `parse_text`, `unpack_mse`, `element_tuple_decode`, `neighbor_tuple_decode`. Structure-aware input derivation.
-- [ ] **Unsafe audit.** Review all `unsafe` blocks for SAFETY comments. Enforce in CI via `check_unsafe_comments.sh`.
+- [ ] **Unsafe audit.** Review all legacy `unsafe` blocks for SAFETY comments
+  through Task 35. `check_unsafe_comments.sh` currently blocks new
+  undocumented unsafe sites against the grandfathered baseline.
 - [x] **cargo deny in CI.** License compliance check wired into ci-quick Makefile target.
 - [x] **Property tests.** 10 quantizer + 5 page codec properties via proptest. Run on every PR (256 cases).
 - [x] **Miri tests.** 11 miri-prefixed tests covering pure-Rust quantizer and page codec paths at small dimensions.
@@ -35,7 +40,7 @@ Wire existing build/test/lint targets into automated CI. Add fuzz harness and un
 
 - ~~CI YAML configuration~~ **done**
 - ~~Fuzz harness~~ **done**
-- Unsafe comment audit report — **remaining**
+- Unsafe comment audit report — **remaining under Task 35**
 - ~~All gates green~~ **done** (fmt, clippy, test, proptest, layout-check pass)
 
 ## Primary Tests
@@ -47,4 +52,5 @@ Wire existing build/test/lint targets into automated CI. Add fuzz harness and un
 ## Notes
 
 - This task ran on a **separate parallel agent** with no coordination required.
-- The remaining unsafe audit (TC-036) can be completed independently at any time.
+- The remaining unsafe audit (TC-036) is now the Task 35 unsafe quality
+  burndown. It can proceed independently in reviewed subsystem packets.
