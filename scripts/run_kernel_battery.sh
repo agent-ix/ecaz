@@ -34,14 +34,22 @@ Required:
                        created. Intended layout: review/<packet>/artifacts/<host>/kernels
 
 Options:
-  --profile <p>        Host profile. Tunes criterion sample-size and
-                       process priority for the target CPU count.
-                         small  -- 2 vCPU (m8g.large class). sample-size 30,
-                                   warm-up 1s, measurement 2s, nice 10,
-                                   30s sleep between perf-stat runs.
-                                   This avoids starving the SSM agent.
-                         large  -- 8+ vCPU. sample-size 50, defaults
-                                   otherwise.
+  --profile <p>        Host profile. Tunes criterion sample-size, CPU
+                       affinity, and inter-run cadence for the target host.
+                         small  -- 2 vCPU (m8g.large class, 8 GB). Pins
+                                   criterion to CPU 0 via taskset so the
+                                   OS/SSM agent keeps CPU 1. sample-size
+                                   30, warm-up 1s, measurement 2s. 30s
+                                   sleeps between perf-stat runs.
+                                   Requires swap or you'll OOM during the
+                                   bench binary compile.
+                         medium -- 4 vCPU (m8g.xlarge class, 16 GB).
+                                   sample-size 50, default warmup,
+                                   measurement 3s. No taskset (uses all
+                                   cores). 10s inter-run sleep. Recommended
+                                   default for cloud bench cycles.
+                         large  -- 8+ vCPU. sample-size 100. No tuning
+                                   overhead.
                          local  -- developer workstation. criterion defaults.
                        (default: local)
   --skip-iai           Skip iai-callgrind runs. Use on aarch64 if
@@ -94,26 +102,39 @@ fi
 
 case "$PROFILE" in
   small)
-    # 2-vCPU host (m8g.large class). Pin to a single core so the other
-    # vCPU stays available for the OS / SSM agent. Without taskset the
-    # SSM agent reliably gets starved during criterion + perf runs and
-    # the only recovery is a forced EC2 stop/start.
+    # 2-vCPU host (m8g.large class, 8 GB). Pin criterion to CPU 0 so
+    # the OS / SSM agent keeps CPU 1; without this the SSM agent gets
+    # starved and ConnectionLost is the only recovery path.
+    # NOTE: needs swap configured (>= 4 GB recommended) or the bench
+    # binary compile OOM-kills under [profile.bench] lto=fat
+    # codegen-units=1. See docs/benchmarks.md "small-host bench host".
     CRIT_FLAGS="--sample-size 30 --warm-up-time 1 --measurement-time 2"
     NICE="taskset -c 0 nice -n 10 ionice -c 3 --"
     INTER_RUN_SLEEP=30
     ;;
+  medium)
+    # 4-vCPU host (m8g.xlarge class, 16 GB). Recommended default for
+    # cloud bench cycles -- enough memory headroom that the bench
+    # binary compiles without swap, enough cores that criterion does
+    # not need pinning. SSM agent stays responsive on the spare cores.
+    CRIT_FLAGS="--sample-size 50 --warm-up-time 2 --measurement-time 3"
+    NICE="nice -n 5 --"
+    INTER_RUN_SLEEP=10
+    ;;
   large)
-    CRIT_FLAGS="--sample-size 50"
+    # 8+ vCPU host. No tuning overhead.
+    CRIT_FLAGS="--sample-size 100"
     NICE=""
     INTER_RUN_SLEEP=5
     ;;
   local)
+    # Developer workstation. Criterion defaults.
     CRIT_FLAGS=""
     NICE=""
     INTER_RUN_SLEEP=0
     ;;
   *)
-    echo "error: --profile must be small|large|local" >&2
+    echo "error: --profile must be small|medium|large|local" >&2
     exit 1
     ;;
 esac

@@ -98,10 +98,15 @@ done
 [[ -z "$OUT" || -z "$DB" ]] && { usage; exit 1; }
 
 case "$PROFILE_RUNNER" in
-  small) NICE="nice -n 10 ionice -c 3 --"; INTER=10 ;;
-  large) NICE=""; INTER=2 ;;
-  local) NICE=""; INTER=0 ;;
-  *) echo "bad --profile-runner: $PROFILE_RUNNER" >&2; exit 1 ;;
+  # 2 vCPU / 8 GB (m8g.large class)
+  small)  NICE="taskset -c 0 nice -n 10 ionice -c 3 --"; INTER=10 ;;
+  # 4 vCPU / 16 GB (m8g.xlarge class) -- recommended default for cloud cycles
+  medium) NICE="nice -n 5 --"; INTER=5 ;;
+  # 8+ vCPU
+  large)  NICE=""; INTER=2 ;;
+  # developer workstation
+  local)  NICE=""; INTER=0 ;;
+  *) echo "bad --profile-runner: $PROFILE_RUNNER (small|medium|large|local)" >&2; exit 1 ;;
 esac
 
 mkdir -p "$OUT"

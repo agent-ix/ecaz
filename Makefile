@@ -163,8 +163,17 @@ kernel-battery:
 ## Shorthand: run the kernel battery sized for a 2-vCPU cloud host
 ## (m8g.large class). Skips iai-callgrind by default since valgrind on
 ## aarch64 is very slow. Override with KERNEL_BATTERY_FLAGS=.
+## Requires >= 4 GB swap on the host (the `[profile.bench]` build
+## otherwise OOM-kills under 8 GB RAM).
 kernel-battery-cloud-small:
 	$(MAKE) kernel-battery HOST_PROFILE=small KERNEL_BATTERY_FLAGS="--skip-iai $(KERNEL_BATTERY_FLAGS)" OUT=$(OUT)
+
+## Shorthand: run the kernel battery sized for a 4-vCPU cloud host
+## (m8g.xlarge class). Recommended default for cloud bench cycles --
+## enough memory and core headroom that the SSM agent does not need
+## special handling.
+kernel-battery-cloud-medium:
+	$(MAKE) kernel-battery HOST_PROFILE=medium KERNEL_BATTERY_FLAGS="--skip-iai $(KERNEL_BATTERY_FLAGS)" OUT=$(OUT)
 
 ## Run dhat heap profiler on encode path
 dhat-encode:
