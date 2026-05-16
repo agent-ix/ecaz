@@ -25,9 +25,13 @@ be attached to a review packet.
   layout assertions, unsafe comment audit, full `cargo-deny`, and
   `cargo-audit`.
 - `make hardening-nightly-local` adds slower and toolchain-sensitive local
-  lanes: expanded Miri, `cargo-careful`, fuzz smoke, Kani, Loom, Shuttle, and
-  pure Rust ASan/LSan. `cargo-geiger` remains a standalone reporting lane
-  because it can force a large clean rebuild.
+  lanes: expanded Miri, `cargo-careful`, fuzz smoke, Kani, and pure Rust
+  ASan/LSan. `cargo-geiger` remains a standalone reporting lane because it can
+  force a large clean rebuild.
+- `make hardening-validate` checks that local hardening crates import real
+  ECAZ `src/` code and that retired synthetic-only lanes have not reappeared.
+- `make hardening-tiers-report` prints the current lane tier inventory. See
+  `docs/hardening-governance.md` for promotion and demotion rules.
 
 ## Baseline
 
@@ -35,6 +39,7 @@ be attached to a review packet.
 - `make lint`
 - `make lint-hardening`
 - `make test`
+- `make test-local`
 - `make test-hardening-local`
 - `make pg-test`
 - `make proptest`
@@ -63,17 +68,14 @@ imports and criteria are reviewed.
 ## Unsafe And Static Hygiene
 
 - `make cargo-geiger`: install with `cargo install cargo-geiger`.
-- `make rudra`: runs the reusable Rudra Docker helper against
-  `hardening/rudra/`. Override with `RUDRA_MANIFEST=...` for manual audits.
 - `make mirai`: runs the archived MIRAI analyzer against
   `hardening/careful/` with its pinned nightly toolchain.
-- `make flux`: runs Flux against `hardening/flux/`, a small
-  dimension/index-invariant pilot harness.
 
 Policy: new unsafe blocks need a nearby `SAFETY` comment and, when the unsafe
 surface is non-trivial, the review packet should call out why the boundary is
-valid. Rudra, MIRAI, and Flux stay standalone/manual rather than aggregate
-targets while their false-positive profile is unknown for pgrx-heavy code.
+valid. MIRAI stays standalone/manual while its false-positive profile is
+unknown for pgrx-heavy code. Rudra and Flux return only when they exercise real
+ECAZ code instead of synthetic harness crates.
 
 ### Unsafe Quality Burndown
 
@@ -131,13 +133,11 @@ under the relevant review packet before citing findings.
 ## Concurrency And Formal Pilots
 
 - `make kani`: bounded proof for `ItemPointer` decode length behavior.
-- `make flux`: Flux proof for bounded payload dimension/index arithmetic.
-- `make loom`: small atomic worker-slot claim/release model.
-- `make shuttle`: small deterministic coordinator merge-order model.
 
-These are pilot lanes. They are intentionally separate from normal `cargo test`
-so the repo does not acquire heavyweight model-checking dependencies on the
-default path.
+Kani is intentionally separate from normal `cargo test` so the repo does not
+acquire heavyweight model-checking dependencies on the default path. Flux,
+Loom, and Shuttle lanes are deferred until Tasks 44 and 40 can point them at
+real ECAZ invariants.
 
 ## Sanitizers
 

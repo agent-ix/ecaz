@@ -1,14 +1,14 @@
 # Task 49: Hardening CI Governance and Lane Retargeting
 
-Status: **recommended next coder pickup** — addresses the meta-gaps Task 34
-left: synthetic-harness lanes that report "passing" without exercising ECAZ
-code, a weakened `make test` that ships to CI, and the absence of a documented
+Status: **implemented** — addresses the meta-gaps Task 34 left:
+synthetic-harness lanes that report "passing" without exercising ECAZ code, a
+weakened `make test` that ships to CI, and the absence of a documented
 promotion path from local to PR-blocking to nightly.
 
-Task 49 should land before opening new structural hardening tasks. It repairs
-the trust ledger from Task 34 first, then Task 41 can remove PG-resource unsafe
-sites by construction, with Tasks 36/37, 39, 40, and 43 following per
-environment readiness.
+Task 49 landed before the structural hardening tasks. It repaired the trust
+ledger from Task 34 first; Task 41 can now remove PG-resource unsafe sites by
+construction, with Tasks 36/37, 39, 40, and 43 following per environment
+readiness.
 
 ## Scope
 

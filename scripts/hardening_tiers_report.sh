@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+sha="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+
+cat <<EOF
+hardening lane tiers at ${sha}
+
+lane                    tier        budget        evidence
+fmt-check               PR          <1 min        cargo fmt --check
+lint                    PR          <5 min        clippy pg18 bench
+test                    PR          variable     cargo test
+layout-check            PR          <1 min        size_of_assertions
+audit-unsafe            PR          <1 min        SAFETY comment gate
+proptest                PR          <5 min        quant/page property tests
+test-hardening-local    local       <5 min        macOS-safe local unit subset
+deny-full               local       <5 min        cargo-deny full policy
+cargo-audit             local       <1 min        RustSec advisory scan
+miri-expanded           nightly     variable     pure-Rust Miri prefixes
+careful                 nightly     variable     cargo-careful standalone harness
+fuzz-all-short          nightly     variable     short libFuzzer smoke
+kani                    nightly     variable     ItemPointer decode proof
+sanitizer-asan          nightly     variable     pure-Rust ASan
+sanitizer-lsan          nightly     variable     pure-Rust LSan
+cargo-geiger            manual      variable     unsafe surface report
+pg-test                 manual      variable     live PG18 pgrx tests
+sqlsmith-pg18           manual      variable     live PG18 SQLsmith
+EOF

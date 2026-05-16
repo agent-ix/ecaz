@@ -27,12 +27,14 @@ make lint                # clippy, deny warnings (default: pg18)
 make lint-pg17           # clippy against pg17
 make audit-unsafe        # verify SAFETY comments on unsafe blocks
 make unsafe-baseline-report # summarize grandfathered unsafe-comment debt
+make hardening-validate  # verify hardening lanes exercise real repo code
 ```
 
 ### Testing
 
 ```bash
-make test                # unit tests (no Postgres required)
+make test                # full Rust unit tests (CI semantics)
+make test-local          # macOS-safe local subset for pgrx loader issues
 make pg-test             # pgrx integration tests (pg18)
 make pg-test-pg17        # pgrx integration tests (pg17)
 ecaz dev test pg18-preload-pgstat        # preload-aware PG18 shared-pgstat lane
@@ -92,6 +94,9 @@ make clean               # remove build artifacts
 | --- | --- | --- |
 | `make ci-quick` | fmt, lint, test, layout, unsafe audit | every PR |
 | `make ci-nightly` | ci-quick + bench, iai, proptest, miri | nightly |
+
+Hardening lane tiering and promotion rules live in
+[Hardening Governance](hardening-governance.md).
 
 ## Dependency Licenses
 

@@ -1,8 +1,8 @@
-.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report cargo-geiger rudra mirai flux build install clean
+.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report cargo-geiger mirai build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
-.PHONY: kani loom shuttle sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: hardening-local hardening-nightly-local
+.PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
+.PHONY: hardening-local hardening-nightly-local hardening-validate hardening-tiers-report
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 
 ## Format all source files
@@ -49,7 +49,11 @@ lint-hardening:
 	cargo clippy --all-targets --no-default-features --features pg18,bench -- -D warnings $(CLIPPY_HARDENING_BASELINE_ALLOW)
 
 ## Run unit tests (no Postgres required)
-test: test-hardening-local
+test:
+	cargo test
+
+## Run local unit lanes that avoid pgrx callback symbol loading on macOS
+test-local: test-hardening-local
 
 ## Run local unit lanes that avoid pgrx callback symbol loading
 test-hardening-local:
@@ -97,17 +101,8 @@ unsafe-baseline-report:
 cargo-geiger:
 	bash scripts/hardening.sh cargo-geiger
 
-RUDRA_MANIFEST ?= hardening/rudra/Cargo.toml
-RUDRA_FLAGS ?= --manifest-path $(RUDRA_MANIFEST)
-
-rudra:
-	bash scripts/hardening.sh rudra $(RUDRA_FLAGS)
-
 mirai:
 	bash scripts/hardening.sh mirai
-
-flux:
-	bash scripts/hardening.sh flux
 
 ## Build release shared library
 build:
@@ -211,12 +206,6 @@ afl-decoders:
 kani:
 	bash scripts/hardening.sh kani
 
-loom:
-	bash scripts/hardening.sh loom
-
-shuttle:
-	bash scripts/hardening.sh shuttle
-
 # --- Sanitizers / live-cluster hardening ---
 
 SQLSMITH_DSN ?=
@@ -272,4 +261,10 @@ ci-nightly: ci-quick bench bench-iai proptest miri
 
 hardening-local: fmt-check lint-hardening test-hardening-local proptest layout-check audit-unsafe deny-full cargo-audit
 
-hardening-nightly-local: hardening-local miri-expanded careful fuzz-all-short kani loom shuttle sanitizer-asan sanitizer-lsan
+hardening-nightly-local: hardening-local miri-expanded careful fuzz-all-short kani sanitizer-asan sanitizer-lsan
+
+hardening-validate:
+	bash scripts/hardening_validate.sh
+
+hardening-tiers-report:
+	bash scripts/hardening_tiers_report.sh
