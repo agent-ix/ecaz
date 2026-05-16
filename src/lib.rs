@@ -7429,10 +7429,11 @@ fn ec_spire_index_scan_placement_snapshot(
         name!(dropped_unselected_delta_route_count, i64),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_placement_snapshot") };
-    let rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rows = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_placement_snapshot");
+        unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) }
+    };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -7516,12 +7517,15 @@ fn ec_spire_index_selected_pid_placement_snapshot(
             })
         })
         .collect::<Vec<_>>();
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_index_selected_pid_placement_snapshot")
+    let rows = {
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_index_selected_pid_placement_snapshot",
+        );
+        unsafe {
+            am::spire_index_selected_pid_placement_snapshot(index_relation.as_ptr(), selected_pids)
+        }
     };
-    let rows =
-        unsafe { am::spire_index_selected_pid_placement_snapshot(index_relation, selected_pids) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -7557,14 +7561,13 @@ fn ec_spire_index_scan_local_store_execution_snapshot(
         name!(scanned_pid_count, i64),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    let rows = {
+        let index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_index_scan_local_store_execution_snapshot",
-        )
+        );
+        unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) }
     };
-    let rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -7604,14 +7607,13 @@ fn ec_spire_index_scan_local_store_read_overlap_harness(
         name!(delta_decode_count, i64),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    let rows = {
+        let index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_index_scan_local_store_read_overlap_harness",
-        )
+        );
+        unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) }
     };
-    let rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -7664,10 +7666,11 @@ fn ec_spire_index_scan_routing_snapshot(
         name!(truncation_reason, String),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_routing_snapshot") };
-    let rows = unsafe { am::spire_index_scan_routing_snapshot(index_relation, query) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rows = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_routing_snapshot");
+        unsafe { am::spire_index_scan_routing_snapshot(index_relation.as_ptr(), query) }
+    };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -7719,12 +7722,16 @@ fn ec_spire_index_scan_pipeline_snapshot(
     if unsafe { !relation_oid_exists(index_oid) } {
         return TableIterator::new(Vec::new().into_iter());
     }
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_pipeline_snapshot") };
-    let routing_rows =
-        unsafe { am::spire_index_scan_routing_snapshot(index_relation, query.clone()) };
-    let placement_rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let (routing_rows, placement_rows) = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_pipeline_snapshot");
+        let routing_rows = unsafe {
+            am::spire_index_scan_routing_snapshot(index_relation.as_ptr(), query.clone())
+        };
+        let placement_rows =
+            unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) };
+        (routing_rows, placement_rows)
+    };
 
     let active_epoch = placement_rows
         .first()
