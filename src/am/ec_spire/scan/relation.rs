@@ -31,6 +31,47 @@ pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
     }
 }
 
+pub(super) struct ResolvedScanHeapRelation {
+    relation: pg_sys::Relation,
+    owned: bool,
+}
+
+impl ResolvedScanHeapRelation {
+    fn borrowed(relation: pg_sys::Relation) -> Self {
+        Self {
+            relation,
+            owned: false,
+        }
+    }
+
+    fn owned(relation: pg_sys::Relation) -> Self {
+        Self {
+            relation,
+            owned: true,
+        }
+    }
+
+    pub(super) fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for ResolvedScanHeapRelation {
+    fn drop(&mut self) {
+        if self.owned && !self.relation.is_null() {
+            // SAFETY: Owned heap relations are opened by
+            // `resolve_scan_heap_relation` with `AccessShareLock`; this guard
+            // owns the matching close.
+            unsafe {
+                pg_sys::table_close(
+                    self.relation,
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                );
+            }
+        }
+    }
+}
+
 pub(super) unsafe fn load_relation_epoch_manifests(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -132,16 +173,17 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
     query: &SpireScanQuery,
     options: EcSpireOptions,
 ) -> Result<SpirePreparedScanCandidates, String> {
-    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
-    let snapshot_pg = unsafe { resolve_scan_snapshot(scan) };
+    let heap_relation = resolve_scan_heap_relation(scan);
+    let heap_relation_ptr = heap_relation.as_ptr();
+    let snapshot_pg = resolve_scan_snapshot(scan);
     let indexed_attribute = unsafe {
         source::resolve_indexed_vector_attribute(
-            heap_relation,
+            heap_relation_ptr,
             (*scan).indexRelation,
             "ec_spire heap rerank indexed column",
         )
     };
-    let slot = unsafe { allocate_heap_slot(heap_relation)? };
+    let slot = unsafe { allocate_heap_slot(heap_relation_ptr)? };
 
     let result = prepare_single_level_snapshot_scan_candidates_with_prefetch(
         snapshot,
@@ -149,12 +191,12 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
         query,
         options,
         |candidates| {
-            unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation, candidates) };
+            unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates) };
             Ok(())
         },
         |candidate| unsafe {
             exact_heap_source_inner_product(
-                heap_relation,
+                heap_relation_ptr,
                 snapshot_pg,
                 slot,
                 indexed_attribute,
@@ -165,9 +207,6 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
     );
 
     unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
-    if heap_relation_owned {
-        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
     result
 }
 
@@ -240,26 +279,43 @@ unsafe fn prefetch_heap_rerank_blocks(
     }
 }
 
-unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {
-    if !unsafe { (*scan).heapRelation }.is_null() {
-        return (unsafe { (*scan).heapRelation }, false);
+fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRelation {
+    if scan.is_null() {
+        pgrx::error!("ec_spire heap rerank received a null scan descriptor");
     }
 
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+    // SAFETY: `scan` is non-null and owned by PostgreSQL for this AM callback.
+    let scan_ref = unsafe { &*scan };
+    if !scan_ref.heapRelation.is_null() {
+        return ResolvedScanHeapRelation::borrowed(scan_ref.heapRelation);
+    }
+
+    // SAFETY: `indexRelation` comes from the live scan descriptor.
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*scan_ref.indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_spire heap rerank could not resolve heap relation");
     }
-    (
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
-        true,
-    )
+    // SAFETY: `heap_oid` was resolved from the scan's index relation and is
+    // closed by `ResolvedScanHeapRelation` when ownership is needed.
+    let relation = unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    if relation.is_null() {
+        pgrx::error!("ec_spire heap rerank failed to open heap relation");
+    }
+    ResolvedScanHeapRelation::owned(relation)
 }
 
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
-    if !unsafe { (*scan).xs_snapshot }.is_null() {
-        return unsafe { (*scan).xs_snapshot };
+fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
+    if scan.is_null() {
+        pgrx::error!("ec_spire heap rerank received a null scan descriptor");
     }
 
+    // SAFETY: `scan` is non-null and owned by PostgreSQL for this AM callback.
+    let scan_ref = unsafe { &*scan };
+    if !scan_ref.xs_snapshot.is_null() {
+        return scan_ref.xs_snapshot;
+    }
+
+    // SAFETY: Reads PostgreSQL backend-local active snapshot state.
     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
         return active_snapshot;

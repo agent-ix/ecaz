@@ -61,17 +61,14 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
                 return;
             }
 
-            let (heap_relation, heap_relation_owned) = resolve_scan_heap_relation(scan);
+            let heap_relation = resolve_scan_heap_relation(scan);
             let snapshot = resolve_scan_snapshot(scan);
             let stream = super::remote_search_production_scan_heap_resolution_am_result_stream(
                 (*scan).indexRelation,
-                heap_relation,
+                heap_relation.as_ptr(),
                 snapshot,
                 query.values().to_vec(),
             );
-            if heap_relation_owned {
-                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            }
             let outputs = production_scan_result_stream_am_outputs(&stream)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             opaque.reset_for_outputs(query, None, outputs);
