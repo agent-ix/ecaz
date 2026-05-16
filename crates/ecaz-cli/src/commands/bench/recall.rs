@@ -54,6 +54,12 @@ pub struct RecallArgs {
     /// Use -1 for the index reloption, 0 for the full probed frontier.
     #[arg(long)]
     pub rerank_width: Option<i32>,
+    /// SPIRE-only: enable deterministic adaptive nprobe during the sweep.
+    #[arg(long)]
+    pub adaptive_nprobe: bool,
+    /// SPIRE-only: score-gap threshold for adaptive nprobe decisions.
+    #[arg(long)]
+    pub adaptive_nprobe_score_gap_micros: Option<i32>,
     /// Cap the query set (default: all rows in `<prefix>_queries`).
     #[arg(long)]
     pub queries_limit: Option<usize>,
@@ -121,6 +127,11 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         args.sweep.clone()
     };
     validate_rerank_width_arg(profile, args.rerank_width)?;
+    let adaptive_nprobe_options = super::SpireAdaptiveNprobeBenchOptions {
+        enabled: args.adaptive_nprobe,
+        score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+    };
+    super::validate_spire_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -195,6 +206,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         "mean q-time",
     ]);
 
+    let rerank_width_guc = rerank_width_guc(profile);
     for value in &sweep_values {
         if args.force_index {
             client
@@ -203,11 +215,14 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                 .wrap_err("SET enable_seqscan = off")?;
         }
         if let Some(rerank_width) = args.rerank_width {
-            client
-                .batch_execute(&format!("SET ec_ivf.rerank_width = {rerank_width}"))
-                .await
-                .wrap_err_with(|| format!("SET ec_ivf.rerank_width = {rerank_width}"))?;
+            if let Some(rerank_width_guc) = rerank_width_guc {
+                client
+                    .batch_execute(&format!("SET {rerank_width_guc} = {rerank_width}"))
+                    .await
+                    .wrap_err_with(|| format!("SET {rerank_width_guc} = {rerank_width}"))?;
+            }
         }
+        super::apply_spire_adaptive_nprobe_options(&client, adaptive_nprobe_options).await?;
         client
             .batch_execute(&format!("SET {guc} = {value}"))
             .await
@@ -218,15 +233,20 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                 .unwrap(),
         );
         let msg = match args.rerank_width {
-            Some(rerank_width) => {
+            Some(rerank_width) if rerank_width_guc.is_some() => {
                 format!(
-                    "{} ec_ivf.rerank_width={rerank_width}",
-                    super::sweep_value_label(profile, *value)
+                    "{} {}={rerank_width}",
+                    super::sweep_value_label(profile, *value),
+                    rerank_width_guc.unwrap()
                 )
             }
             None => super::sweep_value_label(profile, *value),
+            _ => super::sweep_value_label(profile, *value),
         };
-        bar.set_message(msg);
+        bar.set_message(super::append_adaptive_nprobe_label(
+            msg,
+            adaptive_nprobe_options,
+        ));
         bar.enable_steady_tick(Duration::from_millis(250));
 
         let mut pred: Vec<Vec<i64>> = Vec::with_capacity(queries.nrows());
@@ -527,15 +547,23 @@ fn validate_rerank_width_arg(
     let Some(value) = rerank_width else {
         return Ok(());
     };
-    if profile.name != "ec_ivf" {
+    if rerank_width_guc(profile).is_none() {
         return Err(eyre!(
-            "--rerank-width is only supported with --profile ec_ivf"
+            "--rerank-width is only supported with --profile ec_ivf or ec_spire"
         ));
     }
     if value < -1 {
         return Err(eyre!("--rerank-width must be >= -1"));
     }
     Ok(())
+}
+
+fn rerank_width_guc(profile: &profiles::IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_ivf" => Some("ec_ivf.rerank_width"),
+        "ec_spire" => Some("ec_spire.rerank_width"),
+        _ => None,
+    }
 }
 
 /// `fetch_sources` reachable from sibling modules (e.g. `compare::pgvector`)

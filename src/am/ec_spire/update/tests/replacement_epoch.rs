@@ -117,6 +117,73 @@
     }
 
     #[test]
+    fn replacement_leaf_rows_preserve_global_vec_ids_from_base_and_delta() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let active_epoch = 7;
+        let root = root_routing_object();
+        let root_placement = object_store
+            .insert_routing_object(active_epoch, &root)
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                12,
+                1,
+                root.header.pid,
+                &[global_primary_row(0x11, 10, 1)],
+            )
+            .unwrap();
+        let mut delta_row = global_primary_row(0x22, 20, 1);
+        delta_row.flags |= SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT;
+        let delta = SpireDeltaPartitionObject::new(40, 1, 12, vec![delta_row]).unwrap();
+        let delta_placement = object_store
+            .insert_delta_object(active_epoch, &delta)
+            .unwrap();
+        let active_placements = vec![root_placement, leaf_12, delta_placement];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: active_epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            active_epoch,
+            active_placements
+                .iter()
+                .map(manifest_entry_for)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(active_epoch, active_placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let rows = collect_replacement_leaf_rows(&snapshot, &object_store, &[12]).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].base_pid, 12);
+        assert_eq!(
+            rows[0]
+                .rows
+                .iter()
+                .map(|row| row.vec_id.clone())
+                .collect::<Vec<_>>(),
+            vec![global_vec_id(0x11), global_vec_id(0x22)]
+        );
+        assert!(rows[0]
+            .rows
+            .iter()
+            .all(|row| row.flags == SPIRE_ASSIGNMENT_FLAG_PRIMARY));
+    }
+
+    #[test]
     fn replacement_epoch_draft_builds_manifest_and_publish_bundle() {
         let placement_directory = SpirePlacementDirectory::from_entries(
             8,

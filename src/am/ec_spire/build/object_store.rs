@@ -17,6 +17,14 @@ impl SpireBuildObjectStore for SpireLocalObjectStore {
     ) -> Result<SpirePlacementEntry, String> {
         self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
     }
+
+    fn write_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.insert_top_graph_object(epoch, object)
+    }
 }
 
 impl SpireBuildObjectStore for SpireLocalObjectStoreSet {
@@ -37,6 +45,14 @@ impl SpireBuildObjectStore for SpireLocalObjectStoreSet {
         rows: &[SpireLeafAssignmentRow],
     ) -> Result<SpirePlacementEntry, String> {
         self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
+    }
+
+    fn write_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.insert_top_graph_object(epoch, object)
     }
 }
 
@@ -61,6 +77,14 @@ impl SpireBuildObjectStore for SpireRelationObjectStore {
             self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
         }
     }
+
+    fn write_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe { self.insert_top_graph_object(epoch, object) }
+    }
 }
 
 impl SpireBuildObjectStore for SpireRelationObjectStoreSet {
@@ -83,5 +107,13 @@ impl SpireBuildObjectStore for SpireRelationObjectStoreSet {
         unsafe {
             self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
         }
+    }
+
+    fn write_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe { self.insert_top_graph_object(epoch, object) }
     }
 }

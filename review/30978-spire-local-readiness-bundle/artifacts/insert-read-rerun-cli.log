@@ -1,0 +1,13 @@
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] insert_mode=trigger
+[spire-multicluster] artifact_dir=review/30978-spire-local-readiness-bundle/artifacts/insert-read-rerun
+
+   0: [91mrunning SPIRE PG18 INSERT/read-after-CustomScan fixture[0m
+   1: [91mCommand { std: cd "/home/peter/dev/ecaz" && "bash" "/home/peter/dev/ecaz/scripts/run_spire_multicluster_insert_read_after_customscan_pg18.sh" "--pgbin" "/home/peter/.pgrx/18.3/pgrx-install/bin" "--insert-mode" "trigger" "--artifact-dir" "review/30978-spire-local-readiness-bundle/artifacts/insert-read-rerun" "--smoke-log" "review/30978-spire-local-readiness-bundle/artifacts/insert-read-rerun.log" "--coord-port" "39187" "--remote-port" "39188" "--run-id" "phase12-final-insert-read-rerun" "--skip-install", kill_on_drop: false } failed with status exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/support.rs[0m:[35m180[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

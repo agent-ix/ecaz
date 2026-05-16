@@ -13,6 +13,7 @@ use super::build::{
     SpireEncodedManifestBundle, SpireEncodedPublishBundle, SpirePublishCoordinatorInput,
     SpirePublishPlacementWriteEvidence, SpirePublishedManifestLocators,
 };
+use super::build::{rank_centroid_routes_by_ip, SpireCentroidRouteInput};
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
     SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry,
@@ -25,10 +26,11 @@ use super::scan::{
     load_relation_local_store_config, SpireLeafScanRow,
 };
 use super::storage::{
-    is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,
-    SpireLeafAssignmentRow, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
-    SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
-    SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+    is_delete_delta_assignment, is_visible_primary_assignment, is_visible_scored_assignment,
+    SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLocalObjectStore, SpireObjectReader,
+    SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingChildEntry,
+    SpireRoutingPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
 };
 use super::SpireIndexLeafSnapshotRow;
 use crate::am::common::training as common_training;

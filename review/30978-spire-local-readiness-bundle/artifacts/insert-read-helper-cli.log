@@ -1,0 +1,4 @@
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] insert_mode=helper
+[spire-multicluster] artifact_dir=review/30978-spire-local-readiness-bundle/artifacts/insert-read-helper

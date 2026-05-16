@@ -1,0 +1,29 @@
+SET
+SET
+SET
+SET
+SET
+pg_binary_attr_v1	ready	{pg_binary_attr_v1}
+CREATE TABLE
+DO
+json_tuple_payload_v1	20	200	31510	30.231	29.753	31.829	35.525	33.079
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=1 rows=10 payload_bytes=1556 elapsed_ms=36.449
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=2 rows=10 payload_bytes=1556 elapsed_ms=29.325
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=3 rows=10 payload_bytes=1569 elapsed_ms=29.719
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=4 rows=10 payload_bytes=1569 elapsed_ms=29.786
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=5 rows=10 payload_bytes=1556 elapsed_ms=29.619
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=6 rows=10 payload_bytes=1556 elapsed_ms=29.206
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=7 rows=10 payload_bytes=1556 elapsed_ms=29.078
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=8 rows=10 payload_bytes=1582 elapsed_ms=29.556
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=9 rows=10 payload_bytes=1569 elapsed_ms=31.586
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=10 rows=10 payload_bytes=1582 elapsed_ms=31.544
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=11 rows=10 payload_bytes=1569 elapsed_ms=30.036
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=12 rows=10 payload_bytes=1595 elapsed_ms=29.977
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=13 rows=10 payload_bytes=1595 elapsed_ms=29.881
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=14 rows=10 payload_bytes=1595 elapsed_ms=30.344
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=15 rows=10 payload_bytes=1595 elapsed_ms=30.438
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=16 rows=10 payload_bytes=1582 elapsed_ms=29.716
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=17 rows=10 payload_bytes=1595 elapsed_ms=30.615
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=18 rows=10 payload_bytes=1569 elapsed_ms=29.342
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=19 rows=10 payload_bytes=1569 elapsed_ms=29.269
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-json-simple.sql:50: NOTICE:  transport=json_tuple_payload_v1 qid=20 rows=10 payload_bytes=1595 elapsed_ms=29.134

@@ -1,0 +1,15 @@
+run_dir=/home/peter/dev/ecaz/target/spire-phase13c-drift-pg18-20260515Tpkselect02Z
+port=39429
+NOTICE:  table "ec_spire_phase13c_pk_select_coord_only_remote" does not exist, skipping
+NOTICE:  table "ec_spire_phase13c_pk_select_coord_only_coord" does not exist, skipping
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 91 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+pk_select_schema_drift_variant=coord_only,schema_drift,coordinator side drifted
+NOTICE:  table "ec_spire_phase13c_pk_select_remote_only_remote" does not exist, skipping
+NOTICE:  table "ec_spire_phase13c_pk_select_remote_only_coord" does not exist, skipping
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 92 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+pk_select_schema_drift_variant=remote_only,schema_drift,remote side drifted
+NOTICE:  table "ec_spire_phase13c_pk_select_both_sides_remote" does not exist, skipping
+NOTICE:  table "ec_spire_phase13c_pk_select_both_sides_coord" does not exist, skipping
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 93 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+pk_select_schema_drift_variant=both_sides,schema_drift,coordinator and remote schema fingerprints differ
+SPIRE Phase 13c PG18 PK SELECT drift smoke passed

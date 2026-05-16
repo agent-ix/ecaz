@@ -1,0 +1,8 @@
+Script started on 2026-05-13 21:21:55-07:00 [<not executed on terminal>]
+ plan/tasks/task30-phase12b-spire-cleanup.md        |   8 [32m+[m[31m-[m
+ .../remote_candidates/production_transport.rs      |  12 [32m++[m[31m-[m
+ src/tests/custom_scan.rs                           | 100 [32m+++++++++++++++++++++[m
+ src/tests/remote_search/receive_faults.rs          |   6 [32m+[m[31m-[m
+ 4 files changed, 121 insertions(+), 5 deletions(-)
+
+Script done on 2026-05-13 21:21:55-07:00 [COMMAND_EXIT_CODE="0"]

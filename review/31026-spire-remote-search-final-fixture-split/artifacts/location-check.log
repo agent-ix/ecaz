@@ -1,0 +1,13 @@
+Script started on 2026-05-13 19:09:58-07:00 [<not executed on terminal>]
+src/tests/remote_search.rs
+2637:    fn test_ec_spire_remote_search_local_heap_resolution_plan() {
+11881:    fn test_ec_spire_remote_search_degraded_stale_leaf() {
+11933:    fn test_ec_spire_reaper_resolves_lost_prepare_ack_fixture() {
+12071:    fn test_ec_spire_remote_pk_select_isolation_contract_sql() {
+
+src/tests/mod.rs
+2520:    unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
+2541:    include!("custom_scan.rs");
+2546:    fn test_ec_spire_relation_object_tuple_roundtrip() {
+
+Script done on 2026-05-13 19:09:58-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,154 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1903db179d6aa6e7)
+
+running 25 tests
+test am::ec_spire::dml_frontdoor::tests::classifier_accepts_update_delete_and_pk_select_v1_shapes ... ok
+test am::ec_spire::dml_frontdoor::tests::classifier_rejects_embedding_and_pk_updates ... ok
+test am::ec_spire::dml_frontdoor::tests::classifier_rejects_empty_update_or_projection ... ok
+test am::ec_spire::dml_frontdoor::tests::classifier_rejects_joins_subqueries_and_returning ... ok
+test am::ec_spire::dml_frontdoor::tests::baserel_handoff_uses_only_target_rel_for_dml ... ok
+test am::ec_spire::dml_frontdoor::tests::classifier_requires_bigint_pk_equality_predicate ... ok
+test am::ec_spire::dml_frontdoor::tests::query_layer_maps_command_and_subquery_flags ... ok
+test am::ec_spire::dml_frontdoor::tests::query_layer_binds_target_relation_var_to_column_name ... ok
+test am::ec_spire::dml_frontdoor::tests::query_layer_recognizes_bigint_const_and_param_values ... ok
+test am::ec_spire::dml_frontdoor::tests::query_layer_recognizes_bigint_integer_equality_variants ... ok
+test am::ec_spire::dml_frontdoor::tests::query_layer_walks_nested_integer_coercion_wrappers ... ok
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg_test pg18[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+Error: 
+   0: failed writing `/home/peter/dev/ecaz/ecaz.control` to `/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control`
+   1: Read-only file system (os error 30)
+
+Location:
+   /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:269
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   0: cargo_pgrx::command::install::install_extension with pg_version=18.3 profile=Dev test=true features=["pg_test", "pg18"]
+      at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:117
+   1: cargo_pgrx::command::install::execute
+      at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:65
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+test tests::pg_test_ec_spire_coordinator_dml_frontdoor_plan_sql ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_const_coercion_and_cte ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_context_error ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_unsupported_shape ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_hook_status_installed_pass_through ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_pk_argument_from_decision ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_pk_select_customscan_local_sql ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_from_decision ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_sql ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_rejects_multi_index - should panic ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_replacement_decision_sql ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_relation_context_sql ... FAILED
+test tests::pg_test_ec_spire_dml_frontdoor_target_relation_oid_sql ... FAILED
+
+failures:
+
+---- tests::pg_test_ec_spire_coordinator_dml_frontdoor_plan_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_coordinator_dml_frontdoor_plan_sql' (30) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:217:14:
+Could not initialize test framework: Failure installing extension using command: CARGO_TARGET_DIR="/home/peter/dev/ecaz/target" "/home/peter/.cargo/bin/cargo-pgrx" "pgrx" "install" "--test" "--pg-config" "/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config" "--features" "pg_test"
+
+
+
+Location:
+    /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:387:20
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tests::pg_test_ec_spire_dml_frontdoor_const_coercion_and_cte stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_const_coercion_and_cte' (31) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_context_error stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_context_error' (32) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_unsupported_shape stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_unsupported_shape' (33) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_hook_status_installed_pass_through stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_hook_status_installed_pass_through' (34) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_pk_argument_from_decision stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_pk_argument_from_decision' (35) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send' (37) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_pk_select_customscan_local_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_pk_select_customscan_local_sql' (36) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_from_decision stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_from_decision' (38) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_sql' (39) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_rejects_multi_index stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_rejects_multi_index' (40) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+note: panic did not contain expected string
+      panic message: "Could not obtain test mutex. A previous test may have hard-aborted while holding it."
+ expected substring: "requires at most one ec_spire index"
+---- tests::pg_test_ec_spire_dml_frontdoor_replacement_decision_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_replacement_decision_sql' (43) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_relation_context_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_relation_context_sql' (42) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+---- tests::pg_test_ec_spire_dml_frontdoor_target_relation_oid_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_dml_frontdoor_target_relation_oid_sql' (44) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:210:13:
+Could not obtain test mutex. A previous test may have hard-aborted while holding it.
+
+
+failures:
+    tests::pg_test_ec_spire_coordinator_dml_frontdoor_plan_sql
+    tests::pg_test_ec_spire_dml_frontdoor_const_coercion_and_cte
+    tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_context_error
+    tests::pg_test_ec_spire_dml_frontdoor_hook_fail_closed_unsupported_shape
+    tests::pg_test_ec_spire_dml_frontdoor_hook_status_installed_pass_through
+    tests::pg_test_ec_spire_dml_frontdoor_pk_argument_from_decision
+    tests::pg_test_ec_spire_dml_frontdoor_pk_select_customscan_local_sql
+    tests::pg_test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send
+    tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_from_decision
+    tests::pg_test_ec_spire_dml_frontdoor_primitive_plan_sql
+    tests::pg_test_ec_spire_dml_frontdoor_rejects_multi_index
+    tests::pg_test_ec_spire_dml_frontdoor_relation_context_sql
+    tests::pg_test_ec_spire_dml_frontdoor_replacement_decision_sql
+    tests::pg_test_ec_spire_dml_frontdoor_target_relation_oid_sql
+
+test result: FAILED. 11 passed; 14 failed; 0 ignored; 0 measured; 1648 filtered out; finished in 0.39s
+
+error: test failed, to rerun pass `--lib`
+
+COMMAND_EXIT_CODE="101"

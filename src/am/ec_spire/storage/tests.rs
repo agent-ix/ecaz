@@ -1,17 +1,23 @@
 #[cfg(test)]
 mod tests {
     use super::super::meta::{
-        SpireLocalStoreDescriptor, SpireLocalStoreState, SpirePlacementEntry, SpirePlacementState,
+        SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState,
+        SpirePlacementEntry, SpirePlacementState,
     };
     use super::{
-        decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
-        is_visible_primary_assignment_ref, is_visible_scored_assignment,
-        local_store_config_from_relation_plan, plan_local_store_relations,
+        decode_leaf_v2_local_vec_id, decode_relation_object_chain_meta,
+        decode_relation_object_chain_segment, encode_relation_object_chain_meta,
+        encode_relation_object_chain_segment, is_delete_delta_assignment,
+        is_visible_primary_assignment, is_visible_primary_assignment_ref,
+        is_visible_scored_assignment, local_store_config_from_relation_plan,
+        plan_local_store_relations,
         relation_object_prefetch_groups,
         spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
-        SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
-        SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
-        SpireVecIdKind,
+        SpireLeafPartitionObject, SpireLocalObjectStore, SpireLocalObjectStoreSet,
+        SpireObjectReader, SpirePartitionObjectHeader, SpirePartitionObjectKind,
+        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+        SpireTopGraphNodeRecord, SpireTopGraphPartitionObject, SpireVecIdKind,
+        PARTITION_OBJECT_V2_CHAIN_META_FLAG, PARTITION_OBJECT_V2_CHAIN_SEGMENT_FLAG,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -50,8 +56,28 @@ mod tests {
         }
     }
 
+    fn leaf_v2_global_assignment(
+        global_payload: &[u8],
+        heap_block_number: u32,
+        heap_offset_number: u16,
+        payload_len: usize,
+    ) -> SpireLeafAssignmentRow {
+        SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::global(global_payload).unwrap(),
+            heap_tid: ItemPointer {
+                block_number: heap_block_number,
+                offset_number: heap_offset_number,
+            },
+            payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+            gamma: heap_offset_number as f32 / 10.0,
+            encoded_payload: vec![heap_offset_number as u8; payload_len],
+        }
+    }
+
 
     include!("tests/vec_and_routing.rs");
+    include!("tests/top_graph.rs");
     include!("tests/local_store_plan.rs");
     include!("tests/assignment.rs");
     include!("tests/leaf.rs");

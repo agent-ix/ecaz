@@ -1,0 +1,18 @@
+region            = "us-east-1"
+availability_zone = "us-east-1a"
+
+# Amazon Linux 2023 AMI for the chosen region; pick the latest patched id.
+ami_id = "ami-0123456789abcdef0"
+
+owner        = "your-gh-handle"
+auto_stop_at = "2026-05-15T18:00:00Z"
+
+# Optional: leave null for Session-Manager-only access.
+# key_name = "ecaz-spire-aws-ops"
+
+# Defaults below match Phase 13a.1 decisions.
+# coordinator_instance_type = "r6i.4xlarge"
+# remote_instance_type      = "r6i.2xlarge"
+# remote_count              = 3
+# coordinator_storage_gb    = 200
+# remote_storage_gb         = 100

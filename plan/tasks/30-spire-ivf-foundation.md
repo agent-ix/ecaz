@@ -1168,15 +1168,18 @@ diagnostics without scoring assignments.
 These items came out of the Phase 3 closeout review and are carried forward
 explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
-- [ ] Durable per-level `nprobe` metadata/configuration. Phase 3 exposes the
-  effective policy through diagnostics, but still uses configured
-  relation/session `nprobe` at level 1 and a conservative one-child probe above
-  level 1.
+- [x] Durable per-level `nprobe` metadata/configuration. Phase 8 pull-forward
+  added the `nprobe_per_level` reloption, ordered from level 2 upward.
+  Diagnostics now report configured upper-level entries as
+  `configured_above_level_1`, while omitted upper levels retain the
+  conservative one-child policy.
 - [ ] Durable per-level parameter storage. Phase 3 exposes level parameters
   through diagnostics reconstructed from active routing objects and reloptions.
 - [ ] Explicit user-facing per-level fanout configuration. Phase 3 exposes
   effective target fanout diagnostics, while relation configuration remains the
-  single `recursive_fanout` reloption.
+  single `recursive_fanout` reloption. This is intentionally separate from
+  `nprobe_per_level`: fanout controls build-time children per parent, while
+  nprobe controls scan-time children visited per parent.
 - [x] Three-routing-level recursive descent coverage.
 - [x] Degraded-placement recursive descent coverage.
 - [x] `effective_nprobe_per_level` and `nprobe_policy_per_level` on
@@ -1368,54 +1371,424 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   landed the parsed reloption, SQL options diagnostics, CLI profile key, and a
   pure route-map helper that resolves primary plus bounded secondary leaf PIDs
   without writing replica rows yet.
-- [ ] **Assignment fanout.** Extend the assignment writer from one row per
+- [x] **Assignment fanout.** Extend the assignment writer from one row per
   vector to multiple `(vec_id, pid)` rows. The populated single-level
   relation-backed build path now writes one primary row plus bounded
   `BOUNDARY_REPLICA` rows with the same `vec_id` when
   `boundary_replica_count > 0`; post-build inserts now publish one insert
-  delta per selected target leaf with a shared `vec_id`; recursive build and
-  split/merge replacement fanout remain open.
-- [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
+  delta per selected target leaf with a shared `vec_id`; recursive builds now
+  route each source vector through the same top-N boundary predicate before
+  writing leaf rows; split replacement materialization now fans out normalized
+  source rows across replacement leaves; merge replacement remains primary-only
+  because it publishes one replacement leaf.
+- [x] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
   before final top-k. Scan candidate collection now treats primary and
   boundary-replica rows as scored-visible and uses the existing
   `VecIdDedupeEnabled` mode for replica-capable scan plans; the default
   primary-only path still resolves to `NoReplicaDedupeDisabled`.
-- [ ] **Recall study.** Measure recall delta with boundary replication off/on
-  at fixed storage overhead.
-- [ ] **Storage accounting.** Report leaf-assignment and posting-list growth
-  from replication.
+- [x] **Recall study.** Packet `review/30548-spire-boundary-recall-study/`
+  measures real-10k recall/storage with boundary replication off/on. With
+  `boundary_replica_count=1`, base assignment rows double from 10,000 to
+  20,000 and SPIRE index bytes rise from 8.2 MiB to 16.0 MiB. Recall@10 improves
+  from 0.9950 to 0.9975 at `nprobe=4` and from 0.9985 to 0.9990 at `nprobe=8`,
+  while mean query time roughly doubles at the same `nprobe`. The result keeps
+  boundary replication functioning but not compelling for the current real-10k
+  default operating point.
+- [x] **Storage accounting.** Leaf snapshot diagnostics now report base
+  primary rows, base boundary-replica rows, delta boundary-replica insert rows,
+  and effective boundary-replica rows so physical assignment growth from
+  replication is visible separately from logical row count.
 
 ## Phase 6 — Top-Level Graph
 
-- [ ] **Graph choice.** Decide whether the top-level centroid graph uses HNSW,
-  DiskANN, or a build-time-selectable option. Do not introduce a generic graph
-  abstraction until there are two real consumers.
-- [ ] **Build integration.** Build the top-level graph over top-level
-  centroids after recursive centroid materialization.
-- [ ] **Routing integration.** Replace flat top-level centroid scan with graph
-  lookup, then descend through SPIRE levels.
-- [ ] **Diagnostics.** Expose top-level graph size, degree, recall sanity rows,
-  and routing fanout.
+- [x] **Graph choice.** Phase 6 now has a design checkpoint in
+  `plan/design/spire-top-level-graph.md`. The first top-level graph is a
+  single-layer Vamana/DiskANN-style graph over top-level SPIRE routing
+  centroids, reusing the pure `ec_diskann` graph core rather than nesting an
+  `ec_diskann` AM or introducing a selectable graph abstraction. HNSW and
+  build-time graph algorithm selection remain deferred until there is a second
+  SPIRE graph implementation.
+- [x] **Build integration.** Opt-in recursive builds now publish a durable
+  `TopGraph` partition object over the root routing centroids when
+  `top_graph_enabled = 1`; the build path rejects top-graph publication unless
+  `recursive_fanout >= 2`.
+- [x] **Routing integration.** Opt-in scans now load the active top-graph object,
+  route from graph-selected root children through recursive SPIRE levels, and
+  then reuse the existing quantized scoring, `vec_id` dedupe, and exact-rerank
+  pipeline. The default remains flat because `top_graph_enabled = 0`.
+- [x] **Diagnostics.** SQL function `ec_spire_index_top_graph_snapshot(index_oid)`
+  now exposes active top-graph presence, size, degree/build parameters,
+  configured/effective scan fanout, object bytes, and fail-closed status rows
+  for missing or duplicated visible graph objects.
 
 ## Phase 7 — Multi-Machine Placement
 
-- [ ] **Remote node model.** Define node identity, placement-map membership,
-  remote health, and stale-node behavior.
-- [ ] **Remote search API.** Add a SPIRE remote search SQL function on storage
-  nodes that accepts query vector, selected PIDs, requested epoch, and top-k
-  budget, then returns compact candidate rows.
-- [ ] **Coordinator transport.** Use libpq pipeline mode first for
+- [x] **Remote node model.** Phase 7 now has a design checkpoint in
+  `plan/design/spire-remote-node-model.md`: `node_id = 0` remains the local
+  coordinator node, nonzero node IDs are coordinator-scoped remote SPIRE
+  storage nodes, remote placements stay in the existing
+  `pid -> node_id -> local_store_id` map, and strict/degraded behavior is
+  defined around explicit node health, epoch-serving evidence, and
+  stale/unavailable diagnostics before libpq execution lands.
+- [x] **Remote search API.** `ec_spire_remote_search` is now available as the
+  first storage-node SQL endpoint: it accepts query vector, selected leaf PIDs,
+  requested active epoch, top-k budget, and strict/degraded consistency mode,
+  then returns compact quantized candidate rows with epoch/node/object identity,
+  vec-id bytes, opaque row locator bytes, and score. Coordinator libpq fanout and
+  retained-epoch serving remain separate Phase 7 work.
+- [x] **Coordinator transport.** Use libpq pipeline mode first for
   coordinator-to-node fanout; do not invent a custom network protocol until the
-  SQL/protocol shape fails measurement.
-- [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
+  SQL/protocol shape fails measurement. Coordinator-side fanout planning now
+  groups selected leaf PIDs into local work, per-remote-node target requests,
+  and degraded skipped-placement diagnostics before libpq execution lands. The
+  plan is SQL-visible through `ec_spire_remote_search_fanout_plan(...)`.
+  Target-level request grouping is SQL-visible through
+  `ec_spire_remote_search_target_plan(...)`, which emits one row per local,
+  remote, or degraded-skipped target group with the selected PID array and
+  transport status. Target-readiness planning is SQL-visible through
+  `ec_spire_remote_search_target_readiness(...)`, which joins target fanout to
+  node descriptor readiness and reports remote targets as blocked by missing
+  remote-node descriptors before libpq transport can run. Request-level
+  planning is SQL-visible through `ec_spire_remote_search_request_plan(...)`,
+  which binds target groups to the storage-node endpoint contract: query
+  dimension, top-k budget, consistency mode, endpoint function, and transport
+  status. Request-level readiness is SQL-visible through
+  `ec_spire_remote_search_request_readiness(...)`, which binds query/top-k and
+  endpoint metadata to target/node readiness so missing remote descriptors are
+  visible at the same granularity a future libpq request executor will consume.
+  Descriptor-aware request readiness is summarized through
+  `ec_spire_remote_search_readiness_summary(...)`, which reports one gating row
+  with ready/blocked/skipped request counts, blocked PID counts, missing
+  descriptor counts, transport counts, and the effective readiness status.
+  Request readiness is also
+  SQL-visible through `ec_spire_remote_search_request_summary(...)`, which
+  aggregates request counts, local/remote/skipped PID counts, executable PID
+  count, query dimension, top-k budget, consistency mode, and the effective
+  transport/degraded status into one coordinator gating row.
+  `ec_spire_remote_search_coordinator_local(...)` now exercises the planned
+  coordinator path for local-only fanout by planning selected leaves, executing
+  the local target batch, validating the batch, and applying the coordinator
+  merge helper. It fails closed before remote-target execution until libpq
+  transport lands. `ec_spire_remote_search_coordinator_local_summary(...)`
+  exposes the same path's fanout counts, skipped-placement count, merge input
+  count, duplicate vec-id count, returned candidate count, and transport status
+  for local-ready and remote-target plans. `ec_spire_remote_node_snapshot(...)`
+  now exposes node-level diagnostic rows derived from active placement metadata:
+  local node readiness is explicit, and nonzero node IDs are reported as
+  remote placements that require durable remote-node descriptors before libpq
+  fanout execution can be enabled.
+  `ec_spire_remote_node_descriptor_contract()` now exposes the durable
+  descriptor fields required before real libpq fanout can run; conninfo remains
+  an indirect secret reference rather than a raw connection string.
+  `ec_spire_remote_node_descriptor_state_contract()` now exposes the descriptor
+  lifecycle registry for catalog states (`active`, `draining`, `disabled`,
+  `failed`) and the synthetic `missing` state, including read eligibility and
+  snapshot status.
+  `ec_spire_remote_node_descriptor_registration_contract()` now exposes the
+  ordered validation and persistence actions for descriptor registration,
+  including secret-reference-only storage, remote identity/capability checks,
+  served-epoch window validation, policy state handling, and atomic generation
+  replacement.
+  `ec_spire_remote_node_descriptor_readiness(...)` and
+  `ec_spire_remote_node_descriptor_readiness_summary(...)` now project that
+  contract onto remote nodes so required missing descriptor fields are visible
+  as the precise pre-libpq blocker. `ec_spire_remote_node_descriptor` now
+  provides the durable coordinator-owned descriptor catalog keyed by
+  `(coordinator_index_oid, node_id)`, and `ec_spire_remote_node_snapshot(...)`
+  consumes active/draining/disabled/failed catalog rows so registered remote
+  nodes can advance from descriptor-missing to the libpq transport gate.
+  `ec_spire_register_remote_node_descriptor(...)` now performs validated
+  upserts into that catalog while preserving the `conninfo_secret_name`
+  indirection, and registered remote descriptors now propagate through
+  target-readiness, execution-plan, and libpq-request envelopes as the
+  `requires_libpq_transport` gate rather than a missing-descriptor blocker. The
+  registration upsert validates the coordinator OID as an `ec_spire` index
+  before mutating the descriptor catalog and fails closed unless
+  `descriptor_generation` advances the existing row. Descriptor registration
+  now also rejects distinct `conninfo_secret_name` values that sanitize to the
+  same external provider lookup key for one coordinator index, preventing
+  accidental env-var secret aliasing. Read-side libpq connection descriptors
+  now accept only `active` and `draining` catalog states, so `disabled` or
+  `failed` descriptors continue to block dispatch instead of resolving as
+  pipeline-ready.
+  `ec_spire_remote_node_capability_plan(...)`
+  now exposes the pre-libpq capability-check contract per node: required epoch
+  window, candidate format, extension version, conninfo source, identity status,
+  and readiness status. `ec_spire_remote_node_capability_summary(...)`
+  aggregates that contract into one coordinator gate with ready/blocked node
+  counts, missing descriptor counts, required candidate format, required
+  extension version, and a recommendation.
+  `ec_spire_remote_search_execution_plan(...)` and
+  `ec_spire_remote_search_execution_summary(...)` now expose the final
+  pre-libpq executor contract: local-direct vs. libpq-pipeline transport,
+  endpoint function, remote index/conninfo metadata source, candidate format,
+  blocked/degraded counts, and effective status.
+  `ec_spire_remote_search_libpq_request_plan(...)` and
+  `ec_spire_remote_search_libpq_request_summary(...)` now expose the remote
+  libpq request envelope without opening connections: SQL template, bind
+  parameter count, expected result column count, remote index source, conninfo
+  source, candidate format, PID counts, and blocked/readiness status.
+  `ec_spire_remote_search_libpq_connection_plan(...)` and
+  `ec_spire_remote_search_libpq_connection_summary(...)` now resolve registered
+  descriptors into the future executor's per-node connection envelope without
+  exposing raw conninfo: secret reference, remote index regclass, remote
+  identity byte count, pipeline-mode requirement, summary counts, and
+  fail-closed missing descriptor status.
+  `ec_spire_remote_search_libpq_dispatch_plan(...)` and
+  `ec_spire_remote_search_libpq_dispatch_summary(...)` now expose the final
+  pre-I/O dispatch contract: SQL template, parameter/result shape, secret
+  reference, remote index regclass, pipeline dispatch action, receive validator,
+  dispatch counts, and fail-closed blocked status.
+  `ec_spire_remote_search_libpq_bind_plan(...)` now expands each ready or
+  blocked dispatch row into the six executor bind slots from the parameter
+  contract, including value source, status, preview, and element-count metadata
+  without opening libpq connections or exposing raw conninfo.
+  `ec_spire_remote_search_libpq_bind_summary(...)` now aggregates those bind
+  rows into a compact executor gate with ready/blocked bind counts, remote PID
+  counts, and the effective bind status.
+  `ec_spire_remote_search_libpq_executor_work_plan(...)` now composes per-node
+  dispatch, bind readiness, executor next-step, and work action into the
+  immediate pre-I/O work rows a future libpq executor will consume.
+  `ec_spire_remote_search_libpq_executor_work_summary(...)` now aggregates
+  those work rows into one coordinator gate with ready/blocked work counts,
+  remote PID counts, next executor step, executor status, and effective status.
+  `ec_spire_remote_search_libpq_executor_readiness(...)` now splits the
+  remaining transport gate into executor steps: conninfo secret resolution,
+  libpq connection open, pipeline mode, request send, receive validation, and
+  merge handoff, while still avoiding socket I/O. The coordinator gate now
+  includes `libpq_executor_status` and `libpq_executor_next_step`, and advances
+  active-descriptor remote plans from the generic transport blocker to
+  `requires_libpq_executor` / `conninfo_secret_resolution`.
+  `ec_spire_remote_search_libpq_executor_step_contract()` now publishes the
+  ordered executor step contract so descriptor, secret, connection, pipeline,
+  send, receive-validation, and merge-handoff names can be checked without a
+  specific query plan.
+  `ec_spire_remote_search_libpq_secret_plan(...)` and
+  `ec_spire_remote_search_libpq_secret_summary(...)` now project the external
+  conninfo secret-provider status onto per-node remote search rows, reporting
+  resolved/missing secret blockers and the next executor step without exposing
+  raw conninfo or opening sockets.
+  The search executor-readiness and coordinator gate now consume that secret
+  summary, so resolved conninfo secrets advance the reported blocker from
+  `conninfo_secret_resolution` to `open_libpq_connection` while staying
+  fail-closed before socket I/O.
+  `ec_spire_remote_search_libpq_connection_open_plan(...)` and
+  `ec_spire_remote_search_libpq_connection_open_summary(...)` now project
+  resolved secret rows into per-query, no-pooling connection-open work and the
+  next pipeline-mode blocker without opening sockets.
+  `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
+  parameters, types, semantic roles, and validators for that request envelope.
+  `ec_spire_remote_search_libpq_result_contract()`,
+  `ec_spire_remote_search_receive_plan(...)`, and
+  `ec_spire_remote_search_merge_input_summary(...)` now expose the next
+  receive/merge boundary: result-column schema, per-node candidate batch
+  validation expectations, opaque row-locator policy, merge helper, dedupe key,
+  tie-breaker, batch counts, and blocked/readiness status.
+  `ec_spire_remote_search_receive_summary(...)` now aggregates receive-plan
+  rows into one coordinator gate with ready/blocked receive counts, remote PID
+  counts, result contract metadata, row-locator policy, and effective status.
+  `ec_spire_remote_search_row_locator_contract()` and
+  `ec_spire_remote_search_finalization_summary(...)` now expose the final
+  post-merge boundary: row locators remain origin-node opaque bytes, remote heap
+  resolution stays deferred to origin-node lookup, and finalization reports
+  whether remote heap fetch is blocked or ready.
+  `ec_spire_remote_search_coordinator_gate_summary(...)` now ties execution,
+  libpq dispatch, receive, merge, and final heap-fetch readiness into one
+  coordinator integration gate with the next unresolved blocker. The gate now
+  uses an internal `SpireCoordinatorPipeline::execute_once(...)` bundle so the
+  operator entrypoint computes target readiness once and derives execution,
+  dispatch, receive, merge, finalization, and executor-readiness summaries from
+  that shared pipeline state.
+  `ec_spire_remote_search_heap_resolution_contract()` now makes the local vs.
+  origin-node heap lookup boundary explicit.
+  `ec_spire_remote_search_local_heap_resolution_plan(...)` now decodes
+  coordinator-local opaque row locators into heap block/offset work items while
+  keeping remote-origin resolution blocked behind the origin-node contract.
+  `ec_spire_remote_search_heap_resolution_summary(...)` now aggregates local
+  decoded locator counts, remote heap work, and the effective resolution
+  blocker for the coordinator.
+  `ec_spire_remote_search_local_heap_candidates(...)` and
+  `ec_spire_remote_search_local_heap_candidate_summary(...)` now attach decoded
+  coordinator-local heap block/offset work items to ranked candidates while
+  preserving the fail-closed remote-target gate. Mixed local/degraded-skipped
+  plans now preserve `degraded_ready` through merge, finalization, heap
+  resolution, and local heap candidate summaries.
+  `ec_spire_remote_search_coordinator_result_summary(...)` now composes the
+  final coordinator gate into one row with result source, returned local heap
+  candidate count, decoded locator count, receive status, final heap-fetch
+  status, and next blocker. It now also consumes libpq executor heap candidates
+  for ready remote plans, merges them with any coordinator-local heap rows,
+  dedupes by vec-id under the remote merge ordering contract, and reports
+  `remote_heap_candidates,ready,remote_ready` once remote origin-node heap rows
+  are available.
+  `ec_spire_remote_search_coordinator_result_contract()` now names the final
+  search result-source states for local heap candidates, remote heap
+  candidates, blocked pre-result gates, and empty-top-k outcomes.
+  `ec_spire_remote_operator_entrypoint_contract()` now names the compact
+  operator-facing subset of the larger remote diagnostic surface for search,
+  descriptor readiness, capability, manifest persistence, and manifest
+  publication checks, plus the search conninfo-secret gate and single-secret
+  probe surfaces. `ec_spire_remote_libpq_connection_lifecycle_contract()` now
+  locks the Phase 7 executor contract to per-query, no-pooling libpq
+  connections, executor-owned `conninfo_secret_name` resolution, no raw
+  conninfo exposure through SQL, and fail-closed/no-implicit-retry behavior for
+  both remote search and remote manifest publication transports.
+  `ec_spire_remote_conninfo_secret_resolution_contract()` now records the
+  Phase 7 authentication decision: v1 uses an external executor-owned secret
+  provider keyed by `conninfo_secret_name`, keeps raw conninfo out of extension
+  SQL/catalog surfaces, leaves FDW-style mappings as a future option, and
+  rejects an extension-owned raw conninfo table.
+  PG18 contract coverage now also verifies that the descriptor-state CHECK in
+  `sql/bootstrap.sql` and `ecaz--0.1.0--0.1.1.sql` both match the Rust catalog
+  state registry, preventing upgrade/bootstrap drift.
+  `ec_spire_remote_conninfo_secret_resolution_status(...)` now implements the
+  first external-provider lookup surface by mapping secret references to
+  executor-owned environment keys and reporting only lookup key, byte count,
+  status, and recommendation; raw libpq conninfo remains unreturned from SQL.
+  Descriptor registration uses the same lookup-key derivation to reject
+  colliding secret references before they can share one provider entry by
+  accident.
+  `ec_spire_remote_catalog_orphan_summary()` and
+  `ec_spire_remote_catalog_orphan_cleanup()` now expose the first remote
+  catalog lifecycle cleanup path: rows keyed by coordinator OIDs that no longer
+  resolve to live `ec_spire` indexes are reported and removable from the
+  descriptor and manifest catalogs. `ec_spire_remote_catalog_index_cleanup()`
+  now adds an exact coordinator-OID cleanup target, and
+  `ec_spire_remote_catalog_drop_index_cleanup` wires that target to a `sql_drop`
+  event trigger so DROP INDEX removes matching remote catalog rows without
+  sweeping unrelated orphaned rows. The same exact cleanup now also removes
+  applied manifest header/entry rows keyed by `remote_index_oid`, so dropping a
+  remote-side apply target does not leave inert applied-catalog rows behind.
+  Phase 7 coordinator transport closeout is validated by packet
+  `30654-spire-result-composition-closeout`, including the multicluster smoke
+  artifact at `review/30654-spire-result-composition-closeout/artifacts/`.
+- [x] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
-  stale-node state.
-- [ ] **Graceful degradation policy.** Define strict fail-closed and degraded
+  stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
+  the pre-publish remote-node descriptor gate for active placement metadata:
+  remote node counts, remote placement-state counts, blocked/missing descriptor
+  counts, readiness status, and recommendation.
+  `ec_spire_remote_epoch_publish_plan(...)` now exposes the same gate per
+  remote node, including placement-state counts, required served/retained epoch
+  windows, observed node epoch windows, and the precise publish blocker.
+  `ec_spire_remote_epoch_publish_gate_summary(...)` now composes those
+  readiness rows into one final pre-publish decision: local-only publish,
+  distributed publish-ready, or blocked distributed publish with the next
+  descriptor/epoch-window blocker and the shared degradation-policy contract.
+  `ec_spire_remote_epoch_manifest_plan(...)` and
+  `ec_spire_remote_epoch_manifest_summary(...)` now expose the planned manifest
+  entries and final manifest decision for local-only, blocked, and distributed
+  epoch publishes without writing a remote manifest. Publish readiness now
+  derives blocked state from the per-node publish plan, so stale served-epoch
+  or retained-window gaps block manifests through the `remote_epoch_window`
+  gate even when the remote descriptor exists. `ec_spire_remote_epoch_manifest`
+  and `ec_spire_remote_epoch_manifest_entry` now persist distributed-ready
+  manifest headers and included remote-node entries through
+  `ec_spire_persist_remote_epoch_manifest(...)`; blocked or local-only manifest
+  decisions fail closed, and readback is SQL-visible through
+  `ec_spire_remote_epoch_manifest_catalog(...)` plus
+  `ec_spire_remote_epoch_manifest_entry_catalog(...)`.
+  `ec_spire_remote_epoch_manifest_catalog_summary(...)` compares the current
+  manifest decision against persisted catalog rows so operators can distinguish
+  blocked, missing-persistence, stale-persistence, and ready manifest states.
+  `ec_spire_persist_remote_epoch_manifest(...)` now rechecks the current active
+  epoch inside its SPI write block and fails closed with a retryable error if
+  the epoch advanced between the manifest summary read and durable catalog
+  writes.
+  `ec_spire_remote_epoch_manifest_publication_plan(...)` projects the current
+  manifest and persisted catalog into per-node publication actions,
+  distinguishing ready libpq-pipeline publication from missing or stale
+  manifest persistence before any remote I/O exists.
+  `ec_spire_remote_epoch_manifest_publication_summary(...)` aggregates that
+  plan into one publication decision with ready, persist-required,
+  refresh-required, and blocked counts, plus the remaining
+  `requires_libpq_executor` / `conninfo_secret_resolution` handoff when
+  manifest publication preconditions are ready.
+  `ec_spire_remote_epoch_manifest_libpq_request_plan(...)` now exposes the
+  future per-node libpq request envelope for ready remote manifest publication,
+  including descriptor-backed secret/index metadata, payload source/format,
+  SQL template, parameter/result counts, and executor handoff status.
+  `ec_spire_remote_epoch_manifest_libpq_request_summary(...)`, the manifest
+  libpq parameter/result contracts, and the manifest libpq executor-step
+  contract now make the pre-I/O request batch and apply-result boundary
+  reviewable before a real libpq executor exists.
+  `ec_spire_remote_epoch_manifest_payload_plan(...)` and
+  `ec_spire_remote_epoch_manifest_payload_summary(...)` now materialize the
+  catalog-backed JSONB payloads referenced by the request plan, and
+  `ec_spire_validate_remote_epoch_manifest_payload(...)` validates that payload
+  shape on the remote side before any durable remote apply path exists.
+  `ec_spire_remote_epoch_manifest_libpq_dispatch_plan(...)` and
+  `ec_spire_remote_epoch_manifest_libpq_dispatch_summary(...)` now join the
+  request envelope, JSONB payload, dispatch action, receive validator, and
+  executor handoff into the final manifest-publication pre-I/O dispatch view.
+  `ec_spire_remote_epoch_manifest_libpq_bind_plan(...)` now expands each
+  manifest dispatch row into the three parameter-contract bind slots with value
+  source, status, preview, and manifest-entry count metadata.
+  `ec_spire_remote_epoch_manifest_libpq_bind_summary(...)` now aggregates
+  manifest bind readiness into one row with request, bind, ready/blocked, entry
+  count, executor status, and effective bind status.
+  `ec_spire_remote_epoch_manifest_libpq_executor_work_plan(...)` now composes
+  manifest dispatch, bind readiness, executor next-step, and work action into
+  per-node pre-I/O publication work rows.
+  `ec_spire_remote_epoch_manifest_libpq_executor_work_summary(...)` now
+  aggregates manifest publication work into one pre-I/O executor gate with
+  ready/blocked work counts, bind readiness, next step, executor status, and
+  effective status.
+  `ec_spire_remote_epoch_manifest_libpq_executor_readiness(...)` now reports the
+  remaining manifest publication executor steps: secret resolution, connection
+  open, pipeline entry, send, and payload-validation result handoff.
+  `ec_spire_remote_epoch_manifest_libpq_receive_plan(...)` and
+  `ec_spire_remote_epoch_manifest_libpq_receive_summary(...)` now expose the
+  pre-I/O manifest payload-validation receive boundary, including expected
+  result contract, validator action, ready/blocked receive counts, executor
+  status, and effective status.
+  `ec_spire_remote_epoch_manifest_publication_gate_summary(...)` now composes
+  publication readiness, libpq request/dispatch/receive counts, executor status,
+  next blocker, and effective status into one final pre-I/O manifest
+  publication gate.
+  `ec_spire_remote_epoch_manifest_publication_result_summary(...)` now presents
+  that gate as the final operator-facing publication result source, including
+  receive counts, payload-validation result status, the next blocker, and
+  effective status.
+  `ec_spire_remote_epoch_manifest_publication_result_contract()` now names the
+  final result-source states for local-only, pending-libpq, ready validation,
+  and blocked publication outcomes.
+  `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
+  ordered prerequisite/action contract for manifest publication: publish gate,
+  persisted catalog, entry freshness, per-node plan readiness, and future
+  libpq-pipeline transport. Phase 7 distributed manifest closeout is validated
+  by packet `30654-spire-result-composition-closeout`, including remote manifest
+  apply evidence in
+  `review/30654-spire-result-composition-closeout/artifacts/`.
+- [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
-  reporting skipped placements explicitly.
-- [ ] **Merge semantics.** Merge remote candidates by stable `vec_id`, dedupe
-  boundary replicas, and define how local heap row resolution works after
-  remote candidate selection.
+  reporting skipped placements explicitly. The coordinator-local summary now
+  reports `degraded_ready` when degraded-mode planning skips selected
+  placements, and exposes the skipped-placement count alongside merge counters.
+  `ec_spire_remote_degradation_policy_contract()` now documents the strict vs.
+  degraded placement-state actions that coordinator fanout and distributed
+  epoch publication share. The invariant test
+  `remote_degradation_policy_contract_matches_fanout_skip_decisions` now guards
+  that SQL contract against fanout planner drift, and mixed
+  local/degraded-skipped plans preserve `degraded_ready` through execution,
+  merge, finalization, heap-resolution, local heap-candidate, and coordinator
+  result summaries while keeping stale placements fail-closed.
+- [x] **Merge semantics.** Remote candidate merge now has a production helper
+  that globally ranks compact candidate rows, dedupes by stable `vec_id`, keeps
+  primary placements ahead of boundary replicas on score ties, validates
+  candidate envelopes, and applies the final top-k cap after dedupe. The
+  coordinator receive boundary now validates candidate batches against the
+  requested epoch, expected node, selected PIDs, object version, visible
+  assignment flags, vec-id, locator, and score before those batches can enter
+  the merge path. `ec_spire_remote_search_merge_order_contract()` now exposes
+  the exact comparator order used by that helper. Coordinator-local heap
+  resolution now decodes local opaque locators into heap block/offset work
+  items, local heap candidates carry ranked candidate metadata through that
+  boundary, and `ec_spire_remote_search_coordinator_result_summary(...)`
+  composes the final gate for local-ready, degraded-ready, and remote-blocked
+  plans. Remote-origin heap fetch remains deferred under the coordinator
+  transport item until libpq execution can return real remote candidate
+  batches.
 - [x] **Replica deferral.** Record replicated partition objects as future work
   for read throughput and availability; v1 assumes one primary placement per
   PID. Recorded in the Phase 0 storage note as a future
@@ -1424,20 +1797,32 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
 ## Phase 8 — Product-Scale Measurement Gate
 
-- [ ] **Background maintenance scheduler.** Add automatic scheduling around the
+- [x] **Background maintenance scheduler.** Add automatic scheduling around the
   existing manual `ec_spire_index_maintenance_run(index_oid)` machinery, such
   as a background worker, VACUUM-time hook, or operator-controlled periodic
   job. Any automated scheduler must keep the Phase 2 lock-time reload/recheck
   contract and reuse the same publish path rather than inventing a second
   split/merge implementation.
-- [ ] **Old-epoch physical reclamation.** Physically reclaim or reuse retained
+  Landed in packet 30625: `ec_spire_index_maintenance_scheduler_plan` exposes
+  an operator-periodic-job schedule decision under the same publish lock
+  recheck, and `ec_spire_index_maintenance_scheduler_run` delegates to the
+  existing locked maintenance publish path.
+- [x] **Old-epoch physical reclamation.** Physically reclaim or reuse retained
   old epoch object/manifest tuples only after active-query and retention rules
   prove they are no longer needed. Phase 2 preserves retired epochs for
   correctness and exposes cleanup-candidate debt, but tuple/page reclamation is
   a later space-management phase.
-- [ ] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
+  Packet 30625 added `ec_spire_index_epoch_cleanup_summary` so operators can
+  see retention blockers and cleanup-candidate tuple debt in one row. Landed in
+  packet 30628: `ec_spire_index_epoch_cleanup_run` now removes unprotected
+  object tuples for cleanup-eligible epochs using no-compaction line-pointer
+  deletion under the SPIRE publish lock.
+- [x] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
   correctness, WAL safety, and scan behavior.
-- [ ] **SPIRE planner cost model.** Replace the
+  Landed in packet 30626: the local correctness matrix records the focused PG18
+  lanes for build/scan, insert/update/vacuum, recursive routing, maintenance
+  publish safety, storage debt, planner cost, and remote contract drift guards.
+- [x] **SPIRE planner cost model.** Replace the
   `cost::gated_planner_cost_estimate(block_count)` stub in
   `src/am/ec_spire/cost.rs` with a SPIRE-aware cost function factoring in
   `nlists`, effective `nprobe`, `local_store_count`, recursion depth, and the
@@ -1450,18 +1835,171 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_ivf`, and `ec_hnsw` are credible. Until this lands, planner choice
   involving `ec_spire` is driven only by block count and any cross-AM
   benchmark comparison through the planner is misleading.
-- [ ] **Benchmark harness.** Extend `ecaz` to prepare/load/query SPIRE corpora
+  Landed in packet 30620: the callback now uses active hierarchy diagnostics,
+  page byte estimates, effective probe count, storage format, rerank width,
+  local-store fanout, and the PG18 tree-height callback.
+- [x] **Benchmark harness.** Extend `ecaz` to prepare/load/query SPIRE corpora
   and write packet-local artifacts. Depends on the SPIRE planner cost model
   above for any measurement that traverses the SQL planner.
+  Landed across packets 30622-30624: suite explain steps are profile-aware for
+  SPIRE, the reusable real10k SPIRE suite expands load/storage/explain/latency/
+  recall commands with packet-local artifacts, and suite reports can parse the
+  planner-cost snapshot rows emitted by explain artifacts.
 - [ ] **Scale packet.** Run controlled AWS/RDS-class measurements before making
   product billion-scale claims. Depends on the SPIRE planner cost model
-  above.
-- [ ] **Docs.** Update README/user docs only after a validated operator path
-  exists.
+  above. Packet 30629 prepares the scale-packet runbook and artifact manifest
+  scaffold. Packet 30629 also records a local PG18 real10k preflight covering
+  load, storage, explain, latency, and recall with `recursive_fanout=2` and
+  `nprobe_per_level=2`; that proves local functional/operator readiness but is
+  not the controlled AWS/RDS-class performance run. The actual scale
+  measurement remains open until the external environment is available or the
+  operator explicitly waives the product-scale gate.
+- [x] **Docs.** Update README/user docs only after a validated operator path
+  exists. Landed in packet 30627: `docs/SPIRE_DIAGNOSTICS.md` now documents the
+  operator-controlled scheduler flow and old-epoch cleanup summary status.
+
+## Phase 9 — SPIRE Routing Quality
+
+Detailed task file:
+`plan/tasks/task30-phase9-spire-graph-architecture.md`.
+
+Phase 9 is the graph-architecture and routing-quality ladder opened after
+Phase 8 local functionality. It is not part of the Phase 8 ship-readiness gate.
+The goal is to make the SPIRE graph shape composable across many hierarchy
+levels before remote execution and performance work build on it.
+
+Reviewer scoping packet:
+`review/30653-spire-multicluster-pg18-smoke/feedback/2026-05-09-02-reviewer.md`.
+The Phase 8 pull-forward from that note, per-level `nprobe`, landed in packet
+30656. Architecture review packet
+`review/30658-spire-phase9-routing-plan/feedback/2026-05-09-01-reviewer.md`
+expands Phase 9 around top-graph frontier, global recursive beam, boundary
+replication execution, and global vector identity.
+
+- [x] **Phase 9 entry gate.** Keep AWS/RDS-class performance claims gated on
+  the Phase 8 scale packet unless the operator explicitly waives that claim.
+  Architecture/design work proceeded under the operator's local-functionality
+  waiver; product-scale claims remain blocked on the Phase 8 scale packet.
+- [x] **Top-graph frontier contract.** Decouple top graph node count from root
+  fanout and define which routing frontier the graph covers.
+  Landed in Phase 9.1 planning/code checkpoint: ADR-054 defines the active
+  root/top routing child frontier, and top-graph diagnostics now distinguish
+  frontier node count, root child count, routing levels, and active leaf count.
+  Review packet: `review/30660-spire-top-graph-frontier-contract/request.md`.
+- [x] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
+  by reusing the relation-object V2 chain format for top graphs and surfacing
+  byte, tuple, and segment diagnostics.
+- [x] **Cached or borrowed graph routing.** Avoid per-query adjacency copies
+  and avoid full centroid offset scans when the comparator can use monotonic
+  inner-product ordering.
+- [x] **Global recursive beam.** Core scan route budgets, global scored
+  expansion, leaf-route dedupe, and per-level routing diagnostics have landed
+  in the Phase 9.4 implementation slices.
+- [x] **Boundary replication execution contract.** Primary/replica row
+  semantics, route integration, dedupe behavior, opt-in defaults, and
+  primary/replica/deduped/winner scan diagnostics are now covered for boundary
+  replicas.
+- [x] **Global vector identity.** ADR-055 defines cross-node global vec IDs and
+  remote merge now scopes existing local vec IDs by `node_id`, preventing
+  unrelated node-local IDs from deduping across nodes.
+- [x] **Quality experiments.** Phase 9.7 now has canonical local baseline
+  evidence, adaptive `nprobe` treatment in `review/30687-spire-adaptive-nprobe`,
+  and ADR deferrals for IMI, anisotropic centroid scoring, and query difficulty
+  estimation. Details live in `plan/tasks/task30-phase9-spire-graph-architecture.md`.
+- [x] **ADR defer multi-probe centroid scoring.** ADR-051 records that
+  standalone multi-probe centroid scoring is deferred because anisotropic
+  centroid scoring is expected to subsume it.
+- [x] **ADR defer NN-routing classifier.** ADR-052 records the deferred
+  research track and the open drift/retraining/evaluation questions.
+- [x] **ADR defer routing reranker.** ADR-053 records the deferred research
+  track and the open cost-of-being-wrong/evaluation questions.
+
+## Phase 10 — SPIRE Execution and Performance Architecture
+
+Detailed task file:
+`plan/tasks/task30-phase10-spire-execution-performance.md`.
+
+Phase 10 turns the corrected Phase 9 graph semantics into a scalable execution
+path. It owns bounded candidate collection, eager-vs-streaming scan shape,
+heap-rerank I/O, multi-NVMe read overlap, and remote libpq fanout. It should
+not change the graph semantics established in Phase 9.
+
+- [x] **Bounded candidate collection.** Hard candidate-row budgets, bounded
+  heap retention, truncation diagnostics, and deterministic tie-break behavior
+  are tracked in the detailed Phase 10.1 section.
+- [x] **Streaming AM scan decision.** ADR-056 keeps Phase 10 on the eager
+  bounded `amrescan` path, documents the ceiling, and leaves incremental
+  `amgettuple` streaming for a future ownership ADR.
+- [x] **Heap rerank I/O.** Batched/prefetched exact heap rerank landed, with
+  rerank-width recall and latency evidence recorded in packets
+  `review/30686-spire-phase9-quality-baseline` and
+  `review/30687-spire-adaptive-nprobe`.
+- [x] **Multi-NVMe read overlap.** Phase 10 keeps `(node_id, local_store_id)`
+  grouping, adds per-store and top-graph I/O attribution, reuses decoded delta
+  rows, and records the PostgreSQL read-stream/prefetch scheduling contract in
+  ADR-057.
+- [x] **Remote libpq executor.** ADR-058 keeps the current custom libpq
+  executor diagnostic/operator-only; production concurrent/pipelined fanout is
+  deferred to a future production remote executor checkpoint.
+- [x] **Remote heap resolution.** ADR-059 assigns future production remote heap
+  resolution to the origin node and keeps coordinator locators opaque until
+  writer-side global vector IDs and origin-node visibility filtering are
+  available.
+- [x] **Performance harness.** Extend `ecaz` measurements for route budgets,
+  candidate budgets, multi-store reads, and remote fanout. The detailed Phase
+  10.7 task file records the landed adaptive-nprobe bench flags, local
+  pipeline snapshot, local-vs-AWS evidence split, and the
+  `ecaz bench spire-pipeline` route-budget / remote-fanout counter command.
+
+## Phase 11 — SPIRE Distributed Production Parity
+
+Detailed task file:
+`plan/tasks/task30-phase11-spire-distributed-production-parity.md`.
+
+Phase 11 owns the production-readiness work that should happen before the
+deferred AWS/RDS-class scale packet: production remote execution, writer-side
+global vector IDs, origin-node heap resolution, local multi-instance fixtures,
+strict/degraded epoch behavior, security/version/fault contracts, and
+distributed benchmark harnesses. Coordinator HA, distributed writes, and
+AWS/RDS-class product-scale claims remain deferred until this local
+production-readiness gate is reviewed.
+
+- [ ] **Paper-parity gate.** Build a SPIRE paper parity checklist and define
+  the local production-readiness gate that must pass before AWS is scheduled.
+- [ ] **Writer-side global vector IDs.** Emit durable global `0x02` IDs when a
+  stable fixed-width source identity is available while preserving node-scoped
+  local ID compatibility. Allocation hooks and Leaf V2 fixed-width global-ID
+  storage are landed, and the stable source contract is fixed at 16 payload
+  bytes. ADR-063 selects the v1 provider as one included UUID or exact-16-byte
+  `bytea` identity column; live writer plumbing remains.
+- [ ] **Remote search endpoint.** Promote or add a production remote search
+  endpoint that returns compact candidates with served epoch, node identity,
+  row locator, score, quantizer/index fingerprint, protocol/version metadata,
+  and diagnostics.
+- [ ] **Production libpq coordinator.** Add concurrent or pipelined libpq
+  fanout with bounded connections, timeouts, cancellation, cached remote index
+  validation, libpq `sslmode` preservation, raw-conninfo non-exposure, global
+  backpressure, and explicit strict/degraded failure behavior.
+- [ ] **Remote heap resolution.** Resolve remote heap visibility on the origin
+  node and return one coordinator-visible ordered result stream.
+- [ ] **Multi-instance readiness.** Add local coordinator plus at least two
+  remote PostgreSQL node fixtures that verify epoch consistency, degraded
+  behavior, merge ordering, online lifecycle behavior, fault injection, and
+  fanout diagnostics.
+- [ ] **Local multi-NVMe hardening.** Keep `(node_id, local_store_id)` as the
+  scheduling unit and add repeatable local multi-store evidence before AWS.
+- [ ] **Production harness and runbooks.** Extend `ecaz` and docs so local
+  multi-instance recall/latency/counter packets can be produced repeatably,
+  including the Phase 11 libpq security boundary and local capacity targets.
+- [ ] **AWS entry gate.** Defer AWS/RDS-class scale until the Phase 11 local
+  production-readiness bundle is reviewed.
 
 ## Dependencies
 
 - ADR-049 — accepted staging and partition-object storage decision.
+- ADR-051 — multi-probe centroid scoring deferred.
+- ADR-052 — learned NN-routing classifier deferred.
+- ADR-053 — routing reranker deferred.
 - Task 28 — landed IVF implementation and local benchmark substrate.
 - Task 10 — benchmark result-capture discipline and packet-local artifacts.
 - Task 19 — PG18 primary target and diagnostics surface.
@@ -1491,6 +2029,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 - Boundary replication with deduped scans and recall/storage evidence.
 - Top-level graph routing over top centroids.
 - Multi-machine coordinator and remote partition-store prototype.
+- Production-ready distributed SPIRE coordinator path after Phase 11.
 - `ecaz` operator support and review-packet benchmark artifacts.
 
 ## Primary Validation

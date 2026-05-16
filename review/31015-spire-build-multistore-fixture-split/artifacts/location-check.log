@@ -1,0 +1,10 @@
+Script started on 2026-05-13 17:24:46-07:00 [<not executed on terminal>]
+src/tests/build.rs
+460:    fn test_ec_spire_aux_store_relcache_disables_autovacuum() {
+538:    fn test_ec_spire_multistore_large_fixture_routes_all_stores() {
+630:    fn test_ec_spire_singlestore_reindex_succeeds() {
+668:    fn test_ec_spire_multistore_reindex_rejected() {
+698:    fn test_ec_spire_tqvector_populated_build_scans_with_heap_rerank() {
+730:    fn test_ec_spire_relation_two_store_scan_roundtrip() {
+
+Script done on 2026-05-13 17:24:46-07:00 [COMMAND_EXIT_CODE="0"]

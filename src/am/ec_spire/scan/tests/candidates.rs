@@ -502,9 +502,25 @@
         .unwrap();
 
         let stores = observer.into_stores();
-        assert_eq!(stores.len(), 1);
-        assert_eq!(stores[0].local_store_id, 1);
-        assert_eq!(stores[0].dropped_unselected_delta_route_count, 1);
+        assert_eq!(stores.len(), 3);
+        let selected_leaf_store = stores
+            .iter()
+            .find(|store| store.local_store_id == 0)
+            .unwrap();
+        assert_eq!(selected_leaf_store.route_count, 1);
+        assert_eq!(selected_leaf_store.leaf_route_count, 1);
+        let dropped_store = stores
+            .iter()
+            .find(|store| store.local_store_id == 1)
+            .unwrap();
+        assert_eq!(dropped_store.route_count, 0);
+        assert_eq!(dropped_store.dropped_unselected_delta_route_count, 1);
+        let selected_delta_store = stores
+            .iter()
+            .find(|store| store.local_store_id == 2)
+            .unwrap();
+        assert_eq!(selected_delta_store.route_count, 1);
+        assert_eq!(selected_delta_store.delta_route_count, 1);
 
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].local_store_id, 0);
@@ -516,6 +532,127 @@
         assert_eq!(groups[1].delta_routes.len(), 1);
         assert_eq!(groups[1].delta_routes[0].delta_pid, selected_delta_pid);
         assert_eq!(groups[1].delta_routes[0].parent_leaf_pid, selected_leaf_pid);
+    }
+
+    #[test]
+    fn load_delta_rows_for_routes_reads_each_delta_object_once() {
+        struct CountingDeltaReader {
+            delta_object: SpireDeltaPartitionObject,
+            read_pids: RefCell<Vec<u64>>,
+        }
+
+        impl SpireObjectReader for CountingDeltaReader {
+            fn read_object_header(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpirePartitionObjectHeader, String> {
+                unreachable!("delta load test should not read object headers")
+            }
+
+            fn read_routing_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireRoutingPartitionObject, String> {
+                unreachable!("delta load test should not read routing objects")
+            }
+
+            fn read_leaf_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireLeafPartitionObject, String> {
+                unreachable!("delta load test should not read leaf objects")
+            }
+
+            fn read_leaf_object_v2(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<crate::am::ec_spire::storage::SpireLeafPartitionObjectV2, String>
+            {
+                unreachable!("delta load test should not read leaf V2 objects")
+            }
+
+            fn read_delta_object(
+                &self,
+                placement: &SpirePlacementEntry,
+            ) -> Result<SpireDeltaPartitionObject, String> {
+                self.read_pids.borrow_mut().push(placement.pid);
+                Ok(self.delta_object.clone())
+            }
+        }
+
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let leaf_pid = SPIRE_FIRST_PID + 1;
+        let delta_pid = SPIRE_FIRST_PID + 11;
+        let delta_placement = SpirePlacementEntry::local_store_available_by_id(
+            7,
+            delta_pid,
+            2,
+            502,
+            1,
+            tid(61, 1),
+            100,
+        );
+        let object_manifest =
+            SpireObjectManifest::from_entries(7, vec![manifest_entry_for(&delta_placement)])
+                .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(7, vec![delta_placement]).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+        let delta_object = SpireDeltaPartitionObject::new(
+            delta_pid,
+            1,
+            leaf_pid,
+            vec![
+                assignment_row_with_payload(
+                    SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                    1,
+                    10,
+                    1,
+                    vec![1, 2, 3],
+                ),
+                delete_assignment_row(2, 10, 2),
+            ],
+        )
+        .unwrap();
+        let reader = CountingDeltaReader {
+            delta_object,
+            read_pids: RefCell::new(Vec::new()),
+        };
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+
+        let loaded = load_delta_rows_for_routes(
+            &snapshot,
+            &reader,
+            &[SpireDeltaObjectRoute {
+                delta_pid,
+                parent_leaf_pid: leaf_pid,
+                placement: delta_placement,
+                object_version: 1,
+            }],
+            &mut observer,
+        )
+        .unwrap();
+        let deleted_vec_ids = collect_delta_delete_vec_ids_for_loaded_routes(&loaded);
+
+        assert_eq!(*reader.read_pids.borrow(), vec![delta_pid]);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].rows.len(), 2);
+        assert!(deleted_vec_ids.contains(&SpireVecId::local(2)));
+
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].local_store_id, 2);
+        assert_eq!(stores[0].delta_pid_count, 1);
+        assert_eq!(stores[0].delete_delta_row_count, 1);
     }
 
     #[test]
@@ -635,9 +772,21 @@
             prefetched_pids: RefCell::new(Vec::new()),
         };
 
-        prefetch_store_object_read_groups(&reader, std::slice::from_ref(&groups[0])).unwrap();
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+        prefetch_store_object_read_groups(
+            &reader,
+            7,
+            std::slice::from_ref(&groups[0]),
+            &mut observer,
+        )
+        .unwrap();
 
         assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].prefetched_object_count, 2);
+        assert_eq!(stores[0].prefetched_object_bytes, 200);
+        assert_eq!(stores[0].read_batch_count, 1);
     }
 
     #[test]
@@ -735,9 +884,18 @@
             prefetched_pids: RefCell::new(Vec::new()),
         };
 
-        prefetch_store_object_read_groups(&reader, &groups).unwrap();
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+        prefetch_store_object_read_groups(&reader, 7, &groups, &mut observer).unwrap();
 
         assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 2);
+        assert_eq!(stores[0].prefetched_object_count, 1);
+        assert_eq!(stores[0].prefetched_object_bytes, 100);
+        assert_eq!(stores[0].read_batch_count, 1);
+        assert_eq!(stores[1].prefetched_object_count, 1);
+        assert_eq!(stores[1].prefetched_object_bytes, 100);
+        assert_eq!(stores[1].read_batch_count, 1);
     }
 
     #[test]
@@ -888,6 +1046,8 @@
             leaf_count: 2,
             nprobe: 2,
             nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 2,
             rerank_width_source: "relation",
@@ -958,19 +1118,30 @@
             boundary_replica_count: 0,
             nprobe: 2,
             rerank_width: 2,
+            max_candidate_rows: 0,
             training_sample_rows: 0,
             seed: 0,
             pq_group_size: 0,
+            top_graph_enabled: 0,
+            top_graph_degree: 32,
+            top_graph_build_list_size: 100,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 0,
+            nprobe_per_level: None,
             storage_format: SpireStorageFormat::TurboQuant,
+            source_identity: SpireSourceIdentityProvider::None,
             local_store_tablespaces: None,
         };
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
 
-        let prepared = prepare_single_level_snapshot_scan_candidates(
+        let leaf_count = count_snapshot_single_level_leaf_pids(&snapshot, &object_store).unwrap();
+        let scan_plan =
+            resolve_single_level_scan_plan_values(leaf_count, options, -1, -1).unwrap();
+        let candidates = collect_single_level_scan_plan_reranked_candidates(
             &snapshot,
             &object_store,
-            &query,
-            options,
+            query.values(),
+            scan_plan,
             |candidate| {
                 Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
                     1 => 1.0,
@@ -981,14 +1152,180 @@
         )
         .unwrap();
 
-        assert_eq!(prepared.scan_plan.leaf_count, 2);
-        assert_eq!(prepared.scan_plan.nprobe, 2);
-        assert_eq!(prepared.scan_plan.nprobe_source, "relation");
-        assert_eq!(prepared.candidates.len(), 2);
-        assert_eq!(prepared.candidates[0].vec_id.local_sequence(), Some(2));
-        assert_eq!(prepared.candidates[0].score, -10.0);
-        assert_eq!(prepared.candidates[1].vec_id.local_sequence(), Some(1));
-        assert_eq!(prepared.candidates[1].score, -1.0);
+        assert_eq!(scan_plan.leaf_count, 2);
+        assert_eq!(scan_plan.nprobe, 2);
+        assert_eq!(scan_plan.nprobe_source, "relation");
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
+    fn prepare_single_level_snapshot_scan_candidates_uses_top_graph_when_enabled() {
+        fn quantized_row(
+            vec_seq: u64,
+            block_number: u32,
+            offset_number: u16,
+            source_vector: &[f32],
+        ) -> SpireLeafAssignmentRow {
+            let input = quantized_assignment_input(
+                block_number,
+                offset_number,
+                SpireAssignmentPayloadFormat::TurboQuant,
+                source_vector,
+            );
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(vec_seq),
+                heap_tid: input.heap_tid,
+                payload_format: input.payload_format,
+                gamma: input.gamma,
+                encoded_payload: input.encoded_payload,
+            }
+        }
+
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let top_graph_draft = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 1,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .unwrap();
+        let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+            SPIRE_FIRST_PID + 90,
+            1,
+            root.header.level,
+            &top_graph_draft,
+        )
+        .unwrap();
+        let positive_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 11, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let negative_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 21, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store
+                .insert_routing_object(7, &positive_internal)
+                .unwrap(),
+            object_store
+                .insert_routing_object(7, &negative_internal)
+                .unwrap(),
+            object_store
+                .insert_top_graph_object(7, &top_graph_object)
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 11,
+                    1,
+                    SPIRE_FIRST_PID + 10,
+                    &[quantized_row(1, 10, 1, &[1.0, 0.0])],
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 21,
+                    1,
+                    SPIRE_FIRST_PID + 20,
+                    &[quantized_row(2, 10, 2, &[-1.0, 0.0])],
+                )
+                .unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let options = EcSpireOptions {
+            nlists: 2,
+            recursive_fanout: 2,
+            local_store_count: 1,
+            boundary_replica_count: 0,
+            nprobe: 1,
+            rerank_width: 0,
+            max_candidate_rows: 0,
+            training_sample_rows: 0,
+            seed: 42,
+            pq_group_size: 0,
+            top_graph_enabled: 1,
+            top_graph_degree: 1,
+            top_graph_build_list_size: 2,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 2,
+            nprobe_per_level: None,
+            storage_format: SpireStorageFormat::TurboQuant,
+            source_identity: SpireSourceIdentityProvider::None,
+            local_store_tablespaces: None,
+        };
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+
+        let top_graph_plan = options.top_graph_plan().unwrap();
+        let leaf_count = count_snapshot_single_level_leaf_pids(&snapshot, &object_store).unwrap();
+        let scan_plan =
+            resolve_single_level_scan_plan_values(leaf_count, options, -1, -1).unwrap();
+        let candidates = collect_top_graph_scan_plan_reranked_candidates(
+            &snapshot,
+            &object_store,
+            query.values(),
+            scan_plan,
+            top_graph_plan,
+            |candidate| {
+                Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
+                    1 => 10.0,
+                    other => panic!("unexpected rerank candidate {other}"),
+                }))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(scan_plan.nprobe, 1);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[0].heap_tid, tid(10, 1));
+        assert_eq!(candidates[0].score, -10.0);
     }
 
     #[test]
@@ -1010,6 +1347,8 @@
             leaf_count: 0,
             nprobe: 0,
             nprobe_source: "none",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(0).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 0,
             rerank_width_source: "relation",
@@ -1203,6 +1542,140 @@
         assert_eq!(candidates[0].score, -10.0);
         assert_eq!(candidates[1].vec_id.local_sequence(), Some(4));
         assert_eq!(candidates[1].score, -7.0);
+    }
+
+    #[test]
+    fn rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates() {
+        let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        1,
+                        10,
+                        1,
+                        vec![4],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 1,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        2,
+                        10,
+                        2,
+                        vec![3],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 2,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        3,
+                        10,
+                        3,
+                        vec![10],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 3,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        2,
+                        10,
+                        4,
+                        vec![9],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 4,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        1,
+                        10,
+                        5,
+                        vec![2],
+                    ),
+                },
+            ],
+        }];
+
+        let candidates = rank_routed_leaf_rows_by_ip(
+            routed,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::VecIdDedupeEnabled,
+            Some(2),
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(3));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[1].score, -9.0);
+    }
+
+    #[test]
+    fn rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe() {
+        let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+                        7,
+                        10,
+                        1,
+                        vec![5],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 1,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        7,
+                        10,
+                        2,
+                        vec![5],
+                    ),
+                },
+            ],
+        }];
+
+        let candidates = rank_routed_leaf_rows_by_ip(
+            routed,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::VecIdDedupeEnabled,
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(7));
+        assert_eq!(candidates[0].assignment_flags, SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        assert_eq!(candidates[0].heap_tid, tid(10, 2));
+        assert_eq!(candidates[0].score, -5.0);
     }
 
     #[test]

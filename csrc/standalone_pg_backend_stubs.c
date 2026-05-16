@@ -7,6 +7,7 @@
 
 typedef struct MemoryContextData {
     uintptr_t opaque;
+    struct MemoryContextData *parent;
 } MemoryContextData;
 
 typedef MemoryContextData *MemoryContext;
@@ -50,12 +51,43 @@ typedef struct ErrorData {
 
 extern void ecaz_test_pg_backend_panic(const char *message);
 
-static MemoryContextData tqvector_test_memory_context_storage = {0};
+/*
+ * Standalone cargo-test loader stubs have a strict contract:
+ *
+ * - inert helper symbols may return minimal defaults when they only let
+ *   pure-Rust tests load pgrx-linked code;
+ * - backend execution symbols must panic through tqvector_backend_only() so a
+ *   direct cargo test cannot fake SPI, heap, catalog, or executor behavior.
+ *
+ * If a new unresolved PostgreSQL symbol appears, classify it deliberately in
+ * one of those two groups. Anything that would read or write backend state
+ * belongs in the pgrx/pg_test lane, not in a fake standalone implementation.
+ */
+static const uintptr_t TQVECTOR_TEST_ALLOCATED_MEMORY_CONTEXT = 0xecaa0001U;
 
-MemoryContext CurrentMemoryContext = &tqvector_test_memory_context_storage;
-MemoryContext ErrorContext = &tqvector_test_memory_context_storage;
+static MemoryContextData tqvector_top_memory_context_storage = {0};
+static MemoryContextData tqvector_error_context_storage = {0};
+static MemoryContextData tqvector_cache_memory_context_storage = {0};
+static MemoryContextData tqvector_message_context_storage = {0};
+static MemoryContextData tqvector_top_transaction_context_storage = {0};
+static MemoryContextData tqvector_cur_transaction_context_storage = {0};
+static MemoryContextData tqvector_portal_context_storage = {0};
+static MemoryContextData tqvector_postmaster_context_storage = {0};
+
+MemoryContext TopMemoryContext = &tqvector_top_memory_context_storage;
+MemoryContext CurrentMemoryContext = &tqvector_top_memory_context_storage;
+MemoryContext ErrorContext = &tqvector_error_context_storage;
+MemoryContext CacheMemoryContext = &tqvector_cache_memory_context_storage;
+MemoryContext MessageContext = &tqvector_message_context_storage;
+MemoryContext TopTransactionContext = &tqvector_top_transaction_context_storage;
+MemoryContext CurTransactionContext = &tqvector_cur_transaction_context_storage;
+MemoryContext PortalContext = &tqvector_portal_context_storage;
+MemoryContext PostmasterContext = &tqvector_postmaster_context_storage;
 ErrorContextCallback *error_context_stack = NULL;
 void *PG_exception_stack = NULL;
+
+uint64_t SPI_processed = 0;
+void *SPI_tuptable = NULL;
 
 static __thread ErrorData tqvector_current_error = {0};
 static __thread bool tqvector_current_error_active = false;
@@ -122,6 +154,11 @@ static void tqvector_free_error(ErrorData *edata) {
 static void tqvector_set_text(char **slot, const char *fmt, va_list args) {
     free(*slot);
     *slot = tqvector_vformat(fmt, args);
+}
+
+static void tqvector_backend_only(const char *symbol) {
+    ecaz_test_pg_backend_panic(symbol);
+    abort();
 }
 
 void ecaz_test_pg_backend_stubs_anchor(void) {}
@@ -237,4 +274,115 @@ void *palloc0(size_t size) {
 
 void pfree(void *pointer) {
     free(pointer);
+}
+
+MemoryContext AllocSetContextCreateInternal(
+    MemoryContext parent,
+    const char *name,
+    size_t minContextSize,
+    size_t initBlockSize,
+    size_t maxBlockSize
+) {
+    (void)name;
+    (void)minContextSize;
+    (void)initBlockSize;
+    (void)maxBlockSize;
+
+    MemoryContext context = (MemoryContext)calloc(1, sizeof(MemoryContextData));
+    if (context == NULL) {
+        abort();
+    }
+
+    context->opaque = TQVECTOR_TEST_ALLOCATED_MEMORY_CONTEXT;
+    context->parent = parent != NULL ? parent : TopMemoryContext;
+    return context;
+}
+
+void MemoryContextDelete(MemoryContext context) {
+    if (context != NULL && context->opaque == TQVECTOR_TEST_ALLOCATED_MEMORY_CONTEXT) {
+        free(context);
+    }
+}
+
+MemoryContext MemoryContextGetParent(MemoryContext context) {
+    if (context == NULL || context->parent == NULL) {
+        return TopMemoryContext;
+    }
+
+    return context->parent;
+}
+
+uint32_t GetCurrentTransactionId(void) {
+    return 1;
+}
+
+uint32_t GetCurrentTransactionIdIfAny(void) {
+    return 1;
+}
+
+bool IsBinaryCoercible(uint32_t srctype, uint32_t targettype) {
+    return srctype == targettype;
+}
+
+int SPI_connect(void) {
+    tqvector_backend_only("SPI_connect is unavailable outside a PostgreSQL backend");
+    return -1;
+}
+
+int SPI_finish(void) {
+    tqvector_backend_only("SPI_finish is unavailable outside a PostgreSQL backend");
+    return -1;
+}
+
+int SPI_execute(const char *src, bool read_only, long tcount) {
+    (void)src;
+    (void)read_only;
+    (void)tcount;
+    tqvector_backend_only("SPI_execute is unavailable outside a PostgreSQL backend");
+    return -1;
+}
+
+int SPI_execute_with_args(
+    const char *src,
+    int nargs,
+    uint32_t *argtypes,
+    uintptr_t *values,
+    const char *nulls,
+    bool read_only,
+    long tcount
+) {
+    (void)src;
+    (void)nargs;
+    (void)argtypes;
+    (void)values;
+    (void)nulls;
+    (void)read_only;
+    (void)tcount;
+    tqvector_backend_only("SPI_execute_with_args is unavailable outside a PostgreSQL backend");
+    return -1;
+}
+
+uintptr_t SPI_getbinval(void *tuple, void *tupdesc, int fnumber, bool *isnull) {
+    (void)tuple;
+    (void)tupdesc;
+    (void)fnumber;
+    if (isnull != NULL) {
+        *isnull = true;
+    }
+    tqvector_backend_only("SPI_getbinval is unavailable outside a PostgreSQL backend");
+    return 0;
+}
+
+uint32_t SPI_gettypeid(void *tupdesc, int fnumber) {
+    (void)tupdesc;
+    (void)fnumber;
+    tqvector_backend_only("SPI_gettypeid is unavailable outside a PostgreSQL backend");
+    return 0;
+}
+
+char *format_type_extended(uint32_t type_oid, int32_t typemod, uint16_t flags) {
+    (void)type_oid;
+    (void)typemod;
+    (void)flags;
+    return tqvector_strdup("unknown");
 }

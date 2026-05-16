@@ -1,0 +1,25 @@
+Script started on 2026-05-13 11:44:56-07:00 [<not executed on terminal>]
+    20 src/am/ec_spire/root/remote_candidates/mod.rs
+    21 src/am/ec_spire/root/remote_candidates/sort.rs
+    66 src/am/ec_spire/root/remote_candidates/payload_limits.rs
+   137 src/am/ec_spire/root/remote_candidates/vocab.rs
+   233 src/am/ec_spire/root/remote_candidates/result_contracts.rs
+   276 src/am/ec_spire/root/remote_candidates/payload.rs
+   337 src/am/ec_spire/root/remote_candidates/resolve.rs
+   431 src/am/ec_spire/root/remote_candidates/governance.rs
+   450 src/am/ec_spire/root/remote_candidates/pipeline.rs
+   587 src/am/ec_spire/root/remote_candidates/endpoint_identity.rs
+   654 src/am/ec_spire/root/remote_candidates/libpq_plan.rs
+   655 src/am/ec_spire/root/remote_candidates/contracts.rs
+   717 src/am/ec_spire/root/remote_candidates/fault_matrix.rs
+   776 src/am/ec_spire/root/remote_candidates/operator.rs
+   780 src/am/ec_spire/root/remote_candidates/fanout.rs
+   801 src/am/ec_spire/root/remote_candidates/scan_output.rs
+   846 src/am/ec_spire/root/remote_candidates/write_payload.rs
+   984 src/am/ec_spire/root/remote_candidates/executor_receive.rs
+  1094 src/am/ec_spire/root/remote_candidates/tests/production_executor_state.rs
+  1488 src/am/ec_spire/root/remote_candidates/dispatch.rs
+  1633 src/am/ec_spire/root/remote_candidates/production_transport.rs
+ 12986 total
+
+Script done on 2026-05-13 11:44:56-07:00 [COMMAND_EXIT_CODE="0"]

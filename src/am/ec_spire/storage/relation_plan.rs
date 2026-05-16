@@ -5,6 +5,7 @@ pub(super) enum SpirePartitionObjectKind {
     Internal = 2,
     Leaf = 3,
     Delta = 4,
+    TopGraph = 5,
 }
 
 impl SpirePartitionObjectKind {
@@ -14,6 +15,7 @@ impl SpirePartitionObjectKind {
             2 => Ok(Self::Internal),
             3 => Ok(Self::Leaf),
             4 => Ok(Self::Delta),
+            5 => Ok(Self::TopGraph),
             other => Err(format!("ec_spire invalid partition object kind: {other}")),
         }
     }

@@ -59,7 +59,8 @@ pub(super) fn collect_replacement_leaf_rows(
             SpirePartitionObjectKind::Root
             | SpirePartitionObjectKind::Internal
             | SpirePartitionObjectKind::Leaf
-            | SpirePartitionObjectKind::Delta => {}
+            | SpirePartitionObjectKind::Delta
+            | SpirePartitionObjectKind::TopGraph => {}
         }
     }
 
@@ -230,7 +231,10 @@ pub(super) fn plan_replacement_epoch_placement_directory(
             SpirePartitionObjectKind::Root
             | SpirePartitionObjectKind::Internal
             | SpirePartitionObjectKind::Leaf
-            | SpirePartitionObjectKind::Delta => {
+            | SpirePartitionObjectKind::Delta
+            | SpirePartitionObjectKind::TopGraph => {
+                // TODO(phase6): invalidate or rebuild top graphs when a
+                // replacement rewrites routing centroids rather than only leaf rows.
                 let mut carried = *placement;
                 carried.epoch = new_epoch;
                 entries.push(carried);

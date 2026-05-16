@@ -1,0 +1,6 @@
+Script started on 2026-05-13 17:15:39-07:00 [<not executed on terminal>]
+src/tests/build.rs
+231:    fn test_ec_spire_populated_build_publishes_root_control() {
+280:    fn test_ec_spire_populated_build_hash_routes_logical_store_set() {
+
+Script done on 2026-05-13 17:15:39-07:00 [COMMAND_EXIT_CODE="0"]

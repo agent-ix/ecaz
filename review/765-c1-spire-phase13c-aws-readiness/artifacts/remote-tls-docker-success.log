@@ -1,0 +1,12 @@
+run_dir=/home/peter/dev/ecaz/target/spire-remote-tls-docker-pg18-20260515Tlocaltls08Z
+remote_port=39418
+coord_port=39419
+docker_image=postgres:latest
+container_name=ecaz-spire-tls-20260515Tlocaltls08Z
+require_probe=connected,true,TLSv1.3
+verify_full_probe=connected,true,TLSv1.3
+disable_probe=connect_failed,false
+bad_host_probe=connect_failed,false
+require_transport=2,ready,none,3
+verify_full_transport=3,ready,none,3
+SPIRE remote TLS Docker PG18 probe passed

@@ -82,7 +82,7 @@ impl SpireLeafPartitionObjectV2 {
                 let row = columns.row(row_offset)?;
                 rows.push(SpireLeafAssignmentRow {
                     flags: row.flags,
-                    vec_id: SpireVecId::local(row.local_vec_seq()?),
+                    vec_id: row.vec_id()?,
                     heap_tid: row.heap_tid,
                     payload_format: columns.payload_format,
                     gamma: row.gamma,

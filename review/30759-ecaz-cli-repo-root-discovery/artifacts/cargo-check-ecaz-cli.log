@@ -1,0 +1,7 @@
+Script started on 2026-05-10 12:40:30-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.39s
+
+Script done on 2026-05-10 12:40:30-07:00 [COMMAND_EXIT_CODE="0"]

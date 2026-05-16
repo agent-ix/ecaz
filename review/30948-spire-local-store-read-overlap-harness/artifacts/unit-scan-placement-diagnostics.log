@@ -1,0 +1,12 @@
+Script started on 2026-05-12 17:58:48-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-81ab2156a921a9a9)
+
+running 1 test
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_counts_routed_store_rows ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 1689 filtered out; finished in 0.06s
+
+
+Script done on 2026-05-12 17:59:29-07:00 [COMMAND_EXIT_CODE="0"]

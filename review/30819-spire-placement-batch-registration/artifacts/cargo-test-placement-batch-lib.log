@@ -1,0 +1,20 @@
+command: cargo test placement_batch --lib
+timestamp: 2026-05-11 America/Los_Angeles
+
+Finished `test` profile [unoptimized + debuginfo] target(s) in 39.67s
+Running unittests src/lib.rs (target/debug/deps/ecaz-1903db179d6aa6e7)
+
+running 1 test
+Using PgConfig("pg18") and `pg_config` from /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config
+Building extension with features pg_test pg18
+Running command "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 19.52s
+Installing extension
+Discovered 740 SQL entities: 2 schemas (1 unique), 737 functions, 0 types, 0 enums, 1 sqls, 0 ords, 0 hashes, 0 aggregates, 0 triggers
+Rebuilding pgrx_embed, in debug mode, for SQL generation with features pg_test pg18
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.83s
+Writing SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+Finished installing ecaz
+test tests::pg_test_ec_spire_register_placement_batch_sql ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1618 filtered out; finished in 33.74s

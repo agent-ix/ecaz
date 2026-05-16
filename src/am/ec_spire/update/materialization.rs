@@ -222,6 +222,7 @@ pub(super) fn build_split_replacement_leaf_materialization_from_rows(
     pid_plan: &SpireLeafReplacementPidPlan,
     replacement_rows: Vec<SpireReplacementLeafRows>,
     fetched_sources: Vec<SpireSplitReplacementFetchedSourceVector>,
+    boundary_replica_count: u32,
     dimensions: usize,
     seed: u64,
     max_iterations: usize,
@@ -232,6 +233,7 @@ pub(super) fn build_split_replacement_leaf_materialization_from_rows(
         decision,
         pid_plan,
         source_rows,
+        boundary_replica_count,
         dimensions,
         seed,
         max_iterations,
@@ -314,6 +316,7 @@ pub(super) fn build_split_replacement_leaf_materialization(
     decision: &SpireLeafReplacementScheduleDecision,
     pid_plan: &SpireLeafReplacementPidPlan,
     source_rows: Vec<SpireSplitReplacementSourceRow>,
+    boundary_replica_count: u32,
     dimensions: usize,
     seed: u64,
     max_iterations: usize,
@@ -385,18 +388,28 @@ pub(super) fn build_split_replacement_leaf_materialization(
         })
         .collect::<Vec<_>>();
     for source_row in source_rows {
-        let centroid_index = common_training::assign_vector_to_centroid(
-            "ec_spire split replacement materialization",
+        let routed_indexes = route_split_replacement_boundary_indexes(
+            &model.centroids,
+            &pid_plan.replacement_pids,
             &source_row.source_vector,
-            &model,
+            boundary_replica_count,
         )?;
-        let Some(input) = routed_inputs.get_mut(centroid_index) else {
-            return Err(
-                "ec_spire split replacement materialization centroid index out of bounds"
-                    .to_owned(),
-            );
-        };
-        input.rows.push(source_row.assignment);
+        for (route_offset, centroid_index) in routed_indexes.into_iter().enumerate() {
+            let Some(input) = routed_inputs.get_mut(centroid_index) else {
+                return Err(
+                    "ec_spire split replacement materialization centroid index out of bounds"
+                        .to_owned(),
+                );
+            };
+            let flags = if route_offset == 0 {
+                SPIRE_ASSIGNMENT_FLAG_PRIMARY
+            } else {
+                SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
+            };
+            input
+                .rows
+                .push(split_replacement_assignment_with_flags(&source_row.assignment, flags)?);
+        }
     }
 
     let leaf_inputs =
@@ -405,4 +418,67 @@ pub(super) fn build_split_replacement_leaf_materialization(
         centroids: model.centroids,
         leaf_inputs,
     })
+}
+
+fn route_split_replacement_boundary_indexes(
+    centroids: &[Vec<f32>],
+    replacement_pids: &[u64],
+    source_vector: &[f32],
+    boundary_replica_count: u32,
+) -> Result<Vec<usize>, String> {
+    if centroids.is_empty() {
+        return Err(
+            "ec_spire split replacement boundary routing requires centroids".to_owned(),
+        );
+    }
+    if replacement_pids.len() != centroids.len() {
+        return Err(format!(
+            "ec_spire split replacement boundary routing pid count {} does not match centroid count {}",
+            replacement_pids.len(),
+            centroids.len()
+        ));
+    }
+    if centroids.len() > u32::MAX as usize {
+        return Err(
+            "ec_spire split replacement boundary routing centroid count exceeds u32".to_owned(),
+        );
+    }
+    let ranked = rank_centroid_routes_by_ip(
+        "ec_spire split replacement boundary routing",
+        source_vector,
+        source_vector.len(),
+        centroids
+        .iter()
+        .enumerate()
+        .zip(replacement_pids.iter().copied())
+        .map(|((index, centroid), pid)| SpireCentroidRouteInput {
+            centroid_index: index as u32,
+            pid,
+            centroid,
+        }),
+    )?;
+    let limit = usize::try_from(boundary_replica_count)
+        .unwrap_or(usize::MAX)
+        .saturating_add(1)
+        .min(ranked.len());
+    let selected = ranked
+        .into_iter()
+        .take(limit)
+        .map(|route| {
+            usize::try_from(route.centroid_index).map_err(|_| {
+                "ec_spire split replacement boundary routing centroid index exceeds usize"
+                    .to_owned()
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(selected)
+}
+
+fn split_replacement_assignment_with_flags(
+    assignment: &SpireLeafAssignmentRow,
+    flags: u16,
+) -> Result<SpireLeafAssignmentRow, String> {
+    let mut row = assignment.clone();
+    row.flags = flags;
+    Ok(row)
 }

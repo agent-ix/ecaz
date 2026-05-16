@@ -267,9 +267,9 @@ unsafe fn publish_relation_partitioned_single_level_build(
     leaf_assignments_by_centroid.resize_with(centroid_count, Vec::new);
     let boundary_replica_count = u32::try_from(state.options.boundary_replica_count)
         .map_err(|_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned())?;
-    for placement in build_boundary_leaf_assignment_placements(
+    for placement in build_boundary_leaf_assignment_placements_with_identity(
         &mut local_vec_id_allocator,
-        plan_boundary_assignment_inputs(state, &route_map, boundary_replica_count)?,
+        plan_boundary_assignment_identity_inputs(state, &route_map, boundary_replica_count)?,
     )? {
         let centroid_index = centroid_pids
             .iter()
@@ -332,11 +332,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
     Ok(state.scanned_tuples)
 }
 
-fn plan_boundary_assignment_inputs(
+fn plan_boundary_assignment_identity_inputs(
     state: &SpireBuildState,
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
-) -> Result<Vec<SpireBoundaryLeafAssignmentInput>, String> {
+) -> Result<Vec<SpireBoundaryLeafAssignmentIdentityInput>, String> {
     state
         .tuples
         .iter()
@@ -345,10 +345,13 @@ fn plan_boundary_assignment_inputs(
                 &tuple.source_vector,
                 boundary_replica_count,
             )?;
-            Ok(SpireBoundaryLeafAssignmentInput {
+            Ok(SpireBoundaryLeafAssignmentIdentityInput {
                 primary_pid: plan.primary_pid,
                 replica_pids: plan.replica_pids,
-                assignment: tuple.assignment.clone(),
+                assignment: SpireLeafAssignmentIdentityInput {
+                    assignment: tuple.assignment.clone(),
+                    vec_id_source_identity: tuple.vec_id_source_identity.clone(),
+                },
             })
         })
         .collect()
@@ -377,7 +380,11 @@ unsafe fn publish_relation_recursive_routing_build(
             consistency_mode: SpireConsistencyMode::Strict,
             target_fanout,
             seed: state.options.seed as u64,
-            assignments: state.assignment_inputs(),
+            boundary_replica_count: u32::try_from(state.options.boundary_replica_count).map_err(
+                |_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned(),
+            )?,
+            assignments: state.assignment_identity_inputs(),
+            source_vectors: state.source_vectors(),
             centroid_plan,
         },
         &mut pid_allocator,
@@ -390,14 +397,36 @@ unsafe fn publish_relation_recursive_routing_build(
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?
     };
-    let draft = build_recursive_routing_epoch_from_leaf_inputs_with_store(
-        coordinator.epoch_input,
-        &mut store,
-    )?;
-    if draft.next_pid != coordinator.next_pid {
+    let top_graph_plan = state.options.top_graph_plan()?;
+    let expected_next_pid = if top_graph_plan.enabled {
+        coordinator
+            .next_pid
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire recursive top graph next_pid overflow".to_owned())?
+    } else {
+        coordinator.next_pid
+    };
+    let draft = if top_graph_plan.enabled {
+        build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
+            coordinator.epoch_input,
+            SpireTopGraphBuildParams {
+                graph_degree: top_graph_plan.graph_degree,
+                build_list_size: top_graph_plan.build_list_size,
+                alpha: top_graph_plan.alpha,
+                seed: state.options.seed as u64,
+            },
+            &mut store,
+        )?
+    } else {
+        build_recursive_routing_epoch_from_leaf_inputs_with_store(
+            coordinator.epoch_input,
+            &mut store,
+        )?
+    };
+    if draft.next_pid != expected_next_pid {
         return Err(format!(
-            "ec_spire recursive relation build next_pid {} does not match coordinator next_pid {}",
-            draft.next_pid, coordinator.next_pid
+            "ec_spire recursive relation build next_pid {} does not match expected next_pid {}",
+            draft.next_pid, expected_next_pid
         ));
     }
     unsafe {
@@ -426,7 +455,7 @@ pub(super) unsafe fn build_spire_index_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: ItemPointer,
-    indexed_vector_kind: SpireIndexedVectorKind,
+    tuple_layout: SpireIndexedTupleLayout,
     payload_format: SpireAssignmentPayloadFormat,
     context: &str,
 ) -> SpireBuildTuple {
@@ -443,12 +472,76 @@ pub(super) unsafe fn build_spire_index_tuple(
     }
 
     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
-    match indexed_vector_kind {
+    let vec_id_source_identity = unsafe {
+        build_source_identity_from_tuple_values(values, isnull, tuple_layout.source_identity, context)
+    };
+    match tuple_layout.vector_kind {
         SpireIndexedVectorKind::Ecvector => {
-            build_spire_ecvector_tuple(heap_tid, &bytes, payload_format, context)
+            build_spire_ecvector_tuple(
+                heap_tid,
+                &bytes,
+                payload_format,
+                vec_id_source_identity,
+                context,
+            )
         }
         SpireIndexedVectorKind::Tqvector => {
-            build_spire_tqvector_tuple(heap_tid, &bytes, payload_format, context)
+            build_spire_tqvector_tuple(
+                heap_tid,
+                &bytes,
+                payload_format,
+                vec_id_source_identity,
+                context,
+            )
         }
     }
+}
+
+unsafe fn build_source_identity_from_tuple_values(
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    source_identity: Option<SpireSourceIdentityAttribute>,
+    context: &str,
+) -> SpireVecIdSourceIdentity {
+    let Some(source_identity) = source_identity else {
+        return SpireVecIdSourceIdentity::AllocateLocal;
+    };
+    let offset = source_identity.index_attr_offset;
+    if unsafe { *isnull.add(offset) } {
+        pgrx::error!("ec_spire {context} source_identity INCLUDE column must not be NULL");
+    }
+    let datum = unsafe { *values.add(offset) };
+    if datum.is_null() {
+        pgrx::error!("ec_spire {context} received a null source_identity datum");
+    }
+
+    let payload = match source_identity.datum_kind {
+        SpireSourceIdentityDatumKind::Uuid => unsafe { uuid_source_identity_payload(datum) },
+        SpireSourceIdentityDatumKind::Bytea16 => unsafe {
+            let bytes = detoasted_varlena_bytes(datum, "source_identity INCLUDE column");
+            <[u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]>::try_from(bytes.as_slice())
+                .unwrap_or_else(|_| {
+                    pgrx::error!(
+                        "ec_spire {context} source_identity bytea payload length {} must be {} bytes",
+                        bytes.len(),
+                        SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES
+                    )
+                })
+        },
+    };
+    SpireVecIdSourceIdentity::stable_fixed_global_payload(payload)
+}
+
+unsafe fn uuid_source_identity_payload(
+    datum: pg_sys::Datum,
+) -> [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES] {
+    let bytes = unsafe {
+        std::slice::from_raw_parts(
+            datum.cast_mut_ptr::<u8>(),
+            SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES,
+        )
+    };
+    let mut payload = [0_u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES];
+    payload.copy_from_slice(bytes);
+    payload
 }

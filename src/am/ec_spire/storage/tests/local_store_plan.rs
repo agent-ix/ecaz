@@ -75,6 +75,32 @@
     }
 
     #[test]
+    fn local_object_store_set_indexes_non_contiguous_store_ids() {
+        let config = SpireLocalStoreConfig::from_stores(
+            7,
+            vec![
+                SpireLocalStoreDescriptor::available(5, 505, 1005).unwrap(),
+                SpireLocalStoreDescriptor::available(2, 502, 1002).unwrap(),
+            ],
+        )
+        .unwrap();
+        let target_pid = (1..1000)
+            .find(|pid| config.store_for_pid(*pid).unwrap().local_store_id == 5)
+            .unwrap();
+        let mut store_set = SpireLocalObjectStoreSet::from_config(config, 8192).unwrap();
+        let object = SpireRoutingPartitionObject::root(target_pid, 3, 2, routing_children()).unwrap();
+
+        let placement = store_set.insert_routing_object(7, &object).unwrap();
+        let decoded = SpireObjectReader::read_routing_object(&store_set, &placement).unwrap();
+
+        assert_eq!(placement.local_store_id, 5);
+        assert_eq!(placement.store_relid, 505);
+        let mut expected = object.clone();
+        expected.header.published_epoch_backref = 7;
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
     fn local_object_store_rejects_unavailable_descriptor() {
         let descriptor = SpireLocalStoreDescriptor {
             local_store_id: 2,

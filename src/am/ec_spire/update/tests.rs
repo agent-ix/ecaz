@@ -85,9 +85,9 @@ mod tests {
     use crate::am::ec_spire::storage::{
         SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
         SpireLocalObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
-        SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
-        SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
-        SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+        SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
     };
     use crate::storage::page::ItemPointer;
 
@@ -222,6 +222,20 @@ mod tests {
         }
     }
 
+    fn global_vec_id(fill: u8) -> SpireVecId {
+        SpireVecId::global(&[fill; 16]).unwrap()
+    }
+
+    fn global_primary_row(
+        fill: u8,
+        block_number: u32,
+        offset_number: u16,
+    ) -> SpireLeafAssignmentRow {
+        let mut row = primary_row(u64::from(fill), block_number, offset_number);
+        row.vec_id = global_vec_id(fill);
+        row
+    }
+
     fn delta_insert_row(
         vec_seq: u64,
         block_number: u32,
@@ -278,10 +292,14 @@ mod tests {
             local_store_id: 12345,
             placement_state: "available",
             base_assignment_count: effective_assignment_count,
+            base_primary_assignment_count: effective_assignment_count,
+            base_boundary_replica_assignment_count: 0,
             delta_object_count: 0,
             delta_insert_assignment_count: 0,
+            delta_boundary_replica_insert_assignment_count: 0,
             delta_delete_assignment_count: 0,
             effective_assignment_count,
+            effective_boundary_replica_assignment_count: 0,
             split_assignment_threshold: 32,
             merge_assignment_threshold: 2,
             split_recommended,

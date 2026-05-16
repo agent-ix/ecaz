@@ -1,0 +1,43 @@
+Script started on 2026-05-13 12:06:25-07:00 [<not executed on terminal>]
+src/tests/mod.rs:2367:    #[pg_test]
+src/tests/mod.rs:2378:    #[pg_test]
+src/tests/mod.rs:2391:    #[pg_test]
+src/tests/mod.rs:2404:    #[pg_test]
+src/tests/mod.rs:2413:    #[pg_test]
+src/tests/mod.rs:2423:    #[pg_test]
+src/tests/mod.rs:2429:    #[pg_test]
+src/tests/mod.rs:2440:    #[pg_test]
+src/tests/mod.rs:2446:    #[pg_test]
+src/tests/mod.rs:2455:    #[pg_test]
+src/tests/mod.rs:2465:    #[pg_test]
+src/tests/mod.rs:2474:    #[pg_test]
+src/tests/mod.rs:2487:    #[pg_test]
+src/tests/mod.rs:2488:    fn test_ec_spire_access_method_is_registered() {
+src/tests/mod.rs:2496:    #[pg_test]
+src/tests/mod.rs:2497:    fn test_ec_spire_operator_classes_are_registered() {
+src/tests/mod.rs:2509:    #[pg_test]
+src/tests/mod.rs:2510:    fn test_ec_spire_empty_build_scan_no_rows() {
+src/tests/mod.rs:2533:    #[pg_test]
+src/tests/mod.rs:2534:    fn test_ec_spire_empty_pq_fastscan_build_scan_no_rows() {
+src/tests/mod.rs:2557:    #[pg_test]
+src/tests/mod.rs:2558:    fn test_ec_spire_active_snapshot_diagnostics_sql() {
+src/tests/mod.rs:2621:    #[pg_test]
+src/tests/mod.rs:2622:    fn test_ec_spire_large_routing_object_builds_and_scans() {
+src/tests/mod.rs:2673:    #[pg_test]
+src/tests/mod.rs:2674:    fn test_ec_spire_allocator_snapshot_sql() {
+src/tests/mod.rs:2764:    #[pg_test]
+src/tests/mod.rs:2765:    fn test_ec_spire_placement_directory_catalog_sql() {
+src/tests/mod.rs:2839:    #[pg_test]
+src/tests/mod.rs:2840:    fn test_ec_spire_placement_index_oid_lookup_uses_index_sql() {
+src/tests/mod.rs:2894:    #[pg_test]
+src/tests/mod.rs:2895:    fn test_ec_spire_register_placement_batch_sql() {
+src/tests/mod.rs:2938:    #[pg_test]
+src/tests/mod.rs:2940:    fn test_ec_spire_register_placement_batch_rejects_null_entry_sql() {
+src/tests/mod.rs:2954:    #[pg_test]
+src/tests/mod.rs:2956:    fn test_ec_spire_register_placement_batch_rejects_duplicate_pk_sql() {
+src/tests/mod.rs:2971:    #[pg_test]
+src/tests/mod.rs:2973:    fn test_ec_spire_register_placement_batch_rejects_invalid_sql() {
+src/tests/mod.rs:2986:    #[pg_test]
+src/tests/mod.rs:2987:    fn test_ec_spire_placement_snapshot_sql() {
+
+Script done on 2026-05-13 12:06:25-07:00 [COMMAND_EXIT_CODE="0"]

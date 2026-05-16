@@ -1,0 +1,70 @@
+Script started on 2026-05-09 23:20:32-07:00 [<not executed on terminal>]
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+CARGO_TARGET_DIR="/home/peter/dev/ecaz/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "test" "--features" "pg18 pg_test" "--no-default-features" "test_ec_spire_remote_search_libpq_executor_loopback_empty"
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 06s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-113f9a0fbb365a3d)
+
+running 1 test
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18 pg_test[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg18 pg_test" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 19.28s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m653[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m650[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18 pg_test[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 13.19s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+test tests::pg_test_ec_spire_remote_search_libpq_executor_loopback_empty ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 1520 filtered out; finished in 35.58s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-025515280eb64baa)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-b9069598404e2181)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-2c6200917d6383f5)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-13de3e3a006b8462)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-8bd489ae04052628)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-a725e8d168062db0)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-6182b844d613d903)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-09 23:23:06-07:00 [COMMAND_EXIT_CODE="0"]

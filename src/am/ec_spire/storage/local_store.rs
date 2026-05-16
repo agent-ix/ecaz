@@ -90,11 +90,11 @@ impl SpireLocalObjectStore {
         validate_leaf_assignments(assignments)?;
         let assignment_count = u32::try_from(assignments.len())
             .map_err(|_| "ec_spire leaf V2 assignment count exceeds u32".to_owned())?;
-        let (payload_format, payload_stride) = leaf_v2_payload_layout(assignments)?;
+        let layout = leaf_v2_column_layout(assignments)?;
         let max_segment_rows = leaf_v2_max_segment_rows(
             self.pages.page_size(),
-            payload_stride,
-            LEAF_V2_LOCAL_VEC_ID_STRIDE,
+            layout.payload_stride,
+            layout.vec_id_stride,
         )?;
         let segment_count = if assignments.is_empty() {
             0
@@ -121,9 +121,12 @@ impl SpireLocalObjectStore {
             object_version,
             parent_pid,
             assignment_count,
-            payload_format,
-            u32::try_from(payload_stride)
+            layout.payload_format,
+            u32::try_from(layout.payload_stride)
                 .map_err(|_| "ec_spire leaf V2 payload stride exceeds u32".to_owned())?,
+            layout.vec_id_kind,
+            u16::try_from(layout.vec_id_stride)
+                .map_err(|_| "ec_spire leaf V2 vec_id stride exceeds u16".to_owned())?,
             segment_count,
             provisional_first_segment,
             1,
@@ -177,9 +180,12 @@ impl SpireLocalObjectStore {
             object_version,
             parent_pid,
             assignment_count,
-            payload_format,
-            u32::try_from(payload_stride)
+            layout.payload_format,
+            u32::try_from(layout.payload_stride)
                 .map_err(|_| "ec_spire leaf V2 payload stride exceeds u32".to_owned())?,
+            layout.vec_id_kind,
+            u16::try_from(layout.vec_id_stride)
+                .map_err(|_| "ec_spire leaf V2 vec_id stride exceeds u16".to_owned())?,
             segment_count,
             first_segment_locator,
             object_bytes_total,
@@ -231,6 +237,33 @@ impl SpireLocalObjectStore {
         &mut self,
         epoch: u64,
         object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire local object store epoch 0 is invalid".to_owned());
+        }
+        let mut durable_object = object.clone();
+        durable_object.header.published_epoch_backref = epoch;
+        let encoded = durable_object.encode()?;
+        let object_bytes = u32::try_from(encoded.len())
+            .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
+        let object_tid = self.pages.insert_raw_tuple(encoded)?;
+        let placement = SpirePlacementEntry::local_store_available_by_id(
+            epoch,
+            durable_object.header.pid,
+            self.local_store_id,
+            self.store_relid,
+            durable_object.header.object_version,
+            object_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
+    pub(super) fn insert_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
         if epoch == 0 {
             return Err("ec_spire local object store epoch 0 is invalid".to_owned());
@@ -445,6 +478,35 @@ impl SpireLocalObjectStore {
         {
             return Err(format!(
                 "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                object.header.published_epoch_backref, placement.epoch
+            ));
+        }
+        Ok(object)
+    }
+
+    pub(super) fn read_top_graph_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireTopGraphPartitionObject, String> {
+        let raw = self.read_object_bytes(placement)?;
+        let object = SpireTopGraphPartitionObject::decode(raw)?;
+        if object.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match top graph pid {}",
+                placement.pid, object.header.pid
+            ));
+        }
+        if object.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match top graph version {}",
+                placement.object_version, object.header.object_version
+            ));
+        }
+        if object.header.published_epoch_backref == 0
+            || object.header.published_epoch_backref > placement.epoch
+        {
+            return Err(format!(
+                "ec_spire top graph published epoch backref {} is not valid for placement epoch {}",
                 object.header.published_epoch_backref, placement.epoch
             ));
         }

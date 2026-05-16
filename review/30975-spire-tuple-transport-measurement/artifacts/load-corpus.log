@@ -1,0 +1,22 @@
+[loader] inspecting review/30975-spire-tuple-transport-measurement/artifacts/measure_corpus.tsv
+[loader] inspecting review/30975-spire-tuple-transport-measurement/artifacts/measure_queries.tsv
+[loader] corpus: 2000 rows, sha256=71d1d8b08d960c2b67a05680ed08fcd73bca90ab279beff21173db2cfa1a894f  queries: 40 rows, sha256=4fa610c8675a5067a946c3e68e1e0a68b37eb8693cf449dcbbe117be61f41be4
+[loader] no sibling manifest at review/30975-spire-tuple-transport-measurement/artifacts/measure_manifest.json; continuing without verification
+[loader] copied corpus table phase12_tuple_measure_corpus in 62.66ms
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table phase12_tuple_measure_corpus in 15.42ms
+[loader] copied queries table phase12_tuple_measure_queries in 3.30ms
+[loader] building phase12_tuple_measure_turboquant_idx using ec_spire (reloptions=[nlists=16, nprobe=8, rerank_width=16, recursive_fanout=2, nprobe_per_level=2, storage_format=turboquant]) ...
+[loader] built phase12_tuple_measure_turboquant_idx in 26.57ms
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                          │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ phase12_tuple_measure_corpus (2000 rows)                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ phase12_tuple_measure_queries (40 rows)                                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ phase12_tuple_measure_turboquant_idx [nlists=16, nprobe=8, rerank_width=16, recursive_fanout=2, nprobe_per_level=2, storage_format=turboquant] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix phase12_tuple_measure in 186.09ms

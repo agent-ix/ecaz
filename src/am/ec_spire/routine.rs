@@ -29,7 +29,7 @@ fn build_ec_spire_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.ampredlocks = false;
     amroutine.amcanparallel = false;
     amroutine.amcanbuildparallel = false;
-    amroutine.amcaninclude = false;
+    amroutine.amcaninclude = true;
     amroutine.amusemaintenanceworkmem = true;
     amroutine.amsummarizing = false;
     amroutine.amparallelvacuumoptions = 0;

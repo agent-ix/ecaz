@@ -1,0 +1,12 @@
+Script started on 2026-05-13 16:43:16-07:00 [<not executed on terminal>]
+src/tests/vacuum.rs
+2:    fn test_ec_spire_epoch_cleanup_run_reclaims_old_tuples_sql() {
+100:    fn test_ec_spire_epoch_snapshot_sql() {
+278:    fn test_ec_spire_maintenance_run_empty_sql() {
+354:    fn test_ec_spire_locked_maintenance_run_plan_no_write_sql() {
+570:    fn test_ec_spire_maintenance_run_no_candidate_sql() {
+681:    fn test_ec_spire_recursive_maintenance_run_rejected() {
+711:    fn test_ec_spire_maintenance_run_merge_publish_sql() {
+841:    fn test_ec_spire_maintenance_run_split_publish_sql() {
+
+Script done on 2026-05-13 16:43:16-07:00 [COMMAND_EXIT_CODE="0"]

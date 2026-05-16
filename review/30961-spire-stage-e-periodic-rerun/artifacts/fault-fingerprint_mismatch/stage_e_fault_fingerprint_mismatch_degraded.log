@@ -1,0 +1,17 @@
+matrix_row=fingerprint_mismatch,endpoint_identity_mismatch,fail_closed,remote_candidate_receive_failed,skip_node,degraded_skipped,identity_cache_invalidations+1; degraded_skipped_dispatch_count+1
+injection=remote_index_identity=00 expected=dd43b9f7cf3827bd
+missing_remote_identity=dd43b9f7cf3827bd
+coord_ready_identity=dd43b9f7cf3827bd
+coord_ready_epoch=1
+coord_ready_pids=2,3
+query_command=tests.ec_spire_test_production_candidate_receive_summary(..., 'degraded')
+expected_status=degraded_ready
+expected_candidate_receive_failed_dispatch_count=0
+expected_degraded_skipped_dispatch_count=1
+expected_first_candidate_receive_failure_category=none
+expected_first_degraded_skip_category=endpoint_identity_mismatch
+expected_next_executor_step=remote_heap_resolution
+direct_ready_rows=1,0,3,1,0,1,9,6,-0.9999998,ec_spire_remote_search_v1,0.1.1,dd43b9f7cf3827bd,ready
+observed_candidate_receive_rows=2,remote_candidate_receive_failed,endpoint_identity_mismatch,0
+3,ready,none,1
+observed_summary=spire_remote_fanout_executor_v1,2,1,1,0,none,1,1,endpoint_identity_mismatch,remote_heap_resolution,degraded_ready

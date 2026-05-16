@@ -1,0 +1,19 @@
+Script started on 2026-05-13 16:02:56-07:00 [<not executed on terminal>]
+src/tests/dml_frontdoor.rs
+1001:    fn test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send() {
+1318:    fn test_ec_spire_dml_frontdoor_primitive_plan_sql() {
+
+src/tests/mod.rs
+7384:    include!("dml_frontdoor.rs");
+7704:    fn test_ec_spire_dml_frontdoor_replacement_decision_sql() {
+  40931 src/tests/mod.rs
+   1364 src/tests/dml_frontdoor.rs
+    838 src/tests/scan.rs
+    403 src/tests/placement.rs
+   1764 src/tests/insert.rs
+   2634 src/tests/remote_search.rs
+    796 src/tests/custom_scan.rs
+  17812 src/lib.rs
+  66542 total
+
+Script done on 2026-05-13 16:02:56-07:00 [COMMAND_EXIT_CODE="0"]

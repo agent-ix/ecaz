@@ -97,18 +97,67 @@
     }
 
     #[test]
+    fn local_object_store_writes_and_reads_top_graph_object() {
+        let object = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            2,
+            2,
+            4,
+            1.2,
+            0,
+            vec![
+                top_graph_node(21, 0, vec![1]),
+                top_graph_node(22, 1, vec![0]),
+            ],
+        )
+        .unwrap();
+        let expected_bytes = object.encode().unwrap().len() as u32;
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let placement = store.insert_top_graph_object(7, &object).unwrap();
+        let decoded = store.read_top_graph_object(&placement).unwrap();
+        let mut expected = object.clone();
+        expected.header.published_epoch_backref = 7;
+
+        assert_eq!(decoded, expected);
+        assert_eq!(placement.epoch, 7);
+        assert_eq!(placement.pid, 90);
+        assert_eq!(placement.object_version, 3);
+        assert_eq!(placement.object_bytes, expected_bytes);
+        assert_eq!(store.page_count(), 1);
+    }
+
+    #[test]
     fn local_object_store_reads_object_headers_for_dispatch() {
         let leaf = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
         let delta = SpireDeltaPartitionObject::new(19, 4, 17, Vec::new()).unwrap();
         let root = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        let top_graph = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            2,
+            2,
+            4,
+            1.2,
+            0,
+            vec![top_graph_node(21, 0, vec![])],
+        )
+        .unwrap();
         let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
 
         let leaf_placement = store.insert_leaf_object(7, &leaf).unwrap();
         let delta_placement = store.insert_delta_object(7, &delta).unwrap();
         let root_placement = store.insert_routing_object(7, &root).unwrap();
+        let top_graph_placement = store.insert_top_graph_object(7, &top_graph).unwrap();
         let leaf_header = store.read_object_header(&leaf_placement).unwrap();
         let delta_header = store.read_object_header(&delta_placement).unwrap();
         let root_header = store.read_object_header(&root_placement).unwrap();
+        let top_graph_header = store.read_object_header(&top_graph_placement).unwrap();
 
         assert_eq!(leaf_header.kind, SpirePartitionObjectKind::Leaf);
         assert_eq!(leaf_header.pid, 17);
@@ -122,6 +171,10 @@
         assert_eq!(root_header.pid, 11);
         assert_eq!(root_header.object_version, 3);
         assert_eq!(root_header.published_epoch_backref, 7);
+        assert_eq!(top_graph_header.kind, SpirePartitionObjectKind::TopGraph);
+        assert_eq!(top_graph_header.pid, 90);
+        assert_eq!(top_graph_header.parent_pid, 11);
+        assert_eq!(top_graph_header.published_epoch_backref, 7);
     }
 
     #[test]

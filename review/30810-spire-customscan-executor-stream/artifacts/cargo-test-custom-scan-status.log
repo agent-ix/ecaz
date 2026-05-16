@@ -1,0 +1,27 @@
+Script started on 2026-05-10 23:09:55-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.80s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-1bcc1a720f8a77b1)
+
+running 2 tests
+test am::ec_spire::custom_scan::tests::custom_scan_status_reports_executor_stream_pending_tuple_payload ... [32mok[m
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg_test pg18[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.80s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m731[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m728[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg_test pg18[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.93s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+test tests::pg_test_ec_spire_custom_scan_status_registered_fail_closed ... [32mok[m
+
+test result: [32mok[m. 2 passed; 0 failed; 0 ignored; 0 measured; 1608 filtered out; finished in 26.13s
+
+
+Script done on 2026-05-10 23:10:54-07:00 [COMMAND_EXIT_CODE="0"]

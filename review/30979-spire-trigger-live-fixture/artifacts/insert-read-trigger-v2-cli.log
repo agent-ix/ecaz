@@ -1,0 +1,4 @@
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] insert_mode=trigger
+[spire-multicluster] artifact_dir=review/30979-spire-trigger-live-fixture/artifacts/insert-read-trigger-v2

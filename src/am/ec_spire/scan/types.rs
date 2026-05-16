@@ -59,38 +59,6 @@ impl Ord for SpireScoredScanCandidateHeapEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct SpireRouteCandidate {
-    centroid_index: u32,
-    child_pid: u64,
-    ip_score: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SpireRouteCandidateHeapEntry {
-    candidate: SpireRouteCandidate,
-}
-
-impl PartialEq for SpireRouteCandidateHeapEntry {
-    fn eq(&self, other: &Self) -> bool {
-        route_candidate_cmp(&self.candidate, &other.candidate) == Ordering::Equal
-    }
-}
-
-impl Eq for SpireRouteCandidateHeapEntry {}
-
-impl PartialOrd for SpireRouteCandidateHeapEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SpireRouteCandidateHeapEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        route_candidate_cmp(&self.candidate, &other.candidate)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 struct SpireLoadedRoutingHierarchy {
     root_pid: u64,
@@ -104,12 +72,50 @@ struct SpireRecursiveLeafRoute {
     parent_pid: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpireRoutingChildRoute {
+    centroid_index: u32,
+    child_pid: u64,
+    score: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SpireRecursiveParentRoute {
+    parent: SpireRoutingPartitionObject,
+    path_score: f32,
+}
+
+// Recursive routing accumulates inner-product scores across levels. Top-graph
+// routes enter this same contract by converting their search distance back to a
+// score before the recursive descent continues.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpireRecursiveScoredChildRoute {
+    parent_pid: u64,
+    parent_level: u16,
+    child_pid: u64,
+    centroid_index: u32,
+    path_score: f32,
+    score: f32,
+}
+
+impl SpireRecursiveScoredChildRoute {
+    fn total_score(&self) -> f32 {
+        self.path_score + self.score
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireDeltaObjectRoute {
     delta_pid: u64,
     parent_leaf_pid: u64,
     placement: SpirePlacementEntry,
     object_version: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SpireLoadedDeltaObjectRoute {
+    route: SpireDeltaObjectRoute,
+    rows: Vec<SpireDeltaScanRow>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,29 +132,6 @@ struct SpireStoreObjectReadGroup {
     local_store_id: u32,
     leaf_routes: Vec<SpireLeafObjectReadRoute>,
     delta_routes: Vec<SpireDeltaObjectRoute>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SpireConservativeRecursiveNprobePolicy {
-    leaf_level_nprobe: u32,
-}
-
-impl SpireConservativeRecursiveNprobePolicy {
-    fn new(leaf_level_nprobe: u32) -> Result<Self, String> {
-        if leaf_level_nprobe == 0 {
-            return Err("ec_spire recursive scan requires leaf-level nprobe > 0".to_owned());
-        }
-        Ok(Self { leaf_level_nprobe })
-    }
-
-    fn nprobe_for_parent_level(self, parent_level: u16) -> u32 {
-        if parent_level <= 1 {
-            self.leaf_level_nprobe
-        } else {
-            // TODO: replace this conservative default when durable per-level nprobe controls land.
-            1
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -173,16 +156,53 @@ pub(super) struct SpirePreparedScanCandidates {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireRoutingLevelDiagnostics {
+    pub(super) level: u16,
+    pub(super) effective_nprobe: u32,
+    pub(super) effective_nprobe_source: &'static str,
+    pub(super) adaptive_nprobe_decision: &'static str,
+    pub(super) input_frontier_width: usize,
+    pub(super) expanded_parent_count: usize,
+    pub(super) selected_child_count: usize,
+    pub(super) deduped_route_count: usize,
+    pub(super) truncation_reason: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireScanRoutingDiagnostics {
+    pub(super) scan_plan: SpireSingleLevelScanPlan,
+    pub(super) levels: Vec<SpireRoutingLevelDiagnostics>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SpireStoreScanDiagnostics {
     pub(super) epoch: u64,
     pub(super) node_id: u32,
     pub(super) local_store_id: u32,
+    pub(super) route_count: usize,
+    pub(super) leaf_route_count: usize,
+    pub(super) delta_route_count: usize,
+    pub(super) prefetched_object_count: usize,
+    pub(super) prefetched_object_bytes: u64,
+    pub(super) read_batch_count: usize,
     pub(super) scanned_pid_count: usize,
     pub(super) leaf_pid_count: usize,
     pub(super) delta_pid_count: usize,
+    pub(super) delta_decode_count: usize,
     pub(super) candidate_row_count: usize,
     pub(super) leaf_candidate_row_count: usize,
     pub(super) delta_candidate_row_count: usize,
+    pub(super) primary_candidate_row_count: usize,
+    pub(super) boundary_replica_candidate_row_count: usize,
+    pub(super) deduped_candidate_row_count: usize,
+    pub(super) deduped_primary_candidate_row_count: usize,
+    pub(super) deduped_boundary_replica_candidate_row_count: usize,
+    pub(super) truncated_candidate_row_count: usize,
+    pub(super) truncated_primary_candidate_row_count: usize,
+    pub(super) truncated_boundary_replica_candidate_row_count: usize,
+    pub(super) candidate_winner_count: usize,
+    pub(super) primary_candidate_winner_count: usize,
+    pub(super) boundary_replica_candidate_winner_count: usize,
     pub(super) delete_delta_row_count: usize,
     pub(super) dropped_unselected_delta_route_count: usize,
 }
@@ -194,6 +214,14 @@ pub(super) struct SpireScanPlacementDiagnostics {
 }
 
 trait SpireRoutedScanObserver {
+    fn routed_leaf(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn routed_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn store_read_batch(&mut self, _epoch: u64, _node_id: u32, _local_store_id: u32) {}
+
+    fn prefetched_object(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
     fn scanned_leaf(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
     fn scanned_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
@@ -202,9 +230,45 @@ trait SpireRoutedScanObserver {
 
     fn dropped_unselected_delta_route(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
-    fn visible_leaf_candidate(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+    fn visible_leaf_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
 
-    fn visible_delta_candidate(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+    fn visible_delta_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
+
+    fn deduped_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
+
+    fn truncated_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
+
+    fn candidate_winner(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
 }
 
 struct SpireNoopRoutedScanObserver;
@@ -231,18 +295,45 @@ impl SpireScanPlacementDiagnosticsObserver {
         epoch: u64,
         placement: &SpirePlacementEntry,
     ) -> &mut SpireStoreScanDiagnostics {
+        self.entry_by_store(epoch, placement.node_id, placement.local_store_id)
+    }
+
+    fn entry_by_store(
+        &mut self,
+        epoch: u64,
+        node_id: u32,
+        local_store_id: u32,
+    ) -> &mut SpireStoreScanDiagnostics {
         self.by_store
-            .entry((placement.node_id, placement.local_store_id))
+            .entry((node_id, local_store_id))
             .or_insert_with(|| SpireStoreScanDiagnostics {
                 epoch,
-                node_id: placement.node_id,
-                local_store_id: placement.local_store_id,
+                node_id,
+                local_store_id,
+                route_count: 0,
+                leaf_route_count: 0,
+                delta_route_count: 0,
+                prefetched_object_count: 0,
+                prefetched_object_bytes: 0,
+                read_batch_count: 0,
                 scanned_pid_count: 0,
                 leaf_pid_count: 0,
                 delta_pid_count: 0,
+                delta_decode_count: 0,
                 candidate_row_count: 0,
                 leaf_candidate_row_count: 0,
                 delta_candidate_row_count: 0,
+                primary_candidate_row_count: 0,
+                boundary_replica_candidate_row_count: 0,
+                deduped_candidate_row_count: 0,
+                deduped_primary_candidate_row_count: 0,
+                deduped_boundary_replica_candidate_row_count: 0,
+                truncated_candidate_row_count: 0,
+                truncated_primary_candidate_row_count: 0,
+                truncated_boundary_replica_candidate_row_count: 0,
+                candidate_winner_count: 0,
+                primary_candidate_winner_count: 0,
+                boundary_replica_candidate_winner_count: 0,
                 delete_delta_row_count: 0,
                 dropped_unselected_delta_route_count: 0,
             })
@@ -250,6 +341,29 @@ impl SpireScanPlacementDiagnosticsObserver {
 }
 
 impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
+    fn routed_leaf(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.route_count += 1;
+        entry.leaf_route_count += 1;
+    }
+
+    fn routed_delta(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.route_count += 1;
+        entry.delta_route_count += 1;
+    }
+
+    fn store_read_batch(&mut self, epoch: u64, node_id: u32, local_store_id: u32) {
+        self.entry_by_store(epoch, node_id, local_store_id)
+            .read_batch_count += 1;
+    }
+
+    fn prefetched_object(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.prefetched_object_count += 1;
+        entry.prefetched_object_bytes += u64::from(placement.object_bytes);
+    }
+
     fn scanned_leaf(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
         let entry = self.entry(epoch, placement);
         entry.scanned_pid_count += 1;
@@ -260,6 +374,7 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         let entry = self.entry(epoch, placement);
         entry.scanned_pid_count += 1;
         entry.delta_pid_count += 1;
+        entry.delta_decode_count += 1;
     }
 
     fn delete_delta_row(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
@@ -271,16 +386,89 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
             .dropped_unselected_delta_route_count += 1;
     }
 
-    fn visible_leaf_candidate(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+    fn visible_leaf_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
         let entry = self.entry(epoch, placement);
         entry.candidate_row_count += 1;
         entry.leaf_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.primary_candidate_row_count,
+            &mut entry.boundary_replica_candidate_row_count,
+        );
     }
 
-    fn visible_delta_candidate(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+    fn visible_delta_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
         let entry = self.entry(epoch, placement);
         entry.candidate_row_count += 1;
         entry.delta_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.primary_candidate_row_count,
+            &mut entry.boundary_replica_candidate_row_count,
+        );
+    }
+
+    fn deduped_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.deduped_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.deduped_primary_candidate_row_count,
+            &mut entry.deduped_boundary_replica_candidate_row_count,
+        );
+    }
+
+    fn truncated_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.truncated_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.truncated_primary_candidate_row_count,
+            &mut entry.truncated_boundary_replica_candidate_row_count,
+        );
+    }
+
+    fn candidate_winner(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.candidate_winner_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.primary_candidate_winner_count,
+            &mut entry.boundary_replica_candidate_winner_count,
+        );
+    }
+}
+
+fn count_candidate_role(flags: u16, primary_count: &mut usize, replica_count: &mut usize) {
+    if flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
+        *replica_count += 1;
+    } else {
+        *primary_count += 1;
     }
 }
 
@@ -326,7 +514,7 @@ struct SpireScanOpaque {
     rescan_called: bool,
     query: Option<SpireScanQuery>,
     scan_plan: Option<SpireSingleLevelScanPlan>,
-    cursor: SpireScanCandidateCursor,
+    cursor: SpireScanOutputCursor,
     // Cached for diagnostics and tests; every rescan replaces this with the
     // root/control page just read so scan-side cursor fields cannot go stale.
     root_control: Option<SpireRootControlState>,
@@ -338,7 +526,7 @@ impl Default for SpireScanOpaque {
             rescan_called: false,
             query: None,
             scan_plan: None,
-            cursor: SpireScanCandidateCursor::default(),
+            cursor: SpireScanOutputCursor::default(),
             root_control: None,
         }
     }
@@ -351,10 +539,20 @@ impl SpireScanOpaque {
         scan_plan: SpireSingleLevelScanPlan,
         candidates: Vec<SpireScoredScanCandidate>,
     ) {
+        let outputs = candidates.iter().map(SpireScanOutput::from).collect();
+        self.reset_for_outputs(query, Some(scan_plan), outputs);
+    }
+
+    fn reset_for_outputs(
+        &mut self,
+        query: SpireScanQuery,
+        scan_plan: Option<SpireSingleLevelScanPlan>,
+        outputs: Vec<SpireScanOutput>,
+    ) {
         self.rescan_called = true;
         self.query = Some(query);
-        self.scan_plan = Some(scan_plan);
-        self.cursor.reset(candidates);
+        self.scan_plan = scan_plan;
+        self.cursor.reset(outputs);
     }
 
     fn clear_scan_work(&mut self) {
@@ -382,6 +580,48 @@ impl SpireScanOpaque {
 
     fn next_output(&mut self) -> Option<SpireScanOutput> {
         self.cursor.next_output()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireScanOutputCursor {
+    outputs: Vec<SpireScanOutput>,
+    next_index: usize,
+}
+
+impl SpireScanOutputCursor {
+    pub(super) fn new(outputs: Vec<SpireScanOutput>) -> Self {
+        Self {
+            outputs,
+            next_index: 0,
+        }
+    }
+
+    pub(super) fn remaining(&self) -> usize {
+        self.outputs.len().saturating_sub(self.next_index)
+    }
+
+    pub(super) fn is_exhausted(&self) -> bool {
+        self.remaining() == 0
+    }
+
+    pub(super) fn next_output(&mut self) -> Option<SpireScanOutput> {
+        if self.next_index >= self.outputs.len() {
+            return None;
+        }
+        let output_index = self.next_index;
+        self.next_index += 1;
+        self.outputs.get(output_index).copied()
+    }
+
+    pub(super) fn reset(&mut self, outputs: Vec<SpireScanOutput>) {
+        *self = Self::new(outputs);
+    }
+}
+
+impl Default for SpireScanOutputCursor {
+    fn default() -> Self {
+        Self::new(Vec::new())
     }
 }
 
@@ -432,4 +672,59 @@ impl Default for SpireScanCandidateCursor {
     fn default() -> Self {
         Self::new(Vec::new())
     }
+}
+
+fn production_scan_output_is_am_deliverable(
+    output: &super::SpireRemoteProductionScanOutputRow,
+) -> bool {
+    matches!(
+        output.heap_lookup_owner,
+        super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
+    )
+}
+
+fn production_scan_output_to_am_output(
+    output: &super::SpireRemoteProductionScanOutputRow,
+) -> Result<SpireScanOutput, String> {
+    if !production_scan_output_is_am_deliverable(output) {
+        return Err(format!(
+            "ec_spire production scan output for node_id {} cannot be delivered as coordinator xs_heaptid; next step is {}",
+            output.node_id,
+            super::SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY
+        ));
+    }
+
+    Ok(SpireScanOutput {
+        heap_tid: ItemPointer {
+            block_number: output.heap_block,
+            offset_number: output.heap_offset,
+        },
+        orderby_score: output.score,
+    })
+}
+
+fn production_scan_result_stream_am_outputs(
+    stream: &super::SpireRemoteProductionScanResultStream,
+) -> Result<Vec<SpireScanOutput>, String> {
+    if stream.am_delivery.next_blocker != super::SPIRE_REMOTE_NONE {
+        return Err(format!(
+            "ec_spire production scan AM tuple delivery blocked: status {}, next_blocker {}, recommendation {}",
+            stream.am_delivery.status,
+            stream.am_delivery.next_blocker,
+            stream.am_delivery.recommendation
+        ));
+    }
+    if stream.am_delivery.remote_origin_output_count != 0 {
+        return Err(format!(
+            "ec_spire production scan AM tuple delivery requires {} for {} remote-origin output(s)",
+            super::SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+            stream.am_delivery.remote_origin_output_count
+        ));
+    }
+
+    stream
+        .outputs
+        .iter()
+        .map(production_scan_output_to_am_output)
+        .collect()
 }

@@ -1,0 +1,11 @@
+Script started on 2026-05-12 17:36:51-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-81ab2156a921a9a9)
+
+running 1 test
+test am::ec_spire::scan::tests::load_delta_rows_for_routes_reads_each_delta_object_once ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 1688 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-12 17:36:52-07:00 [COMMAND_EXIT_CODE="0"]

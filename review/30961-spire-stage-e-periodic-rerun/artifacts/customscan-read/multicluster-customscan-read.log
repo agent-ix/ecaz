@@ -1,0 +1,5 @@
+run_dir=target/se30961-customscan-read
+remote_port=39228
+coord_port=39229
+pg_ctl: could not start server
+Examine the log output.

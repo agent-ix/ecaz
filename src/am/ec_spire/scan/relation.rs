@@ -63,8 +63,38 @@ pub(super) unsafe fn load_relation_epoch_manifests(
         ));
     }
     SpireValidatedEpochSnapshot::new(&epoch_manifest, &object_manifest, &placement_directory)?;
+    ensure_local_heap_placement_directory_is_deliverable(&placement_directory)?;
     local_store_config.validate_placement_directory(&placement_directory)?;
     Ok((epoch_manifest, object_manifest, placement_directory))
+}
+
+fn ensure_local_heap_placement_directory_is_deliverable(
+    placement_directory: &SpirePlacementDirectory,
+) -> Result<(), String> {
+    let remote_placement_count = placement_directory
+        .entries
+        .iter()
+        .filter(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID)
+        .count();
+    if remote_placement_count == 0 {
+        return Ok(());
+    }
+
+    let Some(first_remote) = placement_directory
+        .entries
+        .iter()
+        .find(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID) else {
+        return Err(
+            "ec_spire local heap tuple delivery remote placement count disagrees with placement directory"
+                .to_owned(),
+        );
+    };
+    Err(format!(
+        "ec_spire local heap tuple delivery requires {} before consuming {remote_placement_count} remote placement(s); first remote pid {} is on node_id {}",
+        super::SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+        first_remote.pid,
+        first_remote.node_id
+    ))
 }
 
 pub(super) unsafe fn load_relation_local_store_config(
@@ -113,11 +143,15 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
     };
     let slot = unsafe { allocate_heap_slot(heap_relation)? };
 
-    let result = prepare_single_level_snapshot_scan_candidates(
+    let result = prepare_single_level_snapshot_scan_candidates_with_prefetch(
         snapshot,
         object_store,
         query,
         options,
+        |candidates| {
+            unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation, candidates) };
+            Ok(())
+        },
         |candidate| unsafe {
             exact_heap_source_inner_product(
                 heap_relation,
@@ -135,6 +169,75 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
         unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     }
     result
+}
+
+fn heap_rerank_prefetch_block_numbers(
+    candidates: &[SpireScoredScanCandidate],
+) -> Vec<pg_sys::BlockNumber> {
+    let mut block_numbers = candidates
+        .iter()
+        .map(|candidate| candidate.heap_tid.block_number)
+        .collect::<Vec<_>>();
+    block_numbers.sort_unstable();
+    block_numbers.dedup();
+    block_numbers
+}
+
+unsafe fn prefetch_heap_rerank_candidate_blocks(
+    heap_relation: pg_sys::Relation,
+    candidates: &[SpireScoredScanCandidate],
+) {
+    let block_numbers = heap_rerank_prefetch_block_numbers(candidates);
+    if block_numbers.is_empty() {
+        return;
+    }
+    unsafe { prefetch_heap_rerank_blocks(heap_relation, &block_numbers) };
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn prefetch_heap_rerank_blocks(
+    heap_relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+) {
+    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers.to_vec());
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_DEFAULT as i32,
+            ptr::null_mut(),
+            heap_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(crate::am::stream::block_sequence_prefetch_cb),
+            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
+            std::mem::size_of::<pg_sys::BlockNumber>(),
+        )
+    };
+
+    loop {
+        let mut per_buffer_data = ptr::null_mut();
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        unsafe { pg_sys::ReleaseBuffer(buffer) };
+    }
+
+    unsafe { pg_sys::read_stream_end(stream) };
+}
+
+#[cfg(not(feature = "pg18"))]
+unsafe fn prefetch_heap_rerank_blocks(
+    heap_relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+) {
+    for block_number in block_numbers {
+        unsafe {
+            pg_sys::PrefetchBuffer(
+                heap_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                *block_number,
+            );
+        }
+    }
 }
 
 unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {

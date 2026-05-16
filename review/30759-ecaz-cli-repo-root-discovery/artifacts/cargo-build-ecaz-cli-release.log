@@ -1,0 +1,6 @@
+Script started on 2026-05-10 12:41:11-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `release` profile [optimized] target(s) in 5m 49s
+
+Script done on 2026-05-10 12:47:00-07:00 [COMMAND_EXIT_CODE="0"]

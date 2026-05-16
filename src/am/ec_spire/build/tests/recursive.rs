@@ -210,6 +210,170 @@
     }
 
     #[test]
+    fn local_recursive_top_graph_epoch_draft_publishes_graph_object() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let routing_draft = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 4,
+                seed: 42,
+                children: vec![
+                    recursive_child(11, vec![1.0, 0.0]),
+                    recursive_child(12, vec![0.8, 0.2]),
+                    recursive_child(13, vec![-1.0, 0.0]),
+                ],
+            },
+            &mut pid_allocator,
+        )
+        .expect("recursive routing draft should build");
+        let root_pid = routing_draft.root_pid;
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let leaf_placements = vec![
+            object_store
+                .insert_leaf_object_v2_from_rows(7, 11, 3, root_pid, &[])
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(7, 12, 3, root_pid, &[])
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(7, 13, 3, root_pid, &[])
+                .unwrap(),
+        ];
+        let top_graph_pid = leaf_placements
+            .iter()
+            .try_fold(routing_draft.next_pid, |next_pid, placement| {
+                placement.pid.checked_add(1).map(|pid| next_pid.max(pid))
+            })
+            .unwrap();
+
+        let draft = super::build_local_recursive_top_graph_epoch_draft(
+            SpireRecursiveTopGraphEpochInput {
+                epoch_input: SpireRecursiveRoutingEpochInput {
+                    epoch: 7,
+                    published_at_micros: 1000,
+                    retain_until_micros: 2000,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    routing_draft,
+                    leaf_placements,
+                },
+                top_graph_params: SpireTopGraphBuildParams {
+                    graph_degree: 2,
+                    build_list_size: 3,
+                    alpha: 1.2,
+                    seed: 42,
+                },
+            },
+            &mut object_store,
+        )
+        .unwrap();
+
+        assert_eq!(draft.root_pid, root_pid);
+        assert_eq!(draft.object_manifest.entries.len(), 5);
+        assert_eq!(draft.placement_directory.entries.len(), 5);
+        assert_eq!(draft.next_pid, top_graph_pid + 1);
+        let top_graph_placement = draft.placement_directory.get(top_graph_pid).unwrap();
+        let top_graph = object_store
+            .read_top_graph_object(top_graph_placement)
+            .unwrap();
+        assert_eq!(top_graph.header.kind, SpirePartitionObjectKind::TopGraph);
+        assert_eq!(top_graph.header.pid, top_graph_pid);
+        assert_eq!(top_graph.header.parent_pid, root_pid);
+        assert_eq!(top_graph.header.published_epoch_backref, 7);
+        assert_eq!(top_graph.root_pid, root_pid);
+        assert_eq!(top_graph.node_count(), 3);
+        assert_eq!(draft.top_graph_object.as_ref().unwrap().header.pid, top_graph_pid);
+        SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn recursive_top_graph_epoch_from_leaf_inputs_writes_leaves_and_graph() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let routing_draft = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 4,
+                seed: 42,
+                children: vec![
+                    recursive_child(11, vec![1.0, 0.0]),
+                    recursive_child(12, vec![0.8, 0.2]),
+                ],
+            },
+            &mut pid_allocator,
+        )
+        .expect("recursive routing draft should build");
+        let root_pid = routing_draft.root_pid;
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let draft = super::build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
+            SpireRecursiveRoutingEpochObjectInput {
+                epoch: 7,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                routing_draft,
+                leaf_inputs: vec![
+                    SpireRecursiveLeafObjectInput {
+                        pid: 11,
+                        object_version: 3,
+                        parent_pid: root_pid,
+                        rows: vec![primary_row(1, 10, 1)],
+                    },
+                    SpireRecursiveLeafObjectInput {
+                        pid: 12,
+                        object_version: 3,
+                        parent_pid: root_pid,
+                        rows: vec![primary_row(2, 10, 2)],
+                    },
+                ],
+            },
+            SpireTopGraphBuildParams {
+                graph_degree: 1,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+            &mut object_store,
+        )
+        .unwrap();
+
+        let top_graph = draft
+            .top_graph_object
+            .as_ref()
+            .expect("top graph object should be included");
+        assert_eq!(draft.object_manifest.entries.len(), 4);
+        assert_eq!(top_graph.header.parent_pid, root_pid);
+        assert_eq!(top_graph.node_count(), 2);
+        let top_graph_placement = draft
+            .placement_directory
+            .get(top_graph.header.pid)
+            .unwrap();
+        assert_eq!(
+            object_store
+                .read_top_graph_object(top_graph_placement)
+                .unwrap()
+                .header
+                .published_epoch_backref,
+            7
+        );
+        assert_eq!(
+            object_store
+                .read_leaf_object_v2(draft.placement_directory.get(11).unwrap())
+                .unwrap()
+                .assignment_rows()
+                .unwrap()[0]
+                .heap_tid,
+            tid(10, 1)
+        );
+    }
+
+    #[test]
     fn local_recursive_routing_epoch_draft_rejects_missing_leaf_placement() {
         let mut pid_allocator = SpirePidAllocator::default();
         let routing_draft = super::build_recursive_routing_hierarchy_draft(
@@ -427,11 +591,18 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
+                boundary_replica_count: 0,
                 assignments: vec![
-                    assignment_input(10, 1),
-                    assignment_input(10, 2),
-                    assignment_input(10, 3),
-                    assignment_input(10, 4),
+                    local_identity_assignment(10, 1),
+                    local_identity_assignment(10, 2),
+                    local_identity_assignment(10, 3),
+                    local_identity_assignment(10, 4),
+                ],
+                source_vectors: vec![
+                    vec![1.0, 0.0],
+                    vec![0.9, 0.1],
+                    vec![-1.0, 0.0],
+                    vec![-0.9, 0.1],
                 ],
                 centroid_plan,
             },
@@ -490,6 +661,61 @@
     }
 
     #[test]
+    fn recursive_build_coordinator_fans_out_boundary_leaf_rows() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![vec![1.0, 0.0], vec![0.8, 0.2], vec![-1.0, 0.0]],
+            assignment_indexes: vec![0, 1, 2],
+        };
+
+        let draft = super::build_recursive_epoch_input_from_centroid_plan(
+            SpireRecursiveBuildCoordinatorInput {
+                epoch: 7,
+                object_version: 3,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                target_fanout: 2,
+                seed: 42,
+                boundary_replica_count: 1,
+                assignments: vec![
+                    local_identity_assignment(10, 1),
+                    local_identity_assignment(10, 2),
+                    local_identity_assignment(10, 3),
+                ],
+                source_vectors: vec![vec![1.0, 0.0], vec![0.8, 0.2], vec![-1.0, 0.0]],
+                centroid_plan,
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+        )
+        .unwrap();
+
+        let assignment_count = draft
+            .epoch_input
+            .leaf_inputs
+            .iter()
+            .map(|leaf_input| leaf_input.rows.len())
+            .sum::<usize>();
+        let boundary_count = draft
+            .epoch_input
+            .leaf_inputs
+            .iter()
+            .flat_map(|leaf_input| leaf_input.rows.iter())
+            .filter(|row| row.flags == SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA)
+            .count();
+
+        assert_eq!(assignment_count, 6);
+        assert_eq!(boundary_count, 3);
+        assert_eq!(
+            local_vec_id_allocator.next_local_vec_seq(),
+            SPIRE_FIRST_LOCAL_VEC_SEQ + 3
+        );
+    }
+
+    #[test]
     fn recursive_build_coordinator_rejects_assignment_count_mismatch() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
@@ -508,7 +734,9 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
-                assignments: vec![assignment_input(10, 1)],
+                boundary_replica_count: 0,
+                assignments: vec![local_identity_assignment(10, 1)],
+                source_vectors: vec![vec![1.0, 0.0]],
                 centroid_plan,
             },
             &mut pid_allocator,
@@ -542,7 +770,12 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
-                assignments: vec![assignment_input(10, 1), assignment_input(10, 2)],
+                boundary_replica_count: 0,
+                assignments: vec![
+                    local_identity_assignment(10, 1),
+                    local_identity_assignment(10, 2),
+                ],
+                source_vectors: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
                 centroid_plan,
             },
             &mut pid_allocator,
@@ -601,7 +834,12 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
-                assignments: vec![assignment_input(10, 1), assignment_input(10, 2)],
+                boundary_replica_count: 0,
+                assignments: vec![
+                    local_identity_assignment(10, 1),
+                    local_identity_assignment(10, 2),
+                ],
+                source_vectors: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
                 centroid_plan,
             },
             &mut pid_allocator,

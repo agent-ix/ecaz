@@ -1,0 +1,64 @@
+{
+  "name": "spire-aws-representative",
+  "schema_version": 1,
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "13a3a-recall-k10",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "queries_limit": 1000
+    },
+    {
+      "kind": "recall",
+      "name": "13a3a-recall-k100",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 100,
+      "sweep": [8, 16, 24, 32],
+      "queries_limit": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c1",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 1,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c4",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 4,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c8",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 8,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3f-pk-c32",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 1,
+      "sweep": [32],
+      "concurrency": 32,
+      "iterations": 5000
+    }
+  ]
+}

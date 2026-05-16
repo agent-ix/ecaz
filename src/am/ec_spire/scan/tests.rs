@@ -2,22 +2,41 @@
 mod tests {
     use super::{
         collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
-        collect_reranked_quantized_routed_probe_candidates,
+        collect_delta_delete_vec_ids_for_loaded_routes,
+        collect_reranked_quantized_routed_probe_candidates, collect_scan_routing_diagnostics,
+        collect_scan_plan_selected_leaf_pids,
         collect_single_level_scan_plan_placement_diagnostics,
         collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
-        collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
+        collect_snapshot_routed_probe_leaf_rows, collect_snapshot_top_graph_routed_probe_leaf_rows,
+        collect_snapshot_visible_primary_rows, collect_top_graph_scan_plan_reranked_candidates,
         count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
-        group_leaf_and_delta_reads_by_local_store, load_snapshot_routing_hierarchy,
-        prefetch_store_object_read_groups, prepare_single_level_snapshot_scan_candidates,
-        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
-        route_recursive_routing_objects_to_leaf_pids, route_root_object_to_leaf_pids,
-        route_routing_object_to_child_pids,
-        SpireDeltaObjectRoute, SpireLeafObjectReadRoute, SpireLeafScanRow,
-        SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute, SpireRoutedLeafScanRows,
-        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
-        SpireScanPlacementDiagnosticsObserver, SpireScanQuery, SpireScoredScanCandidate,
-        SpireStoreObjectReadGroup,
+        ensure_local_heap_placement_directory_is_deliverable,
+        group_leaf_and_delta_reads_by_local_store, heap_rerank_prefetch_block_numbers,
+        load_delta_rows_for_routes, load_snapshot_routing_hierarchy, load_snapshot_top_graph_object,
+        prefetch_store_object_read_groups, production_scan_result_stream_am_outputs,
+        rank_routed_leaf_rows_by_ip,
+        rerank_scored_candidates_by_ip, rerank_scored_candidates_by_ip_with_prefetch,
+        route_recursive_routing_objects_to_leaf_pids,
+        route_recursive_routing_objects_to_leaf_routes_with_budget,
+        route_recursive_routing_objects_to_leaf_routes_with_policy, route_root_object_to_leaf_pids,
+        route_routing_object_to_child_pids, route_routing_object_to_child_routes_with_policy,
+        route_top_graph_object_to_child_pids, route_top_graph_object_to_leaf_routes,
+        route_top_graph_to_child_pids, SpireDeltaObjectRoute, SpireLeafObjectReadRoute,
+        SpireLeafScanRow, SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute,
+        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
+        SpireScanOutputCursor, SpireScanPlacementDiagnosticsObserver, SpireScanQuery,
+        SpireScoredScanCandidate, SpireStoreObjectReadGroup,
+    };
+    use crate::am::ec_spire::{
+        SpireRemoteProductionScanAmDeliverySummaryRow,
+        SpireRemoteProductionScanHeapResolutionSummaryRow, SpireRemoteProductionScanOutputRow,
+        SpireRemoteProductionScanResultStream,
+        SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+        SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY,
+        SPIRE_REMOTE_FINAL_STATUS_REQUIRES_CUSTOM_SCAN_TUPLE_DELIVERY,
+        SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -26,9 +45,11 @@ mod tests {
     use crate::am::ec_spire::build::{
         build_local_recursive_routing_epoch_draft, build_partitioned_single_level_leaf_epoch_draft,
         build_recursive_routing_hierarchy_draft, build_single_level_leaf_epoch_draft,
-        SpirePartitionedSingleLevelBuildInput, SpireRecursiveRoutingBuildInput,
-        SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
-        SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan,
+        build_spire_top_graph_draft_from_routing_object,
+        spire_top_graph_partition_object_from_build_draft, SpirePartitionedSingleLevelBuildInput,
+        SpireRecursiveRoutingBuildInput, SpireRecursiveRoutingChildInput,
+        SpireRecursiveRoutingEpochInput, SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan,
+        SpireTopGraphBuildParams,
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
@@ -37,7 +58,9 @@ mod tests {
         SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
     };
     use crate::am::ec_spire::options::{
-        EcSpireOptions, SpireCandidateDedupeMode, SpireSingleLevelScanPlan, SpireStorageFormat,
+        resolve_single_level_scan_plan_values, EcSpireOptions, SpireCandidateDedupeMode,
+        SpireRecursiveNprobePolicy, SpireRecursiveRouteBudget, SpireSingleLevelScanPlan,
+        SpireSourceIdentityProvider, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::{
         encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
@@ -45,8 +68,8 @@ mod tests {
     use crate::am::ec_spire::storage::{
         SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
         SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
-        SpirePartitionObjectHeader, SpireRoutingChildEntry, SpireRoutingPartitionObject,
-        SpireVecId,
+        SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireRoutingChildEntry,
+        SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -62,6 +85,38 @@ mod tests {
         ItemPointer {
             block_number,
             offset_number,
+        }
+    }
+
+    fn production_scan_stream_for_am(
+        am_delivery: SpireRemoteProductionScanAmDeliverySummaryRow,
+        outputs: Vec<SpireRemoteProductionScanOutputRow>,
+    ) -> SpireRemoteProductionScanResultStream {
+        SpireRemoteProductionScanResultStream {
+            summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+                requested_epoch: am_delivery.requested_epoch,
+                consistency_mode_source: "test",
+                consistency_mode: "strict",
+                effective_nprobe: 1,
+                selected_pid_count: 1,
+                local_pid_count: am_delivery.local_heap_tid_output_count,
+                remote_pid_count: am_delivery.remote_origin_output_count,
+                skipped_pid_count: 0,
+                dispatch_count: am_delivery.remote_origin_output_count,
+                compact_candidate_count: am_delivery.output_count,
+                remote_heap_ready_dispatch_count: am_delivery.remote_origin_output_count,
+                remote_heap_failed_dispatch_count: 0,
+                remote_heap_candidate_count: am_delivery.remote_origin_output_count,
+                local_heap_candidate_count: am_delivery.local_heap_tid_output_count,
+                returned_candidate_count: am_delivery.output_count,
+                result_source: "test",
+                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY,
+                next_blocker: am_delivery.next_blocker,
+                status: am_delivery.status,
+                recommendation: am_delivery.recommendation,
+            },
+            am_delivery,
+            outputs,
         }
     }
 

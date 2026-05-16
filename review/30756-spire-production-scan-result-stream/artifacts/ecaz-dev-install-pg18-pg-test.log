@@ -1,0 +1,9 @@
+
+   0: [91mresolving repo root from crates/ecaz-cli[0m
+   1: [91mNo such file or directory (os error 2)[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/support.rs[0m:[35m23[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

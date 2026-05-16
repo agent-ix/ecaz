@@ -1,0 +1,2 @@
+DROP DATABASE
+NOTICE:  database "spire_phase12_readiness" does not exist, skipping

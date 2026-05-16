@@ -1,0 +1,34 @@
+Script started on 2026-05-15 17:17:01-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform fmt -check
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform init -backend=false
+[0m[1mInitializing provider plugins found in the configuration...[0m
+- Reusing previous version of hashicorp/random from the dependency lock file
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Installing hashicorp/random v3.9.0...
+- Installed hashicorp/random v3.9.0 (signed by HashiCorp)
+- Installing hashicorp/aws v5.100.0...
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+
+
+
+
+[0m[1m[32mTerraform has been successfully initialized![0m[32m[0m
+[0m[32m
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.[0m
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform validate
+[32m[1mSuccess![0m The configuration is valid.
+[0m
+cd /home/peter/dev/ecaz && bash -n scripts/spire-aws/*.sh
+cd /home/peter/dev/ecaz && if command -v shellcheck >/dev/null 2>&1; then shellcheck scripts/spire-aws/*.sh; else echo "shellcheck not found; skipping shellcheck"; fi
+shellcheck not found; skipping shellcheck
+cd /home/peter/dev/ecaz && jq empty scripts/spire-aws/suite-correctness.json scripts/spire-aws/suite-representative.json scripts/spire-aws/suite-stress.json
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-15 17:17:14-07:00 [COMMAND_EXIT_CODE="0"]

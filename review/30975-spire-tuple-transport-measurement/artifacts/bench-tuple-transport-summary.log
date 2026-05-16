@@ -1,0 +1,12 @@
+SET
+SET
+DROP TABLE
+CREATE TABLE
+psql:review/30975-spire-tuple-transport-measurement/artifacts/run-tuple-transport-bench.sql:4: NOTICE:  table "phase12_tuple_transport_bench_results" does not exist, skipping
+psql:review/30975-spire-tuple-transport-measurement/artifacts/run-tuple-transport-bench.sql:55: ERROR:  ec_spire_distributed: DML requires a bigint primary-key equality predicate in v1
+HINT:  See ADR-069 for the v1 SPIRE distributed DML shape.
+CONTEXT:  SQL statement "SELECT id, title, body
+                   FROM phase12_tuple_measure_corpus
+                  ORDER BY embedding <#> $1::real[]
+                  LIMIT 10"
+PL/pgSQL function inline_code_block line 21 at FOR over EXECUTE statement

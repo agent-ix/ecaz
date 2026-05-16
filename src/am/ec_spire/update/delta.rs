@@ -201,7 +201,9 @@ fn collect_snapshot_assignment_vec_ids(
                         .map(|assignment| assignment.vec_id),
                 );
             }
-            SpirePartitionObjectKind::Root | SpirePartitionObjectKind::Internal => {}
+            SpirePartitionObjectKind::Root
+            | SpirePartitionObjectKind::Internal
+            | SpirePartitionObjectKind::TopGraph => {}
         }
     }
     Ok(vec_ids)

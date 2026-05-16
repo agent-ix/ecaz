@@ -1,0 +1,33 @@
+2026-05-15 09:14:53.564 PDT [2250321] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-15 09:14:53.564 PDT [2250321] LOG:  listening on IPv4 address "127.0.0.1", port 39429
+2026-05-15 09:14:53.568 PDT [2250321] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13c-drift-pg18-20260515Tpkselect02Z/sockets/.s.PGSQL.39429"
+2026-05-15 09:14:53.574 PDT [2250333] LOG:  database system was shut down at 2026-05-15 09:14:53 PDT
+2026-05-15 09:14:53.577 PDT [2250321] LOG:  database system is ready to accept connections
+2026-05-15 09:14:54.045 PDT [2250366] ERROR:  ec_spire coordinator read status schema_drift: coordinator side drifted for index_oid 17558: descriptor coordinator fingerprint c74a9f89b09768d94e4d973ff3a23869 does not match current coordinator fingerprint 0983fe454fc96b16ff6f5d8a04d123d9; hint: pause reads, apply matching DDL on every remote, refresh descriptors, then retry
+2026-05-15 09:14:54.045 PDT [2250366] STATEMENT:
+	SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(
+	    'ec_spire_phase13c_pk_select_coord_only_coord_idx'::regclass,
+	    'id',
+	    int8send(7901::bigint)::bytea,
+	    ARRAY['id', 'title']::text[])
+2026-05-15 09:14:54.247 PDT [2250391] ERROR:  ec_spire coordinator read status schema_drift: remote side drifted for node_id 92: descriptor remote fingerprint c74a9f89b09768d94e4d973ff3a23869 does not match current remote fingerprint 83afeb83c4c048fbba864043134d670b; hint: pause reads, apply matching DDL on the remote, refresh the descriptor, then retry
+2026-05-15 09:14:54.247 PDT [2250391] STATEMENT:
+	SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(
+	    'ec_spire_phase13c_pk_select_remote_only_coord_idx'::regclass,
+	    'id',
+	    int8send(7902::bigint)::bytea,
+	    ARRAY['id', 'title']::text[])
+2026-05-15 09:14:54.451 PDT [2250416] ERROR:  ec_spire coordinator read status schema_drift: coordinator and remote schema fingerprints differ for node_id 93: descriptor coordinator fingerprint c74a9f89b09768d94e4d973ff3a23869, current coordinator fingerprint caafc71d6d57963052cffe5e4534107a, descriptor remote fingerprint c74a9f89b09768d94e4d973ff3a23869, current remote fingerprint 7f2a89a16d48d9ffd3635caff2daaedc; hint: pause reads, apply matching DDL on both sides, refresh descriptors, then retry
+2026-05-15 09:14:54.451 PDT [2250416] STATEMENT:
+	SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(
+	    'ec_spire_phase13c_pk_select_both_sides_coord_idx'::regclass,
+	    'id',
+	    int8send(7903::bigint)::bytea,
+	    ARRAY['id', 'title']::text[])
+2026-05-15 09:14:54.467 PDT [2250321] LOG:  received fast shutdown request
+2026-05-15 09:14:54.470 PDT [2250321] LOG:  aborting any active transactions
+2026-05-15 09:14:54.471 PDT [2250321] LOG:  background worker "logical replication launcher" (PID 2250336) exited with exit code 1
+2026-05-15 09:14:54.471 PDT [2250331] LOG:  shutting down
+2026-05-15 09:14:54.473 PDT [2250331] LOG:  checkpoint starting: shutdown immediate
+2026-05-15 09:14:54.644 PDT [2250331] LOG:  checkpoint complete: wrote 344 buffers (2.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.015 s, sync=0.142 s, total=0.174 s; sync files=161, longest=0.006 s, average=0.001 s; distance=2523 kB, estimate=2523 kB; lsn=0/19CB408, redo lsn=0/19CB408
+2026-05-15 09:14:54.654 PDT [2250321] LOG:  database system is shut down

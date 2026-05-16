@@ -137,12 +137,21 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
             input.centroid_plan.assignment_indexes.len()
         ));
     }
+    if input.source_vectors.len() != input.assignments.len() {
+        return Err(format!(
+            "ec_spire recursive build source vector count {} does not match assignment count {}",
+            input.source_vectors.len(),
+            input.assignments.len()
+        ));
+    }
 
-    let assignments_by_centroid = group_assignments_by_centroid(
-        input.assignments,
-        &input.centroid_plan.assignment_indexes,
-        centroid_count,
-    )?;
+    if input.centroid_plan.assignment_indexes.len() != input.assignments.len() {
+        return Err(format!(
+            "ec_spire recursive build centroid assignment count {} does not match assignment count {}",
+            input.centroid_plan.assignment_indexes.len(),
+            input.assignments.len()
+        ));
+    }
     let mut pid_cursor = *pid_allocator;
     let mut local_vec_id_cursor = *local_vec_id_allocator;
     let mut leaf_pids = Vec::with_capacity(centroid_count);
@@ -172,20 +181,29 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
         &mut pid_cursor,
     )?;
     let leaf_parent_pids = assert_recursive_draft_invariants(&routing_draft)?.leaf_parent_pids;
+    let route_map = SpireSingleLevelRouteMap::from_centroid_plan(&input.centroid_plan, &leaf_pids)?;
+    let rows_by_leaf_pid = build_recursive_leaf_rows_by_pid(
+        input.assignments,
+        input.source_vectors,
+        &input.centroid_plan.assignment_indexes,
+        &route_map,
+        input.boundary_replica_count,
+        &mut local_vec_id_cursor,
+    )?;
     let mut leaf_inputs = Vec::with_capacity(centroid_count);
-    for (pid, assignments) in leaf_pids
-        .iter()
-        .copied()
-        .zip(assignments_by_centroid.into_iter())
-    {
+    for pid in leaf_pids.iter().copied() {
         let parent_pid = *leaf_parent_pids.get(&pid).ok_or_else(|| {
             format!("ec_spire recursive build missing routing parent for leaf pid {pid}")
         })?;
+        let rows = rows_by_leaf_pid
+            .get(&pid)
+            .cloned()
+            .ok_or_else(|| format!("ec_spire recursive build missing leaf rows for pid {pid}"))?;
         leaf_inputs.push(SpireRecursiveLeafObjectInput {
             pid,
             object_version: input.object_version,
             parent_pid,
-            rows: build_primary_leaf_assignments(&mut local_vec_id_cursor, assignments)?,
+            rows,
         });
     }
 
@@ -205,6 +223,63 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
     *pid_allocator = pid_cursor;
     *local_vec_id_allocator = local_vec_id_cursor;
     Ok(draft)
+}
+
+fn build_recursive_leaf_rows_by_pid(
+    assignments: Vec<SpireLeafAssignmentIdentityInput>,
+    source_vectors: Vec<Vec<f32>>,
+    assignment_indexes: &[u32],
+    route_map: &SpireSingleLevelRouteMap,
+    boundary_replica_count: u32,
+    local_vec_id_cursor: &mut SpireLocalVecIdAllocator,
+) -> Result<HashMap<u64, Vec<SpireLeafAssignmentRow>>, String> {
+    let mut rows_by_leaf_pid = route_map
+        .entries
+        .iter()
+        .map(|entry| (entry.pid, Vec::new()))
+        .collect::<HashMap<_, _>>();
+    let boundary_inputs = assignments
+        .into_iter()
+        .zip(source_vectors.into_iter())
+        .zip(assignment_indexes.iter())
+        .map(|((assignment, source_vector), assignment_index)| {
+            let primary_pid = route_map
+                .get(*assignment_index)
+                .ok_or_else(|| {
+                    format!(
+                        "ec_spire recursive build assignment index {} has no leaf route",
+                        assignment_index
+                    )
+                })?
+                .pid;
+            let boundary_plan = route_map.route_boundary_assignment_for_vector(
+                &source_vector,
+                boundary_replica_count.saturating_add(1),
+            )?;
+            let replica_pids = std::iter::once(boundary_plan.primary_pid)
+                .chain(boundary_plan.replica_pids.into_iter())
+                .filter(|pid| *pid != primary_pid)
+                .take(usize::try_from(boundary_replica_count).unwrap_or(usize::MAX))
+                .collect();
+            Ok(SpireBoundaryLeafAssignmentIdentityInput {
+                primary_pid,
+                replica_pids,
+                assignment,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    for placement in
+        build_boundary_leaf_assignment_placements_with_identity(local_vec_id_cursor, boundary_inputs)?
+    {
+        let rows = rows_by_leaf_pid.get_mut(&placement.pid).ok_or_else(|| {
+            format!(
+                "ec_spire recursive boundary assignment resolved unknown leaf pid {}",
+                placement.pid
+            )
+        })?;
+        rows.push(placement.row);
+    }
+    Ok(rows_by_leaf_pid)
 }
 
 impl SpireRecursiveRoutingBuildInput {
@@ -473,6 +548,20 @@ pub(super) unsafe fn build_relation_recursive_routing_epoch_draft(
     build_recursive_routing_epoch_draft_with_store(input, object_store)
 }
 
+pub(super) fn build_local_recursive_top_graph_epoch_draft(
+    input: SpireRecursiveTopGraphEpochInput,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_top_graph_epoch_draft_with_store(input, object_store)
+}
+
+pub(super) unsafe fn build_relation_recursive_top_graph_epoch_draft(
+    input: SpireRecursiveTopGraphEpochInput,
+    object_store: &mut SpireRelationObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_top_graph_epoch_draft_with_store(input, object_store)
+}
+
 pub(super) fn build_local_recursive_routing_epoch_from_leaf_inputs(
     input: SpireRecursiveRoutingEpochObjectInput,
     object_store: &mut SpireLocalObjectStore,
@@ -553,9 +642,127 @@ fn build_recursive_routing_epoch_from_leaf_inputs_with_store(
     )
 }
 
+fn build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
+    input: SpireRecursiveRoutingEpochObjectInput,
+    top_graph_params: SpireTopGraphBuildParams,
+    object_store: &mut impl SpireBuildObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
+    let expected_leaf_parents = invariants.leaf_parent_pids;
+    let mut seen_leaf_pids = HashSet::with_capacity(input.leaf_inputs.len());
+    let mut leaf_placements = Vec::with_capacity(input.leaf_inputs.len());
+    for leaf_input in input.leaf_inputs {
+        if !seen_leaf_pids.insert(leaf_input.pid) {
+            return Err(format!(
+                "ec_spire recursive routing epoch duplicate leaf object input pid {}",
+                leaf_input.pid
+            ));
+        }
+        let expected_parent_pid = expected_leaf_parents.get(&leaf_input.pid).ok_or_else(|| {
+            format!(
+                "ec_spire recursive routing epoch unexpected leaf object input pid {}",
+                leaf_input.pid
+            )
+        })?;
+        if leaf_input.parent_pid != *expected_parent_pid {
+            return Err(format!(
+                "ec_spire recursive routing epoch leaf object input pid {} parent {} does not match routing parent {}",
+                leaf_input.pid, leaf_input.parent_pid, expected_parent_pid
+            ));
+        }
+        leaf_placements.push(object_store.write_leaf_object_v2_from_rows(
+            input.epoch,
+            leaf_input.pid,
+            leaf_input.object_version,
+            leaf_input.parent_pid,
+            &leaf_input.rows,
+        )?);
+    }
+    let expected_leaf_pids = expected_leaf_parents
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
+    if seen_leaf_pids != expected_leaf_pids {
+        let missing = expected_leaf_pids
+            .difference(&seen_leaf_pids)
+            .copied()
+            .collect::<Vec<_>>();
+        let extra = seen_leaf_pids
+            .difference(&expected_leaf_pids)
+            .copied()
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "ec_spire recursive routing epoch leaf object input mismatch: missing {missing:?}, extra {extra:?}"
+        ));
+    }
+
+    build_recursive_top_graph_epoch_draft_with_store(
+        SpireRecursiveTopGraphEpochInput {
+            epoch_input: SpireRecursiveRoutingEpochInput {
+                epoch: input.epoch,
+                published_at_micros: input.published_at_micros,
+                retain_until_micros: input.retain_until_micros,
+                consistency_mode: input.consistency_mode,
+                routing_draft: input.routing_draft,
+                leaf_placements,
+            },
+            top_graph_params,
+        },
+        object_store,
+    )
+}
+
 fn build_recursive_routing_epoch_draft_with_store(
     input: SpireRecursiveRoutingEpochInput,
     object_store: &mut impl SpireBuildObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_routing_epoch_draft_with_extra_placements(input, object_store, Vec::new(), None)
+}
+
+fn build_recursive_top_graph_epoch_draft_with_store(
+    input: SpireRecursiveTopGraphEpochInput,
+    object_store: &mut impl SpireBuildObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    let invariants = assert_recursive_draft_invariants(&input.epoch_input.routing_draft)?;
+    validate_recursive_epoch_leaf_placements(
+        &input.epoch_input,
+        &invariants.leaf_parent_pids,
+        object_store,
+    )?;
+    let root_object = input
+        .epoch_input
+        .routing_draft
+        .routing_objects
+        .iter()
+        .find(|object| object.header.kind == SpirePartitionObjectKind::Root)
+        .ok_or_else(|| "ec_spire top graph epoch requires a root routing object".to_owned())?;
+    let top_graph_draft =
+        build_spire_top_graph_draft_from_routing_object(root_object, input.top_graph_params)?;
+    let top_graph_pid = next_recursive_epoch_pid(
+        input.epoch_input.routing_draft.next_pid,
+        &input.epoch_input.leaf_placements,
+    )?;
+    let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+        top_graph_pid,
+        root_object.header.object_version,
+        root_object.header.level,
+        &top_graph_draft,
+    )?;
+    let top_graph_placement =
+        object_store.write_top_graph_object(input.epoch_input.epoch, &top_graph_object)?;
+    build_recursive_routing_epoch_draft_with_extra_placements(
+        input.epoch_input,
+        object_store,
+        vec![top_graph_placement],
+        Some(top_graph_object),
+    )
+}
+
+fn build_recursive_routing_epoch_draft_with_extra_placements(
+    input: SpireRecursiveRoutingEpochInput,
+    object_store: &mut impl SpireBuildObjectStore,
+    extra_placements: Vec<SpirePlacementEntry>,
+    top_graph_object: Option<SpireTopGraphPartitionObject>,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
     let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
 
@@ -572,11 +779,16 @@ fn build_recursive_routing_epoch_draft_with_store(
     validate_recursive_epoch_leaf_placements(&input, &invariants.leaf_parent_pids, object_store)?;
 
     let mut placements =
-        Vec::with_capacity(input.routing_draft.routing_objects.len() + input.leaf_placements.len());
+        Vec::with_capacity(
+            input.routing_draft.routing_objects.len()
+                + input.leaf_placements.len()
+                + extra_placements.len(),
+        );
     for object in &input.routing_draft.routing_objects {
         placements.push(object_store.write_routing_object(input.epoch, object)?);
     }
     placements.extend(input.leaf_placements);
+    placements.extend(extra_placements);
 
     let object_manifest = SpireObjectManifest::from_entries(
         input.epoch,
@@ -601,6 +813,7 @@ fn build_recursive_routing_epoch_draft_with_store(
         root_pid: input.routing_draft.root_pid,
         centroid_records: input.routing_draft.centroid_records.clone(),
         routing_objects: input.routing_draft.routing_objects,
+        top_graph_object,
         next_pid,
     };
     SpireValidatedEpochSnapshot::new(

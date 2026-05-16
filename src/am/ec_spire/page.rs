@@ -261,6 +261,155 @@ where
     Ok(())
 }
 
+pub(super) unsafe fn rewrite_object_tuple_same_len(
+    index_relation: pg_sys::Relation,
+    tid: crate::storage::page::ItemPointer,
+    payload: &[u8],
+) -> Result<(), String> {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err(format!(
+            "ec_spire failed to open object block {}",
+            tid.block_number
+        ));
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let result = unsafe {
+        with_object_tuple_from_locked_page(page, page_size, tid, |tuple| {
+            if tuple.len() != payload.len() {
+                return Err(format!(
+                    "ec_spire object tuple rewrite length changed from {} to {}",
+                    tuple.len(),
+                    payload.len()
+                ));
+            }
+            Ok(tuple.as_ptr() as *mut u8)
+        })
+    };
+    match result {
+        Ok(tuple_ptr) => unsafe {
+            ptr::copy_nonoverlapping(payload.as_ptr(), tuple_ptr, payload.len());
+            wal_txn.finish();
+            pg_sys::UnlockReleaseBuffer(buffer);
+            Ok(())
+        },
+        Err(error) => {
+            std::mem::drop(wal_txn);
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            Err(error)
+        }
+    }
+}
+
+pub(super) unsafe fn delete_object_tuples_no_compact(
+    index_relation: pg_sys::Relation,
+    tids: &[crate::storage::page::ItemPointer],
+) -> Result<(u64, u64), String> {
+    let mut offsets_by_block = std::collections::BTreeMap::<pg_sys::BlockNumber, Vec<u16>>::new();
+    for tid in tids {
+        if tid.block_number < FIRST_DATA_BLOCK_NUMBER {
+            return Err(format!(
+                "ec_spire object tuple delete cannot remove metadata block {}",
+                tid.block_number
+            ));
+        }
+        offsets_by_block
+            .entry(tid.block_number)
+            .or_default()
+            .push(tid.offset_number);
+    }
+
+    let mut removed_tuple_count = 0_u64;
+    let mut removed_tuple_bytes = 0_u64;
+    for (block_number, mut offsets) in offsets_by_block {
+        offsets.sort_unstable();
+        offsets.dedup();
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return Err(format!(
+                "ec_spire failed to open object block {block_number}"
+            ));
+        }
+
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let page =
+            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
+        let mut changed = false;
+        for offset in offsets.into_iter().rev() {
+            if offset == pg_sys::InvalidOffsetNumber || offset > max_offset {
+                std::mem::drop(wal_txn);
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Err(format!(
+                    "ec_spire object tuple delete offset {} out of range on block {}",
+                    offset, block_number
+                ));
+            }
+            let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };
+            if item_id.is_null() {
+                std::mem::drop(wal_txn);
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Err(format!(
+                    "ec_spire object tuple delete ({block_number},{offset}) returned a null item id"
+                ));
+            }
+            let item_id_ref = unsafe { &*item_id };
+            if item_id_ref.lp_flags() == 0 {
+                continue;
+            }
+            let tuple_offset = item_id_ref.lp_off() as usize;
+            let tuple_len = item_id_ref.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                std::mem::drop(wal_txn);
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Err(format!(
+                    "ec_spire object tuple delete ({block_number},{offset}) has invalid bounds"
+                ));
+            }
+            unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, offset) };
+            removed_tuple_count = removed_tuple_count
+                .checked_add(1)
+                .ok_or_else(|| "ec_spire removed tuple count overflow".to_owned())?;
+            removed_tuple_bytes = removed_tuple_bytes
+                .checked_add(
+                    u64::try_from(tuple_len)
+                        .map_err(|_| "ec_spire removed tuple bytes exceed u64".to_owned())?,
+                )
+                .ok_or_else(|| "ec_spire removed tuple bytes overflow".to_owned())?;
+            changed = true;
+        }
+        if changed {
+            unsafe { wal_txn.finish() };
+        }
+        let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+        unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+    Ok((removed_tuple_count, removed_tuple_bytes))
+}
+
 unsafe fn try_append_object_tuple_to_block(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,

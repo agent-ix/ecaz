@@ -61,30 +61,20 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
                 return;
             }
 
-            let (epoch_manifest, object_manifest, placement_directory) =
-                load_relation_epoch_manifests((*scan).indexRelation, root_control)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let snapshot = SpirePublishedEpochSnapshot::new(
-                &epoch_manifest,
-                &object_manifest,
-                &placement_directory,
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let object_store = SpireRelationObjectStoreSet::for_index_relation_and_placements(
+            let (heap_relation, heap_relation_owned) = resolve_scan_heap_relation(scan);
+            let snapshot = resolve_scan_snapshot(scan);
+            let stream = super::remote_search_production_scan_heap_resolution_am_result_stream(
                 (*scan).indexRelation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let prepared = prepare_single_level_relation_snapshot_scan_candidates(
-                scan,
-                &snapshot,
-                &object_store,
-                &query,
-                relation_options((*scan).indexRelation),
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-            opaque.reset_for_candidates(query, prepared.scan_plan, prepared.candidates);
+                heap_relation,
+                snapshot,
+                query.values().to_vec(),
+            );
+            if heap_relation_owned {
+                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            }
+            let outputs = production_scan_result_stream_am_outputs(&stream)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            opaque.reset_for_outputs(query, None, outputs);
         })
     }
 }

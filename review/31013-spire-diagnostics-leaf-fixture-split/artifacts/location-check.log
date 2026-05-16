@@ -1,0 +1,5 @@
+Script started on 2026-05-13 17:09:24-07:00 [<not executed on terminal>]
+src/tests/diagnostics.rs
+1472:    fn test_ec_spire_leaf_snapshot_sql() {
+
+Script done on 2026-05-13 17:09:24-07:00 [COMMAND_EXIT_CODE="0"]

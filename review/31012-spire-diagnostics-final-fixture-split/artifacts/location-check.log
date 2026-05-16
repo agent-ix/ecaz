@@ -1,0 +1,6 @@
+Script started on 2026-05-13 17:04:12-07:00 [<not executed on terminal>]
+src/tests/diagnostics.rs
+1190:    fn test_ec_spire_top_graph_snapshot_sql() {
+1348:    fn test_ec_spire_boundary_replica_placement_diagnostics_sql() {
+
+Script done on 2026-05-13 17:04:12-07:00 [COMMAND_EXIT_CODE="0"]

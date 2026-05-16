@@ -107,6 +107,7 @@ ecaz
 │   ├── diskann-graph       # persisted graph reachability/degree/edge diagnostics
 │   ├── diskann-build-probe # in-memory candidate pool/pruning/degree diagnostics
 │   ├── overhead            # encode / internal scan / residual SQL breakdown
+│   ├── spire-pipeline      # SPIRE routing, remote fanout, recall, latency, and transport counters
 │   └── suite
 │       ├── run             # dry-run or execute a configured benchmark suite
 │       ├── audit           # validate suite shape and required local inputs
@@ -124,6 +125,13 @@ ecaz
 │   │   ├── restart               # restart pgrx with runtime env knobs
 │   │   ├── sql                   # run psql against a pgrx scratch cluster
 │   │   └── refresh-debug-helpers # install ADR-030 debug SQL wrappers
+│   ├── spire-multicluster
+│   │   ├── smoke-pg18                      # one-coordinator/one-remote baseline fixture
+│   │   ├── customscan-read-pg18            # repeated CustomScan read fixture
+│   │   ├── insert-read-after-customscan-pg18 # write-then-read CustomScan fixture
+│   │   ├── transport-overlap-pg18          # one-coordinator/two-remote PG18 fixture
+│   │   ├── fault-pg18                      # Stage E fault matrix fixtures
+│   │   └── lifecycle-pg18                  # Stage E lifecycle matrix fixtures
 │   ├── sql         # version-aware pgrx SQL runner with packet-local logging
 │   └── test
 │       ├── pgrx                # run cargo pgrx test

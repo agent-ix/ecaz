@@ -1,0 +1,7 @@
+Script started on 2026-05-13 17:04:12-07:00 [<not executed on terminal>]
+  37120 src/tests/mod.rs
+   1469 src/tests/diagnostics.rs
+  17812 src/lib.rs
+  56401 total
+
+Script done on 2026-05-13 17:04:12-07:00 [COMMAND_EXIT_CODE="0"]

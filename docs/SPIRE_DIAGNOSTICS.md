@@ -4,6 +4,12 @@ SPIRE diagnostics are read-only SQL functions for inspecting the currently
 published index state. They are operator-facing triage surfaces, not recall or
 latency measurements.
 
+For remote libpq security and operations, including `sslmode` preservation,
+raw-conninfo non-exposure, sanitized auth/certificate failures,
+`max_prepared_transactions`, orphaned prepared xact recovery, credential
+rotation deferral, and audit-log deferral, see
+`docs/SPIRE_LIBPQ_RUNBOOK.md`.
+
 Start with:
 
 - `ec_spire_index_health_snapshot(index_oid)` for a compact health summary and
@@ -12,8 +18,28 @@ Start with:
   placement, object, assignment, and byte-count cardinalities.
 - `ec_spire_index_scan_sanity_snapshot(index_oid)` when a query appears slow
   or unexpectedly approximate.
+- `ec_spire_index_cost_tuning_snapshot(index_oid)` when EXPLAIN or benchmark
+  output needs the live SPIRE cost-model GUC values used by planner costing.
 - `ec_spire_index_relation_storage_snapshot(index_oid)` when old epoch or
   relation-object cleanup debt is suspected.
+- `ec_spire_index_maintenance_scheduler_plan(index_oid)` before running a
+  periodic maintenance job.
+- `ec_spire_index_epoch_cleanup_summary(index_oid)` when old-epoch retention
+  and physical cleanup status need one operator row.
+- `ec_spire_index_epoch_cleanup_run(index_oid)` when the cleanup summary reports
+  eligible old-epoch tuple debt.
+- `ec_spire_remote_search_production_executor_state_summary(...)` when you need
+  the dry production fanout state and C0/C1 counters without conninfo secret
+  lookup or socket opens.
+- `ec_spire_remote_search_production_read_profile(...)` when you explicitly
+  want to execute the live production read path and attribute elapsed time to
+  planning, secret lookup, TLS/connect, remote receive, payload decode, and
+  merge stages.
+- `ec_spire_remote_search_degraded_skip_report(...)` when degraded mode needs
+  one row per skipped remote node with node ID, skipped PID count, and first
+  skip category.
+- `ec_spire_remote_pipeline_steps(...)` when remote search spans multiple
+  libpq/manifest/result diagnostic surfaces and you need one cheap step list.
 
 ## Function Map
 
@@ -22,23 +48,79 @@ Start with:
 | `ec_spire_index_health_snapshot(index_oid)` | operator | You need the quickest health label and recommendation. |
 | `ec_spire_index_active_snapshot_diagnostics(index_oid)` | operator | You need active epoch cardinalities and byte totals. |
 | `ec_spire_index_options_snapshot(index_oid)` | operator | You need resolved reloptions, session overrides, and effective scan settings. |
+| `ec_spire_index_cost_tuning_snapshot(index_oid)` | operator | You need the active SPIRE cost-model GUC values and effective storage/rerank multipliers for EXPLAIN-driven tuning. |
+| `ec_spire_index_boundary_replica_identity_snapshot(index_oid)` | operator/debug | You need to prove boundary replicas share global vector identity across primary and replica assignments. |
+| `ec_spire_index_boundary_replica_placement_diagnostics(index_oid)` | operator/debug | You need missing, stale, unavailable, or skipped boundary-replica placement status and degraded-mode action. |
 | `ec_spire_index_scan_sanity_snapshot(index_oid)` | operator | You need deterministic scan preconditions such as exact leaf coverage and rerank mode. |
 | `ec_spire_index_relation_storage_snapshot(index_oid)` | operator | You need relation object tuple counts, active referenced bytes, and cleanup-candidate debt. |
 | `ec_spire_index_epoch_snapshot(index_oid)` | operator | You need active, retired, failed, superseded, and cleanup-eligibility epoch rows. |
+| `ec_spire_index_epoch_cleanup_summary(index_oid)` | operator | You need retained-epoch blockers and cleanup-candidate tuple debt in one row. |
+| `ec_spire_index_epoch_cleanup_run(index_oid)` | operator | You need to reclaim cleanup-eligible old-epoch object tuples under the SPIRE publish lock. |
 | `ec_spire_index_placement_snapshot(index_oid)` | operator | You need per-store placement counts, availability counts, and object bytes by kind. |
 | `ec_spire_index_scan_placement_snapshot(index_oid, query)` | operator/debug | You need the stores, leaf PIDs, delta PIDs, and candidate rows touched by one query. |
+| `ec_spire_index_selected_pid_placement_snapshot(index_oid, selected_pids)` | operator/debug | You need the exact selected PID to remote node and local store mapping before remote fanout. |
+| `ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` | operator/debug | You need to know whether scan-touched local stores execute sequentially or through a real parallel primitive. |
+| `ec_spire_index_scan_local_store_read_overlap_harness(index_oid, query)` | operator/debug | You need repeatable per-store route, candidate, object-byte, read-batch, and delta-decode counters for a local multi-store query. |
+| `ec_spire_index_scan_routing_snapshot(index_oid, query)` | operator/debug | You need per-routing-level frontier widths, expansion counts, deduped route counts, and truncation reasons for one query. |
 | `ec_spire_index_root_routing_snapshot(index_oid)` | debug | You need root centroid-to-child routing rows and child placement metadata. |
 | `ec_spire_index_hierarchy_snapshot(index_oid)` | operator/debug | You need the current hierarchy shape and single-level foundation capability flags. |
 | `ec_spire_index_object_snapshot(index_oid)` | debug | You need one row per active manifest object PID with kind, version, placement, and readability. |
 | `ec_spire_index_leaf_snapshot(index_oid)` | operator/debug | You need per-leaf base, delta, effective assignment counts, maintenance labels, and object bytes. |
 | `ec_spire_index_delta_snapshot(index_oid)` | debug | You need readable delta object rows with parent leaf, version, and insert/delete counts. |
 | `ec_spire_index_insert_debt_snapshot(index_oid)` | operator | You need active delta fanout and whether insert batching is recommended. |
+| `ec_spire_index_maintenance_plan_snapshot(index_oid)` | operator/debug | You need an unlocked split/merge maintenance preview. |
+| `ec_spire_index_locked_maintenance_run_plan(index_oid)` | operator/debug | You need the publish-lock rechecked split/merge plan without publishing an epoch. |
+| `ec_spire_index_maintenance_scheduler_plan(index_oid)` | operator | You need to decide whether an operator-controlled periodic job should call maintenance. |
+| `ec_spire_index_maintenance_scheduler_run(index_oid)` | operator | You need a periodic-job entrypoint that reuses the normal maintenance publish path. |
 | `ec_spire_index_allocator_snapshot(index_oid, warn_within)` | operator | You need PID and local vec_id cursor distance-to-exhaustion warnings. |
+| `ec_spire_remote_search_production_executor_state_summary(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need the planned production fanout state plus dry C0/C1 counters without resolving conninfo secrets or opening remote libpq sockets. |
+| `ec_spire_remote_search_production_read_profile(index_oid, query, top_k)` | operator/perf | You have already chosen to run the live production read path and need key/value timing and count rows for Phase 13d/AWS bottleneck attribution. |
+| `ec_spire_remote_search_degraded_skip_report(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need every degraded-skipped remote node with node ID, skipped PID count, first skip category, operator hint, and status. |
+| `ec_spire_remote_pipeline_steps(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need one consolidated remote-search pipeline row per dispatch, connection, candidate, heap, manifest, and result step without opening remote libpq connections. |
+| `ec_spire_remote_pipeline_steps_live(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You have already inspected the dry pipeline row and explicitly want live libpq connection, candidate, heap, and coordinator-result probes. |
 
 ## Stable Labels
 
 Diagnostic label strings are part of the operator-facing contract. Do not reuse
 an existing label for a new meaning; add a new label instead.
+
+## Production Read Profiling
+
+`ec_spire_remote_search_operator_diagnostics(...)` is a default triage surface;
+it should stay cheap enough for routine operator use and no longer performs full
+remote heap resolution as a side effect. Use
+`ec_spire_remote_search_production_scan_heap_resolution_summary(...)` for the
+live heap-resolution summary, or
+`ec_spire_remote_search_production_read_profile(...)` when the goal is
+bottleneck attribution.
+
+The profile function returns `(metric, value)` rows so new Phase 13d metrics can
+be added without changing tuple-width limits. It uses the production
+candidate/heap read path and therefore performs conninfo lookup, remote
+socket/TLS setup, endpoint identity validation, candidate receive, heap receive,
+payload decode, and final merge work. It does not expose raw conninfo secrets.
+
+## Cost Tuning
+
+Packet `30976` is the Phase 12 local calibration baseline for SPIRE planner
+costs. The default GUC values below preserve that modeled-cost output; Phase 13
+AWS/RDS recalibration should record packet-local before/after rows from
+`ec_spire_index_cost_snapshot(index_oid)` and the live values from
+`ec_spire_index_cost_tuning_snapshot(index_oid)`.
+
+| GUC | Default | Applies to |
+| --- | ---: | --- |
+| `ec_spire.cost_routing_dimension_scale` | `0.01` | Routing-level vector scoring CPU dimension scale. |
+| `ec_spire.cost_leaf_dimension_scale` | `0.01` | Leaf candidate scoring CPU dimension scale. |
+| `ec_spire.cost_index_page_scale` | `1.0` | SPIRE index page cost multiplier over `seq_page_cost`. |
+| `ec_spire.cost_local_store_page_fanout_scale` | `0.05` | Additional page-cost multiplier per local store beyond the first. |
+| `ec_spire.cost_storage_scoring_multiplier` | `1.0` | Session scalar over the calibrated storage-format scoring baseline. |
+| `ec_spire.cost_rerank_multiplier` | `1.35` | Candidate CPU multiplier when effective `rerank_width = 0`. |
+
+`ecaz bench spire-pipeline --include-cost-snapshot` prints the tuning snapshot
+beside the routing and pipeline counters. Pass the matching `--cost-*` flags to
+that command when collecting a packet-local override fixture so the connection
+that runs the benchmark also owns the session GUC changes.
 
 `ec_spire_index_options_snapshot(index_oid)` reports assignment payload
 scannability with these `assignment_payload_status` values:
@@ -52,8 +134,29 @@ scannability with these `assignment_payload_status` values:
 `effective_nprobe_per_level` and `nprobe_policy_per_level`. Single-level
 indexes report one `single_level` entry. Recursive indexes report one entry per
 active routing level, ordered from level 1 upward. Phase 3 recursive routing is
-conservative: relation or session `nprobe` applies at level 1, and levels above
-1 probe one child until durable per-level nprobe configuration lands.
+conservative by default: relation or session `nprobe` applies at level 1, and
+levels above 1 probe one child unless the index is configured with
+`nprobe_per_level`. That reloption is a comma-separated list ordered from level
+2 upward.
+
+The same options snapshot reports the effective Phase 9 route-budget guardrails
+as `recursive_beam_width`, `max_leaf_routes`, and `max_routing_expansions`.
+These are derived from active leaf count and effective `nprobe`; they cap the
+global recursive routing frontier while `nprobe_per_level` remains the local
+per-parent input.
+
+Phase 10 adds a `max_candidate_rows` scan cap. `max_candidate_rows = 0` means
+`auto`, which resolves to the hard SPIRE candidate ceiling. This cap applies
+before exact heap rerank, including scans with `rerank_width = 0`.
+
+`ec_spire_index_scan_routing_snapshot(index_oid, query)` reports one row per
+routing level touched by the query. `input_frontier_width` is the number of
+parent routes entering that level; `expanded_parent_count` is the number
+actually expanded before the route-expansion guard; `selected_child_count` is
+the local per-parent routing output before global dedupe; and
+`deduped_route_count` is the route count left after global dedupe and the level
+cap. `truncation_reason` uses stable labels: `none`,
+`max_routing_expansions`, `beam_width`, and `max_leaf_routes`.
 
 `ec_spire_index_options_snapshot(index_oid)` reports `local_store_count` and
 `local_store_tablespaces` as the requested local placement surface. Repeated
@@ -61,6 +164,42 @@ tablespace names are allowed so same-device baseline runs can be configured and
 reported honestly. Phase 4 supports auxiliary partition-store relations for
 local multi-store indexes, while multi-store REINDEX remains explicitly
 rejected until a full auxiliary-store rebuild lifecycle lands.
+`ec_spire_index_placement_snapshot(index_oid)` reports the configured placement
+surface by `(node_id, local_store_id, store_relid)`.
+`ec_spire_index_selected_pid_placement_snapshot(index_oid, selected_pids)`
+reports one row per requested PID with its `node_id`, `local_store_id`,
+`store_relid`, placement state, object version, and object bytes. Use it before
+remote fanout when an operator needs to inspect the exact selected PID mapping
+rather than grouped scan counters. `selection_ordinal` is the 1-indexed
+position of the PID in the `selected_pids` input array. This diagnostic answers
+"where would this PID be served from?" rather than proving end-to-end data
+readability; if it returns fewer rows than requested, check for object-version
+mismatches between the object manifest and placement directory before treating
+the PID as absent.
+`ec_spire_index_scan_placement_snapshot(index_oid, query)` reports the
+scan-touched store groups by `(node_id, local_store_id)`. Local relation-backed
+object reads resolve those diagnostics through bounded store maps keyed by
+`local_store_id` for in-memory stores and by `(local_store_id, store_relid)` for
+relation-backed stores, so configured local-store lookup does not require a
+linear scan per placement.
+`ec_spire_index_scan_local_store_execution_snapshot(index_oid, query)` reports
+the local-store execution limitation explicitly:
+`local_store_execution_mode = 'sequential_backend'`. PG18 builds report
+`local_store_read_ahead_primitive = 'pg18_read_stream'`, which means relation
+block read-ahead is used within the current backend, not concurrent store-group
+execution; object decoding, candidate scoring, and heap rerank CPU work still
+serialize in that backend. The future primitive for real local multi-store
+overlap is reported as
+`local_store_parallelism_next_step = 'async_or_parallel_store_group_executor'`.
+The execution-mode label is an operator-visible public contract; a future
+parallel executor must intentionally change that label and update its tests.
+`ec_spire_index_scan_local_store_read_overlap_harness(index_oid, query)` is the
+repeatable local multi-store harness for the same scan collector. It returns
+one row per touched `(node_id, local_store_id)` with route counts, visible
+candidate rows, prefetched object bytes, store read-batch count, and selected
+delta-object decode count. The current executor should report one read batch
+per touched store group; non-sequential overlap work must change that execution
+primitive before it can claim multi-store parallelism.
 
 `ec_spire_index_options_snapshot(index_oid)` reports Phase 5 boundary
 replication planning state through `boundary_replica_count`,
@@ -68,6 +207,252 @@ replication planning state through `boundary_replica_count`,
 `boundary_replica_count = 0` keeps primary-only assignment and reports
 `scan_dedupe_mode = none`; replica-capable indexes report `vec_id` so operators
 can see when scan plans must deduplicate replicated vector identities.
+`ec_spire_index_boundary_replica_identity_snapshot(index_oid)` groups primary
+and boundary-replica assignments by `vec_id`, reports whether the ID scope is
+global, and surfaces the node/local-store span covered by that identity. The
+snapshot reads coordinator metadata copies for remote placements, so a
+multi-instance readiness fixture can prove one global original-vector identity
+across local and remote placement rows before live remote object reads exist.
+The reported `node_id` and `local_store_id` columns are placement identity, not
+the local coordinator metadata read source.
+`ec_spire_index_boundary_replica_placement_diagnostics(index_oid)` reports the
+operator side of boundary-replica placement health. It groups by `vec_id` and
+surfaces missing replica assignments, stale replica placements, unavailable
+replica placements, skipped replica placements, and the degraded-mode action
+(`fail_closed` or `skip_and_report`) attached to each condition.
+`ec_spire_remote_epoch_manifest_freshness(index_oid)` should be paired with
+that identity snapshot for boundary-replica readiness: it reports whether each
+remote node's persisted epoch-manifest entry is missing, ready, or stale before
+Stage E fixtures rely on the replicated placement metadata. When the freshness
+next action is `persist_remote_epoch_manifest` or `refresh_remote_epoch_manifest`,
+run `ec_spire_persist_remote_epoch_manifest(index_oid)` after confirming the
+placement metadata is the intended remote surface.
+`ec_spire_index_scan_placement_snapshot(index_oid, query)` then reports the
+runtime side of that contract with primary versus boundary-replica candidate
+rows, vec-id duplicate candidates suppressed by scan dedupe, and final
+candidate winners after dedupe and candidate limits. The aggregate
+`candidate_row_count` is the pre-dedupe total; its role split is
+`primary_candidate_row_count + boundary_replica_candidate_row_count`. Candidate
+rows retained by the bounded collection path are reported as
+`candidate_winner_count`; rows dropped only by the candidate-row cap are
+reported as `truncated_candidate_row_count` with matching primary versus
+boundary-replica role splits.
+
+`ec_spire_remote_pipeline_steps(...)` reports six stable `step_name` values:
+`dispatch_plan`, `connection_check`, `candidates`, `heap_candidates`,
+`manifest_apply`, and `coordinator_result`. The default surface is dry: it can
+read conninfo-secret presence, but it does not open remote libpq connections or
+execute remote candidate/coordinator probes. When the dry
+`connection_check` row reports `requires_libpq_executor`, use
+`ec_spire_remote_pipeline_steps_live(...)` only if live probe load is expected.
+Both surfaces carry step-local counts, status, next blocker, and
+recommendation; counts are not comparable across step names.
+
+`ec_spire_remote_search_vector_identity_contract()` records the Phase 9 vector
+identity contract. Global `0x02` vec IDs dedupe across nodes. Existing local
+`0x01` vec IDs remain valid but remote merge scopes them by `node_id`, so
+unrelated local sequences from different nodes cannot silently collapse into one
+candidate.
+
+## Distributed CustomScan Compatibility
+
+SPIRE 0.1.2 uses `EcSpireDistributedScan` as the production distributed read
+integration point. Remote-origin rows are delivered through CustomScan tuple
+payloads, not through coordinator-side AM mirror rows.
+
+Distributed table reads provide read-committed semantics only, even when the
+surrounding coordinator transaction is `REPEATABLE READ` or `SERIALIZABLE`.
+Remote statements run under remote PostgreSQL snapshots rather than the
+coordinator transaction snapshot, so a later distributed read in the same
+coordinator transaction can observe a newer committed remote row. Applications
+that require PostgreSQL's normal repeatable or serializable guarantees for
+distributed tables must add application-level locking or accept this v1
+limitation.
+
+Operator status labels changed with that pivot:
+
+| Superseded label | Current label | Meaning |
+| --- | --- | --- |
+| `requires_remote_row_materialization` | `requires_custom_scan_tuple_delivery` | A remote-origin row reached a path that cannot deliver it as a coordinator heap TID; use the CustomScan tuple delivery path. |
+| `remote_row_materialization` | `custom_scan_tuple_delivery` | The next blocker is the CustomScan tuple-delivery integration point, not a mirror-row catalog. |
+
+The row-materialization and mirror-sync SQL contract entrypoints were removed
+with the Shape-A AM mirror path. Operators should no longer expect rows for
+`ec_spire_remote_search_row_materialization_contract`,
+`ec_spire_remote_search_row_materialization_mapping_contract`, or the
+operator-owned mirror-sync contract in
+`ec_spire_remote_operator_entrypoint_contract()`. The surviving entrypoint
+contract rows cover descriptor, manifest, libpq executor, pipeline, and
+CustomScan-compatible read/write diagnostics.
+
+Remote catalog cleanup functions keep the `row_materialization_*` result
+columns as a 0.1.x compatibility shim, but they always report `0` after the
+0.1.1 -> 0.1.2 upgrade drops `ec_spire_remote_row_materialization`. A future
+0.2.x cleanup may remove those zero-valued columns once operator consumers have
+had a full minor-version window to stop reading them.
+
+Packet `30895` reran the full Stage E CustomScan matrix after the cleanup. The
+matrix definitions remain anchored in packets `30770` (fault matrix), `30772`
+(lifecycle matrix), and `30773` (per-case artifact convention), with packet
+`30895` providing the current CustomScan evidence trail.
+
+## Maintenance And Cleanup
+
+SPIRE maintenance uses epoch publication. The operator-controlled periodic-job
+path is:
+
+1. Read `ec_spire_index_maintenance_scheduler_plan(index_oid)`.
+2. If `scheduler_status = 'due'`, call
+   `ec_spire_index_maintenance_scheduler_run(index_oid)`.
+3. Inspect `maintenance_status`, `planned_action`, `published`, and
+   `maintenance_message`.
+
+The scheduler entrypoint does not implement a separate split/merge algorithm.
+It delegates to `ec_spire_index_maintenance_run(index_oid)`, which takes the
+SPIRE publish lock, reloads active state, rechecks the selected action, and
+publishes through the normal maintenance path.
+
+Use `ec_spire_index_epoch_cleanup_summary(index_oid)` for old-epoch cleanup
+triage. `physical_cleanup_status = 'not_required'` means there is no old-epoch
+tuple debt to reclaim. `physical_cleanup_status = 'blocked_by_retention'` means
+cleanup debt is visible, but no epoch is currently eligible after retention and
+active-query checks. `physical_cleanup_status = 'supported'` means
+`ec_spire_index_epoch_cleanup_run(index_oid)` can reclaim old object tuples. The
+cleanup run removes only unprotected tuples for cleanup-eligible epochs under
+the SPIRE publish lock. Schedule cleanup from an operator-controlled job during
+an acceptable pause window for publish-path work.
+
+## Prepared Transaction Recovery
+
+Coordinator-routed SPIRE writes use remote PostgreSQL prepared transactions.
+This is the correctness-first write path for normal application traffic: each
+affected remote row pays remote SQL, remote `PREPARE TRANSACTION`, coordinator
+placement-directory staging, and remote prepared-transaction resolution so the
+remote heap and coordinator placement state become visible atomically. For
+bulk ingestion where that per-row 2PC latency is too expensive, use the
+ADR-069 bulk-load escape hatch instead: classify rows on the coordinator with
+`ec_spire_classify_centroid(...)`, load them directly to the owning remotes in
+parallel, then batch-register placement entries on the coordinator with
+`ec_spire_register_placement_batch(...)`. The batch registration is
+transactional within the calling session: placement entries from one call
+become visible together at commit, or not at all on rollback. Partial
+visibility concerns therefore sit between committed bulk-load batches or tool
+runs, not inside one registration transaction. Until placement registration
+commits, those rows are not eligible for coordinator-routed SPIRE reads, so
+keep readers off the partially registered dataset or accept temporary
+omissions.
+
+Every remote PostgreSQL instance used for coordinator-routed writes must set
+`max_prepared_transactions` above zero and leave enough free slots for peak
+concurrent SPIRE remote prepares plus any other prepared transactions on that
+instance. Changing the setting requires a PostgreSQL restart. When a remote
+`PREPARE TRANSACTION` fails because prepared transactions are disabled or the
+slot pool is exhausted, SPIRE wraps the remote error with a hint naming this
+readiness requirement. Remote descriptor registration performs a nonblocking
+preflight when `conninfo_secret_name` is resolvable: it emits a NOTICE-level
+operator message if the remote cannot be reached, if
+`SHOW max_prepared_transactions` cannot be read, or if the value is zero. The
+message is visible to the registering client and normal PostgreSQL logging; it
+does not reject the descriptor because secret-resolution and remote
+availability are already separately visible operator surfaces, but it must be
+treated as a write-readiness blocker before enabling coordinator-routed writes.
+
+If concurrent coordinator INSERTs refresh the same remote-node descriptor and a
+newer descriptor generation wins first, the older transaction fails with
+SQLSTATE `40001` (`serialization_failure`) and message
+`ec_spire_register_remote_node_descriptor descriptor_generation must advance
+existing descriptor_generation`. Retry the whole coordinator write after the
+winning descriptor refresh commits; the failed transaction has not published
+its placement row, and its remote prepared transaction is rolled back by the
+transaction callback.
+
+If a coordinator backend crashes after remote prepare and before the xact
+callback resolves the remote transaction, run the operator-driven reaper first:
+
+```sql
+SELECT *
+  FROM ec_spire_reap_orphaned_remote_prepared_xacts(2);
+
+SELECT *
+  FROM ec_spire_reap_all_orphaned_remote_prepared_xacts();
+```
+
+The reaper scans remote `pg_prepared_xacts` for `ec_spire_insert_%` GIDs,
+joins each parsed GID to coordinator
+`ec_spire_remote_prepared_xact_intent`, and rolls back only entries whose
+coordinator top xid is no longer visible and whose intent state is not
+`commit_local`. There is no background worker in v1; operators run this helper
+during incident response and recovery drills.
+
+For manual audit or escalation, inspect the remote:
+
+```sql
+SELECT gid, prepared, owner, database
+  FROM pg_prepared_xacts
+ WHERE gid LIKE 'ec_spire_insert_%'
+ ORDER BY prepared;
+```
+
+SPIRE GIDs have the stable form
+`ec_spire_insert_<index_oid>_<node_id>_<served_epoch>_<top_xid>`. The
+`ec_spire_insert` prefix is historical and currently covers both remote INSERT
+and DELETE prepares; do not use the prefix to infer the operation type. There
+is no backend pid in the GID; `top_xid` is the coordinator transaction identity
+to correlate with logs and coordinator-side evidence while the resolution
+decision remains based on the known coordinator transaction outcome and the
+placement row state for the affected key.
+
+Manually resolve only after the affected primary key and coordinator outcome
+are known:
+
+1. On the coordinator, inspect `ec_spire_placement` for the parsed
+   `index_oid`, `node_id`, `served_epoch`, and the affected primary key.
+2. For INSERT recovery, commit the remote prepared transaction only when the
+   coordinator transaction committed and the expected placement row exists.
+   Roll it back when the coordinator transaction aborted or the placement row
+   is absent after the outcome is known.
+3. For DELETE recovery, commit the remote prepared transaction only when the
+   coordinator transaction committed and the placement row was removed. Roll it
+   back when the coordinator transaction aborted and the placement row remains.
+4. After `COMMIT PREPARED` or `ROLLBACK PREPARED`, re-query the remote row and
+   the coordinator placement row to verify the two sides match the intended
+   outcome.
+
+If the coordinator transaction outcome or affected primary key cannot be
+established for a `commit_local` row, leave the prepared transaction unresolved
+and escalate with the GID, remote node id, and coordinator index OID. Do not
+bulk-resolve SPIRE GIDs from the remote side alone.
+
+## Distributed DDL Ordering
+
+SPIRE v1 does not propagate DDL from the coordinator relation to remote shard
+relations. For any `ALTER TABLE` or other schema change that affects
+coordinator-routed writes or tuple payloads, operators must pause writes, apply
+the DDL to the coordinator, apply matching DDL to every remote, refresh the
+affected remote-node descriptors, verify the descriptors report the expected
+state, and only then resume writes. Bulk-load placement registration for the
+same relation should remain paused during the same window.
+
+There is no separate v1 DDL-window guard flag. The operational guard is the
+pause/apply/refresh/resume sequence; the descriptor-bound Phase 12.5
+schema-drift fingerprint is the fail-closed safety net for coordinator-routed
+writes when either side's column shape changes without a descriptor refresh.
+The guard compares the current coordinator heap shape to
+`ec_spire_remote_node_descriptor.coordinator_insert_shape_fingerprint`, then
+performs a remote echo-back query and compares the current remote heap shape to
+`remote_insert_shape_fingerprint` and to the coordinator fingerprint before
+opening mutating remote SQL. If it reports `schema_drift`, keep writes paused,
+apply matching DDL to the side named in the hint, refresh the affected
+descriptors, and retry.
+The `coordinator_insert_shape_fingerprint` name is historical: the field landed
+with coordinator-routed INSERT first, but the same guard covers INSERT, UPDATE,
+and DELETE remote write paths.
+Rows left with the `unset` sentinel for either fingerprint fail closed for
+coordinator-routed INSERT, UPDATE, and DELETE until the descriptor is
+registered again with a reachable remote. UPDATE fails before remote mutation,
+and DELETE fails before remote 2PC prepare or placement-directory deletion.
+Read-path endpoint identity mismatches continue to surface through the Stage
+B/Stage E remote fault diagnostics.
 
 ## Reading Notes
 

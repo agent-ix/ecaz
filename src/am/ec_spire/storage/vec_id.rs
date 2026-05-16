@@ -29,15 +29,17 @@ const ASSIGNMENT_ROW_FIXED_PREFIX_BYTES: usize = 3;
 const ASSIGNMENT_ROW_FIXED_TAIL_BYTES: usize = ITEM_POINTER_BYTES + 1 + 4 + 4;
 const ROUTING_OBJECT_BODY_PREFIX_BYTES: usize = 4;
 const ROUTING_CHILD_ENTRY_FIXED_BYTES: usize = 4 + 8;
+const TOP_GRAPH_OBJECT_BODY_PREFIX_BYTES: usize = 8 + 2 + 2 + 4 + 4 + 4 + 4;
+const TOP_GRAPH_NODE_FIXED_BYTES: usize = 8 + 4 + 4;
 const LEAF_V2_META_FLAG: u32 = 0x0000_0001;
 const LEAF_V2_SEGMENT_FLAG: u32 = 0x0000_0002;
-const ROUTING_V2_CHAIN_META_FLAG: u32 = 0x0000_0004;
-const ROUTING_V2_CHAIN_SEGMENT_FLAG: u32 = 0x0000_0008;
+const PARTITION_OBJECT_V2_CHAIN_META_FLAG: u32 = 0x0000_0004;
+const PARTITION_OBJECT_V2_CHAIN_SEGMENT_FLAG: u32 = 0x0000_0008;
 const LEAF_V2_LOCAL_VEC_ID_STRIDE: usize = 16;
 const LEAF_V2_META_BODY_BYTES: usize = 1 + 1 + 2 + 4 + 2 + 2 + 4 + ITEM_POINTER_BYTES + 8;
 const LEAF_V2_SEGMENT_PREFIX_BYTES: usize = 4 + 4 + 4 + ITEM_POINTER_BYTES;
-const ROUTING_V2_CHAIN_META_BODY_BYTES: usize = 2 + 2 + 4 + ITEM_POINTER_BYTES + 8;
-const ROUTING_V2_CHAIN_SEGMENT_PREFIX_BYTES: usize = 4 + 4 + ITEM_POINTER_BYTES;
+const PARTITION_OBJECT_V2_CHAIN_META_BODY_BYTES: usize = 2 + 2 + 4 + ITEM_POINTER_BYTES + 8;
+const PARTITION_OBJECT_V2_CHAIN_SEGMENT_PREFIX_BYTES: usize = 4 + 4 + ITEM_POINTER_BYTES;
 const SPIRE_STORE_RELATION_NAME_PREFIX: &str = "ec_spire_store";
 
 #[repr(u8)]
@@ -61,6 +63,7 @@ impl SpireVecIdKind {
 pub(super) struct SpireLeafObjectColumnRowRef<'a> {
     pub(super) row_index: u32,
     pub(super) flags: u16,
+    pub(super) vec_id_kind: SpireVecIdKind,
     pub(super) vec_id_bytes: &'a [u8],
     pub(super) heap_tid: ItemPointer,
     pub(super) gamma: f32,
@@ -68,6 +71,10 @@ pub(super) struct SpireLeafObjectColumnRowRef<'a> {
 }
 
 impl SpireLeafObjectColumnRowRef<'_> {
+    pub(super) fn vec_id(&self) -> Result<SpireVecId, String> {
+        decode_leaf_v2_vec_id(self.vec_id_kind, self.vec_id_bytes)
+    }
+
     pub(super) fn local_vec_seq(&self) -> Result<u64, String> {
         decode_leaf_v2_local_vec_id(self.vec_id_bytes)
     }
@@ -122,6 +129,7 @@ impl<'a> SpireLeafObjectColumns<'a> {
         Ok(SpireLeafObjectColumnRowRef {
             row_index,
             flags: self.flags[row_offset],
+            vec_id_kind: self.vec_id_kind,
             vec_id_bytes: self
                 .vec_ids
                 .get(vec_id_start..vec_id_end)

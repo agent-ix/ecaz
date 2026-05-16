@@ -1,0 +1,9 @@
+CREATE EXTENSION
+CREATE TABLE
+INSERT 0 2000
+SELECT 40
+CREATE INDEX
+UPDATE 0
+t
+0
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 2 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots

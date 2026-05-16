@@ -1,0 +1,10 @@
+Script started on 2026-05-13 18:36:58-07:00 [<not executed on terminal>]
+  34426 src/tests/mod.rs
+    570 src/tests/placement.rs
+    838 src/tests/scan.rs
+   2634 src/tests/remote_search.rs
+   1477 src/tests/vacuum.rs
+   2814 src/tests/insert.rs
+  42759 total
+
+Script done on 2026-05-13 18:36:58-07:00 [COMMAND_EXIT_CODE="0"]

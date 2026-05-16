@@ -1,0 +1,41 @@
+run_dir=/home/peter/dev/ecaz/target/spire-stage-e-predispatch-fault-pg18-30779b
+fault_case=version_skew
+remote_ready_port=39320
+coord_port=39321
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18 pg_test[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg18 pg_test" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m705[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m702[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18 pg_test[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.77s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+matrix_row=version_skew,incompatible_extension_version,fail_closed,incompatible_extension_version,skip_node,degraded_skipped,strict_failed_dispatch_count+1; degraded_skipped_dispatch_count+1
+injection=fault_node_extension_version=0.0.0-test-skew
+ready_remote_identity=da0b218def942978
+query_command=ec_spire_remote_search_production_executor_state_summary('ec_spire_stage_e_version_skew_strict_coord_idx', ..., 'strict')
+expected_status=incompatible_extension_version
+expected_blocked_before_dispatch_count=1
+expected_degraded_skipped_dispatch_count=0
+expected_first_degraded_skip_category=none
+expected_next_executor_step=remote_extension_version
+observed_summary=spire_remote_fanout_executor_v1,2,1,1,1,0,none,remote_extension_version,incompatible_extension_version
+matrix_row=version_skew,incompatible_extension_version,fail_closed,incompatible_extension_version,skip_node,degraded_skipped,strict_failed_dispatch_count+1; degraded_skipped_dispatch_count+1
+injection=fault_node_extension_version=0.0.0-test-skew
+ready_remote_identity=da0b218def942978
+query_command=ec_spire_remote_search_production_executor_state_summary('ec_spire_stage_e_version_skew_degraded_coord_idx', ..., 'degraded')
+expected_status=requires_production_transport_adapter
+expected_blocked_before_dispatch_count=0
+expected_degraded_skipped_dispatch_count=1
+expected_first_degraded_skip_category=incompatible_extension_version
+expected_next_executor_step=production_transport_adapter
+observed_summary=spire_remote_fanout_executor_v1,2,2,0,1,1,incompatible_extension_version,production_transport_adapter,requires_production_transport_adapter
+strict_log=review/30779-spire-stage-e-version-skew/artifacts/stage_e_fault_version_skew_strict.log
+degraded_log=review/30779-spire-stage-e-version-skew/artifacts/stage_e_fault_version_skew_degraded.log
+stage_e_fault_version_skew_passed=true
+SPIRE Stage E version_skew PG18 fixture passed

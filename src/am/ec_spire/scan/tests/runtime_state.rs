@@ -69,6 +69,47 @@
     }
 
     #[test]
+    fn rerank_scored_candidates_by_ip_prefetches_prefix_before_fetching() {
+        let mut candidates = vec![
+            scored_candidate(1, 10, 1, -5.0),
+            scored_candidate(2, 20, 2, -4.0),
+            scored_candidate(3, 30, 3, -3.0),
+        ];
+        let events = RefCell::new(Vec::new());
+
+        rerank_scored_candidates_by_ip_with_prefetch(
+            &mut candidates,
+            2,
+            |prefetch_candidates| {
+                let sequences = prefetch_candidates
+                    .iter()
+                    .map(|candidate| candidate.vec_id.local_sequence().unwrap())
+                    .collect::<Vec<_>>();
+                events.borrow_mut().push(format!("prefetch:{sequences:?}"));
+                Ok(())
+            },
+            |candidate| {
+                let sequence = candidate.vec_id.local_sequence().unwrap();
+                events.borrow_mut().push(format!("score:{sequence}"));
+                Ok(Some(sequence as f32))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            events.into_inner(),
+            vec![
+                "prefetch:[1, 2]".to_owned(),
+                "score:1".to_owned(),
+                "score:2".to_owned(),
+            ]
+        );
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+    }
+
+    #[test]
     fn rerank_scored_candidates_by_ip_rejects_non_finite_scores() {
         let mut candidates = vec![scored_candidate(1, 10, 1, -5.0)];
 
@@ -76,6 +117,21 @@
             rerank_scored_candidates_by_ip(&mut candidates, 0, |_| Ok(Some(f32::INFINITY)))
                 .unwrap_err()
                 .contains("non-finite")
+        );
+    }
+
+    #[test]
+    fn heap_rerank_prefetch_block_numbers_dedupes_and_sorts_blocks() {
+        let candidates = vec![
+            scored_candidate(1, 30, 1, -5.0),
+            scored_candidate(2, 10, 2, -4.0),
+            scored_candidate(3, 30, 3, -3.0),
+            scored_candidate(4, 20, 4, -2.0),
+        ];
+
+        assert_eq!(
+            heap_rerank_prefetch_block_numbers(&candidates),
+            vec![10, 20, 30]
         );
     }
 
@@ -140,6 +196,113 @@
     }
 
     #[test]
+    fn scan_output_cursor_emits_am_outputs_once() {
+        let mut cursor = SpireScanOutputCursor::new(vec![
+            SpireScanOutput {
+                heap_tid: tid(41, 1),
+                orderby_score: -4.1,
+            },
+            SpireScanOutput {
+                heap_tid: tid(42, 2),
+                orderby_score: -4.2,
+            },
+        ]);
+
+        assert_eq!(cursor.remaining(), 2);
+        assert_eq!(
+            cursor.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(41, 1),
+                orderby_score: -4.1,
+            })
+        );
+        assert_eq!(cursor.remaining(), 1);
+        assert_eq!(
+            cursor.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(42, 2),
+                orderby_score: -4.2,
+            })
+        );
+        assert!(cursor.is_exhausted());
+        assert!(cursor.next_output().is_none());
+    }
+
+    #[test]
+    fn production_scan_result_stream_am_outputs_accepts_local_heap_tid_rows() {
+        let stream = production_scan_stream_for_am(
+            SpireRemoteProductionScanAmDeliverySummaryRow {
+                requested_epoch: 1,
+                output_count: 1,
+                local_heap_tid_output_count: 1,
+                remote_origin_output_count: 0,
+                am_deliverable_output_count: 1,
+                status: SPIRE_REMOTE_STATUS_READY,
+                next_blocker: SPIRE_REMOTE_NONE,
+                recommendation: SPIRE_REMOTE_NONE,
+            },
+            vec![SpireRemoteProductionScanOutputRow {
+                requested_epoch: 1,
+                served_epoch: 1,
+                node_id: super::super::meta::SPIRE_LOCAL_NODE_ID,
+                heap_block: 50,
+                heap_offset: 3,
+                score: -1.25,
+                heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+                vec_id: vec![1],
+                row_locator: vec![2],
+                tuple_payload_json: None,
+                typed_tuple_payload: None,
+                tuple_payload_missing: false,
+            }],
+        );
+
+        assert_eq!(
+            production_scan_result_stream_am_outputs(&stream).unwrap(),
+            vec![SpireScanOutput {
+                heap_tid: tid(50, 3),
+                orderby_score: -1.25,
+            }]
+        );
+    }
+
+    #[test]
+    fn production_scan_result_stream_am_outputs_blocks_remote_origin_rows() {
+        let stream = production_scan_stream_for_am(
+            SpireRemoteProductionScanAmDeliverySummaryRow {
+                requested_epoch: 1,
+                output_count: 1,
+                local_heap_tid_output_count: 0,
+                remote_origin_output_count: 1,
+                am_deliverable_output_count: 0,
+                status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_CUSTOM_SCAN_TUPLE_DELIVERY,
+                next_blocker: SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+                recommendation: "use CustomScan tuple delivery",
+            },
+            vec![SpireRemoteProductionScanOutputRow {
+                requested_epoch: 1,
+                served_epoch: 1,
+                node_id: 9,
+                heap_block: 60,
+                heap_offset: 4,
+                score: -1.5,
+                heap_lookup_owner: "origin_node_heap",
+                vec_id: vec![1],
+                row_locator: vec![2],
+                tuple_payload_json: None,
+                typed_tuple_payload: None,
+                tuple_payload_missing: false,
+            }],
+        );
+
+        let error = production_scan_result_stream_am_outputs(&stream)
+            .expect_err("remote-origin rows should block AM delivery");
+
+        assert!(error.contains("custom_scan_tuple_delivery"));
+        assert!(error.contains("blocked"));
+    }
+
+    #[test]
     fn scan_query_accepts_nonzero_finite_vectors() {
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
 
@@ -167,6 +330,8 @@
             leaf_count: 1,
             nprobe: 1,
             nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(1).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 1,
             rerank_width_source: "relation",
@@ -194,12 +359,78 @@
     }
 
     #[test]
+    fn scan_opaque_rescan_replaces_exhausted_output_cursor() {
+        let mut opaque = SpireScanOpaque::default();
+        assert!(!opaque.rescan_called);
+        assert!(opaque.next_output().is_none());
+
+        opaque.reset_for_outputs(
+            SpireScanQuery::new(vec![1.0, 0.0]).unwrap(),
+            None,
+            vec![
+                SpireScanOutput {
+                    heap_tid: tid(10, 1),
+                    orderby_score: -1.0,
+                },
+                SpireScanOutput {
+                    heap_tid: tid(10, 2),
+                    orderby_score: -2.0,
+                },
+            ],
+        );
+
+        assert!(opaque.rescan_called);
+        assert_eq!(opaque.query.as_ref().unwrap().values(), &[1.0, 0.0]);
+        assert_eq!(opaque.cursor.remaining(), 2);
+        assert_eq!(
+            opaque.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(10, 1),
+                orderby_score: -1.0,
+            })
+        );
+        assert_eq!(opaque.cursor.remaining(), 1);
+        assert_eq!(
+            opaque.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(10, 2),
+                orderby_score: -2.0,
+            })
+        );
+        assert!(opaque.cursor.is_exhausted());
+        assert!(opaque.next_output().is_none());
+
+        opaque.reset_for_outputs(
+            SpireScanQuery::new(vec![0.0, 1.0]).unwrap(),
+            None,
+            vec![SpireScanOutput {
+                heap_tid: tid(20, 3),
+                orderby_score: -3.0,
+            }],
+        );
+
+        assert!(opaque.rescan_called);
+        assert_eq!(opaque.query.as_ref().unwrap().values(), &[0.0, 1.0]);
+        assert_eq!(opaque.cursor.remaining(), 1);
+        assert_eq!(
+            opaque.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(20, 3),
+                orderby_score: -3.0,
+            })
+        );
+        assert!(opaque.next_output().is_none());
+    }
+
+    #[test]
     fn scan_opaque_clear_scan_work_drops_rescan_state() {
         let mut opaque = SpireScanOpaque::default();
         let scan_plan = SpireSingleLevelScanPlan {
             leaf_count: 1,
             nprobe: 1,
             nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(1).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 1,
             rerank_width_source: "relation",
@@ -242,6 +473,43 @@
         assert_eq!(opaque.root_control, Some(same_epoch_newer_cursors));
         assert_eq!(opaque.observe_root_control_for_rescan(epoch_two), epoch_two);
         assert_eq!(opaque.root_control, Some(epoch_two));
+    }
+
+    #[test]
+    fn local_heap_delivery_gate_accepts_local_placements() {
+        let placement = SpirePlacementEntry::local_single_store_available(
+            1,
+            SPIRE_FIRST_PID,
+            42,
+            1,
+            tid(10, 1),
+            128,
+        );
+        let directory = SpirePlacementDirectory::from_entries(1, vec![placement]).unwrap();
+
+        ensure_local_heap_placement_directory_is_deliverable(&directory)
+            .expect("local placements should be deliverable through xs_heaptid");
+    }
+
+    #[test]
+    fn local_heap_delivery_gate_blocks_remote_placements() {
+        let mut placement = SpirePlacementEntry::local_single_store_available(
+            1,
+            SPIRE_FIRST_PID + 3,
+            42,
+            1,
+            tid(10, 2),
+            128,
+        );
+        placement.node_id = 9;
+        let directory = SpirePlacementDirectory::from_entries(1, vec![placement]).unwrap();
+
+        let error = ensure_local_heap_placement_directory_is_deliverable(&directory)
+            .expect_err("remote placements should require CustomScan delivery");
+
+        assert!(error.contains("custom_scan_tuple_delivery"));
+        assert!(error.contains("1 remote placement"));
+        assert!(error.contains("node_id 9"));
     }
 
     #[test]

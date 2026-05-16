@@ -190,6 +190,7 @@ pub const EC_SPIRE: IndexProfile = IndexProfile {
         "local_store_tablespaces",
         "boundary_replica_count",
         "nprobe",
+        "nprobe_per_level",
         "rerank_width",
         "training_sample_rows",
         "seed",
@@ -356,6 +357,7 @@ mod tests {
         assert_eq!(p.build_source_column, None);
         assert!(!p.encode_scan_query);
         assert!(p.known_reloptions.contains(&"local_store_count"));
+        assert!(p.known_reloptions.contains(&"nprobe_per_level"));
     }
 
     #[test]

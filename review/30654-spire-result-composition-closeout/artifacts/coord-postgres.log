@@ -1,0 +1,11 @@
+2026-05-09 08:05:41.855 PDT [45680] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-09 08:05:41.858 PDT [45680] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-multicluster-pg18-30654/sockets/.s.PGSQL.39219"
+2026-05-09 08:05:41.867 PDT [45686] LOG:  database system was shut down at 2026-05-09 08:05:41 PDT
+2026-05-09 08:05:41.871 PDT [45680] LOG:  database system is ready to accept connections
+2026-05-09 08:05:42.894 PDT [45680] LOG:  received fast shutdown request
+2026-05-09 08:05:42.897 PDT [45680] LOG:  aborting any active transactions
+2026-05-09 08:05:42.898 PDT [45680] LOG:  background worker "logical replication launcher" (PID 45689) exited with exit code 1
+2026-05-09 08:05:42.898 PDT [45684] LOG:  shutting down
+2026-05-09 08:05:42.900 PDT [45684] LOG:  checkpoint starting: shutdown immediate
+2026-05-09 08:05:42.965 PDT [45684] LOG:  checkpoint complete: wrote 267 buffers (1.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.049 s, total=0.068 s; sync files=117, longest=0.003 s, average=0.001 s; distance=1896 kB, estimate=1896 kB; lsn=0/192E7E0, redo lsn=0/192E7E0
+2026-05-09 08:05:42.972 PDT [45680] LOG:  database system is shut down

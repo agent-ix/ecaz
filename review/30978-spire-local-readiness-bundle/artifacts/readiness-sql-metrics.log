@@ -1,0 +1,36 @@
+SET
+SET
+SET
+SET
+SET
+capacity_remote_search_max_nodes	8
+capacity_remote_search_max_pids	256
+capacity_remote_search_max_pids_per_node	64
+capacity_remote_search_max_concurrent_dispatches	8
+capacity_remote_search_max_concurrent_dispatches_per_node	1
+pg_binary_attr_v1	ready	{pg_binary_attr_v1}	t
+corpus_rows	600
+query_rows	12
+CREATE TABLE
+DO
+12	120	0.4000	8860	2.943	2.633	4.867	5.645
+pipeline	1	routing	1	ready	1	1	0	8	0	0	0	none	none
+pipeline	2	placement	1	ready	1	1	0	8	0	0	0	none	none
+pipeline	3	prefetch	1	ready	8	8	0	8	0	0	0	none	none
+pipeline	4	candidates	1	truncated	600	16	584	8	600	0	0	candidate_budget	increase max_candidate_rows or inspect candidate diagnostics
+pipeline	5	heap_rerank	1	ready	16	16	0	0	16	16	0	none	none
+pipeline	6	remote_fanout	1	not_applicable_local_scan	0	0	0	0	0	0	0	none	use ec_spire_remote_pipeline_steps for remote fanout diagnostics
+routing	1	8	session	disabled	8	8	8	1	1	1	8	8	none
+local_store_overlap	1	8	0	0	8	8	0	600	27648	1	0
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=1 rows=10 recall_hits=4 payload_bytes=725 elapsed_ms=5.839
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=2 rows=10 recall_hits=4 payload_bytes=735 elapsed_ms=2.973
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=3 rows=10 recall_hits=4 payload_bytes=720 elapsed_ms=2.740
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=4 rows=10 recall_hits=4 payload_bytes=750 elapsed_ms=2.791
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=5 rows=10 recall_hits=4 payload_bytes=745 elapsed_ms=2.592
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=6 rows=10 recall_hits=4 payload_bytes=750 elapsed_ms=2.673
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=7 rows=10 recall_hits=4 payload_bytes=750 elapsed_ms=4.072
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=8 rows=10 recall_hits=4 payload_bytes=750 elapsed_ms=2.186
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=9 rows=10 recall_hits=4 payload_bytes=725 elapsed_ms=2.226
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=10 rows=10 recall_hits=4 payload_bytes=715 elapsed_ms=2.290
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=11 rows=10 recall_hits=4 payload_bytes=750 elapsed_ms=2.402
+psql:review/30978-spire-local-readiness-bundle/artifacts/readiness-sql-metrics.sql:94: NOTICE:  qid=12 rows=10 recall_hits=4 payload_bytes=745 elapsed_ms=2.529

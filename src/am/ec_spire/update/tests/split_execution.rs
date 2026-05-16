@@ -481,6 +481,7 @@
                     heap_tid: tid(10, 2),
                     source_vector: vec![1.0, 0.0],
                 }],
+                0,
                 2,
                 42,
                 8,

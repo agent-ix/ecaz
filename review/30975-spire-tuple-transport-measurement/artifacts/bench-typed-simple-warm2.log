@@ -1,0 +1,29 @@
+SET
+SET
+SET
+SET
+SET
+pg_binary_attr_v1	ready	{pg_binary_attr_v1}
+CREATE TABLE
+DO
+pg_binary_attr_v1	20	200	31510	34.293	33.892	35.179	41.313	29.160
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=1 rows=10 payload_bytes=1556 elapsed_ms=42.847
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=2 rows=10 payload_bytes=1556 elapsed_ms=34.191
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=3 rows=10 payload_bytes=1569 elapsed_ms=33.955
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=4 rows=10 payload_bytes=1569 elapsed_ms=33.454
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=5 rows=10 payload_bytes=1556 elapsed_ms=32.746
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=6 rows=10 payload_bytes=1556 elapsed_ms=33.935
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=7 rows=10 payload_bytes=1556 elapsed_ms=33.749
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=8 rows=10 payload_bytes=1582 elapsed_ms=33.301
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=9 rows=10 payload_bytes=1569 elapsed_ms=33.850
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=10 rows=10 payload_bytes=1582 elapsed_ms=33.739
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=11 rows=10 payload_bytes=1569 elapsed_ms=34.127
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=12 rows=10 payload_bytes=1595 elapsed_ms=33.286
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=13 rows=10 payload_bytes=1595 elapsed_ms=33.370
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=14 rows=10 payload_bytes=1595 elapsed_ms=33.719
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=15 rows=10 payload_bytes=1595 elapsed_ms=34.775
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=16 rows=10 payload_bytes=1582 elapsed_ms=33.933
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=17 rows=10 payload_bytes=1595 elapsed_ms=34.669
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=18 rows=10 payload_bytes=1569 elapsed_ms=34.373
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=19 rows=10 payload_bytes=1569 elapsed_ms=33.470
+psql:review/30975-spire-tuple-transport-measurement/artifacts/bench-typed-simple.sql:50: NOTICE:  transport=pg_binary_attr_v1 qid=20 rows=10 payload_bytes=1595 elapsed_ms=34.380

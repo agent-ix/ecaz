@@ -1,0 +1,10 @@
+Script started on 2026-05-13 18:06:20-07:00 [<not executed on terminal>]
+src/am/ec_hnsw/source.rs
+285:        pgrx::error!("ec_hnsw {label} currently supports single-key indexes only");
+
+src/tests/insert.rs
+2473:    fn test_ec_spire_srcid_uuid_global_ids() {
+2648:    fn test_ec_spire_srcid_bytea_bootstrap_global() {
+2793:    fn test_ec_spire_srcid_rejects_bad_bytea_width() {
+
+Script done on 2026-05-13 18:06:20-07:00 [COMMAND_EXIT_CODE="0"]

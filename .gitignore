@@ -5,6 +5,9 @@ __pycache__/
 .codex
 tmp/
 /data/
+**/.terraform/
+*.tfstate
+*.tfstate.*
 
 # Local agent/session state and downloaded paper copies.
 .claude/

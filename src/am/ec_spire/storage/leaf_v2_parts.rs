@@ -18,6 +18,8 @@ impl SpireLeafPartitionObjectV2Meta {
         assignment_count: u32,
         payload_format: u8,
         payload_stride: u32,
+        vec_id_kind: SpireVecIdKind,
+        vec_id_stride: u16,
         segment_count: u32,
         first_segment_locator: ItemPointer,
         object_bytes_total: u64,
@@ -37,8 +39,8 @@ impl SpireLeafPartitionObjectV2Meta {
             },
             payload_format,
             payload_stride,
-            vec_id_kind: SpireVecIdKind::LocalU64,
-            vec_id_stride: LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+            vec_id_kind,
+            vec_id_stride,
             segment_count,
             first_segment_locator,
             object_bytes_total,
@@ -122,14 +124,23 @@ impl SpireLeafPartitionObjectV2Meta {
         if self.object_bytes_total == 0 {
             return Err("ec_spire leaf V2 object_bytes_total 0 is invalid".to_owned());
         }
-        if self.vec_id_kind != SpireVecIdKind::LocalU64 {
-            return Err("ec_spire leaf V2 Phase 1 only supports local_u64 vec_ids".to_owned());
-        }
-        if usize::from(self.vec_id_stride) != LEAF_V2_LOCAL_VEC_ID_STRIDE {
-            return Err(format!(
-                "ec_spire leaf V2 local vec_id stride mismatch: got {}, expected {LEAF_V2_LOCAL_VEC_ID_STRIDE}",
-                self.vec_id_stride
-            ));
+        match self.vec_id_kind {
+            SpireVecIdKind::LocalU64 => {
+                if usize::from(self.vec_id_stride) != LEAF_V2_LOCAL_VEC_ID_STRIDE {
+                    return Err(format!(
+                        "ec_spire leaf V2 local vec_id stride mismatch: got {}, expected {LEAF_V2_LOCAL_VEC_ID_STRIDE}",
+                        self.vec_id_stride
+                    ));
+                }
+            }
+            SpireVecIdKind::GlobalBytes => {
+                let stride = usize::from(self.vec_id_stride);
+                if !(2..=SPIRE_VEC_ID_MAX_BYTES).contains(&stride) {
+                    return Err(format!(
+                        "ec_spire leaf V2 global vec_id stride {stride} is outside 2..={SPIRE_VEC_ID_MAX_BYTES}"
+                    ));
+                }
+            }
         }
         if self.header.assignment_count == 0 {
             if self.segment_count != 0 {
@@ -202,7 +213,12 @@ impl SpireLeafPartitionObjectV2Segment {
                     meta.payload_stride
                 ));
             }
-            encode_leaf_v2_local_vec_id(&row.vec_id, &mut vec_ids)?;
+            encode_leaf_v2_vec_id(
+                &row.vec_id,
+                meta.vec_id_kind,
+                usize::from(meta.vec_id_stride),
+                &mut vec_ids,
+            )?;
             flags.push(row.flags);
             heap_tids.push(row.heap_tid);
             gammas.push(row.gamma);
@@ -415,7 +431,7 @@ impl SpireLeafPartitionObjectV2Segment {
             ));
         }
         for chunk in self.vec_ids.chunks_exact(usize::from(meta.vec_id_stride)) {
-            decode_leaf_v2_local_vec_id(chunk)?;
+            decode_leaf_v2_vec_id(meta.vec_id_kind, chunk)?;
         }
         if self.heap_tids.len() != row_count {
             return Err(format!(

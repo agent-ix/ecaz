@@ -5,17 +5,37 @@ pub(super) enum SpireIndexedVectorKind {
     Tqvector,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireSourceIdentityDatumKind {
+    Uuid,
+    Bytea16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireSourceIdentityAttribute {
+    pub(super) index_attr_offset: usize,
+    pub(super) heap_attnum: i32,
+    pub(super) datum_kind: SpireSourceIdentityDatumKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireIndexedTupleLayout {
+    pub(super) vector_kind: SpireIndexedVectorKind,
+    pub(super) source_identity: Option<SpireSourceIdentityAttribute>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireBuildTuple {
     pub(super) heap_tid: ItemPointer,
     pub(super) dimensions: u16,
     pub(super) assignment: SpireLeafAssignmentInput,
+    pub(super) vec_id_source_identity: SpireVecIdSourceIdentity,
     pub(super) source_vector: Vec<f32>,
 }
 
 struct SpireBuildState {
     options: options::EcSpireOptions,
-    indexed_vector_kind: SpireIndexedVectorKind,
+    tuple_layout: SpireIndexedTupleLayout,
     scanned_tuples: usize,
     tuples: Vec<SpireBuildTuple>,
     dimensions: Option<u16>,
@@ -115,7 +135,9 @@ pub(super) struct SpireRecursiveBuildCoordinatorInput {
     pub(super) consistency_mode: SpireConsistencyMode,
     pub(super) target_fanout: u32,
     pub(super) seed: u64,
-    pub(super) assignments: Vec<SpireLeafAssignmentInput>,
+    pub(super) boundary_replica_count: u32,
+    pub(super) assignments: Vec<SpireLeafAssignmentIdentityInput>,
+    pub(super) source_vectors: Vec<Vec<f32>>,
     pub(super) centroid_plan: SpireSingleLevelCentroidPlan,
 }
 
@@ -156,12 +178,19 @@ pub(super) struct SpireRecursiveRoutingEpochInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveTopGraphEpochInput {
+    pub(super) epoch_input: SpireRecursiveRoutingEpochInput,
+    pub(super) top_graph_params: SpireTopGraphBuildParams,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRecursiveRoutingEpochDraft {
     pub(super) epoch_manifest: SpireEpochManifest,
     pub(super) object_manifest: SpireObjectManifest,
     pub(super) placement_directory: SpirePlacementDirectory,
     pub(super) root_pid: u64,
     pub(super) routing_objects: Vec<SpireRoutingPartitionObject>,
+    pub(super) top_graph_object: Option<SpireTopGraphPartitionObject>,
     // TODO: these are not persisted separately; diagnostics rebuild them with
     // centroid_records_from_routing until durable centroid objects land.
     pub(super) centroid_records: Vec<SpireRecursiveCentroidRecord>,
@@ -187,5 +216,11 @@ pub(super) trait SpireBuildObjectStore: SpireObjectReader {
         object_version: u64,
         parent_pid: u64,
         rows: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String>;
+
+    fn write_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
     ) -> Result<SpirePlacementEntry, String>;
 }

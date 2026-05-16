@@ -1,0 +1,7 @@
+t
+16
+t
+0	ready	3
+2	ready	16
+ready	pg_binary_attr_v1	ready
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 2 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots

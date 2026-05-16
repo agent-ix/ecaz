@@ -1,0 +1,9 @@
+CREATE EXTENSION
+CREATE TABLE
+INSERT 0 2000
+SELECT 40
+CREATE INDEX
+ERROR:  function ec_spire_test_rewrite_placement_node(regclass, bigint, integer) does not exist
+LINE 1: ...age_format = 'rabitq'); WITH rewritten AS (SELECT ec_spire_t...
+                                                             ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.

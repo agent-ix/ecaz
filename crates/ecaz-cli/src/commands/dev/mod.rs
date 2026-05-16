@@ -6,8 +6,11 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
+use crate::psql::ConnectionOptions;
+
 mod install;
 mod scratch;
+mod spire_multicluster;
 mod sql;
 mod support;
 mod test;
@@ -24,7 +27,12 @@ pub enum DevCommand {
         #[command(subcommand)]
         command: scratch::ScratchCommand,
     },
-    /// Run SQL against a local pgrx PostgreSQL install.
+    /// SPIRE local multi-cluster fixture helpers.
+    SpireMulticluster {
+        #[command(subcommand)]
+        command: spire_multicluster::SpireMulticlusterCommand,
+    },
+    /// Run SQL against local pgrx PostgreSQL or a global connection target.
     Sql(sql::SqlArgs),
     /// Validation/test entry points.
     Test {
@@ -34,12 +42,13 @@ pub enum DevCommand {
 }
 
 impl DevCommand {
-    pub async fn run(self, database: &str) -> Result<()> {
+    pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
-            DevCommand::Install { command } => command.run(database).await,
-            DevCommand::Scratch { command } => command.run(database).await,
-            DevCommand::Sql(args) => sql::run(database, args).await,
-            DevCommand::Test { command } => command.run(database).await,
+            DevCommand::Install { command } => command.run(&conn.database).await,
+            DevCommand::Scratch { command } => command.run(&conn.database).await,
+            DevCommand::SpireMulticluster { command } => command.run(&conn.database).await,
+            DevCommand::Sql(args) => sql::run(conn, args).await,
+            DevCommand::Test { command } => command.run(&conn.database).await,
         }
     }
 }

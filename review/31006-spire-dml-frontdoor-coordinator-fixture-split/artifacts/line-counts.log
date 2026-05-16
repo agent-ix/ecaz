@@ -1,0 +1,7 @@
+Script started on 2026-05-13 16:21:17-07:00 [<not executed on terminal>]
+  39730 src/tests/mod.rs
+   2562 src/tests/dml_frontdoor.rs
+  17812 src/lib.rs
+  60104 total
+
+Script done on 2026-05-13 16:21:17-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,22 @@
+Script started on 2026-05-13 15:29:45-07:00 [<not executed on terminal>]
+src/tests/custom_scan.rs
+2:    fn test_ec_spire_customscan_tuple_payload_stores_virtual_slot() {
+46:    fn test_ec_spire_customscan_returns_loopback_remote_tuple_payload() {
+288:    fn test_ec_spire_customscan_eligibility_no_active_epoch() {
+322:    fn test_ec_spire_custom_scan_index_eligibility_remote() {
+412:    fn test_ec_spire_customscan_eligibility_no_available_remote() {
+489:    fn test_ec_spire_customscan_explain_remote_order_limit() {
+555:    fn test_ec_spire_customscan_does_not_replace_local_only_index_plan() {
+610:    fn test_ec_spire_customscan_exec_reaches_production_executor() {
+671:    fn test_ec_spire_customscan_exec_accepts_parameter_query() {
+738:    fn test_ec_spire_customscan_rejects_array_tuple_payload_projection() {
+
+src/tests/mod.rs
+14861:    include!("custom_scan.rs");
+14865:    fn test_ec_spire_remote_search_local_heap_resolution_plan() {
+  47932 src/tests/mod.rs
+    796 src/tests/custom_scan.rs
+  17812 src/lib.rs
+  66540 total
+
+Script done on 2026-05-13 15:29:45-07:00 [COMMAND_EXIT_CODE="0"]

@@ -58,6 +58,12 @@ pub struct LatencyArgs {
     /// Use -1 for the index reloption, 0 for the full probed frontier.
     #[arg(long)]
     pub rerank_width: Option<i32>,
+    /// SPIRE-only: enable deterministic adaptive nprobe during the sweep.
+    #[arg(long)]
+    pub adaptive_nprobe: bool,
+    /// SPIRE-only: score-gap threshold for adaptive nprobe decisions.
+    #[arg(long)]
+    pub adaptive_nprobe_score_gap_micros: Option<i32>,
     /// Quantization bits used when encoding query vectors (must match loader).
     #[arg(long, default_value_t = 4)]
     pub bits: i32,
@@ -114,6 +120,11 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         args.sweep.clone()
     };
     validate_rerank_width_arg(profile, args.rerank_width)?;
+    let adaptive_nprobe_options = super::SpireAdaptiveNprobeBenchOptions {
+        enabled: args.adaptive_nprobe,
+        score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+    };
+    super::validate_spire_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -160,10 +171,12 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     }
     table.set_header(header);
 
+    let rerank_width_guc = rerank_width_guc(profile);
     for value in &sweep_values {
         let sweep = run_sweep_point(
             conn,
             guc,
+            rerank_width_guc,
             super::sweep_value_label(profile, *value),
             *value,
             &sql,
@@ -173,6 +186,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             profile.encode_scan_query,
             args.force_index,
             args.rerank_width,
+            adaptive_nprobe_options,
             args.bits,
             args.seed,
             args.k,
@@ -220,6 +234,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
 async fn run_sweep_point(
     conn: &ConnectionOptions,
     guc: &str,
+    rerank_width_guc: Option<&str>,
     sweep_label: String,
     value: i32,
     sql: &str,
@@ -229,6 +244,7 @@ async fn run_sweep_point(
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
+    adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
     bits: i32,
     seed: i64,
     k: usize,
@@ -239,10 +255,13 @@ async fn run_sweep_point(
     bar.set_style(
         ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
     );
-    let msg = match rerank_width {
-        Some(rerank_width) => format!("{sweep_label} ec_ivf.rerank_width={rerank_width}"),
-        None => sweep_label,
+    let msg = match (rerank_width, rerank_width_guc) {
+        (Some(rerank_width), Some(rerank_width_guc)) => {
+            format!("{sweep_label} {rerank_width_guc}={rerank_width}")
+        }
+        _ => sweep_label,
     };
+    let msg = super::append_adaptive_nprobe_label(msg, adaptive_nprobe_options);
     bar.set_message(msg);
     bar.enable_steady_tick(Duration::from_millis(250));
     let bar = Arc::new(bar);
@@ -252,6 +271,7 @@ async fn run_sweep_point(
     for _ in 0..concurrency {
         let conn = conn.clone();
         let guc = guc.to_owned();
+        let rerank_width_guc = rerank_width_guc.map(str::to_owned);
         let sql = sql.to_owned();
         let queries = Arc::clone(&queries);
         let counter = Arc::clone(&counter);
@@ -268,6 +288,8 @@ async fn run_sweep_point(
                 encode_scan_query,
                 force_index,
                 rerank_width,
+                rerank_width_guc,
+                adaptive_nprobe_options,
                 bits,
                 seed,
                 k,
@@ -305,6 +327,8 @@ async fn worker(
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
+    rerank_width_guc: Option<String>,
+    adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
     bits: i32,
     seed: i64,
     k: usize,
@@ -319,10 +343,13 @@ async fn worker(
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;
     if let Some(rerank_width) = rerank_width {
-        client
-            .batch_execute(&format!("SET ec_ivf.rerank_width = {rerank_width}"))
-            .await?;
+        if let Some(rerank_width_guc) = rerank_width_guc {
+            client
+                .batch_execute(&format!("SET {rerank_width_guc} = {rerank_width}"))
+                .await?;
+        }
     }
+    super::apply_spire_adaptive_nprobe_options(&client, adaptive_nprobe_options).await?;
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }
@@ -384,15 +411,23 @@ fn validate_rerank_width_arg(
     let Some(value) = rerank_width else {
         return Ok(());
     };
-    if profile.name != "ec_ivf" {
+    if rerank_width_guc(profile).is_none() {
         return Err(eyre!(
-            "--rerank-width is only supported with --profile ec_ivf"
+            "--rerank-width is only supported with --profile ec_ivf or ec_spire"
         ));
     }
     if value < -1 {
         return Err(eyre!("--rerank-width must be >= -1"));
     }
     Ok(())
+}
+
+fn rerank_width_guc(profile: &profiles::IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_ivf" => Some("ec_ivf.rerank_width"),
+        "ec_spire" => Some("ec_spire.rerank_width"),
+        _ => None,
+    }
 }
 
 /// Fixed-field summary of a latency sample. All durations are in the
