@@ -5,6 +5,8 @@ db_volume_iops       = 12000
 db_volume_throughput = 500
 loader_instance_type = "c7g.4xlarge"
 ecaz_git_ref         = "main"
+region               = "us-west-2"
+az                   = "us-west-2a"
 
 # Sized for compressed indexes only: RaBitQ 1-bit (~200 GB) + PQ-fastscan
 # rerank (~256 GB) + IVF/SPIRE metadata (~15 GB) + WAL/FS overhead (~50 GB).

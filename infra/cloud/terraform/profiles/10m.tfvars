@@ -5,3 +5,5 @@ db_volume_iops       = 6000
 db_volume_throughput = 250
 loader_instance_type = "c7g.2xlarge"
 ecaz_git_ref         = "main"
+region               = "us-west-2"
+az                   = "us-west-2a"

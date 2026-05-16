@@ -1,5 +1,5 @@
 locals {
-  name        = "ecaz-cloud-${var.profile}"
+  name = "ecaz-cloud-${var.profile}"
   common_tags = merge(var.tags, {
     "ecaz:profile" = var.profile
     "ecaz:harness" = "cloud"
