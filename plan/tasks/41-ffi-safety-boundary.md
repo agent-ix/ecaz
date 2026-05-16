@@ -26,6 +26,13 @@ Closeout requirements for this subtrack:
 - keep SPI and local heap helper work outside relation-guard scopes unless the
   AM explicitly requires the relation to remain open.
 
+The next Task 41 slice should be selected from the survey packet at
+`review/921-c1-task41-unsafe-surface-strategy/`. Prefer structural cluster
+removal over per-site annotation: wrappers first for relation/buffer/snapshot
+resources, Task 40 for synchronization primitives, Task 43 for proof coverage,
+and Task 35 comments only after the relevant structural refactor lands or is
+abandoned.
+
 ## Scope
 
 Audit and enforce three invariants at the Rust↔Postgres boundary:
