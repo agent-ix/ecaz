@@ -20,6 +20,36 @@ const IVF_POSTING_SCORING_DIMENSION_SCALE: f64 = 0.01;
 const IVF_INDEX_PAGE_COST_SCALE: f64 = 1.0;
 const IVF_TREE_HEIGHT: i32 = 0;
 
+struct OpenedCostIndexRelation {
+    relation: pg_sys::Relation,
+}
+
+impl OpenedCostIndexRelation {
+    fn open(index_oid: pg_sys::Oid) -> Self {
+        // SAFETY: The planner passes an index OID through `IndexPath`; the
+        // returned relation is closed by this guard before the callback exits.
+        let relation = unsafe { pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            pgrx::error!("ec_ivf planner failed to open index relation");
+        }
+        Self { relation }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for OpenedCostIndexRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `index_open` in
+        // `OpenedCostIndexRelation::open`; this guard owns the matching close.
+        unsafe {
+            pg_sys::index_close(self.relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct IndexCostSnapshot {
     pub planner_scan_enabled: bool,
@@ -68,11 +98,22 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
 ) {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            if path.is_null()
+                || index_startup_cost.is_null()
+                || index_total_cost.is_null()
+                || index_selectivity.is_null()
+                || index_correlation.is_null()
+                || index_pages.is_null()
+            {
+                pgrx::error!("ec_ivf planner callback received null arguments");
+            }
             let index_info = (*path).indexinfo;
+            if index_info.is_null() {
+                pgrx::error!("ec_ivf planner callback received null index info");
+            }
             let index_oid = (*index_info).indexoid;
-            let index_relation = pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
-            let estimate = compute_amcostestimate(index_relation);
-            pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+            let index_relation = OpenedCostIndexRelation::open(index_oid);
+            let estimate = compute_amcostestimate(index_relation.as_ptr());
 
             *index_startup_cost = estimate.startup_cost;
             *index_total_cost = estimate.total_cost;
@@ -163,12 +204,17 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
 }
 
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+    // SAFETY: `index_relation` is a live PostgreSQL index relation supplied by
+    // a SQL diagnostic wrapper.
     let metadata = unsafe { page::read_metadata_page(index_relation) };
+    // SAFETY: `index_relation` is live for the duration of the snapshot read.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let index_pages = f64::from(block_count);
+    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
     let constants = unsafe { current_planner_cost_constants() };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let tree_height = resolved_ivf_tree_height_input();
@@ -213,12 +259,17 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
 }
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+    // SAFETY: `index_relation` is a live relation pointer owned by the planner
+    // callback guard for the duration of this computation.
     let metadata = unsafe { page::read_metadata_page(index_relation) };
+    // SAFETY: `index_relation` is live while the planner callback computes cost.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let index_pages = f64::from(block_count);
+    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
     let constants = unsafe { current_planner_cost_constants() };
 
     estimate_ivf_cost(&metadata, index_pages, reltuples, constants)
