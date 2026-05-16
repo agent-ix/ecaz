@@ -195,6 +195,7 @@ enum SuiteStep {
     Recall(RecallStep),
     Latency(LatencyStep),
     Storage(StorageStep),
+    Sql(SqlStep),
     Explain(ExplainStep),
     ComparePgvector(ComparePgvectorStep),
     CompareVectorscale(CompareVectorscaleStep),
@@ -343,6 +344,25 @@ struct StorageStep {
     prefix: String,
     #[serde(default)]
     log_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SqlStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    pg: Option<u16>,
+    #[serde(default)]
+    db: Option<String>,
+    #[serde(default)]
+    socket_dir: Option<PathBuf>,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    raw: bool,
+    sql_file: PathBuf,
+    log_output: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1404,6 +1424,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
+            SuiteStep::Sql(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
             SuiteStep::ComparePgvector(step) => &step.name,
             SuiteStep::CompareVectorscale(step) => &step.name,
@@ -1419,6 +1440,7 @@ impl SuiteStep {
             SuiteStep::Recall(_) => "recall",
             SuiteStep::Latency(_) => "latency",
             SuiteStep::Storage(_) => "storage",
+            SuiteStep::Sql(_) => "sql",
             SuiteStep::Explain(_) => "explain",
             SuiteStep::ComparePgvector(_) => "compare-pgvector",
             SuiteStep::CompareVectorscale(_) => "compare-vectorscale",
@@ -1434,6 +1456,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
+            SuiteStep::Sql(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
             SuiteStep::ComparePgvector(step) => &step.tags,
             SuiteStep::CompareVectorscale(step) => &step.tags,
@@ -1555,6 +1578,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => Ok(expand_recall(step, defaults)),
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
+            SuiteStep::Sql(step) => Ok(expand_sql(step, defaults, conn)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
             SuiteStep::ComparePgvector(step) => Ok(expand_compare_pgvector(step, defaults)),
             SuiteStep::CompareVectorscale(step) => Ok(expand_compare_vectorscale(step, defaults)),
@@ -1584,6 +1608,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
+            SuiteStep::Sql(step) => vec![step.log_output.clone()],
             SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
             SuiteStep::ComparePgvector(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::CompareVectorscale(step) => step.log_file.iter().cloned().collect(),
@@ -1607,6 +1632,7 @@ impl SuiteStep {
                 }
                 paths
             }
+            SuiteStep::Sql(step) => vec![step.sql_file.clone()],
             _ => Vec::new(),
         }
     }
@@ -1636,6 +1662,7 @@ impl SuiteStep {
                 }
                 paths
             }
+            SuiteStep::Sql(step) => vec![step.sql_file.clone()],
             SuiteStep::Explain(step) => vec![step.sql_file.clone()],
             _ => Vec::new(),
         }
@@ -1868,6 +1895,37 @@ fn expand_storage(step: &StorageStep) -> Vec<String> {
     push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
     args.extend(["bench".into(), "storage".into()]);
     push_arg(&mut args, "--prefix", &step.prefix);
+    args
+}
+
+fn expand_sql(step: &SqlStep, defaults: &SuiteDefaults, conn: &ConnectionOptions) -> Vec<String> {
+    let mut args = vec!["dev".into(), "sql".into()];
+    push_arg(
+        &mut args,
+        "--pg",
+        &step.pg.or(defaults.pg).unwrap_or(18).to_string(),
+    );
+    push_arg(
+        &mut args,
+        "--db",
+        step.db.as_deref().unwrap_or(&conn.database),
+    );
+    push_opt_path(
+        &mut args,
+        "--socket-dir",
+        step.socket_dir
+            .as_deref()
+            .or(defaults.socket_dir.as_deref())
+            .or(conn.host.as_deref().map(Path::new)),
+    );
+    if let Some(port) = step.port.or(conn.port) {
+        push_arg(&mut args, "--port", &port.to_string());
+    }
+    if step.raw {
+        args.push("--raw".into());
+    }
+    push_arg_path(&mut args, "--file", &step.sql_file);
+    push_arg_path(&mut args, "--log-output", &step.log_output);
     args
 }
 
@@ -2630,6 +2688,31 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--socket-dir", "/tmp/pg"]));
         assert!(args.windows(2).any(|w| w == ["--port", "28818"]));
         assert!(args.windows(2).any(|w| w == ["--file", "explain.sql"]));
+    }
+
+    #[test]
+    fn expands_sql_with_connection_defaults() {
+        let defaults = SuiteDefaults::default();
+        let step = SqlStep {
+            name: "sql".into(),
+            tags: Vec::new(),
+            pg: None,
+            db: None,
+            socket_dir: None,
+            port: None,
+            raw: true,
+            sql_file: "profile.sql".into(),
+            log_output: "profile.log".into(),
+        };
+        let args = expand_sql(&step, &defaults, &conn());
+        assert!(args.windows(2).any(|w| w == ["--db", "postgres"]));
+        assert!(args.windows(2).any(|w| w == ["--socket-dir", "/tmp/pg"]));
+        assert!(args.windows(2).any(|w| w == ["--port", "28818"]));
+        assert!(args.contains(&"--raw".into()));
+        assert!(args.windows(2).any(|w| w == ["--file", "profile.sql"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--log-output", "profile.log"]));
     }
 
     #[test]

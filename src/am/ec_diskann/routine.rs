@@ -3,7 +3,13 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Mutex, OnceLock,
 };
-use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr, slice};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    ffi::c_void,
+    ptr, slice,
+    time::{Duration, Instant},
+};
 
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts};
 
@@ -53,6 +59,21 @@ struct VacuumBulkDeletePassResult {
     live_tuple_count: usize,
     removed_heap_tids: usize,
     entry_point_needs_medoid_refresh: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct ExactHeapRerankTiming {
+    heap_fetch_ms: f64,
+    source_decode_ms: f64,
+    exact_dot_ms: f64,
+}
+
+impl ExactHeapRerankTiming {
+    fn add(&mut self, other: Self) {
+        self.heap_fetch_ms += other.heap_fetch_ms;
+        self.source_decode_ms += other.source_decode_ms;
+        self.exact_dot_ms += other.exact_dot_ms;
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -623,6 +644,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                     pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
                 });
             let rerank_error = RefCell::new(None::<String>);
+            let exact_timing = RefCell::new(ExactHeapRerankTiming::default());
             let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
             let scan_params = ScanParams {
                 entry_point,
@@ -630,7 +652,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 rerank_budget: opaque.rerank_budget,
                 top_k: sql_result_cap,
             };
-            let results = scan::vamana_scan_with(
+            let results = scan::vamana_scan_with_profile(
                 &reader,
                 &mut opaque.visited,
                 scan_params,
@@ -638,13 +660,14 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 |heap_tids: &[ItemPointer]| {
                     prefetch_heap_rerank_blocks(heap_relation_state.0, heap_tids)
                 },
-                |heap_tid| match exact_heap_rerank_distance(
+                |heap_tid| match exact_heap_rerank_distance_profiled(
                     heap_relation_state.0,
                     snapshot_state.0,
                     slot,
                     source_attnum,
                     &raw_query,
                     heap_tid,
+                    &exact_timing,
                 ) {
                     Ok(distance) => distance,
                     Err(error) => {
@@ -667,14 +690,39 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             if let Some(error) = rerank_error.into_inner() {
                 pgrx::error!("ec_diskann scan heap rerank failed: {error}");
             }
-            let node_results =
+            let (node_results, scan_profile) =
                 results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
+            let duplicate_expand_started = Instant::now();
             opaque.result_buf = expand_scan_results_with_bound_heap_tids(
                 &opaque.chain,
                 &node_results,
                 sql_result_cap,
             )
             .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
+            let duplicate_expand_ms = elapsed_ms(duplicate_expand_started.elapsed());
+            if options::log_scan_profile() {
+                let exact_timing = exact_timing.into_inner();
+                pgrx::info!(
+                    "ec_diskann_scan_profile list_size={} rerank_budget={} top_k={} results={} frontier={} emittable={} reranked={} greedy_ms={:.3} heap_tid_sort_ms={:.3} prefetch_ms={:.3} rerank_callback_ms={:.3} heap_fetch_ms={:.3} source_decode_ms={:.3} exact_dot_ms={:.3} result_sort_ms={:.3} duplicate_expand_ms={:.3} total_ms={:.3}",
+                    opaque.list_size,
+                    opaque.rerank_budget,
+                    sql_result_cap,
+                    opaque.result_buf.len(),
+                    scan_profile.frontier_len,
+                    scan_profile.emittable_frontier_len,
+                    scan_profile.rerank_count,
+                    scan_profile.greedy_ms,
+                    scan_profile.heap_tid_sort_ms,
+                    scan_profile.prefetch_ms,
+                    scan_profile.rerank_callback_ms,
+                    exact_timing.heap_fetch_ms,
+                    exact_timing.source_decode_ms,
+                    exact_timing.exact_dot_ms,
+                    scan_profile.result_sort_ms,
+                    duplicate_expand_ms,
+                    scan_profile.total_ms + duplicate_expand_ms,
+                );
+            }
             opaque.result_cursor = 0;
             opaque.rescan_called = true;
         })
@@ -1835,10 +1883,7 @@ fn sql_scan_result_cap(reloption_top_k: usize, rerank_budget: usize) -> usize {
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    heap_tids: &[ItemPointer],
-) {
+unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
     if heap_tids.is_empty() {
         return;
     }
@@ -1867,10 +1912,7 @@ unsafe fn prefetch_heap_rerank_blocks(
 }
 
 #[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    heap_tids: &[ItemPointer],
-) {
+unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
     for heap_tid in heap_tids {
         unsafe {
             pg_sys::PrefetchBuffer(
@@ -1912,6 +1954,49 @@ unsafe fn exact_heap_rerank_distance(
     }
 }
 
+unsafe fn exact_heap_rerank_distance_profiled(
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    raw_query: &[f32],
+    heap_tid: ItemPointer,
+    timing: &RefCell<ExactHeapRerankTiming>,
+) -> Result<f32, String> {
+    let heap_fetch_started = Instant::now();
+    unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
+    let heap_fetch_elapsed = heap_fetch_started.elapsed();
+
+    let decode_started = Instant::now();
+    let datum = unsafe {
+        scan_state::required_slot_datum(slot, source_attnum, "heap rerank source vector")?
+    };
+    let mut dot_elapsed = Duration::ZERO;
+    let result = unsafe {
+        ambuild::with_ecvector_datum_slice(datum, |source_vector| {
+            if source_vector.len() != raw_query.len() {
+                return Err(format!(
+                    "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
+                    raw_query.len(),
+                    source_vector.len()
+                ));
+            }
+            let dot_started = Instant::now();
+            let distance = -ambuild::source_inner_product(raw_query, source_vector);
+            dot_elapsed = dot_started.elapsed();
+            Ok(distance)
+        })
+    };
+    let decode_elapsed = decode_started.elapsed().saturating_sub(dot_elapsed);
+    unsafe { pg_sys::ExecClearTuple(slot) };
+    timing.borrow_mut().add(ExactHeapRerankTiming {
+        heap_fetch_ms: elapsed_ms(heap_fetch_elapsed),
+        source_decode_ms: elapsed_ms(decode_elapsed),
+        exact_dot_ms: elapsed_ms(dot_elapsed),
+    });
+    result
+}
+
 unsafe fn with_heap_source_vector<T>(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
@@ -1947,6 +2032,10 @@ unsafe fn fetch_heap_source_vector(
             |source_vector| Ok(source_vector.to_vec()),
         )
     }
+}
+
+fn elapsed_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {

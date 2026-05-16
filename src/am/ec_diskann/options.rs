@@ -20,6 +20,7 @@ static ECDISKANN_RERANK_BUDGET_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISKANN_SESSION_LIST_SIZE_UNSET);
 static ECDISKANN_PREFILTER_KIND_GUC: GucSetting<PrefilterKind> =
     GucSetting::<PrefilterKind>::new(PrefilterKind::Auto);
+static ECDISKANN_LOG_SCAN_PROFILE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
 pub(super) enum PrefilterKind {
@@ -139,6 +140,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_diskann.log_scan_profile",
+        c"Log per-query ec_diskann scan cost split.",
+        c"Diagnostic benchmark surface: when enabled, ec_diskann emits one parseable scan-profile log line per amrescan with traversal, prefetch, heap-source, exact-dot, sort, and duplicate-expansion timing.",
+        &ECDISKANN_LOG_SCAN_PROFILE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_list_size() -> i32 {
@@ -151,6 +160,10 @@ pub(super) fn current_session_rerank_budget() -> i32 {
 
 pub(super) fn current_prefilter_kind() -> PrefilterKind {
     ECDISKANN_PREFILTER_KIND_GUC.get()
+}
+
+pub(super) fn log_scan_profile() -> bool {
+    ECDISKANN_LOG_SCAN_PROFILE_GUC.get()
 }
 
 pub(super) fn resolve_scan_tuning(options: &TqDiskannOptions) -> ScanTuning {
@@ -339,9 +352,9 @@ pub(super) fn storage_format_name(fmt: StorageFormat) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        current_prefilter_kind, resolve_scan_tuning_values, ListSizeSource, PrefilterKind,
-        ScanTuning, StorageFormat, TqDiskannOptions, ECDISKANN_DEFAULT_RERANK_BUDGET,
-        ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
+        current_prefilter_kind, log_scan_profile, resolve_scan_tuning_values, ListSizeSource,
+        PrefilterKind, ScanTuning, StorageFormat, TqDiskannOptions,
+        ECDISKANN_DEFAULT_RERANK_BUDGET, ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
         ECDISKANN_SESSION_LIST_SIZE_UNSET,
     };
 
@@ -412,5 +425,10 @@ mod tests {
     #[test]
     fn prefilter_kind_guc_defaults_to_auto() {
         assert_eq!(current_prefilter_kind(), PrefilterKind::Auto);
+    }
+
+    #[test]
+    fn scan_profile_logging_defaults_off() {
+        assert!(!log_scan_profile());
     }
 }

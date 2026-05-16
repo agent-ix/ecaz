@@ -5,6 +5,8 @@ __pycache__/
 .codex
 tmp/
 /data/
+/fixtures/
+/artifacts/benchmark-profiles/
 
 # Local agent/session state and downloaded paper copies.
 .claude/

@@ -37,6 +37,7 @@ use super::{
 use crate::storage::page::ItemPointer;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::time::{Duration, Instant};
 
 /// Scan-time tuning parameters. Every value must be > 0.
 #[derive(Debug, Clone, Copy)]
@@ -61,6 +62,26 @@ pub struct ScanResult {
     pub tid: ItemPointer,
     pub primary_heaptid: ItemPointer,
     pub distance: f32,
+}
+
+/// Coarse scan-stage timing for DiskANN cost-split profiling.
+///
+/// The pgrx AM layer owns finer heap-source timing because only it can
+/// distinguish heap fetch, datum extraction, ecvector decode, and exact
+/// dot-product cost. This pure scan shell records the algorithmic pieces
+/// around those callbacks.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct ScanProfile {
+    pub greedy_ms: f64,
+    pub heap_tid_sort_ms: f64,
+    pub prefetch_ms: f64,
+    pub rerank_callback_ms: f64,
+    pub result_sort_ms: f64,
+    pub total_ms: f64,
+    pub frontier_len: usize,
+    pub emittable_frontier_len: usize,
+    pub rerank_count: usize,
+    pub result_count: usize,
 }
 
 /// Candidate carried through the greedy loop. Caches the tuple's
@@ -188,6 +209,26 @@ where
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
+    vamana_scan_with_profile(reader, scratch, params, prefilter, prefetch, rerank)
+        .map(|(results, _profile)| results)
+}
+
+/// Profiled variant of [`vamana_scan_with`]. Returns the same sorted results
+/// plus coarse timings/counts for repeatable benchmark artifacts.
+pub fn vamana_scan_with_profile<Pre, Pf, Re>(
+    reader: &PersistedGraphReader<'_>,
+    scratch: &mut VisitedState,
+    params: ScanParams,
+    prefilter: Pre,
+    prefetch: Pf,
+    rerank: Re,
+) -> Result<(Vec<ScanResult>, ScanProfile), String>
+where
+    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pf: FnOnce(&[ItemPointer]),
+    Re: Fn(ItemPointer) -> f32,
+{
+    let total_started = Instant::now();
     if params.entry_point == ItemPointer::INVALID {
         return Err("entry_point must not be INVALID".into());
     }
@@ -214,6 +255,7 @@ where
     }
 
     // Stage 1 — greedy descent under the cheap prefilter.
+    let greedy_started = Instant::now();
     let frontier = greedy_descent_with(
         reader,
         scratch,
@@ -221,6 +263,8 @@ where
         params.list_size,
         &prefilter,
     )?;
+    let greedy_elapsed = greedy_started.elapsed();
+    let frontier_len = frontier.len();
 
     // Stage 2 — exact rerank of the top `rerank_budget` emittable
     // candidates. Tombstoned tuples (`deleted = true`) and
@@ -239,6 +283,8 @@ where
         .filter(|c| c.emittable)
         .take(params.rerank_budget)
         .collect();
+    let emittable_frontier_len = to_rerank.len();
+    let heap_tid_sort_started = Instant::now();
     to_rerank.sort_by(|a, b| {
         a.primary_heaptid
             .block_number
@@ -249,13 +295,16 @@ where
                     .cmp(&b.primary_heaptid.offset_number)
             })
     });
+    let heap_tid_sort_elapsed = heap_tid_sort_started.elapsed();
     // Hand the heap-TID-sorted batch to the caller's prefetch hook so
     // PG can start populating shared buffers concurrently with the
     // first few rerank rows. Same shape as the IVF prefetch in
     // `3ef44426`.
-    let prefetch_tids: Vec<ItemPointer> =
-        to_rerank.iter().map(|c| c.primary_heaptid).collect();
+    let prefetch_tids: Vec<ItemPointer> = to_rerank.iter().map(|c| c.primary_heaptid).collect();
+    let prefetch_started = Instant::now();
     prefetch(&prefetch_tids);
+    let prefetch_elapsed = prefetch_started.elapsed();
+    let rerank_started = Instant::now();
     let mut reranked: Vec<ScanResult> = to_rerank
         .into_iter()
         .map(|c| {
@@ -267,7 +316,9 @@ where
             }
         })
         .collect();
+    let rerank_elapsed = rerank_started.elapsed();
 
+    let result_sort_started = Instant::now();
     reranked.sort_by(|a, b| {
         a.distance
             .partial_cmp(&b.distance)
@@ -276,7 +327,26 @@ where
             .then_with(|| a.tid.offset_number.cmp(&b.tid.offset_number))
     });
     reranked.truncate(params.top_k);
-    Ok(reranked)
+    let result_count = reranked.len();
+    let result_sort_elapsed = result_sort_started.elapsed();
+    let total_elapsed = total_started.elapsed();
+    let profile = ScanProfile {
+        greedy_ms: elapsed_ms(greedy_elapsed),
+        heap_tid_sort_ms: elapsed_ms(heap_tid_sort_elapsed),
+        prefetch_ms: elapsed_ms(prefetch_elapsed),
+        rerank_callback_ms: elapsed_ms(rerank_elapsed),
+        result_sort_ms: elapsed_ms(result_sort_elapsed),
+        total_ms: elapsed_ms(total_elapsed),
+        frontier_len,
+        emittable_frontier_len,
+        rerank_count: prefetch_tids.len(),
+        result_count,
+    };
+    Ok((reranked, profile))
+}
+
+fn elapsed_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
 }
 
 /// Greedy best-first descent under a cheap prefilter score. Returns
@@ -561,6 +631,40 @@ mod tests {
         assert_eq!(res[0].distance, 0.1);
     }
 
+    #[test]
+    fn profiled_scan_reports_stage_counts() {
+        let n = 8;
+        let g = chain_graph(n, 4);
+        let payloads = synth_payloads(n, 1, 4);
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 1, 4).expect("persist");
+        let reader = PersistedGraphReader::new(&persisted.chain, 4, 1, 4);
+        let mut scratch = VisitedState::new();
+        let params = ScanParams {
+            entry_point: persisted.entry_point_tid,
+            list_size: 4,
+            rerank_budget: 3,
+            top_k: 2,
+        };
+
+        let (res, profile) = vamana_scan_with_profile(
+            &reader,
+            &mut scratch,
+            params,
+            |_tuple| 0.0,
+            |_heap_tids| {},
+            |_heap_tid| 0.0,
+        )
+        .expect("profiled scan should succeed");
+
+        assert_eq!(res.len(), 2);
+        assert_eq!(profile.frontier_len, 4);
+        assert_eq!(profile.emittable_frontier_len, 3);
+        assert_eq!(profile.rerank_count, 3);
+        assert_eq!(profile.result_count, 2);
+        assert!(profile.total_ms >= profile.greedy_ms);
+    }
+
     // SC-003: rerank_budget < list_size — only the top-budget of the
     // prefilter frontier get reranked. Confirm rerank is called at
     // most `budget` times.
@@ -689,8 +793,7 @@ mod tests {
         // Fixture-shape sanity: there really are multiple candidates
         // per block, so a block_number-only sort would not be enough
         // to satisfy the assertion above.
-        let unique_blocks: HashSet<u32> =
-            observed.iter().map(|tid| tid.block_number).collect();
+        let unique_blocks: HashSet<u32> = observed.iter().map(|tid| tid.block_number).collect();
         assert!(
             unique_blocks.len() < observed.len(),
             "fixture must include multiple candidates per block to exercise \

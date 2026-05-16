@@ -56,6 +56,14 @@
       "log_output": "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/latency-diskann-binary-real10k.log"
     },
     {
+      "kind": "sql",
+      "name": "cost-split-diskann-binary-real10k",
+      "tags": ["cost-split", "diskann", "binary-sidecar", "real10k", "prefilter"],
+      "raw": true,
+      "sql_file": "crates/ecaz-cli/suites/sql/diskann-cost-split-real10k.sql",
+      "log_output": "artifacts/benchmark-profiles/profile-diskann-prefilter-real10k/cost-split-diskann-binary-real10k.log"
+    },
+    {
       "kind": "recall",
       "name": "recall-diskann-grouped-real10k",
       "tags": ["recall", "diskann", "grouped-pq", "real10k", "prefilter"],
