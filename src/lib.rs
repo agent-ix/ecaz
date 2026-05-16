@@ -2853,10 +2853,12 @@ fn ec_spire_remote_epoch_manifest_entry_catalog(
         name!(status, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_entry_catalog")
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    {
+        let _index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_entry_catalog",
+        );
+    }
 
     let sql = format!(
         "SELECT active_epoch, node_id, descriptor_state, placement_count, \
@@ -2961,15 +2963,19 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
         name!(recommendation, &'static str),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_catalog_summary")
+    let (summary, current_entries) = {
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_catalog_summary",
+        );
+        let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation.as_ptr()) };
+        let current_entries =
+            unsafe { am::spire_remote_epoch_manifest_plan(index_relation.as_ptr()) }
+                .into_iter()
+                .filter(|row| row.manifest_action == "include_remote_node")
+                .collect::<Vec<_>>();
+        (summary, current_entries)
     };
-    let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation) };
-    let current_entries = unsafe { am::spire_remote_epoch_manifest_plan(index_relation) }
-        .into_iter()
-        .filter(|row| row.manifest_action == "include_remote_node")
-        .collect::<Vec<_>>();
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     let active_epoch = i64::try_from(summary.active_epoch).expect("active epoch should fit in i64");
     let catalog = Spi::connect(|client| {
@@ -3172,9 +3178,10 @@ fn ec_spire_remote_epoch_manifest_freshness(
         name!(recommendation, String),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_freshness") };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    {
+        let _index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_manifest_freshness");
+    }
 
     let rows = Spi::connect(|client| {
         client
@@ -3370,11 +3377,13 @@ fn ec_spire_remote_epoch_manifest_publication_plan(
         name!(recommendation, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_publication_plan")
+    let current_rows = {
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_publication_plan",
+        );
+        unsafe { am::spire_remote_epoch_manifest_plan(index_relation.as_ptr()) }
     };
-    let current_rows = unsafe { am::spire_remote_epoch_manifest_plan(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     let Some(active_epoch) = current_rows.first().map(|row| row.active_epoch) else {
         return TableIterator::new(Vec::new().into_iter());
