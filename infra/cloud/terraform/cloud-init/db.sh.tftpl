@@ -104,7 +104,11 @@ sudo -u postgres bash -lc "
   cd ecaz
   git checkout $ECAZ_REF
   cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
+  # Build the ecaz CLI alongside the extension so `ecaz corpus`,
+  # `ecaz bench`, etc. are available on the DB host for in-VPC use.
+  cargo build --release -p ecaz-cli
 "
+install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
 
 # Now safe to enable shared_preload_libraries.
 cat >> "$PGDATA/postgresql.auto.conf" <<EOF
