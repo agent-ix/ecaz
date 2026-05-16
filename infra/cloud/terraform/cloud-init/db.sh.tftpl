@@ -65,8 +65,16 @@ host  all all 127.0.0.1/32        trust
 host  all all 10.42.0.0/16        trust
 EOF
 
-systemctl enable postgresql-18
-systemctl start postgresql-18
+# AL2023 unit is `postgresql.service` with default PGDATA=/var/lib/pgsql/data.
+# Drop-in overrides PGDATA to our EBS-backed location.
+mkdir -p /etc/systemd/system/postgresql.service.d
+cat > /etc/systemd/system/postgresql.service.d/pgdata.conf <<EOF
+[Service]
+Environment=PGDATA=$PGDATA
+EOF
+systemctl daemon-reload
+systemctl enable postgresql
+systemctl start postgresql
 
 # --- Rust toolchain (for cargo pgrx) --------------------------------------
 sudo -u postgres bash -c '
@@ -90,7 +98,7 @@ sudo -u postgres bash -lc "
   cargo pgrx install --release --pg-config /usr/bin/pg_config
 "
 
-systemctl restart postgresql-18
+systemctl restart postgresql
 
 sudo -u postgres psql -c 'CREATE EXTENSION IF NOT EXISTS ecaz;'
 
