@@ -1,6 +1,6 @@
 # Review Request: Task 34 Comprehensive Hardening Surface
 
-Head: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+Head: `773c75b487277a15f8ca8c82cb313858be7abff9`
 
 Scope:
 - `Makefile`
@@ -57,6 +57,7 @@ Validation:
   tools: cargo-audit, cargo-deny, cargo-vet, cargo-geiger, cargo-careful,
   cargo-fuzz, cargo-afl, cargo-kani, sqlsmith, cargo-mirai, cargo-flux, and the
   Rudra Docker helper.
+- `make test` passed: 331 CLI tests and 8 standalone pure-Rust harness tests.
 - `make hardening-local` passed.
 - `make hardening-nightly-local FUZZ_SECONDS=1` passed.
 - `make cargo-vet` passed.
@@ -77,9 +78,6 @@ Validation:
 - `make shuttle` passed.
 
 Known local limits:
-- `make test` still aborts in this macOS local runner on the existing pgrx
-  callback-loader issue with unresolved PostgreSQL symbol `_BufferBlocks`; the
-  new aggregate uses `test-hardening-local` for non-live local coverage.
 - PG18 live lanes, PG sanitizer lanes, and SQLsmith require a running PG18
   cluster with `ecaz` installed and were not run in this local closeout.
 - Rudra's pinned 2021 Cargo cannot resolve the root workspace's current

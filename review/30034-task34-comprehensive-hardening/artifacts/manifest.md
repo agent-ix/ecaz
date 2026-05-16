@@ -1,6 +1,6 @@
 # Manifest: Task 34 Comprehensive Hardening Surface
 
-Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 Packet: `30034-task34-comprehensive-hardening`
 Timestamp: `2026-05-16T20:14:01Z`
 
@@ -11,7 +11,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `install-hardening-tools.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: reusable optional tool installer
 - Fixture: repository root
@@ -26,7 +26,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `install-hardening-tools-retry.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: MIRAI/Flux installer retry
 - Fixture: repository root
@@ -41,7 +41,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `install-hardening-tools-rustup-retry.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: MIRAI/Flux installer retry with rustup cargo
 - Fixture: repository root
@@ -56,7 +56,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `install-hardening-tools-flux-fixpoint.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: Flux installer with liquid-fixpoint
 - Fixture: repository root
@@ -71,7 +71,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `mirai.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: `mirai`
 - Fixture: `hardening/careful/`
@@ -86,7 +86,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `flux.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: `flux`
 - Fixture: `hardening/flux/`
@@ -101,7 +101,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `rudra.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: `rudra`
 - Fixture: `hardening/rudra/`
@@ -133,7 +133,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `rudra-careful.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: `rudra`
 - Fixture: `hardening/careful/`
@@ -148,7 +148,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `rudra-root-metadata-failure.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: `rudra`
 - Fixture: repository root
@@ -163,7 +163,7 @@ claims in `request.md` are command pass/fail results from local hardening lanes.
 
 ### `rudra-smoke.log`
 
-- Head SHA: `bb2d8a0b5a2b9e71baac4d0ed8010c0da13534fb`
+- Head SHA: `773c75b487277a15f8ca8c82cb313858be7abff9`
 - Packet/topic: `30034-task34-comprehensive-hardening`
 - Lane: `rudra`
 - Fixture: `hardening/rudra/`
