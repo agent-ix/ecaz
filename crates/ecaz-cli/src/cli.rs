@@ -104,7 +104,7 @@ impl Cli {
             Command::Corpus { command } => command.run(&conn).await,
             Command::Bench { command } => command.run(&conn).await,
             Command::Compare { command } => command.run(&conn).await,
-            Command::Dev { command } => command.run(&conn.database).await,
+            Command::Dev { command } => command.run(&conn).await,
             Command::Quant { command } => command.run(&conn.database).await,
             Command::Stress { command } => command.run(&conn).await,
         }

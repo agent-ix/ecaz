@@ -18,6 +18,7 @@ pipeline.
 The operator-facing surface for one Phase 13 pass is **two commands**:
 
 ```
+make -C infra/spire-aws preflight
 make -C infra/spire-aws provision
 make -C infra/spire-aws pass-correctness   # or pass-representative
 ```
@@ -59,7 +60,7 @@ Phase 13a is re-accepted.
 - Coordinator and remote shells are reached via AWS Session Manager
   (`aws ssm start-session --target <instance-id>`) — see **13a.1.d**.
 - Every Makefile target reads the topology from
-  `$(ARTIFACT_DIR)/aws-topology.json` (produced by `make setup`) and
+  `$(ARTIFACT_DIR)/aws-topology.json` (produced by `make provision`) and
   writes transcripts under
   `review/<NN>-phase13-spire-aws-<slice>/artifacts/` per **13a.7**.
 - All times are UTC. The packet manifest carries the ISO-8601 timestamp
@@ -119,6 +120,8 @@ gate for Phase 13b.2..N.
 
 Phase 13b.1 is reviewer-acceptable when:
 
+- `make -C infra/spire-aws preflight` passes without provisioning AWS
+  resources.
 - `terraform init && terraform validate` passes against `infra/spire-aws/`.
 - Every SQL helper parses against a local PG18 with the ecaz extension
   installed (use `ecaz dev sql --file ... --raw`).
@@ -135,6 +138,8 @@ Phase 13b.1 is reviewer-acceptable when:
 - [ ] Phase 13d read-profile surface is landed and reviewer-accepted.
 - [ ] Parent packet `review/<NN>-phase13-spire-aws-verification/` exists
   with `request.md` and `artifacts/manifest.md` on a feature branch.
+- [ ] `make -C infra/spire-aws preflight` passes from the branch that will
+  provision AWS.
 - [ ] AWS account quota for `r6i.4xlarge` + 3× `r6i.2xlarge` confirmed
   in the target region.
 - [ ] Cost-tag set per **13a.8** is defined in
@@ -420,7 +425,7 @@ Operator steps before / after:
 make -C infra/spire-aws pass-correctness
 ```
 
-This chains `setup → install → register → load-correctness → smoke →
+This chains `provision → install-extension → register-remotes → load-correctness → smoke →
 bench-correctness → fault-degraded → fault-strict → teardown`.
 
 **Full representative pass, one command:**
@@ -429,7 +434,7 @@ bench-correctness → fault-degraded → fault-strict → teardown`.
 make -C infra/spire-aws pass-representative
 ```
 
-Chains `setup → install → register → load-representative → smoke →
+Chains `provision → install-extension → register-remotes → load-representative → smoke →
 bench-representative → fault-2pc → fault-schema-drift → teardown`.
 
 **Re-run one matrix row on an already-provisioned topology:**
@@ -483,7 +488,7 @@ ARTIFACT_DIR=review/<NN>-phase13-spire-aws-13a3a-rerun/artifacts \
    passes and every SQL helper parses against local PG18.
 2. **P1 — Phase 13b runbook acceptance.** This file is reviewed
    alongside Phase 13b.1.
-3. **P1 — Correctness pass.** `make all-correctness` against a fresh
+3. **P1 — Correctness pass.** `make pass-correctness` against a fresh
    packet; fault drills 13b.9 `degraded` / `strict`.
 4. **P2 — Representative read pass.** `make load-representative
    smoke bench-representative` + fault drills 13b.9 `schema-drift` /

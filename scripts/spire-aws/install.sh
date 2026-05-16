@@ -10,6 +10,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+cd "$REPO_ROOT"
+
 TOPOLOGY="${1:?topology JSON path required}"
 ARTIFACT_DIR="${2:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
@@ -18,15 +22,22 @@ REGION=$(jq -r '.region' "$TOPOLOGY")
 BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
 COORD_ID=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
 REMOTE_IDS=$(jq -r '.remotes[].instance_id' "$TOPOLOGY")
+TARBALL_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
 
 ALL_IDS=("$COORD_ID")
 while IFS= read -r id; do ALL_IDS+=("$id"); done <<< "$REMOTE_IDS"
+
+aws s3 cp \
+  "$REPO_ROOT/scripts/spire-aws/bootstrap-node.sh" \
+  "s3://${BUCKET}/bootstrap-node.sh" \
+  --region "$REGION" \
+  > "$ARTIFACT_DIR/bootstrap-upload.log"
 
 CMD_ID=$(aws ssm send-command \
   --region "$REGION" \
   --document-name "AWS-RunShellScript" \
   --instance-ids "${ALL_IDS[@]}" \
-  --parameters "commands=[\"sudo aws s3 cp s3://${BUCKET}/bootstrap-node.sh /tmp/bootstrap-node.sh\",\"sudo bash /tmp/bootstrap-node.sh\"]" \
+  --parameters "commands=[\"sudo aws s3 cp s3://${BUCKET}/bootstrap-node.sh /tmp/bootstrap-node.sh\",\"sudo ECAZ_SPIRE_AWS_BUCKET=${BUCKET} ECAZ_SPIRE_AWS_TARBALL_KEY=${TARBALL_KEY} bash /tmp/bootstrap-node.sh\"]" \
   --output-s3-bucket-name "$BUCKET" \
   --output-s3-key-prefix "spire-aws/install" \
   --comment "ecaz Phase 13b.5 install" \

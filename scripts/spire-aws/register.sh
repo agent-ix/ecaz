@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+cd "$REPO_ROOT"
+
 TOPOLOGY="${1:?topology JSON path required}"
 ARTIFACT_DIR="${2:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
