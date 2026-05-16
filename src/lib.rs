@@ -8440,21 +8440,20 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload_batch(
         })
         .collect::<Vec<_>>();
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    let prepare_rows = {
+        let index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_prepare_coordinator_insert_tuple_payload_batch",
-        )
-    };
-    let prepare_rows = unsafe {
-        am::spire_coordinator_insert_prepare_remote_tuple_payload_batch(
-            index_relation,
-            batch_rows,
-            &requested_columns,
-        )
+        );
+        unsafe {
+            am::spire_coordinator_insert_prepare_remote_tuple_payload_batch(
+                index_relation.as_ptr(),
+                batch_rows,
+                &requested_columns,
+            )
+        }
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     if prepare_rows.len() != row_count {
         pgrx::error!(
             "ec_spire_prepare_coordinator_insert_tuple_payload_batch prepared {} rows for {row_count} inputs",
@@ -8692,22 +8691,20 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
         pgrx::error!("ec_spire coordinator update placement served_epoch must be greater than 0");
     }
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
-            index_oid,
-            "ec_spire_forward_coordinator_update_tuple_payload",
-        )
-    };
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_forward_coordinator_update_tuple_payload",
+    );
     let row_payload_json = row_payload.0.to_string();
     if node_id == 0 {
         let heap_relation_oid = unsafe {
-            (*index_relation)
+            (*index_relation.as_ptr())
                 .rd_index
                 .as_ref()
                 .expect("opened index relation should expose pg_index metadata")
                 .indrelid
         };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
         let updated_count = ec_spire_update_tuple_payload_on_heap(
             heap_relation_oid,
             &pk_column,
@@ -8733,7 +8730,7 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
     }
     let update_row = unsafe {
         am::spire_coordinator_update_remote_tuple_payload(
-            index_relation,
+            index_relation.as_ptr(),
             u32::try_from(node_id).expect("positive node_id should fit u32"),
             u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
             &pk_column,
@@ -8743,7 +8740,6 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
         )
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     TableIterator::once((
         index_oid,
         pk_value,
@@ -8853,21 +8849,19 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
         pgrx::error!("ec_spire coordinator delete placement served_epoch must be greater than 0");
     }
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
-            index_oid,
-            "ec_spire_prepare_coordinator_delete_tuple_payload",
-        )
-    };
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_prepare_coordinator_delete_tuple_payload",
+    );
     if node_id == 0 {
         let heap_relation_oid = unsafe {
-            (*index_relation)
+            (*index_relation.as_ptr())
                 .rd_index
                 .as_ref()
                 .expect("opened index relation should expose pg_index metadata")
                 .indrelid
         };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
         let deleted_count = ec_spire_delete_tuple_payload_on_heap(
             heap_relation_oid,
             &pk_column,
@@ -8903,7 +8897,7 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
     }
     let delete_row = unsafe {
         am::spire_coordinator_delete_prepare_remote_tuple_payload(
-            index_relation,
+            index_relation.as_ptr(),
             u32::try_from(node_id).expect("positive node_id should fit u32"),
             u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
             &pk_column,
@@ -8911,7 +8905,6 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
         )
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     if delete_row.remote_deleted_count > 1 {
         pgrx::error!(
             "ec_spire coordinator delete expected at most one remote row, got {}",
@@ -9027,21 +9020,19 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
         pgrx::error!("ec_spire coordinator select placement served_epoch must be greater than 0");
     }
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
-            index_oid,
-            "ec_spire_forward_coordinator_select_tuple_payload",
-        )
-    };
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_forward_coordinator_select_tuple_payload",
+    );
     if node_id == 0 {
         let heap_relation_oid = unsafe {
-            (*index_relation)
+            (*index_relation.as_ptr())
                 .rd_index
                 .as_ref()
                 .expect("opened index relation should expose pg_index metadata")
                 .indrelid
         };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
         let (selected_count, tuple_payload_json) = ec_spire_select_tuple_payload_on_heap(
             heap_relation_oid,
             &pk_column,
@@ -9074,7 +9065,7 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
     }
     let select_row = unsafe {
         am::spire_coordinator_select_remote_tuple_payload(
-            index_relation,
+            index_relation.as_ptr(),
             u32::try_from(node_id).expect("positive node_id should fit u32"),
             u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
             &pk_column,
@@ -9083,7 +9074,6 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
         )
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     if select_row.remote_selected_count > 1 {
         pgrx::error!(
             "ec_spire coordinator select expected at most one remote row, got {}",
