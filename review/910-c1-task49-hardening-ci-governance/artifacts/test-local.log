@@ -1,0 +1,407 @@
+cargo test -p ecaz-cli
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+warning: unused imports: `SpireDmlFrontdoorCustomScanMode`, `SpireDmlFrontdoorPkValuePlan`, `coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql`, `dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes`, `dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision`, `dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan`, `dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row`, and `dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes`
+   --> src/am/mod.rs:49:5
+    |
+ 49 |     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 56 |     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 57 |     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+ 58 |     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 59 |     dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 60 |     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
+ 61 |     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 62 |     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
+ 63 |     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+183 |     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz` (lib) generated 1 warning (run `cargo fix --lib -p ecaz` to apply 1 suggestion)
+   Compiling ecaz-cli v0.1.0 (/Users/peter/dev/tqvector/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.49s
+     Running unittests src/main.rs (target/debug/deps/ecaz-2d2dc5acafda0d07)
+
+running 331 tests
+test cli::tests::cli_parses_log_file_override ... ok
+test cli::tests::cli_parses_corpus_fetch_command ... ok
+test cli::tests::cli_parses_spire_multicluster_epoch_mismatch_fault_command ... ok
+test cli::tests::cli_parses_explicit_connection_overrides ... ok
+test cli::tests::cli_parses_spire_multicluster_fingerprint_mismatch_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_local_statement_timeout_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_customscan_read_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_new_descriptor_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_missing_descriptor_command ... ok
+test cli::tests::cli_parses_spire_multicluster_local_cancel_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_insert_read_after_customscan_command ... ok
+test cli::tests::cli_parses_spire_multicluster_connection_reset_mid_batch_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_before_fanout_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_before_fanout_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_in_flight_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_in_flight_command ... ok
+test cli::tests::cli_parses_spire_multicluster_missing_remote_index_fault_command ... ok
+test commands::bench::build_probe::tests::hamming_distance_counts_xor_bits ... ok
+test commands::bench::build_probe::tests::nearest_from_sample_skips_pivot_and_sorts_by_distance ... ok
+test commands::bench::build_probe::tests::unit_ip_distance_uses_one_minus_inner_product ... ok
+test commands::bench::latency::tests::ns_to_duration_rejects_nan_and_negative ... ok
+test commands::bench::latency::tests::memory_sample_merge_keeps_peaks_and_adds_samples ... ok
+test commands::bench::latency::tests::percentile_sorted_clamps_out_of_range_p ... ok
+test commands::bench::latency::tests::format_ms_switches_precision_at_10ms_boundary ... ok
+test commands::bench::latency::tests::percentile_sorted_empty_is_zero ... ok
+test commands::bench::build_probe::tests::scored_frontier_prunes_by_best_scores ... ok
+test commands::bench::latency::tests::parse_status_kb_reads_proc_status_value ... ok
+test commands::bench::build_probe::tests::overlap_count_counts_intersection ... ok
+test commands::bench::latency::tests::percentile_sorted_endpoints_hit_extremes ... ok
+test commands::bench::latency::tests::percentile_sorted_linear_interpolates_between_ranks ... ok
+test commands::bench::latency::tests::percentile_sorted_single_value_is_that_value_for_any_p ... ok
+test commands::bench::latency::tests::summarize_empty_returns_zero_stats ... ok
+test commands::bench::latency::tests::summarize_is_independent_of_input_order ... ok
+test commands::bench::latency::tests::summarize_mean_and_min_max_match_raw_sample ... ok
+test commands::bench::latency::tests::summarize_p50_is_the_median ... ok
+test commands::bench::latency::tests::summarize_single_value_has_zero_stddev_and_equal_percentiles ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_oom_fault_command ... ok
+test commands::bench::latency::tests::summarize_stddev_matches_population_formula ... ok
+test cli::tests::cli_parses_spire_multicluster_transport_overlap_command ... ok
+test cli::tests::cli_parses_spire_multicluster_version_skew_fault_command ... ok
+test commands::bench::overhead::tests::breakdown_clamps_negative_residual_to_zero ... ok
+test commands::bench::overhead::tests::breakdown_handles_zero_full_without_nan ... ok
+test commands::bench::overhead::tests::breakdown_rejects_nan_internal_as_zero ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_statement_timeout_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_backend_termination_fault_command ... ok
+test commands::bench::overhead::tests::breakdown_rejects_negative_internal_as_zero ... ok
+test cli::tests::cli_parses_spire_pipeline_remote_tuple_transport ... ok
+test commands::bench::overhead::tests::breakdown_residual_is_full_minus_internal ... ok
+test cli::tests::cli_parses_spire_multicluster_smoke_command ... ok
+test commands::bench::overhead::tests::encode_only_sql_uses_profile_encoder ... ok
+test commands::bench::build_probe::tests::in_memory_recall_scores_graph_search ... ok
+test commands::bench::overhead::tests::parse_execution_time_accepts_integer_value ... ok
+test commands::bench::overhead::tests::parse_execution_time_from_array_envelope ... ok
+test commands::bench::overhead::tests::parse_execution_time_from_object_envelope ... ok
+test commands::bench::overhead::tests::parse_execution_time_missing_returns_none ... ok
+test commands::bench::overhead::tests::parse_execution_time_non_numeric_returns_none ... ok
+test commands::bench::recall::tests::build_knn_sql_uses_raw_real_query_for_diskann ... ok
+test commands::bench::recall::tests::build_knn_sql_uses_raw_real_query_for_hnsw ... ok
+test commands::bench::recall::tests::build_knn_sql_uses_raw_real_query_for_ivf ... ok
+test commands::bench::recall::tests::build_knn_sql_uses_raw_real_query_for_spire ... ok
+test commands::bench::recall::tests::map_indices_to_ids_translates_row_positions_to_ids ... ok
+test commands::bench::recall::tests::ndcg_at_k_clamps_negative_relevance_to_zero ... ok
+test commands::bench::recall::tests::ndcg_at_k_ignores_unknown_ids ... ok
+test commands::bench::recall::tests::brute_force_k_truncation_is_safe ... ok
+test commands::bench::recall::tests::ndcg_at_k_inverted_ranking_is_less_than_perfect ... ok
+test commands::bench::recall::tests::brute_force_matches_hand_computed_inner_products ... ok
+test commands::bench::recall::tests::ndcg_at_k_perfect_ranking_equals_1 ... ok
+test commands::bench::recall::tests::ndcg_at_k_zero_ideal_avoids_division_by_zero ... ok
+test commands::bench::recall::tests::recall_at_k_disjoint_predictions_equals_0 ... ok
+test commands::bench::recall::tests::recall_at_k_empty_inputs_are_zero ... ok
+test commands::bench::graph::tests::render_summary_includes_reachability_and_degree_rows ... ok
+test commands::bench::build_probe::tests::render_probe_includes_pass_and_degree_summaries ... ok
+test commands::bench::recall::tests::recall_at_k_partial_hit_is_fraction_hits_over_k_times_queries ... ok
+test commands::bench::recall::tests::recall_at_k_perfect_predictions_equals_1 ... ok
+test commands::bench::recall::tests::ndcg_from_sources_matches_matrix_backed_ndcg ... ok
+test commands::bench::recall::tests::recall_at_k_respects_k_cap_when_pred_is_longer ... ok
+test commands::bench::recall::tests::ndcg_from_source_map_matches_matrix_backed_ndcg ... ok
+test commands::bench::build_probe::tests::render_probe_includes_optional_query_comparisons ... ok
+test commands::bench::recall::tests::top_k_desc_handles_empty_inputs ... ok
+test commands::bench::recall::tests::top_k_desc_k_greater_than_len_returns_all ... ok
+test commands::bench::recall::tests::source_fingerprint_changes_with_ids_and_values ... ok
+test commands::bench::recall::tests::top_k_desc_sorts_by_score_descending ... ok
+test commands::bench::recall::tests::top_k_desc_stable_on_ties_prefers_lower_index ... ok
+test commands::bench::spire_pipeline::tests::mixed_value_reports_stable_or_mixed_values ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_defaults_to_spire_sweep_values ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_matrix_requires_fixed_dimensions ... ok
+test commands::bench::recall::tests::truth_cache_path_changes_with_k ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_metric_sql_projects_payload_columns ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_out_of_range_sweep_values ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_reports_remote_tuple_transport_override ... ok
+test commands::bench::storage::tests::format_bytes_negative_falls_back_to_raw ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_sql_uses_public_snapshot_contracts ... ok
+test commands::bench::storage::tests::format_bytes_scales_units_and_promotes_at_1024 ... ok
+test commands::bench::storage::tests::per_row_bytes_computes_floating_ratio ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_endpoint_identity_readiness ... ok
+test commands::bench::storage::tests::per_row_bytes_handles_billion_row_corpus_without_overflow ... ok
+test commands::bench::storage::tests::per_row_bytes_zero_or_negative_size_is_zero ... ok
+test commands::bench::storage::tests::per_row_bytes_zero_rows_is_zero_not_nan ... ok
+test commands::bench::storage::tests::profile_label_for_access_method_maps_known_profiles ... ok
+test commands::bench::storage::tests::profile_label_for_access_method_marks_unknown_access_methods ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_local_store_overlap_counters ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_cost_tuning_snapshot ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_degraded_skip_counters ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_query_metrics_with_recall ... ok
+test commands::bench::suite::tests::expands_chunked_load_without_corpus_query_paths ... ok
+test commands::bench::suite::tests::expands_explain_with_connection_defaults ... ok
+test commands::bench::suite::tests::expands_recall_with_defaults ... ok
+test commands::bench::suite::tests::explain_sql_uses_spire_profile_gucs_and_cost_snapshot ... ok
+test commands::bench::suite::tests::explain_sql_uses_suite_fields ... ok
+test commands::bench::suite::tests::evaluates_thresholds_against_result_rows ... ok
+test commands::bench::suite::tests::parses_explain_planner_cost_rows ... ok
+test commands::bench::suite::tests::parses_loader_timing_rows ... ok
+test commands::bench::suite::tests::parses_recall_result_table ... ok
+test commands::bench::suite::tests::prefixes_child_commands_with_connection_flags ... ok
+test commands::bench::suite::tests::parses_legacy_dry_run_alias ... ok
+test commands::bench::suite::tests::skips_thresholds_for_unselected_steps ... ok
+test commands::bench::suite::tests::step_selection_requires_name_and_tag_matches ... ok
+test commands::bench::suite::tests::parses_nested_run_command ... ok
+test commands::bench::tests::adaptive_nprobe_bench_options_are_spire_only ... ok
+test commands::bench::suite::tests::threshold_filters_select_matching_sweep_row ... ok
+test commands::bench::suite::tests::rejects_unknown_profile_names ... ok
+test commands::bench::suite::tests::rejects_duplicate_step_names ... ok
+test commands::bench::tests::adaptive_nprobe_threshold_requires_enabled_switch ... ok
+test commands::bench::tests::missing_am_error_points_operator_at_matching_profile_load ... ok
+test commands::bench::tests::missing_am_error_preserves_explicit_am_argument ... ok
+test commands::bench::suite::tests::parses_minimal_suite_config ... ok
+test commands::bench::suite::tests::parses_fetch_prepare_suite_config ... ok
+test commands::bench::tests::sweep_value_label_uses_profile_axis_name ... ok
+test commands::compare::pgvector::tests::comparison_row_carries_engine_label_and_metrics ... ok
+test commands::compare::pgvector::tests::configured_engine_label_is_self_describing ... ok
+test commands::compare::pgvector::tests::create_index_sql_pins_hnsw_ip_ops_and_reloptions ... ok
+test commands::compare::pgvector::tests::create_ivfflat_index_sql_pins_ip_ops_and_lists ... ok
+test commands::compare::pgvector::tests::format_pct_delta_has_leading_sign_and_one_decimal ... ok
+test commands::compare::pgvector::tests::format_pct_delta_ms_reads_duration_as_ms ... ok
+test commands::compare::pgvector::tests::knn_sql_uses_ip_operator_and_bind_cast ... ok
+test commands::compare::pgvector::tests::pct_delta_nan_input_is_none ... ok
+test commands::compare::pgvector::tests::pct_delta_negative_when_other_smaller ... ok
+test commands::compare::pgvector::tests::pct_delta_positive_when_other_larger ... ok
+test commands::compare::pgvector::tests::pct_delta_zero_base_is_none_not_infinity ... ok
+test commands::compare::pgvector::tests::pgvector_index_name_is_sidecar_scoped ... ok
+test commands::compare::pgvector::tests::pgvector_sidecar_name_is_suffixed_from_prefix ... ok
+test commands::compare::pgvector::tests::populate_sql_is_idempotent_via_on_conflict ... ok
+test commands::compare::pgvector::tests::sidecar_ddl_uses_if_not_exists_and_vector_dim ... ok
+test commands::compare::pgvector::tests::pgvector_args_accept_generic_ecaz_sweep_flag ... ok
+test commands::compare::vectorscale::tests::storage_layout_validation_accepts_known_values ... ok
+test commands::compare::vectorscale::tests::vectorscale_create_index_sql_uses_diskann_ip_ops_and_reloptions ... ok
+test commands::compare::vectorscale::tests::vectorscale_knn_sql_uses_ip_operator_and_bind_cast ... ok
+test commands::compare::pgvector::tests::pgvector_args_accept_ivfflat_options ... ok
+test commands::compare::pgvector::tests::pgvector_args_accept_matched_sweep_list ... ok
+test commands::compare::pgvector::tests::pgvector_args_keep_legacy_ecaz_ef_search_alias ... ok
+test commands::compare::vectorscale::tests::vectorscale_names_are_suffixed_from_prefix ... ok
+test commands::corpus::fetch::tests::build_download_url_points_at_dataset_resolve_path ... ok
+test commands::corpus::fetch::tests::build_fetch_manifest_records_repo_revision_and_shards ... ok
+test commands::corpus::fetch::tests::resolve_dataset_accepts_canonical_name_and_aliases ... ok
+test commands::corpus::fetch::tests::shard_filename_matches_hugging_face_layout ... ok
+test commands::corpus::fetch::tests::shard_filenames_cover_all_shards ... ok
+test commands::corpus::fetch::tests::temp_download_path_appends_part_suffix ... ok
+test commands::corpus::generate::tests::format_tsv_row_empty_vector_is_empty_json_array ... ok
+test commands::corpus::generate::tests::format_tsv_row_has_tab_between_id_and_json_array ... ok
+test commands::corpus::generate::tests::format_tsv_row_is_parseable_as_json_after_splitting_on_tab ... ok
+test commands::corpus::generate::tests::different_seeds_produce_different_vectors ... ok
+test commands::corpus::generate::tests::format_tsv_row_uses_six_decimal_precision_matching_legacy_python ... ok
+test commands::corpus::generate::tests::generated_vector_has_requested_dimension ... ok
+test commands::corpus::inspect::tests::bench_ready_profiles_label_ignores_unknown_access_methods ... ok
+test commands::corpus::inspect::tests::bench_ready_profiles_label_requires_queries_table ... ok
+test commands::corpus::generate::tests::generation_is_deterministic_for_a_given_seed ... ok
+test commands::corpus::inspect::tests::bench_ready_profiles_label_sorts_and_dedups_known_profiles ... ok
+test commands::corpus::inspect::tests::format_bytes_caps_at_largest_unit ... ok
+test commands::corpus::inspect::tests::format_bytes_falls_back_to_raw_for_negative ... ok
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_invalid_limits ... ok
+test commands::corpus::inspect::tests::format_bytes_handles_boundary_at_1024 ... ok
+test commands::corpus::inspect::tests::format_bytes_scales_through_units ... ok
+test commands::corpus::inspect::tests::profile_label_for_access_method_maps_known_profiles ... ok
+test commands::corpus::generate::tests::generated_vector_is_unit_norm ... ok
+test commands::corpus::inspect::tests::profile_label_for_access_method_marks_unknown_access_methods ... ok
+test commands::corpus::list::tests::format_name_list_empty_is_none ... ok
+test commands::corpus::list::tests::format_name_list_joins_names_in_order ... ok
+test commands::corpus::list::tests::profile_names_for_access_methods_ignores_unknown_access_methods ... ok
+test commands::corpus::list::tests::profile_names_for_access_methods_sorts_and_dedups_matches ... ok
+test commands::corpus::load::tests::chunk_state_validation_accepts_matching_partial_resume ... ok
+test commands::corpus::load::tests::collision_diskann_m_reloption_not_flagged ... ok
+test commands::corpus::load::tests::chunk_state_validation_rejects_rows_without_state ... ok
+test commands::corpus::load::tests::collision_empty_when_no_overlap ... ok
+test commands::corpus::load::tests::collision_hnsw_ef_construction_and_build_source_flagged ... ok
+test commands::corpus::load::tests::collision_hnsw_m_reloption_flagged ... ok
+test commands::corpus::load::tests::collision_storage_format_flagged_only_when_cli_flag_set ... ok
+test commands::corpus::load::tests::dedup_preserve_order_keeps_first_occurrence ... ok
+test commands::corpus::load::tests::diskann_plan_appends_storage_format_to_extras ... ok
+test commands::corpus::load::tests::diskann_plan_is_single_index_with_no_hnsw_defaults ... ok
+test commands::corpus::load::tests::existing_single_index_conflict_error_points_diskann_operator_at_drop_index ... ok
+test commands::corpus::load::tests::foreign_hnsw_reloption_keys_are_ignored_for_hnsw_profile ... ok
+test commands::corpus::load::tests::foreign_hnsw_reloption_keys_find_hnsw_only_keys_once_for_diskann ... ok
+test commands::corpus::load::tests::hnsw_plan_defaults_to_8_16_sweep_with_ef_and_build_source ... ok
+test commands::corpus::load::tests::hnsw_plan_honors_explicit_m_and_dedup ... ok
+test commands::corpus::load::tests::hnsw_plan_passes_extras_through_and_orders_after_built_ins ... ok
+test commands::corpus::load::tests::ivf_plan_is_single_index_with_ivf_reloptions_only ... ok
+test commands::corpus::load::tests::unsupported_ef_construction_error_points_diskann_operators_at_reloptions ... ok
+test commands::corpus::load::tests::unsupported_hnsw_reloption_error_points_diskann_operator_at_known_keys ... ok
+test commands::corpus::load::tests::unsupported_m_error_points_diskann_operators_at_reloptions ... ok
+test commands::corpus::prepare::tests::anchor_profile_matches_documented_split ... ok
+test commands::corpus::prepare::tests::canonical_float_keeps_nine_significant_digits ... ok
+test commands::corpus::prepare::tests::canonical_float_rejects_nan_and_inf ... ok
+test commands::corpus::prepare::tests::canonical_float_strips_trailing_zeros ... ok
+test commands::corpus::prepare::tests::canonical_float_zero_is_bare_zero ... ok
+test commands::corpus::prepare::tests::canonical_json_array_joins_with_commas_and_no_spaces ... ok
+test commands::corpus::prepare::tests::manifest_json_has_version_one_and_portable_fields ... ok
+test commands::corpus::prepare::tests::profile_query_start_equals_corpus_rows ... ok
+test commands::corpus::prepare::tests::push_smallest_leaves_heap_unchanged_when_new_id_is_larger ... ok
+test commands::corpus::prepare::tests::push_smallest_tracks_k_smallest_across_unsorted_stream ... ok
+test commands::corpus::prepare::tests::resolve_id_column_rejects_ambiguous_candidates ... ok
+test commands::corpus::prepare::tests::resolve_id_column_picks_unique_candidate ... ok
+test commands::corpus::prepare::tests::resolve_id_column_rejects_override_missing_from_schema ... ok
+test commands::corpus::prepare::tests::resolve_id_column_respects_override ... ok
+test commands::corpus::prepare::tests::resolve_profile_unknown_name_is_none ... ok
+test commands::corpus::prepare::tests::resolve_vector_column_falls_back_to_unique_non_id_column ... ok
+test commands::corpus::prepare::tests::resolve_vector_column_picks_unique_candidate ... ok
+test commands::corpus::prepare::tests::resolve_vector_column_rejects_ambiguous_schema ... ok
+test commands::corpus::prepare::tests::source_parquet_basename_handles_trailing_slash_directory ... ok
+test commands::corpus::prepare::tests::split_sorted_ids_carves_contiguous_prefixes ... ok
+test commands::dev::sql::tests::default_pgrx_port_matches_pgrx_convention ... ok
+test commands::dev::sql::tests::parse_env_assignment_accepts_name_value ... ok
+test commands::dev::sql::tests::parse_env_assignment_rejects_missing_name_or_separator ... ok
+test commands::dev::sql::tests::parse_psql_variable_assignment_rejects_whitespace_names ... ok
+test commands::dev::support::tests::ignores_other_pgrx_config_entries ... ok
+test commands::dev::support::tests::reads_pg_config_from_pgrx_config ... ok
+test commands::stress::ivf_insert::tests::rejects_zero_dimensions ... ok
+test commands::stress::ivf_insert::tests::insert_sql_uses_parameterized_batch_size ... ok
+test commands::stress::ivf_insert::tests::insert_sql_supports_configurable_dimensions ... ok
+test commands::stress::ivf_insert::tests::rejects_zero_duration ... ok
+test commands::corpus::load::tests::manifest_orchestration_explicit_missing_errs ... ok
+test commands::corpus::load::tests::load_chunked_manifest_detects_chunked_layout ... ok
+test commands::stress::ivf_insert::tests::seed_ddl_pins_ivf_shape ... ok
+test commands::stress::ivf_vacuum_scale::tests::parses_proc_status_kb ... ok
+test commands::stress::ivf_vacuum_scale::tests::refill_sql_uses_insert_range ... ok
+test commands::stress::ivf_vacuum_scale::tests::rejects_empty_nlists ... ok
+[loader] warning: manifest verification failed for /var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/.tmpaHEVmF/x_manifest.json: corpus.rows=99 (expected 1)
+test commands::stress::ivf_vacuum_scale::tests::rejects_multi_cycle_without_refill ... ok
+test commands::stress::ivf_vacuum_scale::tests::setup_sql_pins_ivf_vacuum_shape ... ok
+test commands::stress::vacuum::tests::insert_iteration_adds_four_rows_per_call ... ok
+test commands::stress::ivf_vacuum_scale::tests::same_slice_churn_deletes_previous_refill_range ... ok
+test commands::stress::ivf_vacuum_scale::tests::vector_base_sql_can_pin_refill_distribution ... [loader] verified manifest /var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/.tmpm5DAT0/x_manifest.json for prefix x
+ok
+test commands::stress::vacuum::tests::reachability_floor_100_percent_requires_exact_match ... ok
+test commands::stress::vacuum::tests::reachability_floor_fails_below_threshold ... ok
+test commands::stress::vacuum::tests::reachability_floor_large_values_do_not_overflow_i64_multiply ... ok
+test commands::stress::vacuum::tests::reachability_floor_ok_above_threshold ... ok
+test commands::stress::vacuum::tests::reachability_floor_ok_at_exact_threshold ... ok
+test commands::stress::vacuum::tests::reachability_floor_rejects_zero_reference ... ok
+test commands::stress::vacuum::tests::reference_index_sql_matches_measured_index_shape ... ok
+test commands::stress::vacuum::tests::seed_ddl_pins_ec_hnsw_opclass_and_encoder ... ok
+test commands::stress::vacuum::tests::vacuum_iteration_deletes_oldest_two_then_vacuums ... ok
+test manifest::tests::derive_returns_none_for_mismatched_basenames ... ok
+test manifest::tests::derive_returns_sibling_when_basenames_match ... ok
+test commands::corpus::prepare::tests::plan_chunks_uses_relative_paths_and_global_row_ranges ... ok
+test manifest::tests::verify_accepts_shard_list_of_portable_basenames ... ok
+test commands::corpus::load::tests::manifest_orchestration_no_derived_no_explicit_is_ok ... ok
+test manifest::tests::parse_chunked_manifest_accepts_contiguous_relative_chunks ... ok
+test manifest::tests::derive_returns_none_when_suffixes_dont_match ... ok
+test manifest::tests::verify_accepts_missing_optional_portability_fields ... ok
+test manifest::tests::verify_flags_non_string_basename ... ok
+test manifest::tests::verify_flags_non_portable_basename_with_slash ... ok
+test manifest::tests::parse_chunked_manifest_rejects_absolute_chunk_paths ... ok
+test manifest::tests::verify_flags_shard_list_with_non_strings ... ok
+test manifest::tests::verify_flags_sha_row_count_and_id_drift ... ok
+test manifest::tests::verify_flags_shard_list_with_path_separator ... ok
+test manifest::tests::verify_flags_wrong_file_basename ... ok
+test manifest::tests::verify_flags_wrong_manifest_version ... ok
+test manifest::tests::verify_flags_wrong_prefix_and_dim ... ok
+test manifest::tests::verify_passes_on_matching_manifest ... ok
+test profiles::tests::default_sweep_is_strictly_ascending ... ok
+test profiles::tests::ec_diskann_has_list_size_sweep_and_no_build_source ... ok
+test profiles::tests::ec_hnsw_supports_m_sweep_and_build_source ... ok
+test profiles::tests::ec_ivf_profile_uses_nprobe_and_raw_real_scan_query ... ok
+test profiles::tests::ec_spire_profile_uses_spire_opclass_and_raw_real_scan_query ... ok
+test commands::corpus::prepare::tests::write_tsv_on_empty_entries_returns_none_first_last ... ok
+test profiles::tests::every_profile_has_nonempty_access_method_and_opclass ... ok
+test commands::corpus::load::tests::manifest_orchestration_mismatch_errs_unless_allowed ... ok
+test profiles::tests::every_profile_has_nonempty_default_sweep ... ok
+test profiles::tests::names_are_sorted_and_complete ... ok
+test profiles::tests::postgres_profiles_share_embedding_type_so_one_corpus_serves_all ... ok
+test profiles::tests::registry_has_no_duplicate_names ... ok
+test profiles::tests::resolve_known_access_methods ... ok
+test profiles::tests::resolve_known_profiles ... ok
+test profiles::tests::sweep_axis_label_strips_module_prefix ... ok
+test profiles::tests::unknown_reloption_keys_empty_when_all_known ... ok
+test profiles::tests::unknown_reloption_keys_empty_when_no_reloptions ... ok
+test profiles::tests::unknown_reloption_keys_is_case_sensitive ... ok
+test profiles::tests::unknown_reloption_keys_returns_only_keys_outside_known_set ... ok
+test profiles::tests::validate_ident_accepts_safe_names ... ok
+test profiles::tests::validate_ident_rejects_injection_attempts ... ok
+test psql::tests::build_index_sql_with_empty_reloptions_omits_with_clause ... ok
+test commands::corpus::prepare::tests::write_tsv_records_sha256_first_last_ids_and_row_count ... ok
+test psql::tests::connection_options_config_sets_explicit_overrides ... ok
+test commands::corpus::load::tests::manifest_orchestration_sibling_auto_discovered_verified ... ok
+test psql::tests::diskann_index_sql_uses_diskann_opclass_and_no_default_reloptions ... ok
+test psql::tests::relkind_ascii_codes_encode_to_postgres_char ... ok
+test psql::tests::relkind_rejects_non_ascii_catalog_codes ... ok
+test reloptions::tests::format_sql_value_leaves_booleans_unquoted ... ok
+test reloptions::tests::format_sql_value_passes_pre_quoted_values_through ... ok
+test commands::dev::support::tests::does_not_treat_crate_directory_as_repo_root ... ok
+test reloptions::tests::format_with_clause_empty_returns_empty_string ... ok
+test reloptions::tests::normalize_list_produces_canonical_form ... ok
+test reloptions::tests::parse_cli_error_is_string_typed ... ok
+test reloptions::tests::parse_rejects_empty_key_or_value_explicitly ... ok
+test tsv::tests::format_real_array_literal_roundtrips_fractional_floats ... ok
+test tsv::tests::format_real_array_literal_uses_pg_array_syntax ... ok
+test reloptions::tests::parse_accepts_equals_sign_in_value ... ok
+test commands::corpus::prepare::tests::finalize_chunk_group_sorts_spill_rows_and_records_checksums ... ok
+test reloptions::tests::parse_accepts_simple_key_value ... ok
+test reloptions::tests::parse_rejects_malformed_input ... ok
+test tsv::tests::inspect_on_empty_file_reports_zero_rows_and_no_ids ... ok
+test tsv::tests::inspect_counts_rows_and_tracks_first_last_id ... ok
+test reloptions::tests::format_with_clause_emits_full_suffix ... ok
+test psql::tests::build_index_sql_renders_multiple_reloptions_in_order ... ok
+test reloptions::tests::format_sql_value_rejects_numeric_with_extra_text_as_string ... ok
+test reloptions::tests::format_sql_value_quotes_string_with_multiple_apostrophes ... ok
+test reloptions::tests::format_sql_value_quotes_and_escapes_strings ... ok
+test psql::tests::ivf_index_sql_uses_ivf_access_method_and_ecvector_opclass ... ok
+test psql::tests::diskann_index_sql_quotes_strings_but_not_numerics ... ok
+test reloptions::tests::format_sql_value_leading_dot_fraction_is_numeric ... ok
+test psql::tests::hnsw_index_sql_matches_legacy_loader_shape ... ok
+test psql::tests::spire_index_sql_uses_spire_access_method_and_opclass ... ok
+test reloptions::tests::format_sql_value_leaves_numbers_unquoted ... ok
+test tsv::tests::iter_rows_handles_crlf_line_endings ... ok
+test commands::dev::support::tests::finds_repo_root_from_nested_checkout_path ... ok
+test tsv::tests::iter_rows_rejects_dim_mismatch_with_line_number ... ok
+test tsv::tests::iter_rows_skips_blank_lines ... ok
+test tsv::tests::iter_rows_rejects_non_integer_id ... ok
+test tsv::tests::inspect_sha256_matches_plain_file_digest ... ok
+test tsv::tests::iter_rows_rejects_missing_tab_separator ... ok
+test tsv::tests::iter_rows_parses_valid_file ... ok
+test tsv::tests::iter_rows_rejects_invalid_json ... ok
+
+test result: ok. 331 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+cargo test --manifest-path hardening/careful/Cargo.toml --lib
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (hardening/careful/target/debug/deps/ecaz_careful_hardening-8216b77837b5d0af)
+
+running 8 tests
+test page::tests::data_page_chain_appends_empty_pages_contiguously ... ok
+test page::tests::data_page_chain_can_start_next_tuple_on_fresh_page ... ok
+test page::tests::data_page_chain_overflow_creates_new_block ... ok
+test page::tests::data_page_raw_round_trip ... ok
+test page::tests::miri_data_page_chain_preserves_tuple_lookup_across_pages ... ok
+test page::tests::miri_item_pointer_roundtrip ... ok
+test tests::item_pointer_decode_rejects_short_payloads ... ok
+test tests::page_chain_preserves_payloads_across_overflow ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
