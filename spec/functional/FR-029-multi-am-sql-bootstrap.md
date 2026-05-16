@@ -21,7 +21,7 @@ relationships:
 | Object class | Required objects |
 | --- | --- |
 | Types | `ecvector`, `tqvector` |
-| Access methods | `ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire` scaffold |
+| Access methods | `ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire` |
 | HNSW opclasses | `ecvector_ip_ops`, `tqvector_ip_ops` |
 | IVF opclasses | `ecvector_ip_ops`, `tqvector_ip_ops` scoped to `ec_ivf` |
 | DiskANN opclasses | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` |
@@ -33,7 +33,7 @@ relationships:
 
 ### FR-029-AC-1
 
-After `CREATE EXTENSION ecaz`, `pg_am` includes `ec_hnsw`, `ec_ivf`, `ec_diskann`, and the `ec_spire` scaffold.
+After `CREATE EXTENSION ecaz`, `pg_am` includes `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire`.
 
 ### FR-029-AC-2
 
@@ -45,4 +45,4 @@ An `ecvector` column can be indexed by all three implemented AMs with the docume
 
 ### FR-029-AC-4
 
-The `ec_spire` scaffold registers its AM handler and SPIRE-specific opclasses while build, scan, insert, and vacuum callbacks remain explicitly unsupported until the Phase 1 persistence path lands.
+The `ec_spire` access method registers its AM handler and SPIRE-specific opclasses for local partition-object indexes; distributed remote reads use the `EcSpireDistributedScan` CustomScan path when active remote placements exist.

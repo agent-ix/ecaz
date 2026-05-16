@@ -1,7 +1,7 @@
 ---
 id: ADR-063
 title: "SPIRE Source Identity Provider"
-status: PROPOSED
+status: ACCEPTED
 impact: Affects ADR-055, Task 30 Phase 11.2 writer-side global vector identity
 date: 2026-05-09
 ---
@@ -9,7 +9,7 @@ date: 2026-05-09
 
 ## Status
 
-Proposed.
+Accepted.
 
 ## Context
 

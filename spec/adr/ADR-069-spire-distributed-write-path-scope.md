@@ -1,7 +1,7 @@
 ---
 id: ADR-069
 title: "SPIRE Distributed Write Path Scope"
-status: PROPOSED
+status: ACCEPTED
 impact: Declares the v1 distributed INSERT/UPDATE/DELETE contract under
   ADR-067 CustomScan and ADR-068 distributed table topology. Bulk load and
   cross-shard embedding moves are deferred.
@@ -11,7 +11,7 @@ date: 2026-05-10
 
 ## Status
 
-Proposed.
+Accepted.
 
 ## Related
 

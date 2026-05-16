@@ -3,46 +3,55 @@ id: US-019
 title: Query Distributed SPIRE Across Postgres Instances
 type: user-story
 artifact_type: US
-status: DRAFT
+status: APPROVED
 relationships:
-  - target: "ix://agent-ix/tqvector/StR-005"
+  - target: "ix://agent-ix/ecaz/StR-005"
     type: "derives_from"
     cardinality: "N:1"
-  - target: "ix://agent-ix/tqvector/FR-042"
+  - target: "ix://agent-ix/ecaz/FR-055"
     type: "derives_into"
     cardinality: "1:N"
-  - target: "ix://agent-ix/tqvector/FR-041"
+  - target: "ix://agent-ix/ecaz/FR-056"
+    type: "derives_into"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-057"
+    type: "derives_into"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-058"
+    type: "derives_into"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/NFR-014"
     type: "derives_into"
     cardinality: "1:N"
 ---
 # US-019: Query Distributed SPIRE Across Postgres Instances
 
 **As** a platform engineer,
-**I want** a coordinator PostgreSQL instance to query SPIRE partition objects on remote PostgreSQL instances through libpq,
-**So that** distributed SPIRE can preserve high write throughput and near-data scoring while returning one merged result stream to the client.
+**I want** a coordinator PostgreSQL instance to execute vector-ordered reads across remote PostgreSQL shard nodes through `EcSpireDistributedScan`,
+**So that** distributed SPIRE can keep row storage near each shard while returning one ordered tuple stream to the client.
 
 ## Acceptance Criteria
 
 ### US-019-AC-1
 
-Remote storage nodes are PostgreSQL instances with the SPIRE extension installed and local heap rows or row locators for their owned vector data.
+Remote storage nodes are PostgreSQL instances with the `ecaz` extension installed, shard-local heap rows, and local SPIRE indexes.
 
 ### US-019-AC-2
 
-The coordinator routes selected PIDs to remote nodes through the placement map and uses libpq, preferably pipeline mode, for remote search calls.
+The coordinator uses CustomScan execution to load routing metadata, select PIDs, group them by remote node, and dispatch typed remote search requests through the production executor.
 
 ### US-019-AC-3
 
-Remote nodes score local partition objects near their heap rows and return compact candidate rows to the coordinator.
+Remote nodes score local partition objects, resolve origin-node heap visibility, and return validated candidate envelopes plus typed tuple payloads.
 
 ### US-019-AC-4
 
-The coordinator merges remote and local candidates by stable `vec_id`, deduplicates boundary replicas, resolves final row delivery, and returns a single ordered result stream.
+The coordinator merges local and remote candidates by stable vector identity, deduplicates boundary replicas, and returns virtual tuple payloads through CustomScan rather than coordinator heap mirror rows.
 
 ### US-019-AC-5
 
-Distributed search degrades gracefully by default when configured for degraded recall: unreachable or stale nodes are skipped or downweighted with explicit diagnostics. Strict epoch-matching fail-closed behavior remains available as a consistency mode.
+Strict distributed search fails closed for stale, unavailable, overloaded, identity-incompatible, or typed-transport-incompatible remote work. Degraded search may skip remote work only when configured and explicitly reported.
 
 ### US-019-AC-6
 
-Replicated partition objects MAY be considered in a future phase to increase read throughput and availability, but distributed v1 assumes one primary node placement per PID.
+Distributed read isolation is documented as v1 read-committed remote-statement behavior rather than coordinator-snapshot repeatability across shards.

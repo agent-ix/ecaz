@@ -49,13 +49,15 @@ a sustained INSERT or COPY load against an already-built index.
 | `1m`–`10m` | ≥ 3k/s | ≥ 300k/s | ~80k/s |
 | `100m`–`1b` | ≥ 3k/s | ≥ 200k/s | ~80k/s |
 
-The WAL ceiling is reported, not enforced — it identifies when
-distribution becomes the only path to higher write rates (FR-042).
+The WAL ceiling is reported, not enforced; it identifies when SPIRE
+coordinator-routed DML and placement-aware distribution become the only path to
+higher write rates (`FR-059`).
 
 ## Distributed Targets (Future)
 
-When the SPIRE distributed coordinator (FR-042) lands, the harness
-SHALL also produce these comparison artifacts:
+For SPIRE distributed runs using `EcSpireDistributedScan` (`FR-058`) and the
+production remote executor (`FR-057`), the harness SHALL also produce these
+comparison artifacts:
 
 | Setup | Read QPS expectation vs single-node | Write throughput |
 |---|---|---|
@@ -63,9 +65,9 @@ SHALL also produce these comparison artifacts:
 | Replicated N nodes | ~N × single | ~single |
 
 The first run that emits both `1b` single-node and `1b × 3 sharded`
-results closes a fundamental design question: is libpq coordinator
-overhead small enough that sharding wins for read latency, or only
-for write throughput.
+results closes a fundamental design question: is CustomScan remote-executor
+coordination overhead small enough that sharding wins for read latency, or
+only for write throughput.
 
 ## Acceptance Criteria
 

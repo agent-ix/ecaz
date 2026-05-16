@@ -3,15 +3,18 @@ id: US-020
 title: Manage SPIRE Epochs, Updates, and Rebalancing
 type: user-story
 artifact_type: US
-status: DRAFT
+status: APPROVED
 relationships:
-  - target: "ix://agent-ix/tqvector/StR-005"
+  - target: "ix://agent-ix/ecaz/StR-005"
     type: "derives_from"
     cardinality: "N:1"
-  - target: "ix://agent-ix/tqvector/FR-041"
+  - target: "ix://agent-ix/ecaz/FR-052"
     type: "derives_into"
     cardinality: "1:N"
-  - target: "ix://agent-ix/tqvector/FR-043"
+  - target: "ix://agent-ix/ecaz/FR-054"
+    type: "derives_into"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-060"
     type: "derives_into"
     cardinality: "1:N"
 ---
@@ -25,7 +28,7 @@ relationships:
 
 ### US-020-AC-1
 
-SPIRE can publish a new epoch only after the required root metadata, hierarchy metadata, placement metadata, and partition objects are present.
+SPIRE publishes a new epoch only after required root/control metadata, hierarchy metadata, placement entries, store descriptors, object manifests, and partition-object bytes validate.
 
 ### US-020-AC-2
 
@@ -33,15 +36,15 @@ Old epochs remain readable for a configured minimum retention window and can be 
 
 ### US-020-AC-3
 
-Inserts and deletes can be represented by either live deltas or replacement partition-object versions before compaction.
+Inserts and deletes are represented by delta objects or replacement partition-object versions before compaction.
 
 ### US-020-AC-4
 
-Split, merge, and rebalance operations publish new placement/hierarchy metadata through an epoch transition rather than silently changing the state under active queries.
+Split, merge, rebalance, and vacuum compaction publish replacement placement and hierarchy metadata through epoch transitions rather than changing state under active queries.
 
 ### US-020-AC-5
 
-Operators can inspect active epoch, retained epochs, pending epoch publication, stale nodes/stores, and cleanup eligibility through SQL diagnostics.
+Operators can inspect active epochs, retired epochs, failed epochs, stale stores/remotes, maintenance plans, and cleanup eligibility through SQL diagnostics.
 
 ### US-020-AC-6
 
