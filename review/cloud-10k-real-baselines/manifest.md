@@ -1,4 +1,14 @@
-# Cloud REAL baselines — DBpedia 10k + 50k, ec_ivf @ m8g.large (PG18)
+# Cloud REAL baselines — DBpedia 10k + 50k, **access method = ec_ivf** @ m8g.large (PG18)
+
+> ⚠️ **Read the access method, not the prefix.** The corpus table prefixes
+> `ec_hnsw_real_10k` and `ec_hnsw_real_50k` are the legacy names of the
+> `SubsetProfile` slicing recipe in
+> `crates/ecaz-cli/src/commands/corpus/prepare.rs` (the same 10k/50k row
+> selections used by every prior recall study). The "hnsw" token in the
+> prefix is **cosmetic** and unrelated to which access method was tested.
+> Every result on this page was loaded with `--profile ec_ivf` and uses
+> the `ec_ivf` index. Confirm via `ecaz corpus list` →
+> `access methods: btree, ec_ivf`.
 
 ## Purpose
 
@@ -50,7 +60,8 @@ built-in `SubsetProfile`s (sorted-id prefix, deterministic):
 | `concurrency` | 1 |
 | `sweep` | profile default `nprobe = [8, 16, 24, 32, 48, 64]` |
 
-## Results — ec_hnsw_real_10k (real DBpedia 10k)
+## Results — real DBpedia 10k, access method ec_ivf
+(corpus tables prefixed `ec_hnsw_real_10k_*`; see warning above)
 
 ### Latency (200 iters, k=10, concurrency=1)
 
@@ -80,7 +91,8 @@ mean settles by nprobe=16.)
 Recall saturates at ~97% by nprobe=24. The remaining 3% is the quantization
 recall ceiling (4-bit codes lose information that no nprobe can recover).
 
-## Results — ec_hnsw_real_50k (real DBpedia 50k)
+## Results — real DBpedia 50k, access method ec_ivf
+(corpus tables prefixed `ec_hnsw_real_50k_*`; see warning above)
 
 ### Latency (200 iters, k=10, concurrency=1)
 

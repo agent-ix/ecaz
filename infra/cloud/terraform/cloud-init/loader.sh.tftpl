@@ -13,16 +13,25 @@ S3_BUCKET='${bucket}'
 
 dnf -y update
 dnf -y install --allowerasing \
-  git gcc gcc-c++ make clang \
-  openssl-devel zlib-devel \
-  postgresql18 jq
+  git gcc gcc-c++ make clang clang-devel llvm llvm-devel \
+  openssl-devel readline-devel zlib-devel bzip2-devel \
+  postgresql18 postgresql18-server-devel \
+  jq cmake pkgconfig perl
 # Note: awscli v2 (`aws`) ships in the AL2023 base image; no dnf install needed.
+# postgresql18-server-devel is required because `cargo build -p ecaz-cli`
+# pulls in the ecaz lib crate, which transitively requires pgrx-pg-sys —
+# pgrx-pg-sys needs pg_config + a `cargo pgrx init`'d PGRX_HOME at build
+# time. Without server-devel + init the build dies with
+# "Error: $PGRX_HOME does not exist".
 
 useradd -m loader || true
 
 sudo -u loader bash -c '
   curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal
+  source $HOME/.cargo/env
+  cargo install --locked cargo-pgrx@^0.17
+  cargo pgrx init --pg18 /usr/bin/pg_config
 '
 
 sudo -u loader bash -lc "
