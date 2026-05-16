@@ -37,11 +37,12 @@ case "$TIER" in
     ;;
   representative)
     PREFIX=ec_spire_aws_repr_1m
+    PREPARED_PREFIX=ec_real_100k
     ecaz corpus fetch \
       --dataset qdrant-dbpedia-openai3-large-1536-1m \
       --output-dir "$WORK_DIR/qdrant-dbpedia/"
     ecaz corpus prepare \
-      --profile ec_hnsw_real_100k \
+      --profile "$PREPARED_PREFIX" \
       --parquet "$WORK_DIR/qdrant-dbpedia/data/0000.parquet" \
       --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
       --dim 1536 \
@@ -49,8 +50,10 @@ case "$TIER" in
     ecaz corpus load \
       --host "$COORD_HOST" --user ecaz_coord --database postgres \
       --prefix "$PREFIX" \
-      --corpus-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREFIX}_corpus.tsv" \
-      --queries-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREFIX}_queries.tsv" \
+      --corpus-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
+      --queries-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
+      --manifest-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json" \
+      --allow-manifest-mismatch \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --log-output "$ARTIFACT_DIR/corpus-load-${TIER}.log"
     ;;

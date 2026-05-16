@@ -19,9 +19,9 @@
       "name": "load-real25k-n64-w750",
       "tags": ["load", "ivf", "real25k", "n64", "w750"],
       "prefix": "profile_real25k_pqg8_n64",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_25k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_25k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_25k_manifest.json",
       "allow_manifest_mismatch": true,
       "reloptions": [
         "storage_format=pq_fastscan",

@@ -33,8 +33,8 @@ subset for the recall gate is:
 
 | Subset | Rows | Queries | Notes |
 | --- | --- | --- | --- |
-| `ec_hnsw_real_50k` | 50,000 corpus | 1,000 queries | matches `NFR-003` headline shape |
-| `ec_hnsw_real_10k` | 10,000 corpus | 200 queries | optional smaller surface for fast iteration |
+| `ec_real_50k` | 50,000 corpus | 1,000 queries | matches `NFR-003` headline shape |
+| `ec_real_10k` | 10,000 corpus | 200 queries | optional smaller surface for fast iteration |
 
 Larger subsets (full 1M) are allowed but should be opt-in: A4 needs the 50k
 shape because that is the surface `NFR-003` declares its targets against.
@@ -47,10 +47,10 @@ deterministic rule over the full parquet release:
 - sort the full dataset by the source parquet id column ascending
 - the current Hugging Face parquet uses `_id`, so the canonical sort key is
   `_id` ascending lexicographic
-- `ec_hnsw_real_50k` corpus: rows `[0, 49_999]`
-- `ec_hnsw_real_50k` queries: rows `[50_000, 50_999]`
-- `ec_hnsw_real_10k` corpus: rows `[0, 9_999]`
-- `ec_hnsw_real_10k` queries: rows `[10_000, 10_199]`
+- `ec_real_50k` corpus: rows `[0, 49_999]`
+- `ec_real_50k` queries: rows `[50_000, 50_999]`
+- `ec_real_10k` corpus: rows `[0, 9_999]`
+- `ec_real_10k` queries: rows `[10_000, 10_199]`
 
 The emitted TSV ids are deterministic global row indices from that sorted
 ordering. The original source ids remain in the manifest as
@@ -215,14 +215,14 @@ WITH (
 1. Convert the parquet release into canonical TSV + manifest files:
    ```bash
    ecaz corpus prepare \
-       --profile ec_hnsw_real_50k \
+       --profile ec_real_50k \
        --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
        --output-dir /path/to/staged
    ```
    The converter writes:
-   - `ec_hnsw_real_50k_corpus.tsv`
-   - `ec_hnsw_real_50k_queries.tsv`
-   - `ec_hnsw_real_50k_manifest.json`
+   - `ec_real_50k_corpus.tsv`
+   - `ec_real_50k_queries.tsv`
+   - `ec_real_50k_manifest.json`
    If you are targeting the repo-local scratch `pg17` cluster, point normal
    libpq env vars at it before invoking `ecaz`:
    `PGHOST=/home/peter/.pgrx PGPORT=28817 PGDATABASE=postgres`.
@@ -238,9 +238,9 @@ WITH (
 3. Run the loader:
    ```bash
    ecaz corpus load \
-       --prefix ec_hnsw_real_50k \
-       --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
-       --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
+       --prefix ec_real_50k \
+       --corpus-file /path/to/staged/ec_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/ec_real_50k_queries.tsv \
        --m 8,16
    ```
    That preserves the legacy `<prefix>_m{N}_idx` names. To stage both
@@ -248,16 +248,16 @@ WITH (
    the loader with explicit storage formats:
    ```bash
    ecaz corpus load \
-       --prefix ec_hnsw_real_50k \
-       --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
-       --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
+       --prefix ec_real_50k \
+       --corpus-file /path/to/staged/ec_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/ec_real_50k_queries.tsv \
        --m 8,16 \
        --storage-format turboquant
 
    ecaz corpus load \
-       --prefix ec_hnsw_real_50k \
-       --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
-       --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
+       --prefix ec_real_50k \
+       --corpus-file /path/to/staged/ec_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/ec_real_50k_queries.tsv \
        --m 8,16 \
        --storage-format pq_fastscan
    ```
@@ -265,24 +265,24 @@ WITH (
    and create coexisting index families:
    - `<prefix>_turboquant_m8_idx`, `<prefix>_turboquant_m16_idx`
    - `<prefix>_pq_fastscan_m8_idx`, `<prefix>_pq_fastscan_m16_idx`
-   If a sibling `ec_hnsw_real_50k_manifest.json` exists, the loader verifies it
+   If a sibling `ec_real_50k_manifest.json` exists, the loader verifies it
    automatically before loading. You can also pass `--manifest-file`
    explicitly.
 4. Run the A4 gate report:
    ```sql
    SELECT * FROM ec_hnsw_graph_scan_recall_external_gate_report(
-       'ec_hnsw_real_50k_corpus',
-       'ec_hnsw_real_50k_queries',
-       'ec_hnsw_real_50k'
+       'ec_real_50k_corpus',
+       'ec_real_50k_queries',
+       'ec_real_50k'
    );
    ```
    The third argument is the fixture/index prefix, not the table prefix. For a
    coexisting explicit format family, pass the suffixed index prefix instead:
    ```sql
    SELECT * FROM ec_hnsw_graph_scan_recall_external_gate_report(
-       'ec_hnsw_real_50k_corpus',
-       'ec_hnsw_real_50k_queries',
-       'ec_hnsw_real_50k_pq_fastscan'
+       'ec_real_50k_corpus',
+       'ec_real_50k_queries',
+       'ec_real_50k_pq_fastscan'
    );
    ```
    This emits one row per A4 configuration:
@@ -296,9 +296,9 @@ WITH (
 5. For per-query detail, use:
    ```sql
    SELECT * FROM ec_hnsw_graph_scan_recall_external_summary(
-       'ec_hnsw_real_50k_corpus',
-       'ec_hnsw_real_50k_queries',
-       'ec_hnsw_real_50k_m8_idx',
+       'ec_real_50k_corpus',
+       'ec_real_50k_queries',
+       'ec_real_50k_m8_idx',
        8,
        128
    );
@@ -306,9 +306,9 @@ WITH (
    For an explicit format family, swap only the index name:
    ```sql
    SELECT * FROM ec_hnsw_graph_scan_recall_external_summary(
-       'ec_hnsw_real_50k_corpus',
-       'ec_hnsw_real_50k_queries',
-       'ec_hnsw_real_50k_pq_fastscan_m8_idx',
+       'ec_real_50k_corpus',
+       'ec_real_50k_queries',
+       'ec_real_50k_pq_fastscan_m8_idx',
        8,
        128
    );
@@ -332,9 +332,9 @@ with the `ec_diskann` profile:
 
 ```bash
 PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
-    --prefix ec_hnsw_real_10k \
-    --corpus-file /path/to/staged/ec_hnsw_real_10k_corpus.tsv \
-    --queries-file /path/to/staged/ec_hnsw_real_10k_queries.tsv \
+    --prefix ec_real_10k \
+    --corpus-file /path/to/staged/ec_real_10k_corpus.tsv \
+    --queries-file /path/to/staged/ec_real_10k_queries.tsv \
     --index-profile ec_diskann \
     --reloption graph_degree=32 \
     --reloption alpha=1.2
@@ -353,14 +353,14 @@ AM-generic recall and latency sweeps against the same `<prefix>_corpus`:
 ```bash
 # Recall sweep over DiskANN's list_size
 ecaz bench recall \
-    --prefix ec_hnsw_real_10k \
+    --prefix ec_real_10k \
     --profile ec_diskann \
     --k 10 \
     --sweep 64,128,200,400
 
 # Latency sweep on the same index
 ecaz bench latency \
-    --prefix ec_hnsw_real_10k \
+    --prefix ec_real_10k \
     --profile ec_diskann \
     --sweep 64,128,200,400
 ```
@@ -388,9 +388,9 @@ surfaces.
 
 ```sql
 SELECT * FROM ec_hnsw_graph_scan_recall_histogram(
-    'ec_hnsw_real_10k_corpus',
-    'ec_hnsw_real_10k_queries',
-    'ec_hnsw_real_10k_m8_idx',
+    'ec_real_10k_corpus',
+    'ec_real_10k_queries',
+    'ec_real_10k_m8_idx',
     8,
     128
 );
@@ -417,9 +417,9 @@ and the rest are fine. The two failure modes have completely different fixes.
 
 ```sql
 SELECT * FROM ec_hnsw_graph_scan_recall_ef_sweep(
-    'ec_hnsw_real_10k_corpus',
-    'ec_hnsw_real_10k_queries',
-    'ec_hnsw_real_10k_m8_idx',
+    'ec_real_10k_corpus',
+    'ec_real_10k_queries',
+    'ec_real_10k_m8_idx',
     8,
     ARRAY[40, 64, 100, 128, 160, 200, 300, 500]
 );
@@ -445,9 +445,9 @@ NDCG/MAE/Spearman bookkeeping cost but is dominated by the graph traversal.
 
 ```sql
 SELECT * FROM ec_hnsw_graph_scan_recall_failure_breakdown(
-    'ec_hnsw_real_10k_corpus',
-    'ec_hnsw_real_10k_queries',
-    'ec_hnsw_real_10k_m8_idx',
+    'ec_real_10k_corpus',
+    'ec_real_10k_queries',
+    'ec_real_10k_m8_idx',
     8,
     128,
     8  -- list every query whose top-10 recall is < 8 (i.e. missed >= 3 of 10)
@@ -498,11 +498,11 @@ has built the tables and indexes there is no second load step. Use
 `EXPLAIN` plan separately in the artifact packet so the measured run shows the
 expected index selection.
 
-A worked example against the already-loaded `ec_hnsw_real_10k` fixture:
+A worked example against the already-loaded `ec_real_10k` fixture:
 
 ```bash
 ecaz bench latency \
-    --prefix ec_hnsw_real_10k \
+    --prefix ec_real_10k \
     --profile ec_hnsw \
     --k 10 \
     --concurrency 1 \
@@ -517,11 +517,11 @@ Against the repo-local scratch cluster, set `PGHOST`, `PGPORT`, and
 If the planner surface is not active for the target index, the verified
 launcher aborts before timing and prints the representative plan. That is the
 guard against silently recording a sequential `Sort -> Seq Scan` plan as an
-HNSW artifact. On current `main`, the canonical `ec_hnsw_real_10k` `m=8`
+HNSW artifact. On current `main`, the canonical `ec_real_10k` `m=8`
 surface is planner-visible and produces durable NFR-001 artifacts through the
 verified launcher. When comparing alternate `m` values on the same loaded
 corpus, the planner may naturally prefer the cheaper sibling index; in that
-case, use an isolated prefix (for example `ec_hnsw_real_10k_m16only`) so the
+case, use an isolated prefix (for example `ec_real_10k_m16only`) so the
 verified run measures the intended index honestly rather than forcing the
 planner to lie.
 

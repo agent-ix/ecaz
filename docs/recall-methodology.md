@@ -16,16 +16,16 @@
 
 | Subset | Corpus rows | Queries | Purpose |
 | --- | --- | --- | --- |
-| `ec_hnsw_real_50k` | 50,000 | 1,000 | NFR-003 headline shape |
-| `ec_hnsw_real_10k` | 10,000 | 200 | Fast iteration |
+| `ec_real_50k` | 50,000 | 1,000 | NFR-003 headline shape |
+| `ec_real_10k` | 10,000 | 200 | Fast iteration |
 
 ### Selection Rule
 
 Subsets are deterministic, not random:
 
 1. Sort the full dataset by `_id` ascending (lexicographic)
-2. `ec_hnsw_real_50k` corpus: rows [0, 49,999], queries: rows [50,000, 50,999]
-3. `ec_hnsw_real_10k` corpus: rows [0, 9,999], queries: rows [10,000, 10,199]
+2. `ec_real_50k` corpus: rows [0, 49,999], queries: rows [50,000, 50,999]
+3. `ec_real_10k` corpus: rows [0, 9,999], queries: rows [10,000, 10,199]
 
 The canonical conversion command is `ecaz corpus prepare`.
 
@@ -39,7 +39,7 @@ Corpus and query files are tab-separated:
 ## Loading
 
 ```bash
-ecaz corpus load --prefix ec_hnsw_real_50k --corpus-file /path/to/ec_hnsw_real_50k_corpus.tsv --queries-file /path/to/ec_hnsw_real_50k_queries.tsv --m 8,16
+ecaz corpus load --prefix ec_real_50k --corpus-file /path/to/ec_real_50k_corpus.tsv --queries-file /path/to/ec_real_50k_queries.tsv --m 8,16
 ```
 
 The loader is idempotent — it skips tables that already exist.
@@ -48,11 +48,11 @@ The loader is idempotent — it skips tables that already exist.
 
 ```bash
 # Prepare and load the dataset
-ecaz corpus prepare --profile ec_hnsw_real_50k --parquet /path/to/parquet --output-dir /path/to/staged
-ecaz corpus load --prefix ec_hnsw_real_50k --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv --m 8,16
+ecaz corpus prepare --profile ec_real_50k --parquet /path/to/parquet --output-dir /path/to/staged
+ecaz corpus load --prefix ec_real_50k --corpus-file /path/to/staged/ec_real_50k_corpus.tsv --queries-file /path/to/staged/ec_real_50k_queries.tsv --m 8,16
 
 # Run the SQL recall benchmark
-ecaz bench recall --prefix ec_hnsw_real_50k --profile ec_hnsw --k 10 --sweep 40,128,200
+ecaz bench recall --prefix ec_real_50k --profile ec_hnsw --k 10 --sweep 40,128,200
 ```
 
 ## Further Reading

@@ -166,14 +166,14 @@ For the real-corpus path, the intended flow is now:
 ```sh
 ecaz corpus fetch --output-dir /path/to/qdrant-dbpedia-openai3-1m
 ecaz corpus prepare \
-  --profile ec_hnsw_real_10k \
+  --profile ec_real_10k \
   --parquet /path/to/qdrant-dbpedia-openai3-1m/data \
   --output-dir /path/to/staged
 ecaz corpus load \
   --log-file review/11073-task17-diskann-real-10k-recall/artifacts/load.log \
-  --prefix ec_hnsw_real_10k \
-  --corpus-file /path/to/staged/ec_hnsw_real_10k_corpus.tsv \
-  --queries-file /path/to/staged/ec_hnsw_real_10k_queries.tsv \
+  --prefix ec_real_10k \
+  --corpus-file /path/to/staged/ec_real_10k_corpus.tsv \
+  --queries-file /path/to/staged/ec_real_10k_queries.tsv \
   --profile ec_diskann
 ```
 

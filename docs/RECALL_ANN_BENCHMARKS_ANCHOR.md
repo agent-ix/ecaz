@@ -98,31 +98,31 @@ real-corpus lane already loads.
 1. Convert the parquet release into the anchor TSV pair plus manifest:
    ```bash
    ecaz corpus prepare \
-       --profile ec_hnsw_real_ann_benchmarks_anchor \
+       --profile ec_real_ann_benchmarks_anchor \
        --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
        --output-dir /path/to/staged
    ```
    This emits:
-   - `ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv` (990,000 rows)
-   - `ec_hnsw_real_ann_benchmarks_anchor_queries.tsv` (10,000 rows)
-   - `ec_hnsw_real_ann_benchmarks_anchor_manifest.json`
+   - `ec_real_ann_benchmarks_anchor_corpus.tsv` (990,000 rows)
+   - `ec_real_ann_benchmarks_anchor_queries.tsv` (10,000 rows)
+   - `ec_real_ann_benchmarks_anchor_manifest.json`
 2. Load it. The loader is the same `ecaz corpus load` flow used by the
    primary gate. Build the `m=16` index (other `m` values are not part of the
    anchor):
    ```bash
    ecaz corpus load \
-       --prefix ec_hnsw_real_ann_benchmarks_anchor \
-       --corpus-file /path/to/staged/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv \
-       --queries-file /path/to/staged/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv \
+       --prefix ec_real_ann_benchmarks_anchor \
+       --corpus-file /path/to/staged/ec_real_ann_benchmarks_anchor_corpus.tsv \
+       --queries-file /path/to/staged/ec_real_ann_benchmarks_anchor_queries.tsv \
        --m 16
    ```
 3. Run the anchor probe:
    ```sql
    SELECT *
    FROM ec_hnsw_graph_scan_recall_ann_benchmarks_reference(
-       'ec_hnsw_real_ann_benchmarks_anchor_corpus',
-       'ec_hnsw_real_ann_benchmarks_anchor_queries',
-       'ec_hnsw_real_ann_benchmarks_anchor_m16_idx',
+       'ec_real_ann_benchmarks_anchor_corpus',
+       'ec_real_ann_benchmarks_anchor_queries',
+       'ec_real_ann_benchmarks_anchor_m16_idx',
        16,
        128
    );
@@ -148,5 +148,5 @@ test's doc comment for the environment variables it expects.
   reviewers can re-run when something feels off.
 - Other published rows on the same dataset. Adding more rows turns the
   anchor into a sweep, which is task 10054's surface, not this one.
-- The primary A4 gate. That stays on `ec_hnsw_real_50k` and
-  `ec_hnsw_real_10k`; see `docs/RECALL_REAL_CORPUS.md`.
+- The primary A4 gate. That stays on `ec_real_50k` and
+  `ec_real_10k`; see `docs/RECALL_REAL_CORPUS.md`.

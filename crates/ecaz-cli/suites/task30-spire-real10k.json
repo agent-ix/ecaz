@@ -20,9 +20,9 @@
       "name": "load-real10k-turboquant-n32-w25",
       "tags": ["load", "real10k", "n32", "w25"],
       "prefix": "task30_spire_real10k_suite",
-      "corpus_file": "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_corpus.tsv",
-      "queries_file": "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_queries.tsv",
-      "manifest_file": "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_manifest.json",
+      "corpus_file": "target/real-corpus/ec_real_10k/ec_real_10k_corpus.tsv",
+      "queries_file": "target/real-corpus/ec_real_10k/ec_real_10k_queries.tsv",
+      "manifest_file": "target/real-corpus/ec_real_10k/ec_real_10k_manifest.json",
       "allow_manifest_mismatch": true,
       "reloptions": [
         "storage_format=turboquant",

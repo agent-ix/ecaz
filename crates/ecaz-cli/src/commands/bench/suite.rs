@@ -2475,7 +2475,7 @@ mod tests {
                 {
                   "kind": "corpus-prepare",
                   "name": "prepare",
-                  "profile": "ec_hnsw_real_ann_benchmarks_anchor",
+                  "profile": "ec_real_ann_benchmarks_anchor",
                   "parquet": "data/fetch/data",
                   "output_dir": "data/staged",
                   "chunk_rows": 25000
@@ -2484,7 +2484,7 @@ mod tests {
                   "kind": "load",
                   "name": "load",
                   "prefix": "profile_real1m",
-                  "manifest_file": "data/staged/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+                  "manifest_file": "data/staged/ec_real_ann_benchmarks_anchor_manifest.json",
                   "chunked": true
                 }
               ]

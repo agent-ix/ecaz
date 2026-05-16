@@ -167,9 +167,9 @@ harnesses, and local development helpers:
 ```bash
 cargo install --path crates/ecaz-cli
 ecaz corpus list
-ecaz corpus inspect --prefix ec_hnsw_real_10k
-ecaz bench recall --prefix ec_hnsw_real_10k --profile ec_hnsw
-ecaz bench latency --prefix ec_hnsw_real_10k --profile ec_hnsw
+ecaz corpus inspect --prefix ec_real_10k
+ecaz bench recall --prefix ec_real_10k --profile ec_hnsw
+ecaz bench latency --prefix ec_real_10k --profile ec_hnsw
 ```
 
 The CLI is profile-aware for `ec_hnsw`, `ec_ivf`, and `ec_diskann`, and accepts

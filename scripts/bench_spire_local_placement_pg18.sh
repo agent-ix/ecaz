@@ -14,9 +14,9 @@ PG_CONFIG="${PG_CONFIG:-/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config}"
 ECAZ="${ECAZ:-target/debug/ecaz}"
 
 ARTIFACT_DIR="${ARTIFACT_DIR:-review/30533-spire-local-placement-benchmark/artifacts}"
-CORPUS_FILE="${CORPUS_FILE:-target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_corpus.tsv}"
-QUERIES_FILE="${QUERIES_FILE:-target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_queries.tsv}"
-MANIFEST_FILE="${MANIFEST_FILE:-target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_manifest.json}"
+CORPUS_FILE="${CORPUS_FILE:-target/real-corpus/ec_real_10k/ec_real_10k_corpus.tsv}"
+QUERIES_FILE="${QUERIES_FILE:-target/real-corpus/ec_real_10k/ec_real_10k_queries.tsv}"
+MANIFEST_FILE="${MANIFEST_FILE:-target/real-corpus/ec_real_10k/ec_real_10k_manifest.json}"
 
 TABLESPACE_NAME="${TABLESPACE_NAME:-ecaz_spire_e}"
 TABLESPACE_PATH="${TABLESPACE_PATH:-/mnt/e/ecaz_pg_tblspc/spire_e}"
