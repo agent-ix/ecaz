@@ -15,6 +15,36 @@ use super::{insert, options};
 // multilevel descent.
 const DISKANN_SINGLE_LAYER_TREE_HEIGHT: f64 = 1.0;
 
+struct OpenedCostIndexRelation {
+    relation: pg_sys::Relation,
+}
+
+impl OpenedCostIndexRelation {
+    fn open(index_oid: pg_sys::Oid) -> Self {
+        // SAFETY: The planner passes an index OID through `IndexPath`; the
+        // returned relation is closed by this guard before the callback exits.
+        let relation = unsafe { pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            pgrx::error!("ec_diskann planner failed to open index relation");
+        }
+        Self { relation }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for OpenedCostIndexRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `index_open` in
+        // `OpenedCostIndexRelation::open`; this guard owns the matching close.
+        unsafe {
+            pg_sys::index_close(self.relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+        }
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
     path: *mut pg_sys::IndexPath,
@@ -27,11 +57,22 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
 ) {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            if path.is_null()
+                || index_startup_cost.is_null()
+                || index_total_cost.is_null()
+                || index_selectivity.is_null()
+                || index_correlation.is_null()
+                || index_pages.is_null()
+            {
+                pgrx::error!("ec_diskann planner callback received null arguments");
+            }
             let index_info = (*path).indexinfo;
+            if index_info.is_null() {
+                pgrx::error!("ec_diskann planner callback received null index info");
+            }
             let index_oid = (*index_info).indexoid;
-            let index_relation = pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
-            let estimate = compute_amcostestimate(index_relation);
-            pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+            let index_relation = OpenedCostIndexRelation::open(index_oid);
+            let estimate = compute_amcostestimate(index_relation.as_ptr());
 
             *index_startup_cost = estimate.startup_cost;
             *index_total_cost = estimate.total_cost;
@@ -43,8 +84,11 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
 }
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+    // SAFETY: `index_relation` is a live relation pointer owned by the planner
+    // callback guard for the duration of this computation.
     let relation_options = unsafe { options::relation_options(index_relation) };
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
+    // SAFETY: `index_relation` is live while the planner callback computes cost.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -53,13 +97,17 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
         return gated_planner_cost_estimate(index_pages);
     }
 
+    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     // A metadata decode failure means the index itself is structurally
     // broken. Failing loudly during planning is preferable to masking
     // corruption behind a gated cost and continuing with an invalid AM
     // state.
+    // SAFETY: Metadata is read from the live index relation opened by the
+    // planner callback guard.
     let metadata = unsafe { insert::read_metadata_page(index_relation) }
         .unwrap_or_else(|e| pgrx::error!("ec_diskann planner could not read metadata: {e}"));
+    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
     let constants = unsafe { current_planner_cost_constants() };
 
     estimate_planner_cost(

@@ -201,12 +201,7 @@ src/am/ec_diskann/ambuild.rs:847
 src/am/ec_diskann/ambuild.rs:853
 src/am/ec_diskann/ambuild.rs:859
 src/am/ec_diskann/ambuild.rs:903
-src/am/ec_diskann/cost.rs:28
-src/am/ec_diskann/cost.rs:46
-src/am/ec_diskann/cost.rs:48
-src/am/ec_diskann/cost.rs:56
-src/am/ec_diskann/cost.rs:61
-src/am/ec_diskann/cost.rs:63
+src/am/ec_diskann/cost.rs:58
 src/am/ec_diskann/insert.rs:1125
 src/am/ec_diskann/insert.rs:1134
 src/am/ec_diskann/insert.rs:1137
