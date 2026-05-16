@@ -20,6 +20,7 @@ fn make_element_tuple(code_len: usize) -> TqElementTuple {
             },
         ],
         gamma: 0.42,
+        binary_words: Vec::new(),
         neighbortid: ItemPointer {
             block_number: 5,
             offset_number: 1,

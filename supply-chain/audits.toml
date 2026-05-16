@@ -1,2 +1,4 @@
-# cargo-vet audit records are intentionally empty at Task 34 landing.
-# Run `make cargo-vet` after `cargo vet init` to refresh local report state.
+
+# cargo-vet audits file
+
+[audits]

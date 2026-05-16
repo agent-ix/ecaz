@@ -8,17 +8,22 @@ subcommand errors.
 ## Aggregates
 
 - `make hardening-local` runs stable local checks that do not need a live
-  cluster: format check, PG18 Clippy, unit tests, property tests, layout
-  assertions, unsafe comment audit, full `cargo-deny`, and `cargo-audit`.
+  cluster: format check, PG18 Clippy with the current repository lint baseline,
+  CLI unit tests, a standalone pure Rust extension harness, property tests,
+  layout assertions, unsafe comment audit, full `cargo-deny`, and
+  `cargo-audit`.
 - `make hardening-nightly-local` adds slower and toolchain-sensitive local
-  lanes: expanded Miri, `cargo-careful`, fuzz smoke, Kani, Loom, Shuttle,
-  `cargo-geiger`, and pure Rust ASan/LSan.
+  lanes: expanded Miri, `cargo-careful`, fuzz smoke, Kani, Loom, Shuttle, and
+  pure Rust ASan/LSan. `cargo-geiger` remains a standalone reporting lane
+  because it can force a large clean rebuild.
 
 ## Baseline
 
 - `make fmt-check`
 - `make lint`
+- `make lint-hardening`
 - `make test`
+- `make test-hardening-local`
 - `make pg-test`
 - `make proptest`
 - `make layout-check`
@@ -48,8 +53,13 @@ imports and criteria are reviewed.
 - `make cargo-geiger`: install with `cargo install cargo-geiger`.
 - `make rudra`: install Rudra and keep the one-shot output under
   `review/30034-task34-comprehensive-hardening/artifacts/rudra.log`.
-- `make mirai`: install with `cargo install --locked mirai`.
-- `make flux`: install Flux from the upstream project.
+- `make mirai`: deferred/manual. The crates.io `mirai` package is not the
+  MIRAI analyzer; build the archived analyzer from
+  <https://github.com/endorlabs/MIRAI> and put `cargo-mirai` on `PATH` before
+  running this lane.
+- `make flux`: deferred/manual. Install Flux from the upstream guide at
+  <https://flux-rs.github.io/flux/guide/install.html> and put `flux` on
+  `PATH` before running this lane.
 
 Policy: new unsafe blocks need a nearby `SAFETY` comment and, when the unsafe
 surface is non-trivial, the review packet should call out why the boundary is
@@ -58,8 +68,11 @@ unknown for pgrx-heavy code.
 
 ## Miri And Cargo-Careful
 
-- `make miri-expanded`: runs `cargo +nightly miri test --lib -- miri_`.
-- `make careful`: runs `cargo careful test --lib --tests`.
+- `make miri-expanded`: runs the expanded `miri_` pure-Rust test set through
+  the repo hardening script.
+- `make careful`: runs a standalone pure-Rust harness under
+  `hardening/careful/` so PostgreSQL callback symbols are kept out of the
+  `cargo-careful` test binary.
 
 Miri and Kani cover only pure Rust paths. pgrx, SPI, libpq, PostgreSQL memory
 contexts, and C callback entrypoints are outside their model and must stay in
@@ -75,7 +88,8 @@ Seeded Miri coverage now includes:
 ## Fuzzing
 
 - `make fuzz-all-short`: runs each libFuzzer target for `FUZZ_SECONDS`, default
-  30 seconds.
+  30 seconds. Override without environment prefixes:
+  `make fuzz-all-short FUZZ_SECONDS=5`.
 - Individual targets: `make fuzz-parse-text`, `make fuzz-unpack`,
   `make fuzz-element-decode`, `make fuzz-neighbor-decode`,
   `make fuzz-diskann-metadata`, `make fuzz-item-pointer`, and
@@ -86,8 +100,7 @@ Seeded Miri coverage now includes:
 SQLsmith is live-cluster only:
 
 ```sh
-export ECAZ_HARDENING_SQLSMITH_DSN='postgresql://localhost/postgres'
-make sqlsmith-pg18
+make sqlsmith-pg18 SQLSMITH_DSN='postgresql://localhost/postgres'
 ```
 
 Use a PG18 cluster with `ecaz` installed. Capture crashes and raw SQLsmith logs

@@ -112,8 +112,8 @@ impl Terraform {
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
-        let raw: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .wrap_err("parse terraform output JSON")?;
+        let raw: serde_json::Value =
+            serde_json::from_slice(&output.stdout).wrap_err("parse terraform output JSON")?;
         Outputs::from_json(&raw)
     }
 

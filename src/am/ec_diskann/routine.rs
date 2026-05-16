@@ -1835,10 +1835,7 @@ fn sql_scan_result_cap(reloption_top_k: usize, rerank_budget: usize) -> usize {
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    heap_tids: &[ItemPointer],
-) {
+unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
     if heap_tids.is_empty() {
         return;
     }
@@ -1867,10 +1864,7 @@ unsafe fn prefetch_heap_rerank_blocks(
 }
 
 #[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    heap_tids: &[ItemPointer],
-) {
+unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
     for heap_tid in heap_tids {
         unsafe {
             pg_sys::PrefetchBuffer(

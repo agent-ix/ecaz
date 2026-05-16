@@ -14,6 +14,6 @@ fuzz_target!(|data: &[u8]| {
         .into_iter()
         .map(|value| value.clamp(-1.0, 1.0))
         .collect::<Vec<_>>();
-    let quantizer = ecaz::bench_api::ProdQuantizer::new(bounded.len(), 4, 42);
+    let quantizer = ecaz_fuzz::bench_api::ProdQuantizer::new(bounded.len(), 4, 42);
     let _ = quantizer.encode(&bounded);
 });

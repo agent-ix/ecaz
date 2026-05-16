@@ -1,5 +1,7 @@
 /target
 /fuzz/target
+/fuzz/artifacts
+/fuzz/corpus
 /hardening/*/target
 /.pgrx
 Cargo.lock

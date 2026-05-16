@@ -18,11 +18,7 @@ impl PauseArgs {
             return Err(eyre!("no stack to pause for profile {}", self.profile));
         }
         let out = tf.outputs().await?;
-        aws::stop_instances(
-            &out.region,
-            &[&out.db_instance_id, &out.loader_instance_id],
-        )
-        .await?;
+        aws::stop_instances(&out.region, &[&out.db_instance_id, &out.loader_instance_id]).await?;
         let mut st = state::load(self.profile).await?;
         st.paused_at = Some(chrono::Utc::now());
         state::save(self.profile, &st).await?;

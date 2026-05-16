@@ -1,0 +1,10 @@
+[package]
+name = "ecaz-careful-hardening"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"

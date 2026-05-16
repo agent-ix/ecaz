@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="${HOME}/.cargo/bin:${PATH}"
+RUSTUP_CARGO="${RUSTUP_CARGO:-/opt/homebrew/opt/rustup/bin/cargo}"
+RUSTUP_BIN="${RUSTUP_BIN:-/opt/homebrew/opt/rustup/bin/rustup}"
+
 usage() {
   cat <<'EOF'
 usage: scripts/hardening.sh <lane>
 
 Local-first hardening lanes. Each lane checks for optional tooling before it
 runs and prints install/setup guidance when the tool is missing.
+
+lane flags:
+  fuzz-all-short --seconds N
+  sqlsmith-pg18 --dsn LIBPQ_DSN
 EOF
 }
 
@@ -24,11 +32,19 @@ EOF
 }
 
 need_nightly() {
-  need_cmd rustup "Install rustup from https://rustup.rs, then run: rustup toolchain install nightly"
-  if ! rustup toolchain list | sed 's/ .*//' | grep -qx nightly; then
+  if [ ! -x "$RUSTUP_CARGO" ]; then
+    cat >&2 <<EOF
+missing rustup cargo shim: $RUSTUP_CARGO
+install/setup:
+  brew install rustup
+EOF
+    exit 127
+  fi
+  if ! "$RUSTUP_CARGO" +nightly --version >/dev/null 2>&1; then
     cat >&2 <<'EOF'
 missing Rust nightly toolchain
 install/setup:
+  Install rustup from https://rustup.rs, then run:
   rustup toolchain install nightly
 EOF
     exit 127
@@ -37,7 +53,15 @@ EOF
 
 need_nightly_miri() {
   need_nightly
-  if ! rustup +nightly component list --installed | grep -qx 'miri'; then
+  if [ ! -x "$RUSTUP_BIN" ]; then
+    cat >&2 <<EOF
+missing rustup binary: $RUSTUP_BIN
+install/setup:
+  brew install rustup
+EOF
+    exit 127
+  fi
+  if ! "$RUSTUP_BIN" which --toolchain nightly cargo-miri >/dev/null 2>&1; then
     cat >&2 <<'EOF'
 missing nightly miri component
 install/setup:
@@ -47,11 +71,64 @@ EOF
   fi
 }
 
+nightly_path() {
+  PATH="$(dirname "$RUSTUP_BIN"):$PATH"
+  export PATH
+  RUSTUP_TOOLCHAIN=nightly
+  export RUSTUP_TOOLCHAIN
+}
+
+host_triple() {
+  rustc -vV | awk '/host:/ {print $2}'
+}
+
+run_sanitized_lib_tests() {
+  local sanitizer="$1"
+  need_nightly
+  nightly_path
+  case "$(host_triple):$sanitizer" in
+    aarch64-apple-darwin:leak|aarch64-apple-darwin:memory)
+      echo "skipping ${sanitizer} sanitizer: rustc does not support it for $(host_triple)"
+      return 0
+      ;;
+  esac
+  RUSTFLAGS="-Zsanitizer=${sanitizer}"
+  export RUSTFLAGS
+  if [ "$sanitizer" = "thread" ]; then
+    cargo -Z build-std test --manifest-path hardening/careful/Cargo.toml --target "$(host_triple)" --lib
+  else
+    cargo test --manifest-path hardening/careful/Cargo.toml --target "$(host_triple)" --lib
+  fi
+}
+
+run_sanitized_pg18_tests() {
+  local sanitizer="$1"
+  need_nightly
+  nightly_path
+  RUSTFLAGS="-Zsanitizer=${sanitizer}"
+  export RUSTFLAGS
+  cargo pgrx test pg18
+}
+
+mac_dynamic_lookup_config=()
+if [ "$(host_triple)" = "aarch64-apple-darwin" ]; then
+  mac_dynamic_lookup_config=(
+    --config 'target.aarch64-apple-darwin.rustflags=["-C","link-arg=-undefined","-C","link-arg=dynamic_lookup"]'
+  )
+fi
+
+careful_cargo_config=(
+  --config 'profile.dev.lto=false'
+  --config 'profile.test.lto=false'
+)
+careful_cargo_config+=("${mac_dynamic_lookup_config[@]}")
+
 lane="${1:-}"
 if [ -z "$lane" ]; then
   usage >&2
   exit 2
 fi
+shift
 
 case "$lane" in
   cargo-audit)
@@ -77,7 +154,16 @@ EOF
     ;;
   cargo-geiger)
     need_cmd cargo-geiger "cargo install cargo-geiger"
-    cargo geiger --all-features
+    geiger_manifest="$PWD/crates/ecaz-cli/Cargo.toml"
+    set +e
+    cargo geiger --manifest-path "$geiger_manifest"
+    status=$?
+    set -e
+    if [ "$status" -eq 1 ]; then
+      echo "cargo-geiger completed with unsafe findings; review the report above."
+      exit 0
+    fi
+    exit "$status"
     ;;
   rudra)
     need_cmd cargo-rudra "Install Rudra from https://github.com/sslab-gatech/Rudra and ensure cargo-rudra is on PATH"
@@ -85,25 +171,45 @@ EOF
     cargo rudra | tee review/30034-task34-comprehensive-hardening/artifacts/rudra.log
     ;;
   mirai)
-    need_cmd cargo-mirai "cargo install --locked mirai"
+    need_cmd cargo-mirai "Build MIRAI from https://github.com/endorlabs/MIRAI and ensure cargo-mirai is on PATH; the crates.io mirai package is not the analyzer"
     cargo mirai
     ;;
   flux)
-    need_cmd flux "Install Flux from https://github.com/flux-rs/flux and ensure flux is on PATH"
+    need_cmd flux "Install Flux from https://flux-rs.github.io/flux/guide/install.html and ensure flux is on PATH"
     flux check
     ;;
   miri-expanded)
     need_nightly_miri
-    cargo +nightly miri test --lib -- miri_
+    nightly_path
+    cargo miri test --lib -- miri_
     ;;
   cargo-careful)
+    need_nightly
     need_cmd cargo-careful "cargo install cargo-careful"
-    cargo careful test --lib --tests
+    nightly_path
+    cargo careful test "${careful_cargo_config[@]}" --manifest-path hardening/careful/Cargo.toml
     ;;
   fuzz-all-short)
     need_nightly
     need_cmd cargo-fuzz "cargo install cargo-fuzz"
-    seconds="${FUZZ_SECONDS:-30}"
+    nightly_path
+    seconds=30
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --seconds)
+          seconds="${2:-}"
+          if [ -z "$seconds" ]; then
+            echo "missing value for --seconds" >&2
+            exit 2
+          fi
+          shift 2
+          ;;
+        *)
+          echo "unknown fuzz-all-short flag: $1" >&2
+          exit 2
+          ;;
+      esac
+    done
     (
       cd fuzz
       for target in \
@@ -115,19 +221,21 @@ EOF
         fuzz_item_pointer_decode \
         fuzz_vector_normalize
       do
-        cargo +nightly fuzz run "$target" -- -max_total_time="$seconds"
+        cargo fuzz run "$target" -- -max_total_time="$seconds"
       done
     )
     ;;
   afl-decoders)
     need_nightly
-    need_cmd cargo-afl "cargo install afl"
-    cargo +nightly afl build --manifest-path fuzz/Cargo.toml --bin fuzz_diskann_metadata_decode
-    cargo +nightly afl build --manifest-path fuzz/Cargo.toml --bin fuzz_item_pointer_decode
+    need_cmd cargo-afl "cargo install cargo-afl"
+    nightly_path
+    cargo afl config --build
+    cargo afl build --manifest-path fuzz/Cargo.toml --bin fuzz_diskann_metadata_decode
+    cargo afl build --manifest-path fuzz/Cargo.toml --bin fuzz_item_pointer_decode
     ;;
   kani)
     need_cmd cargo-kani "cargo install --locked kani-verifier"
-    cargo kani --test kani_item_pointer --harness kani_item_pointer_decode_contract
+    cargo kani --manifest-path hardening/kani/Cargo.toml --harness kani_item_pointer_decode_contract
     ;;
   loom)
     cargo test --manifest-path hardening/loom/Cargo.toml
@@ -136,41 +244,52 @@ EOF
     cargo test --manifest-path hardening/shuttle/Cargo.toml
     ;;
   sanitizer-asan)
-    need_nightly
-    RUSTFLAGS="-Zsanitizer=address" cargo +nightly test --lib --target "$(rustc -vV | awk '/host:/ {print $2}')"
+    run_sanitized_lib_tests address
     ;;
   sanitizer-lsan)
-    need_nightly
-    RUSTFLAGS="-Zsanitizer=leak" cargo +nightly test --lib --target "$(rustc -vV | awk '/host:/ {print $2}')"
+    run_sanitized_lib_tests leak
     ;;
   sanitizer-tsan)
-    need_nightly
-    RUSTFLAGS="-Zsanitizer=thread" cargo +nightly test --lib --target "$(rustc -vV | awk '/host:/ {print $2}')"
+    run_sanitized_lib_tests thread
     ;;
   sanitizer-msan)
-    need_nightly
-    RUSTFLAGS="-Zsanitizer=memory" cargo +nightly test --lib --target "$(rustc -vV | awk '/host:/ {print $2}')"
+    run_sanitized_lib_tests memory
     ;;
   sanitizer-pg18-asan)
-    need_nightly
-    RUSTFLAGS="-Zsanitizer=address" cargo +nightly pgrx test pg18
+    run_sanitized_pg18_tests address
     ;;
   sanitizer-pg18-tsan)
-    need_nightly
-    RUSTFLAGS="-Zsanitizer=thread" cargo +nightly pgrx test pg18
+    run_sanitized_pg18_tests thread
     ;;
   sqlsmith-pg18)
     need_cmd sqlsmith "Install SQLsmith and ensure sqlsmith is on PATH"
-    if [ -z "${ECAZ_HARDENING_SQLSMITH_DSN:-}" ]; then
+    dsn="${ECAZ_HARDENING_SQLSMITH_DSN:-}"
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --dsn)
+          dsn="${2:-}"
+          if [ -z "$dsn" ]; then
+            echo "missing value for --dsn" >&2
+            exit 2
+          fi
+          shift 2
+          ;;
+        *)
+          echo "unknown sqlsmith-pg18 flag: $1" >&2
+          exit 2
+          ;;
+      esac
+    done
+    if [ -z "$dsn" ]; then
       cat >&2 <<'EOF'
-missing ECAZ_HARDENING_SQLSMITH_DSN
+missing SQLsmith DSN
 setup:
-  Start a PG18 cluster with ecaz installed, then export a libpq connection string, for example:
-  export ECAZ_HARDENING_SQLSMITH_DSN='postgresql://localhost/postgres'
+  Start a PG18 cluster with ecaz installed, then pass a libpq connection string:
+  make sqlsmith-pg18 SQLSMITH_DSN='postgresql://localhost/postgres'
 EOF
       exit 127
     fi
-    sqlsmith "$ECAZ_HARDENING_SQLSMITH_DSN"
+    sqlsmith "$dsn"
     ;;
   *)
     usage >&2

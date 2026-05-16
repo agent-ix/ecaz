@@ -109,7 +109,10 @@ impl BenchArgs {
 
         println!(
             "bench: profile={} suite={} run={} log={}",
-            self.profile, self.suite, run_id, log_file.display()
+            self.profile,
+            self.suite,
+            run_id,
+            log_file.display()
         );
         Ok(())
     }
