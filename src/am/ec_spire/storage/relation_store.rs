@@ -39,7 +39,7 @@ impl SpireRelationObjectStore {
         }
     }
 
-    pub(super) unsafe fn insert_routing_object(
+    pub(super) fn insert_routing_object(
         &self,
         epoch: u64,
         object: &SpireRoutingPartitionObject,
@@ -53,15 +53,13 @@ impl SpireRelationObjectStore {
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = if relation_object_tuple_fits(encoded.len()) {
-            unsafe { page::append_object_tuple(self.store_relation, &encoded)? }
+            self.append_object_tuple(&encoded)?
         } else {
-            unsafe {
-                self.insert_large_partition_object_chain(
-                    durable_object.header,
-                    durable_object.dimensions,
-                    &encoded,
-                )?
-            }
+            self.insert_large_partition_object_chain(
+                durable_object.header,
+                durable_object.dimensions,
+                &encoded,
+            )?
         };
         let placement = SpirePlacementEntry::local_store_available_by_id(
             epoch,
@@ -76,7 +74,7 @@ impl SpireRelationObjectStore {
         Ok(placement)
     }
 
-    pub(super) unsafe fn insert_leaf_object_v2_from_rows(
+    pub(super) fn insert_leaf_object_v2_from_rows(
         &self,
         epoch: u64,
         pid: u64,
@@ -156,8 +154,7 @@ impl SpireRelationObjectStore {
                         "ec_spire leaf V2 segment byte length exceeds u64".to_owned()
                     })?)
                     .ok_or_else(|| "ec_spire leaf V2 object byte length overflow".to_owned())?;
-            next_segment_locator =
-                unsafe { page::append_object_tuple(self.store_relation, &encoded_segment)? };
+            next_segment_locator = self.append_object_tuple(&encoded_segment)?;
         }
 
         let first_segment_locator = if assignments.is_empty() {
@@ -193,7 +190,7 @@ impl SpireRelationObjectStore {
             epoch,
         )?;
         let encoded_meta = meta.encode()?;
-        let meta_tid = unsafe { page::append_object_tuple(self.store_relation, &encoded_meta)? };
+        let meta_tid = self.append_object_tuple(&encoded_meta)?;
         let placement = SpirePlacementEntry::local_store_available_by_id(
             epoch,
             pid,
@@ -207,7 +204,7 @@ impl SpireRelationObjectStore {
         Ok(placement)
     }
 
-    pub(super) unsafe fn insert_delta_object(
+    pub(super) fn insert_delta_object(
         &self,
         epoch: u64,
         object: &SpireDeltaPartitionObject,
@@ -220,7 +217,7 @@ impl SpireRelationObjectStore {
         let encoded = durable_object.encode()?;
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
-        let object_tid = unsafe { page::append_object_tuple(self.store_relation, &encoded)? };
+        let object_tid = self.append_object_tuple(&encoded)?;
         let placement = SpirePlacementEntry::local_store_available_by_id(
             epoch,
             durable_object.header.pid,
@@ -234,7 +231,7 @@ impl SpireRelationObjectStore {
         Ok(placement)
     }
 
-    pub(super) unsafe fn insert_top_graph_object(
+    pub(super) fn insert_top_graph_object(
         &self,
         epoch: u64,
         object: &SpireTopGraphPartitionObject,
@@ -248,15 +245,13 @@ impl SpireRelationObjectStore {
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = if relation_object_tuple_fits(encoded.len()) {
-            unsafe { page::append_object_tuple(self.store_relation, &encoded)? }
+            self.append_object_tuple(&encoded)?
         } else {
-            unsafe {
-                self.insert_large_partition_object_chain(
-                    durable_object.header,
-                    durable_object.dimensions,
-                    &encoded,
-                )?
-            }
+            self.insert_large_partition_object_chain(
+                durable_object.header,
+                durable_object.dimensions,
+                &encoded,
+            )?
         };
         let placement = SpirePlacementEntry::local_store_available_by_id(
             epoch,
@@ -771,7 +766,7 @@ impl SpireRelationObjectStore {
         Ok(())
     }
 
-    unsafe fn insert_large_partition_object_chain(
+    fn insert_large_partition_object_chain(
         &self,
         header: SpirePartitionObjectHeader,
         dimensions: u16,
@@ -804,8 +799,7 @@ impl SpireRelationObjectStore {
                 next_segment_locator,
                 &encoded[byte_base..byte_end],
             )?;
-            next_segment_locator =
-                unsafe { page::append_object_tuple(self.store_relation, &encoded_segment)? };
+            next_segment_locator = self.append_object_tuple(&encoded_segment)?;
         }
 
         let encoded_meta = encode_relation_object_chain_meta(
@@ -817,7 +811,7 @@ impl SpireRelationObjectStore {
                 "ec_spire partition object V2 object length exceeds u64".to_owned()
             })?,
         )?;
-        unsafe { page::append_object_tuple(self.store_relation, &encoded_meta) }
+        self.append_object_tuple(&encoded_meta)
     }
 
     unsafe fn read_large_partition_object_bytes(
@@ -873,6 +867,15 @@ impl SpireRelationObjectStore {
             ));
         }
         Ok(out)
+    }
+}
+
+impl SpireRelationObjectStore {
+    fn append_object_tuple(&self, encoded: &[u8]) -> Result<ItemPointer, String> {
+        // SAFETY: `SpireRelationObjectStore` instances are constructed from a
+        // live PostgreSQL relation opened by the caller/owning store set. This
+        // helper is the single append boundary for relation-backed writes.
+        unsafe { page::append_object_tuple(self.store_relation, encoded) }
     }
 }
 
@@ -1400,18 +1403,16 @@ impl SpireRelationObjectStoreSet {
         })
     }
 
-    pub(super) unsafe fn insert_routing_object(
+    pub(super) fn insert_routing_object(
         &mut self,
         epoch: u64,
         object: &SpireRoutingPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.store_mut_for_pid(object.header.pid)?
-                .insert_routing_object(epoch, object)
-        }
+        self.store_mut_for_pid(object.header.pid)?
+            .insert_routing_object(epoch, object)
     }
 
-    pub(super) unsafe fn insert_leaf_object_v2_from_rows(
+    pub(super) fn insert_leaf_object_v2_from_rows(
         &mut self,
         epoch: u64,
         pid: u64,
@@ -1419,49 +1420,36 @@ impl SpireRelationObjectStoreSet {
         parent_pid: u64,
         assignments: &[SpireLeafAssignmentRow],
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.store_mut_for_pid(pid)?.insert_leaf_object_v2_from_rows(
-                epoch,
-                pid,
-                object_version,
-                parent_pid,
-                assignments,
-            )
-        }
+        self.store_mut_for_pid(pid)?
+            .insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, assignments)
     }
 
-    pub(super) unsafe fn insert_delta_object(
+    pub(super) fn insert_delta_object(
         &mut self,
         epoch: u64,
         object: &SpireDeltaPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.store_mut_for_pid(object.header.pid)?
-                .insert_delta_object(epoch, object)
-        }
+        self.store_mut_for_pid(object.header.pid)?
+            .insert_delta_object(epoch, object)
     }
 
-    pub(super) unsafe fn insert_top_graph_object(
+    pub(super) fn insert_top_graph_object(
         &mut self,
         epoch: u64,
         object: &SpireTopGraphPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.store_mut_for_pid(object.header.pid)?
-                .insert_top_graph_object(epoch, object)
-        }
+        self.store_mut_for_pid(object.header.pid)?
+            .insert_top_graph_object(epoch, object)
     }
 
-    pub(super) unsafe fn insert_delta_object_for_base_placement(
+    pub(super) fn insert_delta_object_for_base_placement(
         &mut self,
         epoch: u64,
         base_placement: &SpirePlacementEntry,
         object: &SpireDeltaPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.store_mut_for_placement(base_placement)?
-                .insert_delta_object(epoch, object)
-        }
+        self.store_mut_for_placement(base_placement)?
+            .insert_delta_object(epoch, object)
     }
 
     pub(super) unsafe fn active_object_tuple_locators(

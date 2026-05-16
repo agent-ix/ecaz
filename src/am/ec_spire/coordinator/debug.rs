@@ -22,7 +22,7 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
             }],
         )?;
 
-        let placement = unsafe { store.insert_routing_object(1, &object)? };
+        let placement = store.insert_routing_object(1, &object)?;
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let decoded = unsafe { store.read_routing_object(&placement)? };
         let child = decoded
@@ -80,7 +80,7 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
         ];
 
         let placement =
-            unsafe { store.insert_leaf_object_v2_from_rows(1, 20, 1, 10, &assignments)? };
+            store.insert_leaf_object_v2_from_rows(1, 20, 1, 10, &assignments)?;
         let leaf = unsafe { store.read_leaf_object_v2(&placement)? };
         let rows = leaf.assignment_rows()?;
         let first_row = rows
@@ -264,25 +264,21 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
         };
 
         let placements = vec![
-            unsafe { aux_store.insert_routing_object(1, &root_object)? },
-            unsafe {
-                root_store.insert_leaf_object_v2_from_rows(
-                    1,
-                    left_leaf_pid,
-                    1,
-                    root_pid,
-                    &[left_row],
-                )?
-            },
-            unsafe {
-                aux_store.insert_leaf_object_v2_from_rows(
-                    1,
-                    right_leaf_pid,
-                    1,
-                    root_pid,
-                    &[right_row],
-                )?
-            },
+            aux_store.insert_routing_object(1, &root_object)?,
+            root_store.insert_leaf_object_v2_from_rows(
+                1,
+                left_leaf_pid,
+                1,
+                root_pid,
+                &[left_row],
+            )?,
+            aux_store.insert_leaf_object_v2_from_rows(
+                1,
+                right_leaf_pid,
+                1,
+                root_pid,
+                &[right_row],
+            )?,
         ];
         let placement_directory = meta::SpirePlacementDirectory::from_entries(1, placements)?;
         let placement_evidence = unsafe {

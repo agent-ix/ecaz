@@ -360,7 +360,7 @@ impl SpireReplacementObjectWriter for SpireRelationObjectStore {
         epoch: u64,
         object: &SpireRoutingPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe { self.insert_routing_object(epoch, object) }
+        self.insert_routing_object(epoch, object)
     }
 
     fn write_replacement_leaf_object_v2_from_rows(
@@ -371,8 +371,6 @@ impl SpireReplacementObjectWriter for SpireRelationObjectStore {
         parent_pid: u64,
         rows: &[SpireLeafAssignmentRow],
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
-        }
+        self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
     }
 }

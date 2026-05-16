@@ -173,13 +173,11 @@ unsafe fn publish_insert_delta_epoch(
             assignment_placement.pid,
             vec![assignment_placement.row],
         )?;
-        placement_entries.push(unsafe {
-            store.insert_delta_object_for_base_placement(
-                new_epoch,
-                base_lookup.placement,
-                &delta_object,
-            )?
-        });
+        placement_entries.push(store.insert_delta_object_for_base_placement(
+            new_epoch,
+            base_lookup.placement,
+            &delta_object,
+        )?);
     }
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;
     let placement_evidence =
@@ -254,16 +252,14 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         unsafe { (*(*index_relation).rd_rel).reltablespace }.into(),
     )?;
     let placements = vec![
-        unsafe { store.insert_routing_object(new_epoch, &routing_object)? },
-        unsafe {
-            store.insert_leaf_object_v2_from_rows(
-                new_epoch,
-                leaf_pid,
-                build::SPIRE_INITIAL_OBJECT_VERSION,
-                root_pid,
-                &assignments,
-            )?
-        },
+        store.insert_routing_object(new_epoch, &routing_object)?,
+        store.insert_leaf_object_v2_from_rows(
+            new_epoch,
+            leaf_pid,
+            build::SPIRE_INITIAL_OBJECT_VERSION,
+            root_pid,
+            &assignments,
+        )?,
     ];
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placements)?;
     let placement_evidence =

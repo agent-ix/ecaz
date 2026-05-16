@@ -62,7 +62,7 @@ impl SpireBuildObjectStore for SpireRelationObjectStore {
         epoch: u64,
         object: &SpireRoutingPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe { self.insert_routing_object(epoch, object) }
+        self.insert_routing_object(epoch, object)
     }
 
     fn write_leaf_object_v2_from_rows(
@@ -73,9 +73,7 @@ impl SpireBuildObjectStore for SpireRelationObjectStore {
         parent_pid: u64,
         rows: &[SpireLeafAssignmentRow],
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
-        }
+        self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
     }
 
     fn write_top_graph_object(
@@ -83,7 +81,7 @@ impl SpireBuildObjectStore for SpireRelationObjectStore {
         epoch: u64,
         object: &SpireTopGraphPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe { self.insert_top_graph_object(epoch, object) }
+        self.insert_top_graph_object(epoch, object)
     }
 }
 
@@ -93,7 +91,7 @@ impl SpireBuildObjectStore for SpireRelationObjectStoreSet {
         epoch: u64,
         object: &SpireRoutingPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe { self.insert_routing_object(epoch, object) }
+        self.insert_routing_object(epoch, object)
     }
 
     fn write_leaf_object_v2_from_rows(
@@ -104,9 +102,7 @@ impl SpireBuildObjectStore for SpireRelationObjectStoreSet {
         parent_pid: u64,
         rows: &[SpireLeafAssignmentRow],
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe {
-            self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
-        }
+        self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
     }
 
     fn write_top_graph_object(
@@ -114,6 +110,6 @@ impl SpireBuildObjectStore for SpireRelationObjectStoreSet {
         epoch: u64,
         object: &SpireTopGraphPartitionObject,
     ) -> Result<SpirePlacementEntry, String> {
-        unsafe { self.insert_top_graph_object(epoch, object) }
+        self.insert_top_graph_object(epoch, object)
     }
 }

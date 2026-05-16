@@ -326,15 +326,13 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
                         leaf_pid
                     )
                 })?;
-                placement_entries.push(unsafe {
-                    store.insert_leaf_object_v2_from_rows(
-                        new_epoch,
-                        leaf_pid,
-                        object_version,
-                        header.parent_pid,
-                        &rows,
-                    )?
-                });
+                placement_entries.push(store.insert_leaf_object_v2_from_rows(
+                    new_epoch,
+                    leaf_pid,
+                    object_version,
+                    header.parent_pid,
+                    &rows,
+                )?);
                 compacted_base_pids.insert(leaf_pid);
             }
             SpirePartitionObjectKind::Root
@@ -516,13 +514,11 @@ fn publish_delete_delta_epoch(
         let delta_object =
             SpireDeltaPartitionObject::new(delta_pid, new_epoch, base_pid, assignments)?;
         let base_placement = require_base_placement(&placement_directory, base_pid)?;
-        placement_entries.push(unsafe {
-            store.insert_delta_object_for_base_placement(
-                new_epoch,
-                base_placement,
-                &delta_object,
-            )?
-        });
+        placement_entries.push(store.insert_delta_object_for_base_placement(
+            new_epoch,
+            base_placement,
+            &delta_object,
+        )?);
     }
 
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;

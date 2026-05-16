@@ -291,21 +291,19 @@ unsafe fn publish_relation_partitioned_single_level_build(
         )?
     };
     let mut placements = Vec::with_capacity(centroid_count + 1);
-    placements.push(unsafe { store.insert_routing_object(SPIRE_INITIAL_EPOCH, &routing_object)? });
+    placements.push(store.insert_routing_object(SPIRE_INITIAL_EPOCH, &routing_object)?);
     for (pid, assignments) in centroid_pids
         .iter()
         .copied()
         .zip(leaf_assignments_by_centroid.iter())
     {
-        placements.push(unsafe {
-            store.insert_leaf_object_v2_from_rows(
-                SPIRE_INITIAL_EPOCH,
-                pid,
-                SPIRE_INITIAL_OBJECT_VERSION,
-                root_pid,
-                assignments,
-            )?
-        });
+        placements.push(store.insert_leaf_object_v2_from_rows(
+            SPIRE_INITIAL_EPOCH,
+            pid,
+            SPIRE_INITIAL_OBJECT_VERSION,
+            root_pid,
+            assignments,
+        )?);
     }
     let placement_directory =
         SpirePlacementDirectory::from_entries(SPIRE_INITIAL_EPOCH, placements)?;
