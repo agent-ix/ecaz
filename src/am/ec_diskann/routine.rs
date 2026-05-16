@@ -1944,7 +1944,7 @@ unsafe fn fetch_heap_source_vector(
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
-    unsafe { pgrx::pgrx_extern_c_guard(|| true) }
+    true
 }
 
 #[pg_guard]
@@ -1952,9 +1952,8 @@ unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> b
 pub unsafe extern "C-unwind" fn ec_diskann_handler(
     _fcinfo: pg_sys::FunctionCallInfo,
 ) -> pg_sys::Datum {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| pg_sys::Datum::from(build_ec_diskann_routine().into_pg()))
-    }
+    // `#[pg_guard]` is the pgrx boundary guard for this PostgreSQL callback.
+    pg_sys::Datum::from(build_ec_diskann_routine().into_pg())
 }
 
 #[no_mangle]
