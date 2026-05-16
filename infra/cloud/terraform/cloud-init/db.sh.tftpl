@@ -79,6 +79,12 @@ systemctl enable postgresql
 systemctl start postgresql
 
 # --- Rust toolchain (for cargo pgrx) --------------------------------------
+# `cargo pgrx install --sudo` needs passwordless sudo for the postgres
+# user (the install step copies ecaz.control + ecaz.so into root-owned
+# /usr/share/pgsql/extension and /usr/lib64/pgsql).
+echo 'postgres ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/postgres
+chmod 440 /etc/sudoers.d/postgres
+
 sudo -u postgres bash -c '
   curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal
@@ -97,7 +103,7 @@ sudo -u postgres bash -lc "
   git clone $ECAZ_URL ecaz
   cd ecaz
   git checkout $ECAZ_REF
-  cargo pgrx install --release --pg-config /usr/bin/pg_config
+  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
 "
 
 # Now safe to enable shared_preload_libraries.
