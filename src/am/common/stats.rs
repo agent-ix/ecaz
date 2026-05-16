@@ -84,9 +84,7 @@ fn increment(counter: &AtomicU64) {
 
 #[cfg(feature = "pg18")]
 fn record_shared_delta(delta: TqStatsCounters) {
-    unsafe {
-        let _ = pg18_pgstat_shim::record(&delta);
-    }
+    let _ = pg18_pgstat_shim::record(&delta);
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -94,7 +92,7 @@ fn record_shared_delta(_delta: TqStatsCounters) {}
 
 #[cfg(feature = "pg18")]
 fn pgstat_kind_ready() -> bool {
-    unsafe { pg18_pgstat_shim::is_registered() }
+    pg18_pgstat_shim::is_registered()
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -122,7 +120,7 @@ pub(crate) fn current_backend_stats_counters() -> TqStatsCounters {
 
 #[cfg(feature = "pg18")]
 pub(crate) fn current_stats_counters() -> TqStatsCounters {
-    unsafe { pg18_pgstat_shim::snapshot().unwrap_or_else(current_backend_stats_counters) }
+    pg18_pgstat_shim::snapshot().unwrap_or_else(current_backend_stats_counters)
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -187,10 +185,8 @@ pub(crate) fn record_quantizer_cache_miss() {
 pub(crate) fn record_quantizer_cache_miss() {}
 
 #[cfg(feature = "pg18")]
-pub(crate) unsafe fn register_pg18_stats() {
-    unsafe {
-        let _ = pg18_pgstat_shim::register_kind();
-    }
+pub(crate) fn register_pg18_stats() {
+    let _ = pg18_pgstat_shim::register_kind();
 }
 
 pub(crate) fn flush_shared_delta(delta: TqStatsCounters) {

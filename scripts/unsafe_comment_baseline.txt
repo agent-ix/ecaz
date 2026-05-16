@@ -129,10 +129,6 @@ src/am/common/parallel.rs:978
 src/am/common/parallel.rs:982
 src/am/common/parallel.rs:989
 src/am/common/parallel.rs:998
-src/am/common/stats.rs:125
-src/am/common/stats.rs:191
-src/am/common/stats.rs:87
-src/am/common/stats.rs:97
 src/am/ec_diskann/ambuild.rs:104
 src/am/ec_diskann/ambuild.rs:161
 src/am/ec_diskann/ambuild.rs:223
@@ -4182,10 +4178,6 @@ src/lib.rs:9873
 src/lib.rs:9951
 src/lib.rs:9952
 src/lib.rs:9962
-src/pg18_pgstat_shim.rs:19
-src/pg18_pgstat_shim.rs:29
-src/pg18_pgstat_shim.rs:39
-src/pg18_pgstat_shim.rs:50
 src/quant/hadamard.rs:102
 src/quant/hadamard.rs:103
 src/quant/hadamard.rs:105
