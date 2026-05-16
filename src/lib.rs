@@ -7937,10 +7937,11 @@ fn ec_spire_index_root_routing_snapshot(
         name!(child_object_bytes, i64),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_root_routing_snapshot") };
-    let rows = unsafe { am::spire_index_root_routing_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rows = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_root_routing_snapshot");
+        unsafe { am::spire_index_root_routing_snapshot(index_relation.as_ptr()) }
+    };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -7997,10 +7998,11 @@ fn ec_spire_index_routing_centroid_snapshot(
         name!(centroid, Vec<f32>),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_routing_centroid_snapshot") };
-    let rows = unsafe { am::spire_index_routing_centroid_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rows = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_routing_centroid_snapshot");
+        unsafe { am::spire_index_routing_centroid_snapshot(index_relation.as_ptr()) }
+    };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -8043,10 +8045,11 @@ fn ec_spire_classify_centroid(
         name!(epoch, i64),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_classify_centroid") };
-    let classification = unsafe { am::spire_classify_centroid(index_relation, &embedding) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let classification = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_classify_centroid");
+        unsafe { am::spire_classify_centroid(index_relation.as_ptr(), &embedding) }
+    };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
     TableIterator::once((
@@ -8080,10 +8083,11 @@ fn ec_spire_plan_coordinator_insert(
         pgrx::error!("ec_spire_plan_coordinator_insert source_identity must be exactly 16 bytes");
     }
 
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_plan_coordinator_insert") };
-    let classification = unsafe { am::spire_classify_centroid(index_relation, &embedding) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let classification = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert");
+        unsafe { am::spire_classify_centroid(index_relation.as_ptr(), &embedding) }
+    };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
     TableIterator::once((
@@ -8133,13 +8137,17 @@ fn ec_spire_plan_coordinator_insert_dispatch(
     let served_epoch =
         u64::try_from(served_epoch).expect("positive served_epoch should fit in u64");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_plan_coordinator_insert_dispatch")
+    let row = {
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert_dispatch");
+        unsafe {
+            am::spire_coordinator_insert_dispatch_plan_row(
+                index_relation.as_ptr(),
+                node_id,
+                served_epoch,
+            )
+        }
     };
-    let row = unsafe {
-        am::spire_coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch)
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     TableIterator::once((
         row.index_oid,
@@ -8199,27 +8207,27 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
         );
     }
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
+    let ((node_id, centroid_id, served_epoch), prepare_row) = {
+        let index_relation = open_valid_ec_spire_index_guard(
             index_oid,
             "ec_spire_prepare_coordinator_insert_tuple_payload",
-        )
+        );
+        let classification =
+            unsafe { am::spire_classify_centroid(index_relation.as_ptr(), &embedding) }
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let row_payload_json = row_payload.0.to_string();
+        let prepare_row = unsafe {
+            am::spire_coordinator_insert_prepare_remote_tuple_payload(
+                index_relation.as_ptr(),
+                classification.0,
+                classification.2,
+                &row_payload_json,
+                &requested_columns,
+            )
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        (classification, prepare_row)
     };
-    let (node_id, centroid_id, served_epoch) =
-        unsafe { am::spire_classify_centroid(index_relation, &embedding) }
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-    let row_payload_json = row_payload.0.to_string();
-    let prepare_row = unsafe {
-        am::spire_coordinator_insert_prepare_remote_tuple_payload(
-            index_relation,
-            node_id,
-            served_epoch,
-            &row_payload_json,
-            &requested_columns,
-        )
-    }
-    .unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     Spi::connect_mut(|client| {
         let descriptor_refreshed = client
