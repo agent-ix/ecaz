@@ -71,7 +71,21 @@ These pre-lane task files are retained only for historical context under
 32. `32-diskann-m5-optimization.md` — second-priority M5 optimization lane for landed DiskANN: refresh Task 29d baselines, profile low-L scan latency, and pursue targeted constant-factor wins without lowering recall floors.
 33. `33-hnsw-m5-optimization.md` — third-priority M5 optimization lane for HNSW: refresh reference worker curves, then decide between direct DSM ingestion, offline/staged build, or narrow scan/build hot-path work.
 34. `34-comprehensive-hardening.md` — local-first expansion of the ECAZ/SPIRE hardening stack: cargo-audit/deny/vet, Miri, cargo-careful, sanitizers, fuzzing, SQLsmith, Loom/Shuttle, Kani/Flux/MIRAI, Rudra, and unsafe-surface reporting.
-35. `35-unsafe-quality-burndown.md` — reviewed burndown of the grandfathered unsafe-comment baseline to zero, with packet-local before/after counts and subsystem ownership.
+35. `35-unsafe-quality-burndown.md` — paused reviewed burndown of the grandfathered unsafe-comment baseline to zero; resumes after Tasks 41/40/43 shrink the residual unsafe set by construction and proof coverage.
+36. `36-simd-scalar-differential.md` — proptest harness comparing every SIMD scoring / decoding path to a scalar reference; closes the silent-recall-regression gap left by Task 34's Miri scalar fallback.
+37. `37-crash-recovery-and-amcheck.md` — PG18 crash-recovery harness with `SIGKILL` at WAL boundaries and `pg_amcheck` post-restart verification for every ECAZ AM; the WAL-replay safety net Task 34 explicitly does not cover.
+38. `38-pg-fault-injection.md` — I/O (EIO/ENOSPC), palloc OOM, `pg_cancel_backend`, `statement_timeout`, and resource-exhaustion sweeps against ECAZ entry points, with buffer-pin / LWLock leak detection.
+39. `39-test-quality-measurement.md` — `cargo-llvm-cov` coverage gate and `cargo-mutants` mutation testing over critical correctness modules; answers "are our tests real" for the existing and new hardening lanes.
+40. `40-concurrency-model-checking-real.md` — retargets the Task 34 placeholder Loom/Shuttle harnesses at real ECAZ state machines (parallel build slots, SPIRE coordinator) via the lifted-module pattern, plus madsim / turmoil for SPIRE remote.
+41. `41-ffi-safety-boundary.md` — inventory and enforcement for panic-across-FFI, `pg_guard`, palloc memory-context lifetimes, and RAII wrappers for PG buffer pins / LWLocks / snapshots; backed by a custom `dylint` lint suite.
+42. `42-on-disk-format-invariants.md` — endian-explicit encoding, `qemu` cross-arch decode lane, static `size_of` / offset assertions for every on-disk type, a `(format_version, AM)` upgrade matrix, and `pg_upgrade` smoke.
+43. `43-miri-careful-depth.md` — Tree Borrows pass, `-Zmiri-many-seeds` interleavings, and Miri/cargo-careful coverage extended to SPIRE coordinator, DiskANN/HNSW graph helpers, top-k merge, remote parser, and serialization.
+44. `44-formal-verification-expansion.md` — Kani proofs for tuple alignment, payload length, leaf V2 metadata, top-k merge order, partition routing, and remote-parser rejection; Flux refinement types on real quantizer / page APIs (replaces the Task 34 synthetic Flux harness).
+45. `45-static-analysis-and-supply-chain-depth.md` — custom `dylint` lints, `cargo-public-api` and `cargo-semver-checks` for API/ABI stability, SBOM generation, `cargo-vet` criteria delegation, license allow-listing, reproducible build checks, and yank watch.
+46. `46-structure-aware-and-grammar-fuzzing.md` — `arbitrary`-derived structure-aware libFuzzer targets, ECAZ-grammar SQLsmith biased toward vector-operator / CustomScan paths, Honggfuzz + AFL+ cross-pollination, and corpus minimization.
+47. `47-recall-and-cost-model-gates.md` — brute-force exact-KNN differential per AM with documented recall floors, cross-AM consistency (Jaccard / Kendall-tau), and an `EXPLAIN`-diff cost-model regression gate.
+48. `48-build-matrix-and-soak.md` — CI matrix for darwin / linux-gnu / linux-musl × pg17 / pg18, qemu cross-endian decode lane, 24-hour soak harness with leak-slope detection, and PG resource-limit exhaustion sweeps.
+49. `49-hardening-ci-governance.md` — recommended next coder pickup; retargets the four Task 34 synthetic harnesses (Rudra/Flux/Loom/Shuttle) at real ECAZ code, restores `make test` to `cargo test` on CI, documents the local → PR → nightly → weekly promotion ladder, and adds `make hardening-validate` to block future synthetic-only lanes.
 
 ## Coordination rules
 

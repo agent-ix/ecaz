@@ -1,8 +1,10 @@
 # Task 35: Unsafe Quality Burndown
 
-Status: **active** — Task 34 installed the local-first hardening lanes and
-grandfathered the historical unsafe-comment debt. This task owns burning that
-baseline down to zero through reviewed subsystem packets.
+Status: **paused pending Tasks 41, 40, and 43** — Task 34 installed the
+local-first hardening lanes and grandfathered the historical unsafe-comment
+debt. This task owns burning that baseline down to zero through reviewed
+subsystem packets, but broad annotation-only packets are deferred while the
+structural safety tasks remove unsafe sites by construction.
 
 ## Scope
 
@@ -47,6 +49,11 @@ subsystem permits it:
 
 Within each subsystem, prefer deletion or safe wrappers over comments when the
 unsafe pattern repeats and a wrapper can encode the real contract.
+
+If the site can plausibly be deleted by an in-flight structural refactor (Task
+40 lifted concurrency modules, Task 41 PG resource wrappers, Task 43 expanded
+Miri/cargo-careful proof coverage, or equivalent), defer the packet that would
+annotate it until the refactor lands or is abandoned.
 
 ## Validation
 
