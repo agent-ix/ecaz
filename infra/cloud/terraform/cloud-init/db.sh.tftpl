@@ -83,7 +83,7 @@ sudo -u postgres bash -c '
   curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal
   source $HOME/.cargo/env
-  cargo install --locked cargo-pgrx@^0.17 --features pg18
+  cargo install --locked cargo-pgrx@^0.17
   cargo pgrx init --pg18 /usr/bin/pg_config
 '
 
