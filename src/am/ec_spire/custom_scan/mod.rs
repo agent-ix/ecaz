@@ -145,7 +145,10 @@ struct SpireCustomScanPayloadAttrIo {
     typmod: i32,
 }
 
-pub(crate) unsafe fn register_custom_scan() {
+pub(crate) fn register_custom_scan() {
+    // SAFETY: `_PG_init` calls this during backend extension initialization.
+    // The writes below install process-global PostgreSQL hook/method pointers
+    // exactly once for this backend.
     unsafe {
         if !CUSTOM_SCAN_REGISTERED {
             pg_sys::RegisterCustomScanMethods(&raw const CUSTOM_SCAN_METHODS);
@@ -161,6 +164,8 @@ pub(crate) unsafe fn register_custom_scan() {
 }
 
 pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
+    // SAFETY: These process-local flags are only written during `_PG_init`;
+    // reading them for diagnostics does not cross backend threads.
     let (registered, hook_installed) =
         unsafe { (CUSTOM_SCAN_REGISTERED, REL_PATHLIST_HOOK_INSTALLED) };
     SpireCustomScanStatusRow {

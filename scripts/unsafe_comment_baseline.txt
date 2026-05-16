@@ -3070,10 +3070,6 @@ src/am/ec_spire/custom_scan/dml.rs:567
 src/am/ec_spire/custom_scan/dml.rs:613
 src/am/ec_spire/custom_scan/dml.rs:637
 src/am/ec_spire/custom_scan/dml.rs:719
-src/am/ec_spire/custom_scan/explain.rs:14
-src/am/ec_spire/custom_scan/explain.rs:47
-src/am/ec_spire/custom_scan/mod.rs:149
-src/am/ec_spire/custom_scan/mod.rs:165
 src/am/ec_spire/custom_scan/plan_private.rs:10
 src/am/ec_spire/custom_scan/plan_private.rs:101
 src/am/ec_spire/custom_scan/plan_private.rs:120
@@ -3656,7 +3652,6 @@ src/am/ec_spire/vacuum/mod.rs:72
 src/am/ec_spire/vacuum/mod.rs:86
 src/am/ec_spire/vacuum/mod.rs:87
 src/am/ec_spire/vacuum/mod.rs:91
-src/am/mod.rs:199
 src/am/mod.rs:203
 src/am/mod.rs:247
 src/am/mod.rs:253

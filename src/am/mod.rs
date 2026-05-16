@@ -195,8 +195,8 @@ pub(crate) fn register_gucs() {
     ec_spire::register_gucs();
 }
 
-pub(crate) unsafe fn register_custom_scan() {
-    unsafe { ec_spire::register_custom_scan() };
+pub(crate) fn register_custom_scan() {
+    ec_spire::register_custom_scan();
 }
 
 pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
