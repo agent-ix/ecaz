@@ -18,6 +18,10 @@ clock budget, signal evidence, and rollback plan. Lanes that repeatedly fail
 for toolchain or environment reasons must be demoted with a repair packet
 instead of blocking unrelated work.
 
+The `test` PR lane is the single budget carveout: it is governed by the CI wall
+clock budget for the full unit suite rather than the five-minute promotion rule
+used for smaller hardening lanes.
+
 ## Current Inventory
 
 Use `make hardening-tiers-report` for the current SHA-local report.

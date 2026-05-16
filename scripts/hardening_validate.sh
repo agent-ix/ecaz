@@ -2,10 +2,15 @@
 set -euo pipefail
 
 status=0
+retired_pattern='rudra|flux|loom|shuttle'
 
 for retired in hardening/rudra hardening/flux hardening/loom hardening/shuttle; do
   if [ -f "$retired/Cargo.toml" ] || [ -f "$retired/src/lib.rs" ]; then
     echo "synthetic hardening lane still present: $retired" >&2
+    status=1
+  fi
+  if [ -n "$(git ls-files "$retired/")" ]; then
+    echo "retired synthetic lane has tracked files: $retired" >&2
     status=1
   fi
 done
@@ -27,18 +32,36 @@ if grep -Eq '^(rudra|flux|loom|shuttle):' Makefile; then
   status=1
 fi
 
-if grep -Eq '^hardening-nightly-local:.*\b(loom|shuttle|flux|rudra)\b' Makefile; then
-  echo "hardening-nightly-local still depends on retired synthetic lanes" >&2
-  status=1
-fi
+for aggregate in hardening-local hardening-nightly-local; do
+  if awk -v aggregate="$aggregate" -v retired_pattern="$retired_pattern" '
+    $0 ~ "^" aggregate ":" &&
+      $0 ~ "(^|[[:space:]:])(" retired_pattern ")([[:space:]]|$)" {
+        found = 1
+      }
+    END { exit found ? 0 : 1 }
+  ' Makefile; then
+    echo "$aggregate still depends on retired synthetic lanes" >&2
+    status=1
+  fi
+done
 
 if ! awk '
   /^test:/ { in_test = 1; next }
   /^[[:alnum:]_.-]+:/ { in_test = 0 }
-  in_test && /^[[:space:]]+cargo test$/ { found = 1 }
+  in_test && /(^|[[:space:]])cargo[[:space:]]+test([[:space:]]|$)/ { found = 1 }
   END { exit found ? 0 : 1 }
 ' Makefile; then
   echo "make test must run cargo test directly" >&2
+  status=1
+fi
+
+if awk '
+  /^test:/ { in_test = 1; next }
+  /^[[:alnum:]_.-]+:/ { in_test = 0 }
+  in_test && /test-hardening-local/ { found = 1 }
+  END { exit found ? 0 : 1 }
+' Makefile; then
+  echo "make test must not be narrowed to test-hardening-local" >&2
   status=1
 fi
 
