@@ -1857,12 +1857,26 @@ fn expand_scan_results_with_bound_heap_tids(
 ) -> Result<Vec<scan::ScanResult>, String> {
     let mut expanded = Vec::with_capacity(top_k.min(node_results.len()));
     for result in node_results {
+        if !result.has_overflow_heaptids {
+            expanded.push(scan::ScanResult {
+                tid: result.tid,
+                primary_heaptid: result.primary_heaptid,
+                has_overflow_heaptids: false,
+                distance: result.distance,
+            });
+            if expanded.len() >= top_k {
+                return Ok(expanded);
+            }
+            continue;
+        }
+
         let bound_heap_tids =
             insert::bound_heap_tids_for_owner(chain, result.tid, result.primary_heaptid)?;
         for heap_tid in bound_heap_tids {
             expanded.push(scan::ScanResult {
                 tid: result.tid,
                 primary_heaptid: heap_tid,
+                has_overflow_heaptids: false,
                 distance: result.distance,
             });
             if expanded.len() >= top_k {
