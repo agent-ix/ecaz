@@ -7,7 +7,12 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# Network — single VPC, single private subnet, S3 + SSM VPC endpoints, no NAT.
+# Network — single VPC, single subnet with an Internet Gateway so cloud-init
+# can reach github.com + sh.rustup.rs to build ecaz from source. We avoid a
+# NAT gateway ($32/mo) by assigning public IPs to the instances directly;
+# the security groups still deny all inbound except 5432-from-inside-VPC,
+# so the public IPs do not expose anything new. S3 + SSM VPC endpoints stay
+# for cheap intra-VPC access to those services.
 # ---------------------------------------------------------------------------
 
 resource "aws_vpc" "this" {
@@ -15,6 +20,11 @@ resource "aws_vpc" "this" {
   enable_dns_support   = true
   enable_dns_hostnames = true
   tags                 = merge(local.common_tags, { Name = local.name })
+}
+
+resource "aws_internet_gateway" "this" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(local.common_tags, { Name = local.name })
 }
 
 resource "aws_subnet" "private" {
@@ -26,7 +36,13 @@ resource "aws_subnet" "private" {
 
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
-  tags   = merge(local.common_tags, { Name = "${local.name}-private" })
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.this.id
+  }
+
+  tags = merge(local.common_tags, { Name = "${local.name}-private" })
 }
 
 resource "aws_route_table_association" "private" {
@@ -261,7 +277,7 @@ resource "aws_instance" "db" {
   iam_instance_profile        = aws_iam_instance_profile.instance.name
   user_data                   = local.cloud_init_db
   user_data_replace_on_change = false
-  associate_public_ip_address = false
+  associate_public_ip_address = true
 
   root_block_device {
     volume_size = 20
@@ -288,7 +304,7 @@ resource "aws_instance" "loader" {
   subnet_id                   = aws_subnet.private.id
   vpc_security_group_ids      = [aws_security_group.loader.id]
   iam_instance_profile        = aws_iam_instance_profile.instance.name
-  associate_public_ip_address = false
+  associate_public_ip_address = true
 
   root_block_device {
     volume_size = 100
