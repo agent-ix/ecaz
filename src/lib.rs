@@ -1453,9 +1453,8 @@ fn ec_spire_custom_scan_index_eligibility(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_custom_scan_index_eligibility") };
-    let row = unsafe { am::spire_custom_scan_index_eligibility_row(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_custom_scan_index_eligibility");
+    let row = unsafe { am::spire_custom_scan_index_eligibility_row(index_relation.as_ptr()) };
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -1499,10 +1498,8 @@ fn ec_ivf_index_drift_snapshot(
         name!(list_imbalance_reindex_threshold, f64),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_drift_snapshot") };
-    let snapshot = unsafe { am::ivf_index_drift_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_drift_snapshot");
+    let snapshot = unsafe { am::ivf_index_drift_snapshot(index_relation.as_ptr()) };
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -1560,10 +1557,8 @@ fn ec_ivf_index_admin_snapshot(
         name!(reindex_reason, String),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_admin_snapshot") };
-    let snapshot = unsafe { am::ivf_index_admin_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_admin_snapshot");
+    let snapshot = unsafe { am::ivf_index_admin_snapshot(index_relation.as_ptr()) };
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -1631,11 +1626,9 @@ fn ec_spire_index_active_snapshot_diagnostics(
         name!(delta_object_bytes, i64),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_index_active_snapshot_diagnostics")
-    };
-    let diagnostics = unsafe { am::spire_active_snapshot_diagnostics(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_active_snapshot_diagnostics");
+    let diagnostics = unsafe { am::spire_active_snapshot_diagnostics(index_relation.as_ptr()) };
 
     TableIterator::once((
         i64::try_from(diagnostics.active_epoch).expect("active epoch should fit in i64"),
@@ -1703,9 +1696,9 @@ fn ec_spire_index_allocator_snapshot(
     let warn_within =
         u64::try_from(warn_within).expect("non-negative warning threshold should fit in u64");
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_allocator_snapshot") };
-    let snapshot = unsafe { am::spire_index_allocator_snapshot(index_relation, warn_within) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_allocator_snapshot");
+    let snapshot =
+        unsafe { am::spire_index_allocator_snapshot(index_relation.as_ptr(), warn_within) };
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -1754,9 +1747,8 @@ fn ec_spire_index_placement_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_placement_snapshot") };
-    let rows = unsafe { am::spire_index_placement_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_placement_snapshot");
+    let rows = unsafe { am::spire_index_placement_snapshot(index_relation.as_ptr()) };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -1821,9 +1813,8 @@ fn ec_spire_remote_node_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_node_snapshot") };
-    let rows = unsafe { am::spire_remote_node_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_snapshot");
+    let rows = unsafe { am::spire_remote_node_snapshot(index_relation.as_ptr()) };
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2014,9 +2005,10 @@ fn ec_spire_register_remote_node_descriptor(
         pgrx::notice!("{warning}");
     }
 
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_register_remote_node_descriptor") };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    {
+        let _index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "ec_spire_register_remote_node_descriptor");
+    }
 
     let result = Spi::connect_mut(|client| {
         client
