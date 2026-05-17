@@ -65,7 +65,7 @@ unzip -o "$ZIP_NAME" >/dev/null
 
 # The zip contains a .deb package (Debian/Ubuntu native format).
 # AL2023 has no dpkg, so extract the .deb manually with ar + tar.
-DEB_FILE=$(ls pgvectorscale-postgresql-${PG_MAJOR}_*_Linux_${ARCH}.deb 2>/dev/null | head -1)
+DEB_FILE=$(find . -maxdepth 1 -name "pgvectorscale-postgresql-${PG_MAJOR}_*-Linux_${ARCH}.deb" ! -name '*dbgsym*' | head -1)
 [[ -z "$DEB_FILE" ]] && { comparator_log "no matching .deb in zip"; ls; exit 1; }
 
 EXTRACT_DIR="extracted"
