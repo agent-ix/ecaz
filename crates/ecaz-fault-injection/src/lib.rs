@@ -261,10 +261,9 @@ fn case(
         trigger,
         expected,
         postconditions: &[
-            "no pinned buffers retained by the test backend",
+            "no surviving ecaz-fault sessions",
             "no surviving relation or advisory locks",
-            "no PANIC or FATAL in postmaster log",
-            "pgstat counters remain monotonic",
+            "no prepared transactions in the test database",
         ],
     }
 }
@@ -347,6 +346,25 @@ pub fn workload_scan_sql(access_method: FaultAm) -> String {
     )
 }
 
+pub fn workload_repeated_scan_sql(access_method: FaultAm, iterations: i64) -> String {
+    let table = workload_table(access_method);
+    format!(
+        "SET enable_seqscan = off;
+         SELECT count(*)
+         FROM generate_series(1, {iterations}) AS probe(i)
+         CROSS JOIN LATERAL (
+             SELECT id FROM {table}
+             ORDER BY embedding <#> ARRAY[
+                 cos((probe.i * 0.000001)::double precision)::real,
+                 sin((probe.i * 0.000001)::double precision)::real,
+                 0.0::real,
+                 0.0::real
+             ]::real[]
+             LIMIT 5
+         ) AS nearest"
+    )
+}
+
 pub fn workload_insert_sql(access_method: FaultAm) -> String {
     let table = workload_table(access_method);
     format!(
@@ -357,6 +375,13 @@ pub fn workload_insert_sql(access_method: FaultAm) -> String {
 
 pub fn workload_vacuum_sql(access_method: FaultAm) -> String {
     format!("VACUUM (ANALYZE) {}", workload_table(access_method))
+}
+
+pub fn workload_reindex_sql(access_method: FaultAm) -> String {
+    format!(
+        "REINDEX INDEX CONCURRENTLY {}",
+        workload_index(access_method)
+    )
 }
 
 #[cfg(test)]
@@ -405,8 +430,10 @@ mod tests {
             assert!(sql.contains(workload_index(am)));
             assert!(sql.contains(am.as_str()));
             assert!(workload_scan_sql(am).contains(workload_table(am)));
+            assert!(workload_repeated_scan_sql(am, 10).contains(workload_table(am)));
             assert!(workload_insert_sql(am).contains(workload_table(am)));
             assert!(workload_vacuum_sql(am).contains(workload_table(am)));
+            assert!(workload_reindex_sql(am).contains(workload_index(am)));
         }
     }
 

@@ -1,10 +1,17 @@
 use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
-    all_smoke_cases, leak_probe_sql, required_smoke_cases, workload_insert_sql, workload_scan_sql,
-    workload_setup_sql, workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
+    all_smoke_cases, leak_probe_sql, required_smoke_cases, workload_insert_sql,
+    workload_reindex_sql, workload_repeated_scan_sql, workload_scan_sql, workload_setup_sql,
+    workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
 };
+use std::path::PathBuf;
+use std::process::Stdio;
+use tokio::process::Command;
 
+use super::support::{
+    default_pgrx_port, find_pgrx_install, resolve_pgrx_home, run_status, DEFAULT_PG_MAJOR,
+};
 use crate::psql::{self, ConnectionOptions};
 
 #[derive(Subcommand, Debug)]
@@ -13,6 +20,10 @@ pub enum FaultCommand {
     Plan(PlanArgs),
     /// Print LD_PRELOAD provider environment for postmaster startup.
     ProviderEnv(ProviderEnvArgs),
+    /// Restart a local pgrx postmaster with the LD_PRELOAD provider active.
+    ProviderRestart(ProviderRestartArgs),
+    /// Restart a local pgrx postmaster without the LD_PRELOAD provider.
+    ProviderRestore(ProviderRestoreArgs),
     /// Run or dry-run one smoke lane.
     Smoke(SmokeArgs),
 }
@@ -41,6 +52,47 @@ pub struct ProviderEnvArgs {
     /// Optional marker file written by every process that loads the provider.
     #[arg(long)]
     marker: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ProviderRestartArgs {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+    /// Scratch-cluster port. Defaults to the pgrx convention, e.g. 28818 for PG18.
+    #[arg(long)]
+    port: Option<u16>,
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+    /// Provider fault mode to configure.
+    #[arg(long, value_enum)]
+    mode: ProviderModeArg,
+    /// Substring that must appear in the target path, for example "base/".
+    #[arg(long, default_value = "base/")]
+    path_match: String,
+    /// Start injecting on the Nth matching provider operation.
+    #[arg(long, default_value_t = 1)]
+    after: u64,
+    /// Latency in milliseconds for slow-disk mode.
+    #[arg(long)]
+    latency_ms: Option<u64>,
+    /// Marker file written by every process that loads the provider.
+    #[arg(long)]
+    marker: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct ProviderRestoreArgs {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+    /// Scratch-cluster port. Defaults to the pgrx convention, e.g. 28818 for PG18.
+    #[arg(long)]
+    port: Option<u16>,
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -106,6 +158,8 @@ impl FaultCommand {
         match self {
             FaultCommand::Plan(args) => run_plan(args),
             FaultCommand::ProviderEnv(args) => run_provider_env(args),
+            FaultCommand::ProviderRestart(args) => run_provider_restart(args).await,
+            FaultCommand::ProviderRestore(args) => run_provider_restore(args).await,
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
         }
     }
@@ -137,6 +191,95 @@ fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
         crate::ecaz_println!("{key}={value}");
     }
     Ok(())
+}
+
+async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
+    let mode = ProviderMode::from(args.mode);
+    let latency_ms = match (mode, args.latency_ms) {
+        (ProviderMode::SlowDisk, None) => Some(1),
+        (_, value) => value,
+    };
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let install = find_pgrx_install(args.pg, &pgrx_home)?;
+    let marker = args.marker.unwrap_or_else(|| {
+        std::env::temp_dir().join(format!("ecaz-fault-provider-{}-pg{}.marker", mode, args.pg))
+    });
+    std::fs::write(&marker, "")?;
+    let marker_string = marker.to_string_lossy().to_string();
+    let env = ecaz_fault_injection::provider_environment(
+        mode,
+        &args.path_match,
+        args.after,
+        latency_ms,
+        Some(&marker_string),
+    );
+    restart_pgrx_postmaster(
+        &install.bin_dir.join("pg_ctl"),
+        &pgrx_home,
+        args.pg,
+        args.port.unwrap_or_else(|| default_pgrx_port(args.pg)),
+        &env,
+    )
+    .await?;
+    crate::ecaz_println!("[fault] provider_marker={}", marker.display());
+    Ok(())
+}
+
+async fn run_provider_restore(args: ProviderRestoreArgs) -> Result<()> {
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let install = find_pgrx_install(args.pg, &pgrx_home)?;
+    restart_pgrx_postmaster(
+        &install.bin_dir.join("pg_ctl"),
+        &pgrx_home,
+        args.pg,
+        args.port.unwrap_or_else(|| default_pgrx_port(args.pg)),
+        &[],
+    )
+    .await
+}
+
+async fn restart_pgrx_postmaster(
+    pg_ctl: &std::path::Path,
+    pgrx_home: &std::path::Path,
+    pg: u16,
+    port: u16,
+    env: &[(String, String)],
+) -> Result<()> {
+    let data_dir = pgrx_home.join(format!("data-{pg}"));
+    let log_file = pgrx_home.join(format!("{pg}.log"));
+    let options = format!(
+        "-i -p {port} -c unix_socket_directories={}",
+        pgrx_home.display()
+    );
+    let mut command = Command::new(pg_ctl);
+    command
+        .arg("-D")
+        .arg(data_dir)
+        .arg("-l")
+        .arg(log_file)
+        .arg("-o")
+        .arg(options)
+        .arg("restart")
+        .arg("-m")
+        .arg("fast")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    for name in [
+        "LD_PRELOAD",
+        "ECAZ_FAULT_PROVIDER_ENABLE",
+        "ECAZ_FAULT_PROVIDER_MODE",
+        "ECAZ_FAULT_PROVIDER_MATCH",
+        "ECAZ_FAULT_PROVIDER_AFTER",
+        "ECAZ_FAULT_PROVIDER_LATENCY_MS",
+        "ECAZ_FAULT_PROVIDER_MARKER",
+    ] {
+        command.env_remove(name);
+    }
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    run_status(command).await
 }
 
 async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
@@ -186,7 +329,7 @@ async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64) -> Result<()> {
             .query_one("SELECT pg_backend_pid()", &[])
             .await?
             .get::<_, i32>(0);
-        let sql = format!("{}; SELECT pg_sleep(5);", workload_scan_sql(am));
+        let sql = workload_repeated_scan_sql(am, cancel_probe_iterations(rows));
         let worker_task = tokio::spawn(async move {
             worker
                 .batch_execute(&sql)
@@ -224,11 +367,11 @@ async fn run_statement_timeout_probe(conn: &ConnectionOptions, rows: i64) -> Res
     for am in FaultAm::ALL {
         let timeout = client
             .batch_execute(&format!(
-                "SET statement_timeout = '1ms'; {}; SELECT pg_sleep(0.05);",
-                workload_scan_sql(am)
+                "SET statement_timeout = '5ms'; {}",
+                workload_repeated_scan_sql(am, timeout_probe_iterations(rows))
             ))
             .await;
-        assert_expected_error(&format!("statement_timeout {}", am.as_str()), timeout)?;
+        assert_query_canceled(&format!("statement_timeout {}", am.as_str()), timeout)?;
         client.batch_execute("RESET statement_timeout;").await?;
     }
     Ok(())
@@ -245,16 +388,21 @@ async fn run_lock_timeout_probe(conn: &ConnectionOptions, rows: i64) -> Result<(
                 "BEGIN; LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE;"
             ))
             .await?;
-        let timeout = waiter
-            .batch_execute(&format!(
-                "SET lock_timeout = '10ms';
-                 LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE;"
-            ))
-            .await;
+        waiter.batch_execute("SET lock_timeout = '10ms';").await?;
+        let timeout = waiter.batch_execute(&workload_reindex_sql(am)).await;
+        waiter.batch_execute("RESET lock_timeout;").await?;
         holder.batch_execute("ROLLBACK;").await?;
         assert_sqlstate(&format!("lock_timeout {}", am.as_str()), timeout, "55P03")?;
     }
     Ok(())
+}
+
+fn cancel_probe_iterations(rows: i64) -> i64 {
+    rows.saturating_mul(2_000).clamp(100_000, 1_000_000)
+}
+
+fn timeout_probe_iterations(rows: i64) -> i64 {
+    rows.saturating_mul(2_000).clamp(100_000, 1_000_000)
 }
 
 async fn run_resource_probe(conn: &ConnectionOptions, rows: i64) -> Result<()> {
@@ -359,7 +507,7 @@ async fn assert_postconditions(conn: &ConnectionOptions, lane: FaultLane) -> Res
     Ok(())
 }
 
-fn assert_expected_error(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
+fn assert_query_canceled(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
     assert_sqlstate(label, result, "57014")
 }
 
@@ -378,7 +526,6 @@ fn assert_sqlstate(
         {
             Ok(())
         }
-        Err(error) if error.to_string().contains("statement timeout") => Ok(()),
         Err(error) => Err(error.into()),
     }
 }

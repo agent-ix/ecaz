@@ -255,6 +255,43 @@ impl ProdQuantizer {
         self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
     }
 
+    #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    pub fn score_ip_from_parts_avx2_fma_for_test(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        code_bytes: &[u8],
+    ) -> Option<f32> {
+        if !std::arch::is_x86_feature_detected!("avx2")
+            || !std::arch::is_x86_feature_detected!("fma")
+            || !qjl_enabled(self.original_dim, self.bits)
+        {
+            return None;
+        }
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        Some(unsafe {
+            self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
+        })
+    }
+
+    #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    pub fn score_ip_from_parts_neon_for_test(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        code_bytes: &[u8],
+    ) -> Option<f32> {
+        if !std::arch::is_aarch64_feature_detected!("neon")
+            || !qjl_enabled(self.original_dim, self.bits)
+        {
+            return None;
+        }
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        Some(unsafe {
+            self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
+        })
+    }
+
     pub fn prepare_ip_query_int8_approx_no_qjl_4bit(
         &self,
         query: &[f32],
@@ -703,6 +740,35 @@ impl ProdQuantizer {
         let (mse_a, _) = self.split_code_bytes(code_a);
         let (mse_b, _) = self.split_code_bytes(code_b);
         self.score_ip_mse_codes_scalar(mse_a, mse_b)
+    }
+
+    #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    pub fn score_ip_codes_lite_avx2_fma_for_test(
+        &self,
+        code_a: &[u8],
+        code_b: &[u8],
+    ) -> Option<f32> {
+        if !std::arch::is_x86_feature_detected!("avx2")
+            || !std::arch::is_x86_feature_detected!("fma")
+            || mse_bits(self.original_dim, self.bits) != 3
+        {
+            return None;
+        }
+        let (mse_a, _) = self.split_code_bytes(code_a);
+        let (mse_b, _) = self.split_code_bytes(code_b);
+        Some(unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) })
+    }
+
+    #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    pub fn score_ip_codes_lite_neon_for_test(&self, code_a: &[u8], code_b: &[u8]) -> Option<f32> {
+        if !std::arch::is_aarch64_feature_detected!("neon")
+            || mse_bits(self.original_dim, self.bits) != 3
+        {
+            return None;
+        }
+        let (mse_a, _) = self.split_code_bytes(code_a);
+        let (mse_b, _) = self.split_code_bytes(code_b);
+        Some(unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) })
     }
 
     fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {

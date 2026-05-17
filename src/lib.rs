@@ -61,6 +61,10 @@ pub mod bench_api {
     };
 
     // Hadamard
+    #[cfg(all(feature = "bench", target_arch = "x86_64"))]
+    pub use crate::quant::hadamard::fwht_in_place_avx2_for_test;
+    #[cfg(all(feature = "bench", target_arch = "aarch64"))]
+    pub use crate::quant::hadamard::fwht_in_place_neon_for_test;
     #[cfg(feature = "bench")]
     pub use crate::quant::hadamard::fwht_in_place_scalar_reference;
     pub use crate::quant::hadamard::{fwht_in_place, orthonormal_fwht_in_place};

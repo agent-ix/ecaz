@@ -43,6 +43,24 @@ pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
     fwht_in_place_scalar(values);
 }
 
+#[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+    if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
+        return false;
+    }
+    unsafe { fwht_in_place_avx2(values) };
+    true
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub fn fwht_in_place_neon_for_test(values: &mut [f32]) -> bool {
+    if !std::arch::is_aarch64_feature_detected!("neon") {
+        return false;
+    }
+    unsafe { fwht_in_place_neon(values) };
+    true
+}
+
 /// In-place tiled FWHT over equal-sized power-of-two chunks.
 pub fn fwht_tiled_in_place(values: &mut [f32], tile_size: usize) {
     assert!(

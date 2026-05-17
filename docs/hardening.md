@@ -100,8 +100,9 @@ Seeded Miri coverage now includes:
 
 - `make simd-diff`: runs `tests/simd_diff.rs` with the `bench` feature. The
   harness compares production-dispatched scoring/FWHT entry points against
-  scalar-reference entry points in the same process, covering the host-reachable
-  SIMD backend without relying on `ECAZ_SIMD` process-global dispatch.
+  scalar-reference entry points in the same process, and also calls test-only
+  AVX2/FMA or NEON entry points directly when the host supports them. This
+  keeps backend pinning independent of `ECAZ_SIMD` process-global dispatch.
 - Tolerances:
   - FWHT lanes: absolute/relative `1e-5`.
   - `score_ip_from_parts`: absolute/relative `1e-5`.
@@ -149,14 +150,18 @@ under the relevant review packet before citing findings.
   matched-path `ENOSPC` writes/creates/fsyncs, and slow-disk latency once the
   PG postmaster is started with the printed environment. Example:
   `make fault-provider-env FAULT_PROVIDER_MODE=slow-disk`.
+- `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
+  wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
+  require hand-assembled `LD_PRELOAD` commands.
   Provider-backed smoke lanes require the same marker path via
   `--provider-marker` so they cannot pass against a normal postmaster.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
-`ec_diskann`, and `ec_spire`, then directly exercises cancellation, statement
-timeout, lock timeout, scan, insert, vacuum, and resource settings on those
-fixtures. Slow-disk runs the same AM-specific scan/insert/vacuum smoke against
-a provider-backed postmaster and requires a non-empty provider marker. I/O lanes
+`ec_diskann`, and `ec_spire`, then directly exercises cancellation and
+statement timeout with repeated AM KNN scans, lock timeout with `REINDEX INDEX
+CONCURRENTLY`, and scan/insert/vacuum/resource settings on those fixtures.
+Slow-disk runs the same AM-specific scan/insert/vacuum smoke against a
+provider-backed postmaster and requires a non-empty provider marker. I/O lanes
 still need mode-specific provider orchestration for read-vs-write error sweeps;
 until that is active for the target cluster, the CLI refuses non-dry-run
 execution rather than reporting a false pass. Memory-allocation failure still

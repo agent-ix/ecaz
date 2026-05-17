@@ -791,4 +791,39 @@ mod tests {
             other => panic!("unexpected command: {other:?}"),
         }
     }
+
+    #[test]
+    fn cli_parses_fault_provider_restart_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "provider-restart",
+            "--mode",
+            "slow-disk",
+            "--latency-ms",
+            "1",
+            "--marker",
+            "/tmp/ecaz-fault-provider.marker",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_fault_provider_restore_command() {
+        let cli =
+            Cli::try_parse_from(["ecaz", "dev", "fault", "provider-restore"]).expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
 }

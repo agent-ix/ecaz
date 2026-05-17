@@ -45,7 +45,7 @@ proptest! {
     #[test]
     fn dispatched_score_ip_from_parts_matches_scalar_reference(
         dim in prop::sample::select(&[8usize, 16, 32, 64, 128, 384][..]),
-        bits in 2u8..=8,
+        bits in prop_oneof![Just(3u8), Just(4u8), 2u8..=8],
         query_seed in 0u64..5000,
         candidate_seed in 5000u64..10000,
     ) {
@@ -63,7 +63,7 @@ proptest! {
     #[test]
     fn dispatched_code_to_code_score_matches_scalar_reference(
         dim in prop::sample::select(&[8usize, 16, 32, 64, 128, 384][..]),
-        bits in 2u8..=8,
+        bits in prop_oneof![Just(3u8), Just(4u8), 2u8..=8],
         left_seed in 10000u64..15000,
         right_seed in 15000u64..20000,
     ) {
@@ -94,11 +94,28 @@ proptest! {
             assert_close(&format!("fwht lane {index}"), *actual, *expected, 1.0e-5);
         }
     }
+
+    #[test]
+    fn packed_mse_indices_roundtrip_across_widths(
+        dim in 1usize..513,
+        bits in prop_oneof![Just(3u8), Just(4u8), 2u8..=8],
+        seed in 25000u64..30000,
+    ) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let max_index = 1u16 << bits;
+        let indices = (0..dim)
+            .map(|_| rng.gen_range(0..max_index))
+            .collect::<Vec<_>>();
+        let packed = pack_mse_indices(&indices, bits);
+        let unpacked = ecaz::bench_api::unpack_mse_indices(&packed, indices.len(), bits);
+        prop_assert_eq!(unpacked, indices);
+    }
 }
 
 #[test]
 fn production_1536_4bit_score_path_matches_scalar_reference() {
     let quantizer = ProdQuantizer::new(1536, 4, 42);
+    // Seeds are tied to the documented 1536/4 production baseline.
     let query = random_unit_vector(1536, 0x1536);
     let candidate = quantizer.encode(&random_unit_vector(1536, 0x4B17));
     let prepared = quantizer.prepare_ip_query(&query);
@@ -112,6 +129,98 @@ fn production_1536_4bit_score_path_matches_scalar_reference() {
         scalar,
         1.0e-5,
     );
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn forced_avx2_fma_score_paths_match_scalar_reference_when_available() {
+    let quantizer = ProdQuantizer::new(384, 4, 42);
+    let query = random_unit_vector(384, 0xA42);
+    let candidate = quantizer.encode(&random_unit_vector(384, 0xB43));
+    let prepared = quantizer.prepare_ip_query(&query);
+    let codes = code_bytes(&candidate);
+
+    if let Some(avx2) =
+        quantizer.score_ip_from_parts_avx2_fma_for_test(&prepared, candidate.gamma, &codes)
+    {
+        let scalar =
+            quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
+        assert_close("forced avx2 score_ip_from_parts", avx2, scalar, 1.0e-5);
+    }
+
+    let other = code_bytes(&quantizer.encode(&random_unit_vector(384, 0xC44)));
+    if let Some(avx2) = quantizer.score_ip_codes_lite_avx2_fma_for_test(&codes, &other) {
+        let scalar = quantizer.score_ip_codes_lite_scalar_reference(&codes, &other);
+        assert_close("forced avx2 score_ip_codes_lite", avx2, scalar, 1.0e-5);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn forced_neon_score_paths_match_scalar_reference_when_available() {
+    let quantizer = ProdQuantizer::new(384, 4, 42);
+    let query = random_unit_vector(384, 0xA42);
+    let candidate = quantizer.encode(&random_unit_vector(384, 0xB43));
+    let prepared = quantizer.prepare_ip_query(&query);
+    let codes = code_bytes(&candidate);
+
+    if let Some(neon) =
+        quantizer.score_ip_from_parts_neon_for_test(&prepared, candidate.gamma, &codes)
+    {
+        let scalar =
+            quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
+        assert_close("forced neon score_ip_from_parts", neon, scalar, 1.0e-5);
+    }
+
+    let other = code_bytes(&quantizer.encode(&random_unit_vector(384, 0xC44)));
+    if let Some(neon) = quantizer.score_ip_codes_lite_neon_for_test(&codes, &other) {
+        let scalar = quantizer.score_ip_codes_lite_scalar_reference(&codes, &other);
+        assert_close("forced neon score_ip_codes_lite", neon, scalar, 1.0e-5);
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn forced_avx2_fwht_matches_scalar_reference_when_available() {
+    let mut rng = ChaCha8Rng::seed_from_u64(0xF00D);
+    let mut avx2 = (0..4096)
+        .map(|_| rng.gen_range(-1.0f32..1.0f32))
+        .collect::<Vec<_>>();
+    let mut scalar = avx2.clone();
+
+    if ecaz::bench_api::fwht_in_place_avx2_for_test(&mut avx2) {
+        fwht_in_place_scalar_reference(&mut scalar);
+        for (index, (actual, expected)) in avx2.iter().zip(scalar.iter()).enumerate() {
+            assert_close(
+                &format!("forced avx2 fwht lane {index}"),
+                *actual,
+                *expected,
+                1.0e-5,
+            );
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn forced_neon_fwht_matches_scalar_reference_when_available() {
+    let mut rng = ChaCha8Rng::seed_from_u64(0xF00D);
+    let mut neon = (0..4096)
+        .map(|_| rng.gen_range(-1.0f32..1.0f32))
+        .collect::<Vec<_>>();
+    let mut scalar = neon.clone();
+
+    if ecaz::bench_api::fwht_in_place_neon_for_test(&mut neon) {
+        fwht_in_place_scalar_reference(&mut scalar);
+        for (index, (actual, expected)) in neon.iter().zip(scalar.iter()).enumerate() {
+            assert_close(
+                &format!("forced neon fwht lane {index}"),
+                *actual,
+                *expected,
+                1.0e-5,
+            );
+        }
+    }
 }
 
 #[test]

@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -13,6 +14,12 @@
 #include <unistd.h>
 
 static unsigned long long fault_counter = 0;
+
+struct open_how {
+    uint64_t flags;
+    uint64_t mode;
+    uint64_t resolve;
+};
 
 static int enabled(void) {
     const char *value = getenv("ECAZ_FAULT_PROVIDER_ENABLE");
@@ -155,6 +162,40 @@ int open64(const char *path, int flags, ...) {
         return -1;
     }
     return (flags & O_CREAT) ? real_open64(path, flags, mode) : real_open64(path, flags);
+}
+
+int openat(int dirfd, const char *path, int flags, ...) {
+    mode_t mode = 0;
+    if (flags & O_CREAT) {
+        va_list ap;
+        va_start(ap, flags);
+        mode = (mode_t)va_arg(ap, int);
+        va_end(ap);
+    }
+    if ((flags & O_CREAT) && should_fault_path("enospc-write", path)) {
+        errno = ENOSPC;
+        return -1;
+    }
+    maybe_sleep();
+    int (*real_openat)(int, const char *, int, ...) = real_symbol("openat");
+    if (!real_openat) {
+        return -1;
+    }
+    return (flags & O_CREAT)
+        ? real_openat(dirfd, path, flags, mode)
+        : real_openat(dirfd, path, flags);
+}
+
+int openat2(int dirfd, const char *path, const struct open_how *how, size_t size) {
+    int flags = how ? (int)how->flags : 0;
+    if ((flags & O_CREAT) && should_fault_path("enospc-write", path)) {
+        errno = ENOSPC;
+        return -1;
+    }
+    maybe_sleep();
+    int (*real_openat2)(int, const char *, const struct open_how *, size_t) =
+        real_symbol("openat2");
+    return real_openat2 ? real_openat2(dirfd, path, how, size) : -1;
 }
 
 ssize_t read(int fd, void *buf, size_t count) {
