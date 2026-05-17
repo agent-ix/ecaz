@@ -3,9 +3,11 @@
 Status: **implemented locally for currently-present SIMD paths** — successor to
 Task 34 (comprehensive hardening). The local implementation adds
 scalar-reference hooks, forced test-only backend entry points, `tests/simd_diff.rs`,
-`make simd-diff`, and `hardening-local` wiring. Current Linux x86 validation
-passes `cargo test --features bench --test simd_diff -- --test-threads=1` with
-9/9 tests passing, including product-quantizer scoring, FWHT, pack/unpack
+`make simd-diff`, `hardening-local` wiring, and a focused GitHub Actions
+`simd-diff` matrix over `ubuntu-24.04` x64 and `ubuntu-24.04-arm` arm64 runners.
+Current Linux x86 validation passes
+`cargo test --features bench --test simd_diff -- --test-threads=1` with 9/9
+tests passing, including product-quantizer scoring, FWHT, pack/unpack
 roundtrips, HNSW/DiskANN AM source inner-product SIMD lanes, and the production
 1536/4-bit score path. Miri scalar-reference coverage passes 19 `miri_` tests.
 A mutation-control run that perturbed the production score assertion failed as
@@ -83,6 +85,9 @@ Optional follow-on:
 
 - `make simd-diff` passes on macOS (Neon + scalar) and Linux x86 (Avx2Fma /
   Avx512 if available + scalar).
+- GitHub Actions runs the same `simd-diff` lane on x64 and arm64 Linux hosted
+  runners so AVX2/FMA and NEON regressions are PR-visible when those host
+  features are available.
 - `make hardening-local` includes `simd-diff` and stays under the existing wall
   clock budget by capping proptest cases per backend.
 - A deliberately mutated SIMD path (flip a sign in one branch) is caught by

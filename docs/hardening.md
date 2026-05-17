@@ -103,6 +103,9 @@ Seeded Miri coverage now includes:
   scalar-reference entry points in the same process, and also calls test-only
   AVX2/FMA or NEON entry points directly when the host supports them. This
   keeps backend pinning independent of `ECAZ_SIMD` process-global dispatch.
+- GitHub Actions runs the same lane in a focused `simd-diff` job on
+  `ubuntu-24.04` x64 and `ubuntu-24.04-arm` arm64 hosted runners so both AVX2
+  and NEON coverage are PR-visible.
 - Tolerances:
   - FWHT lanes: absolute/relative `1e-5`.
   - `score_ip_from_parts`: absolute/relative `1e-5`.
