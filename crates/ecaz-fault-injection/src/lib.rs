@@ -362,6 +362,8 @@ pub fn workload_vacuum_sql(access_method: FaultAm) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    use std::process::Command;
 
     #[test]
     fn all_lanes_cover_every_access_method() {
@@ -426,5 +428,57 @@ mod tests {
         assert!(env
             .iter()
             .any(|(key, value)| key == "ECAZ_FAULT_PROVIDER_AFTER" && value == "3"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_provider_returns_eio_for_matched_read() {
+        let provider = provider_library_path().expect("linux provider should be built");
+        let output = Command::new("/bin/cat")
+            .arg("/etc/hosts")
+            .env("LD_PRELOAD", provider)
+            .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+            .env("ECAZ_FAULT_PROVIDER_MODE", "eio-read")
+            .env("ECAZ_FAULT_PROVIDER_MATCH", "/etc/hosts")
+            .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .output()
+            .expect("run provider-backed cat");
+        assert!(
+            !output.status.success(),
+            "matched read should fail with EIO"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("Input/output error"),
+            "unexpected stderr: {stderr}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_provider_returns_enospc_for_matched_create() {
+        let provider = provider_library_path().expect("linux provider should be built");
+        let path = format!("/tmp/ecaz_fault_provider_write_test_{}", std::process::id());
+        let output = Command::new("dd")
+            .arg("if=/dev/zero")
+            .arg(format!("of={path}"))
+            .arg("bs=1")
+            .arg("count=1")
+            .env("LD_PRELOAD", provider)
+            .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+            .env("ECAZ_FAULT_PROVIDER_MODE", "enospc-write")
+            .env("ECAZ_FAULT_PROVIDER_MATCH", &path)
+            .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .output()
+            .expect("run provider-backed dd");
+        assert!(
+            !output.status.success(),
+            "matched create should fail with ENOSPC"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("No space left on device"),
+            "unexpected stderr: {stderr}"
+        );
     }
 }
