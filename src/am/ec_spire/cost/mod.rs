@@ -7,6 +7,7 @@ use super::{
 use crate::am::common::cost::{
     self, current_planner_cost_constants, PlannerCostConstants, PlannerCostEstimate,
 };
+use crate::storage::relation_guard::IndexRelationGuard;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireIndexCostSnapshot {
@@ -71,9 +72,12 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
         pgrx::pgrx_extern_c_guard(|| {
             let index_info = (*path).indexinfo;
             let index_oid = (*index_info).indexoid;
-            let index_relation = pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
-            let estimate = compute_amcostestimate(index_relation);
-            pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+            let index_relation = IndexRelationGuard::open(
+                index_oid,
+                pg_sys::NoLock as pg_sys::LOCKMODE,
+                "ec_spire planner",
+            );
+            let estimate = compute_amcostestimate(index_relation.as_ptr());
 
             *index_startup_cost = estimate.startup_cost;
             *index_total_cost = estimate.total_cost;

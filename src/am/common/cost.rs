@@ -1,6 +1,7 @@
 use pgrx::pg_sys;
 
 use crate::am::ec_hnsw::{options, page, shared};
+use crate::storage::relation_guard::IndexRelationGuard;
 
 // Ordered ec_hnsw scoring walks LUT-backed quantized codes, not full raw-f32
 // arithmetic at every candidate. Charging the planner the full raw dimension
@@ -281,9 +282,12 @@ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
         pgrx::pgrx_extern_c_guard(|| {
             let index_info = (*path).indexinfo;
             let index_oid = (*index_info).indexoid;
-            let index_relation = pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
-            let estimate = compute_amcostestimate(index_relation, index_info);
-            pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+            let index_relation = IndexRelationGuard::open(
+                index_oid,
+                pg_sys::NoLock as pg_sys::LOCKMODE,
+                "ec_hnsw planner",
+            );
+            let estimate = compute_amcostestimate(index_relation.as_ptr(), index_info);
 
             *index_startup_cost = estimate.startup_cost;
             *index_total_cost = estimate.total_cost;
