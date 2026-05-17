@@ -1115,10 +1115,12 @@ async fn assert_pg_buffercache_fixture_pins(
         .get::<_, i64>(0);
     crate::ecaz_println!("[fault] pg_buffercache_fixture_pins={pinned}");
     if pinned != 0 {
+        crate::ecaz_println!("[fault] pg_buffercache_fixture_pins_ok=false pins={pinned}");
         return Err(eyre!(
             "{lane} postcondition failed: pg_buffercache fixture pin count returned {pinned}"
         ));
     }
+    crate::ecaz_println!("[fault] pg_buffercache_fixture_pins_ok=true pins=0");
     Ok(())
 }
 
@@ -1178,6 +1180,8 @@ fn assert_query_canceled(label: &str, result: Result<(), tokio_postgres::Error>)
     assert_sqlstate(label, result, "57014")
 }
 
+// Provider-backed I/O can surface through several PostgreSQL error classes,
+// but unexpected SQLSTATEs still indicate the lane stopped proving EIO/ENOSPC.
 fn assert_provider_sql_error(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
     match result {
         Ok(()) => Err(eyre!("{label} probe unexpectedly succeeded")),
@@ -1199,6 +1203,8 @@ fn provider_sqlstate_allowed(db: &tokio_postgres::error::DbError) -> bool {
         || (db.code().code() == "XX000" && db.message().contains("checkpoint request failed"))
 }
 
+// pgrx reports the injected fault as an internal ERROR, so match the extension
+// diagnostic instead of accepting all XX000 failures.
 fn assert_ecaz_palloc_error(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
     match result {
         Ok(()) => Err(eyre!("{label} probe unexpectedly succeeded")),
