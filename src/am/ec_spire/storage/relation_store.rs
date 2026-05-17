@@ -1245,11 +1245,42 @@ pub(super) struct SpireRelationObjectStoreSet {
     config: Option<SpireLocalStoreConfig>,
     stores: Vec<SpireRelationObjectStore>,
     store_indexes_by_key: HashMap<(u32, u32), usize>,
-    opened_relations: Vec<(pg_sys::Relation, pg_sys::LOCKMODE)>,
+    opened_relations: Vec<OpenedStoreRelation>,
+}
+
+struct OpenedStoreRelation {
+    relation: pg_sys::Relation,
+    lockmode: pg_sys::LOCKMODE,
+}
+
+impl OpenedStoreRelation {
+    fn open(relid: pg_sys::Oid, lockmode: pg_sys::LOCKMODE) -> Option<Self> {
+        // SAFETY: PostgreSQL owns the relation cache entry returned by
+        // `relation_open`; this wrapper owns the matching close for `lockmode`.
+        let relation = unsafe { pg_sys::relation_open(relid, lockmode) };
+        if relation.is_null() {
+            return None;
+        }
+        Some(Self { relation, lockmode })
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for OpenedStoreRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `relation_open` in
+        // `OpenedStoreRelation::open`; this wrapper owns the matching close.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::relation_close(self.relation, self.lockmode) };
+    }
 }
 
 struct OpenedRelationsGuard {
-    relations: Vec<(pg_sys::Relation, pg_sys::LOCKMODE)>,
+    relations: Vec<OpenedStoreRelation>,
 }
 
 impl OpenedRelationsGuard {
@@ -1259,19 +1290,26 @@ impl OpenedRelationsGuard {
         }
     }
 
-    fn push(&mut self, relation: pg_sys::Relation, lockmode: pg_sys::LOCKMODE) {
-        self.relations.push((relation, lockmode));
+    fn open(
+        &mut self,
+        relid: pg_sys::Oid,
+        lockmode: pg_sys::LOCKMODE,
+    ) -> Option<pg_sys::Relation> {
+        let relation = OpenedStoreRelation::open(relid, lockmode)?;
+        let ptr = relation.as_ptr();
+        self.relations.push(relation);
+        Some(ptr)
     }
 
-    fn into_inner(mut self) -> Vec<(pg_sys::Relation, pg_sys::LOCKMODE)> {
+    fn into_inner(mut self) -> Vec<OpenedStoreRelation> {
         std::mem::take(&mut self.relations)
     }
 }
 
 impl Drop for OpenedRelationsGuard {
     fn drop(&mut self) {
-        for (relation, lockmode) in self.relations.drain(..).rev() {
-            unsafe { pg_sys::relation_close(relation, lockmode) };
+        for relation in self.relations.drain(..).rev() {
+            drop(relation);
         }
     }
 }
@@ -1301,14 +1339,12 @@ impl SpireRelationObjectStoreSet {
                 index_relation
             } else {
                 let relid = pg_sys::Oid::from(descriptor.store_relid);
-                let relation = unsafe { pg_sys::relation_open(relid, lockmode) };
-                if relation.is_null() {
+                let Some(relation) = opened_relations.open(relid, lockmode) else {
                     return Err(format!(
                         "ec_spire failed to open local_store_id {} relation {}",
                         descriptor.local_store_id, descriptor.store_relid
                     ));
-                }
-                opened_relations.push(relation, lockmode);
+                };
                 relation
             };
             stores.push(SpireRelationObjectStore::for_store_relation_id(
@@ -1370,13 +1406,11 @@ impl SpireRelationObjectStoreSet {
                 index_relation
             } else {
                 let relid = pg_sys::Oid::from(store_relid);
-                let relation = unsafe { pg_sys::relation_open(relid, lockmode) };
-                if relation.is_null() {
+                let Some(relation) = opened_relations.open(relid, lockmode) else {
                     return Err(format!(
                         "ec_spire failed to open local_store_id {local_store_id} relation {store_relid}"
                     ));
-                }
-                opened_relations.push(relation, lockmode);
+                };
                 relation
             };
             stores.push(SpireRelationObjectStore::for_store_relation_id(
@@ -1570,8 +1604,8 @@ impl SpireRelationObjectStoreSet {
 
 impl Drop for SpireRelationObjectStoreSet {
     fn drop(&mut self) {
-        for (relation, lockmode) in self.opened_relations.drain(..).rev() {
-            unsafe { pg_sys::relation_close(relation, lockmode) };
+        for relation in self.opened_relations.drain(..).rev() {
+            drop(relation);
         }
     }
 }
