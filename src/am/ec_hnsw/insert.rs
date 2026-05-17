@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::HashMap, ptr};
 use pgrx::pg_sys;
 
 use super::{build, graph, options, page, search, shared, source};
-use crate::storage::wal;
+use crate::storage::{slot_guard::TupleTableSlotGuard, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
@@ -21,7 +21,7 @@ enum InsertSearchMetric {
 struct InsertHeapSourceScorer {
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
+    slot: TupleTableSlotGuard,
     source_attribute: source::SourceAttribute,
 }
 
@@ -42,12 +42,9 @@ impl InsertHeapSourceScorer {
         heap_relation: pg_sys::Relation,
         source_attribute: source::SourceAttribute,
     ) -> Self {
-        let slot = unsafe {
-            source::allocate_heap_slot(
-                heap_relation,
-                "ec_hnsw aminsert failed to allocate a heap source slot",
-            )
-        };
+        let slot = TupleTableSlotGuard::single_for_heap(heap_relation).unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw aminsert failed to allocate a heap source slot")
+        });
 
         Self {
             heap_relation,
@@ -63,14 +60,14 @@ impl InsertHeapSourceScorer {
                 self.heap_relation,
                 heap_tid,
                 self.snapshot,
-                self.slot,
+                self.slot.as_ptr(),
                 self.source_attribute,
                 label,
             )
         };
         let vector = source.as_slice().to_vec();
         drop(source);
-        unsafe { pg_sys::ExecClearTuple(self.slot) };
+        unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         vector
     }
 
@@ -88,7 +85,7 @@ impl InsertHeapSourceScorer {
                     self.heap_relation,
                     heap_tid,
                     self.snapshot,
-                    self.slot,
+                    self.slot.as_ptr(),
                     self.source_attribute,
                     label,
                 )
@@ -104,7 +101,7 @@ impl InsertHeapSourceScorer {
                 }
             }
             drop(source);
-            unsafe { pg_sys::ExecClearTuple(self.slot) };
+            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         }
 
         representative
@@ -172,14 +169,6 @@ impl InsertHeapSourceScorer {
             pgrx::error!("ec_hnsw live insert source scoring requires source data")
         });
         source::negative_inner_product(&target_source, new_source)
-    }
-}
-
-impl Drop for InsertHeapSourceScorer {
-    fn drop(&mut self) {
-        if !self.slot.is_null() {
-            unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
-        }
     }
 }
 
