@@ -14665,6 +14665,22 @@ fn ec_spire_delete_placement_row(index_oid: pg_sys::Oid, pk_value: &[u8]) -> Res
     })
 }
 
+fn ec_spire_index_heap_relation_oid(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Oid {
+    let index_relation = open_valid_ec_spire_index_guard(index_oid, caller_name);
+    // SAFETY: `index_relation` is a live opened index relation for the duration
+    // of this copy, and `rd_index` is PostgreSQL's index metadata for it.
+    unsafe {
+        (*index_relation.as_ptr())
+            .rd_index
+            .as_ref()
+            .expect("opened index relation should expose pg_index metadata")
+            .indrelid
+    }
+}
+
 #[pg_extern(strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_insert_tuple_payload(
@@ -14681,16 +14697,8 @@ fn ec_spire_remote_insert_tuple_payload(
         name!(status, &'static str),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_insert_tuple_payload") };
-    let heap_relation_oid = unsafe {
-        (*index_relation)
-            .rd_index
-            .as_ref()
-            .expect("opened index relation should expose pg_index metadata")
-            .indrelid
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_relation_oid =
+        ec_spire_index_heap_relation_oid(index_oid, "ec_spire_remote_insert_tuple_payload");
 
     if requested_columns.is_empty() {
         pgrx::error!("ec_spire_remote_insert_tuple_payload requested column list must be nonempty");
@@ -14915,16 +14923,8 @@ fn ec_spire_remote_update_tuple_payload(
         name!(status, &'static str),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_update_tuple_payload") };
-    let heap_relation_oid = unsafe {
-        (*index_relation)
-            .rd_index
-            .as_ref()
-            .expect("opened index relation should expose pg_index metadata")
-            .indrelid
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_relation_oid =
+        ec_spire_index_heap_relation_oid(index_oid, "ec_spire_remote_update_tuple_payload");
 
     if pk_column.is_empty() {
         pgrx::error!("ec_spire_remote_update_tuple_payload pk_column must be nonempty");
@@ -14975,16 +14975,8 @@ fn ec_spire_remote_delete_tuple_payload(
         name!(status, &'static str),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_delete_tuple_payload") };
-    let heap_relation_oid = unsafe {
-        (*index_relation)
-            .rd_index
-            .as_ref()
-            .expect("opened index relation should expose pg_index metadata")
-            .indrelid
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_relation_oid =
+        ec_spire_index_heap_relation_oid(index_oid, "ec_spire_remote_delete_tuple_payload");
 
     if pk_column.is_empty() {
         pgrx::error!("ec_spire_remote_delete_tuple_payload pk_column must be nonempty");
@@ -15026,16 +15018,8 @@ fn ec_spire_remote_select_tuple_payload(
         name!(status, &'static str),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_select_tuple_payload") };
-    let heap_relation_oid = unsafe {
-        (*index_relation)
-            .rd_index
-            .as_ref()
-            .expect("opened index relation should expose pg_index metadata")
-            .indrelid
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_relation_oid =
+        ec_spire_index_heap_relation_oid(index_oid, "ec_spire_remote_select_tuple_payload");
 
     if pk_column.is_empty() {
         pgrx::error!("ec_spire_remote_select_tuple_payload pk_column must be nonempty");
