@@ -33,23 +33,22 @@ if [[ $FORCE -eq 0 ]] && comparator_extension_installed vectorscale; then
   exit 0
 fi
 
-# pgvectorscale 0.9.0 (latest as of 2026-05-17) pins pgrx 0.16.1
-# while ecaz's host-wide cargo-pgrx is 0.17. cargo-pgrx requires
-# exact version match. Until pgvectorscale ships a pgrx-0.17 release,
-# building it requires installing a parallel cargo-pgrx 0.16.1
-# (e.g. into ~/.cargo/bin-pgrx-0.16/) and switching PATH for this
-# build. Skipping for now and emitting a clear gap message.
-INSTALLED_CARGO_PGRX="$(cargo pgrx --version 2>/dev/null | head -1 || true)"
-if [[ "$INSTALLED_CARGO_PGRX" != *"0.16"* ]]; then
-  comparator_log "GAP: pgvectorscale $PGVECTORSCALE_VERSION requires cargo-pgrx 0.16.x"
-  comparator_log "     local cargo-pgrx is: ${INSTALLED_CARGO_PGRX:-not installed}"
-  comparator_log "     install a parallel 0.16 toolchain first:"
-  comparator_log "       cargo install --locked --root /var/lib/pgsql/.cargo-pgrx-0.16 cargo-pgrx@0.16.1"
-  comparator_log "       PATH=/var/lib/pgsql/.cargo-pgrx-0.16/bin:\$PATH $0"
-  exit 2
+# pgvectorscale 0.9.0 (latest) supports PG17/PG18 but pins pgrx 0.16.x.
+# cargo-pgrx requires exact version match with the project's pgrx
+# dependency, so we install cargo-pgrx 0.16.1 into a parallel cargo
+# root and use it just for this build. ecaz's host-wide cargo-pgrx
+# 0.17 is unaffected; they coexist as separate binaries.
+CARGO_PGRX_0_16_ROOT="${CARGO_PGRX_0_16_ROOT:-/var/lib/pgsql/.cargo-pgrx-0.16}"
+CARGO_PGRX_0_16_BIN="$CARGO_PGRX_0_16_ROOT/bin/cargo-pgrx"
+if [[ ! -x "$CARGO_PGRX_0_16_BIN" ]]; then
+  comparator_log "installing parallel cargo-pgrx 0.16.1 into $CARGO_PGRX_0_16_ROOT"
+  cargo install --locked --root "$CARGO_PGRX_0_16_ROOT" cargo-pgrx@0.16.1
 fi
 
-comparator_log "building pgvectorscale $PGVECTORSCALE_VERSION (Rust + pgrx)"
+comparator_log "cargo-pgrx 0.16 from $CARGO_PGRX_0_16_ROOT/bin:"
+"$CARGO_PGRX_0_16_BIN" --version
+
+comparator_log "building pgvectorscale $PGVECTORSCALE_VERSION (Rust + pgrx 0.16)"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
@@ -60,6 +59,9 @@ if [[ ! -d pgvectorscale || $FORCE -eq 1 ]]; then
 fi
 
 cd pgvectorscale/pgvectorscale
-cargo pgrx install --release --sudo --pg-config "$PG_CONFIG"
+# Use the parallel cargo-pgrx 0.16 explicitly. PATH manipulation
+# scoped to this subshell only.
+PATH="$CARGO_PGRX_0_16_ROOT/bin:$PATH" \
+  cargo pgrx install --release --sudo --pg-config "$PG_CONFIG"
 
 comparator_log "installed. Run: psql -c 'CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;'"
