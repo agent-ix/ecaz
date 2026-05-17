@@ -3221,8 +3221,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     HeapTidCoords,
     bool,
 ) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_lifecycle");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -3271,7 +3272,6 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         first_tid,
         second_tid,
@@ -3290,8 +3290,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (HeapTidCoords, usize) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_neighbors");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -3322,7 +3323,6 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         debug_item_pointer_coords(current_result_tid),
         neighbors.tids.len(),
@@ -3341,8 +3341,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
     f32,
     f32,
 ) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_heap_progress");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -3375,7 +3376,6 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         element_tid,
         first_heap_tid,
@@ -3388,8 +3388,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_backward_after_rescan");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -3405,8 +3406,9 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<HeapTidCoords>, Vec<HeapTidCoords>) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_rescan_after_exhaustion");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -3438,7 +3440,6 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (first_pass, rescanned)
 }
 
@@ -3447,8 +3448,9 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (HeapTidCoords, Vec<HeapTidCoords>) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_rescan_after_partial");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -3481,24 +3483,22 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (first_tid, tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_entry_point_neighbor_tids");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
     let (_element, neighbors) =
         unsafe { graph::load_exact_graph_adjacency(index_relation, metadata.entry_point, storage) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     neighbors
         .tids
         .into_iter()
