@@ -7,6 +7,8 @@ use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 use crate::am::common::explain::IvfExplainCounters;
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
+#[cfg(feature = "pg18")]
+use crate::storage::buffer_guard::PinnedBufferGuard;
 use crate::storage::{
     page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
     snapshot_guard::RegisteredSnapshotGuard,
@@ -1175,7 +1177,10 @@ unsafe fn prefetch_heap_rerank_blocks(
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
+        // SAFETY: `read_stream_next_buffer` returns a valid pinned buffer
+        // until the stream is exhausted; the guard owns the release.
+        let _buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
+            .unwrap_or_else(|| pgrx::error!("ec_ivf read stream returned an invalid buffer"));
     }
 
     unsafe { pg_sys::read_stream_end(stream) };
