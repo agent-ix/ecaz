@@ -14,6 +14,9 @@ Action:
 
 - keep migrating production entrypoints to guard-owning code,
 - add a validation-only helper for callers that only need AM/relkind checks,
+- prefer re-opening short guards over one long guard when the long guard would
+  span environment-variable lookups, FFI calls into non-PostgreSQL code, SPI
+  work, or large control-flow regions,
 - delete raw `open_valid_ec_hnsw_index`, `open_valid_ec_ivf_index`,
   `open_valid_ec_spire_index`, and `open_valid_ec_diskann_index` after the last
   caller migrates.

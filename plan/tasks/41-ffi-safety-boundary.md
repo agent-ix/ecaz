@@ -23,6 +23,9 @@ Closeout requirements for this subtrack:
 - consolidate validation-only callsites behind a small helper that opens,
   validates, and drops when no AM read is needed,
 - keep AM helper calls scoped so raw relation pointers never escape the guard,
+- prefer re-opening short guards over one long guard when a long guard would
+  span environment-variable lookups, non-PostgreSQL FFI, SPI, or broad
+  diagnostic control flow,
 - keep SPI and local heap helper work outside relation-guard scopes unless the
   AM explicitly requires the relation to remain open.
 
