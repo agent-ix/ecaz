@@ -225,6 +225,43 @@ impl Drop for AccessShareIndexRelation {
     }
 }
 
+struct AccessShareHeapRelation {
+    relation: pg_sys::Relation,
+}
+
+impl AccessShareHeapRelation {
+    fn open(heap_relation_oid: pg_sys::Oid) -> Option<Self> {
+        // SAFETY: PostgreSQL owns the relation cache entry returned by
+        // `table_open`; this guard owns the matching AccessShareLock close.
+        let relation = unsafe {
+            pg_sys::table_open(
+                heap_relation_oid,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+        if relation.is_null() {
+            return None;
+        }
+        Some(Self { relation })
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for AccessShareHeapRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `table_open` in
+        // `AccessShareHeapRelation::open`; this guard owns the matching close.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe {
+            pg_sys::table_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+    }
+}
+
 type RelcacheCallbackFunction =
     Option<unsafe extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
 
@@ -419,18 +456,12 @@ pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
     }
     RELATION_CONTEXT_CACHE_MISSES.fetch_add(1, Ordering::Relaxed);
 
-    let heap_relation = unsafe {
-        pg_sys::table_open(
-            heap_relation_oid,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )
-    };
-    if heap_relation.is_null() {
+    let Some(heap_relation) = AccessShareHeapRelation::open(heap_relation_oid) else {
         return Err("ec_spire DML frontdoor catalog relation open returned NULL".to_owned());
-    }
+    };
 
     let result = unsafe {
-        dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation).map(
+        dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation.as_ptr()).map(
             |(context, watched_relation_oids)| {
                 RELATION_CONTEXT_CACHE
                     .get_or_init(|| Mutex::new(HashMap::new()))
@@ -449,7 +480,6 @@ pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
             },
         )
     };
-    unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
