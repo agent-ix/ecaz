@@ -111,6 +111,143 @@ unsafe fn load_custom_scan_placement_directory(
     Ok(placement_directory)
 }
 
+struct OpenTableRelation {
+    relation: pg_sys::Relation,
+}
+
+impl OpenTableRelation {
+    fn open(relation_oid: pg_sys::Oid) -> Option<Self> {
+        if relation_oid == pg_sys::InvalidOid {
+            return None;
+        }
+        // SAFETY: PostgreSQL owns the relation cache entry returned by
+        // `table_open`; this guard owns the matching AccessShareLock close.
+        let relation =
+            unsafe { pg_sys::table_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            return None;
+        }
+        Some(Self { relation })
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for OpenTableRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `table_open` in
+        // `OpenTableRelation::open`; this guard owns the matching close.
+        unsafe {
+            pg_sys::table_close(
+                self.relation,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            );
+        }
+    }
+}
+
+struct ActiveSnapshotGuard {
+    snapshot: pg_sys::Snapshot,
+}
+
+impl ActiveSnapshotGuard {
+    fn latest() -> Option<Self> {
+        // SAFETY: `GetLatestSnapshot` returns a PostgreSQL snapshot pointer
+        // valid for registration in the current backend context.
+        let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+        if snapshot.is_null() {
+            return None;
+        }
+        // SAFETY: `snapshot` is registered above and remains registered until
+        // this guard drops.
+        unsafe { pg_sys::PushActiveSnapshot(snapshot) };
+        Some(Self { snapshot })
+    }
+
+    fn as_ptr(&self) -> pg_sys::Snapshot {
+        self.snapshot
+    }
+}
+
+impl Drop for ActiveSnapshotGuard {
+    fn drop(&mut self) {
+        // SAFETY: `snapshot` was pushed by `ActiveSnapshotGuard::latest` and
+        // remains registered until this drop runs.
+        unsafe {
+            pg_sys::PopActiveSnapshot();
+            pg_sys::UnregisterSnapshot(self.snapshot);
+        }
+    }
+}
+
+struct IndexScanGuard {
+    scan: pg_sys::IndexScanDesc,
+}
+
+impl IndexScanGuard {
+    fn begin(
+        relation: pg_sys::Relation,
+        index: pg_sys::Relation,
+        snapshot: pg_sys::Snapshot,
+    ) -> Option<Self> {
+        #[cfg(feature = "pg18")]
+        // SAFETY: `relation`, `index`, and `snapshot` are owned by live guards
+        // in the caller; this guard owns the matching `index_endscan`.
+        let scan =
+            unsafe { pg_sys::index_beginscan(relation, index, snapshot, ptr::null_mut(), 1, 0) };
+        #[cfg(not(feature = "pg18"))]
+        // SAFETY: `relation`, `index`, and `snapshot` are owned by live guards
+        // in the caller; this guard owns the matching `index_endscan`.
+        let scan = unsafe { pg_sys::index_beginscan(relation, index, snapshot, 1, 0) };
+        if scan.is_null() {
+            return None;
+        }
+        Some(Self { scan })
+    }
+
+    fn as_ptr(&self) -> pg_sys::IndexScanDesc {
+        self.scan
+    }
+}
+
+impl Drop for IndexScanGuard {
+    fn drop(&mut self) {
+        // SAFETY: `scan` was returned by `index_beginscan` in
+        // `IndexScanGuard::begin`; this guard owns the matching end call.
+        unsafe { pg_sys::index_endscan(self.scan) };
+    }
+}
+
+struct TupleTableSlotGuard {
+    slot: *mut pg_sys::TupleTableSlot,
+}
+
+impl TupleTableSlotGuard {
+    fn create(relation: pg_sys::Relation) -> Option<Self> {
+        // SAFETY: `relation` is owned by a live table-relation guard in the
+        // caller; this guard owns the returned slot.
+        let slot = unsafe { pg_sys::table_slot_create(relation, std::ptr::null_mut()) };
+        if slot.is_null() {
+            return None;
+        }
+        Some(Self { slot })
+    }
+
+    fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
+        self.slot
+    }
+}
+
+impl Drop for TupleTableSlotGuard {
+    fn drop(&mut self) {
+        // SAFETY: `slot` was returned by `table_slot_create` in
+        // `TupleTableSlotGuard::create`; this guard owns the matching drop.
+        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+    }
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
     root: *mut pg_sys::PlannerInfo,
@@ -365,16 +502,10 @@ unsafe fn custom_scan_candidate_index_oid(
         if index_info.relam != ec_spire_am_oid {
             continue;
         }
-        let index_relation = unsafe {
-            pg_sys::index_open(
-                index_info.indexoid,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
+        let Some(index_relation) = OpenIndexRelation::open(index_info.indexoid) else {
+            continue;
         };
-        let eligibility = unsafe { custom_scan_index_eligibility_result(index_relation) };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        let eligibility = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) };
         if let Ok(row) = eligibility {
             if row.eligible_for_custom_scan {
                 return Some((index_info.indexoid, row));
@@ -444,22 +575,12 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
         if placement_by_index_oid == pg_sys::InvalidOid {
             return false;
         }
-        let placement_relation =
-            pg_sys::table_open(placement_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        if placement_relation.is_null() {
+        let Some(placement_relation) = OpenTableRelation::open(placement_oid) else {
             return false;
-        }
-        let placement_index = pg_sys::index_open(
-            placement_by_index_oid,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        );
-        if placement_index.is_null() {
-            pg_sys::table_close(
-                placement_relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            );
+        };
+        let Some(placement_index) = OpenIndexRelation::open(placement_by_index_oid) else {
             return false;
-        }
+        };
 
         let mut scan_key = std::mem::MaybeUninit::<pg_sys::ScanKeyData>::zeroed().assume_init();
         pg_sys::ScanKeyInit(
@@ -469,48 +590,25 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
             pg_sys::F_OIDEQ.into(),
             index_oid.into(),
         );
-        let snapshot = pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot());
-        if snapshot.is_null() {
-            pg_sys::index_close(placement_index, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            pg_sys::table_close(
-                placement_relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            );
+        let Some(snapshot) = ActiveSnapshotGuard::latest() else {
             return false;
-        }
-        pg_sys::PushActiveSnapshot(snapshot);
-        #[cfg(feature = "pg18")]
-        let scan = pg_sys::index_beginscan(
-            placement_relation,
-            placement_index,
-            snapshot,
-            ptr::null_mut(),
-            1,
-            0,
-        );
-        #[cfg(not(feature = "pg18"))]
-        let scan = pg_sys::index_beginscan(placement_relation, placement_index, snapshot, 1, 0);
-        let slot = pg_sys::table_slot_create(placement_relation, std::ptr::null_mut());
-        let found = if scan.is_null() || slot.is_null() {
-            false
-        } else {
-            pg_sys::index_rescan(scan, &mut scan_key, 1, ptr::null_mut(), 0);
-            pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
         };
-        if !scan.is_null() {
-            pg_sys::index_endscan(scan);
-        }
-        if !slot.is_null() {
-            pg_sys::ExecDropSingleTupleTableSlot(slot);
-        }
-        pg_sys::PopActiveSnapshot();
-        pg_sys::UnregisterSnapshot(snapshot);
-        pg_sys::index_close(placement_index, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        pg_sys::table_close(
-            placement_relation,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        );
-        found
+        let Some(scan) = IndexScanGuard::begin(
+            placement_relation.as_ptr(),
+            placement_index.as_ptr(),
+            snapshot.as_ptr(),
+        ) else {
+            return false;
+        };
+        let Some(slot) = TupleTableSlotGuard::create(placement_relation.as_ptr()) else {
+            return false;
+        };
+        pg_sys::index_rescan(scan.as_ptr(), &mut scan_key, 1, ptr::null_mut(), 0);
+        pg_sys::index_getnext_slot(
+            scan.as_ptr(),
+            pg_sys::ScanDirection::ForwardScanDirection,
+            slot.as_ptr(),
+        )
     }
 }
 
@@ -606,4 +704,3 @@ unsafe fn add_dml_pk_select_custom_scan_path(
 
     unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
 }
-
