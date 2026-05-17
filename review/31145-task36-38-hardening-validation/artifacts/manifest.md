@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `bb1581771901ae933d4301d9c83a9442a187e7df`
+Code checkpoint SHA: `6ad7f81d7b514fe47b187ebc2562dd97cb3958b9`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T06:09:16Z`
+Timestamp: `2026-05-17T15:26:18Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -111,6 +111,12 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 backend-SIGKILL OOM-proxy smoke across all AMs
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-oom-kill-all-ams.log`
 - Key result: all four AMs completed palloc smoke plus backend-SIGKILL build, scan, and insert checks. Twelve SIGKILL cases recovered the postmaster; shared postconditions passed with `pg_buffercache_fixture_pins=0`; `pg_stat_io_ops_before=189 after=66` was recorded as a stats reset after crash recovery.
+
+## task38-pg18-memory-hnsw-pin-marker.log
+
+- Lane: Task 38 structured buffer-pin marker smoke
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --am hnsw --rows 32" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-hnsw-pin-marker.log`
+- Key result: HNSW memory smoke passed palloc plus backend-SIGKILL build/scan/insert checks and emitted the structured postcondition marker `pg_buffercache_fixture_pins_ok=true pins=0` with `pg_stat_io_ops_before=42 after=68`.
 
 ## task38-pg18-lock-rollback-guard.log
 

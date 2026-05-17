@@ -48,7 +48,8 @@ fixture bug where long run ids placed Unix sockets under paths longer than
 PostgreSQL allows. Those live lanes tag their sessions and assert
 postconditions for leftover fault sessions, locks, prepared transactions,
 optional `pg_buffercache` fixture pins, and optional `pg_stat_io`
-non-decreasing operation counters.
+non-decreasing operation counters. Buffer-pin probes now also print a
+structured `pg_buffercache_fixture_pins_ok=<bool>` marker for packet checks.
 
 ## Scope Boundary
 
