@@ -111,43 +111,6 @@ unsafe fn load_custom_scan_placement_directory(
     Ok(placement_directory)
 }
 
-struct OpenTableRelation {
-    relation: pg_sys::Relation,
-}
-
-impl OpenTableRelation {
-    fn open(relation_oid: pg_sys::Oid) -> Option<Self> {
-        if relation_oid == pg_sys::InvalidOid {
-            return None;
-        }
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `table_open`; this guard owns the matching AccessShareLock close.
-        let relation =
-            unsafe { pg_sys::table_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        if relation.is_null() {
-            return None;
-        }
-        Some(Self { relation })
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for OpenTableRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `table_open` in
-        // `OpenTableRelation::open`; this guard owns the matching close.
-        unsafe {
-            pg_sys::table_close(
-                self.relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            );
-        }
-    }
-}
-
 struct ActiveSnapshotGuard {
     snapshot: pg_sys::Snapshot,
 }
@@ -502,7 +465,11 @@ unsafe fn custom_scan_candidate_index_oid(
         if index_info.relam != ec_spire_am_oid {
             continue;
         }
-        let Some(index_relation) = OpenIndexRelation::open(index_info.indexoid) else {
+        let Some(index_relation) =
+            crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                index_info.indexoid,
+            )
+        else {
             continue;
         };
         let eligibility = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) };
@@ -575,10 +542,16 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
         if placement_by_index_oid == pg_sys::InvalidOid {
             return false;
         }
-        let Some(placement_relation) = OpenTableRelation::open(placement_oid) else {
+        let Some(placement_relation) =
+            crate::storage::relation_guard::HeapRelationGuard::try_access_share(placement_oid)
+        else {
             return false;
         };
-        let Some(placement_index) = OpenIndexRelation::open(placement_by_index_oid) else {
+        let Some(placement_index) =
+            crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                placement_by_index_oid,
+            )
+        else {
             return false;
         };
 

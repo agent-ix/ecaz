@@ -5,46 +5,6 @@ struct SpireCustomScanExplainContext {
     rerank_width: i64,
 }
 
-struct OpenIndexRelation {
-    relation: pg_sys::Relation,
-}
-
-impl OpenIndexRelation {
-    fn open(index_oid: pg_sys::Oid) -> Option<Self> {
-        if index_oid == pg_sys::InvalidOid {
-            return None;
-        }
-
-        // SAFETY: `index_oid` comes from the CustomScan private plan data and
-        // PostgreSQL owns the returned relation pointer until `index_close`.
-        let relation = unsafe {
-            pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
-        };
-        if relation.is_null() {
-            None
-        } else {
-            Some(Self { relation })
-        }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for OpenIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `index_open` in `OpenIndexRelation::open`
-        // and this guard owns the matching `index_close` responsibility.
-        unsafe {
-            pg_sys::index_close(
-                self.relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            );
-        }
-    }
-}
-
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
     node: *mut pg_sys::CustomScanState,
@@ -90,7 +50,17 @@ unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
 }
 
 fn custom_scan_explain_context(index_oid: pg_sys::Oid) -> SpireCustomScanExplainContext {
-    let Some(index_relation) = OpenIndexRelation::open(index_oid) else {
+    if index_oid == pg_sys::InvalidOid {
+        return SpireCustomScanExplainContext {
+            remote_fanout: 0,
+            nprobe: 0,
+            rerank_width: 0,
+        };
+    }
+
+    let Some(index_relation) =
+        crate::storage::relation_guard::IndexRelationGuard::try_access_share(index_oid)
+    else {
         return SpireCustomScanExplainContext {
             remote_fanout: 0,
             nprobe: 0,
@@ -98,8 +68,9 @@ fn custom_scan_explain_context(index_oid: pg_sys::Oid) -> SpireCustomScanExplain
         };
     };
 
-    // SAFETY: The relation pointer is owned by `OpenIndexRelation` and remains
-    // open under AccessShareLock while these helpers read relation metadata.
+    // SAFETY: The relation pointer is owned by `IndexRelationGuard` and
+    // remains open under AccessShareLock while these helpers read relation
+    // metadata.
     let eligibility = unsafe { custom_scan_index_eligibility_row(index_relation.as_ptr()) };
     // SAFETY: Same open index relation; the helper only reads reloptions.
     let relation_options = unsafe { super::options::relation_options(index_relation.as_ptr()) };
