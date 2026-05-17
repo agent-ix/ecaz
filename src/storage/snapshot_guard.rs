@@ -1,3 +1,7 @@
+//! Snapshot guards split PostgreSQL's two ownership patterns:
+//! `RegisteredSnapshotGuard` owns register/unregister only, while
+//! `ActiveSnapshotGuard` also pushes/pops the backend active-snapshot stack.
+
 use pgrx::pg_sys;
 
 pub(crate) struct RegisteredSnapshotGuard {
