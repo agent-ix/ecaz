@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `2b78b95fa2e96b27a384d519d7209ce467e6e465`
+Code checkpoint SHA: `b41ce4d270f0b6c34bb2793b949e9824615b2f3f`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T17:12:29Z`
+Timestamp: `2026-05-17T17:17:45Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -113,6 +113,12 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Guard artifact: `task38-rlimit-oom-hnsw.log` first verified the new rlimit path on HNSW only and caught the initial tuning issue where the cap was either too low before extension preload or too loose after preload.
 - Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-rlimit-oom-all.log dev fault smoke --lane memory --rows 32`
 - Key result: all four AMs emitted `memory rlimit-oom <am> build ... rlimit_as_bytes=...`, then `backend_disconnected=true`, then `postmaster_recovered=true` under an address-space cap applied with `prlimit64` after warming the backend extension. The same run also reran the palloc ordinal sweeps and twelve backend-SIGKILL build/scan/insert OOM-proxy cases; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`. `pg_stat_io` and `pg_stat_wal` lower after crash recovery were recorded as stats resets.
+
+## task38-palloc-sweep-exhaustive-all.log
+
+- Lane: Task 38 instrumented palloc ordinal sweep exhaustion
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-palloc-sweep-exhaustive-all.log dev fault smoke --lane memory --rows 32`
+- Key result: scan palloc sweeps now use the same cap-and-stop model as build/insert/vacuum instead of hardcoded per-AM scan limits. The all-AM run emitted scan faults through HNSW `nth=4` then `first_success_nth=5`, IVF `nth=7` then `first_success_nth=8`, DiskANN `nth=1` then `first_success_nth=2`, and SPIRE `nth=3` then `first_success_nth=4`. Build, insert, and vacuum each completed at `first_success_nth=2` for every AM. The same run reran backend `RLIMIT_AS` OOM build checks and backend-SIGKILL build/scan/insert checks for every AM; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`.
 
 ## task38-pg18-oom-kill-hnsw-smoke.log
 

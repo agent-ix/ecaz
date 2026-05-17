@@ -27,12 +27,13 @@ prepared transactions, and include optional live `pg_buffercache` fixture pin
 checks plus `pg_stat_io` and `pg_stat_wal` non-decreasing operation counters
 when those PG18 surfaces are available. Resource temp-spill probes also emit
 `pg_stat_database.temp_bytes` before/after markers. Memory smoke now sweeps
-build, insert, and vacuum palloc fault ordinals up to the smoke cap instead of
-checking only the first injected allocation. The smoke surface is now in place;
-exhaustive
-per-allocation palloc sweeps, cgroup OOM-kill campaigns beyond the current
-`RLIMIT_AS` and SIGKILL recovery surfaces, and SPIRE remote-object fetch
-faulting remain follow-on expansion beyond this smoke checkpoint.
+build, scan, insert, and vacuum palloc fault ordinals until the first
+successful Nth allocation, capped at 100, instead of checking only fixed per-AM
+scan limits or the first injected allocation. The smoke surface is now in
+place; raw PostgreSQL allocator sweeps beyond currently instrumented ECAZ
+palloc sites, cgroup OOM-kill campaigns beyond the current `RLIMIT_AS` and
+SIGKILL recovery surfaces, and SPIRE remote-object fetch faulting remain
+follow-on expansion beyond this smoke checkpoint.
 
 ## Scope
 
