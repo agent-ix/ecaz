@@ -7,9 +7,11 @@ use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 use crate::am::common::explain::IvfExplainCounters;
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
-use crate::storage::page::ItemPointer;
 #[cfg(any(test, feature = "pg_test"))]
-use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::relation_guard::IndexRelationGuard;
+use crate::storage::{
+    page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+};
 
 use super::options::StorageFormat;
 use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer};
@@ -32,14 +34,94 @@ struct EcIvfScanOpaque {
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
-    heap_rerank_relation: pg_sys::Relation,
-    heap_rerank_relation_owned: bool,
-    heap_rerank_snapshot: pg_sys::Snapshot,
-    heap_rerank_snapshot_owned: bool,
-    heap_rerank_slot: *mut pg_sys::TupleTableSlot,
-    heap_rerank_source_attnum: i16,
+    heap_rerank_state: *mut IvfHeapRerankState,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
+}
+
+struct ResolvedIvfScanHeapRelation {
+    relation: pg_sys::Relation,
+    _owned: Option<HeapRelationGuard>,
+}
+
+impl ResolvedIvfScanHeapRelation {
+    fn borrowed(relation: pg_sys::Relation) -> Self {
+        Self {
+            relation,
+            _owned: None,
+        }
+    }
+
+    fn owned(guard: HeapRelationGuard) -> Self {
+        let relation = guard.as_ptr();
+        Self {
+            relation,
+            _owned: Some(guard),
+        }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+struct ResolvedIvfScanSnapshot {
+    snapshot: pg_sys::Snapshot,
+    owned: bool,
+}
+
+impl ResolvedIvfScanSnapshot {
+    fn borrowed(snapshot: pg_sys::Snapshot) -> Self {
+        Self {
+            snapshot,
+            owned: false,
+        }
+    }
+
+    fn owned(snapshot: pg_sys::Snapshot) -> Self {
+        Self {
+            snapshot,
+            owned: true,
+        }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Snapshot {
+        self.snapshot
+    }
+}
+
+impl Drop for ResolvedIvfScanSnapshot {
+    fn drop(&mut self) {
+        if self.owned && !self.snapshot.is_null() {
+            // SAFETY: `snapshot` was returned by `RegisterSnapshot` in
+            // `resolve_scan_snapshot`; this wrapper owns the matching
+            // unregister.
+            // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+            // re-audit on pgrx bumps or pg_guard behavior changes.
+            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
+        }
+    }
+}
+
+struct IvfHeapRerankState {
+    slot: TupleTableSlotGuard,
+    snapshot: ResolvedIvfScanSnapshot,
+    heap_relation: ResolvedIvfScanHeapRelation,
+    source_attnum: i16,
+}
+
+impl IvfHeapRerankState {
+    fn heap_relation(&self) -> pg_sys::Relation {
+        self.heap_relation.as_ptr()
+    }
+
+    fn snapshot(&self) -> pg_sys::Snapshot {
+        self.snapshot.as_ptr()
+    }
+
+    fn slot(&self) -> *mut pg_sys::TupleTableSlot {
+        self.slot.as_ptr()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -660,26 +742,10 @@ fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
 }
 
 unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.heap_rerank_slot.is_null() {
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(opaque.heap_rerank_slot) };
-        opaque.heap_rerank_slot = ptr::null_mut();
+    if !opaque.heap_rerank_state.is_null() {
+        drop(unsafe { Box::from_raw(opaque.heap_rerank_state) });
+        opaque.heap_rerank_state = ptr::null_mut();
     }
-    if opaque.heap_rerank_snapshot_owned && !opaque.heap_rerank_snapshot.is_null() {
-        unsafe { pg_sys::UnregisterSnapshot(opaque.heap_rerank_snapshot) };
-    }
-    opaque.heap_rerank_snapshot = ptr::null_mut();
-    opaque.heap_rerank_snapshot_owned = false;
-    if opaque.heap_rerank_relation_owned && !opaque.heap_rerank_relation.is_null() {
-        unsafe {
-            pg_sys::table_close(
-                opaque.heap_rerank_relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
-    }
-    opaque.heap_rerank_relation = ptr::null_mut();
-    opaque.heap_rerank_relation_owned = false;
-    opaque.heap_rerank_source_attnum = 0;
 }
 
 unsafe fn configure_heap_rerank_state(
@@ -693,29 +759,27 @@ unsafe fn configure_heap_rerank_state(
         return;
     }
 
-    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
-    let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
+    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
+    let heap_relation_ptr = heap_relation.as_ptr();
+    let snapshot = unsafe { resolve_scan_snapshot(scan) };
     let source_attribute = unsafe {
         source::resolve_indexed_ecvector_attribute(
-            heap_relation,
+            heap_relation_ptr,
             (*scan).indexRelation,
             "ec_ivf heap_f32 rerank indexed column",
         )
     };
-    let slot = unsafe {
-        source::allocate_heap_slot(
-            heap_relation,
-            "ec_ivf heap_f32 rerank failed to allocate a heap tuple slot",
-        )
-    };
+    let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr).unwrap_or_else(|| {
+        pgrx::error!("ec_ivf heap_f32 rerank failed to allocate a heap tuple slot")
+    });
 
-    opaque.heap_rerank_relation = heap_relation;
-    opaque.heap_rerank_relation_owned = heap_relation_owned;
-    opaque.heap_rerank_snapshot = snapshot;
-    opaque.heap_rerank_snapshot_owned = snapshot_owned;
-    opaque.heap_rerank_slot = slot;
-    opaque.heap_rerank_source_attnum = i16::try_from(source_attribute.attnum)
-        .expect("heap rerank source attnum should fit in i16");
+    opaque.heap_rerank_state = Box::into_raw(Box::new(IvfHeapRerankState {
+        slot,
+        snapshot,
+        heap_relation,
+        source_attnum: i16::try_from(source_attribute.attnum)
+            .expect("heap rerank source attnum should fit in i16"),
+    }));
 }
 
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
@@ -1047,33 +1111,37 @@ unsafe fn rerank_probe_candidates_heap_f32(
         return;
     }
     candidates.sort_by(candidate_heap_tid_cmp);
-    if opaque.heap_rerank_relation.is_null()
-        || opaque.heap_rerank_snapshot.is_null()
-        || opaque.heap_rerank_slot.is_null()
-        || opaque.heap_rerank_source_attnum <= 0
-    {
+    let state = unsafe { opaque.heap_rerank_state.as_ref() }
+        .filter(|state| state.source_attnum > 0)
+        .unwrap_or_else(|| {
+            pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
+        });
+    let heap_relation = state.heap_relation();
+    let snapshot = state.snapshot();
+    let slot = state.slot();
+    if heap_relation.is_null() || snapshot.is_null() || slot.is_null() {
         pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
     }
-    let source_attnum = i32::from(opaque.heap_rerank_source_attnum);
+    let source_attnum = i32::from(state.source_attnum);
     let query_values = unsafe {
         std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
     };
 
-    unsafe { prefetch_heap_rerank_blocks(opaque.heap_rerank_relation, candidates) };
+    unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
 
     for candidate in candidates {
         unsafe {
             source::fetch_heap_row_version(
-                opaque.heap_rerank_relation,
+                heap_relation,
                 candidate.heap_tid,
-                opaque.heap_rerank_snapshot,
-                opaque.heap_rerank_slot,
+                snapshot,
+                slot,
                 "ec_ivf heap_f32 rerank source vector",
             )
         };
         let source_vector = unsafe {
             source::load_indexed_ecvector_from_slot(
-                opaque.heap_rerank_slot,
+                slot,
                 source_attnum,
                 "ec_ivf heap_f32 rerank source vector",
             )
@@ -1135,36 +1203,35 @@ unsafe fn prefetch_heap_rerank_blocks(
     }
 }
 
-unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
     if !unsafe { (*scan).heapRelation }.is_null() {
-        return (unsafe { (*scan).heapRelation }, false);
+        return ResolvedIvfScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
     }
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_ivf heap_f32 rerank could not resolve heap relation");
     }
-    (
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
-        true,
-    )
+    let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf heap_f32 rerank could not open heap relation"));
+    ResolvedIvfScanHeapRelation::owned(heap_relation)
 }
 
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapshot, bool) {
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
     if !unsafe { (*scan).xs_snapshot }.is_null() {
-        return (unsafe { (*scan).xs_snapshot }, false);
+        return ResolvedIvfScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
     }
 
     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
-        return (active_snapshot, false);
+        return ResolvedIvfScanSnapshot::borrowed(active_snapshot);
     }
 
     let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     if registered_snapshot.is_null() {
         pgrx::error!("ec_ivf heap_f32 rerank could not resolve an active snapshot");
     }
-    (registered_snapshot, true)
+    ResolvedIvfScanSnapshot::owned(registered_snapshot)
 }
 
 fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result<u32, String> {
