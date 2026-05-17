@@ -44,18 +44,26 @@ if ! comparator_table_loaded "${prefix}_queries"; then
   comparator_load_vector_table "${prefix}_queries" "$QUERIES" "$DIM"
 fi
 
+# pgvector's HNSW build needs maintenance_work_mem big enough to hold
+# the in-memory graph or it falls back to a much slower disk-based
+# path. For 1M x 1536-dim, 4 GB is comfortable. PG default is only
+# 64 MB which triggers the "hnsw graph no longer fits into
+# maintenance_work_mem after N tuples" warning and a ~10-100x
+# slowdown. IVFFlat also benefits but less dramatically.
+MAINT_WORK_MEM="${MAINT_WORK_MEM:-4GB}"
+
 # HNSW
 hnsw_idx="${prefix}_hnsw_idx"
 if ! psql -tAc "select 1 from pg_indexes where indexname='$hnsw_idx';" | grep -q 1; then
-  comparator_log "building $hnsw_idx (hnsw m=$HNSW_M ef_construction=$HNSW_EFC)"
-  psql -c "CREATE INDEX $hnsw_idx ON ${prefix}_corpus USING hnsw (embedding vector_ip_ops) WITH (m = $HNSW_M, ef_construction = $HNSW_EFC);"
+  comparator_log "building $hnsw_idx (hnsw m=$HNSW_M ef_construction=$HNSW_EFC, maintenance_work_mem=$MAINT_WORK_MEM)"
+  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $hnsw_idx ON ${prefix}_corpus USING hnsw (embedding vector_ip_ops) WITH (m = $HNSW_M, ef_construction = $HNSW_EFC);"
 fi
 
 # IVFFlat
 ivf_idx="${prefix}_ivfflat_idx"
 if ! psql -tAc "select 1 from pg_indexes where indexname='$ivf_idx';" | grep -q 1; then
-  comparator_log "building $ivf_idx (ivfflat lists=$IVFFLAT_LISTS)"
-  psql -c "CREATE INDEX $ivf_idx ON ${prefix}_corpus USING ivfflat (embedding vector_ip_ops) WITH (lists = $IVFFLAT_LISTS);"
+  comparator_log "building $ivf_idx (ivfflat lists=$IVFFLAT_LISTS, maintenance_work_mem=$MAINT_WORK_MEM)"
+  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $ivf_idx ON ${prefix}_corpus USING ivfflat (embedding vector_ip_ops) WITH (lists = $IVFFLAT_LISTS);"
 fi
 
 comparator_log "done. tables: ${prefix}_corpus, ${prefix}_queries; indexes: $hnsw_idx, $ivf_idx"

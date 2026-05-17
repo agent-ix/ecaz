@@ -37,6 +37,8 @@
 //! match the placeholder's byte length, and that holds trivially when
 //! length is a function of metadata-only inputs.
 
+use std::mem::size_of;
+
 use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 
 /// Tuple-type tag for a Vamana graph node. Distinct from the
@@ -61,6 +63,32 @@ pub const FLAG_HAS_OVERFLOW_HEAPTIDS: u8 = 1 << 1;
 /// (R, W, C). Sum of: tag(1) + flags(1) + neighbor_count(2) +
 /// primary_heaptid(6) + rerank_tid(6) = 16.
 pub const HEADER_FIXED_BYTES: usize = 1 + 1 + 2 + ITEM_POINTER_BYTES + ITEM_POINTER_BYTES;
+pub const VAMANA_NODE_HEADER_FIXED_BYTES: usize = HEADER_FIXED_BYTES;
+pub const VAMANA_NODE_TAG_OFFSET: usize = 0;
+pub const VAMANA_NODE_FLAGS_OFFSET: usize = 1;
+pub const VAMANA_NODE_NEIGHBOR_COUNT_OFFSET: usize = 2;
+pub const VAMANA_NODE_PRIMARY_HEAPTID_OFFSET: usize = 4;
+pub const VAMANA_NODE_RERANK_TID_OFFSET: usize =
+    VAMANA_NODE_PRIMARY_HEAPTID_OFFSET + ITEM_POINTER_BYTES;
+pub const VAMANA_NODE_BINARY_WORDS_OFFSET: usize =
+    VAMANA_NODE_RERANK_TID_OFFSET + ITEM_POINTER_BYTES;
+
+pub const fn vamana_node_search_code_offset(binary_word_count: usize) -> usize {
+    VAMANA_NODE_BINARY_WORDS_OFFSET + binary_word_count * size_of::<u64>()
+}
+
+pub const fn vamana_node_neighbors_offset(
+    binary_word_count: usize,
+    search_code_len: usize,
+) -> usize {
+    vamana_node_search_code_offset(binary_word_count) + search_code_len
+}
+
+pub const VAMANA_CODEBOOK_TAG_OFFSET: usize = 0;
+pub const VAMANA_CODEBOOK_GROUP_INDEX_OFFSET: usize = 1;
+pub const VAMANA_CODEBOOK_NEXTTID_OFFSET: usize = 3;
+pub const VAMANA_CODEBOOK_CENTROIDS_OFFSET: usize =
+    VAMANA_CODEBOOK_NEXTTID_OFFSET + ITEM_POINTER_BYTES;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VamanaNodeTuple {

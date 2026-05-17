@@ -14,6 +14,8 @@ pub(crate) const ALIGNMENT_BYTES: usize = 8;
 
 pub const HEAPTID_INLINE_CAPACITY: usize = 10;
 pub const ITEM_POINTER_BYTES: usize = 6;
+pub const ITEM_POINTER_BLOCK_NUMBER_OFFSET: usize = 0;
+pub const ITEM_POINTER_OFFSET_NUMBER_OFFSET: usize = 4;
 pub const METADATA_BLOCK_NUMBER: u32 = 0;
 pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 
