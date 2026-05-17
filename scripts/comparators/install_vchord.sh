@@ -89,4 +89,32 @@ for sql in $(find . -name 'vchord--*.sql' -type f); do
 done
 
 comparator_log "installed vchord $VCHORD_VERSION (prebuilt) for pg$PG_MAJOR-$ARCH"
+
+# vchord requires being loaded via shared_preload_libraries (same
+# pattern as ecaz). Without this, CREATE EXTENSION vchord errors with
+# "vchord must be loaded via shared_preload_libraries". Configure it
+# now via ALTER SYSTEM + restart so the operator doesn't have to.
+#
+# We append vchord to the existing shared_preload_libraries value so
+# we don't clobber other already-loaded extensions (notably ecaz).
+comparator_log "ensuring vchord is in shared_preload_libraries"
+PSQL_OK=$(sudo -u postgres psql -tAc "select 1;" 2>/dev/null || true)
+if [[ "$PSQL_OK" != "1" ]]; then
+  comparator_log "postgres not reachable; skipping auto-config of shared_preload_libraries"
+  comparator_log "Manual step:"
+  comparator_log "  ALTER SYSTEM SET shared_preload_libraries='<existing>,vchord';"
+  comparator_log "  sudo systemctl restart postgresql"
+else
+  CURRENT=$(sudo -u postgres psql -tAc "show shared_preload_libraries;" 2>/dev/null | tr -d ' ')
+  if [[ ",${CURRENT}," != *",vchord,"* ]]; then
+    NEW=$([[ -z "$CURRENT" ]] && echo "vchord" || echo "${CURRENT},vchord")
+    comparator_log "adding vchord -> '$NEW'"
+    sudo -u postgres psql -c "ALTER SYSTEM SET shared_preload_libraries = '$NEW';"
+    sudo systemctl restart postgresql
+    sleep 3
+  else
+    comparator_log "vchord already in shared_preload_libraries"
+  fi
+fi
+
 comparator_log "Run: psql -c 'CREATE EXTENSION IF NOT EXISTS vchord CASCADE;'"
