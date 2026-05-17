@@ -2,7 +2,7 @@
 
 Status: landed on `main` as part of Task 29
 Owner: coder1 / runtime-index track
-Backstory: `review/11095-task29-diskann-pgvectorscale-comparison/`
+Backstory: `reviews/task-29/014-11095-task29-diskann-pgvectorscale-comparison/`
 (`feedback.md` for the review, `prefilter-detail.md` for the deep
 quant breakdown)
 
@@ -12,7 +12,7 @@ Close the DiskANN persisted-scan recall gap from ~0.93 to a target of
 ≥ 0.97 on the local real-10k corpus by replacing the grouped-PQ4 scan
 prefilter with the already-persisted `binary_words` sidecar
 (SRHT-rotated sign bits, Hamming popcount distance). Confirm with
-`review/11091/11094` repro and aggregate sweep before considering
+`reviews/task-29/010-11091-task29-diskann-sql-vs-memory-compare/11094` repro and aggregate sweep before considering
 follow-on cleanup.
 
 This was the required Task 29 recall fix when opened. The binary-sidecar
@@ -326,15 +326,15 @@ required measurements:
 1. **`11091` SQL-vs-memory compare under sidecar** at
    `list_size = 100`, `rerank_budget = 64`. Query `10001` should
    match exact 10/10. Repeat for the four other sample queries. Log
-   to `review/<packet>/artifacts/sql-vs-memory-sidecar.log`.
+   to `reviews/task-{id}/001-<packet>/artifacts/sql-vs-memory-sidecar.log`.
 2. **`11094` grouped-frontier-style probe under sidecar** at
    `list_size = 200`, `rerank_budget = 200`. IDs `9717` and `7782`
    should appear in the top of the simulated frontier (rank ≤ 50).
-   Log to `review/<packet>/artifacts/sidecar-frontier.log`.
+   Log to `reviews/task-{id}/001-<packet>/artifacts/sidecar-frontier.log`.
 3. **Aggregate sweep**: 200-query recall@10 / NDCG / mean-latency
    table at `list_size = 64, 100, 200, 400` and
    `rerank_budget = 32, 64, 100, 200`. Log to
-   `review/<packet>/artifacts/sidecar-recall-sweep.log`. This is
+   `reviews/task-{id}/001-<packet>/artifacts/sidecar-recall-sweep.log`. This is
    the headline result.
 
 ## Decision gates

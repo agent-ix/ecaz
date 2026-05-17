@@ -18,7 +18,7 @@ The important current facts are:
 - local real-10k post-vacuum smoke completed successfully in packet
   `11083`
 
-The remaining work is review/merge hygiene plus final performance
+The remaining work is review and merge hygiene plus final performance
 verification on the faster machine, not another major `ec_diskann`
 implementation phase.
 
@@ -88,7 +88,7 @@ The next highest-value work should stay in signoff territory:
 ## Pointers to context
 
 - `plan/tasks/17-diskann-access-method.md` — canonical task plan.
-- `review/11078-task17-diskann-real-recall-recovery/`
-- `review/11081-task17-diskann-vacuum-recall/`
-- `review/11082-task17-vacuum-pq-frontier/`
-- `review/11083-task17-diskann-post-vacuum-smoke/`
+- `reviews/task-05/078-110-beam-native-scan-test-fixtures78-task17-diskann-real-recall-recovery/`
+- `reviews/task-05/078-110-beam-native-scan-test-fixtures81-task17-diskann-vacuum-recall/`
+- `reviews/task-17/027-11082-task17-vacuum-pq-frontier/`
+- `reviews/task-17/028-11083-task17-diskann-post-vacuum-smoke/`

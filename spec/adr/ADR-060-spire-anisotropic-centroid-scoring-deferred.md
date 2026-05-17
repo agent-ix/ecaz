@@ -19,7 +19,7 @@ line of work: better centroid scoring should improve recall at fixed routing
 budget on dense embeddings.
 
 The local Phase 9.7 baseline packet
-`review/30686-spire-phase9-quality-baseline` shows that the checked-in real10k
+`reviews/task-30/609-30686-spire-phase9-quality-baseline` shows that the checked-in real10k
 fixture is already saturated for the current SPIRE path. Across
 `rerank_width=0,25,50`, recall@10 is `0.9950` at `nprobe=8` and `1.0000` at
 `nprobe=16,24,32` on the 100-query subset. That fixture does not leave enough

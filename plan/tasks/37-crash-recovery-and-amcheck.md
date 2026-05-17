@@ -98,7 +98,7 @@ exactly this reason).
 - `make crash-recovery-smoke` runs in CI nightly with green status across all
   four AMs.
 - `make crash-recovery-full` documented and runnable; failures land in
-  `review/<packet>/artifacts/`.
+  `reviews/task-{id}/001-<packet>/artifacts/`.
 - Each ECAZ AM exposes an `amcheck`-style entry point.
 - A short doc under `docs/crash-recovery.md` describes:
   - the probe-point model,

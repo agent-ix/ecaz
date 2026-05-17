@@ -17,7 +17,7 @@ Any benchmark result used in README, docs, spec, task status, or review rational
 
 ## Measurement Rules
 
-1. Review-packet measurements SHALL store raw logs under `review/<topic>/artifacts/`.
+1. Review-packet measurements SHALL store raw logs under `reviews/task-{id}/001-<topic>/artifacts/`.
 2. Artifact manifests SHALL record head SHA, topic, lane, fixture, storage format, rerank mode, command, timestamp, isolation/shared-table status, and cited key result lines.
 3. Configured benchmark suites SHALL write a suite manifest that records config identity, selected steps, expanded commands, execution status, timing, and expected artifact paths.
 4. Local development measurements SHALL be labeled as local evidence and SHALL NOT be described as product benchmark claims.

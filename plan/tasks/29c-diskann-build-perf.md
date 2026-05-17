@@ -2,7 +2,7 @@
 
 Status: landed on `main`, no Task 29d blocker opened
 Owner: coder1 / runtime-index track
-Backstory: `review/11099-task29-diskann-landing-readiness/feedback.md`
+Backstory: `reviews/task-29/015-11099-task29-diskann-landing-readiness/feedback.md`
 
 ## Goal
 
@@ -25,7 +25,7 @@ the cost is.
 ## Current State
 
 Task 29c initially used the Task 29a baseline measurement
-(`review/11096-task29a-diskann-binary-sidecar-prefilter/`):
+(`reviews/task-29a/001-11096-task29a-diskann-binary-sidecar-prefilter/`):
 
 - **10k × 1536-d real-corpus build**: 503.10 s total
   - copy: 4.27 s

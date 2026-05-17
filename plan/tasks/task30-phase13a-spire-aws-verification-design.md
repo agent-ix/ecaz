@@ -283,16 +283,16 @@ Each drill becomes a Phase 13b sub-packet.
 ## Phase 13a.7: Packet skeleton and reporting (P1)
 
 - [ ] **Parent packet.**
-  `review/<NN>-phase13-spire-aws-verification/` where `<NN>` is the next
+  `reviews/task-{id}/NNN-phase13-spire-aws-verification/` where `<NN>` is the next
   free packet number in the agent's range (coder1: 1-9999, coder2:
   10000-19999).
 - [ ] **Children.** One sub-packet per matrix row or fault drill, named
-  `review/<NN>-phase13-spire-aws-<slice>/` where `<slice>` matches the
+  `reviews/task-{id}/NNN-phase13-spire-aws-<slice>/` where `<slice>` matches the
   Phase 13a section id (e.g. `13a3a-read-k10`).
 - [ ] **Per-packet structure.** Matches `AGENTS.md`:
 
   ```
-  review/<NN>-phase13-spire-aws-<slice>/
+  reviews/task-{id}/NNN-phase13-spire-aws-<slice>/
     request.md
     artifacts/
       manifest.md

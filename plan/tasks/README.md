@@ -56,7 +56,7 @@ These pre-lane task files are retained only for historical context under
 26. `26-parallel-index-build.md` — HNSW parallel build landed for eligible PG18 builds; larger scale curves are deferred to AWS/RDS-class benchmark hardware
 27. `27-symphony-access-method.md` — shelved indefinitely; the historical Symphony plan remains for reference only and requires a new accepted ADR to reopen.
 28. `28-ivf-access-method.md` / `28-ivf-competitive-substrate.md` — IVF access method and local competitive substrate landed on `main`; larger product benchmarks remain deferred to dedicated hardware.
-29. `29-diskann-initial-tuning.md` — DiskANN Task 29/29a/29b/29c/29d landed on `main`; 29e is recorded as follow-up cleanup/evidence, not a current blocker.
+29. `29-diskann-initial-tuning.md` — DiskANN Task 29/29a/29b/29c/29d landed on `main`; `29e-diskann-rerank-cleanup-evidence.md` records follow-up cleanup/evidence and is not a current blocker.
 30. `30-spire-ivf-foundation.md` — proposed ADR-049 implementation plan: reconcile landed IVF with SPIRE-compatible partition-object storage, build a single-level foundation, then add recursion, local multi-NVMe placement, boundary replication, top-level graph routing, and multi-machine placement.
     - `task30-phase9-spire-graph-architecture.md` — expanded SPIRE graph architecture track: top-graph frontier, scalable graph storage, global recursive beam, boundary replication contract, and global vector identity.
     - `task30-phase10-spire-execution-performance.md` — expanded SPIRE execution/performance track: bounded candidate collection, AM scan shape, heap rerank I/O, multi-NVMe read overlap, remote libpq executor, and performance harness.

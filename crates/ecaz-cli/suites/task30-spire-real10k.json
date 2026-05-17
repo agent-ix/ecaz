@@ -1,7 +1,7 @@
 {
   "name": "task30-spire-real10k",
   "schema_version": 1,
-  "artifact_dir": "review/30623-spire-suite-config/artifacts",
+  "artifact_dir": "reviews/task-30/548-30623-spire-suite-config/artifacts",
   "defaults": {
     "profile": "ec_spire",
     "bits": 4,
@@ -30,14 +30,14 @@
         "nprobe=24",
         "rerank_width=25"
       ],
-      "log_file": "review/30623-spire-suite-config/artifacts/load_real10k_spire_turboquant_n32_w25.log"
+      "log_file": "reviews/task-30/548-30623-spire-suite-config/artifacts/load_real10k_spire_turboquant_n32_w25.log"
     },
     {
       "kind": "storage",
       "name": "storage-real10k-n32",
       "tags": ["storage", "real10k", "n32"],
       "prefix": "task30_spire_real10k_suite",
-      "log_file": "review/30623-spire-suite-config/artifacts/storage_real10k_spire_n32.log"
+      "log_file": "reviews/task-30/548-30623-spire-suite-config/artifacts/storage_real10k_spire_n32.log"
     },
     {
       "kind": "explain",
@@ -47,8 +47,8 @@
       "index_name": "task30_spire_real10k_suite_idx",
       "nprobe": 24,
       "rerank_width": 25,
-      "sql_file": "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.sql",
-      "log_output": "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.log"
+      "sql_file": "reviews/task-30/548-30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.sql",
+      "log_output": "reviews/task-30/548-30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.log"
     },
     {
       "kind": "latency",
@@ -58,7 +58,7 @@
       "k": 10,
       "sweep": [8, 24],
       "rerank_width": 25,
-      "log_output": "review/30623-spire-suite-config/artifacts/latency_real10k_spire_n32_w25_p8_24.log"
+      "log_output": "reviews/task-30/548-30623-spire-suite-config/artifacts/latency_real10k_spire_n32_w25_p8_24.log"
     },
     {
       "kind": "recall",
@@ -68,8 +68,8 @@
       "k": 10,
       "sweep": [8, 24],
       "rerank_width": 25,
-      "truth_cache_file": "review/30623-spire-suite-config/artifacts/truth_real10k_spire_k10.json",
-      "log_output": "review/30623-spire-suite-config/artifacts/recall_real10k_spire_n32_w25_p8_24.log"
+      "truth_cache_file": "reviews/task-30/548-30623-spire-suite-config/artifacts/truth_real10k_spire_k10.json",
+      "log_output": "reviews/task-30/548-30623-spire-suite-config/artifacts/recall_real10k_spire_n32_w25_p8_24.log"
     }
   ]
 }

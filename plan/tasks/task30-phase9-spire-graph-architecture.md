@@ -12,7 +12,7 @@ architecture that can scale compositionally across many hierarchy levels.
 
 Phase 9 is about the shape of the index and routing plan, not remote transport
 throughput. It should resolve the architectural findings from
-`review/30658-spire-phase9-routing-plan/feedback/2026-05-09-01-reviewer.md`
+`reviews/task-30/581-30658-spire-phase9-routing-plan/feedback/2026-05-09-01-reviewer.md`
 before Phase 10 optimizes execution.
 
 ## Scope
@@ -42,7 +42,7 @@ before Phase 10 optimizes execution.
   root/top routing object's child frontier. The future scale build must make
   that root/top child set large enough for graph routing instead of compressing
   it down to `recursive_fanout`. Review packet:
-  `review/30660-spire-top-graph-frontier-contract/request.md`.
+  `reviews/task-30/583-30660-spire-top-graph-frontier-contract/request.md`.
 - [x] Record the decision in an ADR or design note if the selected frontier is
   not already covered by `plan/design/spire-top-level-graph.md`. Recorded in
   `spec/adr/ADR-054-spire-top-graph-frontier-contract.md`.
@@ -131,7 +131,7 @@ before Phase 10 optimizes execution.
 These remain below the structural graph work. Do not start them until
 top-graph frontier, global beam, and identity contracts are stable.
 
-Canonical local baseline: `review/30686-spire-phase9-quality-baseline`
+Canonical local baseline: `reviews/task-30/609-30686-spire-phase9-quality-baseline`
 records the real10k pre-treatment baseline on the main machine across
 `nprobe=8,16,24,32` and `rerank_width=0,25,50`. The treatment items below are
 now either implemented or explicitly ADR-deferred.
@@ -141,7 +141,7 @@ now either implemented or explicitly ADR-deferred.
   routing-space A/B; the real10k baseline records the current single-IVF
   storage and saturated recall.
 - [x] Adaptive `nprobe` or adaptive beam policy. Packet
-  `review/30687-spire-adaptive-nprobe` adds a default-off
+  `reviews/task-30/610-30687-spire-adaptive-nprobe` adds a default-off
   `ec_spire.adaptive_nprobe` GUC, thresholded deterministic halving policy,
   routing snapshot diagnostics, `ecaz bench` flags, and local real10k treatment
   measurements. On the rw50 same-build control, adaptive gap150000 preserved
@@ -152,7 +152,7 @@ now either implemented or explicitly ADR-deferred.
   headroom beyond the saturated real10k baseline.
 - [x] Query difficulty estimator stretch. Deferred by ADR-062 to the research
   track; the adaptive `nprobe` diagnostics from packet
-  `review/30687-spire-adaptive-nprobe` are the future estimator input signal.
+  `reviews/task-30/610-30687-spire-adaptive-nprobe` are the future estimator input signal.
 
 ## Validation
 

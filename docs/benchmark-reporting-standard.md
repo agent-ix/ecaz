@@ -16,7 +16,7 @@ future storage formats.
 | Class | Meaning | Required evidence |
 | --- | --- | --- |
 | Local development evidence | Useful engineering result from a developer workstation or local PG cluster. | Packet-local artifacts or clearly identified historical/local source. |
-| Review-packet evidence | Measurement used to justify a landed task or docs/spec claim. | `review/<topic>/artifacts/manifest.md` plus raw logs under the packet. |
+| Review-packet evidence | Measurement used to justify a landed task or docs/spec claim. | `reviews/task-{id}/001-<topic>/artifacts/manifest.md` plus raw logs under the packet. |
 | Product benchmark claim | User-facing performance claim for product comparison or scale planning. | Controlled hardware, cache state, PostgreSQL settings, commands, raw logs, and repeatability summary. |
 
 Local and review-packet evidence must not be promoted to product claims without
@@ -86,7 +86,7 @@ reported through this standard.
 
 When adding a benchmark packet:
 
-1. Store raw logs under `review/<topic>/artifacts/`.
+1. Store raw logs under `reviews/task-{id}/001-<topic>/artifacts/`.
 2. Add or update `artifacts/manifest.md` with the required provenance,
    environment, candidate identity, command, and key result lines.
 3. Update [Benchmark Index](benchmark-index.md) with the packet lane.

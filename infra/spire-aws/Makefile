@@ -17,7 +17,7 @@ SPIRE_AWS_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT     := $(abspath $(SPIRE_AWS_DIR)/../..)
 SCRIPTS       := $(REPO_ROOT)/scripts/spire-aws
 
-ARTIFACT_DIR ?= $(REPO_ROOT)/review/spire-aws-verification/artifacts
+ARTIFACT_DIR ?= $(REPO_ROOT)/reviews/task-30/957-spire-aws-verification/artifacts
 TOPOLOGY     ?= $(ARTIFACT_DIR)/aws-topology.json
 PREFIX       ?= ec_spire_aws_synth_10k
 

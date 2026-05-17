@@ -281,9 +281,9 @@ and never hold more than one data-page lock.
 
 ## References
 
-- Phase 5D — `review/11022-phase5d-persisted-graph-reader/`
-- Phase 6A — `review/11023-phase6a-scan-algorithm-shell/`
-- VisitedState refactor — `review/11026-visited-state-reuse/`
+- Phase 5D — `reviews/task-05/176-11022-phase5d-persisted-graph-reader/`
+- Phase 6A — `reviews/task-05/177-11023-phase6a-scan-algorithm-shell/`
+- VisitedState refactor — `reviews/task-17/039-11026-visited-state-reuse/`
 - ADR-045 — `spec/adr/ADR-045-page-layout-discipline-for-graph-access-methods.md`
 - ADR-046 — `spec/adr/ADR-046-vamana-insert-lock-ordering.md` (ACCEPTED)
 - ADR-047 — `spec/adr/ADR-047-vamana-vacuum-lock-ordering.md` (ACCEPTED)

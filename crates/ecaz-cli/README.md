@@ -70,7 +70,7 @@ through that binary:
 /Users/peter/.cargo/bin/ecaz dev sql --pg 18 --db postgres \
   --socket-dir /Users/peter/.pgrx --raw \
   --sql "select version()" \
-  --log-output review/example/artifacts/pg18-status.log
+  --log-output reviews/task-{id}/001-example/artifacts/pg18-status.log
 ```
 
 Prefer this to direct `psql`, wrapper scripts, or one-off shell plumbing when
@@ -147,8 +147,8 @@ ecaz
 Development SQL can be run through the CLI without shell redirection:
 
 ```sh
-ecaz dev sql --pg 18 --file review/example/artifacts/run.sql --raw \
-  --log-output review/example/artifacts/run.log
+ecaz dev sql --pg 18 --file reviews/task-{id}/001-example/artifacts/run.sql --raw \
+  --log-output reviews/task-{id}/001-example/artifacts/run.log
 ```
 
 Use repeated `--env NAME=VALUE` flags to pass temporary environment to
@@ -170,7 +170,7 @@ ecaz corpus prepare \
   --parquet /path/to/qdrant-dbpedia-openai3-1m/data \
   --output-dir /path/to/staged
 ecaz corpus load \
-  --log-file review/11073-task17-diskann-real-10k-recall/artifacts/load.log \
+  --log-file reviews/task-05/078-110-beam-native-scan-test-fixtures73-task17-diskann-real-10k-recall/artifacts/load.log \
   --prefix ec_real_10k \
   --corpus-file /path/to/staged/ec_real_10k_corpus.tsv \
   --queries-file /path/to/staged/ec_real_10k_queries.tsv \
@@ -277,7 +277,7 @@ The first-supported config schema is JSON `schema_version: 1`:
 {
   "name": "task31-m5-ivf-100k",
   "schema_version": 1,
-  "artifact_dir": "review/30178-task31-suite-runner-dry-run/artifacts",
+  "artifact_dir": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts",
   "defaults": {
     "profile": "ec_ivf",
     "bits": 4,
@@ -310,8 +310,8 @@ The first-supported config schema is JSON `schema_version: 1`:
       "k": 10,
       "sweep": [40, 48, 56, 64, 80, 96],
       "rerank_width": 500,
-      "truth_cache_file": "review/example/artifacts/truth_k10.json",
-      "log_output": "review/example/artifacts/recall10.log"
+      "truth_cache_file": "reviews/task-{id}/001-example/artifacts/truth_k10.json",
+      "log_output": "reviews/task-{id}/001-example/artifacts/recall10.log"
     }
   ]
 }
@@ -398,11 +398,11 @@ After or during a run, inspect the manifest:
 
 ```sh
 ecaz bench suite status \
-  --manifest review/30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json
+  --manifest reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json
 
 ecaz bench suite report \
-  --manifest review/30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json \
-  --results-output review/example/artifacts/results.jsonl
+  --manifest reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json \
+  --results-output reviews/task-{id}/001-example/artifacts/results.jsonl
 ```
 
 `status` reports completed, failed, skipped, dry-run, stale, and

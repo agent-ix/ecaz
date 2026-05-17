@@ -2,7 +2,7 @@
 
 Status: landed on `main`, follows Task 29a (binary-sidecar prefilter)
 Owner: coder1 / runtime-index track
-Backstory: `review/11099-task29-diskann-landing-readiness/feedback.md`
+Backstory: `reviews/task-29/015-11099-task29-diskann-landing-readiness/feedback.md`
 
 ## Goal
 
@@ -15,7 +15,7 @@ of the merge-readiness review.
 
 Task 29b landed on `task29-diskann-initial-tuning` in
 `95fef9ac` with packet
-`review/11100-task29b-diskann-vacuum-prefilter-consistency/`.
+`reviews/task-29b/001-11100-task29b-diskann-vacuum-prefilter-consistency/`.
 It has since merged to `main` as part of Task 29.
 The branch now shares one `PreparedPrefilter` helper between scan and
 vacuum repair, keeps `ec_diskann.prefilter_kind` as a production
@@ -58,7 +58,7 @@ during vacuum, and only on the slots being repaired.
 
 The grouped-PQ scan path is also still wired in via the `Auto`
 fallback and the explicit `GroupedPq` GUC choice. Per the directive
-in `review/11099`'s landing-readiness feedback, that's the right
+in `reviews/task-29/015-11099-task29-diskann-landing-readiness`'s landing-readiness feedback, that's the right
 production posture (emergency rollback knob), so the path stays —
 but the GUC documentation and pgrx test coverage need to catch up
 to that decision.

@@ -9,13 +9,13 @@ Owner: coder1 / runtime-index track
 ## Post-Merge Summary
 
 Task 28's local landing status is consolidated in
-`review/30151-task28-ivf-local-landing-status/`, with the remaining H/I cleanup
-closed in `review/30153-task28-ivf-h-i-cleanups/`.
+`reviews/task-28/140-30151-task28-ivf-local-landing-status/`, with the remaining H/I cleanup
+closed in `reviews/task-28/142-30153-task28-ivf-h-i-cleanups/`.
 
 - A1-A8 and A10 are done for the local lane.
 - A9 has local 100k/990k IVF evidence, with exact 990k fills and long HNSW
   reference rebuilds deferred out of the desktop gate by
-  `review/30150-task28-ivf-local-990k-deferral/`.
+  `reviews/task-28/139-30150-task28-ivf-local-990k-deferral/`.
 - The measured local recommendation keeps `quantizer = 'auto'` unchanged and
   recommends explicit `storage_format = 'pq_fastscan', pq_group_size = 8` for
   larger high-dimensional IVF surfaces where speed and index size dominate.

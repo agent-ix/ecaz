@@ -3,7 +3,7 @@
 ## Context
 
 Prior real-corpus packets:
-- `review/224-a4-real-50k-directional-summary/request.md`
+- `reviews/task-05/209-224-a4-real-50k-directional-summary/request.md`
 
 The real `50k` external recall harness is currently too expensive to run over
 wider query slices interactively. The `224` directional packet calls this out
@@ -140,4 +140,4 @@ not repeat. Widening from a 10-query to a 50-query or 200-query slice then costs
 a single one-time cache build, not repeated brute-force work on every probe.
 
 This directly unblocks the wider real `50k` sweep described in
-`review/224-a4-real-50k-directional-summary`.
+`reviews/task-05/209-224-a4-real-50k-directional-summary`.

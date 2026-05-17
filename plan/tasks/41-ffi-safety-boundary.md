@@ -30,7 +30,7 @@ Closeout requirements for this subtrack:
   AM explicitly requires the relation to remain open.
 
 The next Task 41 slice should be selected from the survey packet at
-`review/31161-c1-task41-unsafe-surface-strategy/`. Prefer structural cluster
+`reviews/task-16/004-311-c1-adr030-v2-grouped-pq-feasibility61-c1-task41-unsafe-surface-strategy/`. Prefer structural cluster
 removal over per-site annotation: wrappers first for relation/buffer/snapshot
 resources, Task 40 for synchronization primitives, Task 43 for proof coverage,
 and Task 35 comments only after the relevant structural refactor lands or is
@@ -104,7 +104,7 @@ recovery starts (best case) or memory is corrupted (worst case).
 6. **Make lanes:**
    - `make ffi-audit` — runs the inventory script and fails if any FFI
      entry point is unguarded; emits a report at
-     `review/<packet>/artifacts/ffi-inventory.md`.
+     `reviews/task-{id}/001-<packet>/artifacts/ffi-inventory.md`.
    - `make ffi-lint` — runs the `dylint` lint suite over the workspace.
    - `make ffi-leak-smoke` — paired with Task 38, forces ERROR at each
      reachable site and checks for leaks.

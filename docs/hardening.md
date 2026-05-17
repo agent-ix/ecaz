@@ -14,7 +14,7 @@ bash scripts/install_hardening_tools.sh --check
 
 The installer keeps upstream source checkouts under `~/.ecaz/hardening-tools`
 and puts reusable binaries or shims on the normal user tool path. Use
-`--log-file review/.../artifacts/name.log` when an install/update log needs to
+`--log-file reviews/task-{id}/001-topic/artifacts/name.log` when an install/update log needs to
 be attached to a review packet.
 
 ## Aggregates

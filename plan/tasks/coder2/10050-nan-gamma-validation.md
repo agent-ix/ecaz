@@ -1,6 +1,6 @@
 # Task: NaN Gamma Validation
 
-Review: `review/10050-nan-gamma-validation/request.md`
+Review: `reviews/task-08/031-10050-nan-gamma-validation/request.md`
 Priority: batch 1
 Status: ready
 

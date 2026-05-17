@@ -31,7 +31,7 @@ Usage:
 
 Required:
   --out <dir>          Directory to write all artifacts into. Will be
-                       created. Intended layout: review/<packet>/artifacts/<host>/kernels
+                       created. Intended layout: reviews/task-{id}/001-<packet>/artifacts/<host>/kernels
 
 Options:
   --profile <p>        Host profile. Tunes criterion sample-size, CPU

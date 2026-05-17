@@ -1,0 +1,4 @@
+==== SIZE=1m ====
+[comparator:pgvector] 23:55:08 done. tables: real_1m_pgv_corpus, real_1m_pgv_queries; indexes: real_1m_pgv_hnsw_idx, real_1m_pgv_ivfflat_idx
+[comparator:pgvectorscale] 23:55:08 done. tables: real_1m_pgvscale_corpus, real_1m_pgvscale_queries; index: real_1m_pgvscale_diskann_idx
+[comparator:vchord] 23:55:08 building real_1m_vchord_rabitq_idx (VectorChord vchordrq RaBitQ-on-IVF, maintenance_work_mem=4GB)

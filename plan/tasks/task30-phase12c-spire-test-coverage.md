@@ -39,7 +39,7 @@ found:
 - Phase 12 closed; Phase 12a closed (`30982`/`30990`); Phase 12b
   closed (`31060`). Tracker trio has zero unchecked rows.
 - Coverage audit at SHA `096609df` enumerated 50 gaps across 11 axes;
-  see `review/31070-spire-phase12c-coverage-audit/` for the full
+  see `reviews/task-30/945-31070-spire-phase12c-coverage-audit/` for the full
   per-axis findings.
 - Production-side cleanup means coverage gaps are now diagnosable —
   151 cohesive files, RemoteScan FFI in its own directory, fault

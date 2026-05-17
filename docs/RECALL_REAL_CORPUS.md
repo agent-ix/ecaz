@@ -5,7 +5,7 @@ This document specifies the local dataset contract used by the
 real `1536`-dimensional embedding corpus consistent with `NFR-003`.
 
 It is the answer to the contradiction recorded in
-`review/217-a4-synthetic-vs-nfr-dataset-gap`: the in-repo synthetic generators
+`reviews/task-05/207-217-a4-synthetic-vs-nfr-dataset-gap`: the in-repo synthetic generators
 are not a credible gate surface, and `NFR-003` requires DBpedia OpenAI embeddings
 or a documented equivalent.
 
@@ -485,7 +485,7 @@ benchmark/report packet so other reviewers can verify they are measuring the
 same staged subset.
 
 The first real-corpus run is documented in
-`review/218-a4-real-corpus-recall-lane`.
+`reviews/task-04/003-21-page-offset-checked-conversion8-a4-real-corpus-recall-lane`.
 
 ## Reusing the Loaded Tables for NFR-001 Latency
 
