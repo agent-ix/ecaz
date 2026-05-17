@@ -5,6 +5,8 @@ loader_instance_type = "c8g.medium"
 ecaz_git_ref         = "main"
 region               = "us-west-2"
 az                   = "us-west-2a"
+enable_eice_ssh      = true
+ssh_key_name         = "ecaz-bench"
 
 # Notes on this profile vs `10k.tfvars`:
 # - m8g.xlarge: 4 vCPU / 16 GB (vs m8g.large: 2 vCPU / 8 GB)

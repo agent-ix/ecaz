@@ -67,7 +67,17 @@
         "ec2:ImportKeyPair",
         "ec2:CreateSnapshot",
         "ec2:DeleteSnapshot",
-        "ec2:CopySnapshot"
+        "ec2:CopySnapshot",
+        "ec2:CreateInstanceConnectEndpoint",
+        "ec2:DeleteInstanceConnectEndpoint",
+        "ec2:ModifyInstanceConnectEndpoint",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:AttachNetworkInterface",
+        "ec2:DetachNetworkInterface",
+        "ec2:ModifyNetworkInterfaceAttribute",
+        "ec2-instance-connect:OpenTunnel",
+        "ec2-instance-connect:SendSSHPublicKey"
       ],
       "Resource": "*",
       "Condition": {

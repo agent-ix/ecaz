@@ -83,3 +83,29 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_eice_ssh" {
+  description = <<-EOT
+    Provision an EC2 Instance Connect Endpoint and an SSH ingress rule
+    on the DB security group. When true, operators can
+    `aws ec2-instance-connect ssh --instance-id <id>` into the
+    private-subnet DB host without a NAT gateway or public IP. Acts as
+    a fallback when SSM Session Manager is wedged (observed during
+    heavy cargo bench compiles on small Graviton hosts during the
+    2026-05-16 Graviton baseline cycle). Costs ~$0.10/hr while the
+    endpoint exists.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "ssh_key_name" {
+  description = <<-EOT
+    Optional AWS key pair name to bake into the DB and loader instances
+    for direct SSH (in addition to EC2 Instance Connect's runtime key
+    push). Only useful if `enable_eice_ssh = true`. Empty string
+    disables.
+  EOT
+  type        = string
+  default     = ""
+}
