@@ -198,6 +198,7 @@ simd-diff:
 ENDIAN_QEMU_TARGET ?= s390x-unknown-linux-gnu
 ENDIAN_QEMU_LINKER ?= s390x-linux-gnu-gcc
 ENDIAN_QEMU_RUNNER ?= qemu-s390x -L /usr/s390x-linux-gnu
+ENDIAN_QEMU_RUSTFLAGS ?= -C link-arg=-Wl,--unresolved-symbols=ignore-all
 
 ## Decode golden on-disk fixtures and reject byte-swapped fields where bounded
 on-disk-fixtures:
@@ -207,6 +208,7 @@ on-disk-fixtures:
 endian-qemu:
 	CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_LINKER="$(ENDIAN_QEMU_LINKER)" \
 	CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_RUNNER="$(ENDIAN_QEMU_RUNNER)" \
+	CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_RUSTFLAGS="$(ENDIAN_QEMU_RUSTFLAGS)" \
 	cargo test --target $(ENDIAN_QEMU_TARGET) --features bench --test on_disk_fixtures
 
 ## Validate the current on-disk format-version compatibility matrix
