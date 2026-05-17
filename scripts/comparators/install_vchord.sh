@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Install VectorChord (vchord) — Rust pgrx extension with RaBitQ-on-IVF.
-# The most relevant comparator for ecaz's RaBitQ-on-IVF work.
-# Requires pgvector to be installed first.
+# Install VectorChord (vchord) from upstream prebuilt zip.
+# Tensorchord ships per-PG-version + per-arch zips containing .so +
+# .sql + .control, ready to drop into the local pg_config dirs.
+# This avoids the Rust + pgrx + gcc14 build dance from source.
+#
+# VectorChord is the most relevant comparator for ecaz's RaBitQ-on-IVF
+# work (they ship their own RaBitQ implementation).
 set -euo pipefail
 
 COMPARATOR_NAME="vchord"
@@ -9,53 +13,69 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_common.sh"
 
 VCHORD_VERSION="${VCHORD_VERSION:-1.1.1}"
-BUILD_DIR="${BUILD_DIR:-$COMPARATORS_BUILD_DIR_DEFAULT}"
+PG_MAJOR="${PG_MAJOR:-18}"
 PG_CONFIG="${PG_CONFIG:-$PG_CONFIG_DEFAULT}"
+BUILD_DIR="${BUILD_DIR:-$COMPARATORS_BUILD_DIR_DEFAULT}"
 FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --build-dir) BUILD_DIR="$2"; shift 2 ;;
     --pg-config) PG_CONFIG="$2"; shift 2 ;;
     --version) VCHORD_VERSION="$2"; shift 2 ;;
+    --pg-major) PG_MAJOR="$2"; shift 2 ;;
+    --build-dir) BUILD_DIR="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
-    -h|--help) sed -n '2,$ s/^# \?//p' "$0" | head -20; exit 0 ;;
+    -h|--help) sed -n '2,$ s/^# \?//p' "$0" | head -15; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
-if ! comparator_extension_installed vector; then
-  comparator_log "pgvector must be installed first; run install_pgvector.sh"
-  exit 1
-fi
-
 if [[ $FORCE -eq 0 ]] && comparator_extension_installed vchord; then
-  comparator_log "already installed; pass --force to rebuild"
+  comparator_log "already installed; pass --force to reinstall"
   exit 0
 fi
 
-comparator_log "building VectorChord $VCHORD_VERSION (Rust + pgrx)"
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
+# Detect arch
+case "$(uname -m)" in
+  aarch64|arm64) ARCH=aarch64-linux-gnu ;;
+  x86_64|amd64)  ARCH=x86_64-linux-gnu ;;
+  *) comparator_log "unsupported arch: $(uname -m)"; exit 1 ;;
+esac
 
-if [[ ! -d vectorchord || $FORCE -eq 1 ]]; then
-  rm -rf vectorchord
-  git clone --depth 1 --branch "$VCHORD_VERSION" \
-    https://github.com/tensorchord/VectorChord.git vectorchord
+ZIP_NAME="postgresql-${PG_MAJOR}-vchord_${VCHORD_VERSION}_${ARCH}.zip"
+ZIP_URL="https://github.com/tensorchord/VectorChord/releases/download/${VCHORD_VERSION}/${ZIP_NAME}"
+
+comparator_log "downloading prebuilt $ZIP_NAME"
+mkdir -p "$BUILD_DIR/vchord-prebuilt"
+cd "$BUILD_DIR/vchord-prebuilt"
+
+if [[ ! -f "$ZIP_NAME" || $FORCE -eq 1 ]]; then
+  rm -f "$ZIP_NAME"
+  curl -L --fail --silent --show-error -o "$ZIP_NAME" "$ZIP_URL"
 fi
+unzip -o "$ZIP_NAME" >/dev/null
 
-# vchord's simd crate uses aarch64 fp16 intrinsics that require gcc >= 14.
-# AL2023's default gcc is 11.5, so install gcc14 if missing and point CC
-# at it for the build. gcc14 is a parallel install on AL2023 (does not
-# replace the default toolchain).
-if ! command -v gcc-14 >/dev/null && ! rpm -q gcc14 >/dev/null 2>&1; then
-  comparator_log "installing gcc14 (vchord aarch64_fp16.c requires gcc>=14)"
-  sudo dnf install -y gcc14 gcc14-c++
-fi
-export CC=/usr/bin/gcc-14
-export CXX=/usr/bin/g++-14
+PG_PKGLIBDIR="$($PG_CONFIG --pkglibdir)"
+PG_SHAREDIR="$($PG_CONFIG --sharedir)"
 
-cd vectorchord
-cargo pgrx install --release --sudo --pg-config "$PG_CONFIG"
+# vchord's zip layout puts files under a directory tree mirroring
+# the install destination, e.g.:
+#   ./usr/lib/postgresql/18/lib/vchord.so   (Ubuntu/Debian path)
+#   ./usr/share/postgresql/18/extension/vchord*.{sql,control}
+# OR flat:
+#   ./vchord.so + ./vchord*.{sql,control}
+# Find the .so and .control wherever they land.
+comparator_log "installing into $PG_PKGLIBDIR and $PG_SHAREDIR/extension"
+SO_PATH=$(find . -name 'vchord.so' -type f | head -1)
+[[ -z "$SO_PATH" ]] && { comparator_log "no vchord.so found in zip"; exit 1; }
+sudo install -m 0755 "$SO_PATH" "$PG_PKGLIBDIR/"
 
-comparator_log "installed. Run: psql -c 'CREATE EXTENSION IF NOT EXISTS vchord CASCADE;'"
+for ctl in $(find . -name 'vchord.control' -type f); do
+  sudo install -m 0644 "$ctl" "$PG_SHAREDIR/extension/"
+done
+for sql in $(find . -name 'vchord--*.sql' -type f); do
+  sudo install -m 0644 "$sql" "$PG_SHAREDIR/extension/"
+done
+
+comparator_log "installed vchord $VCHORD_VERSION (prebuilt) for pg$PG_MAJOR-$ARCH"
+comparator_log "Run: psql -c 'CREATE EXTENSION IF NOT EXISTS vchord CASCADE;'"
