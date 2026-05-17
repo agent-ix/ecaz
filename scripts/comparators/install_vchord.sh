@@ -44,6 +44,17 @@ if [[ ! -d vectorchord || $FORCE -eq 1 ]]; then
     https://github.com/tensorchord/VectorChord.git vectorchord
 fi
 
+# vchord's simd crate uses aarch64 fp16 intrinsics that require gcc >= 14.
+# AL2023's default gcc is 11.5, so install gcc14 if missing and point CC
+# at it for the build. gcc14 is a parallel install on AL2023 (does not
+# replace the default toolchain).
+if ! command -v gcc-14 >/dev/null && ! rpm -q gcc14 >/dev/null 2>&1; then
+  comparator_log "installing gcc14 (vchord aarch64_fp16.c requires gcc>=14)"
+  sudo dnf install -y gcc14 gcc14-c++
+fi
+export CC=/usr/bin/gcc-14
+export CXX=/usr/bin/g++-14
+
 cd vectorchord
 cargo pgrx install --release --sudo --pg-config "$PG_CONFIG"
 
