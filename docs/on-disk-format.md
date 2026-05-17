@@ -44,6 +44,11 @@ Current fixture coverage:
 | `diskann_vamana_metadata_v3.hex` | DiskANN Vamana metadata decode and swapped-version rejection |
 | `diskann_vamana_node_tuple_v3.hex` | DiskANN Vamana node tuple decode and swapped-neighbor-count rejection |
 | `diskann_vamana_codebook_tuple_v3.hex` | DiskANN grouped-PQ codebook shard decode |
+| `ivf_metadata_v1.hex` | IVF metadata decode and swapped-version rejection |
+| `ivf_centroid_tuple_v1.hex` | IVF centroid tuple decode and swapped-dimension rejection |
+| `ivf_list_directory_tuple_v1.hex` | IVF list-directory tuple decode |
+| `ivf_posting_tuple_v1.hex` | IVF posting tuple decode |
+| `ivf_pq_codebook_tuple_v1.hex` | IVF PQ-codebook shard decode |
 
 ## Version Policy
 
@@ -62,8 +67,8 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## Remaining Task 42 Gaps
 
-- Extend fixture bytes under `fixtures/on-disk/` to IVF, SPIRE, and remaining
-  HNSW/DiskANN page kinds.
+- Extend fixture bytes under `fixtures/on-disk/` to SPIRE and remaining
+  HNSW/DiskANN/IVF page kinds.
 - Extend byte-swapped fixture rejection tests to additional bounded multi-byte
   fields where the current decoder can reject malformed values.
 - Extend static offset assertions to additional SPIRE routing/top-graph object

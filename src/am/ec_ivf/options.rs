@@ -38,7 +38,7 @@ struct EcIvfReloptions {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StorageFormat {
+pub enum StorageFormat {
     Auto = 0,
     TurboQuant = 1,
     PqFastScan = 2,
@@ -76,7 +76,7 @@ impl StorageFormat {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RerankMode {
+pub enum RerankMode {
     Auto = 0,
     Off = 1,
     HeapF32 = 2,

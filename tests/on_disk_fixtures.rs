@@ -1,10 +1,13 @@
 //! Golden on-disk fixture decode checks.
 
 use ecaz::bench_api::{
-    ItemPointer, MetadataPage, TqElementTuple, TqGroupedCodebookTuple, TqNeighborTuple,
-    VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple, HNSW_METADATA_FORMAT_VERSION_OFFSET,
-    INDEX_FORMAT_V3_DISKANN, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
-    VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+    ItemPointer, IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage,
+    IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode, IvfStorageFormat, MetadataPage,
+    TqElementTuple, TqGroupedCodebookTuple, TqNeighborTuple, VamanaCodebookTuple,
+    VamanaMetadataPage, VamanaNodeTuple, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+    EC_IVF_INDEX_FORMAT_VERSION, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
+    HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
+    VAMANA_METADATA_FORMAT_VERSION_OFFSET, VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
 };
 
 fn decode_hex_fixture(contents: &str) -> Vec<u8> {
@@ -284,5 +287,185 @@ fn diskann_vamana_codebook_tuple_v3_fixture_decodes() {
             .map(|centroid| centroid.to_bits())
             .collect::<Vec<_>>(),
         vec![1.0_f32.to_bits(), 2.0_f32.to_bits()]
+    );
+}
+
+#[test]
+fn ivf_metadata_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v1.hex"));
+
+    let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
+
+    assert_eq!(metadata.format_version, EC_IVF_INDEX_FORMAT_VERSION);
+    assert_eq!(metadata.dimensions, 128);
+    assert_eq!(metadata.nlists, 16);
+    assert_eq!(metadata.nprobe, 4);
+    assert_eq!(metadata.training_sample_rows, 1_000);
+    assert_eq!(metadata.training_version, 3);
+    assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
+    assert_eq!(metadata.storage_format, IvfStorageFormat::PqFastScan);
+    assert_eq!(metadata.rerank, IvfRerankMode::HeapF32);
+    assert_eq!(
+        metadata.centroid_head,
+        ItemPointer {
+            block_number: 10,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        metadata.directory_head,
+        ItemPointer {
+            block_number: 11,
+            offset_number: 2
+        }
+    );
+    assert_eq!(metadata.total_live_tuples, 42);
+    assert_eq!(metadata.total_dead_tuples, 5);
+    assert_eq!(metadata.inserted_since_build, 7);
+    assert_eq!(
+        metadata.pq_codebook_head,
+        ItemPointer {
+            block_number: 12,
+            offset_number: 3
+        }
+    );
+    assert_eq!(metadata.pq_group_size, 4);
+}
+
+#[test]
+fn ivf_metadata_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v1.hex"));
+    bytes.swap(
+        EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
+        EC_IVF_METADATA_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = IvfMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_centroid_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_centroid_tuple_v1.hex"
+    ));
+
+    let centroid = IvfCentroidTuple::decode(&bytes, 2).expect("ivf centroid should decode");
+
+    assert_eq!(centroid.list_id, 3);
+    assert_eq!(
+        centroid
+            .centroid
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![0.25_f32.to_bits(), (-0.5_f32).to_bits()]
+    );
+}
+
+#[test]
+fn ivf_centroid_tuple_v1_byteswapped_dimensions_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_centroid_tuple_v1.hex"
+    ));
+    bytes.swap(
+        EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+        EC_IVF_CENTROID_DIMENSIONS_OFFSET + 1,
+    );
+
+    let err = IvfCentroidTuple::decode(&bytes, 2).expect_err("byte-swapped dimensions should fail");
+
+    assert!(
+        err.contains("ec_ivf centroid dimensions mismatch: got 512, expected 2"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_list_directory_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_list_directory_tuple_v1.hex"
+    ));
+
+    let directory =
+        IvfListDirectoryTuple::decode(&bytes).expect("ivf list directory should decode");
+
+    assert_eq!(directory.list_id, 9);
+    assert_eq!(directory.head_block, IvfBlockRef { block_number: 20 });
+    assert_eq!(directory.tail_block, IvfBlockRef { block_number: 25 });
+    assert_eq!(directory.live_count, 101);
+    assert_eq!(directory.dead_count, 7);
+    assert_eq!(directory.inserted_since_build, 11);
+}
+
+#[test]
+fn ivf_posting_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_posting_tuple_v1.hex"));
+
+    let posting = IvfPostingTuple::decode(&bytes, 5).expect("ivf posting tuple should decode");
+
+    assert_eq!(posting.list_id, 2);
+    assert!(!posting.deleted);
+    assert_eq!(
+        posting.heaptids,
+        vec![
+            ItemPointer {
+                block_number: 1,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 1,
+                offset_number: 4
+            },
+            ItemPointer {
+                block_number: 2,
+                offset_number: 1
+            }
+        ]
+    );
+    assert_eq!(posting.gamma.to_bits(), 0.75_f32.to_bits());
+    assert_eq!(
+        posting.rerank_tid,
+        ItemPointer {
+            block_number: 7,
+            offset_number: 2
+        }
+    );
+    assert_eq!(posting.payload, vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn ivf_pq_codebook_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_pq_codebook_tuple_v1.hex"
+    ));
+
+    let codebook =
+        IvfPqCodebookTuple::decode(&bytes, 4).expect("ivf pq codebook tuple should decode");
+
+    assert_eq!(codebook.group_index, 2);
+    assert_eq!(
+        codebook.next_tid,
+        ItemPointer {
+            block_number: 9,
+            offset_number: 3
+        }
+    );
+    assert_eq!(
+        codebook
+            .centroids
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![
+            0.0_f32.to_bits(),
+            0.25_f32.to_bits(),
+            (-0.5_f32).to_bits(),
+            1.0_f32.to_bits()
+        ]
     );
 }
