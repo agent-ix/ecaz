@@ -621,13 +621,10 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 });
             let snapshot_state = scan_state::resolve_scan_snapshot(scan)
                 .unwrap_or_else(|e| pgrx::error!("ec_diskann scan snapshot setup failed: {e}"));
-            let slot = scan_state::allocate_heap_slot(heap_relation_state.0)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan heap slot setup failed: {e}"));
             let source_attnum =
                 indexed_ecvector_attnum((*scan).indexRelation).unwrap_or_else(|e| {
                     pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
                 });
-            let rerank_error = RefCell::new(None::<String>);
             let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
             let scan_params = ScanParams {
                 entry_point,
@@ -635,41 +632,48 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 rerank_budget: opaque.rerank_budget,
                 top_k: sql_result_cap,
             };
-            let results = scan::vamana_scan_with(
-                &reader,
-                &mut opaque.visited,
-                scan_params,
-                |tuple| prefilter.score(tuple),
-                |heap_tids: &[ItemPointer]| {
-                    prefetch_heap_rerank_blocks(heap_relation_state.0, heap_tids)
-                },
-                |heap_tid| match exact_heap_rerank_distance(
+            let (results, rerank_error) = {
+                let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(
                     heap_relation_state.0,
-                    snapshot_state.0,
-                    slot,
-                    source_attnum,
-                    &raw_query,
-                    heap_tid,
-                ) {
-                    Ok(distance) => distance,
-                    Err(error) => {
-                        if rerank_error.borrow().is_none() {
-                            *rerank_error.borrow_mut() = Some(error);
+                )
+                .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
+                let rerank_error = RefCell::new(None::<String>);
+                let results = scan::vamana_scan_with(
+                    &reader,
+                    &mut opaque.visited,
+                    scan_params,
+                    |tuple| prefilter.score(tuple),
+                    |heap_tids: &[ItemPointer]| {
+                        prefetch_heap_rerank_blocks(heap_relation_state.0, heap_tids)
+                    },
+                    |heap_tid| match exact_heap_rerank_distance(
+                        heap_relation_state.0,
+                        snapshot_state.0,
+                        slot.as_ptr(),
+                        source_attnum,
+                        &raw_query,
+                        heap_tid,
+                    ) {
+                        Ok(distance) => distance,
+                        Err(error) => {
+                            if rerank_error.borrow().is_none() {
+                                *rerank_error.borrow_mut() = Some(error);
+                            }
+                            f32::INFINITY
                         }
-                        f32::INFINITY
-                    }
-                },
-            );
+                    },
+                );
+                (results, rerank_error.into_inner())
+            };
             prefilter.load_into_scan_opaque(opaque);
             scan_state::release_owned_scan_heap_state(
                 heap_relation_state.0,
                 heap_relation_state.1,
                 snapshot_state.0,
                 snapshot_state.1,
-                slot,
             );
 
-            if let Some(error) = rerank_error.into_inner() {
+            if let Some(error) = rerank_error {
                 pgrx::error!("ec_diskann scan heap rerank failed: {error}");
             }
             let node_results =

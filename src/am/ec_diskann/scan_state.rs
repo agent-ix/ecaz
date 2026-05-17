@@ -284,11 +284,7 @@ pub(super) unsafe fn release_owned_scan_heap_state(
     heap_relation_owned: bool,
     snapshot: pg_sys::Snapshot,
     snapshot_owned: bool,
-    slot: *mut pg_sys::TupleTableSlot,
 ) {
-    if !slot.is_null() {
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
-    }
     if snapshot_owned && !snapshot.is_null() {
         unsafe { pg_sys::UnregisterSnapshot(snapshot) };
     }
