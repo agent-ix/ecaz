@@ -7,6 +7,7 @@ use crate::am::common::cost::{
     current_planner_cost_constants, strategy_translation_snapshot, PlannerCostConstants,
     PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
 };
+use crate::storage::relation_guard::IndexRelationGuard;
 
 // Task 28 packet 30076 measured the scan kernels on local AVX2+FMA:
 // 1536D centroid f32 IP: 1306.1 ns, 1536D no-QJL 4-bit LUT posting score:
@@ -19,36 +20,6 @@ const IVF_POSTING_SCORING_DIMENSION_SCALE: f64 = 0.01;
 // discount in the planner model without a cold/warm buffer-backed measurement.
 const IVF_INDEX_PAGE_COST_SCALE: f64 = 1.0;
 const IVF_TREE_HEIGHT: i32 = 0;
-
-struct OpenedCostIndexRelation {
-    relation: pg_sys::Relation,
-}
-
-impl OpenedCostIndexRelation {
-    fn open(index_oid: pg_sys::Oid) -> Self {
-        // SAFETY: The planner passes an index OID through `IndexPath`; the
-        // returned relation is closed by this guard before the callback exits.
-        let relation = unsafe { pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE) };
-        if relation.is_null() {
-            pgrx::error!("ec_ivf planner failed to open index relation");
-        }
-        Self { relation }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for OpenedCostIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `index_open` in
-        // `OpenedCostIndexRelation::open`; this guard owns the matching close.
-        unsafe {
-            pg_sys::index_close(self.relation, pg_sys::NoLock as pg_sys::LOCKMODE);
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct IndexCostSnapshot {
@@ -112,7 +83,11 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
                 pgrx::error!("ec_ivf planner callback received null index info");
             }
             let index_oid = (*index_info).indexoid;
-            let index_relation = OpenedCostIndexRelation::open(index_oid);
+            let index_relation = IndexRelationGuard::open(
+                index_oid,
+                pg_sys::NoLock as pg_sys::LOCKMODE,
+                "ec_ivf planner",
+            );
             let estimate = compute_amcostestimate(index_relation.as_ptr());
 
             *index_startup_cost = estimate.startup_cost;

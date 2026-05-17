@@ -5,7 +5,7 @@ use crate::{
         current_planner_cost_constants, estimate_planner_cost, gated_planner_cost_estimate,
         PlannerCostEstimate, PlannerCostInputs,
     },
-    storage::page::FIRST_DATA_BLOCK_NUMBER,
+    storage::{page::FIRST_DATA_BLOCK_NUMBER, relation_guard::IndexRelationGuard},
 };
 
 use super::{insert, options};
@@ -14,36 +14,6 @@ use super::{insert, options};
 // one graph-entry phase rather than the HNSW-style metadata-derived
 // multilevel descent.
 const DISKANN_SINGLE_LAYER_TREE_HEIGHT: f64 = 1.0;
-
-struct OpenedCostIndexRelation {
-    relation: pg_sys::Relation,
-}
-
-impl OpenedCostIndexRelation {
-    fn open(index_oid: pg_sys::Oid) -> Self {
-        // SAFETY: The planner passes an index OID through `IndexPath`; the
-        // returned relation is closed by this guard before the callback exits.
-        let relation = unsafe { pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE) };
-        if relation.is_null() {
-            pgrx::error!("ec_diskann planner failed to open index relation");
-        }
-        Self { relation }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for OpenedCostIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `index_open` in
-        // `OpenedCostIndexRelation::open`; this guard owns the matching close.
-        unsafe {
-            pg_sys::index_close(self.relation, pg_sys::NoLock as pg_sys::LOCKMODE);
-        }
-    }
-}
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
@@ -71,7 +41,11 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
                 pgrx::error!("ec_diskann planner callback received null index info");
             }
             let index_oid = (*index_info).indexoid;
-            let index_relation = OpenedCostIndexRelation::open(index_oid);
+            let index_relation = IndexRelationGuard::open(
+                index_oid,
+                pg_sys::NoLock as pg_sys::LOCKMODE,
+                "ec_diskann planner",
+            );
             let estimate = compute_amcostestimate(index_relation.as_ptr());
 
             *index_startup_cost = estimate.startup_cost;

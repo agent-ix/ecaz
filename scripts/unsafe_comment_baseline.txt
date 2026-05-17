@@ -201,7 +201,7 @@ src/am/ec_diskann/ambuild.rs:847
 src/am/ec_diskann/ambuild.rs:853
 src/am/ec_diskann/ambuild.rs:859
 src/am/ec_diskann/ambuild.rs:903
-src/am/ec_diskann/cost.rs:58
+src/am/ec_diskann/cost.rs:28
 src/am/ec_diskann/insert.rs:1125
 src/am/ec_diskann/insert.rs:1134
 src/am/ec_diskann/insert.rs:1137
@@ -2111,10 +2111,10 @@ src/am/ec_ivf/build.rs:762
 src/am/ec_ivf/build.rs:766
 src/am/ec_ivf/build.rs:769
 src/am/ec_ivf/build.rs:779
-src/am/ec_ivf/cost.rs:149
-src/am/ec_ivf/cost.rs:157
-src/am/ec_ivf/cost.rs:185
-src/am/ec_ivf/cost.rs:99
+src/am/ec_ivf/cost.rs:124
+src/am/ec_ivf/cost.rs:132
+src/am/ec_ivf/cost.rs:160
+src/am/ec_ivf/cost.rs:70
 src/am/ec_ivf/insert.rs:120
 src/am/ec_ivf/insert.rs:124
 src/am/ec_ivf/insert.rs:142
