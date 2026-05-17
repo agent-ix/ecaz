@@ -63,26 +63,49 @@ if [[ ! -f "$ZIP_NAME" || $FORCE -eq 1 ]]; then
 fi
 unzip -o "$ZIP_NAME" >/dev/null
 
+# The zip contains a .deb package (Debian/Ubuntu native format).
+# AL2023 has no dpkg, so extract the .deb manually with ar + tar.
+DEB_FILE=$(find . -maxdepth 1 -name "pgvectorscale-postgresql-${PG_MAJOR}_*-Linux_${ARCH}.deb" ! -name '*dbgsym*' | head -1)
+[[ -z "$DEB_FILE" ]] && { comparator_log "no matching .deb in zip"; ls; exit 1; }
+
+EXTRACT_DIR="extracted"
+rm -rf "$EXTRACT_DIR"
+mkdir -p "$EXTRACT_DIR"
+cd "$EXTRACT_DIR"
+ar x "../$DEB_FILE"
+# Debian .deb data.tar is typically compressed: .gz / .xz / .zst.
+# AL2023 ships tar with zstd support but the compression has to be
+# specified explicitly (auto-detect via --auto-compress doesn't pick
+# .zst).
+if [[ -f data.tar.zst ]]; then
+  unzstd -q data.tar.zst && tar xf data.tar
+elif [[ -f data.tar.xz ]]; then
+  tar xJf data.tar.xz
+elif [[ -f data.tar.gz ]]; then
+  tar xzf data.tar.gz
+elif [[ -f data.tar ]]; then
+  tar xf data.tar
+else
+  comparator_log "no data.tar.* in extracted .deb"; ls; exit 1
+fi
+cd ..
+
 PG_PKGLIBDIR="$($PG_CONFIG --pkglibdir)"
 PG_SHAREDIR="$($PG_CONFIG --sharedir)"
 
-# Zip layout typically:
-#   ./vectorscale-<v>.so   or  ./<files-at-root>
-#   ./vectorscale--*.sql
-#   ./vectorscale.control
-# Copy each to the right place; the zip's layout is flat per-extension.
 comparator_log "installing into $PG_PKGLIBDIR and $PG_SHAREDIR/extension"
-shopt -s nullglob
-for so in *.so; do
+# Debian convention: files land under .../usr/lib/postgresql/<v>/lib/
+# and .../usr/share/postgresql/<v>/extension/ — find them anywhere
+# under extracted/.
+for so in $(find "$EXTRACT_DIR" -name 'vectorscale*.so' -type f); do
   sudo install -m 0755 "$so" "$PG_PKGLIBDIR/"
 done
-for ctl in *.control; do
+for ctl in $(find "$EXTRACT_DIR" -name 'vectorscale.control' -type f); do
   sudo install -m 0644 "$ctl" "$PG_SHAREDIR/extension/"
 done
-for sql in *.sql; do
+for sql in $(find "$EXTRACT_DIR" -name 'vectorscale--*.sql' -type f); do
   sudo install -m 0644 "$sql" "$PG_SHAREDIR/extension/"
 done
-shopt -u nullglob
 
 comparator_log "installed pgvectorscale $PGVECTORSCALE_VERSION (prebuilt) for pg$PG_MAJOR-$ARCH"
 comparator_log "Run: psql -c 'CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;'"
