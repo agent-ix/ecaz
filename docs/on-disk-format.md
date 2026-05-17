@@ -26,6 +26,20 @@ These assertions are intentionally about encoded byte layouts, not host Rust
 struct layout. Most persisted structs contain `Vec` fields or are logical views
 over encoded slices, so the stable contract is the codec offset table.
 
+## Fixture Process
+
+`make on-disk-fixtures` decodes packetized hex fixtures under
+`fixtures/on-disk/` and asserts that they match the expected in-memory metadata.
+It also byte-swaps the exercised format-version fields and asserts those
+mutated fixtures are rejected instead of silently decoded.
+
+Current fixture coverage:
+
+| Fixture | Coverage |
+| --- | --- |
+| `hnsw_metadata_v3.hex` | HNSW current metadata decode and swapped-version rejection |
+| `diskann_vamana_metadata_v3.hex` | DiskANN Vamana metadata decode and swapped-version rejection |
+
 ## Version Policy
 
 Every current metadata page carries a format-version field that readers check
@@ -43,9 +57,10 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## Remaining Task 42 Gaps
 
-- Add fixture bytes under `fixtures/on-disk/` for HNSW, DiskANN, IVF, SPIRE, and
-  codebook payloads.
-- Add byte-swapped fixture rejection tests.
+- Extend fixture bytes under `fixtures/on-disk/` beyond HNSW/DiskANN metadata to
+  IVF, SPIRE, codebook payloads, and remaining page kinds.
+- Extend byte-swapped fixture rejection tests beyond the HNSW/DiskANN metadata
+  version fields.
 - Extend static offset assertions to additional SPIRE routing/top-graph object
   body prefixes if they become durable page-buffer contracts beyond the current
   partition-object and metadata codecs.
