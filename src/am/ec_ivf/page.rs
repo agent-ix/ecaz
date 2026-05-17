@@ -2386,26 +2386,24 @@ pub(super) unsafe fn initialize_metadata_page(
     } else {
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_ivf failed to allocate metadata buffer");
+    let buffer = if target_block == P_NEW {
+        unsafe { LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode) }
+    } else {
+        unsafe {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     }
+    .unwrap_or_else(|| pgrx::error!("ec_ivf failed to allocate metadata buffer"));
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
     let special_size = align_up(metadata_bytes.len(), ALIGNMENT_BYTES);
     unsafe { pg_sys::PageInit(page, page_size, special_size) };
@@ -2415,30 +2413,23 @@ pub(super) unsafe fn initialize_metadata_page(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_ivf failed to open metadata buffer");
-    }
+    let buffer = buffer.unwrap_or_else(|| pgrx::error!("ec_ivf failed to open metadata buffer"));
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    let page = buffer.page();
     let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
-    let metadata = MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    metadata
+    MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(super) unsafe fn update_metadata_page<F>(
@@ -2449,41 +2440,35 @@ where
     F: FnOnce(&mut MetadataPage) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_ivf failed to open metadata buffer".to_owned());
-    }
+    let buffer = buffer.ok_or_else(|| "ec_ivf failed to open metadata buffer".to_owned())?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
     let mut metadata = match MetadataPage::decode(metadata_bytes) {
         Ok(metadata) => metadata,
         Err(err) => {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return Err(err);
         }
     };
     if let Err(err) = update(&mut metadata) {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(err);
     }
 
     let encoded = metadata.encode();
     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), metadata_ptr, encoded.len()) };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(metadata)
 }
 
