@@ -422,42 +422,72 @@ async fn run_io_probe(conn: &ConnectionOptions, mode: ProviderMode, ams: &[Fault
 async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     for &am in ams {
-        let worker = connect_fault(conn, "cancel-worker").await?;
-        let control = connect_fault(conn, "cancel-control").await?;
-        let pid = worker
-            .query_one("SELECT pg_backend_pid()", &[])
-            .await?
-            .get::<_, i32>(0);
-        let sql = workload_repeated_scan_sql(am, cancel_probe_iterations(rows));
-        let worker_task = tokio::spawn(async move {
-            worker
-                .batch_execute(&sql)
-                .await
-                .map_err(color_eyre::Report::from)
-        });
-
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        control
-            .execute("SELECT pg_cancel_backend($1)", &[&pid])
-            .await?;
-
-        match worker_task.await? {
-            Ok(()) => {
-                return Err(eyre!(
-                    "cancel probe unexpectedly succeeded for {}",
-                    am.as_str()
-                ))
-            }
-            Err(error)
-                if error
-                    .downcast_ref::<tokio_postgres::Error>()
-                    .and_then(tokio_postgres::Error::as_db_error)
-                    .map(|db| db.code().code() == "57014")
-                    .unwrap_or(false) => {}
-            Err(error) => return Err(error),
-        }
+        run_backend_interrupt_case(
+            conn,
+            rows,
+            am,
+            "cancel",
+            "SELECT pg_cancel_backend($1)",
+            true,
+        )
+        .await?;
+        run_backend_interrupt_case(
+            conn,
+            rows,
+            am,
+            "terminate",
+            "SELECT pg_terminate_backend($1)",
+            false,
+        )
+        .await?;
     }
     Ok(())
+}
+
+async fn run_backend_interrupt_case(
+    conn: &ConnectionOptions,
+    rows: i64,
+    am: FaultAm,
+    label: &str,
+    interrupt_sql: &str,
+    require_query_canceled_sqlstate: bool,
+) -> Result<()> {
+    let worker = connect_fault(conn, &format!("{label}-worker")).await?;
+    let control = connect_fault(conn, &format!("{label}-control")).await?;
+    let pid = worker
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    let sql = workload_repeated_scan_sql(am, cancel_probe_iterations(rows));
+    let worker_task = tokio::spawn(async move {
+        worker
+            .batch_execute(&sql)
+            .await
+            .map_err(color_eyre::Report::from)
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    control.execute(interrupt_sql, &[&pid]).await?;
+
+    match worker_task.await? {
+        Ok(()) => Err(eyre!(
+            "{label} probe unexpectedly succeeded for {}",
+            am.as_str()
+        )),
+        Err(error) if require_query_canceled_sqlstate => {
+            let canceled = error
+                .downcast_ref::<tokio_postgres::Error>()
+                .and_then(tokio_postgres::Error::as_db_error)
+                .map(|db| db.code().code() == "57014")
+                .unwrap_or(false);
+            if canceled {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        }
+        Err(_) => Ok(()),
+    }
 }
 
 async fn run_statement_timeout_probe(

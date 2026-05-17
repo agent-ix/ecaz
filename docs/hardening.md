@@ -173,8 +173,9 @@ under the relevant review packet before citing findings.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, and `ec_spire`, then directly exercises cancellation and
-statement timeout with repeated AM KNN scans, lock timeout with `REINDEX INDEX
-CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)`, and
+backend termination with repeated AM KNN scans, statement timeout with repeated
+AM KNN scans, lock timeout with `REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`,
+and `VACUUM (FULL)`, and
 scan/insert/vacuum/resource settings on those fixtures.
 Slow-disk runs the same AM-specific scan/insert/vacuum smoke against a
 provider-backed postmaster and requires a non-empty provider marker. I/O smoke

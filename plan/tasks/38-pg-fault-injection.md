@@ -8,11 +8,12 @@ ENOSPC, and slow-disk latency injection, extension-side palloc smoke injection
 through `ecaz.fault_palloc_nth`, `ecaz dev fault`, Makefile smoke lanes, and
 `docs/hardening.md` coverage. Current validation passed provider self-tests,
 the full dry-run matrix, and live PG18 probes for cancellation, statement
-timeout, lock timeout across `REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and
-`VACUUM (FULL)`, resource settings, memory/palloc smoke across build, scan,
-insert, and vacuum AM callbacks, provider-backed slow-disk operation, and
-provider-backed EIO/ENOSPC against AM-specific `ec_hnsw`, `ec_ivf`,
-`ec_diskann`, and `ec_spire` fixtures. The smoke surface is now in place;
+timeout, `pg_cancel_backend` and `pg_terminate_backend`, lock timeout across
+`REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)`, resource
+settings, memory/palloc smoke across build, scan, insert, and vacuum AM
+callbacks, provider-backed slow-disk operation, and provider-backed EIO/ENOSPC
+against AM-specific `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` fixtures.
+The smoke surface is now in place;
 exhaustive per-allocation palloc sweeps, OOM-kill campaigns, WAL
 rotation/temp-spill targeting, SPIRE remote-object fetch faulting, and richer
 `pg_buffercache`/`pg_stat_io` accounting remain follow-on expansion beyond this

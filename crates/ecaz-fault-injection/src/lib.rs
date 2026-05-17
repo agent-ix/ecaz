@@ -208,13 +208,22 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             "fail the Nth allocation while the AM callback is active",
             "clean ERROR; Rust guards release PG resources",
         )],
-        FaultLane::Cancel => vec![case(
-            lane,
-            access_method,
-            "pg-cancel-backend",
-            "cancel the backend while build/scan/insert/vacuum is in progress",
-            "query cancels promptly; no leaked pins or locks",
-        )],
+        FaultLane::Cancel => vec![
+            case(
+                lane,
+                access_method,
+                "pg-cancel-backend",
+                "cancel the backend while build/scan/insert/vacuum is in progress",
+                "query cancels promptly; no leaked pins or locks",
+            ),
+            case(
+                lane,
+                access_method,
+                "pg-terminate-backend",
+                "terminate the backend while build/scan/insert/vacuum is in progress",
+                "backend exits cleanly; no leaked pins or locks",
+            ),
+        ],
         FaultLane::Timeout => vec![case(
             lane,
             access_method,
