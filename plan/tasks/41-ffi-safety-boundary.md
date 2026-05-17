@@ -27,7 +27,7 @@ Closeout requirements for this subtrack:
   AM explicitly requires the relation to remain open.
 
 The next Task 41 slice should be selected from the survey packet at
-`review/921-c1-task41-unsafe-surface-strategy/`. Prefer structural cluster
+`review/31161-c1-task41-unsafe-surface-strategy/`. Prefer structural cluster
 removal over per-site annotation: wrappers first for relation/buffer/snapshot
 resources, Task 40 for synchronization primitives, Task 43 for proof coverage,
 and Task 35 comments only after the relevant structural refactor lands or is
