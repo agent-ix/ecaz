@@ -90,6 +90,13 @@ can_write)` table. `make upgrade-smoke` validates that the matrix has unique
 rows, that writable formats are readable, that each row points at a committed
 fixture, and that the current writable set is explicit.
 
+## Cross-Arch Decode
+
+`make endian-qemu` runs the on-disk fixture suite for the big-endian
+`s390x-unknown-linux-gnu` target through `qemu-s390x`. The GitHub Actions
+`endian-qemu` job installs the target, qemu user emulator, and cross linker,
+then runs this make target on `main`, manual dispatch, and the nightly schedule.
+
 ## Remaining Task 42 Gaps
 
 - Extend fixture bytes under `fixtures/on-disk/` to any raw generic page
@@ -99,7 +106,6 @@ fixture, and that the current writable set is explicit.
 - Extend static offset assertions to additional SPIRE routing/top-graph object
   body prefixes if they become durable page-buffer contracts beyond the current
   partition-object and metadata codecs.
-- Add the qemu cross-arch decode lane in coordination with Task 48.
 - Extend `fixtures/upgrade/` from the current matrix into historical corpus
   directories when a new incompatible format version ships.
 - Add WAL record version tags with Task 37.
