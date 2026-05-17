@@ -16,3 +16,9 @@
   - Key result: `test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
   - Note: run emitted one pre-existing library unused-import warning in
     `src/am/mod.rs`.
+- `cargo-test-size-of-assertions-post-merge.log`
+  - Head SHA: `874bcaba`
+  - Command: `cargo test --features bench --test size_of_assertions`
+  - Key result: `test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`
+  - Note: run emitted the same pre-existing library unused-import warning in
+    `src/am/mod.rs`.

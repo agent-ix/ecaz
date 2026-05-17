@@ -34,6 +34,8 @@ See `artifacts/manifest.md`.
 - `cargo test --features bench --test size_of_assertions`
   - Result: 13 passed, 0 failed.
   - Note: the run emitted one existing unused-import warning in `src/am/mod.rs`.
+- Post-merge rerun after integrating `origin/main`: 13 passed, 0 failed, with
+  the same existing unused-import warning.
 
 ## Remaining Task 42 Gaps
 
