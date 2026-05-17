@@ -1680,30 +1680,28 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
 ) -> Result<(), String> {
     let encoded = directory.encode();
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             directory_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_ivf failed to open directory block {}",
             directory_tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     if directory_tid.offset_number == 0 || directory_tid.offset_number > line_pointer_count {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple offset {} out of range on block {}",
             directory_tid.offset_number, directory_tid.block_number
@@ -1713,14 +1711,12 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     let item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_ivf directory tuple slot is unused".to_owned());
     }
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple bounds exceed block {}",
             directory_tid.block_number
@@ -1728,7 +1724,6 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     }
     if tuple_len != encoded.len() {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple size changed from {} to {}",
             tuple_len,
@@ -1740,7 +1735,6 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(())
 }
 
@@ -1753,30 +1747,28 @@ where
     F: FnOnce(&mut IvfListDirectoryTuple) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             directory_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_ivf failed to open directory block {}",
             directory_tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     if directory_tid.offset_number == 0 || directory_tid.offset_number > line_pointer_count {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple offset {} out of range on block {}",
             directory_tid.offset_number, directory_tid.block_number
@@ -1786,14 +1778,12 @@ where
     let item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_ivf directory tuple slot is unused".to_owned());
     }
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple bounds exceed block {}",
             directory_tid.block_number
@@ -1801,7 +1791,6 @@ where
     }
     if tuple_len != IvfListDirectoryTuple::encoded_len() {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple size changed from {} to {}",
             tuple_len,
@@ -1814,13 +1803,11 @@ where
         Ok(directory) => directory,
         Err(err) => {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return Err(err);
         }
     };
     if let Err(err) = update(&mut directory) {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(err);
     }
 
@@ -1829,7 +1816,6 @@ where
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(directory)
 }
 
