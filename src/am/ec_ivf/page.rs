@@ -1280,24 +1280,17 @@ where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        PinnedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
     let result = unsafe {
-        visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
+        visit_ivf_postings_from_buffer(buffer.buffer(), list_id, block_number, payload_len, visitor)
     };
-    unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
 
@@ -1312,23 +1305,17 @@ where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        PinnedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    let result =
-        unsafe { visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor) };
-    unsafe { pg_sys::ReleaseBuffer(buffer) };
+    let result = unsafe {
+        visit_all_ivf_postings_from_buffer(buffer.buffer(), block_number, payload_len, visitor)
+    };
     result
 }
 
@@ -1343,24 +1330,17 @@ where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        PinnedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
     let result = unsafe {
-        visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
+        visit_all_ivf_posting_refs_from_buffer(buffer.buffer(), block_number, payload_len, visitor)
     };
-    unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
 

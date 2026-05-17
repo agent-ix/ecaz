@@ -7,6 +7,28 @@ pub(crate) struct PinnedBufferGuard {
 }
 
 impl PinnedBufferGuard {
+    #[cfg(not(feature = "pg18"))]
+    pub(crate) unsafe fn read_main(
+        relation: pg_sys::Relation,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+    ) -> Option<Self> {
+        // SAFETY: caller supplies a live PostgreSQL relation and block number.
+        // The returned buffer pin is owned by this guard.
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                mode,
+                ptr::null_mut(),
+            )
+        };
+        // SAFETY: `buffer` is the direct result from `ReadBufferExtended`,
+        // which pins valid buffers for the caller.
+        unsafe { Self::from_pinned(buffer) }
+    }
+
     pub(crate) unsafe fn from_pinned(buffer: pg_sys::Buffer) -> Option<Self> {
         // SAFETY: `buffer` is supplied by a PostgreSQL API that pins buffers
         // for the caller, such as `read_stream_next_buffer`.
