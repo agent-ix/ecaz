@@ -1401,19 +1401,18 @@
     ) -> TestCoordinatorInsertPrepareResult {
         let node_id_u32 = u32::try_from(node_id).expect("node_id should fit u32");
         let served_epoch_u64 = u64::try_from(served_epoch).expect("served_epoch should fit u64");
-        let index_relation = unsafe {
-            open_valid_ec_spire_index(index_oid, "test_prepare_coordinator_insert_remote_sql")
-        };
+        let index_relation =
+            open_valid_ec_spire_index_guard(index_oid, "test_prepare_coordinator_insert_remote_sql");
         let row = unsafe {
             am::spire_coordinator_insert_prepare_remote_sql(
-                index_relation,
+                index_relation.as_ptr(),
                 node_id_u32,
                 served_epoch_u64,
                 remote_sql,
             )
         }
         .expect("remote insert prepare should succeed");
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
 
         Spi::connect_mut(|client| {
             client
@@ -1454,15 +1453,13 @@
     ) -> TestCoordinatorInsertPrepareResult {
         let node_id_u32 = u32::try_from(node_id).expect("node_id should fit u32");
         let served_epoch_u64 = u64::try_from(served_epoch).expect("served_epoch should fit u64");
-        let index_relation = unsafe {
-            open_valid_ec_spire_index(
-                index_oid,
-                "test_prepare_coordinator_insert_remote_tuple_payload",
-            )
-        };
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "test_prepare_coordinator_insert_remote_tuple_payload",
+        );
         let row = unsafe {
             am::spire_coordinator_insert_prepare_remote_tuple_payload(
-                index_relation,
+                index_relation.as_ptr(),
                 node_id_u32,
                 served_epoch_u64,
                 row_payload_json,
@@ -1470,7 +1467,7 @@
             )
         }
         .expect("remote tuple payload insert prepare should succeed");
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
 
         Spi::connect_mut(|client| {
             client

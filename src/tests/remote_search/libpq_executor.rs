@@ -571,12 +571,10 @@
             Spi::get_one::<String>(&format!("SELECT status {identity_cache_summary_from}"))
                 .expect("identity cache status query should succeed")
                 .expect("identity cache status should exist");
-        let index_relation = unsafe {
-            open_valid_ec_spire_index(
-                index_oid,
-                "test_ec_spire_libpq_identity_cache_contract_probe",
-            )
-        };
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "test_ec_spire_libpq_identity_cache_contract_probe",
+        );
         let (
             identity_cache_probe_entries,
             identity_cache_probe_queries,
@@ -585,7 +583,7 @@
             identity_cache_probe_mismatch_status,
         ) = unsafe {
             am::spire_remote_search_libpq_identity_cache_contract_probe_counts(
-                index_relation,
+                index_relation.as_ptr(),
                 u64::try_from(active_epoch).expect("active epoch should fit u64"),
                 vec![1.0, 0.0],
                 vec![u64::try_from(selected_pid).expect("selected PID should fit u64")],
@@ -593,7 +591,7 @@
                 "strict",
             )
         };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
 
         assert!(register_result);
         assert!(connection_attempted);

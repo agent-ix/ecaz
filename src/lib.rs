@@ -334,13 +334,6 @@ fn open_valid_ec_spire_index_guard(
     )
 }
 
-unsafe fn open_valid_ec_spire_index(
-    index_oid: pg_sys::Oid,
-    caller_name: &'static str,
-) -> pg_sys::Relation {
-    open_valid_ec_spire_index_guard(index_oid, caller_name).into_raw()
-}
-
 unsafe fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
     relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
 }
@@ -16663,10 +16656,11 @@ fn ec_spire_index_epoch_cleanup_summary(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_epoch_cleanup_summary") };
-    let epoch_rows = unsafe { am::spire_index_epoch_snapshot(index_relation) };
-    let storage_snapshot = unsafe { am::spire_index_relation_storage_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_summary");
+    let epoch_rows = unsafe { am::spire_index_epoch_snapshot(index_relation.as_ptr()) };
+    let storage_snapshot =
+        unsafe { am::spire_index_relation_storage_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     let active_root_manifest_count = epoch_rows
         .iter()
@@ -16756,9 +16750,9 @@ fn ec_spire_index_epoch_cleanup_run(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_epoch_cleanup_run") };
-    let result = unsafe { am::spire_index_epoch_cleanup_run(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_run");
+    let result = unsafe { am::spire_index_epoch_cleanup_run(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(result.active_epoch).expect("active epoch should fit in i64"),
@@ -16809,10 +16803,9 @@ fn ec_spire_index_leaf_snapshot(
     if unsafe { !relation_oid_exists(index_oid) } {
         return TableIterator::new(Vec::new().into_iter());
     }
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_leaf_snapshot") };
-    let rows = unsafe { am::spire_index_leaf_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_leaf_snapshot");
+    let rows = unsafe { am::spire_index_leaf_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -16876,9 +16869,9 @@ fn ec_spire_index_maintenance_plan_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_plan_snapshot") };
-    let snapshot = unsafe { am::spire_index_maintenance_plan_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_plan_snapshot");
+    let snapshot = unsafe { am::spire_index_maintenance_plan_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -16918,11 +16911,13 @@ fn ec_spire_index_locked_maintenance_plan_snapshot(
         name!(planner_message, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_index_locked_maintenance_plan_snapshot")
-    };
-    let snapshot = unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_index_locked_maintenance_plan_snapshot",
+    );
+    let snapshot =
+        unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -16964,11 +16959,10 @@ fn ec_spire_index_locked_maintenance_run_plan(
         name!(maintenance_message, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_index_locked_maintenance_run_plan")
-    };
-    let result = unsafe { am::spire_index_locked_maintenance_run_plan(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_locked_maintenance_run_plan");
+    let result = unsafe { am::spire_index_locked_maintenance_run_plan(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(result.active_epoch_before).expect("active epoch should fit in i64"),
@@ -17012,11 +17006,11 @@ fn ec_spire_index_maintenance_scheduler_plan(
         name!(recommendation, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_scheduler_plan")
-    };
-    let snapshot = unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_plan");
+    let snapshot =
+        unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     let (scheduler_status, recommendation) = if snapshot.planner_status == "planned" {
         (
@@ -17069,9 +17063,9 @@ fn ec_spire_index_maintenance_run(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_run") };
-    let result = unsafe { am::spire_index_maintenance_run(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_run");
+    let result = unsafe { am::spire_index_maintenance_run(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(result.active_epoch_before).expect("active epoch should fit in i64"),
@@ -17121,9 +17115,9 @@ fn ec_spire_index_maintenance_scheduler_run(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_scheduler_run") };
-    let result = unsafe { am::spire_index_maintenance_run(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_run");
+    let result = unsafe { am::spire_index_maintenance_run(index_relation.as_ptr()) };
+    drop(index_relation);
 
     let scheduler_status = if result.published { "ran" } else { "idle" };
 
@@ -17177,9 +17171,9 @@ fn ec_spire_index_delta_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_delta_snapshot") };
-    let rows = unsafe { am::spire_index_delta_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_delta_snapshot");
+    let rows = unsafe { am::spire_index_delta_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -17222,9 +17216,9 @@ fn ec_spire_index_insert_debt_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_insert_debt_snapshot") };
-    let snapshot = unsafe { am::spire_index_insert_debt_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_insert_debt_snapshot");
+    let snapshot = unsafe { am::spire_index_insert_debt_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -17328,10 +17322,9 @@ fn ec_spire_index_cost_snapshot(
         name!(modeled_correlation, f64),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_cost_snapshot") };
-    let snapshot = unsafe { am::spire_index_cost_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_snapshot");
+    let snapshot = unsafe { am::spire_index_cost_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         snapshot.planner_scan_enabled,
@@ -17393,9 +17386,9 @@ fn ec_spire_index_cost_tuning_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_cost_tuning_snapshot") };
-    let snapshot = unsafe { am::spire_index_cost_tuning_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_tuning_snapshot");
+    let snapshot = unsafe { am::spire_index_cost_tuning_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         snapshot.storage_format.to_owned(),

@@ -458,16 +458,19 @@
              (401, 'cancelled prepare', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
               decode('303132333435363738393a3b3c3d3e3f', 'hex'))"
         );
-        let index_relation = unsafe {
-            open_valid_ec_spire_index(
-                index_oid,
-                "test_ec_spire_insert_remote_prepare_local_cancel",
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "test_ec_spire_insert_remote_prepare_local_cancel",
+        );
+        let result = unsafe {
+            am::spire_coordinator_insert_prepare_remote_sql(
+                index_relation.as_ptr(),
+                21,
+                5,
+                &remote_sql,
             )
         };
-        let result = unsafe {
-            am::spire_coordinator_insert_prepare_remote_sql(index_relation, 21, 5, &remote_sql)
-        };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
         unsafe { ScopedPgQueryCancelFlags::clear_pending_for_test() };
 
         let error = result.expect_err("local cancel should abort remote insert prepare");
