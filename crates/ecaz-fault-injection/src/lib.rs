@@ -201,13 +201,22 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
                 "clean ERROR; no partial AM-visible tuple",
             ),
         ],
-        FaultLane::Memory => vec![case(
-            lane,
-            access_method,
-            "palloc-nth-failure",
-            "fail the Nth allocation while the AM callback is active",
-            "clean ERROR; Rust guards release PG resources",
-        )],
+        FaultLane::Memory => vec![
+            case(
+                lane,
+                access_method,
+                "palloc-nth-failure",
+                "fail the Nth allocation while the AM callback is active",
+                "clean ERROR; Rust guards release PG resources",
+            ),
+            case(
+                lane,
+                access_method,
+                "backend-sigkill-oom-proxy",
+                "SIGKILL the backend while build/scan/insert work is active",
+                "postmaster recovers; no leaked fault state remains",
+            ),
+        ],
         FaultLane::Cancel => vec![
             case(
                 lane,
@@ -427,6 +436,25 @@ pub fn workload_insert_sql(access_method: FaultAm) -> String {
     )
 }
 
+pub fn workload_bulk_insert_sql(access_method: FaultAm, rows: i64) -> String {
+    let table = workload_table(access_method);
+    let rows = rows.max(1);
+    format!(
+        "INSERT INTO {table} (embedding)
+         SELECT encode_to_ecvector(
+             ARRAY[
+                 cos((gs * 0.017)::double precision)::real,
+                 sin((gs * 0.017)::double precision)::real,
+                 0.0::real,
+                 0.0::real
+             ]::real[],
+             4,
+             42
+         )
+         FROM generate_series(1, {rows}) AS gs"
+    )
+}
+
 pub fn workload_vacuum_sql(access_method: FaultAm) -> String {
     format!("VACUUM (ANALYZE) {}", workload_table(access_method))
 }
@@ -502,6 +530,7 @@ mod tests {
             assert!(workload_scan_sql(am).contains(workload_table(am)));
             assert!(workload_repeated_scan_sql(am, 10).contains(workload_table(am)));
             assert!(workload_insert_sql(am).contains(workload_table(am)));
+            assert!(workload_bulk_insert_sql(am, 10).contains(workload_table(am)));
             assert!(workload_vacuum_sql(am).contains(workload_table(am)));
             assert!(workload_reindex_sql(am).contains(workload_index(am)));
         }

@@ -2,9 +2,10 @@ use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
     all_smoke_cases, leak_probe_sql, optional_leak_probe_sql, required_smoke_cases,
-    workload_insert_sql, workload_reindex_sql, workload_repeated_scan_sql, workload_scan_sql,
-    workload_setup_sql, workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql,
-    workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
+    workload_bulk_insert_sql, workload_insert_sql, workload_reindex_sql,
+    workload_repeated_scan_sql, workload_scan_sql, workload_setup_sql, workload_table_sql,
+    workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql, FaultAm, FaultLane,
+    ProviderMode,
 };
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -770,6 +771,8 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
         run_memory_single_workload_probe(&client, am, "insert", &workload_insert_sql(am)).await?;
         run_memory_single_workload_probe(&client, am, "vacuum", &workload_vacuum_sql(am)).await?;
     }
+    drop(client);
+    run_memory_oom_kill_probe(conn, rows, ams).await?;
     Ok(())
 }
 
@@ -822,6 +825,116 @@ fn memory_scan_sweep_limit(am: FaultAm) -> i32 {
         FaultAm::DiskAnn => 1,
         FaultAm::Spire => 3,
     }
+}
+
+async fn run_memory_oom_kill_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultAm],
+) -> Result<()> {
+    for &am in ams {
+        let rows = oom_kill_workload_rows(rows);
+        run_memory_oom_kill_build_probe(conn, rows, am).await?;
+        prepare_workloads(conn, rows.min(1_024), &[am]).await?;
+        run_memory_oom_kill_case(
+            conn,
+            am,
+            "scan",
+            &workload_repeated_scan_sql(am, oom_kill_scan_iterations(rows)),
+        )
+        .await?;
+        prepare_workloads(conn, rows.min(1_024), &[am]).await?;
+        run_memory_oom_kill_case(conn, am, "insert", &workload_bulk_insert_sql(am, rows)).await?;
+    }
+    Ok(())
+}
+
+async fn run_memory_oom_kill_build_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    am: FaultAm,
+) -> Result<()> {
+    let setup = connect_fault(conn, "oom-kill-setup").await?;
+    setup.batch_execute(&workload_table_sql(am, rows)).await?;
+    drop(setup);
+    run_memory_oom_kill_case(
+        conn,
+        am,
+        "build",
+        &ecaz_fault_injection::workload_create_index_sql(am, rows),
+    )
+    .await
+}
+
+async fn run_memory_oom_kill_case(
+    conn: &ConnectionOptions,
+    am: FaultAm,
+    workload: &str,
+    sql: &str,
+) -> Result<()> {
+    let worker = connect_fault(conn, &format!("oom-kill-{workload}-worker")).await?;
+    let pid = worker
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    let label = format!("memory oom-kill {} {workload}", am.as_str());
+    let sql = sql.to_owned();
+    let worker_task = tokio::spawn(async move {
+        worker
+            .batch_execute(&sql)
+            .await
+            .map_err(color_eyre::Report::from)
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(oom_kill_delay_ms())).await;
+    crate::ecaz_println!("[fault] {label} sigkill_pid={pid}");
+    send_sigkill(pid).await?;
+
+    match worker_task.await? {
+        Ok(()) => return Err(eyre!("{label} unexpectedly completed before SIGKILL")),
+        Err(_) => {}
+    }
+    wait_for_postmaster_recovery(conn, &label).await
+}
+
+fn oom_kill_workload_rows(rows: i64) -> i64 {
+    rows.saturating_mul(500).clamp(20_000, 200_000)
+}
+
+fn oom_kill_scan_iterations(rows: i64) -> i64 {
+    rows.saturating_mul(20).clamp(200_000, 1_000_000)
+}
+
+fn oom_kill_delay_ms() -> u64 {
+    25
+}
+
+async fn send_sigkill(pid: i32) -> Result<()> {
+    let status = Command::new("kill")
+        .arg("-9")
+        .arg(pid.to_string())
+        .status()
+        .await?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(eyre!("kill -9 {pid} failed with status {status}"))
+    }
+}
+
+async fn wait_for_postmaster_recovery(conn: &ConnectionOptions, label: &str) -> Result<()> {
+    for _ in 0..100 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Ok(client) = connect_fault(conn, "oom-kill-recovery").await {
+            if client.simple_query("SELECT 1").await.is_ok() {
+                crate::ecaz_println!("[fault] {label} postmaster_recovered=true");
+                return Ok(());
+            }
+        }
+    }
+    Err(eyre!(
+        "{label} did not recover a usable postmaster within 10s"
+    ))
 }
 
 async fn run_slow_disk_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
@@ -1030,6 +1143,12 @@ async fn assert_pg_stat_io_non_decreasing(
     };
     crate::ecaz_println!("[fault] pg_stat_io_ops_before={before} after={after}");
     if after < before {
+        if lane == FaultLane::Memory {
+            crate::ecaz_println!(
+                "[fault] pg_stat_io_reset_after_crash_recovery=true before={before} after={after}"
+            );
+            return Ok(());
+        }
         return Err(eyre!(
             "{lane} postcondition failed: pg_stat_io total operations decreased from {before} to {after}"
         ));

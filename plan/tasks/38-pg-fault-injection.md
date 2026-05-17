@@ -12,17 +12,18 @@ timeout, `idle_in_transaction_session_timeout`, `pg_cancel_backend` and
 `pg_terminate_backend`, lock timeout across `REINDEX INDEX CONCURRENTLY`,
 `CREATE INDEX`, and `VACUUM (FULL)`, resource settings plus built-in
 `temp_file_limit` and provider-backed ENOSPC temp-spill failures, memory/palloc
-smoke across build, scan, insert, and vacuum AM callbacks, provider-backed
-slow-disk operation, and provider-backed EIO/ENOSPC against AM-specific
-`ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` fixtures, plus the existing
-SPIRE Stage E `remote_oom` transport fault fixture.
+smoke across build, scan, insert, and vacuum AM callbacks, backend-SIGKILL
+OOM-proxy smoke during build/scan/insert for every AM, provider-backed slow-disk
+operation, and provider-backed EIO/ENOSPC against AM-specific `ec_hnsw`,
+`ec_ivf`, `ec_diskann`, and `ec_spire` fixtures, plus the existing SPIRE Stage E
+`remote_oom` transport fault fixture.
 Postconditions assert no leftover fault sessions, relation/advisory locks, or
 prepared transactions, and include optional live `pg_buffercache` fixture pin
 checks plus `pg_stat_io` non-decreasing operation counters when those PG18
 surfaces are available. The smoke surface is now in place; exhaustive
-per-allocation palloc sweeps, local OOM-kill campaigns during
-build/insert/scan, WAL rotation I/O targeting, and SPIRE remote-object fetch
-faulting remain follow-on expansion beyond this smoke checkpoint.
+per-allocation palloc sweeps, true kernel/cgroup OOM pressure campaigns, WAL
+rotation I/O targeting, and SPIRE remote-object fetch faulting remain follow-on
+expansion beyond this smoke checkpoint.
 
 ## Scope
 
