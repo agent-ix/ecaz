@@ -282,21 +282,6 @@ pub(super) unsafe fn resolve_scan_snapshot(
     Ok(ResolvedScanSnapshot::owned(registered_snapshot))
 }
 
-pub(super) unsafe fn allocate_heap_slot(
-    heap_relation: pg_sys::Relation,
-) -> Result<*mut pg_sys::TupleTableSlot, String> {
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
-        )
-    };
-    if slot.is_null() {
-        return Err("ec_diskann scan failed to allocate a heap tuple slot".into());
-    }
-    Ok(slot)
-}
-
 pub(super) unsafe fn fetch_heap_row_version(
     heap_relation: pg_sys::Relation,
     heap_tid: ItemPointer,
