@@ -33,42 +33,27 @@ pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
 
 pub(super) struct ResolvedScanHeapRelation {
     relation: pg_sys::Relation,
-    owned: bool,
+    _owned: Option<crate::storage::relation_guard::HeapRelationGuard>,
 }
 
 impl ResolvedScanHeapRelation {
     fn borrowed(relation: pg_sys::Relation) -> Self {
         Self {
             relation,
-            owned: false,
+            _owned: None,
         }
     }
 
-    fn owned(relation: pg_sys::Relation) -> Self {
+    fn owned(guard: crate::storage::relation_guard::HeapRelationGuard) -> Self {
+        let relation = guard.as_ptr();
         Self {
             relation,
-            owned: true,
+            _owned: Some(guard),
         }
     }
 
     pub(super) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
-    }
-}
-
-impl Drop for ResolvedScanHeapRelation {
-    fn drop(&mut self) {
-        if self.owned && !self.relation.is_null() {
-            // SAFETY: Owned heap relations are opened by
-            // `resolve_scan_heap_relation` with `AccessShareLock`; this guard
-            // owns the matching close.
-            unsafe {
-                pg_sys::table_close(
-                    self.relation,
-                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                );
-            }
-        }
     }
 }
 
@@ -294,12 +279,11 @@ fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRe
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_spire heap rerank could not resolve heap relation");
     }
-    // SAFETY: `heap_oid` was resolved from the scan's index relation and is
-    // closed by `ResolvedScanHeapRelation` when ownership is needed.
-    let relation = unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    if relation.is_null() {
+    let Some(relation) =
+        crate::storage::relation_guard::HeapRelationGuard::try_access_share(heap_oid)
+    else {
         pgrx::error!("ec_spire heap rerank failed to open heap relation");
-    }
+    };
     ResolvedScanHeapRelation::owned(relation)
 }
 
