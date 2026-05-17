@@ -37,7 +37,10 @@ temp-spill failure and provider-backed ENOSPC on `pgsql_tmp`,
 provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
-`--assume-prepared`. The existing SPIRE Stage E remote fault surface now has a
+`--assume-prepared`. Provider-backed I/O assertions now accept only expected
+provider SQLSTATEs, plus PostgreSQL's specific checkpoint-failure `XX000`
+surface for ENOSPC, instead of accepting any database error. The existing SPIRE
+Stage E remote fault surface now has a
 packet-local `remote_oom` run through
 `ecaz dev spire-multicluster fault-pg18`; that run also exposed and fixed a
 fixture bug where long run ids placed Unix sockets under paths longer than
@@ -89,6 +92,7 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   - `ecaz dev fault smoke --lane slow-disk --rows 64 --provider-marker ...`
   - `ecaz dev fault provider-restart --mode eio-read/enospc-write --path-match <relation path> ...`
   - `ecaz dev fault smoke --lane io --am <hnsw|ivf|diskann|spire> --assume-prepared --provider-marker ...`
+  - focused HNSW provider SQLSTATE guard for EIO and ENOSPC
   - `ecaz dev fault provider-restore`
   - `ecaz dev spire-multicluster fault-pg18 --case remote_oom ...`
 

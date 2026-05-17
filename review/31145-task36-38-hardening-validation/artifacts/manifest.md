@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `b7b8c903ef1996965bcb4b3fd37efd76ce794df8`
+Code checkpoint SHA: `e5f3cd678fcb4cbbc1f34f16504927b1b955c1f8`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:56:07Z`
+Timestamp: `2026-05-17T06:05:19Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -173,6 +173,14 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - SPIRE EIO: `task38-pg18-spire-eio-smoke.log`, path match `base/8052051/8054502`, provider marker `/tmp/ecaz-fault-provider-eio-spire-task38-20260517.marker`.
 - SPIRE ENOSPC: `task38-pg18-spire-enospc-smoke.log`, path match `base/8052051/8054492`, provider marker `/tmp/ecaz-fault-provider-enospc-spire-task38-20260517.marker`.
 - Key result: all eight runs exited 0. Each run restarted PG18 with the provider, ran `ecaz dev fault smoke --lane io --am <am> --assume-prepared`, asserted the shared postcondition probes, and restored the postmaster.
+
+## Provider SQLSTATE Guard
+
+- Lane: Task 38 provider-backed I/O assertion tightening
+- Fixture: HNSW table path `base/8052051/8202610`, HNSW index path `base/8052051/8202620`.
+- EIO command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-eio.marker" review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-eio-smoke.log`
+- ENOSPC command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-enospc-rerun.marker" review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-enospc-rerun-smoke.log`
+- Key result: the EIO smoke exited 0 with `pg_stat_io_ops_before=352 after=441`; the first ENOSPC tightening attempt failed as intended in `task38-provider-sqlstate-hnsw-enospc-smoke.log` because PostgreSQL surfaced provider ENOSPC during `CHECKPOINT` as SQLSTATE `XX000` with message `checkpoint request failed`; the final narrowed allowance accepted that specific checkpoint path and the rerun exited 0 with `pg_stat_io_ops_before=42 after=134`. Provider restart/restore logs and marker files are stored alongside the smoke logs.
 
 ## Prior Live Smoke Artifacts Retained
 
