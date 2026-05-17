@@ -194,6 +194,37 @@ struct CachedRelationContext {
     watched_relation_oids: Vec<pg_sys::Oid>,
 }
 
+struct AccessShareIndexRelation {
+    relation: pg_sys::Relation,
+}
+
+impl AccessShareIndexRelation {
+    fn open(index_oid: pg_sys::Oid) -> Option<Self> {
+        // SAFETY: PostgreSQL owns the relation cache entry returned by
+        // `index_open`; this guard owns the matching AccessShareLock close.
+        let relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            return None;
+        }
+        Some(Self { relation })
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for AccessShareIndexRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `index_open` in
+        // `AccessShareIndexRelation::open`; this guard owns the matching close.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::index_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+}
+
 type RelcacheCallbackFunction =
     Option<unsafe extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
 
@@ -1354,13 +1385,11 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
 
     for index_oid in index_list.iter_oid() {
         watched_index_oids.push(index_oid);
-        let index_relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        if index_relation.is_null() {
+        let Some(index_relation) = AccessShareIndexRelation::open(index_oid) else {
             continue;
-        }
-        let index_form = unsafe { (*index_relation).rd_index.as_ref() };
-        let class_form = unsafe { (*index_relation).rd_rel.as_ref() };
+        };
+        let index_form = unsafe { (*index_relation.as_ptr()).rd_index.as_ref() };
+        let class_form = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() };
         if let Some(class_form) = class_form {
             if ec_spire_am_oid != pg_sys::InvalidOid && class_form.relam == ec_spire_am_oid {
                 ec_spire_index_count += 1;
@@ -1378,7 +1407,6 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
                 };
             }
         }
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     }
 
     if ec_spire_index_count > 1 {
@@ -1443,13 +1471,11 @@ unsafe fn dml_frontdoor_index_key_column_names_from_rel(
     index_oid: pg_sys::Oid,
     heap_relation: pg_sys::Relation,
 ) -> Result<Vec<String>, String> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    if index_relation.is_null() {
+    let Some(index_relation) = AccessShareIndexRelation::open(index_oid) else {
         return Err("ec_spire DML frontdoor catalog index open returned NULL".to_owned());
-    }
+    };
     let result = unsafe {
-        let index_form = (*index_relation)
+        let index_form = (*index_relation.as_ptr())
             .rd_index
             .as_ref()
             .ok_or_else(|| "ec_spire DML frontdoor catalog index metadata is NULL".to_owned())?;
@@ -1471,7 +1497,6 @@ unsafe fn dml_frontdoor_index_key_column_names_from_rel(
         }
         Ok(columns)
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
