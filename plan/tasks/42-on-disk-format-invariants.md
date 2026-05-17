@@ -59,9 +59,11 @@ freshly built index).
    compile error.
 4. **Version compatibility matrix.** Maintain a table of
    `(format_version, AM, can_read, can_write)` and a test that exercises
-   every entry: build a corpus with format vN, upgrade the extension to
-   vN+1, scan and verify recall floor. Stored corpora live under
-   `fixtures/upgrade/{vN}/`.
+   every entry. While each AM has only one writable format, this is a
+   registry-consistency check that pins read/write support and fixture
+   presence. Once a second writable format ships, the lane must build a corpus
+   with format vN, upgrade the extension to vN+1, scan and verify recall floor.
+   Stored corpora live under `fixtures/upgrade/{vN}/`.
 5. **WAL record version tags.** Pair with Task 37: each ECAZ WAL record
    carries a version byte; replay rejects unknown versions cleanly.
 6. **`pg_upgrade` smoke.** A separate lane that runs `pg_upgrade` from PG18
@@ -99,5 +101,5 @@ freshly built index).
 
 - Independent of Tasks 36–41; can land in parallel.
 - The qemu lane needs the CI matrix work from Task 48.
-- The `pg_upgrade` smoke depends on the live-cluster harness from Tasks
-  37–38.
+- The `pg_upgrade` smoke can run against same-binary PG18 today; PG18→PG19
+  coverage waits for PG19 support.

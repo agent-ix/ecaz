@@ -246,6 +246,27 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_pg_upgrade_smoke_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "pg-upgrade-smoke",
+            "--artifact-dir",
+            "review/9057-task42-pg-upgrade-smoke/artifacts",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::PgUpgradeSmoke(_args),
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_spire_multicluster_insert_read_after_customscan_command() {
         let cli = Cli::try_parse_from([
             "ecaz",

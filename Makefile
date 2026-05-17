@@ -1,5 +1,5 @@
 .PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report cargo-geiger mirai build install clean
-.PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke layout-check miri miri-expanded careful
+.PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
 .PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full hardening-local hardening-nightly-local hardening-validate hardening-tiers-report
@@ -198,7 +198,9 @@ simd-diff:
 ENDIAN_QEMU_TARGET ?= s390x-unknown-linux-gnu
 ENDIAN_QEMU_LINKER ?= s390x-linux-gnu-gcc
 ENDIAN_QEMU_RUNNER ?= qemu-s390x -L /usr/s390x-linux-gnu
+# Decode-only qemu lane: pgrx FFI stubs are linked but not executed on s390x.
 ENDIAN_QEMU_RUSTFLAGS ?= -C link-arg=-Wl,--unresolved-symbols=ignore-all
+PG_UPGRADE_SMOKE_FLAGS ?=
 
 ## Decode golden on-disk fixtures and reject byte-swapped fields where bounded
 on-disk-fixtures:
@@ -214,6 +216,10 @@ endian-qemu:
 ## Validate the current on-disk format-version compatibility matrix
 upgrade-smoke:
 	cargo test --features bench --test upgrade_matrix
+
+## Run pg_upgrade PG18-to-PG18 with ECAZ data and post-upgrade checks
+pg-upgrade-smoke:
+	cargo run -p ecaz-cli -- dev pg-upgrade-smoke $(PG_UPGRADE_SMOKE_FLAGS)
 
 # --- Layout ---
 

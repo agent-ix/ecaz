@@ -90,12 +90,31 @@ can_write)` table. `make upgrade-smoke` validates that the matrix has unique
 rows, that writable formats are readable, that each row points at a committed
 fixture, and that the current writable set is explicit.
 
+Today there is only one writable format per AM, so this lane is a registry
+consistency check. When a second writable format ships, the matrix must grow a
+live upgrade rehearsal for the old writable version: build the old corpus,
+upgrade the extension, scan it with the new reader, and record the recall floor
+beside the historical fixture directory.
+
 ## Cross-Arch Decode
 
 `make endian-qemu` runs the on-disk fixture suite for the big-endian
 `s390x-unknown-linux-gnu` target through `qemu-s390x`. The GitHub Actions
 `endian-qemu` job installs the target, qemu user emulator, and cross linker,
 then runs this make target on `main`, manual dispatch, and the nightly schedule.
+
+The qemu lane is decode-only. It links the extension test binary but does not
+execute PostgreSQL callbacks under s390x; the unresolved pgrx FFI symbols are
+therefore allowed only for this target.
+
+## PG Upgrade Smoke
+
+`make pg-upgrade-smoke` runs the PG18 same-binary `pg_upgrade` lane through
+`ecaz dev pg-upgrade-smoke`. The fixture creates an old cluster with ECAZ
+installed, inserts a small `ecvector` corpus, builds an `ec_hnsw` index, checks
+the pre-upgrade nearest-neighbor result, runs `pg_upgrade`, starts the upgraded
+cluster, verifies the same nearest-neighbor result and index presence, then
+runs `pg_amcheck` against the upgraded database.
 
 ## Remaining Task 42 Gaps
 
@@ -109,4 +128,3 @@ then runs this make target on `main`, manual dispatch, and the nightly schedule.
 - Extend `fixtures/upgrade/` from the current matrix into historical corpus
   directories when a new incompatible format version ships.
 - Add WAL record version tags with Task 37.
-- Add pg_upgrade smoke coverage with ECAZ data present.
