@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `6ad7f81d7b514fe47b187ebc2562dd97cb3958b9`
+Code checkpoint SHA: `2882f9517bdc09364594dd6f5d9d98780e48bac9`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T15:26:18Z`
+Timestamp: `2026-05-17T15:40:39Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -187,6 +187,14 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - EIO command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-eio.marker" review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-eio-smoke.log`
 - ENOSPC command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-enospc-rerun.marker" review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-enospc-rerun-smoke.log`
 - Key result: the EIO smoke exited 0 with `pg_stat_io_ops_before=352 after=441`; the first ENOSPC tightening attempt failed as intended in `task38-provider-sqlstate-hnsw-enospc-smoke.log` because PostgreSQL surfaced provider ENOSPC during `CHECKPOINT` as SQLSTATE `XX000` with message `checkpoint request failed`; the final narrowed allowance accepted that specific checkpoint path and the rerun exited 0 with `pg_stat_io_ops_before=42 after=134`. Provider restart/restore logs and marker files are stored alongside the smoke logs.
+
+## WAL-Path ENOSPC Smoke
+
+- Lane: Task 38 provider-backed WAL-path ENOSPC smoke
+- Fixture: HNSW table path `base/8052051/8227222`, HNSW index path `base/8052051/8227232`.
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-wal-enospc-hnsw-final.marker" review/31145-task36-38-hardening-validation/artifacts/task38-wal-enospc-hnsw-final-smoke.log`
+- Provider setup: `task38-wal-enospc-hnsw-final-restart.log` restarted PG18 with `--mode enospc-write --path-match pg_wal --after 1`; `task38-wal-enospc-hnsw-final.marker` recorded `mode=enospc-write match=pg_wal`; `task38-wal-enospc-hnsw-final-restore.log` restored PG18 without provider environment.
+- Key result: final smoke exited 0 after recording `wal_enospc_backend_disconnected=true` and `wal_enospc_provider_restore_required=true match=pg_wal`. Earlier guard artifacts show why the CLI behavior was tightened: `task38-wal-enospc-hnsw-smoke.log` failed because WAL ENOSPC closed the backend before same-session postconditions, and `task38-wal-enospc-cli-restore-fallback.log` proves `ecaz dev fault provider-restore` falls back from failed fast restart to immediate stop/start. Final postmaster status is clean in `task38-final-pg18-status.log`.
 
 ## Prior Live Smoke Artifacts Retained
 
