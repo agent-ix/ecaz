@@ -33,7 +33,9 @@ provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
 `--assume-prepared`. Those live lanes tag their sessions and assert
-postconditions for leftover fault sessions, locks, and prepared transactions.
+postconditions for leftover fault sessions, locks, prepared transactions,
+optional `pg_buffercache` fixture pins, and optional `pg_stat_io`
+non-decreasing operation counters.
 
 ## Scope Boundary
 
@@ -41,8 +43,8 @@ Task 38 is still scope-bounded to smoke coverage. It now has live PG18
 EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
 but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
 OOM-kill campaigns, WAL/temp-spill targeting, SPIRE remote-object fetch
-faulting, and richer `pg_buffercache`/`pg_stat_io` accounting remain follow-on
-expansion.
+faulting, and full expected-vs-forced WAL/temp-spill accounting remain
+follow-on expansion.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
@@ -80,5 +82,5 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
 - Whether the forced backend wrappers are narrow enough for bench/test use.
 - Whether the major-callback memory smoke is enough for this checkpoint before
   expanding into exhaustive per-allocation sweeps.
-- Whether the application-name based postcondition checks are the right minimum
-  live leak checks for the built-in fault lanes.
+- Whether the optional `pg_buffercache`/`pg_stat_io` probes are enough live
+  leak/accounting coverage for this smoke checkpoint.

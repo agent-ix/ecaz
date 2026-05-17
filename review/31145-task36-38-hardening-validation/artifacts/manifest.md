@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `d6b396d9b281cd91d410d5e172281db84393e64d`
+Code checkpoint SHA: `88d21954b501467d8fabc3a2df8d4610e8d62755`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:13:16Z`
+Timestamp: `2026-05-17T05:18:35Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -117,6 +117,12 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live cancellation/termination matrix
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane cancel --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-cancel-terminate-matrix.log`
 - Key result: all four AMs completed both `pg_cancel_backend` and `pg_terminate_backend` smoke cases, with shared postcondition probes asserted.
+
+## task38-pg18-postcondition-pgstat-probes.log
+
+- Lane: Task 38 live postcondition probe expansion
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-postcondition-pgstat-probes.log`
+- Key result: live lock-timeout smoke passed with optional probes enabled; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=731 after=762`.
 
 ## Provider-Backed I/O Smoke
 
