@@ -3,6 +3,18 @@
 Follow `AGENTS.md` for the repository workflow, review-packet rules, checkpoint
 rules, and local safety rules.
 
+## Task File Lookup
+
+- Canonical task definitions live under `plan/tasks/`, not under `review/`.
+- Use `plan/tasks/README.md` as the task index. Numbered primary tasks use the
+  `NN-slug.md` filename pattern.
+- If a requested task is not present in the current checkout, do not infer from
+  similarly numbered review packets. Refresh or inspect `origin/main` first,
+  for example `git fetch origin main` and
+  `git ls-tree --name-only origin/main:plan/tasks`.
+- Current hardening follow-up tasks are `35` through `49` in `plan/tasks/`.
+  Task 42 is `plan/tasks/42-on-disk-format-invariants.md`.
+
 ## Local Operator CLI
 
 - Prefer `ecaz-cli` for local PostgreSQL/pgrx setup, SQL checks, corpus
