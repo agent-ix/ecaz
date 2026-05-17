@@ -1,8 +1,47 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **proposed** — extends Task 37 from "crash mid-write" to the broader
-class of operational faults that real production clusters hit and that no
-current ECAZ lane exercises.
+Status: **operator smoke surface implemented locally; needs follow-up for
+documented expansion gaps** — extends Task 37 from "crash mid-write" to the
+broader class of operational faults that real production clusters hit. The
+local implementation adds
+`crates/ecaz-fault-injection`, an LD_PRELOAD provider for matched-path EIO,
+ENOSPC, and slow-disk latency injection, extension-side palloc smoke injection
+through `ecaz.fault_palloc_nth`, `ecaz dev fault`, Makefile smoke lanes, and
+`docs/hardening.md` coverage. Current validation passed provider self-tests,
+the full dry-run matrix, and live PG18 probes for cancellation, statement
+timeout, `idle_in_transaction_session_timeout`, `pg_cancel_backend` and
+`pg_terminate_backend`, lock timeout across `REINDEX INDEX CONCURRENTLY`,
+`CREATE INDEX`, and `VACUUM (FULL)`, calibrated accumulator `work_mem`
+pressure across all four AMs, resource settings plus built-in
+`temp_file_limit` and provider-backed ENOSPC temp-spill failures, memory/palloc
+smoke across build, scan, insert, and vacuum AM callbacks, backend-SIGKILL
+OOM-proxy smoke during build/scan/insert for every AM, backend `RLIMIT_AS` OOM
+pressure during AM build work for every AM, provider-backed slow-disk
+operation, and provider-backed EIO/ENOSPC against AM-specific `ec_hnsw`,
+`ec_ivf`, `ec_diskann`, and `ec_spire` fixtures, WAL-path ENOSPC smoke through
+`match=pg_wal` with explicit restore-required handling, resource-lane WAL
+rotation accounting that performs AM-backed writes and forces `pg_switch_wal()`
+across all four AMs, provider fault-event marker accounting that requires
+actual `fault=1` events for configured EIO/ENOSPC matches, plus the existing
+SPIRE Stage E `remote_oom` transport fault fixture.
+Postconditions assert no leftover fault sessions, relation/advisory locks, or
+prepared transactions, and include optional live `pg_buffercache` fixture pin
+checks plus `pg_stat_io` and `pg_stat_wal` non-decreasing operation counters
+when those PG18 surfaces are available. Resource temp-spill probes also emit
+`pg_stat_database.temp_bytes` before/after markers. Memory smoke now sweeps
+build, scan, insert, and vacuum palloc fault ordinals until the first
+successful Nth allocation, capped at 100, instead of checking only fixed per-AM
+scan limits or the first injected allocation. The provider marker path is now
+made absolute before postmaster restart, avoiding false negatives after
+PostgreSQL changes backend working directories. The smoke surface is now in
+place; raw PostgreSQL allocator sweeps beyond currently instrumented ECAZ
+palloc sites, byte-perfect expected-vs-forced WAL/temp-byte attribution, cgroup
+OOM-kill campaigns beyond the current `RLIMIT_AS` and SIGKILL recovery
+surfaces, and SPIRE remote-object fetch faulting remain follow-on expansion
+beyond this smoke checkpoint. The packet records current availability checks:
+cgroup v2 memory is present but should be driven through a systemd-scoped
+postmaster workflow rather than direct `/sys/fs/cgroup` writes, and SPIRE live
+remote-object reads are not implemented yet.
 
 ## Scope
 

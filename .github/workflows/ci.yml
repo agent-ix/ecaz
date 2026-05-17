@@ -43,6 +43,31 @@ jobs:
       - name: Unsafe audit
         run: bash scripts/check_unsafe_comments.sh
 
+  simd-diff:
+    name: SIMD differential (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: avx2
+            runner: ubuntu-24.04
+          - arch: neon
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: SIMD/scalar differential tests
+        run: cargo test --features bench --test simd_diff -- --test-threads=1
+        env:
+          PROPTEST_CASES: 256
+
   pgrx-pg18:
     name: pgrx pg18
     runs-on: ubuntu-24.04

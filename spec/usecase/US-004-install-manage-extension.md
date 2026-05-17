@@ -2,9 +2,12 @@
 id: US-004
 title: Install and Manage Extension Lifecycle
 type: user-story
+artifact_type: US
 status: APPROVED
-traces:
-  - StR-002
+relationships:
+  - target: "ix://agent-ix/ecaz/StR-002"
+    type: "derives_from"
+    cardinality: "N:1"
 ---
 # US-004: Install and Manage Extension Lifecycle
 
@@ -14,10 +17,21 @@ traces:
 
 ## Acceptance Criteria
 
-1. `CREATE EXTENSION ecaz` registers the type, operators, and access method
-2. `DROP EXTENSION ecaz CASCADE` cleanly removes all objects
-3. The current packaged extension supports PostgreSQL 17 and 18
-4. `cargo pgrx install --release` produces a valid extension package
+### US-004-AC-1
+
+`CREATE EXTENSION ecaz` registers the type, operators, and access method.
+
+### US-004-AC-2
+
+`DROP EXTENSION ecaz CASCADE` cleanly removes all objects.
+
+### US-004-AC-3
+
+The current packaged extension supports PostgreSQL 17 and 18.
+
+### US-004-AC-4
+
+`cargo pgrx install --release` produces a valid extension package.
 
 Current productization direction:
 

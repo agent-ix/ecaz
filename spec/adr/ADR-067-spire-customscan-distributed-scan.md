@@ -1,7 +1,7 @@
 ---
 id: ADR-067
 title: "SPIRE Distributed Scan via CustomScan"
-status: PROPOSED
+status: ACCEPTED
 impact: Replaces ADR-064 / ADR-065 / ADR-066 for the SPIRE distributed read
   path. Affects Task 30 Phase 11 Stage D and downstream stages. Phase 11.5
   mirror-sync work is superseded.
@@ -11,7 +11,7 @@ date: 2026-05-10
 
 ## Status
 
-Proposed.
+Accepted.
 
 ## Related
 

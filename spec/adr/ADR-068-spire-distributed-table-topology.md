@@ -1,7 +1,7 @@
 ---
 id: ADR-068
 title: "SPIRE Distributed Table Topology"
-status: PROPOSED
+status: ACCEPTED
 impact: Defines coordinator and remote-node table shapes, placement metadata,
   and the read-path data flow under ADR-067 CustomScan. Affects Task 30
   Phase 11 Stage D scope.
@@ -11,7 +11,7 @@ date: 2026-05-10
 
 ## Status
 
-Proposed.
+Accepted.
 
 ## Related
 

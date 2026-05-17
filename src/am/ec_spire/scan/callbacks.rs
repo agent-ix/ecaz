@@ -10,6 +10,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
                 pgrx::error!("ec_spire failed to allocate scan descriptor");
             }
 
+            crate::fault::maybe_fail_palloc("ec_spire ambeginscan opaque");
             let opaque = PgBox::<SpireScanOpaque>::alloc_in_context(PgMemoryContexts::For(
                 pg_sys::CurrentMemoryContext,
             ));

@@ -1,0 +1,18 @@
+{
+"dhatFileVersion": 2,
+"mode": "rust-heap",
+"verb": "Allocated",
+"bklt": true,
+"bkacc": false,
+"tu": "µs",
+"Mtu": "s",
+"tuth": 10,
+"cmd": "target/release/dhat_score",
+"pid": 9485,
+"tg": 0,
+"te": 1102032,
+"pps": [],
+"ftbl": [
+"[root]"
+]
+}

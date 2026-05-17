@@ -2,10 +2,13 @@
 id: US-007
 title: Planner-Visible Cost Model
 type: user-story
+artifact_type: US
 status: DRAFT
 priority: P1-critical
-traces:
-  - StR-004
+relationships:
+  - target: "ix://agent-ix/ecaz/StR-004"
+    type: "derives_from"
+    cardinality: "N:1"
 ---
 # US-007: Planner-Visible Cost Model
 
@@ -15,7 +18,22 @@ traces:
 
 ## Acceptance Criteria
 
-1. `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` shows "Index Scan using ec_hnsw" on a table with an HNSW index
-2. The planner cost model accounts for graph traversal pages, linear scan pages, and CPU scoring cost
-3. On PG18, `amgettreeheight` reports the HNSW graph's `max_level` to the planner for cost refinement
-4. The planner correctly prefers sequential scan over index scan for very small tables (< 100 rows)
+### US-007-AC-1
+
+`EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` shows "Index Scan using
+ec_hnsw" on a table with an HNSW index.
+
+### US-007-AC-2
+
+The planner cost model accounts for graph traversal pages, linear scan pages,
+and CPU scoring cost.
+
+### US-007-AC-3
+
+On PG18, `amgettreeheight` reports the HNSW graph's `max_level` to the planner
+for cost refinement.
+
+### US-007-AC-4
+
+The planner correctly prefers sequential scan over index scan for very small
+tables with fewer than 100 rows.

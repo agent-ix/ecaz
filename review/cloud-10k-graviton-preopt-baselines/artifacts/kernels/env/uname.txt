@@ -1,0 +1,1 @@
+Linux ip-10-42-1-159.us-west-2.compute.internal 6.1.170-213.321.amzn2023.aarch64 #1 SMP Thu May 14 12:18:13 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux

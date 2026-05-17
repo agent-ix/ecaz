@@ -1744,7 +1744,7 @@ fn ann_benchmarks_anchor_within_tolerance() {
     // to run without linking the pgrx-built crate.
     const PUBLISHED_RECALL_AT_10: f32 = 0.96082_f32;
     const TOLERANCE: f32 = 0.02_f32;
-    const PROFILE: &str = "ec_hnsw_real_ann_benchmarks_anchor";
+    const PROFILE: &str = "ec_real_ann_benchmarks_anchor";
 
     let parquet = env::var("TQV_ANCHOR_PARQUET").expect(
         "TQV_ANCHOR_PARQUET must point at the Qdrant DBpedia 1M parquet (file or directory)",

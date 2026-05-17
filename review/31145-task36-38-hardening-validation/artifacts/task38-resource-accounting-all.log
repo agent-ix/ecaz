@@ -1,0 +1,31 @@
+ec_hnsw-resource-tiny-work-mem	resource	ec_hnsw	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_hnsw-resource-temp-file-limit	resource	ec_hnsw	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_ivf-resource-tiny-work-mem	resource	ec_ivf	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_ivf-resource-temp-file-limit	resource	ec_ivf	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_diskann-resource-tiny-work-mem	resource	ec_diskann	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_diskann-resource-temp-file-limit	resource	ec_diskann	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_spire-resource-tiny-work-mem	resource	ec_spire	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_spire-resource-temp-file-limit	resource	ec_spire	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+[fault] resource_accumulator_prepare rows=8192 limit=1000 work_mem=64kB
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8229707	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8229717
+ec_ivf	table=ecaz_fault_ivf	table_path=base/8052051/8229719	index=ecaz_fault_ivf_idx	index_path=base/8052051/8229729
+ec_diskann	table=ecaz_fault_diskann	table_path=base/8052051/8229731	index=ecaz_fault_diskann_idx	index_path=base/8052051/8229741
+ec_spire	table=ecaz_fault_spire	table_path=base/8052051/8229743	index=ecaz_fault_spire_idx	index_path=base/8052051/8229753
+[fault] resource_accumulator_pressure am=ec_hnsw rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_hnsw mode=temp_file_limit temp_bytes_before=327680 after=327680 delta=0
+[fault] resource_accumulator_pressure am=ec_ivf rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_ivf mode=temp_file_limit temp_bytes_before=327680 after=327680 delta=0
+[fault] resource_accumulator_pressure am=ec_diskann rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_diskann mode=temp_file_limit temp_bytes_before=327680 after=327680 delta=0
+[fault] resource_accumulator_pressure am=ec_spire rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_spire mode=temp_file_limit temp_bytes_before=327680 after=327680 delta=0
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=3919 after=4744
+[fault] pg_stat_wal_records_before=201474 after=270121 bytes_before=31593642 after=40508396

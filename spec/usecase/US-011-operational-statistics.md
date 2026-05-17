@@ -2,10 +2,13 @@
 id: US-011
 title: Operational Statistics
 type: user-story
+artifact_type: US
 status: DRAFT
 priority: P3-medium
-traces:
-  - StR-004
+relationships:
+  - target: "ix://agent-ix/ecaz/StR-004"
+    type: "derives_from"
+    cardinality: "N:1"
 ---
 # US-011: Operational Statistics
 
@@ -15,10 +18,24 @@ traces:
 
 ## Acceptance Criteria
 
-1. `SELECT * FROM ecaz_stats()` returns cumulative counters for the current backend
-2. Counters include: total distance calculations, total graph hops, total linear scan pages read, quantizer cache hits/misses
-3. `SELECT pg_stat_reset_shared('ecaz')` resets the counters
-4. The statistics survive across queries within a session but reset on backend restart
+### US-011-AC-1
+
+`SELECT * FROM ecaz_stats()` returns cumulative counters for the current
+backend.
+
+### US-011-AC-2
+
+Counters include total distance calculations, total graph hops, total linear
+scan pages read, and quantizer cache hits/misses.
+
+### US-011-AC-3
+
+`SELECT pg_stat_reset_shared('ecaz')` resets the counters.
+
+### US-011-AC-4
+
+The statistics survive across queries within a session but reset on backend
+restart.
 
 Current staged behavior:
 

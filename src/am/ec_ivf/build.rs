@@ -160,6 +160,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
                 plan.posting_count() as f64
             };
 
+            crate::fault::maybe_fail_palloc("ec_ivf ambuild result");
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
             result.index_tuples = index_tuples;

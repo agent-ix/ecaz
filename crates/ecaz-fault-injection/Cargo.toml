@@ -1,0 +1,11 @@
+[package]
+name = "ecaz-fault-injection"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+build = "build.rs"
+
+[dependencies]
+
+[build-dependencies]
+cc = "1"

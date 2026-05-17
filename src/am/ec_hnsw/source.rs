@@ -94,6 +94,30 @@ pub(crate) fn inner_product(left: &[f32], right: &[f32]) -> f32 {
     inner_product_scalar(left, right)
 }
 
+#[cfg(any(test, feature = "bench"))]
+pub(crate) fn inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+    inner_product_scalar(left, right)
+}
+
+#[cfg(all(
+    any(test, feature = "bench"),
+    any(target_arch = "x86", target_arch = "x86_64")
+))]
+pub(crate) fn inner_product_avx2_fma_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
+        return None;
+    }
+    Some(unsafe { inner_product_avx2_fma(left, right) })
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub(crate) fn inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    if !std::arch::is_aarch64_feature_detected!("neon") {
+        return None;
+    }
+    Some(unsafe { inner_product_neon(left, right) })
+}
+
 fn inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
     let mut sum = 0.0_f32;
     let chunk_len = left.len() / 4 * 4;

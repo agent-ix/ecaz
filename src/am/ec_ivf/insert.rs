@@ -29,6 +29,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            crate::fault::maybe_fail_palloc("ec_ivf aminsert entry");
             let metadata = page::read_metadata_page(index_relation);
             validate_metadata_runtime_options(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
 

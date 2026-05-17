@@ -72,27 +72,27 @@ impl SubsetProfile {
 
 pub const PROFILES: &[SubsetProfile] = &[
     SubsetProfile {
-        prefix: "ec_hnsw_real_50k",
+        prefix: "ec_real_50k",
         corpus_rows: 50_000,
         query_rows: 1_000,
     },
     SubsetProfile {
-        prefix: "ec_hnsw_real_10k",
+        prefix: "ec_real_10k",
         corpus_rows: 10_000,
         query_rows: 200,
     },
     SubsetProfile {
-        prefix: "ec_hnsw_real_25k",
+        prefix: "ec_real_25k",
         corpus_rows: 25_000,
         query_rows: 500,
     },
     SubsetProfile {
-        prefix: "ec_hnsw_real_100k",
+        prefix: "ec_real_100k",
         corpus_rows: 100_000,
         query_rows: 1_000,
     },
     SubsetProfile {
-        prefix: "ec_hnsw_real_ann_benchmarks_anchor",
+        prefix: "ec_real_ann_benchmarks_anchor",
         corpus_rows: 990_000,
         query_rows: 10_000,
     },
@@ -1151,7 +1151,7 @@ mod tests {
 
     #[test]
     fn profile_query_start_equals_corpus_rows() {
-        let p = resolve_profile("ec_hnsw_real_50k").unwrap();
+        let p = resolve_profile("ec_real_50k").unwrap();
         assert_eq!(p.query_start(), 50_000);
         assert_eq!(p.needed_rows(), 51_000);
     }
@@ -1162,8 +1162,14 @@ mod tests {
     }
 
     #[test]
+    fn legacy_hnsw_real_profile_names_are_not_aliases() {
+        assert!(resolve_profile("ec_hnsw_real_10k").is_none());
+        assert!(resolve_profile("ec_hnsw_real_ann_benchmarks_anchor").is_none());
+    }
+
+    #[test]
     fn anchor_profile_matches_documented_split() {
-        let p = resolve_profile("ec_hnsw_real_ann_benchmarks_anchor").unwrap();
+        let p = resolve_profile("ec_real_ann_benchmarks_anchor").unwrap();
         assert_eq!(p.corpus_rows, 990_000);
         assert_eq!(p.query_rows, 10_000);
         assert_eq!(p.needed_rows(), 1_000_000);

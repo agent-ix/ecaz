@@ -120,7 +120,8 @@ else
 fi
 REMOTE_READY_DATA="$RUN_DIR/remote-ready"
 COORD_DATA="$RUN_DIR/coord"
-SOCKET_DIR="$RUN_DIR/sockets"
+SOCKET_KEY="$(printf '%s' "$RUN_DIR" | cksum | awk '{print $1}')"
+SOCKET_DIR="${SOCKET_DIR:-$ROOT_DIR/target/s-$SOCKET_KEY}"
 STRICT_LOG="${ARTIFACT_DIR:-$LOG_DIR}/stage_e_fault_${FAULT_CASE}_strict.log"
 DEGRADED_LOG="${ARTIFACT_DIR:-$LOG_DIR}/stage_e_fault_${FAULT_CASE}_degraded.log"
 
