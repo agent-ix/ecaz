@@ -245,19 +245,16 @@ pub(super) unsafe fn create_local_store_relations_for_build(
         };
         unsafe { pg_sys::CommandCounterIncrement() };
 
-        let store_relation = unsafe {
-            pg_sys::relation_open(store_relid, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE)
-        };
-        if store_relation.is_null() {
+        let Some(store_relation) = crate::storage::relation_guard::RelationGuard::try_open(
+            store_relid,
+            pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+        ) else {
             return Err(format!(
                 "ec_spire failed to open created local_store_id {} relation {}",
                 entry.local_store_id, store_relid
             ));
-        }
-        unsafe {
-            page::initialize_aux_store_metadata_page(store_relation);
-            pg_sys::relation_close(store_relation, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE);
-        }
+        };
+        unsafe { page::initialize_aux_store_metadata_page(store_relation.as_ptr()) };
         created.push((entry.local_store_id, store_relid.into()));
     }
 

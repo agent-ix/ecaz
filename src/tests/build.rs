@@ -508,15 +508,12 @@
 
         for relid in aux_store_relids {
             let autovacuum_enabled = unsafe {
-                let relation = pg_sys::relation_open(
+                let relation = crate::storage::relation_guard::RelationGuard::try_open(
                     pg_sys::Oid::from(relid),
                     pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                );
-                assert!(
-                    !relation.is_null(),
-                    "auxiliary relation {relid} should open"
-                );
-                let rd_options = (*relation).rd_options;
+                )
+                .unwrap_or_else(|| panic!("auxiliary relation {relid} should open"));
+                let rd_options = (*relation.as_ptr()).rd_options;
                 assert!(
                     !rd_options.is_null(),
                     "auxiliary relation {relid} should have parsed reloptions"
@@ -524,7 +521,6 @@
                 let enabled = (*rd_options.cast::<pg_sys::StdRdOptions>())
                     .autovacuum
                     .enabled;
-                pg_sys::relation_close(relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
                 enabled
             };
             assert!(

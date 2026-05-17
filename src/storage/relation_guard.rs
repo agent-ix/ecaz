@@ -91,3 +91,34 @@ impl Drop for HeapRelationGuard {
         unsafe { pg_sys::table_close(self.relation, self.lockmode) };
     }
 }
+
+pub(crate) struct RelationGuard {
+    relation: pg_sys::Relation,
+    lockmode: pg_sys::LOCKMODE,
+}
+
+impl RelationGuard {
+    pub(crate) fn try_open(relation_oid: pg_sys::Oid, lockmode: pg_sys::LOCKMODE) -> Option<Self> {
+        // SAFETY: PostgreSQL owns the relation cache entry returned by
+        // `relation_open`; this guard owns the matching close for `lockmode`.
+        let relation = unsafe { pg_sys::relation_open(relation_oid, lockmode) };
+        if relation.is_null() {
+            return None;
+        }
+        Some(Self { relation, lockmode })
+    }
+
+    pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for RelationGuard {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `relation_open` in
+        // `RelationGuard::try_open`; this guard owns the matching close.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::relation_close(self.relation, self.lockmode) };
+    }
+}

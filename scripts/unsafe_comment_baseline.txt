@@ -3399,7 +3399,6 @@ src/am/ec_spire/storage/relation_plan.rs:196
 src/am/ec_spire/storage/relation_plan.rs:221
 src/am/ec_spire/storage/relation_plan.rs:239
 src/am/ec_spire/storage/relation_plan.rs:246
-src/am/ec_spire/storage/relation_plan.rs:248
 src/am/ec_spire/storage/relation_plan.rs:257
 src/am/ec_spire/storage/relation_store.rs:1168
 src/am/ec_spire/storage/relation_store.rs:1182
@@ -3753,7 +3752,7 @@ src/quant/prod.rs:699
 src/tests/build.rs:251
 src/tests/build.rs:252
 src/tests/build.rs:510
-src/tests/build.rs:746
+src/tests/build.rs:742
 src/tests/custom_scan.rs:1075
 src/tests/custom_scan.rs:1232
 src/tests/custom_scan.rs:1254
