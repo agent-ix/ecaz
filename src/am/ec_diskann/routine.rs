@@ -278,9 +278,13 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
             });
             if !duplicate_candidates.is_empty() {
-                let slot = scan_state::allocate_heap_slot(heap_relation).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann aminsert could not allocate duplicate-probe slot: {e}")
-                });
+                let slot =
+                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+                        .unwrap_or_else(|| {
+                            pgrx::error!(
+                                "ec_diskann aminsert could not allocate duplicate-probe slot"
+                            )
+                        });
                 let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
                 let duplicate_tid = duplicate_candidates.into_iter().find(|candidate_tid| {
                     let Ok(candidate_tuple) = reader.read_node(*candidate_tid) else {
@@ -292,7 +296,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     let Ok(existing_vector) = fetch_heap_source_vector(
                         heap_relation,
                         snapshot,
-                        slot,
+                        slot.as_ptr(),
                         source_attnum,
                         candidate_tuple.primary_heaptid,
                         "duplicate probe source vector",
@@ -301,7 +305,6 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     };
                     existing_vector == source_vector
                 });
-                pg_sys::ExecDropSingleTupleTableSlot(slot);
                 if let Some(existing_tid) = duplicate_tid {
                     insert::bind_duplicate_heap_tid(index_relation, existing_tid, heap_tid)
                         .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate bind failed: {e}"));
@@ -354,9 +357,13 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 );
             }
 
-            let slot = scan_state::allocate_heap_slot(heap_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann unique insert planning could not allocate heap slot: {e}")
-            });
+            let slot =
+                crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_diskann unique insert planning could not allocate heap slot"
+                        )
+                    });
             let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
             let rerank_error = RefCell::new(None::<String>);
             let mut visited = VisitedState::new();
@@ -374,7 +381,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 |heap_tid| match exact_heap_rerank_distance(
                     heap_relation,
                     snapshot,
-                    slot,
+                    slot.as_ptr(),
                     source_attnum,
                     &source_vector,
                     heap_tid,
@@ -390,7 +397,6 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             )
             .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert planning scan failed: {e}"));
             if let Some(error) = rerank_error.into_inner() {
-                pg_sys::ExecDropSingleTupleTableSlot(slot);
                 pgrx::error!("ec_diskann unique insert planning exact rerank failed: {error}");
             }
             let planning_candidates = exact_candidates
@@ -399,7 +405,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     let source_vector = fetch_heap_source_vector(
                         heap_relation,
                         snapshot,
-                        slot,
+                        slot.as_ptr(),
                         source_attnum,
                         candidate.primary_heaptid,
                         "forward-neighbor planning source vector",
@@ -415,7 +421,6 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     }
                 })
                 .collect::<Vec<_>>();
-            pg_sys::ExecDropSingleTupleTableSlot(slot);
 
             let forward_neighbors = insert::select_insert_forward_neighbors(
                 &source_vector,
