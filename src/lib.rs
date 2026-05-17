@@ -314,6 +314,10 @@ fn open_valid_ec_spire_index_guard(
     )
 }
 
+fn validate_ec_spire_index(index_oid: pg_sys::Oid, caller_name: &'static str) {
+    let _index_relation = open_valid_ec_spire_index_guard(index_oid, caller_name);
+}
+
 unsafe fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
     relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
 }
@@ -1988,10 +1992,7 @@ fn ec_spire_register_remote_node_descriptor(
         pgrx::notice!("{warning}");
     }
 
-    {
-        let _index_relation =
-            open_valid_ec_spire_index_guard(index_oid, "ec_spire_register_remote_node_descriptor");
-    }
+    validate_ec_spire_index(index_oid, "ec_spire_register_remote_node_descriptor");
 
     // `index_relation` must remain live through this SPI block: the active
     // epoch recheck still calls back into the AM with `as_ptr()`.
@@ -2753,10 +2754,7 @@ fn ec_spire_remote_epoch_manifest_catalog(
         name!(persisted_at_micros, i64),
     ),
 > {
-    {
-        let _index_relation =
-            open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_manifest_catalog");
-    }
+    validate_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_catalog");
 
     let sql = format!(
         "SELECT active_epoch, manifest_scope, manifest_decision, manifest_entry_count, \
@@ -2838,12 +2836,7 @@ fn ec_spire_remote_epoch_manifest_entry_catalog(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_entry_catalog",
-        );
-    }
+    validate_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_entry_catalog");
 
     let sql = format!(
         "SELECT active_epoch, node_id, descriptor_state, placement_count, \
@@ -3163,10 +3156,7 @@ fn ec_spire_remote_epoch_manifest_freshness(
         name!(recommendation, String),
     ),
 > {
-    {
-        let _index_relation =
-            open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_manifest_freshness");
-    }
+    validate_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_freshness");
 
     let rows = Spi::connect(|client| {
         client
@@ -3578,12 +3568,10 @@ fn ec_spire_remote_epoch_manifest_publication_summary(
         name!(recommendation, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_publication_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_publication_summary",
+    );
 
     let (active_epoch, current_manifest_decision, catalog_status, catalog_recommendation) =
         Spi::connect(|client| {
@@ -3825,12 +3813,10 @@ fn ec_spire_remote_epoch_manifest_libpq_request_plan(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_request_plan",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_request_plan",
+    );
 
     let rows = Spi::connect(|client| {
         client
@@ -3929,12 +3915,10 @@ fn ec_spire_remote_epoch_manifest_libpq_request_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_request_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_request_summary",
+    );
 
     let row = Spi::connect(|client| {
         client
@@ -4073,12 +4057,7 @@ fn ec_spire_remote_epoch_manifest_payload_plan(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_payload_plan",
-        );
-    }
+    validate_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_payload_plan");
 
     let rows = Spi::connect(|client| {
         client
@@ -4169,12 +4148,7 @@ fn ec_spire_remote_epoch_manifest_payload_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_payload_summary",
-        );
-    }
+    validate_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_payload_summary");
 
     let row = Spi::connect(|client| {
         client
@@ -4276,12 +4250,10 @@ fn ec_spire_validate_remote_epoch_manifest_payload(
             "ec_spire_validate_remote_epoch_manifest_payload active_epoch must be greater than 0"
         );
     }
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            remote_index_oid,
-            "ec_spire_validate_remote_epoch_manifest_payload",
-        );
-    }
+    validate_ec_spire_index(
+        remote_index_oid,
+        "ec_spire_validate_remote_epoch_manifest_payload",
+    );
 
     let payload = manifest_payload.0;
     let Some(object) = payload.as_object() else {
@@ -4369,12 +4341,10 @@ fn ec_spire_apply_remote_epoch_manifest_payload(
             "ec_spire_apply_remote_epoch_manifest_payload active_epoch must be greater than 0"
         );
     }
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            remote_index_oid,
-            "ec_spire_apply_remote_epoch_manifest_payload",
-        );
-    }
+    validate_ec_spire_index(
+        remote_index_oid,
+        "ec_spire_apply_remote_epoch_manifest_payload",
+    );
 
     let payload = manifest_payload.0;
     let Some(object) = payload.as_object() else {
@@ -4628,12 +4598,10 @@ fn ec_spire_remote_epoch_manifest_libpq_dispatch_plan(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_dispatch_plan",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_dispatch_plan",
+    );
 
     let rows = Spi::connect(|client| {
         client
@@ -4782,12 +4750,7 @@ fn ec_spire_remote_epoch_manifest_libpq_bind_plan(
         name!(element_count, i64),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_bind_plan",
-        );
-    }
+    validate_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_libpq_bind_plan");
 
     let rows = Spi::connect(|client| {
         client
@@ -4912,12 +4875,10 @@ fn ec_spire_remote_epoch_manifest_libpq_bind_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_bind_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_bind_summary",
+    );
 
     let row = Spi::connect(|client| {
         client
@@ -5054,12 +5015,10 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_work_plan(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_executor_work_plan",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_executor_work_plan",
+    );
 
     let rows = Spi::connect(|client| {
         client
@@ -5177,12 +5136,10 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_work_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_executor_work_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_executor_work_summary",
+    );
 
     let row = Spi::connect(|client| {
         client
@@ -5327,12 +5284,10 @@ fn ec_spire_remote_epoch_manifest_libpq_dispatch_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_dispatch_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_dispatch_summary",
+    );
 
     let row = Spi::connect(|client| {
         client
@@ -5454,12 +5409,10 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_readiness(
         name!(recommendation, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_executor_readiness",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_executor_readiness",
+    );
 
     let (
         active_epoch,
@@ -5603,12 +5556,10 @@ fn ec_spire_remote_epoch_manifest_libpq_receive_plan(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_receive_plan",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_receive_plan",
+    );
 
     let rows = Spi::connect(|client| {
         client
@@ -5709,12 +5660,10 @@ fn ec_spire_remote_epoch_manifest_libpq_receive_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_receive_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_receive_summary",
+    );
 
     let row = Spi::connect(|client| {
         client
@@ -5998,12 +5947,10 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
         name!(recommendation, &'static str),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_libpq_executor_results",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_libpq_executor_results",
+    );
 
     let dispatch_rows = load_spire_manifest_executor_dispatch_rows(index_oid)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -6205,12 +6152,10 @@ fn ec_spire_remote_epoch_manifest_publication_gate_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_publication_gate_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_publication_gate_summary",
+    );
 
     let row = Spi::connect(|client| {
         client
@@ -6415,12 +6360,10 @@ fn ec_spire_remote_epoch_manifest_publication_result_summary(
         name!(status, String),
     ),
 > {
-    {
-        let _index_relation = open_valid_ec_spire_index_guard(
-            index_oid,
-            "ec_spire_remote_epoch_manifest_publication_result_summary",
-        );
-    }
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_remote_epoch_manifest_publication_result_summary",
+    );
 
     let row = Spi::connect(|client| {
         client
