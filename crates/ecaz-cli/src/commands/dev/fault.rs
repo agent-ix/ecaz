@@ -271,14 +271,67 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
 async fn run_provider_restore(args: ProviderRestoreArgs) -> Result<()> {
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = find_pgrx_install(args.pg, &pgrx_home)?;
-    restart_pgrx_postmaster(
-        &install.bin_dir.join("pg_ctl"),
-        &pgrx_home,
-        args.pg,
-        args.port.unwrap_or_else(|| default_pgrx_port(args.pg)),
-        &[],
-    )
-    .await
+    let pg_ctl = install.bin_dir.join("pg_ctl");
+    let port = args.port.unwrap_or_else(|| default_pgrx_port(args.pg));
+    match restart_pgrx_postmaster(&pg_ctl, &pgrx_home, args.pg, port, &[]).await {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            crate::ecaz_println!(
+                "[fault] provider_restore_fast_restart_failed={error}; falling back to immediate stop/start"
+            );
+            restore_pgrx_postmaster_immediate(&pg_ctl, &pgrx_home, args.pg, port).await
+        }
+    }
+}
+
+async fn restore_pgrx_postmaster_immediate(
+    pg_ctl: &std::path::Path,
+    pgrx_home: &std::path::Path,
+    pg: u16,
+    port: u16,
+) -> Result<()> {
+    let data_dir = pgrx_home.join(format!("data-{pg}"));
+    let log_file = pgrx_home.join(format!("{pg}.log"));
+    let options = format!(
+        "-i -p {port} -c unix_socket_directories={}",
+        pgrx_home.display()
+    );
+
+    let mut stop = Command::new(pg_ctl);
+    stop.arg("-D")
+        .arg(&data_dir)
+        .arg("stop")
+        .arg("-m")
+        .arg("immediate")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    run_status(stop).await?;
+
+    let mut start = Command::new(pg_ctl);
+    start
+        .arg("-D")
+        .arg(data_dir)
+        .arg("-l")
+        .arg(log_file)
+        .arg("-o")
+        .arg(options)
+        .arg("start")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    for name in [
+        "LD_PRELOAD",
+        "ECAZ_FAULT_PROVIDER_ENABLE",
+        "ECAZ_FAULT_PROVIDER_MODE",
+        "ECAZ_FAULT_PROVIDER_MATCH",
+        "ECAZ_FAULT_PROVIDER_AFTER",
+        "ECAZ_FAULT_PROVIDER_LATENCY_MS",
+        "ECAZ_FAULT_PROVIDER_MARKER",
+    ] {
+        start.env_remove(name);
+    }
+    run_status(start).await
 }
 
 async fn restart_pgrx_postmaster(
@@ -348,13 +401,20 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
         FaultLane::Io => {
             let marker = read_provider_marker(args.provider_marker.as_deref(), lane)?;
             let mode = provider_mode_from_marker(&marker)?;
+            let path_match = provider_path_match_from_marker(&marker)?;
             if !args.assume_prepared {
                 return Err(eyre!(
                     "lane {lane} must run against prebuilt fixtures; run `ecaz dev fault prepare --rows {}` before starting the provider, then rerun with --assume-prepared",
                     args.rows
                 ));
             }
-            run_io_probe(conn, mode, &ams).await?;
+            run_io_probe(conn, mode, &path_match, &ams).await?;
+            if provider_targets_wal(&path_match) && mode == ProviderMode::EnospcWrite {
+                crate::ecaz_println!(
+                    "[fault] wal_enospc_provider_restore_required=true match={path_match}"
+                );
+                return Ok(());
+            }
             assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Cancel => {
@@ -395,7 +455,12 @@ fn selected_ams(am: Option<FaultAmArg>) -> Vec<FaultAm> {
         .unwrap_or_else(|| FaultAm::ALL.to_vec())
 }
 
-async fn run_io_probe(conn: &ConnectionOptions, mode: ProviderMode, ams: &[FaultAm]) -> Result<()> {
+async fn run_io_probe(
+    conn: &ConnectionOptions,
+    mode: ProviderMode,
+    path_match: &str,
+    ams: &[FaultAm],
+) -> Result<()> {
     let client = connect_fault(conn, mode.as_str()).await?;
     for &am in ams {
         let label = format!("io {} {}", mode.as_str(), am.as_str());
@@ -407,6 +472,12 @@ async fn run_io_probe(conn: &ConnectionOptions, mode: ProviderMode, ams: &[Fault
             ProviderMode::EnospcWrite => {
                 match client.batch_execute(&workload_insert_sql(am)).await {
                     Err(error) if error.as_db_error().is_some() => {}
+                    Err(error) if provider_targets_wal(path_match) => {
+                        crate::ecaz_println!(
+                            "[fault] wal_enospc_backend_disconnected=true label={label} error={error}"
+                        );
+                        return Ok(());
+                    }
                     Err(error) => return Err(error.into()),
                     Ok(()) => {
                         assert_provider_sql_error(
@@ -422,12 +493,22 @@ async fn run_io_probe(conn: &ConnectionOptions, mode: ProviderMode, ams: &[Fault
                 ))
             }
         };
-        client
-            .simple_query("SELECT 1")
-            .await
-            .map_err(|error| eyre!("{label} did not leave the backend usable: {error}"))?;
+        match client.simple_query("SELECT 1").await {
+            Ok(_) => {}
+            Err(error) if mode == ProviderMode::EnospcWrite && provider_targets_wal(path_match) => {
+                crate::ecaz_println!(
+                    "[fault] wal_enospc_backend_disconnected=true label={label} error={error}"
+                );
+                return Ok(());
+            }
+            Err(error) => return Err(eyre!("{label} did not leave the backend usable: {error}")),
+        }
     }
     Ok(())
+}
+
+fn provider_targets_wal(path_match: &str) -> bool {
+    path_match.contains("pg_wal")
 }
 
 async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {

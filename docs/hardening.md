@@ -182,7 +182,12 @@ Slow-disk runs the same AM-specific scan/insert/vacuum smoke against a
 provider-backed postmaster and requires a non-empty provider marker. I/O smoke
 uses prebuilt fixtures and checks one provider mode at a time: `eio-read`
 expects clean ERROR from AM scan reads, while `enospc-write` expects clean
-ERROR from AM writes. Resource smoke runs AM scan/insert/vacuum under tiny
+ERROR from AM writes. When the provider marker records `match=pg_wal`, the I/O
+lane treats WAL-path ENOSPC as a crash-recovery surface: it records the backend
+disconnect, prints `wal_enospc_provider_restore_required=true`, and expects the
+operator to run `ecaz dev fault provider-restore`, whose fallback path performs
+an immediate stop/start if fast restart cannot shut down the faulting
+postmaster. Resource smoke runs AM scan/insert/vacuum under tiny
 `work_mem`/`maintenance_work_mem` settings and forces a temp-spill failure with
 `temp_file_limit = '64kB'`, then verifies the backend remains usable. When the
 postmaster is restarted with an `enospc-write` provider whose marker records
