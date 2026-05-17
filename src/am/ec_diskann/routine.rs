@@ -822,7 +822,8 @@ unsafe fn plan_backlink_mutations(
         scan_state::metadata_binary_word_count(&metadata),
         scan_state::metadata_search_code_len(&metadata),
     );
-    let slot = unsafe { scan_state::allocate_heap_slot(heap_relation)? };
+    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+        .ok_or_else(|| "ec_diskann backlink planning failed to allocate heap slot".to_owned())?;
     let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
     let planned = (|| -> Result<Vec<insert::BacklinkMutation>, String> {
         let mut mutations = Vec::new();
@@ -839,7 +840,7 @@ unsafe fn plan_backlink_mutations(
                 fetch_heap_source_vector(
                     heap_relation,
                     snapshot,
-                    slot,
+                    slot.as_ptr(),
                     source_attnum,
                     target_tuple.primary_heaptid,
                     "backlink planning target source vector",
@@ -868,7 +869,7 @@ unsafe fn plan_backlink_mutations(
                     fetch_heap_source_vector(
                         heap_relation,
                         snapshot,
-                        slot,
+                        slot.as_ptr(),
                         source_attnum,
                         neighbor_tuple.primary_heaptid,
                         "backlink planning neighbor source vector",
@@ -895,7 +896,6 @@ unsafe fn plan_backlink_mutations(
         }
         Ok(mutations)
     })();
-    unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
     Ok((metadata, planned?))
 }
 
@@ -1152,7 +1152,8 @@ unsafe fn fill_vacuum_neighbor_slots(
         return Ok(());
     }
     let source_attnum = unsafe { indexed_ecvector_attnum(index_relation)? };
-    let slot = unsafe { scan_state::allocate_heap_slot(heap_relation)? };
+    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+        .ok_or_else(|| "ec_diskann vacuum fill failed to allocate heap slot".to_owned())?;
     let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
     let mut visited = VisitedState::new();
 
@@ -1163,7 +1164,7 @@ unsafe fn fill_vacuum_neighbor_slots(
             let planner = VacuumFillPlanner {
                 heap_relation,
                 snapshot,
-                slot,
+                slot: slot.as_ptr(),
                 source_attnum,
                 metadata,
                 chain,
@@ -1200,8 +1201,6 @@ unsafe fn fill_vacuum_neighbor_slots(
         }
         Ok(())
     })();
-
-    unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
     repair_result
 }
 
