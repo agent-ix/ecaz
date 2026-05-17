@@ -7,10 +7,13 @@ use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 use crate::am::common::explain::IvfExplainCounters;
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
-#[cfg(any(test, feature = "pg_test"))]
-use crate::storage::relation_guard::IndexRelationGuard;
 use crate::storage::{
     page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+};
+#[cfg(any(test, feature = "pg_test"))]
+use crate::storage::{
+    relation_guard::IndexRelationGuard, scan_guard::IndexScanGuard,
+    snapshot_guard::ActiveSnapshotGuard,
 };
 
 use super::options::StorageFormat;
@@ -1436,21 +1439,10 @@ fn debug_selected_lists(opaque: &EcIvfScanOpaque) -> Vec<u32> {
 
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    _index_relation: IndexRelationGuard,
+    scan: IndexScanGuard,
+    _snapshot: ActiveSnapshotGuard,
     _heap_relation: HeapRelationGuard,
-    scan: pg_sys::IndexScanDesc,
-    registered_snapshot: pg_sys::Snapshot,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_push_latest_snapshot() -> pg_sys::Snapshot {
-    unsafe { pg_sys::CommandCounterIncrement() };
-    let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-    if snapshot.is_null() {
-        pgrx::error!("ec_ivf debug scan could not acquire a latest snapshot");
-    }
-    unsafe { pg_sys::PushActiveSnapshot(snapshot) };
-    snapshot
+    _index_relation: IndexRelationGuard,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1465,52 +1457,24 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
 
     let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not open heap relation"));
-    let heap_relation_ptr = heap_relation.as_ptr();
-    let registered_snapshot = unsafe { debug_push_latest_snapshot() };
-    #[cfg(feature = "pg18")]
-    let scan = unsafe {
-        pg_sys::index_beginscan(
-            heap_relation_ptr,
-            index_relation_ptr,
-            registered_snapshot,
-            ptr::null_mut(),
-            0,
-            1,
-        )
-    };
-    #[cfg(not(feature = "pg18"))]
-    let scan = unsafe {
-        pg_sys::index_beginscan(
-            heap_relation_ptr,
-            index_relation_ptr,
-            registered_snapshot,
-            0,
-            1,
-        )
-    };
-    if scan.is_null() {
-        unsafe {
-            pg_sys::PopActiveSnapshot();
-            pg_sys::UnregisterSnapshot(registered_snapshot);
-        }
-        pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan");
-    }
+    let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
+        .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not acquire a latest snapshot"));
+    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
+        .unwrap_or_else(|| {
+            pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
+        });
 
     DebugHeapBackedScan {
-        _index_relation: index_relation,
-        _heap_relation: heap_relation,
         scan,
-        registered_snapshot,
+        _snapshot: snapshot,
+        _heap_relation: heap_relation,
+        _index_relation: index_relation,
     }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
-    unsafe {
-        pg_sys::index_endscan(state.scan);
-        pg_sys::PopActiveSnapshot();
-        pg_sys::UnregisterSnapshot(state.registered_snapshot);
-    }
+    drop(state);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1521,9 +1485,12 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys
             .expect("debug query should convert to datum"),
         ..Default::default()
     };
-    unsafe { pg_sys::index_rescan(state.scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { pg_sys::index_rescan(state.scan.as_ptr(), ptr::null_mut(), 0, &mut orderby, 1) };
     let tid = unsafe {
-        pg_sys::index_getnext_tid(state.scan, pg_sys::ScanDirection::ForwardScanDirection)
+        pg_sys::index_getnext_tid(
+            state.scan.as_ptr(),
+            pg_sys::ScanDirection::ForwardScanDirection,
+        )
     };
     let found = !tid.is_null();
 
@@ -1639,27 +1606,28 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
         sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { pg_sys::index_rescan(state.scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let scan = state.scan.as_ptr();
+    unsafe { pg_sys::index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut outputs = Vec::new();
-    while unsafe { ec_ivf_amgettuple(state.scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_ivf_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         let (block_number, offset_number) =
-            pgrx::itemptr::item_pointer_get_both(unsafe { (*state.scan).xs_heaptid });
-        let score = if unsafe { (*state.scan).xs_orderbyvals.is_null() }
-            || unsafe { (*state.scan).xs_orderbynulls.is_null() }
-            || unsafe { *(*state.scan).xs_orderbynulls }
+            pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+        let score = if unsafe { (*scan).xs_orderbyvals.is_null() }
+            || unsafe { (*scan).xs_orderbynulls.is_null() }
+            || unsafe { *(*scan).xs_orderbynulls }
         {
             pgrx::error!("ec_ivf debug gettuple output is missing order-by score");
         } else {
-            f32::from_datum(unsafe { *(*state.scan).xs_orderbyvals }, false)
+            f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, false)
                 .expect("score datum should decode as f32")
         };
         outputs.push((block_number, offset_number, score));
     }
-    let orderby_cleared = if unsafe { (*state.scan).xs_orderbynulls.is_null() } {
+    let orderby_cleared = if unsafe { (*scan).xs_orderbynulls.is_null() } {
         false
     } else {
-        unsafe { *(*state.scan).xs_orderbynulls }
+        unsafe { *(*scan).xs_orderbynulls }
     };
 
     unsafe { debug_end_heap_backed_scan(state) };

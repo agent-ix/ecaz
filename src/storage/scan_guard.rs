@@ -64,3 +64,47 @@ impl Drop for IndexScanGuard {
         unsafe { pg_sys::index_endscan(self.scan) };
     }
 }
+
+pub(crate) struct HeapScanGuard {
+    scan: pg_sys::TableScanDesc,
+}
+
+impl HeapScanGuard {
+    pub(crate) fn begin(
+        heap_relation: pg_sys::Relation,
+        snapshot: &ActiveSnapshotGuard,
+        flags: u32,
+    ) -> Option<Self> {
+        // SAFETY: `heap_relation` is a live heap relation owned by the caller
+        // and `snapshot` is owned by a live guard; this guard owns the
+        // matching `heap_endscan`.
+        let scan = unsafe {
+            pg_sys::heap_beginscan(
+                heap_relation,
+                snapshot.as_ptr(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                flags,
+            )
+        };
+        if scan.is_null() {
+            return None;
+        }
+        Some(Self { scan })
+    }
+
+    pub(crate) fn as_ptr(&self) -> pg_sys::TableScanDesc {
+        self.scan
+    }
+}
+
+impl Drop for HeapScanGuard {
+    fn drop(&mut self) {
+        // SAFETY: `scan` was returned by `HeapScanGuard::begin`; this guard
+        // owns the matching end call.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::heap_endscan(self.scan) };
+    }
+}

@@ -1,5 +1,6 @@
 use pgrx::pg_sys;
 
+#[derive(Debug)]
 pub(crate) struct TupleTableSlotGuard {
     slot: *mut pg_sys::TupleTableSlot,
 }

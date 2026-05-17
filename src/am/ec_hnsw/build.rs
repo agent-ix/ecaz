@@ -11,7 +11,10 @@ use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 
 use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
 use crate::am::common::training::{self, GroupedPq4Model};
-use crate::storage::{relation_guard::HeapRelationGuard, wal};
+use crate::storage::{
+    relation_guard::HeapRelationGuard, scan_guard::HeapScanGuard, slot_guard::TupleTableSlotGuard,
+    snapshot_guard::ActiveSnapshotGuard, wal,
+};
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
@@ -692,48 +695,38 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         )
     };
 
-    let slot = unsafe {
-        source::allocate_heap_slot(
-            heap_relation,
-            "ec_hnsw ambuild failed to allocate heap scan slot",
-        )
-    };
+    let slot = TupleTableSlotGuard::single_for_heap(heap_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to allocate heap scan slot"));
+    let slot_ptr = slot.as_ptr();
 
-    let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-    unsafe { pg_sys::PushActiveSnapshot(snapshot) };
-    let scan = unsafe {
-        pg_sys::heap_beginscan(
-            heap_relation,
-            snapshot,
-            0,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            pg_sys::ScanOptions::SO_TYPE_SEQSCAN
-                | pg_sys::ScanOptions::SO_ALLOW_PAGEMODE
-                | pg_sys::ScanOptions::SO_ALLOW_STRAT
-                | pg_sys::ScanOptions::SO_ALLOW_SYNC,
-        )
-    };
-    if scan.is_null() {
-        unsafe {
-            pg_sys::UnregisterSnapshot(snapshot);
-            pg_sys::ExecDropSingleTupleTableSlot(slot);
-        }
-        pgrx::error!("ec_hnsw ambuild failed to begin heap scan");
-    }
+    let snapshot = ActiveSnapshotGuard::latest()
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to register heap scan snapshot"));
+    let scan = HeapScanGuard::begin(
+        heap_relation,
+        &snapshot,
+        pg_sys::ScanOptions::SO_TYPE_SEQSCAN
+            | pg_sys::ScanOptions::SO_ALLOW_PAGEMODE
+            | pg_sys::ScanOptions::SO_ALLOW_STRAT
+            | pg_sys::ScanOptions::SO_ALLOW_SYNC,
+    )
+    .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to begin heap scan"));
 
     let mut scanned_tuples = 0.0_f64;
     while unsafe {
-        pg_sys::heap_getnextslot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
+        pg_sys::heap_getnextslot(
+            scan.as_ptr(),
+            pg_sys::ScanDirection::ForwardScanDirection,
+            slot_ptr,
+        )
     } {
         scanned_tuples += 1.0;
-        let heap_tid = unsafe { decode_slot_tid(slot) };
+        let heap_tid = unsafe { decode_slot_tid(slot_ptr) };
         let vector_datum = unsafe {
-            source::required_slot_datum(slot, indexed_attribute.attnum, "indexed column")
+            source::required_slot_datum(slot_ptr, indexed_attribute.attnum, "indexed column")
         };
         let source_datum = unsafe {
             source::required_slot_datum(
-                slot,
+                slot_ptr,
                 source_attribute.attnum,
                 "ec_hnsw build_source_column",
             )
@@ -758,12 +751,6 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         state.push(tuple);
     }
 
-    unsafe {
-        pg_sys::heap_endscan(scan);
-        pg_sys::PopActiveSnapshot();
-        pg_sys::UnregisterSnapshot(snapshot);
-        pg_sys::ExecDropSingleTupleTableSlot(slot);
-    }
     scanned_tuples
 }
 
