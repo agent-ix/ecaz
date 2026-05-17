@@ -50,6 +50,8 @@ postconditions for leftover fault sessions, locks, prepared transactions,
 optional `pg_buffercache` fixture pins, and optional `pg_stat_io`
 non-decreasing operation counters. Buffer-pin probes now also print a
 structured `pg_buffercache_fixture_pins_ok=<bool>` marker for packet checks.
+The Task 38 interrupt-site inventory is documented in `docs/hardening.md` under
+"Current interrupt inventory".
 
 ## Scope Boundary
 
