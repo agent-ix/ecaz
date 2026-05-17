@@ -271,6 +271,13 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
                 "force temp spill under a tiny temp_file_limit",
                 "clean ERROR; backend remains usable and temp state is released",
             ),
+            case(
+                lane,
+                access_method,
+                "wal-rotation-accounting",
+                "perform AM-backed writes and force a WAL segment switch",
+                "WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing",
+            ),
         ],
         FaultLane::SlowDisk => vec![case(
             lane,
@@ -318,6 +325,8 @@ pub fn optional_leak_probe_sql() -> &'static [&'static str] {
     &[
         "pg_buffercache fixture pin count",
         "pg_stat_io non-decreasing total operation count",
+        "pg_stat_wal non-decreasing record and byte counters",
+        "pg_stat_database temp_bytes before/after resource temp-spill accounting",
     ]
 }
 

@@ -755,6 +755,7 @@ async fn run_resource_probe(
         } else {
             run_temp_file_limit_probe(&client, rows, am).await?;
         }
+        run_wal_rotation_accounting_probe(&client, rows, am).await?;
     }
     Ok(())
 }
@@ -909,6 +910,84 @@ async fn run_provider_temp_spill_probe(
         )
     })?;
     Ok(())
+}
+
+async fn run_wal_rotation_accounting_probe(
+    client: &tokio_postgres::Client,
+    rows: i64,
+    am: FaultAm,
+) -> Result<()> {
+    let wal_before = pg_stat_wal_snapshot(client).await?;
+    let lsn_before = current_wal_lsn(client).await?;
+    client
+        .batch_execute(&format!(
+            "{};
+             CHECKPOINT;
+             SELECT pg_switch_wal();
+             CHECKPOINT;",
+            workload_bulk_insert_sql(am, wal_rotation_rows(rows))
+        ))
+        .await
+        .map_err(|error| {
+            let detail = error
+                .as_db_error()
+                .map(|db| db.message().to_owned())
+                .unwrap_or_else(|| error.to_string());
+            eyre!("WAL rotation accounting {}: {detail}", am.as_str())
+        })?;
+    force_pg_stat_flush(client).await?;
+    let lsn_after = current_wal_lsn(client).await?;
+    let lsn_advanced = client
+        .query_one(
+            "SELECT ($1::text)::pg_lsn < ($2::text)::pg_lsn",
+            &[&lsn_before.as_str(), &lsn_after.as_str()],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !lsn_advanced {
+        return Err(eyre!(
+            "WAL rotation accounting {} did not advance LSN from {lsn_before} to {lsn_after}",
+            am.as_str()
+        ));
+    }
+
+    let Some(wal_before) = wal_before else {
+        crate::ecaz_println!(
+            "[fault] wal_rotation_accounting am={} lsn_before={lsn_before} lsn_after={lsn_after} pg_stat_wal=unavailable",
+            am.as_str()
+        );
+        return Ok(());
+    };
+    let Some(wal_after) = pg_stat_wal_snapshot(client).await? else {
+        crate::ecaz_println!(
+            "[fault] wal_rotation_accounting am={} lsn_before={lsn_before} lsn_after={lsn_after} pg_stat_wal_after=unavailable",
+            am.as_str()
+        );
+        return Ok(());
+    };
+    crate::ecaz_println!(
+        "[fault] wal_rotation_accounting am={} lsn_before={lsn_before} lsn_after={lsn_after} records_before={} records_after={} bytes_before={} bytes_after={}",
+        am.as_str(),
+        wal_before.records,
+        wal_after.records,
+        wal_before.bytes,
+        wal_after.bytes
+    );
+    if wal_after.records < wal_before.records || wal_after.bytes < wal_before.bytes {
+        return Err(eyre!(
+            "WAL rotation accounting {} decreased from records={} bytes={} to records={} bytes={}",
+            am.as_str(),
+            wal_before.records,
+            wal_before.bytes,
+            wal_after.records,
+            wal_after.bytes
+        ));
+    }
+    Ok(())
+}
+
+fn wal_rotation_rows(rows: i64) -> i64 {
+    rows.clamp(64, 1_024)
 }
 
 async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
@@ -1486,6 +1565,31 @@ async fn pg_stat_wal_snapshot(
             }) =>
         {
             Ok(None)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn current_wal_lsn(client: &tokio_postgres::Client) -> Result<String> {
+    let row = client
+        .query_one("SELECT pg_current_wal_lsn()::text", &[])
+        .await?;
+    Ok(row.get::<_, String>(0))
+}
+
+async fn force_pg_stat_flush(client: &tokio_postgres::Client) -> Result<()> {
+    match client
+        .simple_query("SELECT pg_stat_force_next_flush()")
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(error)
+            if error.as_db_error().is_some_and(|db| {
+                let sqlstate = db.code().code();
+                sqlstate == "42883" || sqlstate == "42501"
+            }) =>
+        {
+            Ok(())
         }
         Err(error) => Err(error.into()),
     }

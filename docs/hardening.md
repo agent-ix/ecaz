@@ -195,7 +195,10 @@ limit, and returned row count, then runs AM scan/insert/vacuum under tiny
 `temp_file_limit = '64kB'`, verifying the backend remains usable. When the
 postmaster is restarted with an `enospc-write` provider whose marker records
 `match=pgsql_tmp`, the resource lane instead disables `temp_file_limit` and
-expects the temp-spill failure to come from provider-backed ENOSPC. Memory smoke
+expects the temp-spill failure to come from provider-backed ENOSPC. The same
+resource lane now performs AM-backed writes, forces `pg_switch_wal()`, and
+emits `wal_rotation_accounting` markers proving WAL LSN advancement plus
+non-decreasing `pg_stat_wal` record/byte counters after stats flush. Memory smoke
 injects palloc failures at the
 instrumented AM build/scan/insert/vacuum boundaries. Scan probes use per-AM
 Nth-allocation sweeps; build, insert, and vacuum probes sweep
