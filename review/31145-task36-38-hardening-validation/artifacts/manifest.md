@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `e5f3cd678fcb4cbbc1f34f16504927b1b955c1f8`
+Code checkpoint SHA: `bb1581771901ae933d4301d9c83a9442a187e7df`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T06:05:19Z`
+Timestamp: `2026-05-17T06:09:16Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table

@@ -33,7 +33,8 @@ back the lock holder even if waiter cleanup errors, memory smoke uses
 points plus build/insert/vacuum callback boundaries for each AM and now
 SIGKILLs worker backends during build/scan/insert as an OOM-kill proxy,
 resource smoke covers tiny memory settings plus built-in `temp_file_limit`
-temp-spill failure and provider-backed ENOSPC on `pgsql_tmp`,
+temp-spill failure and provider-backed ENOSPC on `pgsql_tmp` without claiming a
+calibrated accumulator `work_mem` pressure proof,
 provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
@@ -55,8 +56,8 @@ Task 38 is still scope-bounded to smoke coverage. It now has live PG18
 EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
 but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
 true kernel/cgroup OOM pressure campaigns, WAL rotation and SPIRE remote-object
-fetch faulting, and full expected-vs-forced WAL/temp-spill accounting remain
-follow-on expansion.
+fetch faulting, calibrated accumulator `work_mem` pressure, and full
+expected-vs-forced WAL/temp-spill accounting remain follow-on expansion.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
