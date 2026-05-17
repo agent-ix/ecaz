@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `21fc76eaec79710c524a5c9e5bf56cb1778e208c`
+Code checkpoint SHA: `e832d850408339f690916d350abcf75faa847302`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T15:59:23Z`
+Timestamp: `2026-05-17T16:47:01Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -160,6 +160,14 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` tables/indexes; pressure fixtures were prepared with 8192 rows and pressure limit 1000.
 - Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-resource-accumulator-all.log dev fault smoke --lane resource --rows 64`
 - Key result: all four AMs emitted `resource_accumulator_pressure` with `rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB`; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0` and `pg_stat_io_ops_before=2632 after=3530`.
+
+## task38-resource-accounting-all.log
+
+- Lane: Task 38 WAL/temp accounting marker expansion
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` tables/indexes; pressure fixtures were prepared with 8192 rows and pressure limit 1000.
+- Guard artifact: `task38-resource-accounting-smoke.log` first verified the new accounting markers on HNSW only.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-resource-accounting-all.log dev fault smoke --lane resource --rows 64`
+- Key result: all four AMs emitted `resource_accumulator_pressure` and `resource_temp_spill_accounting` markers. The lane asserted shared postconditions plus non-decreasing `pg_stat_io` and `pg_stat_wal`: `pg_stat_io_ops_before=3919 after=4744`, `pg_stat_wal_records_before=201474 after=270121`, and `bytes_before=31593642 after=40508396`. Temp-byte accounting remained readable and non-decreasing for every AM (`delta=0` after the forced `temp_file_limit` ERROR).
 
 ## task38-pg18-resource-provider-temp-spill.log
 

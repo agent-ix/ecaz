@@ -21,8 +21,10 @@ operation, and provider-backed EIO/ENOSPC against AM-specific `ec_hnsw`,
 Stage E `remote_oom` transport fault fixture.
 Postconditions assert no leftover fault sessions, relation/advisory locks, or
 prepared transactions, and include optional live `pg_buffercache` fixture pin
-checks plus `pg_stat_io` non-decreasing operation counters when those PG18
-surfaces are available. The smoke surface is now in place; exhaustive
+checks plus `pg_stat_io` and `pg_stat_wal` non-decreasing operation counters
+when those PG18 surfaces are available. Resource temp-spill probes also emit
+`pg_stat_database.temp_bytes` before/after markers. The smoke surface is now in
+place; exhaustive
 per-allocation palloc sweeps, true kernel/cgroup OOM pressure campaigns, WAL
 rotation edge accounting beyond WAL-path ENOSPC smoke, and SPIRE remote-object
 fetch faulting remain follow-on expansion beyond this smoke checkpoint.

@@ -52,8 +52,11 @@ fixture bug where long run ids placed Unix sockets under paths longer than
 PostgreSQL allows. Those live lanes tag their sessions and assert
 postconditions for leftover fault sessions, locks, prepared transactions,
 optional `pg_buffercache` fixture pins, and optional `pg_stat_io`
-non-decreasing operation counters. Buffer-pin probes now also print a
-structured `pg_buffercache_fixture_pins_ok=<bool>` marker for packet checks.
+non-decreasing operation counters, plus optional `pg_stat_wal` record/byte
+monotonicity. Buffer-pin probes now also print a structured
+`pg_buffercache_fixture_pins_ok=<bool>` marker for packet checks, and resource
+temp-spill probes print `resource_temp_spill_accounting` markers from
+`pg_stat_database.temp_bytes`.
 The Task 38 interrupt-site inventory is documented in `docs/hardening.md` under
 "Current interrupt inventory".
 
@@ -92,7 +95,7 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   - `ecaz dev fault smoke --lane lock-timeout --rows 64`
   - `ecaz dev fault smoke --lane resource --rows 64` including calibrated
     accumulator pressure, tiny memory settings, and `temp_file_limit`
-    temp-spill failure
+    temp-spill failure with temp-byte accounting markers
   - `ecaz dev fault provider-restart --mode enospc-write --path-match pgsql_tmp ...`
   - `ecaz dev fault smoke --lane resource --rows 64 --provider-marker ...`
   - `ecaz dev fault smoke --lane memory --rows 64` including palloc smoke and
