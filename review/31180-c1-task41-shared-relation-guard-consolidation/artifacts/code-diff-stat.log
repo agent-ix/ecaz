@@ -1,0 +1,9 @@
+a32237f1 Consolidate PostgreSQL relation guards
+ scripts/unsafe_comment_baseline.txt  | 708 +++++++++++++++++------------------
+ src/am/ec_spire/coordinator/debug.rs |  59 +--
+ src/am/ec_spire/dml_frontdoor/mod.rs |  76 +---
+ src/lib.rs                           |  49 +--
+ src/storage/mod.rs                   |   1 +
+ src/storage/relation_guard.rs        |  88 +++++
+ 6 files changed, 470 insertions(+), 511 deletions(-)
+ create mode 100644 src/storage/relation_guard.rs
