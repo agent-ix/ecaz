@@ -10,7 +10,6 @@ import subprocess
 import tempfile
 import unittest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / "scripts" / "pg17_scratch_psql.sh"
 
@@ -79,7 +78,9 @@ class Pg17ScratchPsqlSocketResolutionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr.strip(), "")
         argv = json.loads(self.log_file.read_text(encoding="utf-8"))
-        self.assertEqual(argv[:6], ["-h", str(self.preferred_dir), "-p", "28817", "-d", "postgres"])
+        self.assertEqual(
+            argv[:6], ["-h", str(self.preferred_dir), "-p", "28817", "-d", "postgres"]
+        )
         self.assertEqual(argv[-2:], ["-c", "SELECT 1"])
 
     def test_wrapper_honors_explicit_socket_override(self) -> None:

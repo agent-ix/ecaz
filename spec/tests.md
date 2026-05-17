@@ -18,16 +18,18 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 
 ## Coverage Audit Baseline
 
-The matrix is a correctness baseline, not only a generated inventory. "Complete"
-requires evidence that the cited tests assert the relevant behavior, not merely
-that a similarly named test exists.
+The matrix is a correctness baseline, not only a generated inventory. A
+requirement row is not standards-complete until every cited acceptance criterion
+has a concrete TC/evidence row or an explicit per-AC gap. Grouped rows below are
+implementation-backed summaries unless they say per-AC evidence is complete.
 
 | Source | Baseline Evidence | Current Interpretation |
 | --- | --- | --- |
-| Rust unit and pg_test inventory | SPIRE has broad pure-Rust and PG18 fixture coverage across assignment, metadata, storage, options, scan, coordinator, CustomScan, DML, update, vacuum, and diagnostics modules. | Strong implementation baseline; still requires AC-level trace rows for any "Complete" claim. |
+| Rust unit and pg_test inventory | SPIRE has broad pure-Rust and PG18 fixture coverage across assignment, metadata, storage, options, scan, coordinator, CustomScan, DML, update, vacuum, and diagnostics modules. | Strong implementation baseline; still requires AC-level trace rows before any standards-complete claim. |
 | `review/31070-spire-phase12c-coverage-audit` | Independent audit inventoried SPIRE tests, read representative tests for assertion quality, and identified weak or indirect areas such as CustomScan lifecycle, Stage E live coverage, matrix string-only tests, DML row-state assertions, and operator surface coverage. | Treat SPIRE distributed and CustomScan coverage as `Partial` until the named weak areas are closed or explicitly accepted as gaps. |
 | `plan/tasks/34-comprehensive-hardening.md`, `docs/hardening.md`, and `review/30034-task34-comprehensive-hardening` | Task 34 documented hardening lanes for supply chain, unsafe/static hygiene, Miri, cargo-careful, fuzzing, Kani, Flux, Loom, Shuttle, sanitizers, SQLsmith, Rudra, MIRAI, and aggregate local/nightly targets. Packet-local raw logs in `review/30034` currently support only the installer, MIRAI, Flux, and Rudra-family evidence that appears in that packet manifest. | Adds `TC-034` as the hardening evidence lane for `NFR-004`, but unpacketed local aggregate, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, and AFL claims remain explicit evidence gaps until logs are packeted. Live PG18 sanitizer and SQLsmith lanes remain manually gated gaps. |
 | Benchmark reporting standard | `NFR-015` defines identity fields and metric families across AMs, quantizers, storage formats, option sets, and product evidence classes. | The standard itself is implemented, but benchmark rows are only complete after each packet conforms row-by-row. |
+| Legacy relationship frontmatter | Active HNSW/core FRs `FR-001..FR-027`, early NFRs, and several stakeholder requirements remain readable through `traces:` or prose fields. | These artifacts remain outside the fully migrated structured relationship graph until `GAP-020` is closed. |
 
 ## Analysis Requirement Coverage Rules
 
@@ -53,7 +55,7 @@ presence alone.
 | StR-002 | US-004, NFR-004, NFR-005 | TC-013, TC-014, TC-034 | Partial: Task 34 hardening docs exist, but only packet-local Task 34 logs count as completed evidence; unpacketed local lanes plus PG18 live sanitizer and SQLsmith lanes remain gaps |
 | StR-003 | US-003, US-005, FR-008..FR-010, FR-030 | TC-004 | Partial: partition-specific evidence should be refreshed when next HNSW benchmark packet is opened |
 | StR-004 | US-006..US-011, FR-019..FR-027, FR-030 | TC-005, TC-006, TC-017 | Partial: ReadStream/product speedup measurements remain deferred |
-| StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Complete for local implementation surface; product scale evidence deferred |
+| StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Partial: local implementation surface is backed by grouped evidence; strict per-AC evidence inventory remains `GAP-018` and product scale evidence is deferred |
 | StR-005 SPIRE extension | US-018..US-020, US-022, FR-048..FR-060, NFR-013, NFR-014 | TC-020 SPIRE, TC-021..TC-025, TC-034 | Partial: implementation baseline is broad, but AC-level mapping, CustomScan lifecycle proof, Stage E live coverage, and product-scale AWS evidence remain gaps |
 | StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009, NFR-015 | TC-015, TC-016, TC-019, TC-020 benchmark suites, TC-033 | Partial: product hardware gates are explicit gaps |
 | StR-007 cloud | US-021, FR-044..FR-047, NFR-010, NFR-011 | TC-026..TC-032 | Planned: cloud harness implementation begins on `feat/cloud-test-harness` |
@@ -62,57 +64,57 @@ presence alone.
 
 | User Story | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
-| US-001 | US-001-AC-1..4 | TC-001 | Complete for artifact/debug behavior group; strict per-AC evidence inventory remains `GAP-018` |
-| US-002 | US-002-AC-1..4 | TC-004, TC-007, TC-010 | Complete for local AM smoke/behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-001 | US-001-AC-1..4 | TC-001 | Partial: artifact/debug behavior is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| US-002 | US-002-AC-1..4 | TC-004, TC-007, TC-010 | Partial: local AM smoke/behavior evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | US-003 | US-003-AC-1..4 | TC-004, TC-006 | Partial: larger parallel build speedups deferred; strict per-AC evidence inventory remains `GAP-018` |
-| US-004 | US-004-AC-1..4 | TC-003, TC-014 | Complete for catalog/build behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-004 | US-004-AC-1..4 | TC-003, TC-014 | Partial: catalog/build behavior evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | US-005 | US-005-AC-1..3 | TC-004 | Partial: product recall-after-vacuum measurements deferred; strict per-AC evidence inventory remains `GAP-018` |
 | US-006 | US-006-AC-1..5 | TC-005, TC-017 | Partial: live surface exists; cold-cache speedup measurement deferred |
-| US-007 | US-007-AC-1..4 | TC-005 | Complete for local callback/cost behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-007 | US-007-AC-1..4 | TC-005 | Partial: local callback/cost evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | US-008 | US-008-AC-1..4 | TC-006, TC-016 | Partial: local implementation landed; AWS/RDS scale evidence deferred |
-| US-009 | US-009-AC-1..4 | TC-005, TC-008 | Complete for HNSW/IVF local diagnostics group; strict per-AC evidence inventory remains `GAP-018` |
-| US-010 | US-010-AC-1..4 | TC-004, TC-009, TC-012 | Complete for local AM behavior group; strict per-AC evidence inventory remains `GAP-018` |
+| US-009 | US-009-AC-1..4 | TC-005, TC-008 | Partial: HNSW/IVF local diagnostics evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| US-010 | US-010-AC-1..4 | TC-004, TC-009, TC-012 | Partial: local AM behavior evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | US-011 | US-011-AC-1..4 | TC-005 | Partial: reset for custom kind remains blocked upstream/local PG18 tree |
-| US-012 | US-012-AC-1..3 | TC-002, TC-003, TC-004, TC-007, TC-010 | Complete for current SQL surface |
-| US-013 | US-013-AC-1..3 | TC-007, TC-008, TC-009, TC-015 | Complete for local IVF v1; product claims deferred |
-| US-014 | US-014-AC-1..3 | TC-010, TC-011, TC-012, TC-015 | Complete for local DiskANN v1; product claims deferred |
+| US-012 | US-012-AC-1..3 | TC-002, TC-003, TC-004, TC-007, TC-010 | Partial: current SQL surface evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| US-013 | US-013-AC-1..3 | TC-007, TC-008, TC-009, TC-015 | Partial: local IVF v1 evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and product claims are deferred |
+| US-014 | US-014-AC-1..3 | TC-010, TC-011, TC-012, TC-015 | Partial: local DiskANN v1 evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and product claims are deferred |
 | US-015 | US-015-AC-1..4 | TC-015, TC-016, TC-033 | Partial: product benchmark claim lane is a planned gate |
-| US-016 | US-016-AC-1..3 | TC-019 | Complete for docs/spec traceability; command execution tests run on demand |
-| US-017 benchmark suites | US-017-AC-1..5 | TC-020 benchmark suites, TC-033 | Complete for first auto-runner surface; tags/resume/results extraction implemented, richer thresholds deferred |
-| US-018 | US-018-AC-1..6 | TC-021, TC-022, TC-023 | Implemented for relation-backed local stores, PID hash placement, store diagnostics, strict/degraded handling, and sequential backend read scheduling; true parallel local-store execution deferred |
-| US-019 | US-019-AC-1..6 | TC-023, TC-024 | Implemented for CustomScan distributed reads, placement-aware dispatch, typed remote tuple payloads, and origin-node visibility; AWS product evidence deferred |
-| US-020 | US-020-AC-1..6 | TC-023, TC-025 | Implemented for epoch publication, delta/replacement maintenance, split/merge/vacuum hooks, diagnostics, and coordinator DML/2PC recovery; background prepared-xact recovery deferred |
-| US-022 | US-022-AC-1..6 | TC-020 SPIRE, TC-021, TC-022, TC-025 | Implemented for local build/publish/search lifecycle and operator-visible maintenance; long-running scale evidence deferred |
+| US-016 | US-016-AC-1..3 | TC-019 | Partial: docs/spec traceability is grouped; command execution tests run on demand and strict per-AC evidence inventory remains `GAP-018` |
+| US-017 benchmark suites | US-017-AC-1..5 | TC-020 benchmark suites, TC-033 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory remains `GAP-018` and richer thresholds are deferred |
+| US-018 | US-018-AC-1..6 | TC-021, TC-022, TC-023 | Partial: relation-backed local stores, PID hash placement, store diagnostics, strict/degraded handling, and sequential backend read scheduling are implemented, but strict per-AC evidence inventory remains `GAP-018` and true parallel local-store execution is deferred |
+| US-019 | US-019-AC-1..6 | TC-023, TC-024 | Partial: CustomScan distributed reads, placement-aware dispatch, typed remote tuple payloads, and origin-node visibility are implemented, but strict per-AC evidence inventory remains `GAP-018` and AWS product evidence is deferred |
+| US-020 | US-020-AC-1..6 | TC-023, TC-025 | Partial: epoch publication, maintenance hooks, diagnostics, and coordinator DML/2PC recovery are implemented, but strict per-AC evidence inventory remains `GAP-018` and background prepared-xact recovery is deferred |
+| US-022 | US-022-AC-1..6 | TC-020 SPIRE, TC-021, TC-022, TC-025 | Partial: local build/publish/search lifecycle and operator-visible maintenance are implemented, but strict per-AC evidence inventory remains `GAP-018` and long-running scale evidence is deferred |
 | US-021 | US-021-AC-1..5 | TC-026, TC-029, TC-030 | Planned: implementation in progress on cloud branch |
 
 ### Functional Requirement Coverage
 
 | Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
-| FR-001..FR-006 | Type, I/O, encode, scoring, operators | TC-001, TC-002, TC-003 | Complete for current unit/pg_test coverage |
+| FR-001..FR-006 | Type, I/O, encode, scoring, operators | TC-001, TC-002, TC-003 | Partial: current unit/pg_test coverage is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
 | FR-007..FR-018 | HNSW layout/build/scan/vacuum/WAL/insert/scoring | TC-001, TC-004, TC-013 | Partial: old HNSW product benchmark rows need refreshed evidence |
 | FR-019 | ReadStream integration | TC-005, TC-017 | Partial: behavior coverage exists; speedup evidence deferred |
-| FR-020 | Planner cost estimation | TC-005 | Complete for local modeled/live cost surface |
+| FR-020 | Planner cost estimation | TC-005 | Partial: local modeled/live cost evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
 | FR-021 | Parallel index build | TC-006, TC-016 | Partial: scale measurement deferred |
-| FR-022 | Vacuum implementation | TC-004, TC-009, TC-012 | Complete for local behavior surfaces |
-| FR-023 | Strategy translation callbacks | TC-005, TC-008 | Complete for PG18 callback coverage |
-| FR-024 | Custom EXPLAIN | TC-005, TC-008 | Complete for HNSW/IVF local diagnostics |
+| FR-022 | Vacuum implementation | TC-004, TC-009, TC-012 | Partial: local behavior evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
+| FR-023 | Strategy translation callbacks | TC-005, TC-008 | Partial: PG18 callback evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
+| FR-024 | Custom EXPLAIN | TC-005, TC-008 | Partial: HNSW/IVF diagnostics evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
 | FR-025 | Custom statistics | TC-005 | Partial: shared reset path remains a known blocker |
-| FR-026 | PG18 module identity | TC-005, TC-014 | Complete for PG18 build surface |
-| FR-027 | pgrx PG18 support | TC-014 | Complete for current build configuration |
-| FR-028 | FR-028-AC-1..4 | TC-002, TC-003 | Complete for canonical `ecvector` surface |
-| FR-029 | FR-029-AC-1..4 | TC-003 | Complete for SQL bootstrap surface, including `ec_spire` registration |
+| FR-026 | PG18 module identity | TC-005, TC-014 | Partial: PG18 build evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
+| FR-027 | pgrx PG18 support | TC-014 | Partial: current build configuration evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
+| FR-028 | FR-028-AC-1..4 | TC-002, TC-003 | Partial: canonical `ecvector` evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| FR-029 | FR-029-AC-1..4 | TC-003 | Partial: SQL bootstrap evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | FR-030 | FR-030-AC-1..4 | TC-004, TC-005, TC-006 | Partial: large-build measurement deferred |
-| FR-031 | FR-031-AC-1..3 | TC-007 | Complete for local IVF build/storage behavior |
-| FR-032 | FR-032-AC-1..3 | TC-008 | Complete for local IVF scan/rerank/cost behavior |
-| FR-033 | FR-033-AC-1..3 | TC-009 | Complete for local IVF insert/vacuum/admin behavior |
-| FR-034 | FR-034-AC-1..3 | TC-010 | Complete for local DiskANN build/storage behavior |
-| FR-035 | FR-035-AC-1..3 | TC-011 | Complete for local DiskANN scan/prefilter/rerank behavior |
-| FR-036 | FR-036-AC-1..3 | TC-012 | Complete for local DiskANN insert/vacuum/diagnostics behavior |
-| FR-037 | FR-037-AC-1..4 | TC-019 | Complete for docs/spec traceability; CLI unit execution not run in this docs checkpoint |
-| FR-038 benchmark suites | FR-038-AC-1..8 | TC-020 benchmark suites, TC-033 | Complete for first auto-runner surface; full schema-driven report generation remains iterative |
+| FR-031 | FR-031-AC-1..3 | TC-007 | Partial: local IVF build/storage evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| FR-032 | FR-032-AC-1..3 | TC-008 | Partial: local IVF scan/rerank/cost evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| FR-033 | FR-033-AC-1..3 | TC-009 | Partial: local IVF insert/vacuum/admin evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| FR-034 | FR-034-AC-1..3 | TC-010 | Partial: local DiskANN build/storage evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| FR-035 | FR-035-AC-1..3 | TC-011 | Partial: local DiskANN scan/prefilter/rerank evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| FR-036 | FR-036-AC-1..3 | TC-012 | Partial: local DiskANN insert/vacuum/diagnostics evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
+| FR-037 | FR-037-AC-1..4 | TC-019 | Partial: docs/spec traceability is grouped; CLI unit execution was not run in this docs checkpoint and strict per-AC evidence inventory remains `GAP-018` |
+| FR-038 benchmark suites | FR-038-AC-1..8 | TC-020 benchmark suites, TC-033 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory remains `GAP-018` and full schema-driven report generation remains iterative |
 | FR-039..FR-043 tombstones | No active ACs | Spec inspection | Superseded: retained tombstone files preserve immutable ID history and point to `FR-048..FR-060` replacements |
-| FR-048 | FR-048-AC-1..8 | TC-020 SPIRE, TC-021, TC-024, TC-025 | Complete for domain model, identities, epochs, placement, and read/write boundary definitions |
+| FR-048 | FR-048-AC-1..8 | TC-020 SPIRE, TC-021, TC-024, TC-025 | Partial: domain model, identities, epochs, placement, and read/write boundary definitions are specified, but strict per-AC evidence inventory remains `GAP-018` |
 | FR-049 | FR-049-AC-1..3 | TC-020 SPIRE, TC-022, TC-034 | Partial: common header decode and rejection paths exist; external fixture compatibility remains a gap before format freeze |
 | FR-050 | FR-050-AC-1..3 | TC-020 SPIRE, TC-022, TC-034 | Partial: Leaf V2 round-trips and invariants exist; byte-for-byte compatibility fixtures remain a gap before format freeze |
 | FR-051 | FR-051-AC-1..3 | TC-020 SPIRE, TC-022, TC-034 | Partial: routing/delta/top-graph structure is covered; graph/topology malformed-payload fixture coverage should be pinned per AC |
@@ -140,9 +142,9 @@ presence alone.
 | NFR-004 | NFR-004-AC-1..5 | TC-013, TC-034 | Partial: Task 34 documents the lane surface, but only packet-local raw logs count as completed evidence; unpacketed local lanes, PG18 sanitizer, and SQLsmith remain gaps |
 | NFR-005 | Build and CI | TC-014 | Partial: static docs checkpoint did not run build/test commands |
 | NFR-006 | Async I/O cold-cache performance | TC-017 | Gap: measurement deferred |
-| NFR-007 | Benchmark provenance | TC-015 | Complete for current docs/review-packet citations |
-| NFR-008 | Scale boundary | TC-016 | Complete as policy; execution deferred |
-| NFR-009 | CLI drift and artifact discipline | TC-019 | Complete for docs/spec traceability; command-tree execution audit deferred to CLI tests |
+| NFR-007 | Benchmark provenance | TC-015 | Partial: review-packet citations exist, but legacy benchmark summary rows remain outside NFR-015 row-level conformance until `GAP-021` closes |
+| NFR-008 | Scale boundary | TC-016 | Partial: policy is specified; execution remains deferred and strict per-AC evidence inventory remains `GAP-018` |
+| NFR-009 | CLI drift and artifact discipline | TC-019 | Partial: docs/spec traceability exists; command-tree execution audit is deferred to CLI tests and strict per-AC evidence inventory remains `GAP-018` |
 | NFR-010 | Cloud cost discipline (status reporting, no NAT, --confirm-cost gate) | TC-031 | Planned: cloud harness implementation in progress |
 | NFR-011 | Cloud corpus load throughput targets | TC-032 | Planned: targets baseline once first `1m` run lands |
 | NFR-012 | Cloud throughput targets | TC-016, TC-032 | Partial: targets are specified; product evidence is gated on controlled cloud runs |
@@ -289,6 +291,8 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-017 | Analysis lane promotion criteria | Medium | Define explicit burn-in thresholds before moving report-only Task 34 lanes into PR or nightly gates |
 | GAP-018 | Strict per-AC evidence inventory for grouped summary rows | Medium | Split completed summary rows into individual AC-to-TC rows before claiming standards-complete ISO/IEC/IEEE 29148 traceability |
 | GAP-019 | Task 34 unpacketed local hardening lane logs | Medium | Packet raw logs for aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, and AFL lanes before marking `TC-034` complete |
+| GAP-020 | Legacy structured relationship frontmatter migration | Medium | Migrate active legacy `FR-001..FR-027`, early NFRs, and stakeholder requirements from `traces:`/prose links to `artifact_type` plus semantic `relationships:` before claiming whole-spec ISO/IEC/IEEE 42010 or IEEE 828 graph completeness |
+| GAP-021 | Legacy benchmark row conformance to NFR-015 | Medium | Either convert legacy HNSW/IVF/DiskANN benchmark tables to row-level NFR-015 fields or keep them explicitly labeled as local summary rows outside standards-complete comparisons |
 
 ## Test Execution Summary
 
