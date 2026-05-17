@@ -40,6 +40,10 @@ impl LockedBufferGuard {
         unsafe { pg_sys::BufferGetPage(self.buffer) }
     }
 
+    pub(crate) fn buffer(&self) -> pg_sys::Buffer {
+        self.buffer
+    }
+
     pub(crate) fn page_size(&self) -> usize {
         // SAFETY: this guard owns a valid locked buffer.
         unsafe { pg_sys::BufferGetPageSize(self.buffer) as usize }
