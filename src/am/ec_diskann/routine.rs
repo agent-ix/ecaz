@@ -660,10 +660,11 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 top_k: sql_result_cap,
             };
             let (results, rerank_error) = {
-                let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(
-                    heap_relation_state.0,
-                )
-                .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
+                let heap_relation = heap_relation_state.as_ptr();
+                let snapshot = snapshot_state.as_ptr();
+                let slot =
+                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+                        .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
                 let rerank_error = RefCell::new(None::<String>);
                 let results = scan::vamana_scan_with(
                     &reader,
@@ -671,11 +672,11 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                     scan_params,
                     |tuple| prefilter.score(tuple),
                     |heap_tids: &[ItemPointer]| {
-                        prefetch_heap_rerank_blocks(heap_relation_state.0, heap_tids)
+                        prefetch_heap_rerank_blocks(heap_relation, heap_tids)
                     },
                     |heap_tid| match exact_heap_rerank_distance(
-                        heap_relation_state.0,
-                        snapshot_state.0,
+                        heap_relation,
+                        snapshot,
                         slot.as_ptr(),
                         source_attnum,
                         &raw_query,
@@ -693,12 +694,6 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 (results, rerank_error.into_inner())
             };
             prefilter.load_into_scan_opaque(opaque);
-            scan_state::release_owned_scan_heap_state(
-                heap_relation_state.0,
-                heap_relation_state.1,
-                snapshot_state.0,
-                snapshot_state.1,
-            );
 
             if let Some(error) = rerank_error {
                 pgrx::error!("ec_diskann scan heap rerank failed: {error}");

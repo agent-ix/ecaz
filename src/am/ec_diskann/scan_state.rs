@@ -2,7 +2,10 @@ use std::{ptr, slice};
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys};
 
-use crate::storage::page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER};
+use crate::storage::{
+    page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
+    relation_guard::HeapRelationGuard,
+};
 
 use super::{
     options::TqDiskannOptions,
@@ -29,6 +32,70 @@ pub(super) struct DiskannScanOpaque {
     pub(super) top_k: usize,
     pub(super) list_size: usize,
     pub(super) rerank_budget: usize,
+}
+
+pub(super) struct ResolvedScanHeapRelation {
+    relation: pg_sys::Relation,
+    _owned: Option<HeapRelationGuard>,
+}
+
+impl ResolvedScanHeapRelation {
+    fn borrowed(relation: pg_sys::Relation) -> Self {
+        Self {
+            relation,
+            _owned: None,
+        }
+    }
+
+    fn owned(guard: HeapRelationGuard) -> Self {
+        let relation = guard.as_ptr();
+        Self {
+            relation,
+            _owned: Some(guard),
+        }
+    }
+
+    pub(super) fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+pub(super) struct ResolvedScanSnapshot {
+    snapshot: pg_sys::Snapshot,
+    owned: bool,
+}
+
+impl ResolvedScanSnapshot {
+    fn borrowed(snapshot: pg_sys::Snapshot) -> Self {
+        Self {
+            snapshot,
+            owned: false,
+        }
+    }
+
+    fn owned(snapshot: pg_sys::Snapshot) -> Self {
+        Self {
+            snapshot,
+            owned: true,
+        }
+    }
+
+    pub(super) fn as_ptr(&self) -> pg_sys::Snapshot {
+        self.snapshot
+    }
+}
+
+impl Drop for ResolvedScanSnapshot {
+    fn drop(&mut self) {
+        if self.owned && !self.snapshot.is_null() {
+            // SAFETY: `snapshot` was returned by `RegisterSnapshot` in
+            // `resolve_scan_snapshot`; this wrapper owns the matching
+            // unregister.
+            // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+            // re-audit on pgrx bumps or pg_guard behavior changes.
+            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
+        }
+    }
 }
 
 impl DiskannScanOpaque {
@@ -178,38 +245,41 @@ pub(super) unsafe fn materialize_chain_from_index(
 
 pub(super) unsafe fn resolve_scan_heap_relation(
     scan: pg_sys::IndexScanDesc,
-) -> Result<(pg_sys::Relation, bool), String> {
+) -> Result<ResolvedScanHeapRelation, String> {
     if unsafe { !(*scan).heapRelation.is_null() } {
-        return Ok((unsafe { (*scan).heapRelation }, false));
+        return Ok(ResolvedScanHeapRelation::borrowed(unsafe {
+            (*scan).heapRelation
+        }));
     }
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_diskann scan could not resolve heap relation".into());
     }
-    Ok((
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
-        true,
-    ))
+    HeapRelationGuard::try_access_share(heap_oid)
+        .map(ResolvedScanHeapRelation::owned)
+        .ok_or_else(|| "ec_diskann scan could not open heap relation".into())
 }
 
 pub(super) unsafe fn resolve_scan_snapshot(
     scan: pg_sys::IndexScanDesc,
-) -> Result<(pg_sys::Snapshot, bool), String> {
+) -> Result<ResolvedScanSnapshot, String> {
     if unsafe { !(*scan).xs_snapshot.is_null() } {
-        return Ok((unsafe { (*scan).xs_snapshot }, false));
+        return Ok(ResolvedScanSnapshot::borrowed(unsafe {
+            (*scan).xs_snapshot
+        }));
     }
 
     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
-        return Ok((active_snapshot, false));
+        return Ok(ResolvedScanSnapshot::borrowed(active_snapshot));
     }
 
     let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     if registered_snapshot.is_null() {
         return Err("ec_diskann scan could not resolve an active snapshot".into());
     }
-    Ok((registered_snapshot, true))
+    Ok(ResolvedScanSnapshot::owned(registered_snapshot))
 }
 
 pub(super) unsafe fn allocate_heap_slot(
@@ -277,20 +347,6 @@ pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPoi
         block_number,
         offset_number,
     })
-}
-
-pub(super) unsafe fn release_owned_scan_heap_state(
-    heap_relation: pg_sys::Relation,
-    heap_relation_owned: bool,
-    snapshot: pg_sys::Snapshot,
-    snapshot_owned: bool,
-) {
-    if snapshot_owned && !snapshot.is_null() {
-        unsafe { pg_sys::UnregisterSnapshot(snapshot) };
-    }
-    if heap_relation_owned && !heap_relation.is_null() {
-        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
 }
 
 pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
