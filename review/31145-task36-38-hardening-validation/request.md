@@ -24,9 +24,11 @@ documentation for the PG-level fault matrix. The provider now hooks `open`,
 `open64`, `openat`, `openat2`, read/pread, write/pwrite, fsync, and fdatasync
 surfaces. Live lanes run AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, and `ec_spire`: cancellation and backend termination use repeated
-AM KNN scans, statement timeout uses repeated AM KNN scans, lock timeout covers
-blocked `REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)` while
-rolling back the lock holder even if waiter cleanup errors, memory smoke uses
+AM KNN scans, statement timeout uses repeated AM KNN scans,
+`idle_in_transaction_session_timeout` terminates sessions after each AM fixture
+is touched inside an open transaction, lock timeout covers blocked
+`REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)` while rolling
+back the lock holder even if waiter cleanup errors, memory smoke uses
 `ecaz.fault_palloc_nth` and sweeps the currently instrumented scan allocation
 points plus build/insert/vacuum callback boundaries for each AM,
 provider-backed slow-disk latency runs against a postmaster restarted through
@@ -67,7 +69,8 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   perturbed by `0.01`.
 - Live PG18 fault smoke against `ecaz_fault_probe_36_38`:
   - `ecaz dev fault smoke --lane cancel --rows 64`
-  - `ecaz dev fault smoke --lane timeout --rows 64`
+  - `ecaz dev fault smoke --lane timeout --rows 64` including statement timeout
+    and `idle_in_transaction_session_timeout`
   - `ecaz dev fault smoke --lane lock-timeout --rows 64`
   - `ecaz dev fault smoke --lane memory --rows 64`
   - `ecaz dev fault provider-restart --mode slow-disk ...`

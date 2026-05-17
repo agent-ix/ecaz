@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `88d21954b501467d8fabc3a2df8d4610e8d62755`
+Code checkpoint SHA: `4692b087bab9ccd43d8804a9aee2e51b3c87d9a5`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:18:35Z`
+Timestamp: `2026-05-17T05:25:32Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -123,6 +123,12 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live postcondition probe expansion
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-postcondition-pgstat-probes.log`
 - Key result: live lock-timeout smoke passed with optional probes enabled; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=731 after=762`.
+
+## task38-pg18-timeout-idle-tx.log
+
+- Lane: Task 38 live timeout matrix expansion
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-timeout-idle-tx.log`
+- Key result: all four AMs completed timeout smoke with both `statement-timeout` and `idle-in-transaction-timeout` cases listed in the matrix. The expected idle-timeout backend terminations were followed by shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=764 after=795`.
 
 ## Provider-Backed I/O Smoke
 
