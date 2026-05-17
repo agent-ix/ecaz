@@ -496,8 +496,10 @@ async fn run_lock_timeout_probe(
             .await?;
         waiter.batch_execute("SET lock_timeout = '10ms';").await?;
         let timeout = waiter.batch_execute(&workload_reindex_sql(am)).await;
-        waiter.batch_execute("RESET lock_timeout;").await?;
-        holder.batch_execute("ROLLBACK;").await?;
+        let reset = waiter.batch_execute("RESET lock_timeout;").await;
+        let rollback = holder.batch_execute("ROLLBACK;").await;
+        reset?;
+        rollback?;
         assert_sqlstate(&format!("lock_timeout {}", am.as_str()), timeout, "55P03")?;
     }
     Ok(())
@@ -545,26 +547,40 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
     prepare_workloads(conn, rows, ams).await?;
     let client = connect_fault(conn, "memory").await?;
     for &am in ams {
-        client
-            .batch_execute(
-                "SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_after = 1;",
-            )
-            .await?;
-        let result = client.batch_execute(&workload_scan_sql(am)).await;
-        client
-            .batch_execute(
-                "SET ecaz.fault_palloc_after = -1; SELECT ecaz_fault_reset_palloc_counter();",
-            )
-            .await?;
-        assert_ecaz_palloc_error(&format!("memory palloc {}", am.as_str()), result)?;
-        client.simple_query("SELECT 1").await.map_err(|error| {
-            eyre!(
-                "memory palloc {} did not leave the backend usable: {error}",
-                am.as_str()
-            )
-        })?;
+        let sweep_limit = memory_probe_sweep_limit(am);
+        for nth in 1..=sweep_limit {
+            client
+                .batch_execute(&format!(
+                    "SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = {nth};"
+                ))
+                .await?;
+            let result = client
+                .batch_execute(&workload_repeated_scan_sql(am, i64::from(sweep_limit)))
+                .await;
+            client
+                .batch_execute(
+                    "SET ecaz.fault_palloc_nth = -1; SELECT ecaz_fault_reset_palloc_counter();",
+                )
+                .await?;
+            assert_ecaz_palloc_error(&format!("memory palloc {} nth {nth}", am.as_str()), result)?;
+            client.simple_query("SELECT 1").await.map_err(|error| {
+                eyre!(
+                    "memory palloc {} nth {nth} did not leave the backend usable: {error}",
+                    am.as_str()
+                )
+            })?;
+        }
     }
     Ok(())
+}
+
+fn memory_probe_sweep_limit(am: FaultAm) -> i32 {
+    match am {
+        FaultAm::Hnsw => 4,
+        FaultAm::Ivf => 4,
+        FaultAm::DiskAnn => 1,
+        FaultAm::Spire => 3,
+    }
 }
 
 async fn run_slow_disk_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {

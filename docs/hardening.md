@@ -107,6 +107,9 @@ Seeded Miri coverage now includes:
   - FWHT lanes: absolute/relative `1e-5`.
   - `score_ip_from_parts`: absolute/relative `1e-5`.
   - `score_ip_codes_lite`: absolute/relative `1e-5`.
+  - AM source inner product (HNSW/DiskANN): absolute/relative `1e-4`
+    because production SIMD may use fused multiply-add while the scalar
+    reference accumulates with separate operations.
 
 Tolerance changes require a review packet that explains the numeric reason.
 The Miri scalar fallback remains useful for reference-path UB checks, but SIMD
@@ -159,11 +162,10 @@ under the relevant review packet before citing findings.
   `enospc-write` provider-backed postmaster.
   Provider-backed smoke lanes require the same marker path via
   `--provider-marker` so they cannot pass against a normal postmaster.
-- Live memory smoke uses the extension GUC `ecaz.fault_palloc_after` and
+- Live memory smoke uses the extension GUC `ecaz.fault_palloc_nth` and
   `ecaz_fault_reset_palloc_counter()` to raise a clean ERROR at instrumented
-  AM palloc boundaries. The current smoke covers each AM's scan opaque
-  allocation boundary; broader Nth-allocation sweeps can build on the same
-  GUC without adding new shell orchestration.
+  AM palloc boundaries. The current smoke sweeps the first few Nth allocation
+  points for each AM scan workload.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, and `ec_spire`, then directly exercises cancellation and

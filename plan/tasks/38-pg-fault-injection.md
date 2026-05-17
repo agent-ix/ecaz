@@ -5,7 +5,7 @@ Status: **operator smoke surface implemented locally** — extends Task 37 from
 production clusters hit. The local implementation adds
 `crates/ecaz-fault-injection`, an LD_PRELOAD provider for matched-path EIO,
 ENOSPC, and slow-disk latency injection, extension-side palloc smoke injection
-through `ecaz.fault_palloc_after`, `ecaz dev fault`, Makefile smoke lanes, and
+through `ecaz.fault_palloc_nth`, `ecaz dev fault`, Makefile smoke lanes, and
 `docs/hardening.md` coverage. Current validation passed provider self-tests,
 the full dry-run matrix, and live PG18 probes for cancellation, statement
 timeout, lock timeout, resource settings, memory/palloc smoke, provider-backed

@@ -1824,6 +1824,7 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
     free_scan_query(opaque);
 
     let query_bytes = std::mem::size_of_val(query);
+    crate::fault::maybe_fail_palloc("ec_hnsw scan query values");
     let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
     if query_values.is_null() {
         pgrx::error!("ec_hnsw failed to allocate scan query state");
@@ -4882,10 +4883,12 @@ fn emit_scan_output(
 fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
     unsafe {
         if (*scan).xs_orderbyvals.is_null() {
+            crate::fault::maybe_fail_palloc("ec_hnsw scan orderby values");
             (*scan).xs_orderbyvals =
                 pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
         }
         if (*scan).xs_orderbynulls.is_null() {
+            crate::fault::maybe_fail_palloc("ec_hnsw scan orderby nulls");
             (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
         }
 

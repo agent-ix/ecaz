@@ -11,10 +11,12 @@ pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPoint
 pub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
     unsafe {
         if (*scan).xs_orderbyvals.is_null() {
+            crate::fault::maybe_fail_palloc("ec_spire scan orderby values");
             (*scan).xs_orderbyvals =
                 pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
         }
         if (*scan).xs_orderbynulls.is_null() {
+            crate::fault::maybe_fail_palloc("ec_spire scan orderby nulls");
             (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
         }
 
