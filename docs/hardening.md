@@ -184,7 +184,9 @@ expects clean ERROR from AM scan reads, while `enospc-write` expects clean
 ERROR from AM writes. Memory smoke injects palloc failures at the instrumented
 AM build/scan/insert/vacuum boundaries and verifies the backend remains usable
 after each ERROR. Every lane uses the shared post-condition probe inventory from
-`ecaz-fault-injection`.
+`ecaz-fault-injection`: leftover fault sessions, surviving locks, prepared
+transactions, optional `pg_buffercache` fixture pin counts, and optional
+`pg_stat_io` non-decreasing operation counters.
 
 Current interrupt inventory:
 

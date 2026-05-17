@@ -1,10 +1,10 @@
 use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
-    all_smoke_cases, leak_probe_sql, required_smoke_cases, workload_insert_sql,
-    workload_reindex_sql, workload_repeated_scan_sql, workload_scan_sql, workload_setup_sql,
-    workload_table_sql, workload_vacuum_full_sql, workload_vacuum_sql, FaultAm, FaultLane,
-    ProviderMode,
+    all_smoke_cases, leak_probe_sql, optional_leak_probe_sql, required_smoke_cases,
+    workload_insert_sql, workload_reindex_sql, workload_repeated_scan_sql, workload_scan_sql,
+    workload_setup_sql, workload_table_sql, workload_vacuum_full_sql, workload_vacuum_sql, FaultAm,
+    FaultLane, ProviderMode,
 };
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -333,6 +333,11 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
         .collect::<Vec<_>>();
     print_cases(&cases);
     print_leak_probes();
+    let pg_stat_io_before = if args.dry_run {
+        None
+    } else {
+        capture_pg_stat_io_total(conn).await?
+    };
 
     if args.dry_run {
         return Ok(());
@@ -349,32 +354,32 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 ));
             }
             run_io_probe(conn, mode, &ams).await?;
-            assert_postconditions(conn, lane).await
+            assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Cancel => {
             run_cancel_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane).await
+            assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Timeout => {
             run_statement_timeout_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane).await
+            assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::LockTimeout => {
             run_lock_timeout_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane).await
+            assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Resource => {
             run_resource_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane).await
+            assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Memory => {
             run_memory_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane).await
+            assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::SlowDisk => {
             read_provider_marker(args.provider_marker.as_deref(), lane)?;
             run_slow_disk_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane).await
+            assert_postconditions(conn, lane, pg_stat_io_before).await
         }
     }
 }
@@ -802,7 +807,11 @@ async fn connect_fault(conn: &ConnectionOptions, label: &str) -> Result<tokio_po
     Ok(client)
 }
 
-async fn assert_postconditions(conn: &ConnectionOptions, lane: FaultLane) -> Result<()> {
+async fn assert_postconditions(
+    conn: &ConnectionOptions,
+    lane: FaultLane,
+    pg_stat_io_before: Option<i64>,
+) -> Result<()> {
     tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     let client = connect_fault(conn, "postcondition").await?;
     for &sql in leak_probe_sql() {
@@ -812,7 +821,111 @@ async fn assert_postconditions(conn: &ConnectionOptions, lane: FaultLane) -> Res
             return Err(eyre!("{lane} postcondition failed: {sql} returned {count}"));
         }
     }
+    assert_pg_buffercache_fixture_pins(&client, lane).await?;
+    assert_pg_stat_io_non_decreasing(&client, lane, pg_stat_io_before).await?;
     Ok(())
+}
+
+async fn capture_pg_stat_io_total(conn: &ConnectionOptions) -> Result<Option<i64>> {
+    let client = connect_fault(conn, "precondition").await?;
+    pg_stat_io_total(&client).await
+}
+
+async fn assert_pg_buffercache_fixture_pins(
+    client: &tokio_postgres::Client,
+    lane: FaultLane,
+) -> Result<()> {
+    let available = client
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_buffercache')",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !available {
+        crate::ecaz_println!("[fault] pg_buffercache unavailable; skipping pin probe");
+        return Ok(());
+    }
+    if let Err(error) = client
+        .batch_execute("CREATE EXTENSION IF NOT EXISTS pg_buffercache")
+        .await
+    {
+        if error
+            .as_db_error()
+            .map(|db| db.code().code() == "42501")
+            .unwrap_or(false)
+        {
+            crate::ecaz_println!("[fault] pg_buffercache privilege denied; skipping pin probe");
+            return Ok(());
+        }
+        return Err(error.into());
+    }
+
+    let pinned = client
+        .query_one(
+            "SELECT count(*)::bigint
+             FROM pg_buffercache b
+             JOIN pg_class c ON c.relfilenode = b.relfilenode
+             WHERE b.reldatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+               AND c.relname LIKE 'ecaz_fault_%'
+               AND b.pinning_backends > 0",
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    crate::ecaz_println!("[fault] pg_buffercache_fixture_pins={pinned}");
+    if pinned != 0 {
+        return Err(eyre!(
+            "{lane} postcondition failed: pg_buffercache fixture pin count returned {pinned}"
+        ));
+    }
+    Ok(())
+}
+
+async fn assert_pg_stat_io_non_decreasing(
+    client: &tokio_postgres::Client,
+    lane: FaultLane,
+    before: Option<i64>,
+) -> Result<()> {
+    let Some(before) = before else {
+        crate::ecaz_println!("[fault] pg_stat_io unavailable; skipping io counter probe");
+        return Ok(());
+    };
+    let Some(after) = pg_stat_io_total(client).await? else {
+        crate::ecaz_println!(
+            "[fault] pg_stat_io unavailable after lane; skipping io counter probe"
+        );
+        return Ok(());
+    };
+    crate::ecaz_println!("[fault] pg_stat_io_ops_before={before} after={after}");
+    if after < before {
+        return Err(eyre!(
+            "{lane} postcondition failed: pg_stat_io total operations decreased from {before} to {after}"
+        ));
+    }
+    Ok(())
+}
+
+async fn pg_stat_io_total(client: &tokio_postgres::Client) -> Result<Option<i64>> {
+    match client
+        .query_one(
+            "SELECT coalesce(sum(reads + writes + writebacks + extends + fsyncs), 0)::bigint
+             FROM pg_stat_io",
+            &[],
+        )
+        .await
+    {
+        Ok(row) => Ok(Some(row.get::<_, i64>(0))),
+        Err(error)
+            if error
+                .as_db_error()
+                .map(|db| db.code().code() == "42P01")
+                .unwrap_or(false) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn assert_query_canceled(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
@@ -877,6 +990,9 @@ fn print_cases(cases: &[ecaz_fault_injection::FaultCase]) {
 fn print_leak_probes() {
     crate::ecaz_println!("postcondition probes:");
     for sql in leak_probe_sql() {
+        crate::ecaz_println!("{sql}");
+    }
+    for sql in optional_leak_probe_sql() {
         crate::ecaz_println!("{sql}");
     }
 }

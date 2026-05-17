@@ -273,6 +273,8 @@ fn case(
             "no surviving ecaz-fault sessions",
             "no surviving relation or advisory locks",
             "no prepared transactions in the test database",
+            "no pinned pg_buffercache entries for ecaz fault fixtures when pg_buffercache is available",
+            "pg_stat_io counters remain readable and non-decreasing when pg_stat_io is available",
         ],
     }
 }
@@ -282,6 +284,13 @@ pub fn leak_probe_sql() -> &'static [&'static str] {
         "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()",
         "SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()",
         "SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()",
+    ]
+}
+
+pub fn optional_leak_probe_sql() -> &'static [&'static str] {
+    &[
+        "pg_buffercache fixture pin count",
+        "pg_stat_io non-decreasing total operation count",
     ]
 }
 
