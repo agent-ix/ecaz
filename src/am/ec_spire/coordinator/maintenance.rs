@@ -227,20 +227,20 @@ unsafe fn build_relation_selected_scheduled_maintenance_input(
 
     match selected.decision.mode {
         update::SpireLeafReplacementScheduleMode::Split => {
-            let heap_relation = unsafe { SpireHeapRelationGuard::open_for_index(index_relation)? };
+            let heap_relation = unsafe { open_spire_heap_relation_for_index(index_relation)? };
             let heap_snapshot = unsafe { active_spire_maintenance_snapshot()? };
             let indexed_attribute = unsafe {
                 crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
-                    heap_relation.relation(),
+                    heap_relation.as_ptr(),
                     index_relation,
                     "ec_spire maintenance split replacement source vector",
                 )
             };
-            let slot = unsafe { SpireHeapSlotGuard::new(heap_relation.relation())? };
+            let slot = unsafe { SpireHeapSlotGuard::new(heap_relation.as_ptr())? };
             let relation_options = options::relation_options(index_relation);
             unsafe {
                 update::build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
-                    heap_relation.relation(),
+                    heap_relation.as_ptr(),
                     heap_snapshot,
                     slot.as_ptr(),
                     indexed_attribute,

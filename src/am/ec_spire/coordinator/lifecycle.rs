@@ -1,3 +1,5 @@
+use crate::storage::relation_guard::HeapRelationGuard;
+
 pub(super) struct SpireRelationLockGuard {
     relid: pg_sys::Oid,
     lockmode: pg_sys::LOCKMODE,
@@ -22,34 +24,16 @@ pub(super) unsafe fn lock_publish_relation(
     }
 }
 
-struct SpireHeapRelationGuard {
-    relation: pg_sys::Relation,
-}
-
-impl SpireHeapRelationGuard {
-    unsafe fn open_for_index(index_relation: pg_sys::Relation) -> Result<Self, String> {
-        let index_oid = unsafe { (*index_relation).rd_id };
-        let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
-        if heap_oid == pg_sys::InvalidOid {
-            return Err("ec_spire maintenance could not resolve heap relation".to_owned());
-        }
-        let relation =
-            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        if relation.is_null() {
-            return Err("ec_spire maintenance failed to open heap relation".to_owned());
-        }
-        Ok(Self { relation })
+unsafe fn open_spire_heap_relation_for_index(
+    index_relation: pg_sys::Relation,
+) -> Result<HeapRelationGuard, String> {
+    let index_oid = unsafe { (*index_relation).rd_id };
+    let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        return Err("ec_spire maintenance could not resolve heap relation".to_owned());
     }
-
-    fn relation(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for SpireHeapRelationGuard {
-    fn drop(&mut self) {
-        unsafe { pg_sys::table_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
+    HeapRelationGuard::try_access_share(heap_oid)
+        .ok_or_else(|| "ec_spire maintenance failed to open heap relation".to_owned())
 }
 
 struct SpireHeapSlotGuard {
