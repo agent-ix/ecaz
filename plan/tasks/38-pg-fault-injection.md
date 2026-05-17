@@ -33,7 +33,10 @@ scan limits or the first injected allocation. The smoke surface is now in
 place; raw PostgreSQL allocator sweeps beyond currently instrumented ECAZ
 palloc sites, cgroup OOM-kill campaigns beyond the current `RLIMIT_AS` and
 SIGKILL recovery surfaces, and SPIRE remote-object fetch faulting remain
-follow-on expansion beyond this smoke checkpoint.
+follow-on expansion beyond this smoke checkpoint. The packet records current
+availability checks: cgroup v2 memory is present but should be driven through a
+systemd-scoped postmaster workflow rather than direct `/sys/fs/cgroup` writes,
+and SPIRE live remote-object reads are not implemented yet.
 
 ## Scope
 

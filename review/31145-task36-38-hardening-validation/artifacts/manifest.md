@@ -2,7 +2,7 @@
 
 Code checkpoint SHA: `b41ce4d270f0b6c34bb2793b949e9824615b2f3f`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T17:17:45Z`
+Timestamp: `2026-05-17T17:22:15Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -119,6 +119,13 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 instrumented palloc ordinal sweep exhaustion
 - Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-palloc-sweep-exhaustive-all.log dev fault smoke --lane memory --rows 32`
 - Key result: scan palloc sweeps now use the same cap-and-stop model as build/insert/vacuum instead of hardcoded per-AM scan limits. The all-AM run emitted scan faults through HNSW `nth=4` then `first_success_nth=5`, IVF `nth=7` then `first_success_nth=8`, DiskANN `nth=1` then `first_success_nth=2`, and SPIRE `nth=3` then `first_success_nth=4`. Build, insert, and vacuum each completed at `first_success_nth=2` for every AM. The same run reran backend `RLIMIT_AS` OOM build checks and backend-SIGKILL build/scan/insert checks for every AM; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`.
+
+## Task 38 Follow-Up Availability Audits
+
+- Cgroup availability: `task38-cgroup-availability-findmnt.log`, `task38-cgroup-availability-write-test.log`, `task38-cgroup-availability-controllers.log`, `task38-cgroup-availability-systemd-user.log`, and `task38-cgroup-availability-systemd-run.log`.
+- Key result: cgroup v2 memory controller is present and delegated, and a user `systemd-run --scope -p MemoryMax=256M true` probe succeeds when run through the packet PTY. The cgroup root is not directly writable from the repo process (`cgroup_root_writable=false`), so a future cgroup OOM lane should be implemented as an `ecaz`/systemd-scoped postmaster workflow rather than ad hoc writes under `/sys/fs/cgroup`.
+- SPIRE remote-object audit: `task38-spire-remote-object-audit.log`.
+- Key result: current docs still state boundary-replica diagnostics operate "before live remote object reads exist"; grep finds no implemented live SPIRE remote-object read/fetch surface to attach the LD_PRELOAD provider to yet. Existing packet coverage remains the Stage E `remote_oom` transport fault, not remote-object fetch faulting.
 
 ## task38-pg18-oom-kill-hnsw-smoke.log
 

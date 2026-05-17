@@ -72,7 +72,11 @@ but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
 raw PostgreSQL allocator sweeps beyond currently instrumented ECAZ palloc sites,
 cgroup OOM-kill campaigns beyond the current `RLIMIT_AS` and SIGKILL recovery
 surfaces, SPIRE remote-object fetch faulting, and full expected-vs-forced
-WAL/temp-spill accounting remain follow-on expansion.
+WAL/temp-spill accounting remain follow-on expansion. The packet includes
+availability artifacts for the two environment/tree-bound follow-ups: cgroup v2
+memory is present but needs a systemd-scoped postmaster workflow rather than
+direct cgroup filesystem writes, and SPIRE live remote-object reads do not exist
+yet.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
