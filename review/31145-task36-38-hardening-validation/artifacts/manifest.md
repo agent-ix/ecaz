@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `63be6e2d6f4a3a1de2e611193ecdeac454ab8324`
+Code checkpoint SHA: `78c5042ff7836a0cfb4983eec8ce316e958e865e`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T04:55:03Z`
+Timestamp: `2026-05-17T05:03:53Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -87,6 +87,18 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live memory/palloc scan-site sweep
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-palloc-sweep-sites.log`
 - Key result: all four AMs completed the live palloc smoke. HNSW sweeps Nth failures 1..=4, IVF 1..=4, DiskANN 1, and SPIRE 1..=3, with postcondition probes asserted after each run.
+
+## task38-pg18-install-memory-major-workloads.log
+
+- Lane: PG18 extension install for build/scan/insert/vacuum memory smoke
+- Command: `script -q -e -c "cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-install-memory-major-workloads.log`
+- Key result: installed the extension after adding memory-fault checkpoints to each AM's build result, insert entry, and vacuum stats boundaries.
+
+## task38-pg18-memory-major-workloads.log
+
+- Lane: Task 38 live memory/palloc major-workload smoke
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-major-workloads.log`
+- Key result: all four AMs completed memory smoke across build, scan, insert, and vacuum probes, with shared postcondition probes asserted.
 
 ## task38-pg18-lock-rollback-guard.log
 
