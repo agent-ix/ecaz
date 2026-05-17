@@ -35,6 +35,29 @@ impl LockedBufferGuard {
         Some(Self { buffer })
     }
 
+    pub(crate) unsafe fn read_main_locked(
+        relation: pg_sys::Relation,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+    ) -> Option<Self> {
+        // SAFETY: caller supplies a live PostgreSQL relation and a read mode
+        // that returns the buffer already locked, such as `RBM_ZERO_AND_LOCK`.
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                mode,
+                ptr::null_mut(),
+            )
+        };
+        // SAFETY: `buffer` is the result from `ReadBufferExtended`.
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return None;
+        }
+        Some(Self { buffer })
+    }
+
     pub(crate) fn page(&self) -> pg_sys::Page {
         // SAFETY: this guard owns a valid locked buffer.
         unsafe { pg_sys::BufferGetPage(self.buffer) }
@@ -52,8 +75,8 @@ impl LockedBufferGuard {
 
 impl Drop for LockedBufferGuard {
     fn drop(&mut self) {
-        // SAFETY: `buffer` was locked by `LockedBufferGuard::read_main`; this
-        // guard owns the matching unlock and release.
+        // SAFETY: `buffer` was locked by a `LockedBufferGuard` constructor;
+        // this guard owns the matching unlock and release.
         // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
         // re-audit on pgrx bumps or pg_guard behavior changes.
         unsafe { pg_sys::UnlockReleaseBuffer(self.buffer) };

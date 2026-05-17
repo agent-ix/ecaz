@@ -39,31 +39,25 @@ unsafe fn initialize_spire_metadata_block_zero(
     } else {
         METADATA_BLOCK_NUMBER
     };
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
-    } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+    let buffer = if target_block == P_NEW {
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             target_block,
-            read_mode,
-            ptr::null_mut(),
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_spire failed to allocate root/control buffer");
+    } else {
+        LockedBufferGuard::read_main(
+            index_relation,
+            target_block,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
     }
-
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    .unwrap_or_else(|| pgrx::error!("ec_spire failed to allocate root/control buffer"));
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let root_control_bytes = root_control
         .encode()
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -79,7 +73,6 @@ unsafe fn initialize_spire_metadata_block_zero(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 pub(super) unsafe fn read_root_control_page(
@@ -428,26 +421,19 @@ unsafe fn append_object_tuple_to_new_block(
         );
     }
 
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            P_NEW,
-            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_spire failed to allocate object block".to_owned());
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let buffer = LockedBufferGuard::read_main_locked(
+        index_relation,
+        P_NEW,
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+    )
+    .ok_or_else(|| "ec_spire failed to allocate object block".to_owned())?;
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page, page_size, 0) };
     if unsafe { pg_sys::PageGetFreeSpace(page) as usize } < raw_tuple_storage_bytes(payload.len()) {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_spire object tuple payload {} exceeds page capacity",
             payload.len()
@@ -465,15 +451,13 @@ unsafe fn append_object_tuple_to_new_block(
     };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_spire failed to append object tuple to new block".to_owned());
     }
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer.buffer()) };
 
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(crate::storage::page::ItemPointer {
         block_number,
         offset_number: offset,
