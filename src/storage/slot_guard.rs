@@ -37,8 +37,8 @@ impl TupleTableSlotGuard {
 
 impl Drop for TupleTableSlotGuard {
     fn drop(&mut self) {
-        // SAFETY: `slot` was returned by `table_slot_create` in
-        // `TupleTableSlotGuard::create`; this guard owns the matching drop.
+        // SAFETY: `slot` was returned by one of this guard's constructors;
+        // this guard owns the matching drop.
         // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
         // re-audit on pgrx bumps or pg_guard behavior changes.
         unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };

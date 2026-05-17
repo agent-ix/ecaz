@@ -36,35 +36,6 @@ unsafe fn open_spire_heap_relation_for_index(
         .ok_or_else(|| "ec_spire maintenance failed to open heap relation".to_owned())
 }
 
-struct SpireHeapSlotGuard {
-    slot: *mut pg_sys::TupleTableSlot,
-}
-
-impl SpireHeapSlotGuard {
-    unsafe fn new(heap_relation: pg_sys::Relation) -> Result<Self, String> {
-        let slot = unsafe {
-            pg_sys::MakeSingleTupleTableSlot(
-                (*heap_relation).rd_att,
-                pg_sys::table_slot_callbacks(heap_relation),
-            )
-        };
-        if slot.is_null() {
-            return Err("ec_spire maintenance failed to allocate a heap tuple slot".to_owned());
-        }
-        Ok(Self { slot })
-    }
-
-    fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
-        self.slot
-    }
-}
-
-impl Drop for SpireHeapSlotGuard {
-    fn drop(&mut self) {
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
-    }
-}
-
 unsafe fn active_spire_maintenance_snapshot() -> Result<pg_sys::Snapshot, String> {
     let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if snapshot.is_null() {

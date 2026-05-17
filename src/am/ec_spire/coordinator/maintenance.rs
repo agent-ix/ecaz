@@ -236,7 +236,12 @@ unsafe fn build_relation_selected_scheduled_maintenance_input(
                     "ec_spire maintenance split replacement source vector",
                 )
             };
-            let slot = unsafe { SpireHeapSlotGuard::new(heap_relation.as_ptr())? };
+            let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(
+                heap_relation.as_ptr(),
+            )
+            .ok_or_else(|| {
+                "ec_spire maintenance failed to allocate a heap tuple slot".to_owned()
+            })?;
             let relation_options = options::relation_options(index_relation);
             unsafe {
                 update::build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
