@@ -22,8 +22,9 @@ prepared transactions, and include optional live `pg_buffercache` fixture pin
 checks plus `pg_stat_io` non-decreasing operation counters when those PG18
 surfaces are available. The smoke surface is now in place; exhaustive
 per-allocation palloc sweeps, true kernel/cgroup OOM pressure campaigns, WAL
-rotation I/O targeting, and SPIRE remote-object fetch faulting remain follow-on
-expansion beyond this smoke checkpoint.
+rotation I/O targeting, calibrated accumulator `work_mem` pressure, and SPIRE
+remote-object fetch faulting remain follow-on expansion beyond this smoke
+checkpoint.
 
 ## Scope
 

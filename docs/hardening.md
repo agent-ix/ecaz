@@ -187,8 +187,10 @@ ERROR from AM writes. Resource smoke runs AM scan/insert/vacuum under tiny
 `temp_file_limit = '64kB'`, then verifies the backend remains usable. When the
 postmaster is restarted with an `enospc-write` provider whose marker records
 `match=pgsql_tmp`, the resource lane instead disables `temp_file_limit` and
-expects the temp-spill failure to come from provider-backed ENOSPC. Memory smoke
-injects palloc failures at the instrumented AM build/scan/insert/vacuum
+expects the temp-spill failure to come from provider-backed ENOSPC. This is a
+resource-setting and temp-spill smoke; it is not a calibrated accumulator
+`work_mem` pressure proof. Memory smoke injects palloc failures at the
+instrumented AM build/scan/insert/vacuum
 boundaries and verifies the backend remains usable after each ERROR. Every lane
 uses the shared post-condition probe inventory from `ecaz-fault-injection`:
 leftover fault sessions, surviving locks, prepared transactions, optional
