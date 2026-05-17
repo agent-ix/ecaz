@@ -20,11 +20,14 @@ use pgrx::pg_sys;
 use crate::am::common::training;
 use crate::quant::grouped_pq::{encode_grouped_pq, GROUPED_PQ_CENTROIDS};
 use crate::quant::prod::ProdQuantizer;
-use crate::storage::page::{
-    element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, DataPageChain, ItemPointer,
-    FIRST_DATA_BLOCK_NUMBER, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
-};
 use crate::storage::wal;
+use crate::storage::{
+    buffer_guard::LockedBufferGuard,
+    page::{
+        element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, DataPageChain, ItemPointer,
+        FIRST_DATA_BLOCK_NUMBER, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+    },
+};
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 
 use super::scan_query::{encode_query_srht, read_grouped_codebook_chain};
@@ -1143,24 +1146,18 @@ pub(super) unsafe fn read_metadata_page(
     index_relation: pg_sys::Relation,
 ) -> Result<VamanaMetadataPage, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             crate::storage::page::METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_diskann failed to open metadata buffer".into());
     }
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
+    let page = buffer.page();
     let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
-    let metadata = VamanaMetadataPage::decode(metadata_bytes);
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    metadata
+    VamanaMetadataPage::decode(metadata_bytes)
 }
 
 pub(super) unsafe fn with_locked_metadata_page<T>(
@@ -1168,21 +1165,17 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     f: impl FnOnce(&mut VamanaMetadataPage) -> Result<T, String>,
 ) -> Result<T, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             crate::storage::page::METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_diskann failed to open metadata buffer".into());
     }
+    .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page = buffer.page();
+    let page_size = buffer.page_size();
     let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
     let mut metadata = VamanaMetadataPage::decode(metadata_bytes)?;
@@ -1192,12 +1185,11 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     let special_size = (encoded.len() + 7) & !7;
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let writable_page =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(writable_page, page_size, special_size) };
     let dst = unsafe { pg_sys::PageGetSpecialPointer(writable_page) }.cast::<u8>();
     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len()) };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(result)
 }
 
