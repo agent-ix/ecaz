@@ -39,6 +39,9 @@ pressure-sized AM fixtures plus built-in `temp_file_limit` temp-spill failure
 and provider-backed ENOSPC on `pgsql_tmp`, plus WAL rotation accounting that
 performs AM-backed writes, forces `pg_switch_wal()`, and checks LSN movement
 and `pg_stat_wal` record/byte monotonicity,
+provider-backed EIO/ENOSPC now appends `fault=1` marker lines with the
+operation, errno, count, and target path and the smoke asserts
+`provider_fault_events ... count>0` for the configured match,
 provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
@@ -71,12 +74,14 @@ EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
 but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
 raw PostgreSQL allocator sweeps beyond currently instrumented ECAZ palloc sites,
 cgroup OOM-kill campaigns beyond the current `RLIMIT_AS` and SIGKILL recovery
-surfaces, SPIRE remote-object fetch faulting, and full expected-vs-forced
-WAL/temp-spill accounting remain follow-on expansion. The packet includes
+surfaces, SPIRE remote-object fetch faulting, and byte-perfect WAL/temp-byte
+attribution remain follow-on expansion. The packet includes
 availability artifacts for the two environment/tree-bound follow-ups: cgroup v2
 memory is present but needs a systemd-scoped postmaster workflow rather than
 direct cgroup filesystem writes, and SPIRE live remote-object reads do not exist
-yet.
+yet. The prior "expected-vs-forced" gap is narrowed: provider-backed
+EIO/ENOSPC smoke now proves a forced provider event occurred through
+packet-local marker events.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
@@ -117,6 +122,8 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   - `ecaz dev fault provider-restart --mode eio-read/enospc-write --path-match <relation path> ...`
   - `ecaz dev fault smoke --lane io --am <hnsw|ivf|diskann|spire> --assume-prepared --provider-marker ...`
   - focused HNSW provider SQLSTATE guard for EIO and ENOSPC
+  - focused HNSW provider temp-spill marker guard showing
+    `provider_fault_events ... count=2`
   - focused HNSW WAL-path ENOSPC smoke with `--path-match pg_wal`
   - `ecaz dev fault provider-restore`
   - `ecaz dev spire-multicluster fault-pg18 --case remote_oom ...`

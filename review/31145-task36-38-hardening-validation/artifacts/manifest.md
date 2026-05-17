@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `b41ce4d270f0b6c34bb2793b949e9824615b2f3f`
+Code checkpoint SHA: `70f8c28ac3485a0a5306d90f51e374e1eb1d5d9a`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T17:22:15Z`
+Timestamp: `2026-05-17T17:35:00Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -51,6 +51,24 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 CLI parser coverage
 - Command: `script -q -e -c "cargo test -p ecaz-cli cli_parses_fault" review/31145-task36-38-hardening-validation/artifacts/task38-final-ecaz-cli-fault-parse-tests.log`
 - Key result: 6 passed, 0 failed, including `prepare` and prepared-fixture I/O smoke parsing.
+
+## task38-provider-fault-events-cargo-fmt-check.log
+
+- Lane: Task 38 provider fault-event marker formatting check
+- Command: `script -q -e -c "cargo fmt --package ecaz-cli --package ecaz-fault-injection -- --check" review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-cargo-fmt-check.log`
+- Key result: exited 0; rustfmt printed existing stable-toolchain warnings for unstable import-formatting options.
+
+## task38-provider-fault-events-crate-tests.log
+
+- Lane: Task 38 provider fault-event marker unit tests
+- Command: `script -q -e -c "cargo test -p ecaz-fault-injection" review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-crate-tests.log`
+- Key result: 7 passed, 0 failed. The LD_PRELOAD read and create self-tests now also assert `fault=1` marker lines for matched EIO and ENOSPC events.
+
+## task38-provider-fault-events-cli-tests.log
+
+- Lane: Task 38 provider marker CLI parser coverage
+- Command: `script -q -e -c "cargo test -p ecaz-cli cli_parses_fault -- --nocapture" review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-cli-tests.log`
+- Key result: 6 passed, 0 failed. The run emitted an existing unrelated `src/am/mod.rs` unused-import warning.
 
 ## task38-pg18-install-memory-fault.log
 
@@ -210,6 +228,14 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64 --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-temp-spill.marker" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-provider-temp-spill.log`
 - Provider setup: `task38-provider-temp-spill-restart.log` restarted PG18 with `--mode enospc-write --path-match pgsql_tmp --after 1`; `task38-provider-temp-spill.marker` recorded `mode=enospc-write match=pgsql_tmp`; `task38-provider-temp-spill-restore.log` restored PG18 without provider environment.
 - Key result: all four AMs completed resource smoke under the provider, the resource lane printed `resource_temp_spill_provider=enospc-write match=pgsql_tmp`, and shared postconditions passed with `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=1392 after=1712`.
+
+## task38-provider-fault-events-temp-spill.log
+
+- Lane: Task 38 provider fault-event marker accounting
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw` table/index fixture; provider restarted with `--mode enospc-write --path-match pgsql_tmp --after 1` and an absolute marker path.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-temp-spill.log dev fault smoke --lane resource --am hnsw --rows 32 --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-temp-spill.marker`
+- Provider setup: `task38-provider-fault-events-temp-spill-restart.log` restarted PG18 and printed the absolute marker path; `task38-provider-fault-events-temp-spill.marker` records two `fault=1 ... mode=enospc-write ... target=base/pgsql_tmp/...` entries; `task38-provider-fault-events-temp-spill-restore.log` restored PG18 without the provider environment. `task38-provider-fault-events-temp-spill-restore-before-rerun.log` and `task38-provider-fault-events-temp-spill-restore-before-absolute-rerun.log` are retained setup cleanup logs from the failed relative-marker attempt and the final absolute-marker rerun.
+- Key result: focused HNSW resource smoke exited 0 and emitted `provider_fault_events label=resource provider temp spill mode=enospc-write match=pgsql_tmp count=2`, proving the provider actually injected ENOSPC events instead of only observing a SQLSTATE. The run also emitted `wal_rotation_accounting ... records_before=27102 records_after=27911 bytes_before=9546039 bytes_after=13755407`, `pg_buffercache_fixture_pins_ok=true pins=0`, `pg_stat_io_ops_before=1242 after=1699`, and `pg_stat_wal_records_before=18366 after=27911 bytes_before=7826860 after=13755407`.
 
 ## task38-spire-remote-oom.log
 
