@@ -2034,28 +2034,20 @@ mod tests {
     }
 
     fn index_metadata(index_name: &str) -> VamanaMetadataPage {
-        let index_relation = unsafe {
-            pg_sys::index_open(
-                index_oid(index_name),
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
-        let (metadata, _) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
-            .expect("materialize_chain_from_index should succeed");
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let index_relation =
+            IndexRelationGuard::access_share(index_oid(index_name), "index_metadata");
+        let (metadata, _) =
+            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
+                .expect("materialize_chain_from_index should succeed");
         metadata
     }
 
     fn index_materialized_chain(index_name: &str) -> (VamanaMetadataPage, DataPageChain) {
-        let index_relation = unsafe {
-            pg_sys::index_open(
-                index_oid(index_name),
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
-        let materialized = unsafe { scan_state::materialize_chain_from_index(index_relation) }
-            .expect("materialize_chain_from_index should succeed");
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let index_relation =
+            IndexRelationGuard::access_share(index_oid(index_name), "index_materialized_chain");
+        let materialized =
+            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
+                .expect("materialize_chain_from_index should succeed");
         materialized
     }
 
@@ -2079,16 +2071,16 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_relation = unsafe {
-            pg_sys::index_open(
-                index_oid("ec_diskann_session_list_size_override_idx"),
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
+        let index_relation = IndexRelationGuard::access_share(
+            index_oid("ec_diskann_session_list_size_override_idx"),
+            "test_ec_diskann_session_list_size_override_changes_scan_width",
+        );
+        let index_relation_ptr = index_relation.as_ptr();
 
-        let relation_options = unsafe { super::options::relation_options(index_relation) };
-        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
-            .expect("materialize_chain_from_index should succeed");
+        let relation_options = unsafe { super::options::relation_options(index_relation_ptr) };
+        let (metadata, chain) =
+            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
+                .expect("materialize_chain_from_index should succeed");
         let relation_opaque =
             scan_state::DiskannScanOpaque::new(metadata, chain, relation_options.clone())
                 .expect("relation scan state should build");
@@ -2098,8 +2090,9 @@ mod tests {
         );
 
         Spi::run("SET ec_diskann.list_size = 7").expect("session override should succeed");
-        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
-            .expect("materialize_chain_from_index should succeed");
+        let (metadata, chain) =
+            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
+                .expect("materialize_chain_from_index should succeed");
         let session_opaque = scan_state::DiskannScanOpaque::new(metadata, chain, relation_options)
             .expect("session scan state should build");
         assert_eq!(
@@ -2107,8 +2100,6 @@ mod tests {
             "session ec_diskann.list_size should override the reloption during scan setup",
         );
         Spi::run("RESET ec_diskann.list_size").expect("reset should succeed");
-
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     }
 
     #[pg_test]
@@ -2502,10 +2493,9 @@ mod tests {
     }
 
     unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
-        let index_relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let index_relation = IndexRelationGuard::access_share(index_oid, "debug_vacuum_stats");
         let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
-        info.index = index_relation;
+        info.index = index_relation.as_ptr();
         let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
         let stats = unsafe {
@@ -2514,7 +2504,6 @@ mod tests {
         let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };
         let result = unsafe { *stats };
 
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         result
     }
 
@@ -2522,21 +2511,23 @@ mod tests {
         index_oid: pg_sys::Oid,
         dead_tids: &[ItemPointer],
     ) -> pg_sys::IndexBulkDeleteResult {
-        let index_relation = unsafe {
-            pg_sys::index_open(
-                index_oid,
-                pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
-            )
-        };
-        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        let index_relation = IndexRelationGuard::open(
+            index_oid,
+            pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+            "debug_vacuum_remove_heap_tids",
+        );
+        let index_relation_ptr = index_relation.as_ptr();
+        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation_ptr).rd_id, false) };
         let heap_relation = if heap_oid == pg_sys::InvalidOid {
-            ptr::null_mut()
+            None
         } else {
-            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) }
+            HeapRelationGuard::try_access_share(heap_oid)
         };
         let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
-        info.index = index_relation;
-        info.heaprel = heap_relation;
+        info.index = index_relation_ptr;
+        info.heaprel = heap_relation
+            .as_ref()
+            .map_or(ptr::null_mut(), HeapRelationGuard::as_ptr);
         let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
         let mut callback_state = DebugVacuumCallbackState {
             dead_tids: dead_tids.iter().copied().collect(),
@@ -2553,15 +2544,6 @@ mod tests {
         let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };
         let result = unsafe { *stats };
 
-        unsafe {
-            if !heap_relation.is_null() {
-                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            }
-            pg_sys::index_close(
-                index_relation,
-                pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
-            );
-        }
         result
     }
 
@@ -3855,20 +3837,16 @@ mod tests {
             1,
             "fixture rewrite should only touch the target tuple"
         );
-        let index_relation = unsafe {
-            pg_sys::index_open(
-                index_oid("ec_diskann_vacuum_refill_slot_idx"),
-                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-            )
-        };
+        let index_relation = IndexRelationGuard::open(
+            index_oid("ec_diskann_vacuum_refill_slot_idx"),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            "test_ec_diskann_vacuum_refills_dead_neighbor_slot",
+        );
         assert_eq!(
-            unsafe { super::apply_tuple_rewrites(index_relation, &rewrites) }
+            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
                 .expect("fixture rewrite should apply"),
             super::VacuumRewriteApplyOutcome::Applied,
         );
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::RowExclusiveLock as pg_sys::LOCKMODE)
-        };
 
         let deleted_heap_tid = prefill_reader
             .read_node(deleted_tid)
@@ -3993,20 +3971,16 @@ mod tests {
             1,
             "fixture rewrite should only touch the target tuple"
         );
-        let index_relation = unsafe {
-            pg_sys::index_open(
-                index_oid("ec_diskann_vacuum_retry_replan_idx"),
-                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-            )
-        };
+        let index_relation = IndexRelationGuard::open(
+            index_oid("ec_diskann_vacuum_retry_replan_idx"),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            "test_ec_diskann_vacuum_replans_on_stale_repair_tuple",
+        );
         assert_eq!(
-            unsafe { super::apply_tuple_rewrites(index_relation, &rewrites) }
+            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
                 .expect("fixture rewrite should apply"),
             super::VacuumRewriteApplyOutcome::Applied,
         );
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::RowExclusiveLock as pg_sys::LOCKMODE)
-        };
 
         let mut drifted_target_tuple = target_tuple_before.clone();
         let replaced_deleted_neighbor = drifted_target_tuple.neighbors.iter_mut().any(|neighbor| {
