@@ -5,6 +5,8 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 #[cfg(feature = "pg18")]
 use super::stream;
 use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
+#[cfg(any(test, feature = "pg_test"))]
+use crate::storage::relation_guard::IndexRelationGuard;
 use crate::storage::wal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -476,43 +478,10 @@ pub(crate) struct DebugIndexDataPage {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-struct DebugAccessShareIndexRelation {
-    relation: pg_sys::Relation,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl DebugAccessShareIndexRelation {
-    fn open(index_oid: pg_sys::Oid, caller: &'static str) -> Self {
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `index_open`; this guard owns the matching AccessShareLock close.
-        let relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        if relation.is_null() {
-            pgrx::error!("{caller} could not open ec_hnsw index relation");
-        }
-        Self { relation }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl Drop for DebugAccessShareIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by
-        // `DebugAccessShareIndexRelation::open`; this guard owns the matching
-        // close.
-        unsafe { pg_sys::index_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_index_pages(
     index_oid: pg_sys::Oid,
 ) -> (u32, page::MetadataPage, Vec<DebugIndexDataPage>) {
-    let index_relation = DebugAccessShareIndexRelation::open(index_oid, "debug_index_pages");
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_pages");
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(
             index_relation.as_ptr(),
@@ -863,7 +832,7 @@ pub(crate) unsafe fn debug_planner_tuning_snapshot(
     index_oid: pg_sys::Oid,
 ) -> DebugPlannerTuningSnapshot {
     let index_relation =
-        DebugAccessShareIndexRelation::open(index_oid, "debug_planner_tuning_snapshot");
+        IndexRelationGuard::access_share(index_oid, "debug_planner_tuning_snapshot");
     planner_tuning_snapshot(index_relation.as_ptr())
 }
 
@@ -924,7 +893,7 @@ unsafe fn read_data_page(
 pub(crate) unsafe fn debug_index_metadata(
     index_oid: pg_sys::Oid,
 ) -> (u32, i32, i32, page::MetadataPage) {
-    let index_relation = DebugAccessShareIndexRelation::open(index_oid, "debug_index_metadata");
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_metadata");
     let options = unsafe { super::options::relation_options(index_relation.as_ptr()) };
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(
@@ -942,14 +911,13 @@ pub(crate) unsafe fn debug_update_index_metadata(
     index_oid: pg_sys::Oid,
     metadata: page::MetadataPage,
 ) {
-    let index_relation =
-        DebugAccessShareIndexRelation::open(index_oid, "debug_update_index_metadata");
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_update_index_metadata");
     unsafe { update_metadata_page(index_relation.as_ptr(), metadata) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
-    let index_relation = DebugAccessShareIndexRelation::open(index_oid, "debug_vacuum_stats");
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_vacuum_stats");
     let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
