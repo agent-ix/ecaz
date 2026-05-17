@@ -10,7 +10,8 @@ through `ecaz.fault_palloc_nth`, `ecaz dev fault`, Makefile smoke lanes, and
 the full dry-run matrix, and live PG18 probes for cancellation, statement
 timeout, `idle_in_transaction_session_timeout`, `pg_cancel_backend` and
 `pg_terminate_backend`, lock timeout across `REINDEX INDEX CONCURRENTLY`,
-`CREATE INDEX`, and `VACUUM (FULL)`, resource settings plus built-in
+`CREATE INDEX`, and `VACUUM (FULL)`, calibrated accumulator `work_mem`
+pressure across all four AMs, resource settings plus built-in
 `temp_file_limit` and provider-backed ENOSPC temp-spill failures, memory/palloc
 smoke across build, scan, insert, and vacuum AM callbacks, backend-SIGKILL
 OOM-proxy smoke during build/scan/insert for every AM, provider-backed slow-disk
@@ -23,9 +24,8 @@ prepared transactions, and include optional live `pg_buffercache` fixture pin
 checks plus `pg_stat_io` non-decreasing operation counters when those PG18
 surfaces are available. The smoke surface is now in place; exhaustive
 per-allocation palloc sweeps, true kernel/cgroup OOM pressure campaigns, WAL
-rotation edge accounting beyond WAL-path ENOSPC smoke, calibrated accumulator
-`work_mem` pressure, and SPIRE remote-object fetch faulting remain follow-on
-expansion beyond this smoke checkpoint.
+rotation edge accounting beyond WAL-path ENOSPC smoke, and SPIRE remote-object
+fetch faulting remain follow-on expansion beyond this smoke checkpoint.
 
 ## Scope
 

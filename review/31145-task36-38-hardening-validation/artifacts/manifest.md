@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `2882f9517bdc09364594dd6f5d9d98780e48bac9`
+Code checkpoint SHA: `21fc76eaec79710c524a5c9e5bf56cb1778e208c`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T15:40:39Z`
+Timestamp: `2026-05-17T15:59:23Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -153,6 +153,13 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live resource/temp-spill expansion
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-temp-spill.log`
 - Key result: all four AMs completed resource smoke with both `tiny-work-mem` and `temp-file-limit` cases listed in the matrix. The temp-spill subcase forced a `temp_file_limit = '64kB'` ERROR and verified backend usability before shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=799 after=843`.
+
+## task38-resource-accumulator-all.log
+
+- Lane: Task 38 calibrated accumulator `work_mem` pressure
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` tables/indexes; pressure fixtures were prepared with 8192 rows and pressure limit 1000.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-resource-accumulator-all.log dev fault smoke --lane resource --rows 64`
+- Key result: all four AMs emitted `resource_accumulator_pressure` with `rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB`; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0` and `pg_stat_io_ops_before=2632 after=3530`.
 
 ## task38-pg18-resource-provider-temp-spill.log
 
