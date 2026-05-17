@@ -1,15 +1,18 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **operator smoke surface implemented locally; provider-backed injection
-pending** — extends Task 37 from "crash mid-write" to the broader class of
-operational faults that real production clusters hit. The local implementation
-adds `crates/ecaz-fault-injection`, `ecaz dev fault`, Makefile smoke lanes, and
-`docs/hardening.md` coverage. Current validation passed the full dry-run matrix
-and live PG18 probes for cancellation, statement timeout, lock timeout, and
-resource settings against AM-specific `ec_hnsw`, `ec_ivf`, `ec_diskann`, and
-`ec_spire` fixtures. True EIO/ENOSPC, palloc-failure, and slow-disk latency
-injection still require an LD_PRELOAD/FUSE/PG-test-hook provider before this
-task can be called fully closed.
+Status: **operator smoke surface plus IO/latency provider implemented locally;
+palloc injection pending** — extends Task 37 from "crash mid-write" to the
+broader class of operational faults that real production clusters hit. The
+local implementation adds `crates/ecaz-fault-injection`, an LD_PRELOAD provider
+for matched-path EIO, ENOSPC, and slow-disk latency injection, `ecaz dev fault`,
+Makefile smoke lanes, and `docs/hardening.md` coverage. Current validation
+passed provider smoke checks, the full dry-run matrix, and live PG18 probes for
+cancellation, statement timeout, lock timeout, resource settings, and
+provider-backed slow-disk operation against AM-specific `ec_hnsw`, `ec_ivf`,
+`ec_diskann`, and `ec_spire` fixtures. Provider-backed PG18 EIO/ENOSPC runs
+still require mode-specific postmaster orchestration; palloc-failure sweeps
+still require a palloc-aware PG test hook or extension-side injection point
+before this task can be called fully closed.
 
 ## Scope
 

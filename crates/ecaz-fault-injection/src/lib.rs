@@ -8,6 +8,73 @@ use std::fmt;
 use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ProviderMode {
+    EioRead,
+    EnospcWrite,
+    SlowDisk,
+}
+
+impl ProviderMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProviderMode::EioRead => "eio-read",
+            ProviderMode::EnospcWrite => "enospc-write",
+            ProviderMode::SlowDisk => "slow-disk",
+        }
+    }
+}
+
+impl fmt::Display for ProviderMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+pub fn provider_library_path() -> Option<&'static str> {
+    option_env!("ECAZ_FAULT_PROVIDER_SO")
+}
+
+pub fn provider_environment(
+    mode: ProviderMode,
+    path_match: &str,
+    after: u64,
+    latency_ms: Option<u64>,
+    marker: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut env = vec![
+        (
+            "LD_PRELOAD".to_string(),
+            provider_library_path()
+                .unwrap_or("<linux-only provider not built>")
+                .to_string(),
+        ),
+        ("ECAZ_FAULT_PROVIDER_ENABLE".to_string(), "1".to_string()),
+        (
+            "ECAZ_FAULT_PROVIDER_MODE".to_string(),
+            mode.as_str().to_string(),
+        ),
+        (
+            "ECAZ_FAULT_PROVIDER_MATCH".to_string(),
+            path_match.to_string(),
+        ),
+        (
+            "ECAZ_FAULT_PROVIDER_AFTER".to_string(),
+            after.max(1).to_string(),
+        ),
+    ];
+    if let Some(latency_ms) = latency_ms {
+        env.push((
+            "ECAZ_FAULT_PROVIDER_LATENCY_MS".to_string(),
+            latency_ms.to_string(),
+        ));
+    }
+    if let Some(marker) = marker {
+        env.push(("ECAZ_FAULT_PROVIDER_MARKER".to_string(), marker.to_string()));
+    }
+    env
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum FaultLane {
     Io,
     Memory,
@@ -339,5 +406,25 @@ mod tests {
             assert!(workload_insert_sql(am).contains(workload_table(am)));
             assert!(workload_vacuum_sql(am).contains(workload_table(am)));
         }
+    }
+
+    #[test]
+    fn provider_environment_pins_provider_and_mode() {
+        let env = provider_environment(
+            ProviderMode::EioRead,
+            "base/",
+            3,
+            None,
+            Some("/tmp/ecaz-fault-provider.marker"),
+        );
+        assert!(env.iter().any(|(key, value)| {
+            key == "LD_PRELOAD" && (value.ends_with(".so") || value.contains("not built"))
+        }));
+        assert!(env
+            .iter()
+            .any(|(key, value)| key == "ECAZ_FAULT_PROVIDER_MODE" && value == "eio-read"));
+        assert!(env
+            .iter()
+            .any(|(key, value)| key == "ECAZ_FAULT_PROVIDER_AFTER" && value == "3"));
     }
 }

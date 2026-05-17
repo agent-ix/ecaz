@@ -144,15 +144,24 @@ under the relevant review packet before citing findings.
   injection provider.
 - To run a live probe, clear the dry-run flag, for example:
   `make fault-timeout-smoke FAULT_SMOKE_FLAGS=`.
+- `ecaz dev fault provider-env` prints the LD_PRELOAD environment for the
+  built-in Linux provider. That provider can inject matched-path `EIO` reads,
+  matched-path `ENOSPC` writes/creates/fsyncs, and slow-disk latency once the
+  PG postmaster is started with the printed environment. Example:
+  `make fault-provider-env FAULT_PROVIDER_MODE=slow-disk`.
+  Provider-backed smoke lanes require the same marker path via
+  `--provider-marker` so they cannot pass against a normal postmaster.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, and `ec_spire`, then directly exercises cancellation, statement
 timeout, lock timeout, scan, insert, vacuum, and resource settings on those
-fixtures. I/O, memory-allocation failure, and slow-disk lanes
-require a provider such as LD_PRELOAD/libfiu, a FUSE filter, or a PG test hook;
-until that provider is installed, the CLI refuses non-dry-run execution for
-those lanes rather than reporting a false pass. Every lane uses the shared
-post-condition probe inventory from `ecaz-fault-injection`.
+fixtures. Slow-disk runs the same AM-specific scan/insert/vacuum smoke against
+a provider-backed postmaster and requires a non-empty provider marker. I/O lanes
+still need mode-specific provider orchestration for read-vs-write error sweeps;
+until that is active for the target cluster, the CLI refuses non-dry-run
+execution rather than reporting a false pass. Memory-allocation failure still
+requires a palloc-aware PG test hook or extension-side injection point. Every
+lane uses the shared post-condition probe inventory from `ecaz-fault-injection`.
 
 Current interrupt inventory:
 

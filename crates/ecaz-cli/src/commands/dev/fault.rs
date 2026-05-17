@@ -2,7 +2,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
     all_smoke_cases, leak_probe_sql, required_smoke_cases, workload_insert_sql, workload_scan_sql,
-    workload_setup_sql, workload_vacuum_sql, FaultAm, FaultLane,
+    workload_setup_sql, workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
 };
 
 use crate::psql::{self, ConnectionOptions};
@@ -11,6 +11,8 @@ use crate::psql::{self, ConnectionOptions};
 pub enum FaultCommand {
     /// Print the required PG-level fault-injection matrix.
     Plan(PlanArgs),
+    /// Print LD_PRELOAD provider environment for postmaster startup.
+    ProviderEnv(ProviderEnvArgs),
     /// Run or dry-run one smoke lane.
     Smoke(SmokeArgs),
 }
@@ -20,6 +22,25 @@ pub struct PlanArgs {
     /// Restrict output to one lane.
     #[arg(long, value_enum)]
     lane: Option<FaultLaneArg>,
+}
+
+#[derive(Args, Debug)]
+pub struct ProviderEnvArgs {
+    /// Provider fault mode to configure.
+    #[arg(long, value_enum)]
+    mode: ProviderModeArg,
+    /// Substring that must appear in the target path, for example "base/".
+    #[arg(long, default_value = "base/")]
+    path_match: String,
+    /// Start injecting on the Nth matching provider operation.
+    #[arg(long, default_value_t = 1)]
+    after: u64,
+    /// Latency in milliseconds for slow-disk mode.
+    #[arg(long)]
+    latency_ms: Option<u64>,
+    /// Optional marker file written by every process that loads the provider.
+    #[arg(long)]
+    marker: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -33,6 +54,9 @@ pub struct SmokeArgs {
     /// Rows to load into each per-AM fault fixture for live probes.
     #[arg(long, default_value_t = 64)]
     rows: i64,
+    /// Marker file proving the target postmaster loaded the fault provider.
+    #[arg(long)]
+    provider_marker: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -44,6 +68,23 @@ pub enum FaultLaneArg {
     LockTimeout,
     Resource,
     SlowDisk,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum ProviderModeArg {
+    EioRead,
+    EnospcWrite,
+    SlowDisk,
+}
+
+impl From<ProviderModeArg> for ProviderMode {
+    fn from(value: ProviderModeArg) -> Self {
+        match value {
+            ProviderModeArg::EioRead => ProviderMode::EioRead,
+            ProviderModeArg::EnospcWrite => ProviderMode::EnospcWrite,
+            ProviderModeArg::SlowDisk => ProviderMode::SlowDisk,
+        }
+    }
 }
 
 impl From<FaultLaneArg> for FaultLane {
@@ -64,6 +105,7 @@ impl FaultCommand {
     pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
             FaultCommand::Plan(args) => run_plan(args),
+            FaultCommand::ProviderEnv(args) => run_provider_env(args),
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
         }
     }
@@ -76,6 +118,24 @@ fn run_plan(args: PlanArgs) -> Result<()> {
         .unwrap_or_else(all_smoke_cases);
     print_cases(&cases);
     print_leak_probes();
+    Ok(())
+}
+
+fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
+    let mode = ProviderMode::from(args.mode);
+    if mode == ProviderMode::SlowDisk && args.latency_ms.unwrap_or(0) == 0 {
+        return Err(eyre!("--latency-ms must be >= 1 for slow-disk mode"));
+    }
+    let env = ecaz_fault_injection::provider_environment(
+        mode,
+        &args.path_match,
+        args.after,
+        args.latency_ms,
+        args.marker.as_deref(),
+    );
+    for (key, value) in env {
+        crate::ecaz_println!("{key}={value}");
+    }
     Ok(())
 }
 
@@ -106,8 +166,13 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             run_resource_probe(conn, args.rows).await?;
             assert_postconditions(conn, lane).await
         }
+        FaultLane::SlowDisk => {
+            assert_provider_marker(args.provider_marker.as_deref(), lane)?;
+            run_slow_disk_probe(conn, args.rows).await?;
+            assert_postconditions(conn, lane).await
+        }
         unsupported => Err(eyre!(
-            "lane {unsupported} requires an injection provider; rerun with --dry-run or install the Task 38 provider"
+            "lane {unsupported} requires a provider-backed postmaster; use `ecaz dev fault provider-env` to print the LD_PRELOAD environment, then rerun this lane against that cluster"
         )),
     }
 }
@@ -222,6 +287,17 @@ async fn run_resource_probe(conn: &ConnectionOptions, rows: i64) -> Result<()> {
     Ok(())
 }
 
+async fn run_slow_disk_probe(conn: &ConnectionOptions, rows: i64) -> Result<()> {
+    prepare_workloads(conn, rows).await?;
+    let client = connect_fault(conn, "slow-disk").await?;
+    for am in FaultAm::ALL {
+        client.batch_execute(&workload_scan_sql(am)).await?;
+        client.batch_execute(&workload_insert_sql(am)).await?;
+        client.batch_execute(&workload_vacuum_sql(am)).await?;
+    }
+    Ok(())
+}
+
 async fn prepare_workloads(conn: &ConnectionOptions, rows: i64) -> Result<()> {
     if rows <= 0 {
         return Err(eyre!("--rows must be >= 1"));
@@ -241,6 +317,20 @@ async fn prepare_workloads(conn: &ConnectionOptions, rows: i64) -> Result<()> {
                     .unwrap_or_else(|| error.to_string());
                 eyre!("preparing {} fault workload: {detail}", am.as_str())
             })?;
+    }
+    Ok(())
+}
+
+fn assert_provider_marker(marker: Option<&str>, lane: FaultLane) -> Result<()> {
+    let marker = marker.ok_or_else(|| {
+        eyre!(
+            "lane {lane} requires --provider-marker from a postmaster started with `ecaz dev fault provider-env`"
+        )
+    })?;
+    let metadata = std::fs::metadata(marker)
+        .map_err(|error| eyre!("reading provider marker {marker:?}: {error}"))?;
+    if metadata.len() == 0 {
+        return Err(eyre!("provider marker {marker:?} is empty"));
     }
     Ok(())
 }

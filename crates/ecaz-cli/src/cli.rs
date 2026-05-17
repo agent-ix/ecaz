@@ -757,6 +757,31 @@ mod tests {
             "--lane",
             "timeout",
             "--dry-run",
+            "--provider-marker",
+            "/tmp/ecaz-fault-provider.marker",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_fault_provider_env_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "provider-env",
+            "--mode",
+            "slow-disk",
+            "--latency-ms",
+            "25",
+            "--path-match",
+            "base/",
         ])
         .expect("cli parses");
         match cli.command {

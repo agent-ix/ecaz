@@ -2,7 +2,7 @@
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani loom shuttle sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full hardening-local hardening-nightly-local
+.PHONY: fault-provider-env fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full hardening-local hardening-nightly-local
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 
 ## Format all source files
@@ -216,6 +216,13 @@ careful:
 # --- PG fault injection ---
 
 FAULT_SMOKE_FLAGS ?= --dry-run
+FAULT_PROVIDER_MODE ?= eio-read
+FAULT_PROVIDER_MATCH ?= base/
+FAULT_PROVIDER_AFTER ?= 1
+FAULT_PROVIDER_LATENCY_MS ?= 25
+
+fault-provider-env:
+	cargo run -p ecaz-cli -- dev fault provider-env --mode $(FAULT_PROVIDER_MODE) --path-match $(FAULT_PROVIDER_MATCH) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS)
 
 fault-io-smoke:
 	cargo run -p ecaz-cli -- dev fault smoke --lane io $(FAULT_SMOKE_FLAGS)
