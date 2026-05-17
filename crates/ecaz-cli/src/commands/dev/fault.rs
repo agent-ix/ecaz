@@ -941,8 +941,8 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
                 )
             })?;
         }
-        run_memory_single_workload_probe(&client, am, "insert", &workload_insert_sql(am)).await?;
-        run_memory_single_workload_probe(&client, am, "vacuum", &workload_vacuum_sql(am)).await?;
+        run_memory_workload_palloc_sweep(&client, am, "insert", &workload_insert_sql(am)).await?;
+        run_memory_workload_palloc_sweep(&client, am, "vacuum", &workload_vacuum_sql(am)).await?;
     }
     drop(client);
     run_memory_oom_kill_probe(conn, rows, ams).await?;
@@ -954,41 +954,94 @@ async fn run_memory_build_probe(
     rows: i64,
     am: FaultAm,
 ) -> Result<()> {
-    client.batch_execute(&workload_table_sql(am, rows)).await?;
-    run_memory_single_workload_probe(
-        client,
-        am,
-        "build",
-        &ecaz_fault_injection::workload_create_index_sql(am, rows),
-    )
-    .await?;
-    client
-        .batch_execute(&ecaz_fault_injection::workload_create_index_sql(am, rows))
-        .await?;
+    let build_sql = ecaz_fault_injection::workload_create_index_sql(am, rows);
+    let mut reached_success = false;
+    for nth in 1..=memory_major_workload_sweep_limit() {
+        client.batch_execute(&workload_table_sql(am, rows)).await?;
+        if run_memory_expected_palloc_probe(client, am, "build", nth, &build_sql).await? {
+            continue;
+        }
+        reached_success = true;
+        break;
+    }
+    if !reached_success {
+        crate::ecaz_println!(
+            "[fault] memory_palloc_sweep_exhausted am={} lane=build limit={}",
+            am.as_str(),
+            memory_major_workload_sweep_limit()
+        );
+        client.batch_execute(&workload_table_sql(am, rows)).await?;
+        client.batch_execute(&build_sql).await?;
+    }
     Ok(())
 }
 
-async fn run_memory_single_workload_probe(
+async fn run_memory_workload_palloc_sweep(
     client: &tokio_postgres::Client,
     am: FaultAm,
     lane: &str,
     sql: &str,
 ) -> Result<()> {
+    let mut reached_success = false;
+    for nth in 1..=memory_major_workload_sweep_limit() {
+        if run_memory_expected_palloc_probe(client, am, lane, nth, sql).await? {
+            continue;
+        }
+        reached_success = true;
+        break;
+    }
+    if !reached_success {
+        crate::ecaz_println!(
+            "[fault] memory_palloc_sweep_exhausted am={} lane={lane} limit={}",
+            am.as_str(),
+            memory_major_workload_sweep_limit()
+        );
+    }
+    Ok(())
+}
+
+async fn run_memory_expected_palloc_probe(
+    client: &tokio_postgres::Client,
+    am: FaultAm,
+    lane: &str,
+    nth: i32,
+    sql: &str,
+) -> Result<bool> {
     client
-        .batch_execute("SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = 1;")
+        .batch_execute(&format!(
+            "SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = {nth};"
+        ))
         .await?;
     let result = client.batch_execute(sql).await;
     client
         .batch_execute("SET ecaz.fault_palloc_nth = -1; SELECT ecaz_fault_reset_palloc_counter();")
         .await?;
-    assert_ecaz_palloc_error(&format!("memory palloc {} {lane}", am.as_str()), result)?;
+    match result {
+        Ok(()) => {
+            crate::ecaz_println!(
+                "[fault] memory_palloc_sweep_completed am={} lane={lane} first_success_nth={nth}",
+                am.as_str()
+            );
+            return Ok(false);
+        }
+        Err(error) if is_ecaz_palloc_error(&error) => {}
+        Err(error) => return Err(error.into()),
+    }
     client.simple_query("SELECT 1").await.map_err(|error| {
         eyre!(
-            "memory palloc {} {lane} did not leave the backend usable: {error}",
+            "memory palloc {} {lane} nth {nth} did not leave the backend usable: {error}",
             am.as_str()
         )
     })?;
-    Ok(())
+    crate::ecaz_println!(
+        "[fault] memory_palloc_sweep_fault am={} lane={lane} nth={nth}",
+        am.as_str()
+    );
+    Ok(true)
+}
+
+fn memory_major_workload_sweep_limit() -> i32 {
+    8
 }
 
 fn memory_scan_sweep_limit(am: FaultAm) -> i32 {
@@ -1523,16 +1576,16 @@ fn provider_sqlstate_allowed(db: &tokio_postgres::error::DbError) -> bool {
 fn assert_ecaz_palloc_error(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
     match result {
         Ok(()) => Err(eyre!("{label} probe unexpectedly succeeded")),
-        Err(error)
-            if error
-                .as_db_error()
-                .map(|db| db.message().contains("ecaz fault injection palloc failure"))
-                .unwrap_or(false) =>
-        {
-            Ok(())
-        }
+        Err(error) if is_ecaz_palloc_error(&error) => Ok(()),
         Err(error) => Err(error.into()),
     }
+}
+
+fn is_ecaz_palloc_error(error: &tokio_postgres::Error) -> bool {
+    error
+        .as_db_error()
+        .map(|db| db.message().contains("ecaz fault injection palloc failure"))
+        .unwrap_or(false)
 }
 
 fn assert_temp_file_limit_error(
