@@ -10,6 +10,7 @@ use std::time::Instant;
 use pgrx::pg_sys;
 
 use super::{build, graph, insert, options, page, search, shared, source};
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 
 const EC_HNSW_PARALLEL_BUILD_MAGIC: u32 = u32::from_le_bytes(*b"ECBP");
 const EC_HNSW_PARALLEL_BUILD_VERSION: u16 = 1;
@@ -2536,8 +2537,14 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         )
     };
 
-    let heap_relation = unsafe { pg_sys::table_open((*shared).heaprelid, heap_lockmode) };
-    let index_relation = unsafe { pg_sys::index_open((*shared).indexrelid, index_lockmode) };
+    let heap_relation_guard =
+        HeapRelationGuard::try_open(unsafe { (*shared).heaprelid }, heap_lockmode)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open heap"));
+    let index_relation_guard =
+        IndexRelationGuard::try_open(unsafe { (*shared).indexrelid }, index_lockmode)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open index"));
+    let heap_relation = heap_relation_guard.as_ptr();
+    let index_relation = index_relation_guard.as_ptr();
 
     unsafe { pg_sys::InstrStartParallelQuery() };
 
@@ -2589,9 +2596,9 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
             bufferusage.add(worker_number as usize),
             walusage.add(worker_number as usize),
         );
-        pg_sys::index_close(index_relation, index_lockmode);
-        pg_sys::table_close(heap_relation, heap_lockmode);
     }
+    drop(index_relation_guard);
+    drop(heap_relation_guard);
 }
 
 unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
