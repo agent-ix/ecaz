@@ -9,7 +9,6 @@ import subprocess
 import tempfile
 import unittest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HELPER = REPO_ROOT / "scripts" / "resolve_scratch_socket_dir.sh"
 

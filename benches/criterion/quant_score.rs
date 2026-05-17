@@ -150,11 +150,14 @@ fn bench_score_ip_from_parts_lut_no_qjl_4bit(c: &mut Criterion) {
     for &dim in &[256usize, 768, 1536, 3072] {
         let bits = 4u8; // lut_no_qjl_4bit is 4-bit only by construction
         let quantizer = ProdQuantizer::new(dim, bits, 42);
-        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(
-            &helpers::random_unit_vector(dim, 1),
-        );
+        let prepared =
+            quantizer.prepare_ip_query_lut_no_qjl_4bit(&helpers::random_unit_vector(dim, 1));
         let payloads: Vec<Vec<u8>> = (0..1000)
-            .map(|i| quantizer.encode(&helpers::random_unit_vector(dim, i + 600)).mse_packed)
+            .map(|i| {
+                quantizer
+                    .encode(&helpers::random_unit_vector(dim, i + 600))
+                    .mse_packed
+            })
             .collect();
 
         group.throughput(Throughput::Elements(1));
@@ -183,18 +186,25 @@ fn bench_score_ip_from_parts_tiled_lut_no_qjl_4bit(c: &mut Criterion) {
             tile_size,
         );
         let payloads: Vec<Vec<u8>> = (0..1000)
-            .map(|i| quantizer.encode(&helpers::random_unit_vector(dim, i + 700)).mse_packed)
+            .map(|i| {
+                quantizer
+                    .encode(&helpers::random_unit_vector(dim, i + 700))
+                    .mse_packed
+            })
             .collect();
 
         group.throughput(Throughput::Elements(1));
-        group.bench_function(BenchmarkId::new(format!("d{dim}_b{bits}_t{tile_size}"), dim), |b| {
-            let mut idx = 0usize;
-            b.iter(|| {
-                let mse_packed = &payloads[idx % 1000];
-                idx += 1;
-                quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(&prepared, mse_packed)
-            });
-        });
+        group.bench_function(
+            BenchmarkId::new(format!("d{dim}_b{bits}_t{tile_size}"), dim),
+            |b| {
+                let mut idx = 0usize;
+                b.iter(|| {
+                    let mse_packed = &payloads[idx % 1000];
+                    idx += 1;
+                    quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(&prepared, mse_packed)
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -206,11 +216,14 @@ fn bench_score_ip_from_parts_int8_approx_no_qjl_4bit(c: &mut Criterion) {
     for &dim in &[256usize, 768, 1536, 3072] {
         let bits = 4u8;
         let quantizer = ProdQuantizer::new(dim, bits, 42);
-        let prepared = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(
-            &helpers::random_unit_vector(dim, 1),
-        );
+        let prepared = quantizer
+            .prepare_ip_query_int8_approx_no_qjl_4bit(&helpers::random_unit_vector(dim, 1));
         let payloads: Vec<Vec<u8>> = (0..1000)
-            .map(|i| quantizer.encode(&helpers::random_unit_vector(dim, i + 800)).mse_packed)
+            .map(|i| {
+                quantizer
+                    .encode(&helpers::random_unit_vector(dim, i + 800))
+                    .mse_packed
+            })
             .collect();
 
         group.throughput(Throughput::Elements(1));
