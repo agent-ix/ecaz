@@ -340,7 +340,10 @@ pub fn workload_setup_sql(access_method: FaultAm, rows: i64) -> String {
 pub fn workload_scan_sql(access_method: FaultAm) -> String {
     let table = workload_table(access_method);
     format!(
-        "SELECT id FROM {table}
+        "SET enable_seqscan = off;
+         SET enable_bitmapscan = off;
+         SET enable_sort = off;
+         SELECT id FROM {table}
          ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
          LIMIT 5"
     )

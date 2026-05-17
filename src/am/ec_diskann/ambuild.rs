@@ -556,6 +556,27 @@ fn source_inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
     ip
 }
 
+#[cfg(any(test, feature = "bench"))]
+pub(super) fn source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+    source_inner_product_scalar(left, right)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+pub(super) fn source_inner_product_avx2_fma_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
+        return None;
+    }
+    Some(unsafe { source_inner_product_avx2_fma(left, right) })
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub(super) fn source_inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    if !std::arch::is_aarch64_feature_detected!("neon") {
+        return None;
+    }
+    Some(unsafe { source_inner_product_neon(left, right) })
+}
+
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {

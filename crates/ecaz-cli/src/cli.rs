@@ -826,4 +826,38 @@ mod tests {
             other => panic!("unexpected command: {other:?}"),
         }
     }
+
+    #[test]
+    fn cli_parses_fault_prepare_command() {
+        let cli = Cli::try_parse_from(["ecaz", "dev", "fault", "prepare", "--rows", "64"])
+            .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_fault_io_smoke_with_prepared_fixture() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "smoke",
+            "--lane",
+            "io",
+            "--assume-prepared",
+            "--provider-marker",
+            "/tmp/ecaz-fault-provider.marker",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
 }

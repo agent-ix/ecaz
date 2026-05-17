@@ -835,6 +835,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambeginscan(
             }
 
             (*scan).parallel_scan = ptr::null_mut();
+            crate::fault::maybe_fail_palloc("ec_hnsw ambeginscan opaque");
             (*scan).opaque = PgBox::<TqScanOpaque>::alloc0().into_pg().cast();
             scan
         })

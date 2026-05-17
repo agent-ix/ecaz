@@ -203,6 +203,48 @@ pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
     unsafe { ec_spire::register_dml_frontdoor_planner_hook() };
 }
 
+#[cfg(any(test, feature = "bench"))]
+pub(crate) fn hnsw_source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+    ec_hnsw::source::inner_product_scalar_reference(left, right)
+}
+
+#[cfg(all(
+    any(test, feature = "bench"),
+    any(target_arch = "x86", target_arch = "x86_64")
+))]
+pub(crate) fn hnsw_source_inner_product_avx2_fma_for_test(
+    left: &[f32],
+    right: &[f32],
+) -> Option<f32> {
+    ec_hnsw::source::inner_product_avx2_fma_for_test(left, right)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub(crate) fn hnsw_source_inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    ec_hnsw::source::inner_product_neon_for_test(left, right)
+}
+
+#[cfg(any(test, feature = "bench"))]
+pub(crate) fn diskann_source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+    ec_diskann::source_inner_product_scalar_reference(left, right)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+pub(crate) fn diskann_source_inner_product_avx2_fma_for_test(
+    left: &[f32],
+    right: &[f32],
+) -> Option<f32> {
+    ec_diskann::source_inner_product_avx2_fma_for_test(left, right)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub(crate) fn diskann_source_inner_product_neon_for_test(
+    left: &[f32],
+    right: &[f32],
+) -> Option<f32> {
+    ec_diskann::source_inner_product_neon_for_test(left, right)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_hnsw::{
     resolve_pq_fastscan_rerank_mode_decision, resolve_pq_fastscan_traversal_score_mode_decision,

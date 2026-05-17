@@ -507,6 +507,7 @@ unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
             let opaque_state = DiskannScanOpaque::new(metadata, chain, options)
                 .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
 
+            crate::fault::maybe_fail_palloc("ec_diskann ambeginscan opaque");
             let opaque = PgBox::<DiskannScanOpaque>::alloc_in_context(
                 PgMemoryContexts::CurrentMemoryContext,
             );

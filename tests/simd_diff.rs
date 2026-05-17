@@ -24,6 +24,11 @@ fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
     values
 }
 
+fn random_bounded_vector(dim: usize, seed: u64) -> Vec<f32> {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect()
+}
+
 fn code_bytes(encoded: &ecaz::bench_api::EncodedTq) -> Vec<u8> {
     let mut bytes = encoded.mse_packed.clone();
     bytes.extend_from_slice(&encoded.qjl_packed);
@@ -109,6 +114,36 @@ proptest! {
         let packed = pack_mse_indices(&indices, bits);
         let unpacked = ecaz::bench_api::unpack_mse_indices(&packed, indices.len(), bits);
         prop_assert_eq!(unpacked, indices);
+    }
+
+    #[test]
+    fn am_source_inner_product_simd_matches_scalar_reference(
+        dim in prop::sample::select(&[1usize, 3, 4, 7, 8, 15, 16, 31, 32, 33, 64, 127, 128, 384, 1536][..]),
+        left_seed in 30000u64..35000,
+        right_seed in 35000u64..40000,
+    ) {
+        let left = random_bounded_vector(dim, left_seed);
+        let right = random_bounded_vector(dim, right_seed);
+
+        let hnsw_scalar = ecaz::bench_api::hnsw_source_inner_product_scalar_reference(&left, &right);
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if let Some(hnsw_avx2) = ecaz::bench_api::hnsw_source_inner_product_avx2_fma_for_test(&left, &right) {
+            assert_close("hnsw forced avx2 source inner product", hnsw_avx2, hnsw_scalar, 1.0e-4);
+        }
+        #[cfg(target_arch = "aarch64")]
+        if let Some(hnsw_neon) = ecaz::bench_api::hnsw_source_inner_product_neon_for_test(&left, &right) {
+            assert_close("hnsw forced neon source inner product", hnsw_neon, hnsw_scalar, 1.0e-4);
+        }
+
+        let diskann_scalar = ecaz::bench_api::diskann_source_inner_product_scalar_reference(&left, &right);
+        #[cfg(target_arch = "x86_64")]
+        if let Some(diskann_avx2) = ecaz::bench_api::diskann_source_inner_product_avx2_fma_for_test(&left, &right) {
+            assert_close("diskann forced avx2 source inner product", diskann_avx2, diskann_scalar, 1.0e-4);
+        }
+        #[cfg(target_arch = "aarch64")]
+        if let Some(diskann_neon) = ecaz::bench_api::diskann_source_inner_product_neon_for_test(&left, &right) {
+            assert_close("diskann forced neon source inner product", diskann_neon, diskann_scalar, 1.0e-4);
+        }
     }
 }
 

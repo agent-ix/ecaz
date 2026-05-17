@@ -26,6 +26,7 @@ pgrx::pg_module_magic!(name = c"ecaz", version = MODULE_VERSION_CSTR);
 
 #[allow(dead_code)]
 mod am;
+mod fault;
 #[cfg(feature = "pg18")]
 mod pg18_pgstat_shim;
 mod quant;
@@ -37,6 +38,7 @@ use quant::prod::{payload_len, ProdQuantizer};
 
 #[pg_guard]
 pub unsafe extern "C-unwind" fn _PG_init() {
+    fault::register_gucs();
     am::register_gucs();
     unsafe {
         am::register_custom_scan();
@@ -70,6 +72,33 @@ pub mod bench_api {
     pub use crate::quant::hadamard::{fwht_in_place, orthonormal_fwht_in_place};
     pub fn simd_backend() -> &'static str {
         crate::quant::simd_backend_name()
+    }
+    #[cfg(feature = "bench")]
+    pub fn hnsw_source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+        crate::am::hnsw_source_inner_product_scalar_reference(left, right)
+    }
+    #[cfg(all(feature = "bench", any(target_arch = "x86", target_arch = "x86_64")))]
+    pub fn hnsw_source_inner_product_avx2_fma_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+        crate::am::hnsw_source_inner_product_avx2_fma_for_test(left, right)
+    }
+    #[cfg(all(feature = "bench", target_arch = "aarch64"))]
+    pub fn hnsw_source_inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+        crate::am::hnsw_source_inner_product_neon_for_test(left, right)
+    }
+    #[cfg(feature = "bench")]
+    pub fn diskann_source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+        crate::am::diskann_source_inner_product_scalar_reference(left, right)
+    }
+    #[cfg(all(feature = "bench", target_arch = "x86_64"))]
+    pub fn diskann_source_inner_product_avx2_fma_for_test(
+        left: &[f32],
+        right: &[f32],
+    ) -> Option<f32> {
+        crate::am::diskann_source_inner_product_avx2_fma_for_test(left, right)
+    }
+    #[cfg(all(feature = "bench", target_arch = "aarch64"))]
+    pub fn diskann_source_inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+        crate::am::diskann_source_inner_product_neon_for_test(left, right)
     }
 
     // Rotation
@@ -123,6 +152,11 @@ pub mod bench_api {
 }
 
 extension_sql_file!("../sql/bootstrap.sql", name = "bootstrap", bootstrap);
+
+#[pg_extern(volatile)]
+fn ecaz_fault_reset_palloc_counter() {
+    fault::reset_palloc_counter();
+}
 
 /// Number of per-datum descriptor bytes: dim(2).
 pub const HEADER_BYTES: usize = 2;

@@ -153,20 +153,30 @@ under the relevant review packet before citing findings.
 - `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
   wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
   require hand-assembled `LD_PRELOAD` commands.
+- `ecaz dev fault prepare --rows N` creates the AM-specific fixtures before
+  destructive provider modes are enabled. Live I/O smoke then runs with
+  `--assume-prepared --provider-marker <marker>` against an `eio-read` or
+  `enospc-write` provider-backed postmaster.
   Provider-backed smoke lanes require the same marker path via
   `--provider-marker` so they cannot pass against a normal postmaster.
+- Live memory smoke uses the extension GUC `ecaz.fault_palloc_after` and
+  `ecaz_fault_reset_palloc_counter()` to raise a clean ERROR at instrumented
+  AM palloc boundaries. The current smoke covers each AM's scan opaque
+  allocation boundary; broader Nth-allocation sweeps can build on the same
+  GUC without adding new shell orchestration.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, and `ec_spire`, then directly exercises cancellation and
 statement timeout with repeated AM KNN scans, lock timeout with `REINDEX INDEX
 CONCURRENTLY`, and scan/insert/vacuum/resource settings on those fixtures.
 Slow-disk runs the same AM-specific scan/insert/vacuum smoke against a
-provider-backed postmaster and requires a non-empty provider marker. I/O lanes
-still need mode-specific provider orchestration for read-vs-write error sweeps;
-until that is active for the target cluster, the CLI refuses non-dry-run
-execution rather than reporting a false pass. Memory-allocation failure still
-requires a palloc-aware PG test hook or extension-side injection point. Every
-lane uses the shared post-condition probe inventory from `ecaz-fault-injection`.
+provider-backed postmaster and requires a non-empty provider marker. I/O smoke
+uses prebuilt fixtures and checks one provider mode at a time: `eio-read`
+expects clean ERROR from AM scan reads, while `enospc-write` expects clean
+ERROR from AM writes. Memory smoke injects palloc failures at the instrumented
+AM scan allocation boundaries and verifies the backend remains usable after
+each ERROR. Every lane uses the shared post-condition probe inventory from
+`ecaz-fault-injection`.
 
 Current interrupt inventory:
 

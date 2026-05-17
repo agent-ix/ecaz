@@ -122,6 +122,21 @@ pub(super) fn validate_source_vector_unit_norm_sample(
     Ok(())
 }
 
+#[cfg(any(test, feature = "bench"))]
+pub(crate) fn source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+    ambuild::source_inner_product_scalar_reference(left, right)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+pub(crate) fn source_inner_product_avx2_fma_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    ambuild::source_inner_product_avx2_fma_for_test(left, right)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub(crate) fn source_inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    ambuild::source_inner_product_neon_for_test(left, right)
+}
+
 pub(super) fn warn_on_non_unit_source_vector(source_vector: &[f32], context: &str) {
     if let Err(message) = validate_source_vector_unit_norm(source_vector, context) {
         emit_unit_norm_warning(&message);

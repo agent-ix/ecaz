@@ -191,6 +191,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambeginscan(
             }
 
             (*scan).parallel_scan = ptr::null_mut();
+            crate::fault::maybe_fail_palloc("ec_ivf ambeginscan opaque");
             (*scan).opaque = PgBox::<EcIvfScanOpaque>::alloc0().into_pg().cast();
             scan
         })
