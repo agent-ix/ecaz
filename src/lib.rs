@@ -9197,9 +9197,9 @@ fn ec_spire_index_hierarchy_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_hierarchy_snapshot") };
-    let snapshot = unsafe { am::spire_index_hierarchy_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_hierarchy_snapshot");
+    let snapshot = unsafe { am::spire_index_hierarchy_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -9271,9 +9271,9 @@ fn ec_spire_index_top_graph_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_top_graph_snapshot") };
-    let snapshot = unsafe { am::spire_index_top_graph_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_top_graph_snapshot");
+    let snapshot = unsafe { am::spire_index_top_graph_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -9347,16 +9347,16 @@ fn ec_spire_remote_search_fanout_plan(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_fanout_plan") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_fanout_plan");
     let rows = unsafe {
         am::spire_remote_search_fanout_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             selected_pids,
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -9403,16 +9403,16 @@ fn ec_spire_remote_search_target_plan(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_target_plan") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_plan");
     let rows = unsafe {
         am::spire_remote_search_target_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             selected_pids,
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -9471,16 +9471,16 @@ fn ec_spire_remote_search_target_readiness(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_target_readiness") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_readiness");
     let rows = unsafe {
         am::spire_remote_search_target_readiness_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             selected_pids,
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -9544,10 +9544,10 @@ fn ec_spire_remote_search_request_plan(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_request_plan") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_plan");
     let rows = unsafe {
         am::spire_remote_search_request_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -9555,7 +9555,7 @@ fn ec_spire_remote_search_request_plan(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -9626,10 +9626,10 @@ fn ec_spire_remote_search_request_readiness(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_request_readiness") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_readiness");
     let rows = unsafe {
         am::spire_remote_search_request_readiness_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -9637,7 +9637,7 @@ fn ec_spire_remote_search_request_readiness(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -9711,10 +9711,10 @@ fn ec_spire_remote_search_request_summary(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_request_summary") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_summary");
     let row = unsafe {
         am::spire_remote_search_request_summary_row(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -9722,7 +9722,7 @@ fn ec_spire_remote_search_request_summary(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
@@ -9797,10 +9797,10 @@ fn ec_spire_remote_search_readiness_summary(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_readiness_summary") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_readiness_summary");
     let row = unsafe {
         am::spire_remote_search_readiness_summary_row(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -9808,7 +9808,7 @@ fn ec_spire_remote_search_readiness_summary(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
@@ -9885,10 +9885,10 @@ fn ec_spire_remote_search_execution_plan(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_execution_plan") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_execution_plan");
     let rows = unsafe {
         am::spire_remote_search_execution_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -9896,7 +9896,7 @@ fn ec_spire_remote_search_execution_plan(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -9974,10 +9974,10 @@ fn ec_spire_remote_search_execution_summary(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_execution_summary") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_execution_summary");
     let row = unsafe {
         am::spire_remote_search_execution_summary_row(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -9985,7 +9985,7 @@ fn ec_spire_remote_search_execution_summary(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
@@ -10059,12 +10059,11 @@ fn ec_spire_remote_search_libpq_request_plan(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_request_plan")
-    };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_request_plan");
     let rows = unsafe {
         am::spire_remote_search_libpq_request_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10072,7 +10071,7 @@ fn ec_spire_remote_search_libpq_request_plan(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -10146,12 +10145,11 @@ fn ec_spire_remote_search_libpq_request_summary(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_request_summary")
-    };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_request_summary");
     let row = unsafe {
         am::spire_remote_search_libpq_request_summary_row(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10159,7 +10157,7 @@ fn ec_spire_remote_search_libpq_request_summary(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
@@ -10225,12 +10223,11 @@ fn ec_spire_remote_search_libpq_connection_plan(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_connection_plan")
-    };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_connection_plan");
     let rows = unsafe {
         am::spire_remote_search_libpq_connection_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10238,7 +10235,7 @@ fn ec_spire_remote_search_libpq_connection_plan(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -10308,12 +10305,13 @@ fn ec_spire_remote_search_libpq_connection_summary(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_connection_summary")
-    };
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_libpq_connection_summary",
+    );
     let row = unsafe {
         am::spire_remote_search_libpq_connection_summary_row(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10321,7 +10319,7 @@ fn ec_spire_remote_search_libpq_connection_summary(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
@@ -10393,12 +10391,11 @@ fn ec_spire_remote_search_libpq_dispatch_plan(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_dispatch_plan")
-    };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_dispatch_plan");
     let rows = unsafe {
         am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10406,7 +10403,7 @@ fn ec_spire_remote_search_libpq_dispatch_plan(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -10479,10 +10476,10 @@ fn ec_spire_remote_search_libpq_bind_plan(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_bind_plan") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_bind_plan");
     let rows = unsafe {
         am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10490,7 +10487,7 @@ fn ec_spire_remote_search_libpq_bind_plan(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     let bind_rows = rows.into_iter().flat_map(|row| {
         let value_status = if row.dispatch_action == "open_pipeline_and_send_remote_search" {
@@ -10624,12 +10621,11 @@ fn ec_spire_remote_search_libpq_bind_summary(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_bind_summary")
-    };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_bind_summary");
     let rows = unsafe {
         am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10637,7 +10633,7 @@ fn ec_spire_remote_search_libpq_bind_summary(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     let parameter_count_per_request = 6_u64;
     let request_count =
@@ -10743,10 +10739,10 @@ fn ec_spire_remote_search_libpq_secret_plan(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_secret_plan") };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_plan");
     let rows = unsafe {
         am::spire_remote_search_libpq_secret_plan_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10754,7 +10750,7 @@ fn ec_spire_remote_search_libpq_secret_plan(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -10822,12 +10818,11 @@ fn ec_spire_remote_search_libpq_secret_summary(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_secret_summary")
-    };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_summary");
     let row = unsafe {
         am::spire_remote_search_libpq_secret_summary_row(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -10835,7 +10830,7 @@ fn ec_spire_remote_search_libpq_secret_summary(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
