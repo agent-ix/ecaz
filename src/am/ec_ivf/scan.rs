@@ -95,6 +95,8 @@ impl ResolvedIvfScanSnapshot {
     }
 }
 
+// Field order is intentional: Rust drops struct fields in declaration order, so
+// the tuple slot is dropped before snapshot and relation guards.
 struct IvfHeapRerankState {
     slot: TupleTableSlotGuard,
     snapshot: ResolvedIvfScanSnapshot,

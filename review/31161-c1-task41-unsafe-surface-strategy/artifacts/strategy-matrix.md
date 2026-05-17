@@ -79,6 +79,8 @@ Primary targets:
 Action:
 
 - prefer owned scan-state containers over repeated raw descriptor access,
+- compose multiple guards into one Rust-owned state struct when a C opaque
+  needs to hold a nullable lifecycle pointer for scan, vacuum, or build state,
 - isolate tuple slot allocation/drop and detoast ownership in wrappers,
 - when a guard migration leaves only a few FFI calls inside a broad `unsafe`
   block, narrow the block to those calls and document the remaining pointer or
