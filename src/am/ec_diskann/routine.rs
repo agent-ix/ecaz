@@ -1975,7 +1975,11 @@ pub extern "C-unwind" fn pg_finfo_ec_diskann_handler() -> *const pg_sys::Pg_finf
 mod tests {
     use super::{insert, scan_state, PersistedGraphReader};
     use crate::am::ec_diskann::page::VamanaMetadataPage;
-    use crate::storage::page::{DataPageChain, ItemPointer};
+    use crate::storage::{
+        page::{DataPageChain, ItemPointer},
+        relation_guard::{HeapRelationGuard, IndexRelationGuard},
+        slot_guard::TupleTableSlotGuard,
+    };
     use pgrx::{pg_sys, pg_test, Spi};
     use std::{
         collections::HashSet,
@@ -2310,19 +2314,17 @@ mod tests {
             "fixture should expose exactly two more live nodes than the graph degree",
         );
 
-        let search_index_relation = unsafe {
-            pg_sys::index_open(
-                index_oid(index_name),
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
-        let heap_oid = unsafe { pg_sys::IndexGetRelation((*search_index_relation).rd_id, false) };
+        let search_index_relation =
+            IndexRelationGuard::access_share(index_oid(index_name), "find_vacuum_refill_fixture");
+        let index_relation = search_index_relation.as_ptr();
+        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
         assert_ne!(heap_oid, pg_sys::InvalidOid, "heap relation should resolve");
-        let heap_relation =
-            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        let source_attnum = unsafe { super::indexed_ecvector_attnum(search_index_relation) }
+        let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
+            .expect("heap relation should open for fixture search");
+        let heap_relation_ptr = heap_relation.as_ptr();
+        let source_attnum = unsafe { super::indexed_ecvector_attnum(index_relation) }
             .expect("indexed source attnum should resolve");
-        let slot = unsafe { scan_state::allocate_heap_slot(heap_relation) }
+        let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr)
             .expect("heap slot allocation should succeed");
         let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
         let mut visited = super::VisitedState::new();
@@ -2446,9 +2448,9 @@ mod tests {
                         }
 
                         let planner = super::VacuumFillPlanner {
-                            heap_relation,
+                            heap_relation: heap_relation_ptr,
                             snapshot,
-                            slot,
+                            slot: slot.as_ptr(),
                             source_attnum,
                             metadata: &prefill_metadata,
                             chain: &working_chain,
@@ -2477,15 +2479,6 @@ mod tests {
                     })
             })
         });
-
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
-        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        unsafe {
-            pg_sys::index_close(
-                search_index_relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
 
         fixture_plan.expect("fixture search should find a reachable vacuum refill candidate")
     }
