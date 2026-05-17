@@ -1,6 +1,6 @@
 # Task 42: On-Disk Format and Cross-Arch / Cross-Version Invariants
 
-Status: **proposed** — locks down ECAZ's on-disk page formats so they survive
+Status: **complete** — locks down ECAZ's on-disk page formats so they survive
 endianness differences, version upgrades, and silent layout drift.
 
 ## Scope

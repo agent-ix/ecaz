@@ -130,7 +130,7 @@ the custom WAL record format tag. `src/storage/wal.rs` owns
 validator that rejects missing or unknown custom WAL record versions before
 replay reads the body.
 
-## Remaining Task 42 Gaps
+## Future Conditional Extensions
 
 - Extend fixture bytes under `fixtures/on-disk/` to any raw generic page
   encoding that becomes a durable external byte contract.
