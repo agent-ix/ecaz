@@ -224,13 +224,22 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
                 "backend exits cleanly; no leaked pins or locks",
             ),
         ],
-        FaultLane::Timeout => vec![case(
-            lane,
-            access_method,
-            "statement-timeout",
-            "SET statement_timeout low enough to interrupt active AM work",
-            "timeout ERROR; all retained AM state is dropped",
-        )],
+        FaultLane::Timeout => vec![
+            case(
+                lane,
+                access_method,
+                "statement-timeout",
+                "SET statement_timeout low enough to interrupt active AM work",
+                "timeout ERROR; all retained AM state is dropped",
+            ),
+            case(
+                lane,
+                access_method,
+                "idle-in-transaction-timeout",
+                "SET idle_in_transaction_session_timeout after touching an AM fixture in a transaction",
+                "idle session is terminated; transaction state is rolled back",
+            ),
+        ],
         FaultLane::LockTimeout => vec![case(
             lane,
             access_method,

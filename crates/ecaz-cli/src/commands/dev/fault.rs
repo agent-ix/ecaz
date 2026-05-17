@@ -361,7 +361,7 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Timeout => {
-            run_statement_timeout_probe(conn, args.rows, &ams).await?;
+            run_timeout_probe(conn, args.rows, &ams).await?;
             assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::LockTimeout => {
@@ -495,13 +495,18 @@ async fn run_backend_interrupt_case(
     }
 }
 
+async fn run_timeout_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+    prepare_workloads(conn, rows, ams).await?;
+    run_statement_timeout_probe(conn, rows, ams).await?;
+    run_idle_in_transaction_timeout_probe(conn, ams).await
+}
+
 async fn run_statement_timeout_probe(
     conn: &ConnectionOptions,
     rows: i64,
     ams: &[FaultAm],
 ) -> Result<()> {
-    prepare_workloads(conn, rows, ams).await?;
-    let client = connect_fault(conn, "timeout").await?;
+    let client = connect_fault(conn, "statement-timeout").await?;
     for &am in ams {
         let timeout = client
             .batch_execute(&format!(
@@ -511,6 +516,34 @@ async fn run_statement_timeout_probe(
             .await;
         assert_query_canceled(&format!("statement_timeout {}", am.as_str()), timeout)?;
         client.batch_execute("RESET statement_timeout;").await?;
+    }
+    Ok(())
+}
+
+async fn run_idle_in_transaction_timeout_probe(
+    conn: &ConnectionOptions,
+    ams: &[FaultAm],
+) -> Result<()> {
+    for &am in ams {
+        let client = connect_fault(conn, "idle-tx-timeout").await?;
+        client
+            .batch_execute(&format!(
+                "SET idle_in_transaction_session_timeout = '50ms';
+                 BEGIN;
+                 {}",
+                workload_scan_sql(am)
+            ))
+            .await?;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        match client.simple_query("SELECT 1").await {
+            Ok(_) => {
+                return Err(eyre!(
+                    "idle_in_transaction_session_timeout {} unexpectedly left the backend usable",
+                    am.as_str()
+                ))
+            }
+            Err(_) => {}
+        }
     }
     Ok(())
 }
