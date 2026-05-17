@@ -11,7 +11,7 @@ use super::scan::*;
 #[cfg(any(test, feature = "pg_test"))]
 use super::{graph, page, search};
 #[cfg(any(test, feature = "pg_test"))]
-use crate::storage::relation_guard::IndexRelationGuard;
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) type HeapTidCoords = (u32, u16);
@@ -457,95 +457,179 @@ struct DebugGroupedRankMetrics {
 
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
-    scan: pg_sys::IndexScanDesc,
-    registered_snapshot: pg_sys::Snapshot,
-    pushed_registered_snapshot: bool,
+    scan: DebugIndexScanGuard,
+    _snapshot: DebugActiveSnapshotGuard,
+    _index_relation: IndexRelationGuard,
+    _heap_relation: HeapRelationGuard,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_push_latest_snapshot(failure_label: &str) -> pg_sys::Snapshot {
-    unsafe { pg_sys::CommandCounterIncrement() };
-    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-    if registered_snapshot.is_null() {
-        pgrx::error!("{failure_label}");
+struct DebugActiveSnapshotGuard {
+    snapshot: pg_sys::Snapshot,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl DebugActiveSnapshotGuard {
+    fn latest(failure_label: &str) -> Self {
+        // SAFETY: `CommandCounterIncrement` is valid in these pg_test helper
+        // entry points before acquiring a fresh backend snapshot.
+        unsafe { pg_sys::CommandCounterIncrement() };
+        // SAFETY: `GetLatestSnapshot` returns a backend-owned snapshot pointer
+        // that PostgreSQL accepts for registration in the current backend.
+        let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+        if snapshot.is_null() {
+            pgrx::error!("{failure_label}");
+        }
+        // SAFETY: `snapshot` was registered above and remains registered until
+        // this guard drops.
+        unsafe { pg_sys::PushActiveSnapshot(snapshot) };
+        Self { snapshot }
     }
-    unsafe { pg_sys::PushActiveSnapshot(registered_snapshot) };
-    registered_snapshot
+
+    fn as_ptr(&self) -> pg_sys::Snapshot {
+        self.snapshot
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl Drop for DebugActiveSnapshotGuard {
+    fn drop(&mut self) {
+        // SAFETY: this guard pushed `snapshot` in
+        // `DebugActiveSnapshotGuard::latest`; Drop owns the matching pop and
+        // unregister.
+        unsafe {
+            pg_sys::PopActiveSnapshot();
+            pg_sys::UnregisterSnapshot(self.snapshot);
+        }
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+struct DebugIndexScanGuard {
+    scan: pg_sys::IndexScanDesc,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl DebugIndexScanGuard {
+    fn begin(
+        heap_relation: pg_sys::Relation,
+        index_relation: pg_sys::Relation,
+        snapshot: pg_sys::Snapshot,
+        nkeys: i32,
+        norderbys: i32,
+        failure_label: &str,
+    ) -> Self {
+        #[cfg(feature = "pg18")]
+        let scan = unsafe {
+            // SAFETY: `heap_relation` and `index_relation` are open relation
+            // handles kept alive by guards, and `snapshot` is registered and
+            // active for this scan guard's lifetime.
+            pg_sys::index_beginscan(
+                heap_relation,
+                index_relation,
+                snapshot,
+                std::ptr::null_mut(),
+                nkeys,
+                norderbys,
+            )
+        };
+        #[cfg(not(feature = "pg18"))]
+        let scan = unsafe {
+            // SAFETY: `heap_relation` and `index_relation` are open relation
+            // handles kept alive by guards, and `snapshot` is registered and
+            // active for this scan guard's lifetime.
+            pg_sys::index_beginscan(heap_relation, index_relation, snapshot, nkeys, norderbys)
+        };
+        if scan.is_null() {
+            pgrx::error!("{failure_label}");
+        }
+        Self { scan }
+    }
+
+    fn as_ptr(&self) -> pg_sys::IndexScanDesc {
+        self.scan
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl Drop for DebugIndexScanGuard {
+    fn drop(&mut self) {
+        // SAFETY: `scan` was returned by `index_beginscan` in
+        // `DebugIndexScanGuard::begin`; this guard owns the matching end.
+        unsafe { pg_sys::index_endscan(self.scan) };
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+struct DebugTupleSlotGuard {
+    slot: *mut pg_sys::TupleTableSlot,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl DebugTupleSlotGuard {
+    fn single_for_heap(heap_relation: pg_sys::Relation, failure_label: &str) -> Self {
+        let slot = unsafe {
+            // SAFETY: `heap_relation` is an open table relation. PostgreSQL
+            // owns the returned slot until `ExecDropSingleTupleTableSlot`.
+            pg_sys::MakeSingleTupleTableSlot(
+                (*heap_relation).rd_att,
+                pg_sys::table_slot_callbacks(heap_relation),
+            )
+        };
+        if slot.is_null() {
+            pgrx::error!("{failure_label}");
+        }
+        Self { slot }
+    }
+
+    fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
+        self.slot
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl Drop for DebugTupleSlotGuard {
+    fn drop(&mut self) {
+        // SAFETY: `slot` was returned by `MakeSingleTupleTableSlot`; this
+        // guard owns the matching drop.
+        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
+    // SAFETY: `index_relation` is an open PostgreSQL index relation guard.
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation.as_ptr()).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
         pgrx::error!("debug scan could not resolve heap relation for index {index_oid}");
     }
 
-    let heap_relation =
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let registered_snapshot = unsafe {
-        debug_push_latest_snapshot("debug scan could not acquire a fresh latest snapshot")
-    };
-    let pushed_registered_snapshot = true;
-    let snapshot = registered_snapshot;
-
-    #[cfg(feature = "pg18")]
-    let scan = unsafe {
-        pg_sys::index_beginscan(
-            heap_relation,
-            index_relation,
-            snapshot,
-            std::ptr::null_mut(),
-            0,
-            1,
-        )
-    };
-    #[cfg(not(feature = "pg18"))]
-    let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
-    if scan.is_null() {
-        unsafe {
-            if pushed_registered_snapshot {
-                pg_sys::PopActiveSnapshot();
-                pg_sys::UnregisterSnapshot(registered_snapshot);
-            }
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
-        pgrx::error!("debug scan failed to begin heap-backed index scan");
-    }
+    let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
+        .unwrap_or_else(|| pgrx::error!("debug scan failed to open heap relation"));
+    let snapshot =
+        DebugActiveSnapshotGuard::latest("debug scan could not acquire a fresh latest snapshot");
+    let scan = DebugIndexScanGuard::begin(
+        heap_relation.as_ptr(),
+        index_relation.as_ptr(),
+        snapshot.as_ptr(),
+        0,
+        1,
+        "debug scan failed to begin heap-backed index scan",
+    );
 
     DebugHeapBackedScan {
-        index_relation,
-        heap_relation,
         scan,
-        registered_snapshot,
-        pushed_registered_snapshot,
+        _snapshot: snapshot,
+        _index_relation: index_relation,
+        _heap_relation: heap_relation,
     }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
-    unsafe {
-        pg_sys::index_endscan(state.scan);
-        if state.pushed_registered_snapshot {
-            pg_sys::PopActiveSnapshot();
-            pg_sys::UnregisterSnapshot(state.registered_snapshot);
-        }
-        pg_sys::index_close(
-            state.index_relation,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        );
-        pg_sys::table_close(
-            state.heap_relation,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        );
-    }
+    drop(state);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -810,7 +894,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
     query: Vec<f32>,
 ) -> Vec<HeapTidCoords> {
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan;
+    let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -844,7 +928,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
     result_limit: Option<usize>,
 ) -> DebugScanProfile {
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan;
+    let scan = scan_state.scan.as_ptr();
 
     let total_started = Instant::now();
     let rescan_started = Instant::now();
@@ -992,6 +1076,9 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     result_limit: usize,
     project_attnum: Option<i32>,
 ) -> DebugScanHeapFetchProfile {
+    // SAFETY: `index_oid` names the index relation supplied by the pg_test
+    // caller; PostgreSQL resolves the owning heap oid without taking
+    // ownership.
     let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!(
@@ -999,61 +1086,27 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
         );
     }
 
-    let heap_relation =
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
+        .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to open heap relation"));
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let registered_snapshot = unsafe {
-        debug_push_latest_snapshot(
-            "debug heap-fetch profile could not acquire a fresh latest snapshot",
-        )
-    };
-    let pushed_registered_snapshot = true;
-    let snapshot = registered_snapshot;
-
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
-        )
-    };
-    if slot.is_null() {
-        unsafe {
-            if pushed_registered_snapshot {
-                pg_sys::PopActiveSnapshot();
-                pg_sys::UnregisterSnapshot(registered_snapshot);
-            }
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
-        pgrx::error!("debug heap-fetch profile failed to allocate tuple slot");
-    }
-
-    #[cfg(feature = "pg18")]
-    let scan = unsafe {
-        pg_sys::index_beginscan(
-            heap_relation,
-            index_relation,
-            snapshot,
-            std::ptr::null_mut(),
-            0,
-            1,
-        )
-    };
-    #[cfg(not(feature = "pg18"))]
-    let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
-    if scan.is_null() {
-        unsafe {
-            pg_sys::ExecDropSingleTupleTableSlot(slot);
-            if pushed_registered_snapshot {
-                pg_sys::PopActiveSnapshot();
-                pg_sys::UnregisterSnapshot(registered_snapshot);
-            }
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
-        pgrx::error!("debug heap-fetch profile failed to begin index scan");
-    }
+        IndexRelationGuard::access_share(index_oid, "debug_profile_ordered_scan_with_heap_fetch");
+    let snapshot = DebugActiveSnapshotGuard::latest(
+        "debug heap-fetch profile could not acquire a fresh latest snapshot",
+    );
+    let slot_guard = DebugTupleSlotGuard::single_for_heap(
+        heap_relation.as_ptr(),
+        "debug heap-fetch profile failed to allocate tuple slot",
+    );
+    let scan_guard = DebugIndexScanGuard::begin(
+        heap_relation.as_ptr(),
+        index_relation.as_ptr(),
+        snapshot.as_ptr(),
+        0,
+        1,
+        "debug heap-fetch profile failed to begin index scan",
+    );
+    let scan = scan_guard.as_ptr();
+    let slot = slot_guard.as_ptr();
 
     let total_started = Instant::now();
     let rescan_started = Instant::now();
@@ -1101,17 +1154,6 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    unsafe {
-        pg_sys::index_endscan(scan);
-        pg_sys::ExecDropSingleTupleTableSlot(slot);
-        if pushed_registered_snapshot {
-            pg_sys::PopActiveSnapshot();
-            pg_sys::UnregisterSnapshot(registered_snapshot);
-        }
-        pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-    }
-
     (
         rescan_elapsed_us,
         emit_elapsed_us,
@@ -1131,7 +1173,7 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
     limit_count: i32,
 ) -> DebugGroupedRerankProfile {
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan;
+    let scan = scan_state.scan.as_ptr();
     let result_limit =
         usize::try_from(limit_count).expect("grouped rerank profile limit should fit in usize");
 
@@ -1191,7 +1233,7 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
     query: Vec<f32>,
 ) -> DebugTurboQuantScanStageProfile {
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan;
+    let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -2093,7 +2135,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan;
+    let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -2119,7 +2161,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan;
+    let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
