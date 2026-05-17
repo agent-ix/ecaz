@@ -201,12 +201,18 @@ instrumented AM build/scan/insert/vacuum
 boundaries and verifies the backend remains usable after each ERROR. Every lane
 uses the shared post-condition probe inventory from `ecaz-fault-injection`:
 leftover fault sessions, surviving locks, prepared transactions, optional
-`pg_buffercache` fixture pin counts, and optional `pg_stat_io` non-decreasing
-operation counters. Memory smoke also SIGKILLs worker backends during AM
+`pg_buffercache` fixture pin counts, optional `pg_stat_io` non-decreasing
+operation counters, and optional `pg_stat_wal` non-decreasing WAL record/byte
+counters. Resource temp-spill probes also print
+`resource_temp_spill_accounting` markers from `pg_stat_database.temp_bytes` for
+readable before/after accounting; temp-file-limit failures may abort before the
+database temp-byte total advances, so the smoke asserts readability and
+non-decreasing totals rather than byte-perfect attribution. Memory smoke also
+SIGKILLs worker backends during AM
 build/scan/insert as an OOM-kill proxy and waits for postmaster recovery. Those
-subcases are crash-recovery checks; a lower post-run `pg_stat_io` total is
-recorded as a stats reset after recovery rather than treated as a monotonicity
-failure.
+subcases are crash-recovery checks; lower post-run `pg_stat_io` or
+`pg_stat_wal` totals are recorded as stats resets after recovery rather than
+treated as monotonicity failures.
 
 SPIRE remote transport faults reuse `ecaz dev spire-multicluster fault-pg18`.
 The Stage E fixture scripts keep their PostgreSQL Unix sockets under a short

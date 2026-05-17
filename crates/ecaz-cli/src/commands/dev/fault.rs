@@ -393,6 +393,11 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
     } else {
         capture_pg_stat_io_total(conn).await?
     };
+    let pg_stat_wal_before = if args.dry_run {
+        None
+    } else {
+        capture_pg_stat_wal_snapshot(conn).await?
+    };
 
     if args.dry_run {
         return Ok(());
@@ -416,19 +421,19 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 );
                 return Ok(());
             }
-            assert_postconditions(conn, lane, pg_stat_io_before).await
+            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Cancel => {
             run_cancel_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before).await
+            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Timeout => {
             run_timeout_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before).await
+            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::LockTimeout => {
             run_lock_timeout_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before).await
+            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Resource => {
             let provider_marker = args
@@ -437,16 +442,16 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 .map(|marker| read_provider_marker(Some(marker), lane))
                 .transpose()?;
             run_resource_probe(conn, args.rows, &ams, provider_marker.as_deref()).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before).await
+            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Memory => {
             run_memory_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before).await
+            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::SlowDisk => {
             read_provider_marker(args.provider_marker.as_deref(), lane)?;
             run_slow_disk_probe(conn, args.rows, &ams).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before).await
+            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
     }
 }
@@ -852,6 +857,7 @@ async fn run_temp_file_limit_probe(
     rows: i64,
     am: FaultAm,
 ) -> Result<()> {
+    let temp_bytes_before = pg_stat_database_temp_bytes(client).await?;
     let temp_spill = client
         .batch_execute(&format!(
             "SET work_mem = '64kB';
@@ -864,6 +870,7 @@ async fn run_temp_file_limit_probe(
         .batch_execute("RESET temp_file_limit; RESET work_mem;")
         .await?;
     assert_temp_file_limit_error(&format!("resource temp spill {}", am.as_str()), temp_spill)?;
+    assert_temp_bytes_non_decreasing(client, am, "temp_file_limit", temp_bytes_before).await?;
     client.simple_query("SELECT 1").await.map_err(|error| {
         eyre!(
             "resource temp spill {} did not leave the backend usable: {error}",
@@ -878,6 +885,7 @@ async fn run_provider_temp_spill_probe(
     rows: i64,
     am: FaultAm,
 ) -> Result<()> {
+    let temp_bytes_before = pg_stat_database_temp_bytes(client).await?;
     let temp_spill = client
         .batch_execute(&format!(
             "SET work_mem = '64kB';
@@ -893,6 +901,7 @@ async fn run_provider_temp_spill_probe(
         &format!("resource provider temp spill {}", am.as_str()),
         temp_spill,
     )?;
+    assert_temp_bytes_non_decreasing(client, am, "provider_enospc", temp_bytes_before).await?;
     client.simple_query("SELECT 1").await.map_err(|error| {
         eyre!(
             "resource provider temp spill {} did not leave the backend usable: {error}",
@@ -1219,6 +1228,7 @@ async fn assert_postconditions(
     conn: &ConnectionOptions,
     lane: FaultLane,
     pg_stat_io_before: Option<i64>,
+    pg_stat_wal_before: Option<PgStatWalSnapshot>,
 ) -> Result<()> {
     tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     let client = connect_fault(conn, "postcondition").await?;
@@ -1231,12 +1241,26 @@ async fn assert_postconditions(
     }
     assert_pg_buffercache_fixture_pins(&client, lane).await?;
     assert_pg_stat_io_non_decreasing(&client, lane, pg_stat_io_before).await?;
+    assert_pg_stat_wal_non_decreasing(&client, lane, pg_stat_wal_before).await?;
     Ok(())
 }
 
 async fn capture_pg_stat_io_total(conn: &ConnectionOptions) -> Result<Option<i64>> {
     let client = connect_fault(conn, "precondition").await?;
     pg_stat_io_total(&client).await
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PgStatWalSnapshot {
+    records: i64,
+    bytes: i64,
+}
+
+async fn capture_pg_stat_wal_snapshot(
+    conn: &ConnectionOptions,
+) -> Result<Option<PgStatWalSnapshot>> {
+    let client = connect_fault(conn, "wal-precondition").await?;
+    pg_stat_wal_snapshot(&client).await
 }
 
 async fn assert_pg_buffercache_fixture_pins(
@@ -1322,6 +1346,50 @@ async fn assert_pg_stat_io_non_decreasing(
     Ok(())
 }
 
+async fn assert_pg_stat_wal_non_decreasing(
+    client: &tokio_postgres::Client,
+    lane: FaultLane,
+    before: Option<PgStatWalSnapshot>,
+) -> Result<()> {
+    let Some(before) = before else {
+        crate::ecaz_println!("[fault] pg_stat_wal unavailable; skipping wal counter probe");
+        return Ok(());
+    };
+    let Some(after) = pg_stat_wal_snapshot(client).await? else {
+        crate::ecaz_println!(
+            "[fault] pg_stat_wal unavailable after lane; skipping wal counter probe"
+        );
+        return Ok(());
+    };
+    crate::ecaz_println!(
+        "[fault] pg_stat_wal_records_before={} after={} bytes_before={} after={}",
+        before.records,
+        after.records,
+        before.bytes,
+        after.bytes
+    );
+    if after.records < before.records || after.bytes < before.bytes {
+        if lane == FaultLane::Memory {
+            crate::ecaz_println!(
+                "[fault] pg_stat_wal_reset_after_crash_recovery=true records_before={} records_after={} bytes_before={} bytes_after={}",
+                before.records,
+                after.records,
+                before.bytes,
+                after.bytes
+            );
+            return Ok(());
+        }
+        return Err(eyre!(
+            "{lane} postcondition failed: pg_stat_wal decreased from records={} bytes={} to records={} bytes={}",
+            before.records,
+            before.bytes,
+            after.records,
+            after.bytes
+        ));
+    }
+    Ok(())
+}
+
 async fn pg_stat_io_total(client: &tokio_postgres::Client) -> Result<Option<i64>> {
     match client
         .query_one(
@@ -1342,6 +1410,85 @@ async fn pg_stat_io_total(client: &tokio_postgres::Client) -> Result<Option<i64>
         }
         Err(error) => Err(error.into()),
     }
+}
+
+async fn pg_stat_wal_snapshot(
+    client: &tokio_postgres::Client,
+) -> Result<Option<PgStatWalSnapshot>> {
+    match client
+        .query_one(
+            "SELECT wal_records::bigint, wal_bytes::bigint FROM pg_stat_wal",
+            &[],
+        )
+        .await
+    {
+        Ok(row) => Ok(Some(PgStatWalSnapshot {
+            records: row.get::<_, i64>(0),
+            bytes: row.get::<_, i64>(1),
+        })),
+        Err(error)
+            if error.as_db_error().is_some_and(|db| {
+                let sqlstate = db.code().code();
+                sqlstate == "42P01" || sqlstate == "42703"
+            }) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn pg_stat_database_temp_bytes(client: &tokio_postgres::Client) -> Result<Option<i64>> {
+    match client
+        .query_one(
+            "SELECT temp_bytes::bigint FROM pg_stat_database WHERE datname = current_database()",
+            &[],
+        )
+        .await
+    {
+        Ok(row) => Ok(Some(row.get::<_, i64>(0))),
+        Err(error)
+            if error.as_db_error().is_some_and(|db| {
+                let sqlstate = db.code().code();
+                sqlstate == "42P01" || sqlstate == "42703"
+            }) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn assert_temp_bytes_non_decreasing(
+    client: &tokio_postgres::Client,
+    am: FaultAm,
+    mode: &str,
+    before: Option<i64>,
+) -> Result<()> {
+    let Some(before) = before else {
+        crate::ecaz_println!(
+            "[fault] pg_stat_database temp_bytes unavailable; skipping temp accounting probe"
+        );
+        return Ok(());
+    };
+    let Some(after) = pg_stat_database_temp_bytes(client).await? else {
+        crate::ecaz_println!(
+            "[fault] pg_stat_database temp_bytes unavailable after temp spill; skipping temp accounting probe"
+        );
+        return Ok(());
+    };
+    let delta = after.saturating_sub(before);
+    crate::ecaz_println!(
+        "[fault] resource_temp_spill_accounting am={} mode={mode} temp_bytes_before={before} after={after} delta={delta}",
+        am.as_str()
+    );
+    if after < before {
+        return Err(eyre!(
+            "resource temp spill accounting {} {mode} decreased from {before} to {after}",
+            am.as_str()
+        ));
+    }
+    Ok(())
 }
 
 fn assert_query_canceled(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
