@@ -5,6 +5,7 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys};
 use crate::storage::{
     page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
     relation_guard::HeapRelationGuard,
+    snapshot_guard::RegisteredSnapshotGuard,
 };
 
 use super::{
@@ -62,39 +63,27 @@ impl ResolvedScanHeapRelation {
 
 pub(super) struct ResolvedScanSnapshot {
     snapshot: pg_sys::Snapshot,
-    owned: bool,
+    _owned: Option<RegisteredSnapshotGuard>,
 }
 
 impl ResolvedScanSnapshot {
     fn borrowed(snapshot: pg_sys::Snapshot) -> Self {
         Self {
             snapshot,
-            owned: false,
+            _owned: None,
         }
     }
 
-    fn owned(snapshot: pg_sys::Snapshot) -> Self {
+    fn owned(guard: RegisteredSnapshotGuard) -> Self {
+        let snapshot = guard.as_ptr();
         Self {
             snapshot,
-            owned: true,
+            _owned: Some(guard),
         }
     }
 
     pub(super) fn as_ptr(&self) -> pg_sys::Snapshot {
         self.snapshot
-    }
-}
-
-impl Drop for ResolvedScanSnapshot {
-    fn drop(&mut self) {
-        if self.owned && !self.snapshot.is_null() {
-            // SAFETY: `snapshot` was returned by `RegisterSnapshot` in
-            // `resolve_scan_snapshot`; this wrapper owns the matching
-            // unregister.
-            // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-            // re-audit on pgrx bumps or pg_guard behavior changes.
-            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
-        }
     }
 }
 
@@ -275,11 +264,9 @@ pub(super) unsafe fn resolve_scan_snapshot(
         return Ok(ResolvedScanSnapshot::borrowed(active_snapshot));
     }
 
-    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-    if registered_snapshot.is_null() {
-        return Err("ec_diskann scan could not resolve an active snapshot".into());
-    }
-    Ok(ResolvedScanSnapshot::owned(registered_snapshot))
+    RegisteredSnapshotGuard::latest()
+        .map(ResolvedScanSnapshot::owned)
+        .ok_or_else(|| "ec_diskann scan could not resolve an active snapshot".into())
 }
 
 pub(super) unsafe fn fetch_heap_row_version(

@@ -1,5 +1,35 @@
 use pgrx::pg_sys;
 
+pub(crate) struct RegisteredSnapshotGuard {
+    snapshot: pg_sys::Snapshot,
+}
+
+impl RegisteredSnapshotGuard {
+    pub(crate) fn latest() -> Option<Self> {
+        // SAFETY: `GetLatestSnapshot` returns a PostgreSQL snapshot pointer
+        // valid for registration in the current backend context.
+        let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+        if snapshot.is_null() {
+            return None;
+        }
+        Some(Self { snapshot })
+    }
+
+    pub(crate) fn as_ptr(&self) -> pg_sys::Snapshot {
+        self.snapshot
+    }
+}
+
+impl Drop for RegisteredSnapshotGuard {
+    fn drop(&mut self) {
+        // SAFETY: `snapshot` was returned by `RegisterSnapshot`; this guard
+        // owns the matching unregister.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
+    }
+}
+
 pub(crate) struct ActiveSnapshotGuard {
     snapshot: pg_sys::Snapshot,
 }
