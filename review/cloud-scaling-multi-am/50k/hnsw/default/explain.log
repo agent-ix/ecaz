@@ -1,0 +1,21 @@
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=3440.48..3440.51 rows=10 width=12) (actual time=2136.283..2136.285 rows=10.00 loops=1)
+   Buffers: shared hit=450323 read=50544
+   ->  Sort  (cost=3440.48..3565.48 rows=50000 width=12) (actual time=2136.282..2136.283 rows=10.00 loops=1)
+         Sort Key: ((real_50k_hnsw_corpus.embedding <#> (SubPlan 1)))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=450323 read=50544
+         ->  Seq Scan on real_50k_hnsw_corpus  (cost=0.00..2360.00 rows=50000 width=12) (actual time=0.669..2130.130 rows=50000.00 loops=1)
+               Buffers: shared hit=450320 read=50544
+               SubPlan 1
+                 ->  Limit  (cost=0.00..0.02 rows=1 width=32) (actual time=0.002..0.002 rows=1.00 loops=50000)
+                       Buffers: shared hit=99998 read=3
+                       ->  Seq Scan on real_50k_hnsw_queries  (cost=0.00..18.00 rows=1000 width=32) (actual time=0.001..0.001 rows=1.00 loops=50000)
+                             Buffers: shared hit=99998 read=3
+ Planning:
+   Buffers: shared hit=132 read=4
+ Planning Time: 0.985 ms
+ Execution Time: 2136.323 ms
+(17 rows)
+

@@ -1,0 +1,21 @@
+                                                                      QUERY PLAN                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=6880.96..6880.99 rows=10 width=12) (actual time=1324.590..1324.593 rows=10.00 loops=1)
+   Buffers: shared hit=899233 read=102469
+   ->  Sort  (cost=6880.96..7130.96 rows=100000 width=12) (actual time=1324.589..1324.591 rows=10.00 loops=1)
+         Sort Key: ((real_100k_ivf_corpus.embedding <#> (SubPlan 1)))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=899233 read=102469
+         ->  Seq Scan on real_100k_ivf_corpus  (cost=0.00..4720.00 rows=100000 width=12) (actual time=3.042..1312.893 rows=100000.00 loops=1)
+               Buffers: shared hit=899230 read=102469
+               SubPlan 1
+                 ->  Limit  (cost=0.00..0.02 rows=1 width=32) (actual time=0.002..0.002 rows=1.00 loops=100000)
+                       Buffers: shared hit=199998 read=3
+                       ->  Seq Scan on real_100k_ivf_queries  (cost=0.00..18.00 rows=1000 width=32) (actual time=0.001..0.001 rows=1.00 loops=100000)
+                             Buffers: shared hit=199998 read=3
+ Planning:
+   Buffers: shared hit=116 read=7
+ Planning Time: 0.938 ms
+ Execution Time: 1324.632 ms
+(17 rows)
+

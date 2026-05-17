@@ -1,0 +1,53 @@
+[full-sweep] 13:03:19   bench real_10k_hnsw profile=ec_hnsw sf=default
+[full-sweep] 13:03:40 ivf pass: size=10k sf=turboquant
+[full-sweep] 13:03:41   bench real_10k_ivf profile=ec_ivf sf=turboquant
+[full-sweep] 13:04:10 ivf pass: size=10k sf=rabitq
+[full-sweep] 13:04:10 rebuilding real_10k_ivf_rabitq_idx (WITH (storage_format='rabitq')) for snapshot-clean exit
+[full-sweep] 13:04:19   bench real_10k_ivf profile=ec_ivf sf=rabitq
+[full-sweep] 13:04:54 ivf pass: size=10k sf=pq_fastscan
+[full-sweep] 13:04:55 rebuilding real_10k_ivf_pqfs_idx (WITH (storage_format='pq_fastscan')) for snapshot-clean exit
+[full-sweep] 13:05:04   bench real_10k_ivf profile=ec_ivf sf=pq_fastscan
+[full-sweep] 13:05:22   bench real_10k_diskann profile=ec_diskann sf=default
+[full-sweep] 13:05:51   bench real_50k_hnsw profile=ec_hnsw sf=default
+[full-sweep] 13:06:39 ivf pass: size=50k sf=turboquant
+[full-sweep] 13:06:39   bench real_50k_ivf profile=ec_ivf sf=turboquant
+[full-sweep] 13:08:27 ivf pass: size=50k sf=rabitq
+[full-sweep] 13:08:27 rebuilding real_50k_ivf_rabitq_idx (WITH (storage_format='rabitq')) for snapshot-clean exit
+[full-sweep] 13:08:56   bench real_50k_ivf profile=ec_ivf sf=rabitq
+[full-sweep] 13:11:25 ivf pass: size=50k sf=pq_fastscan
+[full-sweep] 13:11:25 rebuilding real_50k_ivf_pqfs_idx (WITH (storage_format='pq_fastscan')) for snapshot-clean exit
+[full-sweep] 13:11:54   bench real_50k_ivf profile=ec_ivf sf=pq_fastscan
+[full-sweep] 13:12:30   bench real_50k_diskann profile=ec_diskann sf=default
+[full-sweep] 13:15:44   bench real_100k_hnsw profile=ec_hnsw sf=default
+[full-sweep] 13:16:45 ivf pass: size=100k sf=turboquant
+[full-sweep] 13:16:45   bench real_100k_ivf profile=ec_ivf sf=turboquant
+[full-sweep] 13:19:08 ivf pass: size=100k sf=rabitq
+[full-sweep] 13:19:09 rebuilding real_100k_ivf_rabitq_idx (WITH (storage_format='rabitq')) for snapshot-clean exit
+[full-sweep] 13:20:05   bench real_100k_ivf profile=ec_ivf sf=rabitq
+[full-sweep] 13:23:35 ivf pass: size=100k sf=pq_fastscan
+[full-sweep] 13:23:35 rebuilding real_100k_ivf_pqfs_idx (WITH (storage_format='pq_fastscan')) for snapshot-clean exit
+[full-sweep] 13:24:32   bench real_100k_ivf profile=ec_ivf sf=pq_fastscan
+[full-sweep] 13:25:19   bench real_100k_diskann profile=ec_diskann sf=default
+[full-sweep] 13:32:51   bench real_1m_hnsw profile=ec_hnsw sf=default
+scripts/run_full_sweep.sh: line 136: 96319 Killed                  $NICE "$ECAZ" bench recall --prefix "$prefix" --profile "$profile" --k "$K" --log-output "$outdir/recall.log" >> "$outdir/recall-stdout.log" 2>&1
+[full-sweep] 13:41:06 ivf pass: size=1m sf=turboquant
+[full-sweep] 13:41:06   bench real_1m_ivf profile=ec_ivf sf=turboquant
+scripts/run_full_sweep.sh: line 136: 98018 Killed                  $NICE "$ECAZ" bench recall --prefix "$prefix" --profile "$profile" --k "$K" --log-output "$outdir/recall.log" >> "$outdir/recall-stdout.log" 2>&1
+[full-sweep] 13:48:22 ivf pass: size=1m sf=rabitq
+[full-sweep] 13:48:22 rebuilding real_1m_ivf_rabitq_idx (WITH (storage_format='rabitq')) for snapshot-clean exit
+[full-sweep] 14:05:38   bench real_1m_ivf profile=ec_ivf sf=rabitq
+scripts/run_full_sweep.sh: line 136: 102961 Killed                  $NICE "$ECAZ" bench recall --prefix "$prefix" --profile "$profile" --k "$K" --log-output "$outdir/recall.log" >> "$outdir/recall-stdout.log" 2>&1
+[full-sweep] 14:13:34 ivf pass: size=1m sf=pq_fastscan
+[full-sweep] 14:13:34 rebuilding real_1m_ivf_pqfs_idx (WITH (storage_format='pq_fastscan')) for snapshot-clean exit
+[full-sweep] 14:30:50   bench real_1m_ivf profile=ec_ivf sf=pq_fastscan
+scripts/run_full_sweep.sh: line 136: 107402 Killed                  $NICE "$ECAZ" bench recall --prefix "$prefix" --profile "$profile" --k "$K" --log-output "$outdir/recall.log" >> "$outdir/recall-stdout.log" 2>&1
+[full-sweep] 14:37:02   bench real_1m_diskann profile=ec_diskann sf=default
+scripts/run_full_sweep.sh: line 136: 111271 Killed                  $NICE "$ECAZ" bench recall --prefix "$prefix" --profile "$profile" --k "$K" --log-output "$outdir/recall.log" >> "$outdir/recall-stdout.log" 2>&1
+[full-sweep] 14:57:30 sweep complete; artifacts in /var/lib/pgsql/18/artifacts/sweep; manifest at /var/lib/pgsql/18/artifacts/sweep/manifest.json
+[full-sweep] 14:57:30 rebuilding real_10k_ivf_idx () for snapshot-clean exit
+[full-sweep] 14:57:39 rebuilding real_10k_ivf_rabitq_idx (WITH (storage_format='rabitq')) for snapshot-clean exit
+[full-sweep] 14:57:48 rebuilding real_50k_ivf_idx () for snapshot-clean exit
+[full-sweep] 14:58:18 rebuilding real_50k_ivf_rabitq_idx (WITH (storage_format='rabitq')) for snapshot-clean exit
+[full-sweep] 14:58:47 rebuilding real_100k_ivf_idx () for snapshot-clean exit
+[full-sweep] 14:59:48 rebuilding real_100k_ivf_rabitq_idx (WITH (storage_format='rabitq')) for snapshot-clean exit
+[full-sweep] 15:00:45 rebuilding real_1m_ivf_idx () for snapshot-clean exit

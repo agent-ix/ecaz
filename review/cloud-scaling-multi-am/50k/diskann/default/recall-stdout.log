@@ -1,0 +1,18 @@
+[recall] no --sweep provided; using profile default list_size values [64, 128, 200, 400, 800]
+[recall] fetching queries from real_50k_diskann_queries ...
+[recall] fetching corpus from real_50k_diskann_corpus ...
+[recall] computing ground truth: 1000 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 2.06s
+┌───────────┬──────────┬────────┬─────────────┐
+│ list_size ┆ recall@k ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪══════════╪════════╪═════════════╡
+│ 64        ┆ 0.9550   ┆ 0.9968 ┆ 30.23 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 0.9697   ┆ 0.9987 ┆ 25.06 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 0.9745   ┆ 0.9993 ┆ 24.74 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 400       ┆ 0.9787   ┆ 0.9996 ┆ 28.32 ms    │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 800       ┆ 0.9796   ┆ 0.9997 ┆ 29.95 ms    │
+└───────────┴──────────┴────────┴─────────────┘
