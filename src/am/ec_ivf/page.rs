@@ -2200,27 +2200,24 @@ where
     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             tuple_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_ivf failed to open block {} for {tuple_kind} tuple",
             tuple_tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf {tuple_kind} tuple offset {} out of range on block {}",
             tuple_tid.offset_number, tuple_tid.block_number
@@ -2229,14 +2226,12 @@ where
 
     let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!("ec_ivf {tuple_kind} tuple slot is unused"));
     }
 
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf {tuple_kind} tuple bounds exceed block {}",
             tuple_tid.block_number
@@ -2245,7 +2240,6 @@ where
 
     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
     let decoded = decode(tuple_bytes);
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     decoded.map(|tuple| (tuple, line_pointer_count))
 }
 
@@ -2262,23 +2256,19 @@ unsafe fn find_next_tuple_with_tag(
     let mut offset_number = start_tid.offset_number;
     while block_number < block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_ivf failed to open block {block_number} while locating next {tuple_kind}"
-            ));
         }
+        .ok_or_else(|| {
+            format!("ec_ivf failed to open block {block_number} while locating next {tuple_kind}")
+        })?;
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = page_line_pointer_count(page_ptr);
         let result = (|| -> Result<Option<ItemPointer>, String> {
             for offset in offset_number..=line_pointer_count {
@@ -2309,7 +2299,6 @@ unsafe fn find_next_tuple_with_tag(
             }
             Ok(None)
         })();
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         if let Some(next_tid) = result? {
             return Ok(next_tid);
         }
