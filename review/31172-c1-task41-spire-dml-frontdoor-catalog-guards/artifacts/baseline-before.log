@@ -1,0 +1,4 @@
+unsafe comment baseline
+file: artifacts/unsafe-baseline-before.txt
+entries: 4351
+src/am/ec_spire/dml_frontdoor/mod.rs: 164
