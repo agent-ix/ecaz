@@ -1,3 +1,15 @@
+//! PostgreSQL buffer ownership guards.
+//!
+//! Use `PinnedBufferGuard` when the caller owns only a buffer pin:
+//! `read_main` wraps `ReadBufferExtended`, and `from_pinned` adopts buffers
+//! returned by APIs such as `read_stream_next_buffer`.
+//!
+//! Use `LockedBufferGuard` when the caller owns both pin and lock:
+//! `read_main` wraps `ReadBufferExtended` plus `LockBuffer`,
+//! `read_main_locked` wraps modes that return an already-locked buffer such as
+//! `RBM_ZERO_AND_LOCK`, and `lock_pinned` adopts a pre-pinned buffer before
+//! locking it.
+
 use std::ptr;
 
 use pgrx::pg_sys;

@@ -12,7 +12,7 @@ use super::P_NEW;
 #[cfg(feature = "pg18")]
 use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 use crate::storage::{
-    buffer_guard::PinnedBufferGuard,
+    buffer_guard::{LockedBufferGuard, PinnedBufferGuard},
     page::{
         align_up, aligned_tuple_bytes, raw_tuple_storage_bytes, usable_page_bytes, DataPage,
         DataPageChain, ItemPointer, ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
@@ -1586,28 +1586,22 @@ unsafe fn try_append_ivf_posting_to_block(
     payload: &[u8],
 ) -> Result<Option<ItemPointer>, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     if free_space < raw_tuple_storage_bytes(payload.len()) {
         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Ok(None);
     }
 
@@ -1622,7 +1616,6 @@ unsafe fn try_append_ivf_posting_to_block(
     };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf failed to append posting tuple to block {block_number}"
         ));
@@ -1631,7 +1624,6 @@ unsafe fn try_append_ivf_posting_to_block(
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(Some(ItemPointer {
         block_number,
         offset_number: offset,
@@ -1643,21 +1635,18 @@ unsafe fn append_ivf_posting_to_new_block(
     payload: &[u8],
 ) -> Result<ItemPointer, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             P_NEW,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            ptr::null_mut(),
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_ivf failed to allocate posting-list block".to_owned());
     }
+    .ok_or_else(|| "ec_ivf failed to allocate posting-list block".to_owned())?;
 
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page, page_size, 0) };
 
     let offset = unsafe {
@@ -1671,15 +1660,13 @@ unsafe fn append_ivf_posting_to_new_block(
     };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_ivf failed to append posting tuple to new block".to_owned());
     }
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
 
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(ItemPointer {
         block_number,
         offset_number: offset,
