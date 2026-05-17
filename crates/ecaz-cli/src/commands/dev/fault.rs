@@ -8,7 +8,7 @@ use ecaz_fault_injection::{
     workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql,
     FaultAm, FaultLane, ProviderMode,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 
@@ -224,12 +224,18 @@ fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
     if mode == ProviderMode::SlowDisk && args.latency_ms.unwrap_or(0) == 0 {
         return Err(eyre!("--latency-ms must be >= 1 for slow-disk mode"));
     }
+    let marker = args
+        .marker
+        .as_deref()
+        .map(Path::new)
+        .map(absolute_marker_string)
+        .transpose()?;
     let env = ecaz_fault_injection::provider_environment(
         mode,
         &args.path_match,
         args.after,
         args.latency_ms,
-        args.marker.as_deref(),
+        marker.as_deref(),
     );
     for (key, value) in env {
         crate::ecaz_println!("{key}={value}");
@@ -249,7 +255,7 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
         std::env::temp_dir().join(format!("ecaz-fault-provider-{}-pg{}.marker", mode, args.pg))
     });
     std::fs::write(&marker, "")?;
-    let marker_string = marker.to_string_lossy().to_string();
+    let marker_string = absolute_marker_string(&marker)?;
     let env = ecaz_fault_injection::provider_environment(
         mode,
         &args.path_match,
@@ -265,8 +271,17 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
         &env,
     )
     .await?;
-    crate::ecaz_println!("[fault] provider_marker={}", marker.display());
+    crate::ecaz_println!("[fault] provider_marker={marker_string}");
     Ok(())
+}
+
+fn absolute_marker_string(path: &Path) -> Result<String> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    Ok(path.to_string_lossy().to_string())
 }
 
 async fn run_provider_restore(args: ProviderRestoreArgs) -> Result<()> {
@@ -415,6 +430,12 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 ));
             }
             run_io_probe(conn, mode, &path_match, &ams).await?;
+            assert_provider_fault_marker(
+                args.provider_marker.as_deref(),
+                mode,
+                &path_match,
+                &format!("io {mode}"),
+            )?;
             if provider_targets_wal(&path_match) && mode == ProviderMode::EnospcWrite {
                 crate::ecaz_println!(
                     "[fault] wal_enospc_provider_restore_required=true match={path_match}"
@@ -442,6 +463,16 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 .map(|marker| read_provider_marker(Some(marker), lane))
                 .transpose()?;
             run_resource_probe(conn, args.rows, &ams, provider_marker.as_deref()).await?;
+            if let Some(marker) = provider_marker.as_deref() {
+                if resource_provider_targets_temp_spill(marker)? {
+                    assert_provider_fault_marker(
+                        args.provider_marker.as_deref(),
+                        ProviderMode::EnospcWrite,
+                        &provider_path_match_from_marker(marker)?,
+                        "resource provider temp spill",
+                    )?;
+                }
+            }
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Memory => {
@@ -477,7 +508,15 @@ async fn run_io_probe(
             }
             ProviderMode::EnospcWrite => {
                 match client.batch_execute(&workload_insert_sql(am)).await {
-                    Err(error) if error.as_db_error().is_some() => {}
+                    Err(error) if error.as_db_error().is_some_and(provider_sqlstate_allowed) => {}
+                    Err(error) if error.as_db_error().is_some() => {
+                        let db = error.as_db_error().expect("checked above");
+                        return Err(eyre!(
+                            "{label} returned unexpected provider SQLSTATE {} ({})",
+                            db.code().code(),
+                            db.message()
+                        ));
+                    }
                     Err(error) if provider_targets_wal(path_match) => {
                         crate::ecaz_println!(
                             "[fault] wal_enospc_backend_disconnected=true label={label} error={error}"
@@ -1455,6 +1494,36 @@ fn provider_path_match_from_marker(content: &str) -> Result<String> {
         .ok_or_else(|| eyre!("provider marker did not include a match field"))
 }
 
+fn assert_provider_fault_marker(
+    marker: Option<&str>,
+    mode: ProviderMode,
+    path_match: &str,
+    label: &str,
+) -> Result<()> {
+    let marker = marker.ok_or_else(|| eyre!("{label} requires --provider-marker"))?;
+    let content = std::fs::read_to_string(marker)
+        .map_err(|error| eyre!("reading provider marker {marker:?}: {error}"))?;
+    let count = content
+        .lines()
+        .filter(|line| {
+            line.contains("fault=1")
+                && line.contains(&format!("mode={}", mode.as_str()))
+                && line.contains(path_match)
+        })
+        .count();
+    crate::ecaz_println!(
+        "[fault] provider_fault_events label={label} mode={} match={path_match} count={count}",
+        mode.as_str()
+    );
+    if count == 0 {
+        return Err(eyre!(
+            "{label} did not record a provider fault event for mode={} match={path_match}",
+            mode.as_str()
+        ));
+    }
+    Ok(())
+}
+
 async fn connect_fault(conn: &ConnectionOptions, label: &str) -> Result<tokio_postgres::Client> {
     let client = psql::connect(conn).await?;
     client
@@ -1783,6 +1852,7 @@ fn assert_provider_sql_error(label: &str, result: Result<(), tokio_postgres::Err
 fn provider_sqlstate_allowed(db: &tokio_postgres::error::DbError) -> bool {
     matches!(db.code().code(), "53100" | "58030")
         || (db.code().code() == "XX000" && db.message().contains("checkpoint request failed"))
+        || (db.code().code() == "XX000" && db.message().contains("No space left on device"))
 }
 
 fn is_ecaz_palloc_error(error: &tokio_postgres::Error) -> bool {

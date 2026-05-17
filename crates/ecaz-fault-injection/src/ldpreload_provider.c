@@ -48,32 +48,85 @@ static int path_matches(const char *path) {
     return path && strstr(path, needle) != NULL;
 }
 
-static int fd_matches(int fd) {
+static void append_marker_line(const char *line, size_t len) {
+    const char *marker = getenv("ECAZ_FAULT_PROVIDER_MARKER");
+    if (!marker || !*marker) {
+        return;
+    }
+    int fd = (int)syscall(
+        SYS_openat,
+        AT_FDCWD,
+        marker,
+        O_CREAT | O_WRONLY | O_APPEND,
+        0600);
+    if (fd >= 0) {
+        (void)syscall(SYS_write, fd, line, len);
+        (void)syscall(SYS_close, fd);
+    }
+}
+
+static void record_fault_event(
+    const char *mode,
+    const char *op,
+    const char *target,
+    unsigned long long count,
+    int errnum) {
+    char line[512];
+    int len = snprintf(
+        line,
+        sizeof(line),
+        "fault=1 pid=%ld mode=%s op=%s count=%llu errno=%d target=%s\n",
+        (long)getpid(),
+        mode ? mode : "unset",
+        op ? op : "unset",
+        count,
+        errnum,
+        target ? target : "unset");
+    if (len > 0) {
+        if ((size_t)len >= sizeof(line)) {
+            len = (int)sizeof(line) - 1;
+        }
+        append_marker_line(line, (size_t)len);
+    }
+}
+
+static int fd_target_matches(int fd, char *target, size_t target_size) {
     char link_path[64];
-    char target[4096];
     snprintf(link_path, sizeof(link_path), "/proc/self/fd/%d", fd);
-    ssize_t len = readlink(link_path, target, sizeof(target) - 1);
+    ssize_t len = readlink(link_path, target, target_size - 1);
     if (len < 0) {
+        if (target_size > 0) {
+            target[0] = '\0';
+        }
         return path_matches("");
     }
     target[len] = '\0';
     return path_matches(target);
 }
 
-static int should_fault_path(const char *mode, const char *path) {
+static int should_fault_path(const char *mode, const char *op, const char *path, int errnum) {
     if (!enabled() || !mode_is(mode) || !path_matches(path)) {
         return 0;
     }
     unsigned long long count = __atomic_add_fetch(&fault_counter, 1, __ATOMIC_RELAXED);
-    return count >= after_count();
+    if (count < after_count()) {
+        return 0;
+    }
+    record_fault_event(mode, op, path, count, errnum);
+    return 1;
 }
 
-static int should_fault_fd(const char *mode, int fd) {
-    if (!enabled() || !mode_is(mode) || !fd_matches(fd)) {
+static int should_fault_fd(const char *mode, const char *op, int fd, int errnum) {
+    char target[4096];
+    if (!enabled() || !mode_is(mode) || !fd_target_matches(fd, target, sizeof(target))) {
         return 0;
     }
     unsigned long long count = __atomic_add_fetch(&fault_counter, 1, __ATOMIC_RELAXED);
-    return count >= after_count();
+    if (count < after_count()) {
+        return 0;
+    }
+    record_fault_event(mode, op, target, count, errnum);
+    return 1;
 }
 
 static void maybe_sleep(void) {
@@ -100,10 +153,6 @@ static void *real_symbol(const char *name) {
 }
 
 __attribute__((constructor)) static void ecaz_fault_provider_loaded(void) {
-    const char *marker = getenv("ECAZ_FAULT_PROVIDER_MARKER");
-    if (!marker || !*marker) {
-        return;
-    }
     const char *mode = getenv("ECAZ_FAULT_PROVIDER_MODE");
     const char *match = getenv("ECAZ_FAULT_PROVIDER_MATCH");
     char line[256];
@@ -114,16 +163,13 @@ __attribute__((constructor)) static void ecaz_fault_provider_loaded(void) {
         (long)getpid(),
         mode ? mode : "unset",
         match ? match : "unset");
-    int fd = (int)syscall(
-        SYS_openat,
-        AT_FDCWD,
-        marker,
-        O_CREAT | O_WRONLY | O_APPEND,
-        0600);
-    if (fd >= 0) {
-        (void)syscall(SYS_write, fd, line, (size_t)len);
-        (void)syscall(SYS_close, fd);
+    if (len <= 0) {
+        return;
     }
+    if ((size_t)len >= sizeof(line)) {
+        len = (int)sizeof(line) - 1;
+    }
+    append_marker_line(line, (size_t)len);
 }
 
 int open(const char *path, int flags, ...) {
@@ -134,7 +180,7 @@ int open(const char *path, int flags, ...) {
         mode = (mode_t)va_arg(ap, int);
         va_end(ap);
     }
-    if ((flags & O_CREAT) && should_fault_path("enospc-write", path)) {
+    if ((flags & O_CREAT) && should_fault_path("enospc-write", "open", path, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -154,7 +200,7 @@ int open64(const char *path, int flags, ...) {
         mode = (mode_t)va_arg(ap, int);
         va_end(ap);
     }
-    if ((flags & O_CREAT) && should_fault_path("enospc-write", path)) {
+    if ((flags & O_CREAT) && should_fault_path("enospc-write", "open64", path, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -174,7 +220,7 @@ int openat(int dirfd, const char *path, int flags, ...) {
         mode = (mode_t)va_arg(ap, int);
         va_end(ap);
     }
-    if ((flags & O_CREAT) && should_fault_path("enospc-write", path)) {
+    if ((flags & O_CREAT) && should_fault_path("enospc-write", "openat", path, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -190,7 +236,7 @@ int openat(int dirfd, const char *path, int flags, ...) {
 
 int openat2(int dirfd, const char *path, const struct open_how *how, size_t size) {
     int flags = how ? (int)how->flags : 0;
-    if ((flags & O_CREAT) && should_fault_path("enospc-write", path)) {
+    if ((flags & O_CREAT) && should_fault_path("enospc-write", "openat2", path, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -201,7 +247,7 @@ int openat2(int dirfd, const char *path, const struct open_how *how, size_t size
 }
 
 ssize_t read(int fd, void *buf, size_t count) {
-    if (should_fault_fd("eio-read", fd)) {
+    if (should_fault_fd("eio-read", "read", fd, EIO)) {
         errno = EIO;
         return -1;
     }
@@ -211,7 +257,7 @@ ssize_t read(int fd, void *buf, size_t count) {
 }
 
 ssize_t pread(int fd, void *buf, size_t count, off_t offset) {
-    if (should_fault_fd("eio-read", fd)) {
+    if (should_fault_fd("eio-read", "pread", fd, EIO)) {
         errno = EIO;
         return -1;
     }
@@ -221,7 +267,7 @@ ssize_t pread(int fd, void *buf, size_t count, off_t offset) {
 }
 
 ssize_t pread64(int fd, void *buf, size_t count, off64_t offset) {
-    if (should_fault_fd("eio-read", fd)) {
+    if (should_fault_fd("eio-read", "pread64", fd, EIO)) {
         errno = EIO;
         return -1;
     }
@@ -231,7 +277,7 @@ ssize_t pread64(int fd, void *buf, size_t count, off64_t offset) {
 }
 
 ssize_t write(int fd, const void *buf, size_t count) {
-    if (should_fault_fd("enospc-write", fd)) {
+    if (should_fault_fd("enospc-write", "write", fd, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -241,7 +287,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
 }
 
 ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
-    if (should_fault_fd("enospc-write", fd)) {
+    if (should_fault_fd("enospc-write", "pwrite", fd, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -251,7 +297,7 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
 }
 
 ssize_t pwrite64(int fd, const void *buf, size_t count, off64_t offset) {
-    if (should_fault_fd("enospc-write", fd)) {
+    if (should_fault_fd("enospc-write", "pwrite64", fd, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -261,7 +307,7 @@ ssize_t pwrite64(int fd, const void *buf, size_t count, off64_t offset) {
 }
 
 int fsync(int fd) {
-    if (should_fault_fd("enospc-write", fd)) {
+    if (should_fault_fd("enospc-write", "fsync", fd, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }
@@ -271,7 +317,7 @@ int fsync(int fd) {
 }
 
 int fdatasync(int fd) {
-    if (should_fault_fd("enospc-write", fd)) {
+    if (should_fault_fd("enospc-write", "fdatasync", fd, ENOSPC)) {
         errno = ENOSPC;
         return -1;
     }

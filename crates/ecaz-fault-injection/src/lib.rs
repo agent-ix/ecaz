@@ -655,6 +655,10 @@ mod tests {
     #[test]
     fn ldpreload_provider_returns_eio_for_matched_read() {
         let provider = provider_library_path().expect("linux provider should be built");
+        let marker = format!(
+            "/tmp/ecaz_fault_provider_read_marker_{}",
+            std::process::id()
+        );
         let output = Command::new("/bin/cat")
             .arg("/etc/hosts")
             .env("LD_PRELOAD", provider)
@@ -662,6 +666,7 @@ mod tests {
             .env("ECAZ_FAULT_PROVIDER_MODE", "eio-read")
             .env("ECAZ_FAULT_PROVIDER_MATCH", "/etc/hosts")
             .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
             .output()
             .expect("run provider-backed cat");
         assert!(
@@ -673,6 +678,14 @@ mod tests {
             stderr.contains("Input/output error"),
             "unexpected stderr: {stderr}"
         );
+        let marker_content = std::fs::read_to_string(&marker).expect("read provider marker");
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            marker_content.contains("fault=1")
+                && marker_content.contains("mode=eio-read")
+                && marker_content.contains("target=/etc/hosts"),
+            "unexpected marker: {marker_content}"
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -680,6 +693,10 @@ mod tests {
     fn ldpreload_provider_returns_enospc_for_matched_create() {
         let provider = provider_library_path().expect("linux provider should be built");
         let path = format!("/tmp/ecaz_fault_provider_write_test_{}", std::process::id());
+        let marker = format!(
+            "/tmp/ecaz_fault_provider_write_marker_{}",
+            std::process::id()
+        );
         let output = Command::new("dd")
             .arg("if=/dev/zero")
             .arg(format!("of={path}"))
@@ -690,6 +707,7 @@ mod tests {
             .env("ECAZ_FAULT_PROVIDER_MODE", "enospc-write")
             .env("ECAZ_FAULT_PROVIDER_MATCH", &path)
             .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
             .output()
             .expect("run provider-backed dd");
         assert!(
@@ -700,6 +718,14 @@ mod tests {
         assert!(
             stderr.contains("No space left on device"),
             "unexpected stderr: {stderr}"
+        );
+        let marker_content = std::fs::read_to_string(&marker).expect("read provider marker");
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            marker_content.contains("fault=1")
+                && marker_content.contains("mode=enospc-write")
+                && marker_content.contains(&format!("target={path}")),
+            "unexpected marker: {marker_content}"
         );
     }
 }

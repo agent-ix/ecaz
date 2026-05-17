@@ -158,7 +158,10 @@ under the relevant review packet before citing findings.
   `make fault-provider-env FAULT_PROVIDER_MODE=slow-disk`.
 - `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
   wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
-  require hand-assembled `LD_PRELOAD` commands.
+  require hand-assembled `LD_PRELOAD` commands. Marker paths passed to
+  `provider-restart` are made absolute before they are exported to the
+  postmaster, so backend workers append to the same marker even after
+  PostgreSQL changes its working directory.
 - `ecaz dev fault prepare --rows N` creates the AM-specific fixtures before
   destructive provider modes are enabled. Live I/O smoke then runs with
   `--assume-prepared --provider-marker <marker>` against an `eio-read` or
@@ -195,7 +198,10 @@ limit, and returned row count, then runs AM scan/insert/vacuum under tiny
 `temp_file_limit = '64kB'`, verifying the backend remains usable. When the
 postmaster is restarted with an `enospc-write` provider whose marker records
 `match=pgsql_tmp`, the resource lane instead disables `temp_file_limit` and
-expects the temp-spill failure to come from provider-backed ENOSPC. The same
+expects the temp-spill failure to come from provider-backed ENOSPC. The
+provider appends `fault=1` marker lines with mode, operation, errno, count, and
+target path when it actually injects EIO/ENOSPC, and provider-backed smoke
+asserts `provider_fault_events ... count>0` for the configured match. The same
 resource lane now performs AM-backed writes, forces `pg_switch_wal()`, and
 emits `wal_rotation_accounting` markers proving WAL LSN advancement plus
 non-decreasing `pg_stat_wal` record/byte counters after stats flush. Memory smoke
