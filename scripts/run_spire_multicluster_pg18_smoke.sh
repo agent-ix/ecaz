@@ -92,7 +92,8 @@ else
 fi
 REMOTE_DATA="$RUN_DIR/remote"
 COORD_DATA="$RUN_DIR/coord"
-SOCKET_DIR="$RUN_DIR/sockets"
+SOCKET_KEY="$(printf '%s' "$RUN_DIR" | cksum | awk '{print $1}')"
+SOCKET_DIR="${SOCKET_DIR:-$ROOT_DIR/target/s-$SOCKET_KEY}"
 
 if [[ -n "$SMOKE_LOG" && "${ECAZ_SPIRE_SMOKE_LOG_ACTIVE:-0}" != "1" ]]; then
   mkdir -p "${SMOKE_LOG%/*}"

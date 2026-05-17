@@ -192,6 +192,11 @@ leftover fault sessions, surviving locks, prepared transactions, optional
 `pg_buffercache` fixture pin counts, and optional `pg_stat_io` non-decreasing
 operation counters.
 
+SPIRE remote transport faults reuse `ecaz dev spire-multicluster fault-pg18`.
+The Stage E fixture scripts keep their PostgreSQL Unix sockets under a short
+target-local socket directory derived from the run directory so descriptive run
+ids do not exceed PostgreSQL's Unix socket path limit.
+
 Current interrupt inventory:
 
 - DiskANN build/scan paths call `maybe_check_for_interrupts()` from
