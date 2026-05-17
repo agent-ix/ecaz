@@ -12,6 +12,7 @@ use super::P_NEW;
 #[cfg(feature = "pg18")]
 use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 use crate::storage::{
+    buffer_guard::PinnedBufferGuard,
     page::{
         align_up, aligned_tuple_bytes, raw_tuple_storage_bytes, usable_page_bytes, DataPage,
         DataPageChain, ItemPointer, ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
@@ -1127,15 +1128,24 @@ where
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        let block_number = if per_buffer_data.is_null() {
-            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
-        } else {
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        let result = {
+            let buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
+                .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+            let block_number = if per_buffer_data.is_null() {
+                buffer.block_number()
+            } else {
+                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+            };
+            unsafe {
+                visit_ivf_postings_from_buffer(
+                    buffer.buffer(),
+                    list_id,
+                    block_number,
+                    payload_len,
+                    visitor,
+                )
+            }
         };
-        let result = unsafe {
-            visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
-        };
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
             unsafe { pg_sys::read_stream_end(stream) };
             return Err(err);
@@ -1175,15 +1185,23 @@ where
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        let block_number = if per_buffer_data.is_null() {
-            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
-        } else {
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        let result = {
+            let buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
+                .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+            let block_number = if per_buffer_data.is_null() {
+                buffer.block_number()
+            } else {
+                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+            };
+            unsafe {
+                visit_all_ivf_postings_from_buffer(
+                    buffer.buffer(),
+                    block_number,
+                    payload_len,
+                    visitor,
+                )
+            }
         };
-        let result = unsafe {
-            visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor)
-        };
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
             unsafe { pg_sys::read_stream_end(stream) };
             return Err(err);
@@ -1223,15 +1241,23 @@ where
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        let block_number = if per_buffer_data.is_null() {
-            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
-        } else {
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        let result = {
+            let buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
+                .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+            let block_number = if per_buffer_data.is_null() {
+                buffer.block_number()
+            } else {
+                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+            };
+            unsafe {
+                visit_all_ivf_posting_refs_from_buffer(
+                    buffer.buffer(),
+                    block_number,
+                    payload_len,
+                    visitor,
+                )
+            }
         };
-        let result = unsafe {
-            visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
-        };
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
             unsafe { pg_sys::read_stream_end(stream) };
             return Err(err);

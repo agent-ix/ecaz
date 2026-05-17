@@ -2,6 +2,40 @@ use std::ptr;
 
 use pgrx::pg_sys;
 
+pub(crate) struct PinnedBufferGuard {
+    buffer: pg_sys::Buffer,
+}
+
+impl PinnedBufferGuard {
+    pub(crate) unsafe fn from_pinned(buffer: pg_sys::Buffer) -> Option<Self> {
+        // SAFETY: `buffer` is supplied by a PostgreSQL API that pins buffers
+        // for the caller, such as `read_stream_next_buffer`.
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return None;
+        }
+        Some(Self { buffer })
+    }
+
+    pub(crate) fn buffer(&self) -> pg_sys::Buffer {
+        self.buffer
+    }
+
+    pub(crate) fn block_number(&self) -> pg_sys::BlockNumber {
+        // SAFETY: this guard owns a valid pinned buffer.
+        unsafe { pg_sys::BufferGetBlockNumber(self.buffer) }
+    }
+}
+
+impl Drop for PinnedBufferGuard {
+    fn drop(&mut self) {
+        // SAFETY: `buffer` was handed to this guard as an owned pin; this guard
+        // owns the matching release.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::ReleaseBuffer(self.buffer) };
+    }
+}
+
 pub(crate) struct LockedBufferGuard {
     buffer: pg_sys::Buffer,
 }
