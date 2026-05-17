@@ -8702,13 +8702,7 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
     );
     let row_payload_json = row_payload.0.to_string();
     if node_id == 0 {
-        let heap_relation_oid = unsafe {
-            (*index_relation.as_ptr())
-                .rd_index
-                .as_ref()
-                .expect("opened index relation should expose pg_index metadata")
-                .indrelid
-        };
+        let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
         drop(index_relation);
         let updated_count = ec_spire_update_tuple_payload_on_heap(
             heap_relation_oid,
@@ -8859,13 +8853,7 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
         "ec_spire_prepare_coordinator_delete_tuple_payload",
     );
     if node_id == 0 {
-        let heap_relation_oid = unsafe {
-            (*index_relation.as_ptr())
-                .rd_index
-                .as_ref()
-                .expect("opened index relation should expose pg_index metadata")
-                .indrelid
-        };
+        let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
         drop(index_relation);
         let deleted_count = ec_spire_delete_tuple_payload_on_heap(
             heap_relation_oid,
@@ -9030,13 +9018,7 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
         "ec_spire_forward_coordinator_select_tuple_payload",
     );
     if node_id == 0 {
-        let heap_relation_oid = unsafe {
-            (*index_relation.as_ptr())
-                .rd_index
-                .as_ref()
-                .expect("opened index relation should expose pg_index metadata")
-                .indrelid
-        };
+        let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
         drop(index_relation);
         let (selected_count, tuple_payload_json) = ec_spire_select_tuple_payload_on_heap(
             heap_relation_oid,
