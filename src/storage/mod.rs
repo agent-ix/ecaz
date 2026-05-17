@@ -5,4 +5,5 @@
 //! tuple codecs (e.g. `TqElementTuple`) stay under their owning AM.
 
 pub mod page;
+pub(crate) mod relation_guard;
 pub mod wal;

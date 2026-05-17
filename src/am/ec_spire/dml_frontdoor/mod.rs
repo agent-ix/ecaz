@@ -14,6 +14,8 @@ use std::ffi::CStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpireDmlFrontdoorOperation {
     Update,
@@ -192,74 +194,6 @@ static RELATION_CONTEXT_CACHE_INVALIDATIONS: AtomicU64 = AtomicU64::new(0);
 struct CachedRelationContext {
     context: SpireDmlFrontdoorRelationContext,
     watched_relation_oids: Vec<pg_sys::Oid>,
-}
-
-struct AccessShareIndexRelation {
-    relation: pg_sys::Relation,
-}
-
-impl AccessShareIndexRelation {
-    fn open(index_oid: pg_sys::Oid) -> Option<Self> {
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `index_open`; this guard owns the matching AccessShareLock close.
-        let relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        if relation.is_null() {
-            return None;
-        }
-        Some(Self { relation })
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for AccessShareIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `index_open` in
-        // `AccessShareIndexRelation::open`; this guard owns the matching close.
-        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-        // re-audit on pgrx bumps or pg_guard behavior changes.
-        unsafe { pg_sys::index_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
-}
-
-struct AccessShareHeapRelation {
-    relation: pg_sys::Relation,
-}
-
-impl AccessShareHeapRelation {
-    fn open(heap_relation_oid: pg_sys::Oid) -> Option<Self> {
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `table_open`; this guard owns the matching AccessShareLock close.
-        let relation = unsafe {
-            pg_sys::table_open(
-                heap_relation_oid,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
-        if relation.is_null() {
-            return None;
-        }
-        Some(Self { relation })
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for AccessShareHeapRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `table_open` in
-        // `AccessShareHeapRelation::open`; this guard owns the matching close.
-        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-        // re-audit on pgrx bumps or pg_guard behavior changes.
-        unsafe {
-            pg_sys::table_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
-    }
 }
 
 type RelcacheCallbackFunction =
@@ -456,7 +390,7 @@ pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
     }
     RELATION_CONTEXT_CACHE_MISSES.fetch_add(1, Ordering::Relaxed);
 
-    let Some(heap_relation) = AccessShareHeapRelation::open(heap_relation_oid) else {
+    let Some(heap_relation) = HeapRelationGuard::try_access_share(heap_relation_oid) else {
         return Err("ec_spire DML frontdoor catalog relation open returned NULL".to_owned());
     };
 
@@ -1415,7 +1349,7 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
 
     for index_oid in index_list.iter_oid() {
         watched_index_oids.push(index_oid);
-        let Some(index_relation) = AccessShareIndexRelation::open(index_oid) else {
+        let Some(index_relation) = IndexRelationGuard::try_access_share(index_oid) else {
             continue;
         };
         let index_form = unsafe { (*index_relation.as_ptr()).rd_index.as_ref() };
@@ -1501,7 +1435,7 @@ unsafe fn dml_frontdoor_index_key_column_names_from_rel(
     index_oid: pg_sys::Oid,
     heap_relation: pg_sys::Relation,
 ) -> Result<Vec<String>, String> {
-    let Some(index_relation) = AccessShareIndexRelation::open(index_oid) else {
+    let Some(index_relation) = IndexRelationGuard::try_access_share(index_oid) else {
         return Err("ec_spire DML frontdoor catalog index open returned NULL".to_owned());
     };
     let result = unsafe {

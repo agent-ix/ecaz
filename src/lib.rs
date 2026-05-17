@@ -34,6 +34,7 @@ mod standalone_pg_backend_stubs;
 pub(crate) mod storage;
 
 use quant::prod::{payload_len, ProdQuantizer};
+use storage::relation_guard::IndexRelationGuard;
 
 #[pg_guard]
 pub unsafe extern "C-unwind" fn _PG_init() {
@@ -218,47 +219,13 @@ fn ec_diskann_access_method_oid() -> pg_sys::Oid {
         .expect("ec_diskann access method should exist")
 }
 
-struct AccessShareIndexRelation {
-    relation: pg_sys::Relation,
-}
-
-impl AccessShareIndexRelation {
-    fn open(index_oid: pg_sys::Oid) -> Self {
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `index_open`; this guard owns the matching AccessShareLock close.
-        let relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        if relation.is_null() {
-            // `index_open` normally raises ERROR before returning a null
-            // relation. Keep this defensive guard for tests/stubs and future
-            // PostgreSQL API changes.
-            pgrx::error!("failed to open index relation");
-        }
-        Self { relation }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for AccessShareIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `index_open` in
-        // `AccessShareIndexRelation::open`; this guard owns the matching close.
-        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-        // re-audit on pgrx bumps or pg_guard behavior changes.
-        unsafe { pg_sys::index_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
-}
-
 fn open_valid_ec_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
     expected_am_oid: pg_sys::Oid,
     expected_am_name: &'static str,
-) -> AccessShareIndexRelation {
-    let index_relation = AccessShareIndexRelation::open(index_oid);
+) -> IndexRelationGuard {
+    let index_relation = IndexRelationGuard::access_share(index_oid, caller_name);
     // SAFETY: `index_relation` is live while the guard is in scope.
     let rd_rel = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() }
         .expect("opened index relation should expose pg_class metadata");
@@ -286,7 +253,7 @@ fn open_valid_ec_index_guard(
 fn open_valid_ec_hnsw_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
-) -> AccessShareIndexRelation {
+) -> IndexRelationGuard {
     open_valid_ec_index_guard(
         index_oid,
         caller_name,
@@ -298,14 +265,14 @@ fn open_valid_ec_hnsw_index_guard(
 fn open_valid_ec_ivf_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
-) -> AccessShareIndexRelation {
+) -> IndexRelationGuard {
     open_valid_ec_index_guard(index_oid, caller_name, ec_ivf_access_method_oid(), "ec_ivf")
 }
 
 fn open_valid_ec_spire_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
-) -> AccessShareIndexRelation {
+) -> IndexRelationGuard {
     open_valid_ec_index_guard(
         index_oid,
         caller_name,
@@ -325,7 +292,7 @@ unsafe fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
 fn open_valid_ec_diskann_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
-) -> AccessShareIndexRelation {
+) -> IndexRelationGuard {
     open_valid_ec_index_guard(
         index_oid,
         caller_name,
@@ -14563,7 +14530,7 @@ fn ec_spire_delete_placement_row(index_oid: pg_sys::Oid, pk_value: &[u8]) -> Res
     })
 }
 
-fn ec_spire_heap_relation_oid_from_index(index_relation: &AccessShareIndexRelation) -> pg_sys::Oid {
+fn ec_spire_heap_relation_oid_from_index(index_relation: &IndexRelationGuard) -> pg_sys::Oid {
     // SAFETY: `index_relation` is a live opened index relation for the duration
     // of this copy, and `rd_index` is PostgreSQL's index metadata for it.
     unsafe {

@@ -1,39 +1,8 @@
+#[cfg(any(test, feature = "pg_test"))]
+use crate::storage::relation_guard::IndexRelationGuard;
+
 fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_spire {callback} is not implemented yet")
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-struct DebugIndexRelation {
-    relation: pg_sys::Relation,
-    lockmode: pg_sys::LOCKMODE,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl DebugIndexRelation {
-    fn open(index_oid: pg_sys::Oid, lockmode: pg_sys::LOCKMODE) -> Self {
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `index_open`; this guard owns the matching close for `lockmode`.
-        let relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
-        if relation.is_null() {
-            pgrx::error!("ec_spire debug index_open returned NULL");
-        }
-        Self { relation, lockmode }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl Drop for DebugIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `index_open` in
-        // `DebugIndexRelation::open`; this guard owns the matching close.
-        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-        // re-audit on pgrx bumps or pg_guard behavior changes.
-        unsafe { pg_sys::index_close(self.relation, self.lockmode) };
-    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -41,7 +10,7 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
     index_oid: pg_sys::Oid,
 ) -> (u32, u16, u64, u32, u64, u64, u32, u64) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u32, u16, u64, u32, u64, u64, u32, u64), String> {
         let store = unsafe {
             storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
@@ -84,7 +53,7 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
     index_oid: pg_sys::Oid,
 ) -> (u32, u16, u32, u32, u64, u32) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u32, u16, u32, u32, u64, u32), String> {
         let store = unsafe {
             storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
@@ -142,7 +111,7 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
     index_oid: pg_sys::Oid,
 ) -> (u64, u64, u64, u32, u16, u32, u16, u32, u16) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u64, u64, u64, u32, u16, u32, u16, u32, u16), String> {
         let epoch_manifest = meta::SpireEpochManifest {
             epoch: 1,
@@ -194,7 +163,7 @@ pub(crate) unsafe fn debug_spire_age_retired_epoch_manifests(
     retain_until_micros: i64,
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
         let mut rewrites = Vec::new();
         unsafe {
@@ -232,8 +201,8 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
     aux_store_oid: pg_sys::Oid,
 ) -> (u32, u32, u32, u32, u64, u64) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let root_relation = DebugIndexRelation::open(root_index_oid, lockmode);
-    let aux_relation = DebugIndexRelation::open(aux_store_oid, lockmode);
+    let root_relation = IndexRelationGuard::open(root_index_oid, lockmode, "ec_spire debug");
+    let aux_relation = IndexRelationGuard::open(aux_store_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u32, u32, u32, u32, u64, u64), String> {
         let root_relid: u32 = root_index_oid.into();
         let aux_relid: u32 = aux_store_oid.into();
@@ -435,7 +404,7 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
     (
         root_control.active_epoch,
@@ -451,7 +420,7 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
     state: &str,
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let local_store_config =
@@ -528,7 +497,7 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
     rewrites: &[(u64, u32)],
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let local_store_config =
@@ -581,7 +550,7 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
     mode: &str,
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let local_store_config =
@@ -646,7 +615,7 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
     index_oid: pg_sys::Oid,
 ) -> SpireDebugSnapshotDiagnostics {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
-    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<SpireDebugSnapshotDiagnostics, String> {
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let (epoch_manifest, object_manifest, placement_directory) =
