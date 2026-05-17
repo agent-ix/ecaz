@@ -80,6 +80,9 @@ Action:
 
 - prefer owned scan-state containers over repeated raw descriptor access,
 - isolate tuple slot allocation/drop and detoast ownership in wrappers,
+- when a guard migration leaves only a few FFI calls inside a broad `unsafe`
+  block, narrow the block to those calls and document the remaining pointer or
+  datum invariant in place,
 - use Task 43 to exercise repeated rescan/end-scan and panic/error paths.
 
 Projected baseline after scan/slot/detoast wrappers: roughly 3,300-3,500, with
