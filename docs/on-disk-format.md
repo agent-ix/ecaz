@@ -59,6 +59,10 @@ Current fixture coverage:
 | `spire_routing_root_partition_object_v1.hex` | SPIRE root routing partition object body decode |
 | `spire_delta_partition_object_v1.hex` | SPIRE delta partition object body decode |
 | `spire_top_graph_partition_object_v1.hex` | SPIRE top-graph partition object body decode |
+| `spire_leaf_v2_meta_v2.hex` | SPIRE leaf V2 partition-object meta decode and swapped-version rejection |
+| `spire_leaf_v2_segment_v2.hex` | SPIRE leaf V2 partition-object segment decode |
+| `spire_partition_object_v2_chain_meta.hex` | SPIRE generic V2 chain meta decode and swapped-version rejection |
+| `spire_partition_object_v2_chain_segment.hex` | SPIRE generic V2 chain segment decode |
 
 ## Version Policy
 
@@ -77,8 +81,8 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## Remaining Task 42 Gaps
 
-- Extend fixture bytes under `fixtures/on-disk/` to SPIRE leaf V2/chained
-  partition object bodies and remaining HNSW/DiskANN/IVF page kinds.
+- Extend fixture bytes under `fixtures/on-disk/` to remaining HNSW/DiskANN/IVF
+  page kinds.
 - Extend byte-swapped fixture rejection tests to additional bounded multi-byte
   fields where the current decoder can reject malformed values.
 - Extend static offset assertions to additional SPIRE routing/top-graph object

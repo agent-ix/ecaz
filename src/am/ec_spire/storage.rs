@@ -96,6 +96,49 @@ pub struct SpireTopGraphPartitionObjectFixture {
     pub nodes: Vec<SpireTopGraphNodeFixture>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpireLeafPartitionObjectV2MetaFixture {
+    pub header: SpirePartitionHeaderFixture,
+    pub payload_format: u8,
+    pub payload_stride: u32,
+    pub vec_id_kind: u8,
+    pub vec_id_stride: u16,
+    pub segment_count: u32,
+    pub first_segment_locator: ItemPointer,
+    pub object_bytes_total: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpireLeafPartitionObjectV2SegmentFixture {
+    pub header: SpirePartitionHeaderFixture,
+    pub segment_no: u32,
+    pub row_base: u32,
+    pub next_segment_locator: ItemPointer,
+    pub flags: Vec<u16>,
+    pub vec_ids: Vec<u8>,
+    pub heap_tids: Vec<ItemPointer>,
+    pub gammas: Vec<f32>,
+    pub payloads: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpirePartitionObjectV2ChainMetaFixture {
+    pub header: SpirePartitionHeaderFixture,
+    pub dimensions: u16,
+    pub segment_count: u32,
+    pub first_segment_locator: ItemPointer,
+    pub object_bytes_total: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpirePartitionObjectV2ChainSegmentFixture {
+    pub header: SpirePartitionHeaderFixture,
+    pub segment_no: u32,
+    pub byte_base: u32,
+    pub next_segment_locator: ItemPointer,
+    pub payload: Vec<u8>,
+}
+
 fn spire_partition_header_fixture(
     header: SpirePartitionObjectHeader,
 ) -> SpirePartitionHeaderFixture {
@@ -161,6 +204,73 @@ pub fn spire_decode_delta_partition_object_fixture(
             .iter()
             .map(spire_assignment_row_fixture)
             .collect(),
+    })
+}
+
+pub fn spire_decode_leaf_v2_meta_fixture(
+    input: &[u8],
+) -> Result<SpireLeafPartitionObjectV2MetaFixture, String> {
+    let meta = SpireLeafPartitionObjectV2Meta::decode(input)?;
+    Ok(SpireLeafPartitionObjectV2MetaFixture {
+        header: spire_partition_header_fixture(meta.header),
+        payload_format: meta.payload_format,
+        payload_stride: meta.payload_stride,
+        vec_id_kind: meta.vec_id_kind as u8,
+        vec_id_stride: meta.vec_id_stride,
+        segment_count: meta.segment_count,
+        first_segment_locator: meta.first_segment_locator,
+        object_bytes_total: meta.object_bytes_total,
+    })
+}
+
+pub fn spire_decode_leaf_v2_segment_fixture(
+    meta_input: &[u8],
+    segment_input: &[u8],
+) -> Result<SpireLeafPartitionObjectV2SegmentFixture, String> {
+    let meta = SpireLeafPartitionObjectV2Meta::decode(meta_input)?;
+    let segment = SpireLeafPartitionObjectV2Segment::decode(segment_input, &meta)?;
+    Ok(SpireLeafPartitionObjectV2SegmentFixture {
+        header: spire_partition_header_fixture(segment.header),
+        segment_no: segment.segment_no,
+        row_base: segment.row_base,
+        next_segment_locator: segment.next_segment_locator,
+        flags: segment.flags,
+        vec_ids: segment.vec_ids,
+        heap_tids: segment.heap_tids,
+        gammas: segment.gammas,
+        payloads: segment.payloads,
+    })
+}
+
+pub fn spire_decode_partition_object_v2_chain_meta_fixture(
+    input: &[u8],
+) -> Result<SpirePartitionObjectV2ChainMetaFixture, String> {
+    let meta = decode_relation_object_chain_meta(input)?
+        .ok_or_else(|| "ec_spire partition object V2 chain meta missing".to_owned())?;
+    Ok(SpirePartitionObjectV2ChainMetaFixture {
+        header: spire_partition_header_fixture(meta.header),
+        dimensions: meta.dimensions,
+        segment_count: meta.segment_count,
+        first_segment_locator: meta.first_segment_locator,
+        object_bytes_total: meta.object_bytes_total,
+    })
+}
+
+pub fn spire_decode_partition_object_v2_chain_segment_fixture(
+    meta_input: &[u8],
+    segment_input: &[u8],
+) -> Result<SpirePartitionObjectV2ChainSegmentFixture, String> {
+    let meta = decode_relation_object_chain_meta(meta_input)?
+        .ok_or_else(|| "ec_spire partition object V2 chain meta missing".to_owned())?;
+    let segment = decode_relation_object_chain_segment(segment_input, &meta)?;
+    let (segment_header, _, _) =
+        SpirePartitionObjectHeader::decode_prefix_with_format_version(segment_input)?;
+    Ok(SpirePartitionObjectV2ChainSegmentFixture {
+        header: spire_partition_header_fixture(segment_header),
+        segment_no: segment.segment_no,
+        byte_base: segment.byte_base,
+        next_segment_locator: segment.next_segment_locator,
+        payload: segment.payload,
     })
 }
 
