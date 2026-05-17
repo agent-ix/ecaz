@@ -10,6 +10,8 @@ use pgrx::{pg_sys, FromDatum};
 use super::scan::*;
 #[cfg(any(test, feature = "pg_test"))]
 use super::{graph, page, search};
+#[cfg(any(test, feature = "pg_test"))]
+use crate::storage::relation_guard::IndexRelationGuard;
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) type HeapTidCoords = (u32, u16);
@@ -548,24 +550,21 @@ unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_begin_end_scan");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
     let has_opaque = unsafe { !(*scan).opaque.is_null() };
 
     unsafe { ec_hnsw_amendscan(scan) };
     let cleared_opaque = unsafe { (*scan).opaque.is_null() };
 
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (has_opaque, cleared_opaque)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_end_scan_twice");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
     let has_opaque = unsafe { !(*scan).opaque.is_null() };
 
     unsafe { ec_hnsw_amendscan(scan) };
@@ -575,7 +574,6 @@ pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool
     let cleared_after_second = unsafe { (*scan).opaque.is_null() };
 
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (has_opaque, cleared_after_first, cleared_after_second)
 }
 
@@ -585,8 +583,8 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
     query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_query_dimensions");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -618,7 +616,6 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
@@ -629,8 +626,8 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     second_query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_overwrites_query_dimensions");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut first_orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(first_query)
@@ -670,15 +667,13 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_rescan_null_query");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_flags: pg_sys::SK_ISNULL as i32,
@@ -690,8 +685,8 @@ pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 1, 1) };
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_with_index_qual");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 1, 1) };
 
     let mut key = pg_sys::ScanKeyData::default();
     let mut orderby = pg_sys::ScanKeyData {
@@ -707,8 +702,8 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
     query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_with_unused_key_buffer");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let unused_keys = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
         .cast::<pg_sys::ScanKeyData>();
@@ -743,15 +738,14 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
     unsafe { pg_sys::pfree(unused_keys.cast()) };
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 2) };
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_with_multiple_orderbys");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 2) };
 
     let datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderbys = [
@@ -770,17 +764,16 @@ pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid,
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_without_rescan");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -796,8 +789,8 @@ pub(crate) unsafe fn debug_gettuple_after_rescan_result(
     query: Vec<f32>,
 ) -> bool {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan_result");
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -808,7 +801,6 @@ pub(crate) unsafe fn debug_gettuple_after_rescan_result(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
