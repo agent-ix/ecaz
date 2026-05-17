@@ -36,7 +36,7 @@ Options:
   --skip-<name>      Skip that extension. Use the upstream name.
 
 Environment:
-  PGVECTOR_VERSION       (default: v0.8.0)
+  PGVECTOR_VERSION       (default: master -- needed for PG18 ABI)
   PGVECTORSCALE_VERSION  (default: 0.4.0)
   VCHORD_VERSION         (default: main)
   LANTERN_VERSION        (default: v0.5.4)
@@ -50,7 +50,7 @@ SKIP_PGVECTORSCALE=0
 SKIP_VCHORD=0
 SKIP_LANTERN=0
 
-PGVECTOR_VERSION="${PGVECTOR_VERSION:-v0.8.0}"
+PGVECTOR_VERSION="${PGVECTOR_VERSION:-master}"
 PGVECTORSCALE_VERSION="${PGVECTORSCALE_VERSION:-0.4.0}"
 VCHORD_VERSION="${VCHORD_VERSION:-main}"
 LANTERN_VERSION="${LANTERN_VERSION:-v0.5.4}"
