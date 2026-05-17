@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `78c5042ff7836a0cfb4983eec8ce316e958e865e`
+Code checkpoint SHA: `7c64d6c22ea25bebfb19fe9cbe8f1e4e46243764`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:03:53Z`
+Timestamp: `2026-05-17T05:08:37Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -105,6 +105,12 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live lock-timeout cleanup guard
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-lock-rollback-guard.log`
 - Key result: all four AMs completed lock-timeout smoke after changing the harness to attempt holder rollback before propagating waiter reset errors.
+
+## task38-pg18-lock-ddl-matrix.log
+
+- Lane: Task 38 live lock-timeout DDL matrix
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-lock-ddl-matrix.log`
+- Key result: all four AMs completed lock-timeout smoke across blocked `REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)` cases, with shared postcondition probes asserted.
 
 ## Provider-Backed I/O Smoke
 

@@ -24,10 +24,11 @@ documentation for the PG-level fault matrix. The provider now hooks `open`,
 `open64`, `openat`, `openat2`, read/pread, write/pwrite, fsync, and fdatasync
 surfaces. Live lanes run AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, and `ec_spire`: cancellation and statement timeout use repeated
-AM KNN scans, lock timeout uses `REINDEX INDEX CONCURRENTLY` while the table is
-locked and rolls back the lock holder even if waiter cleanup errors, memory
-smoke uses `ecaz.fault_palloc_nth` and sweeps the currently instrumented scan
-allocation points plus build/insert/vacuum callback boundaries for each AM,
+AM KNN scans, lock timeout covers blocked `REINDEX INDEX CONCURRENTLY`,
+`CREATE INDEX`, and `VACUUM (FULL)` while rolling back the lock holder even if
+waiter cleanup errors, memory smoke uses `ecaz.fault_palloc_nth` and sweeps the
+currently instrumented scan allocation points plus build/insert/vacuum callback
+boundaries for each AM,
 provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
