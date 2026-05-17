@@ -11,14 +11,15 @@ use ecaz::bench_api::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
     SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory,
     SpirePlacementEntry, SpirePlacementState, TqElementTuple, TqGroupedCodebookTuple,
-    TqNeighborTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
-    EC_IVF_CENTROID_DIMENSIONS_OFFSET, EC_IVF_INDEX_FORMAT_VERSION,
-    EC_IVF_METADATA_FORMAT_VERSION_OFFSET, HNSW_METADATA_FORMAT_VERSION_OFFSET,
-    INDEX_FORMAT_V3_DISKANN, SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
-    SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET, SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
-    SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
-    SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET,
-    VAMANA_METADATA_FORMAT_VERSION_OFFSET, VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+    TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple, TqTurboHotTuple, VamanaCodebookTuple,
+    VamanaMetadataPage, VamanaNodeTuple, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+    EC_IVF_INDEX_FORMAT_VERSION, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
+    HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
+    SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
+    SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET, SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
+    SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
+    SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
+    VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
 };
 
 fn decode_hex_fixture(contents: &str) -> Vec<u8> {
@@ -214,6 +215,94 @@ fn hnsw_grouped_codebook_tuple_v3_fixture_decodes() {
             .collect::<Vec<_>>(),
         vec![1.0_f32.to_bits(), 2.0_f32.to_bits()]
     );
+}
+
+#[test]
+fn hnsw_grouped_hot_tuple_v2_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_grouped_hot_tuple_v2.hex"
+    ));
+
+    let hot = TqGroupedHotTuple::decode(&bytes, 1, 3).expect("hnsw grouped hot tuple decodes");
+
+    assert_eq!(hot.level, 2);
+    assert!(!hot.deleted);
+    assert_eq!(
+        hot.heaptids,
+        vec![
+            ItemPointer {
+                block_number: 70,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 71,
+                offset_number: 2
+            }
+        ]
+    );
+    assert_eq!(
+        hot.neighbortid,
+        ItemPointer {
+            block_number: 80,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        hot.reranktid,
+        ItemPointer {
+            block_number: 81,
+            offset_number: 2
+        }
+    );
+    assert_eq!(hot.binary_words, vec![0x0102_0304_0506_0708]);
+    assert_eq!(hot.search_code, vec![0xaa, 0xbb, 0xcc]);
+}
+
+#[test]
+fn hnsw_turbo_hot_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_turbo_hot_tuple_v3.hex"
+    ));
+
+    let hot = TqTurboHotTuple::decode(&bytes, 2).expect("hnsw turbo hot tuple decodes");
+
+    assert_eq!(hot.level, 3);
+    assert!(hot.deleted);
+    assert_eq!(
+        hot.heaptids,
+        vec![ItemPointer {
+            block_number: 90,
+            offset_number: 1
+        }]
+    );
+    assert_eq!(
+        hot.neighbortid,
+        ItemPointer {
+            block_number: 91,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        hot.reranktid,
+        ItemPointer {
+            block_number: 92,
+            offset_number: 2
+        }
+    );
+    assert_eq!(
+        hot.binary_words,
+        vec![0x1112_1314_1516_1718, 0x2122_2324_2526_2728]
+    );
+}
+
+#[test]
+fn hnsw_rerank_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/hnsw_rerank_tuple_v3.hex"));
+
+    let rerank = TqRerankTuple::decode(&bytes, 4).expect("hnsw rerank tuple decodes");
+
+    assert_eq!(rerank.gamma.to_bits(), 0.75_f32.to_bits());
+    assert_eq!(rerank.code, vec![0xde, 0xad, 0xbe, 0xef]);
 }
 
 #[test]

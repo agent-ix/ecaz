@@ -39,6 +39,9 @@ Current fixture coverage:
 | --- | --- |
 | `hnsw_metadata_v3.hex` | HNSW current metadata decode and swapped-version rejection |
 | `hnsw_element_tuple_v3.hex` | HNSW element tuple decode |
+| `hnsw_grouped_hot_tuple_v2.hex` | HNSW grouped-hot tuple decode |
+| `hnsw_turbo_hot_tuple_v3.hex` | HNSW turbo-hot tuple decode |
+| `hnsw_rerank_tuple_v3.hex` | HNSW cold rerank tuple decode |
 | `hnsw_neighbor_tuple_v3.hex` | HNSW neighbor tuple decode |
 | `hnsw_grouped_codebook_tuple_v3.hex` | HNSW grouped-PQ codebook shard decode |
 | `diskann_vamana_metadata_v3.hex` | DiskANN Vamana metadata decode and swapped-version rejection |
@@ -81,8 +84,9 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## Remaining Task 42 Gaps
 
-- Extend fixture bytes under `fixtures/on-disk/` to remaining HNSW/DiskANN/IVF
-  page kinds.
+- Extend fixture bytes under `fixtures/on-disk/` to remaining DiskANN/IVF page
+  kinds and any raw generic page encoding that becomes a durable external
+  byte contract.
 - Extend byte-swapped fixture rejection tests to additional bounded multi-byte
   fields where the current decoder can reject malformed values.
 - Extend static offset assertions to additional SPIRE routing/top-graph object
