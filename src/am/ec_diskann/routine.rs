@@ -11,6 +11,7 @@ use crate::{
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
         page::{DataPageChain, ItemPointer},
+        relation_guard::HeapRelationGuard,
         wal,
     },
 };
@@ -53,6 +54,32 @@ struct VacuumBulkDeletePassResult {
     live_tuple_count: usize,
     removed_heap_tids: usize,
     entry_point_needs_medoid_refresh: bool,
+}
+
+struct ResolvedVacuumHeapRelation {
+    relation: pg_sys::Relation,
+    _owned: Option<HeapRelationGuard>,
+}
+
+impl ResolvedVacuumHeapRelation {
+    fn borrowed(relation: pg_sys::Relation) -> Self {
+        Self {
+            relation,
+            _owned: None,
+        }
+    }
+
+    fn owned(guard: HeapRelationGuard) -> Self {
+        let relation = guard.as_ptr();
+        Self {
+            relation,
+            _owned: Some(guard),
+        }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1056,19 +1083,17 @@ unsafe fn run_diskann_bulkdelete_pass(
                 )?;
             }
         }
-        let (heap_relation, heap_relation_owned) =
-            unsafe { resolve_vacuum_heap_relation(index_relation, heap_relation)? };
+        let heap_relation = unsafe { resolve_vacuum_heap_relation(index_relation, heap_relation)? };
         let fill_result = unsafe {
             fill_vacuum_neighbor_slots(
                 index_relation,
-                heap_relation,
+                heap_relation.as_ptr(),
                 &metadata,
                 &mut mutated_chain,
                 &repair_target_tids,
                 &dead_set,
             )
         };
-        unsafe { release_owned_vacuum_heap_relation(heap_relation, heap_relation_owned) };
         fill_result?;
     }
 
@@ -1116,28 +1141,18 @@ unsafe fn run_diskann_bulkdelete_pass(
 unsafe fn resolve_vacuum_heap_relation(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
-) -> Result<(pg_sys::Relation, bool), String> {
+) -> Result<ResolvedVacuumHeapRelation, String> {
     if !heap_relation.is_null() {
-        return Ok((heap_relation, false));
+        return Ok(ResolvedVacuumHeapRelation::borrowed(heap_relation));
     }
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_diskann vacuum could not resolve heap relation".into());
     }
-    Ok((
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
-        true,
-    ))
-}
-
-unsafe fn release_owned_vacuum_heap_relation(
-    heap_relation: pg_sys::Relation,
-    heap_relation_owned: bool,
-) {
-    if heap_relation_owned && !heap_relation.is_null() {
-        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
+    HeapRelationGuard::try_access_share(heap_oid)
+        .map(ResolvedVacuumHeapRelation::owned)
+        .ok_or_else(|| "ec_diskann vacuum could not open heap relation".into())
 }
 
 unsafe fn fill_vacuum_neighbor_slots(
