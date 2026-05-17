@@ -11,7 +11,10 @@ use crate::quant::prod::{
     BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
     PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
 };
-use crate::storage::{relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard};
+use crate::storage::{
+    relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+    snapshot_guard::RegisteredSnapshotGuard,
+};
 
 use super::explain::TqExplainCounters;
 use super::graph;
@@ -1629,39 +1632,27 @@ impl ResolvedHnswScanHeapRelation {
 
 struct ResolvedHnswScanSnapshot {
     snapshot: pg_sys::Snapshot,
-    owned: bool,
+    _owned: Option<RegisteredSnapshotGuard>,
 }
 
 impl ResolvedHnswScanSnapshot {
     fn borrowed(snapshot: pg_sys::Snapshot) -> Self {
         Self {
             snapshot,
-            owned: false,
+            _owned: None,
         }
     }
 
-    fn owned(snapshot: pg_sys::Snapshot) -> Self {
+    fn owned(guard: RegisteredSnapshotGuard) -> Self {
+        let snapshot = guard.as_ptr();
         Self {
             snapshot,
-            owned: true,
+            _owned: Some(guard),
         }
     }
 
     fn as_ptr(&self) -> pg_sys::Snapshot {
         self.snapshot
-    }
-}
-
-impl Drop for ResolvedHnswScanSnapshot {
-    fn drop(&mut self) {
-        if self.owned && !self.snapshot.is_null() {
-            // SAFETY: `snapshot` was returned by `RegisterSnapshot` in
-            // `resolve_scan_snapshot`; this wrapper owns the matching
-            // unregister.
-            // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-            // re-audit on pgrx bumps or pg_guard behavior changes.
-            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
-        }
     }
 }
 
@@ -1713,11 +1704,11 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScan
         return ResolvedHnswScanSnapshot::borrowed(active_snapshot);
     }
 
-    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-    if registered_snapshot.is_null() {
-        pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve an active snapshot");
-    }
-    ResolvedHnswScanSnapshot::owned(registered_snapshot)
+    RegisteredSnapshotGuard::latest()
+        .map(ResolvedHnswScanSnapshot::owned)
+        .unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve an active snapshot")
+        })
 }
 
 unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
