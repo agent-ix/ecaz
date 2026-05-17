@@ -2838,8 +2838,9 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapCandidateMaterializationState {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_materialize_bootstrap_candidate_result");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2878,7 +2879,6 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         candidate_before,
         current_result_tid,
@@ -2892,8 +2892,9 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapPhaseTransition {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_bootstrap_phase_transition");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -2931,7 +2932,6 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_complete,
         after_complete,
@@ -2946,8 +2946,9 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierLifecycle {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_candidate_frontier_head_lifecycle");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -2978,7 +2979,6 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_head,
         before_frontier,
@@ -2994,8 +2994,9 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierConsume {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_consume_candidate_frontier_head");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -3023,7 +3024,6 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_head,
         before_frontier,
@@ -3039,8 +3039,9 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierSlotConsume {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_consume_candidate_frontier_head_slots");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -3083,7 +3084,6 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_head,
         before_slots,
@@ -3100,8 +3100,9 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugVisitedSeedsLifecycle {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_visited_seed_lifecycle");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -3127,7 +3128,6 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (before, partial, exhausted)
 }
 
@@ -3148,8 +3148,9 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     HeapTidCoords,
     f32,
 ) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_entry_candidate_lifecycle");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -3190,7 +3191,6 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_valid,
         before_tid,
