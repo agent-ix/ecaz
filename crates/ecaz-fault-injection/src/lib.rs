@@ -397,6 +397,81 @@ pub fn workload_create_named_index_sql(access_method: FaultAm, index: &str, rows
     }
 }
 
+pub fn workload_resource_setup_sql(
+    access_method: FaultAm,
+    rows: i64,
+    pressure_limit: i64,
+) -> String {
+    format!(
+        "{};
+         {};",
+        workload_table_sql(access_method, rows),
+        workload_create_resource_index_sql(access_method, pressure_limit, rows)
+    )
+}
+
+pub fn workload_create_resource_index_sql(
+    access_method: FaultAm,
+    pressure_limit: i64,
+    rows: i64,
+) -> String {
+    let table = workload_table(access_method);
+    let index = workload_index(access_method);
+    let pressure_limit = pressure_limit.clamp(1, 1_000);
+    let nlists = rows.clamp(4, 16);
+    match access_method {
+        FaultAm::Hnsw => format!(
+            "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
+             WITH (m = 8, ef_construction = 32, ef_search = {pressure_limit})"
+        ),
+        FaultAm::Ivf => format!(
+            "CREATE INDEX {index} ON {table} USING ec_ivf (embedding ecvector_ip_ops) \
+             WITH (nlists = {nlists}, nprobe = {nlists}, training_sample_rows = {rows}, storage_format = 'turboquant', rerank = 'heap_f32', rerank_width = {pressure_limit})"
+        ),
+        FaultAm::DiskAnn => format!(
+            "CREATE INDEX {index} ON {table} USING ec_diskann (embedding ecvector_diskann_ip_ops) \
+             WITH (graph_degree = 8, build_list_size = 32, list_size = {pressure_limit}, rerank_budget = {pressure_limit}, top_k = {pressure_limit})"
+        ),
+        FaultAm::Spire => format!(
+            "CREATE INDEX {index} ON {table} USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = {nlists}, nprobe = {nlists}, storage_format = 'rabitq', rerank_width = {pressure_limit}, max_candidate_rows = {pressure_limit})"
+        ),
+    }
+}
+
+pub fn workload_accumulator_pressure_settings_sql(
+    access_method: FaultAm,
+    pressure_limit: i64,
+) -> String {
+    let pressure_limit = pressure_limit.clamp(1, 1_000);
+    match access_method {
+        FaultAm::Hnsw => format!("SET ec_hnsw.ef_search = {pressure_limit};"),
+        FaultAm::Ivf => format!(
+            "SET ec_ivf.nprobe = 16;
+             SET ec_ivf.rerank_width = {pressure_limit};"
+        ),
+        FaultAm::DiskAnn => format!("SET ec_diskann.list_size = {pressure_limit};"),
+        FaultAm::Spire => format!(
+            "SET ec_spire.nprobe = 16;
+             SET ec_spire.rerank_width = {pressure_limit};
+             SET ec_spire.max_candidate_rows = {pressure_limit};"
+        ),
+    }
+}
+
+pub fn workload_accumulator_pressure_sql(access_method: FaultAm, pressure_limit: i64) -> String {
+    let table = workload_table(access_method);
+    let pressure_limit = pressure_limit.clamp(1, 1_000);
+    format!(
+        "SELECT count(*)::bigint
+         FROM (
+             SELECT id FROM {table}
+             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+             LIMIT {pressure_limit}
+         ) AS nearest"
+    )
+}
+
 pub fn workload_scan_sql(access_method: FaultAm) -> String {
     let table = workload_table(access_method);
     format!(
@@ -529,6 +604,9 @@ mod tests {
             assert!(sql.contains(am.as_str()));
             assert!(workload_scan_sql(am).contains(workload_table(am)));
             assert!(workload_repeated_scan_sql(am, 10).contains(workload_table(am)));
+            assert!(workload_resource_setup_sql(am, 1024, 512).contains(workload_table(am)));
+            assert!(workload_resource_setup_sql(am, 1024, 512).contains(workload_index(am)));
+            assert!(workload_accumulator_pressure_sql(am, 512).contains(workload_table(am)));
             assert!(workload_insert_sql(am).contains(workload_table(am)));
             assert!(workload_bulk_insert_sql(am, 10).contains(workload_table(am)));
             assert!(workload_vacuum_sql(am).contains(workload_table(am)));

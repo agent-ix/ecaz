@@ -2,10 +2,11 @@ use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
     all_smoke_cases, leak_probe_sql, optional_leak_probe_sql, required_smoke_cases,
+    workload_accumulator_pressure_settings_sql, workload_accumulator_pressure_sql,
     workload_bulk_insert_sql, workload_insert_sql, workload_reindex_sql,
-    workload_repeated_scan_sql, workload_scan_sql, workload_setup_sql, workload_table_sql,
-    workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql, FaultAm, FaultLane,
-    ProviderMode,
+    workload_repeated_scan_sql, workload_resource_setup_sql, workload_scan_sql, workload_setup_sql,
+    workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql,
+    FaultAm, FaultLane, ProviderMode,
 };
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -709,7 +710,9 @@ async fn run_resource_probe(
     ams: &[FaultAm],
     provider_marker: Option<&str>,
 ) -> Result<()> {
-    prepare_workloads(conn, rows, ams).await?;
+    let pressure_rows = resource_accumulator_rows(rows);
+    let pressure_limit = resource_accumulator_limit(pressure_rows);
+    prepare_resource_workloads(conn, pressure_rows, pressure_limit, ams).await?;
     let client = connect_fault(conn, "resource").await?;
     let provider_temp_spill = provider_marker
         .map(resource_provider_targets_temp_spill)
@@ -722,6 +725,7 @@ async fn run_resource_probe(
         client
             .batch_execute("SET work_mem = '64kB'; SET maintenance_work_mem = '1MB';")
             .await?;
+        run_resource_accumulator_pressure_probe(&client, am, pressure_rows, pressure_limit).await?;
         client.batch_execute(&workload_scan_sql(am)).await?;
         client.batch_execute(&workload_insert_sql(am)).await?;
         client
@@ -748,6 +752,89 @@ async fn run_resource_probe(
         }
     }
     Ok(())
+}
+
+async fn prepare_resource_workloads(
+    conn: &ConnectionOptions,
+    rows: i64,
+    pressure_limit: i64,
+    ams: &[FaultAm],
+) -> Result<()> {
+    if rows <= 0 {
+        return Err(eyre!("--rows must be >= 1"));
+    }
+    let client = connect_fault(conn, "resource-prepare").await?;
+    client
+        .batch_execute("CREATE EXTENSION IF NOT EXISTS ecaz;")
+        .await?;
+    crate::ecaz_println!(
+        "[fault] resource_accumulator_prepare rows={rows} limit={pressure_limit} work_mem=64kB"
+    );
+    for &am in ams {
+        client
+            .batch_execute(&workload_resource_setup_sql(am, rows, pressure_limit))
+            .await
+            .map_err(|error| {
+                let detail = error
+                    .as_db_error()
+                    .map(|db| db.message().to_owned())
+                    .unwrap_or_else(|| error.to_string());
+                eyre!(
+                    "preparing {} resource pressure workload: {detail}",
+                    am.as_str()
+                )
+            })?;
+        print_workload_paths(&client, am).await?;
+    }
+    Ok(())
+}
+
+async fn run_resource_accumulator_pressure_probe(
+    client: &tokio_postgres::Client,
+    am: FaultAm,
+    rows: i64,
+    pressure_limit: i64,
+) -> Result<()> {
+    client
+        .batch_execute(
+            "SET work_mem = '64kB';
+             SET maintenance_work_mem = '1MB';
+             SET effective_cache_size = '1MB';
+             SET enable_seqscan = off;
+             SET enable_bitmapscan = off;
+             SET enable_sort = off;",
+        )
+        .await?;
+    client
+        .batch_execute(&workload_accumulator_pressure_settings_sql(
+            am,
+            pressure_limit,
+        ))
+        .await?;
+    let row = client
+        .query_one(&workload_accumulator_pressure_sql(am, pressure_limit), &[])
+        .await?;
+    let count = row.get::<_, i64>(0);
+    crate::ecaz_println!(
+        "[fault] resource_accumulator_pressure am={} rows={rows} limit={pressure_limit} returned={count} work_mem=64kB effective_cache_size=1MB",
+        am.as_str()
+    );
+    let minimum = pressure_limit.min(rows).min(64);
+    if count < minimum {
+        return Err(eyre!(
+            "resource accumulator pressure {} returned {count}, expected at least {minimum}",
+            am.as_str()
+        ));
+    }
+    Ok(())
+}
+
+fn resource_accumulator_rows(rows: i64) -> i64 {
+    rows.saturating_mul(128).clamp(4_096, 20_000)
+}
+
+fn resource_accumulator_limit(rows: i64) -> i64 {
+    rows.clamp(512, 1_000)
 }
 
 fn resource_provider_targets_temp_spill(marker: &str) -> Result<bool> {

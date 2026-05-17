@@ -187,14 +187,16 @@ lane treats WAL-path ENOSPC as a crash-recovery surface: it records the backend
 disconnect, prints `wal_enospc_provider_restore_required=true`, and expects the
 operator to run `ecaz dev fault provider-restore`, whose fallback path performs
 an immediate stop/start if fast restart cannot shut down the faulting
-postmaster. Resource smoke runs AM scan/insert/vacuum under tiny
+postmaster. Resource smoke prepares pressure-sized AM fixtures, runs high-limit
+KNN scans under `work_mem = '64kB'` and `effective_cache_size = '1MB'`, emits
+`resource_accumulator_pressure` markers with the prepared row count, requested
+limit, and returned row count, then runs AM scan/insert/vacuum under tiny
 `work_mem`/`maintenance_work_mem` settings and forces a temp-spill failure with
-`temp_file_limit = '64kB'`, then verifies the backend remains usable. When the
+`temp_file_limit = '64kB'`, verifying the backend remains usable. When the
 postmaster is restarted with an `enospc-write` provider whose marker records
 `match=pgsql_tmp`, the resource lane instead disables `temp_file_limit` and
-expects the temp-spill failure to come from provider-backed ENOSPC. This is a
-resource-setting and temp-spill smoke; it is not a calibrated accumulator
-`work_mem` pressure proof. Memory smoke injects palloc failures at the
+expects the temp-spill failure to come from provider-backed ENOSPC. Memory smoke
+injects palloc failures at the
 instrumented AM build/scan/insert/vacuum
 boundaries and verifies the backend remains usable after each ERROR. Every lane
 uses the shared post-condition probe inventory from `ecaz-fault-injection`:

@@ -67,12 +67,8 @@ pub async fn run(conn: &ConnectionOptions, args: SqlArgs) -> Result<()> {
         bail!("one of --sql or --file is required");
     }
 
-    let mut command = if conn.host.is_some()
-        || conn.port.is_some()
-        || conn.user.is_some()
-        || conn.password.is_some()
-    {
-        remote_psql_command(conn, args.db.as_deref())
+    let mut command = if conn.host.is_some() || conn.user.is_some() || conn.password.is_some() {
+        remote_psql_command(conn, args.db.as_deref(), &args)?
     } else {
         local_pgrx_psql_command(conn, &args)?
     };
@@ -106,8 +102,14 @@ pub async fn run(conn: &ConnectionOptions, args: SqlArgs) -> Result<()> {
     }
 }
 
-fn remote_psql_command(conn: &ConnectionOptions, db: Option<&str>) -> Command {
-    let mut command = Command::new("psql");
+fn remote_psql_command(
+    conn: &ConnectionOptions,
+    db: Option<&str>,
+    args: &SqlArgs,
+) -> Result<Command> {
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let install = find_pgrx_install(args.pg, &pgrx_home)?;
+    let mut command = Command::new(install.bin_dir.join("psql"));
     if let Some(host) = conn.host.as_deref() {
         command.arg("-h").arg(host);
     }
@@ -121,13 +123,16 @@ fn remote_psql_command(conn: &ConnectionOptions, db: Option<&str>) -> Command {
         command.env("PGPASSWORD", password);
     }
     command.arg("-d").arg(db.unwrap_or(&conn.database));
-    command
+    Ok(command)
 }
 
 fn local_pgrx_psql_command(conn: &ConnectionOptions, args: &SqlArgs) -> Result<Command> {
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = find_pgrx_install(args.pg, &pgrx_home)?;
-    let port = args.port.unwrap_or_else(|| default_pgrx_port(args.pg));
+    let port = args
+        .port
+        .or(conn.port)
+        .unwrap_or_else(|| default_pgrx_port(args.pg));
     let socket_dir = pgrx_socket_dir(args.socket_dir.as_ref(), &pgrx_home, port)?;
     let mut command = Command::new(install.bin_dir.join("psql"));
     command
