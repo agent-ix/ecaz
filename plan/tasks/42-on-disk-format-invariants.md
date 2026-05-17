@@ -64,8 +64,11 @@ freshly built index).
    presence. Once a second writable format ships, the lane must build a corpus
    with format vN, upgrade the extension to vN+1, scan and verify recall floor.
    Stored corpora live under `fixtures/upgrade/{vN}/`.
-5. **WAL record version tags.** Pair with Task 37: each ECAZ WAL record
-   carries a version byte; replay rejects unknown versions cleanly.
+5. **WAL record version tags.** Pair with Task 37: current ECAZ writes use
+   PostgreSQL GenericXLog page images/deltas and have no extension-owned WAL
+   payload body. If Task 37 adds custom ECAZ redo/replay records, each custom
+   record carries a version byte at offset 0 and replay rejects missing or
+   unknown versions cleanly.
 6. **`pg_upgrade` smoke.** A separate lane that runs `pg_upgrade` from PG18
    to itself (in-place) with ECAZ data present; verifies recall floor and
    `pg_amcheck` parity post-upgrade. When PG19 lands, extends to PG18→PG19.

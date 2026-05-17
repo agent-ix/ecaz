@@ -116,6 +116,20 @@ the pre-upgrade nearest-neighbor result, runs `pg_upgrade`, starts the upgraded
 cluster, verifies the same nearest-neighbor result and index presence, then
 runs `pg_amcheck` against the upgraded database.
 
+## WAL Format Policy
+
+Current ECAZ page changes use PostgreSQL GenericXLog. Those WAL records carry
+PostgreSQL-managed page images/deltas, not extension-owned ECAZ record bodies,
+so there is no current custom WAL payload that can carry its own version byte.
+The durable version contract for replayed bytes is therefore the page payload
+format tag that the on-disk fixture suite and layout assertions cover.
+
+If Task 37 adds extension-owned WAL redo/replay payloads, byte 0 is reserved as
+the custom WAL record format tag. `src/storage/wal.rs` owns
+`ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION`, the byte-0 offset constant, and the
+validator that rejects missing or unknown custom WAL record versions before
+replay reads the body.
+
 ## Remaining Task 42 Gaps
 
 - Extend fixture bytes under `fixtures/on-disk/` to any raw generic page
@@ -127,4 +141,3 @@ runs `pg_amcheck` against the upgraded database.
   partition-object and metadata codecs.
 - Extend `fixtures/upgrade/` from the current matrix into historical corpus
   directories when a new incompatible format version ships.
-- Add WAL record version tags with Task 37.
