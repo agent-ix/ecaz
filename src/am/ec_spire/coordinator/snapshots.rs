@@ -53,6 +53,34 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+fn open_storage_relation_or_index(
+    index_relation: pg_sys::Relation,
+    index_relid: u32,
+    storage_relid: u32,
+    lockmode: pg_sys::LOCKMODE,
+) -> Result<
+    (
+        pg_sys::Relation,
+        Option<crate::storage::relation_guard::RelationGuard>,
+    ),
+    String,
+> {
+    if storage_relid == index_relid {
+        return Ok((index_relation, None));
+    }
+
+    let Some(guard) = crate::storage::relation_guard::RelationGuard::try_open(
+        pg_sys::Oid::from(storage_relid),
+        lockmode,
+    ) else {
+        return Err(format!(
+            "ec_spire failed to open local store relation {storage_relid}"
+        ));
+    };
+    let relation = guard.as_ptr();
+    Ok((relation, Some(guard)))
+}
+
 pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
     unsafe { page::read_root_control_page(index_relation).active_epoch }
 }
@@ -463,22 +491,12 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
         let mut active_referenced_tuple_count = 0_u64;
         let mut active_referenced_tuple_bytes = 0_u64;
         for storage_relid in sorted_storage_relids {
-            let (storage_relation, opened) = if storage_relid == index_relid {
-                (index_relation, false)
-            } else {
-                let relation = unsafe {
-                    pg_sys::relation_open(
-                        pg_sys::Oid::from(storage_relid),
-                        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                    )
-                };
-                if relation.is_null() {
-                    return Err(format!(
-                        "ec_spire failed to open local store relation {storage_relid}"
-                    ));
-                }
-                (relation, true)
-            };
+            let (storage_relation, _storage_relation_guard) = open_storage_relation_or_index(
+                index_relation,
+                index_relid,
+                storage_relid,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?;
 
             let storage_block_count = unsafe {
                 pg_sys::RelationGetNumberOfBlocksInFork(
@@ -513,14 +531,6 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 }
                 Ok(())
             }) };
-            if opened {
-                unsafe {
-                    pg_sys::relation_close(
-                        storage_relation,
-                        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                    )
-                };
-            }
             scan_result?;
         }
 
@@ -713,22 +723,12 @@ fn collect_physical_cleanup_candidates(
     let mut sorted_storage_relids = storage_relids.into_iter().collect::<Vec<_>>();
     sorted_storage_relids.sort_unstable();
     for storage_relid in sorted_storage_relids {
-        let (storage_relation, opened) = if storage_relid == index_relid {
-            (index_relation, false)
-        } else {
-            let relation = unsafe {
-                pg_sys::relation_open(
-                    pg_sys::Oid::from(storage_relid),
-                    pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-                )
-            };
-            if relation.is_null() {
-                return Err(format!(
-                    "ec_spire failed to open local store relation {storage_relid}"
-                ));
-            }
-            (relation, true)
-        };
+        let (storage_relation, _storage_relation_guard) = open_storage_relation_or_index(
+            index_relation,
+            index_relid,
+            storage_relid,
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        )?;
         let mut candidates = Vec::new();
         let scan_result = unsafe {
             page::scan_object_tuples(storage_relation, |tid, _tuple| {
@@ -738,14 +738,6 @@ fn collect_physical_cleanup_candidates(
                 Ok(())
             })
         };
-        if opened {
-            unsafe {
-                pg_sys::relation_close(
-                    storage_relation,
-                    pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-                )
-            };
-        }
         scan_result?;
         if !candidates.is_empty() {
             candidates_by_relid.insert(storage_relid, candidates);
@@ -795,32 +787,14 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
         let mut removed_tuple_count = 0_u64;
         let mut removed_tuple_bytes = 0_u64;
         for (storage_relid, tids) in candidates_by_relid {
-            let (storage_relation, opened) = if storage_relid == index_relid {
-                (index_relation, false)
-            } else {
-                let relation = unsafe {
-                    pg_sys::relation_open(
-                        pg_sys::Oid::from(storage_relid),
-                        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-                    )
-                };
-                if relation.is_null() {
-                    return Err(format!(
-                        "ec_spire failed to open local store relation {storage_relid}"
-                    ));
-                }
-                (relation, true)
-            };
+            let (storage_relation, _storage_relation_guard) = open_storage_relation_or_index(
+                index_relation,
+                index_relid,
+                storage_relid,
+                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            )?;
             let delete_result =
                 unsafe { page::delete_object_tuples_no_compact(storage_relation, &tids) };
-            if opened {
-                unsafe {
-                    pg_sys::relation_close(
-                        storage_relation,
-                        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-                    )
-                };
-            }
             let (deleted_count, deleted_bytes) = delete_result?;
             removed_tuple_count = removed_tuple_count
                 .checked_add(deleted_count)
