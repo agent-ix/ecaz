@@ -16,6 +16,9 @@ set of byte-level contracts:
 | HNSW metadata | legacy and current metadata payload sizes, all current field offsets |
 | HNSW tuples | element, grouped-hot, turbo-hot, rerank, grouped-codebook, and neighbor tuple fixed offsets |
 | DiskANN metadata | Vamana metadata payload size and all current field offsets |
+| DiskANN tuples | Vamana node fixed header, dynamic-region offsets, and codebook tuple fixed offsets |
+| IVF metadata | metadata payload size, magic, format version, and all current field offsets |
+| IVF tuples | block refs, centroid, list-directory, posting, and PQ-codebook fixed offsets |
 
 These assertions are intentionally about encoded byte layouts, not host Rust
 struct layout. Most persisted structs contain `Vec` fields or are logical views
@@ -41,9 +44,8 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 - Add fixture bytes under `fixtures/on-disk/` for HNSW, DiskANN, IVF, SPIRE, and
   codebook payloads.
 - Add byte-swapped fixture rejection tests.
-- Extend static offset assertions to IVF tuple codecs and SPIRE partition object
-  headers, leaf V2 meta/segment prefixes, chain objects, placement metadata, and
-  epoch records.
+- Extend static offset assertions to SPIRE partition object headers, leaf V2
+  meta/segment prefixes, chain objects, placement metadata, and epoch records.
 - Add the qemu cross-arch decode lane in coordination with Task 48.
 - Add `fixtures/upgrade/{vN}/` and the `(format_version, AM, can_read,
   can_write)` compatibility matrix.
