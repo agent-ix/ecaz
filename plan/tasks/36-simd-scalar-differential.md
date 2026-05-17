@@ -1,11 +1,15 @@
 # Task 36: SIMD↔Scalar Differential Validation
 
-Status: **implemented locally** — successor to Task 34 (comprehensive
-hardening). The local implementation adds scalar-reference hooks,
-`tests/simd_diff.rs`, `make simd-diff`, and `hardening-local` wiring. Current
-validation on Linux x86 passed `cargo test --features bench --test simd_diff
--- --test-threads=1` with 5/5 tests passing, including the production 1536/4-bit
-score path.
+Status: **implemented locally for currently-present SIMD paths** — successor to
+Task 34 (comprehensive hardening). The local implementation adds
+scalar-reference hooks, forced test-only backend entry points, `tests/simd_diff.rs`,
+`make simd-diff`, and `hardening-local` wiring. Current Linux x86 validation
+passes `cargo test --features bench --test simd_diff -- --test-threads=1` with
+9/9 tests passing, including product-quantizer scoring, FWHT, pack/unpack
+roundtrips, HNSW/DiskANN AM source inner-product SIMD lanes, and the production
+1536/4-bit score path. Miri scalar-reference coverage passes 19 `miri_` tests.
+A mutation-control run that perturbed the production score assertion failed as
+expected.
 
 ## Scope
 
@@ -83,6 +87,12 @@ Optional follow-on:
   clock budget by capping proptest cases per backend.
 - A deliberately mutated SIMD path (flip a sign in one branch) is caught by
   `simd-diff` and reported as a non-trivial diff in the packet.
+
+Current note: no AVX-512 product-quantizer implementation, SIMD
+`unpack_mse_indices` implementation, arch-specific `rotation.rs` path, or
+IVF/SPIRE scan SIMD accumulator exists in this tree. Those items remain covered
+by the "add a diff when the SIMD path exists" rule rather than by dead-code
+tests.
 
 ## Exit Criteria
 

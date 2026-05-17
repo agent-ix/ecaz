@@ -1,18 +1,20 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **operator smoke surface plus IO/latency provider implemented locally;
-palloc injection pending** — extends Task 37 from "crash mid-write" to the
-broader class of operational faults that real production clusters hit. The
-local implementation adds `crates/ecaz-fault-injection`, an LD_PRELOAD provider
-for matched-path EIO, ENOSPC, and slow-disk latency injection, `ecaz dev fault`,
-Makefile smoke lanes, and `docs/hardening.md` coverage. Current validation
-passed provider smoke checks, the full dry-run matrix, and live PG18 probes for
-cancellation, statement timeout, lock timeout, resource settings, and
-provider-backed slow-disk operation against AM-specific `ec_hnsw`, `ec_ivf`,
-`ec_diskann`, and `ec_spire` fixtures. Provider-backed PG18 EIO/ENOSPC runs
-still require mode-specific postmaster orchestration; palloc-failure sweeps
-still require a palloc-aware PG test hook or extension-side injection point
-before this task can be called fully closed.
+Status: **operator smoke surface implemented locally** — extends Task 37 from
+"crash mid-write" to the broader class of operational faults that real
+production clusters hit. The local implementation adds
+`crates/ecaz-fault-injection`, an LD_PRELOAD provider for matched-path EIO,
+ENOSPC, and slow-disk latency injection, extension-side palloc smoke injection
+through `ecaz.fault_palloc_after`, `ecaz dev fault`, Makefile smoke lanes, and
+`docs/hardening.md` coverage. Current validation passed provider self-tests,
+the full dry-run matrix, and live PG18 probes for cancellation, statement
+timeout, lock timeout, resource settings, memory/palloc smoke, provider-backed
+slow-disk operation, and provider-backed EIO/ENOSPC against AM-specific
+`ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` fixtures. The smoke surface is
+now in place; exhaustive per-allocation palloc sweeps, OOM-kill campaigns, WAL
+rotation/temp-spill targeting, SPIRE remote-object fetch faulting, and richer
+`pg_buffercache`/`pg_stat_io` accounting remain follow-on expansion beyond this
+smoke checkpoint.
 
 ## Scope
 

@@ -1,107 +1,96 @@
 # Artifact Manifest
 
-Original head SHA: `a919bb21d459954069ca372dc47e49eb09f0ef26`
-Provider increment SHA: `e751fb89a30b5d0c825a1056f520c6b6b70fc142`
-Latest code SHA: `89570bb60fb32626b24b05ab4cf4cb11a0e12099`
+Code checkpoint SHA: `a2e441b1782caf0c1083ce2416debd69faed7b51`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T03:57:31Z`
+Timestamp: `2026-05-17T04:34:51Z`
 
-## task36-38-cargo-fmt-check.log
+All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
+directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
+fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 
-- Lane: formatting after Task 36/38 review fixes
-- Fixture: repository worktree
-- Storage format: n/a
-- Rerank mode: n/a
-- Command: `script -q -c "cargo fmt --all --check" review/31145-task36-38-hardening-validation/artifacts/task36-38-cargo-fmt-check.log`
-- Isolated one-index-per-table: n/a
-- Key result: command exited 0; rustfmt printed existing stable-toolchain warnings for unstable import-formatting options.
+## task36-38-final-cargo-fmt-check.log
 
-## task36-simd-diff.log
+- Lane: final formatting check
+- Command: `script -q -e -c "cargo fmt --all --check" review/31145-task36-38-hardening-validation/artifacts/task36-38-final-cargo-fmt-check.log`
+- Key result: exited 0; rustfmt printed existing stable-toolchain warnings for unstable import-formatting options.
+
+## task36-final-simd-diff.log
 
 - Lane: Task 36 SIMD/scalar differential
-- Fixture: Rust integration test `tests/simd_diff.rs`
-- Storage format: `turboquant`/packed PQ fixtures
-- Rerank mode: scalar reference vs dispatched and forced host-backend score paths
-- Command: `script -q -c "cargo test --features bench --test simd_diff -- --test-threads=1" review/31145-task36-38-hardening-validation/artifacts/task36-simd-diff.log`
-- Isolated one-index-per-table: n/a
-- Key result: `8 passed; 0 failed`, including forced AVX2/FMA score and FWHT checks on this host, 2..=8 pack/unpack roundtrips, and `production_1536_4bit_score_path_matches_scalar_reference`.
+- Fixture: `tests/simd_diff.rs`
+- Command: `script -q -e -c "cargo test --features bench --test simd_diff -- --test-threads=1" review/31145-task36-38-hardening-validation/artifacts/task36-final-simd-diff.log`
+- Key result: 9 passed, 0 failed. Coverage includes product-quantizer scoring, forced AVX2/FMA score/FWHT on this host, pack/unpack roundtrips, HNSW/DiskANN source inner-product SIMD, and the 1536/4 production score path.
 
-## task38-fault-injection-crate.log
+## task36-miri-scalar-reference.log
+
+- Lane: Task 36 Miri scalar-reference coverage
+- Command: `script -q -e -c "cargo +nightly miri test --lib -- miri_" review/31145-task36-38-hardening-validation/artifacts/task36-miri-scalar-reference.log`
+- Key result: 19 passed, 0 failed.
+
+## task36-simd-diff-mutation-control.log
+
+- Lane: Task 36 mutation control
+- Command: temporarily perturbed the 1536/4 production score assertion by `+0.01`, then ran `script -q -c "cargo test --features bench --test simd_diff production_1536_4bit_score_path_matches_scalar_reference -- --exact --nocapture" review/31145-task36-38-hardening-validation/artifacts/task36-simd-diff-mutation-control.log`
+- Key result: failed as expected with absolute diff `0.010000000` above tolerance `0.000010000`; the source was restored before the final passing SIMD run.
+
+## task38-final-fault-injection-crate.log
 
 - Lane: Task 38 matrix/provider unit tests
-- Fixture: pure Rust fault matrix and Linux LD_PRELOAD provider self-tests
-- Storage format: n/a
-- Rerank mode: n/a
-- Command: `script -q -c "cargo test -p ecaz-fault-injection" review/31145-task36-38-hardening-validation/artifacts/task38-fault-injection-crate.log`
-- Isolated one-index-per-table: n/a
-- Key result: `7 passed; 0 failed`, including matched `EIO` read and matched `ENOSPC` create checks.
+- Command: `script -q -e -c "cargo test -p ecaz-fault-injection" review/31145-task36-38-hardening-validation/artifacts/task38-final-fault-injection-crate.log`
+- Key result: 7 passed, 0 failed, including matched `EIO` read and matched `ENOSPC` create provider self-tests.
 
-## task38-ecaz-cli-fault-parse-tests.log
+## task38-final-ecaz-cli-fault-parse-tests.log
 
-- Lane: CLI parse tests for Task 38 fault commands
-- Fixture: `ecaz-cli` clap parser
-- Storage format: n/a
-- Rerank mode: n/a
-- Command: `script -q -c "cargo test -p ecaz-cli cli_parses_fault" review/31145-task36-38-hardening-validation/artifacts/task38-ecaz-cli-fault-parse-tests.log`
-- Isolated one-index-per-table: n/a
-- Key result: `4 passed; 0 failed`, including `provider-env`, `provider-restart`, `provider-restore`, and smoke dry-run parsing.
+- Lane: Task 38 CLI parser coverage
+- Command: `script -q -e -c "cargo test -p ecaz-cli cli_parses_fault" review/31145-task36-38-hardening-validation/artifacts/task38-final-ecaz-cli-fault-parse-tests.log`
+- Key result: 6 passed, 0 failed, including `prepare` and prepared-fixture I/O smoke parsing.
 
-## task38-pg18-cancel-smoke.log
+## task38-pg18-install-memory-fault.log
 
-- Lane: Task 38 live PG18 cancel smoke
-- Fixture: local pgrx PG18 database `ecaz_fault_probe_36_38`
-- Storage format: AM-specific fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire`
-- Rerank mode: repeated AM KNN scan cancellation
-- Command: `script -q -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane cancel --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-cancel-smoke.log`
-- Isolated one-index-per-table: yes, one fixture table and index per AM
-- Key result: cancel lane completed for all four AMs with postcondition probes emitted and asserted.
+- Lane: PG18 extension install for live memory-fault GUC validation
+- Command: `script -q -e -c "cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-install-memory-fault.log`
+- Key result: installed `ecaz` into the PG18 pgrx tree.
 
-## task38-pg18-timeout-smoke.log
+## task38-provider-restore-after-install.log
 
-- Lane: Task 38 live PG18 statement-timeout smoke
-- Fixture: local pgrx PG18 database `ecaz_fault_probe_36_38`
-- Storage format: AM-specific fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire`
-- Rerank mode: repeated AM KNN scan statement timeout
-- Command: `script -q -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-timeout-smoke.log`
-- Isolated one-index-per-table: yes, one fixture table and index per AM
-- Key result: statement-timeout lane completed for all four AMs with postcondition probes emitted and asserted.
+- Lane: provider cleanup / normal postmaster restart after install
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- dev fault provider-restore" review/31145-task36-38-hardening-validation/artifacts/task38-provider-restore-after-install.log`
+- Key result: restarted PG18 without provider environment.
 
-## task38-pg18-lock-timeout-smoke.log
+## task38-reset-test-extension-local.log
 
-- Lane: Task 38 live PG18 lock-timeout smoke
-- Fixture: local pgrx PG18 database `ecaz_fault_probe_36_38`
-- Storage format: AM-specific fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire`
-- Rerank mode: `REINDEX INDEX CONCURRENTLY` interrupted by `lock_timeout`
-- Command: `script -q -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-lock-timeout-smoke.log`
-- Isolated one-index-per-table: yes, one fixture table and index per AM
-- Key result: lock-timeout lane completed for all four AMs with postcondition probes emitted and asserted.
+- Lane: refresh test database extension SQL after install
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- dev sql --db ecaz_fault_probe_36_38 --socket-dir /home/peter/.pgrx --sql 'DROP EXTENSION IF EXISTS ecaz CASCADE; CREATE EXTENSION ecaz;'" review/31145-task36-38-hardening-validation/artifacts/task38-reset-test-extension-local.log`
+- Key result: recreated the extension in `ecaz_fault_probe_36_38`.
 
-## task38-provider-restart.log
+## task38-pg18-memory-smoke.log
 
-- Lane: Task 38 provider-backed postmaster startup
-- Fixture: local pgrx PG18 postmaster
-- Storage format: n/a
-- Rerank mode: n/a
-- Command: `script -q -c "cargo run -p ecaz-cli -- dev fault provider-restart --mode slow-disk --path-match base/ --after 1 --latency-ms 1 --marker /tmp/ecaz-fault-provider-task38-20260517.marker" review/31145-task36-38-hardening-validation/artifacts/task38-provider-restart.log`
-- Isolated one-index-per-table: n/a
-- Key result: postmaster restarted and printed marker `/tmp/ecaz-fault-provider-task38-20260517.marker`.
+- Lane: Task 38 live memory/palloc smoke
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-smoke.log`
+- Key result: all four AMs completed palloc-failure smoke with postcondition probes asserted.
 
-## task38-pg18-slow-disk-smoke.log
+## Provider-Backed I/O Smoke
 
-- Lane: Task 38 provider-backed slow-disk smoke
-- Fixture: local pgrx PG18 database `ecaz_fault_probe_36_38`; postmaster restarted with the LD_PRELOAD provider in `slow-disk` mode and marker `/tmp/ecaz-fault-provider-task38-20260517.marker`
-- Storage format: AM-specific fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire`
-- Rerank mode: AM default scan/insert/vacuum smoke under provider latency
-- Command: `script -q -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane slow-disk --rows 64 --provider-marker /tmp/ecaz-fault-provider-task38-20260517.marker" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-slow-disk-smoke.log`
-- Isolated one-index-per-table: yes, one fixture table and index per AM
-- Key result: provider-backed slow-disk lane completed for all four AMs with postcondition probes emitted and asserted.
+- HNSW EIO: `task38-pg18-hnsw-eio-smoke.log`, path match `base/8052051/8054466`, provider marker `/tmp/ecaz-fault-provider-eio-hnsw-task38-final.marker`.
+- HNSW ENOSPC: `task38-pg18-hnsw-enospc-smoke.log`, path match `base/8052051/8054456`, provider marker `/tmp/ecaz-fault-provider-enospc-hnsw-task38-final.marker`.
+- IVF EIO: `task38-pg18-ivf-eio-smoke.log`, path match `base/8052051/8054478`, provider marker `/tmp/ecaz-fault-provider-eio-ivf-task38-final.marker`.
+- IVF ENOSPC: `task38-pg18-ivf-enospc-smoke.log`, path match `base/8052051/8054468`, provider marker `/tmp/ecaz-fault-provider-enospc-ivf-task38-final.marker`.
+- DiskANN EIO: `task38-pg18-diskann-eio-smoke.log`, path match `base/8052051/8054490`, provider marker `/tmp/ecaz-fault-provider-eio-diskann-task38-final.marker`.
+- DiskANN ENOSPC: `task38-pg18-diskann-enospc-smoke.log`, path match `base/8052051/8054480`, provider marker `/tmp/ecaz-fault-provider-enospc-diskann-task38-final.marker`.
+- SPIRE EIO: `task38-pg18-spire-eio-smoke.log`, path match `base/8052051/8054502`, provider marker `/tmp/ecaz-fault-provider-eio-spire-task38-20260517.marker`.
+- SPIRE ENOSPC: `task38-pg18-spire-enospc-smoke.log`, path match `base/8052051/8054492`, provider marker `/tmp/ecaz-fault-provider-enospc-spire-task38-20260517.marker`.
+- Key result: all eight runs exited 0. Each run restarted PG18 with the provider, ran `ecaz dev fault smoke --lane io --am <am> --assume-prepared`, asserted the shared postcondition probes, and restored the postmaster.
 
-## task38-provider-restore.log
+## Prior Live Smoke Artifacts Retained
 
-- Lane: Task 38 provider cleanup
-- Fixture: local pgrx PG18 postmaster
-- Storage format: n/a
-- Rerank mode: n/a
-- Command: `script -q -c "cargo run -p ecaz-cli -- dev fault provider-restore" review/31145-task36-38-hardening-validation/artifacts/task38-provider-restore.log`
-- Isolated one-index-per-table: n/a
-- Key result: postmaster restarted without provider environment.
+- `task38-pg18-cancel-smoke.log`: cancel smoke for all four AMs passed.
+- `task38-pg18-timeout-smoke.log`: statement-timeout smoke for all four AMs passed.
+- `task38-pg18-lock-timeout-smoke.log`: lock-timeout smoke for all four AMs passed.
+- `task38-pg18-slow-disk-smoke.log`: provider-backed slow-disk smoke for all four AMs passed.
+- `task38-provider-restart.log` and `task38-provider-restore.log`: slow-disk provider startup/cleanup.
+
+## task38-final-pg18-status.log
+
+- Lane: final postmaster state check
+- Command: `script -q -e -c "/home/peter/.pgrx/18.3/pgrx-install/bin/pg_ctl -D /home/peter/.pgrx/data-18 status" review/31145-task36-38-hardening-validation/artifacts/task38-final-pg18-status.log`
+- Key result: PG18 postmaster is running without provider environment in the command line.
