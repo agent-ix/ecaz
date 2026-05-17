@@ -6,6 +6,7 @@ use pgrx::pg_sys;
 
 use super::meta::SpireRootControlState;
 use crate::storage::{
+    buffer_guard::LockedBufferGuard,
     page::{
         align_up, raw_tuple_storage_bytes, ALIGNMENT_BYTES, FIRST_DATA_BLOCK_NUMBER,
         METADATA_BLOCK_NUMBER,
@@ -84,21 +85,14 @@ unsafe fn initialize_spire_metadata_block_zero(
 pub(super) unsafe fn read_root_control_page(
     index_relation: pg_sys::Relation,
 ) -> SpireRootControlState {
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            METADATA_BLOCK_NUMBER,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_spire failed to open root/control buffer");
-    }
-
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    let buffer = LockedBufferGuard::read_main(
+        index_relation,
+        METADATA_BLOCK_NUMBER,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .unwrap_or_else(|| pgrx::error!("ec_spire failed to open root/control buffer"));
+    let page = buffer.page();
     let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };
     if special_size < SpireRootControlState::encoded_len() {
         pgrx::error!(
@@ -112,7 +106,6 @@ pub(super) unsafe fn read_root_control_page(
     };
     let root_control =
         SpireRootControlState::decode(root_control_bytes).unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     root_control
 }
 
@@ -180,27 +173,16 @@ where
         ));
     }
 
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_spire failed to open object block {}",
-            tid.block_number
-        ));
-    }
-
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let buffer = LockedBufferGuard::read_main(
+        index_relation,
+        tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;
+    let page = buffer.page();
+    let page_size = buffer.page_size();
     let result = unsafe { with_object_tuple_from_locked_page(page, page_size, tid, f) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     result
 }
 
@@ -219,24 +201,15 @@ where
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
-            )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_spire failed to open object block {block_number}"
-            ));
-        }
-
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page = unsafe { pg_sys::BufferGetPage(buffer) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = LockedBufferGuard::read_main(
+            index_relation,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
+        let page = buffer.page();
+        let page_size = buffer.page_size();
         let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
         let mut result = Ok(());
         for offset_number in 1..=max_offset {
@@ -255,7 +228,6 @@ where
                 break;
             }
         }
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         result?;
     }
     Ok(())

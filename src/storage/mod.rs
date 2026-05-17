@@ -4,6 +4,7 @@
 //! the same page-layout, item-pointer, and GenericXLog helpers. AM-specific
 //! tuple codecs (e.g. `TqElementTuple`) stay under their owning AM.
 
+pub(crate) mod buffer_guard;
 pub mod page;
 pub(crate) mod relation_guard;
 pub(crate) mod scan_guard;
