@@ -238,15 +238,16 @@ fi
 # the cwd or /tmp.
 if [[ $SKIP_FLAMEGRAPH -eq 0 ]] && command -v cargo-flamegraph >/dev/null 2>&1; then
   log "cargo-flamegraph on quant_score"
+  # cargo-flamegraph must run inside the repo (needs Cargo.toml). Pass
+  # the SVG output path with --output so the result lands on the data
+  # volume (OUT is intended to point there). perf.data is large but
+  # cargo-flamegraph cleans it up post-conversion.
   record_cmd "$OUT/flame-quant_score.log" "$CARGO flamegraph --features bench --output $OUT/flame-quant_score.svg --bench quant_score -- --bench"
-  (
-    cd "$OUT" && \
-    $NICE "$CARGO" flamegraph --features bench --output "$OUT/flame-quant_score.svg" \
-      --bench quant_score -- --bench
-  ) >> "$OUT/flame-quant_score.log" 2>&1 || true
-  # Move any stray perf.data off the root volume
-  [[ -f "$OUT/perf.data" ]] && rm -f "$OUT/perf.data"
-  [[ -f "$OUT/perf.data.old" ]] && rm -f "$OUT/perf.data.old"
+  $NICE "$CARGO" flamegraph --features bench --output "$OUT/flame-quant_score.svg" \
+    --bench quant_score -- --bench \
+    >> "$OUT/flame-quant_score.log" 2>&1 || true
+  # Move any stray perf.data off the source tree
+  rm -f perf.data perf.data.old 2>/dev/null
 else
   log "skipping flamegraph"
 fi
@@ -280,11 +281,13 @@ if [[ $SKIP_ASM -eq 0 ]] && command -v cargo-asm >/dev/null 2>&1; then
     "ecaz::quant::hadamard::fwht_in_place"
     "ecaz::quant::hadamard::fwht_in_place_scalar"
   )
-  # In a workspace, cargo-asm needs -p to disambiguate which crate the
-  # function lives in. All these kernels live in the `ecaz` crate.
+  # In a workspace cargo-asm needs both --package (to pick the crate
+  # in the workspace) and --lib (to pick the lib target inside that
+  # crate, vs the many bin/bench/test targets). All these kernels
+  # live in the `ecaz` crate's library target.
   for fn in "${KERNELS[@]}"; do
     short="${fn##*::}"
-    "$CARGO" asm --package ecaz --features bench --release "$fn" \
+    "$CARGO" asm --package ecaz --lib --features bench --release "$fn" \
       > "$ASM_DIR/${short}.s" 2>&1 || true
   done
 else
