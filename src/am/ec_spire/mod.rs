@@ -55,6 +55,9 @@ pub(crate) use self::dml_frontdoor::{
     register_dml_frontdoor_planner_hook,
 };
 pub use self::meta::{
+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+    SpireLocalStoreDescriptor, SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest,
+    SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
     SPIRE_EPOCH_MANIFEST_ACTIVE_QUERY_COUNT_OFFSET, SPIRE_EPOCH_MANIFEST_BYTES,
     SPIRE_EPOCH_MANIFEST_CONSISTENCY_MODE_OFFSET, SPIRE_EPOCH_MANIFEST_EPOCH_OFFSET,
     SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_EPOCH_MANIFEST_MAGIC,
@@ -89,9 +92,14 @@ pub use self::meta::{
 pub use self::storage::{
     spire_assignment_row_gamma_offset, spire_assignment_row_heap_tid_offset,
     spire_assignment_row_payload_format_offset, spire_assignment_row_payload_len_offset,
-    spire_assignment_row_payload_offset, spire_leaf_v2_segment_gammas_offset,
+    spire_assignment_row_payload_offset, spire_decode_delta_partition_object_fixture,
+    spire_decode_leaf_partition_object_fixture, spire_decode_routing_partition_object_fixture,
+    spire_decode_top_graph_partition_object_fixture, spire_leaf_v2_segment_gammas_offset,
     spire_leaf_v2_segment_heap_tids_offset, spire_leaf_v2_segment_payloads_offset,
-    spire_leaf_v2_segment_vec_ids_offset, SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES,
+    spire_leaf_v2_segment_vec_ids_offset, SpireAssignmentRowFixture,
+    SpireDeltaPartitionObjectFixture, SpireLeafPartitionObjectFixture, SpirePartitionHeaderFixture,
+    SpireRoutingPartitionObjectFixture, SpireTopGraphNodeFixture,
+    SpireTopGraphPartitionObjectFixture, SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES,
     SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES, SPIRE_ASSIGNMENT_ROW_FLAGS_OFFSET,
     SPIRE_ASSIGNMENT_ROW_VEC_ID_LEN_OFFSET, SPIRE_ASSIGNMENT_ROW_VEC_ID_OFFSET,
     SPIRE_LEAF_V2_LOCAL_VEC_ID_STRIDE, SPIRE_LEAF_V2_META_BODY_BYTES,

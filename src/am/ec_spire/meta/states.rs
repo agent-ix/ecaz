@@ -1,6 +1,6 @@
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SpirePlacementState {
+pub enum SpirePlacementState {
     Available = 1,
     Stale = 2,
     Unavailable = 3,
@@ -21,7 +21,7 @@ impl SpirePlacementState {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SpireLocalStoreState {
+pub enum SpireLocalStoreState {
     Available = 1,
     Unavailable = 2,
 }

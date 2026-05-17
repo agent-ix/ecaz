@@ -1,10 +1,21 @@
 //! Golden on-disk fixture decode checks.
 
 use ecaz::bench_api::{
-    ItemPointer, MetadataPage, TqElementTuple, TqGroupedCodebookTuple, TqNeighborTuple,
-    VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple, HNSW_METADATA_FORMAT_VERSION_OFFSET,
-    INDEX_FORMAT_V3_DISKANN, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
-    VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+    spire_decode_delta_partition_object_fixture, spire_decode_leaf_partition_object_fixture,
+    spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
+    ItemPointer, IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage,
+    IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode, IvfStorageFormat, MetadataPage,
+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+    SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory,
+    SpirePlacementEntry, SpirePlacementState, TqElementTuple, TqGroupedCodebookTuple,
+    TqNeighborTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
+    EC_IVF_CENTROID_DIMENSIONS_OFFSET, EC_IVF_INDEX_FORMAT_VERSION,
+    EC_IVF_METADATA_FORMAT_VERSION_OFFSET, HNSW_METADATA_FORMAT_VERSION_OFFSET,
+    INDEX_FORMAT_V3_DISKANN, SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
+    SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET, SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
+    SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+    SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET,
+    VAMANA_METADATA_FORMAT_VERSION_OFFSET, VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
 };
 
 fn decode_hex_fixture(contents: &str) -> Vec<u8> {
@@ -285,4 +296,549 @@ fn diskann_vamana_codebook_tuple_v3_fixture_decodes() {
             .collect::<Vec<_>>(),
         vec![1.0_f32.to_bits(), 2.0_f32.to_bits()]
     );
+}
+
+#[test]
+fn ivf_metadata_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v1.hex"));
+
+    let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
+
+    assert_eq!(metadata.format_version, EC_IVF_INDEX_FORMAT_VERSION);
+    assert_eq!(metadata.dimensions, 128);
+    assert_eq!(metadata.nlists, 16);
+    assert_eq!(metadata.nprobe, 4);
+    assert_eq!(metadata.training_sample_rows, 1_000);
+    assert_eq!(metadata.training_version, 3);
+    assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
+    assert_eq!(metadata.storage_format, IvfStorageFormat::PqFastScan);
+    assert_eq!(metadata.rerank, IvfRerankMode::HeapF32);
+    assert_eq!(
+        metadata.centroid_head,
+        ItemPointer {
+            block_number: 10,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        metadata.directory_head,
+        ItemPointer {
+            block_number: 11,
+            offset_number: 2
+        }
+    );
+    assert_eq!(metadata.total_live_tuples, 42);
+    assert_eq!(metadata.total_dead_tuples, 5);
+    assert_eq!(metadata.inserted_since_build, 7);
+    assert_eq!(
+        metadata.pq_codebook_head,
+        ItemPointer {
+            block_number: 12,
+            offset_number: 3
+        }
+    );
+    assert_eq!(metadata.pq_group_size, 4);
+}
+
+#[test]
+fn ivf_metadata_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v1.hex"));
+    bytes.swap(
+        EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
+        EC_IVF_METADATA_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = IvfMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_centroid_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_centroid_tuple_v1.hex"
+    ));
+
+    let centroid = IvfCentroidTuple::decode(&bytes, 2).expect("ivf centroid should decode");
+
+    assert_eq!(centroid.list_id, 3);
+    assert_eq!(
+        centroid
+            .centroid
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![0.25_f32.to_bits(), (-0.5_f32).to_bits()]
+    );
+}
+
+#[test]
+fn ivf_centroid_tuple_v1_byteswapped_dimensions_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_centroid_tuple_v1.hex"
+    ));
+    bytes.swap(
+        EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+        EC_IVF_CENTROID_DIMENSIONS_OFFSET + 1,
+    );
+
+    let err = IvfCentroidTuple::decode(&bytes, 2).expect_err("byte-swapped dimensions should fail");
+
+    assert!(
+        err.contains("ec_ivf centroid dimensions mismatch: got 512, expected 2"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_list_directory_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_list_directory_tuple_v1.hex"
+    ));
+
+    let directory =
+        IvfListDirectoryTuple::decode(&bytes).expect("ivf list directory should decode");
+
+    assert_eq!(directory.list_id, 9);
+    assert_eq!(directory.head_block, IvfBlockRef { block_number: 20 });
+    assert_eq!(directory.tail_block, IvfBlockRef { block_number: 25 });
+    assert_eq!(directory.live_count, 101);
+    assert_eq!(directory.dead_count, 7);
+    assert_eq!(directory.inserted_since_build, 11);
+}
+
+#[test]
+fn ivf_posting_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_posting_tuple_v1.hex"));
+
+    let posting = IvfPostingTuple::decode(&bytes, 5).expect("ivf posting tuple should decode");
+
+    assert_eq!(posting.list_id, 2);
+    assert!(!posting.deleted);
+    assert_eq!(
+        posting.heaptids,
+        vec![
+            ItemPointer {
+                block_number: 1,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 1,
+                offset_number: 4
+            },
+            ItemPointer {
+                block_number: 2,
+                offset_number: 1
+            }
+        ]
+    );
+    assert_eq!(posting.gamma.to_bits(), 0.75_f32.to_bits());
+    assert_eq!(
+        posting.rerank_tid,
+        ItemPointer {
+            block_number: 7,
+            offset_number: 2
+        }
+    );
+    assert_eq!(posting.payload, vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn ivf_pq_codebook_tuple_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/ivf_pq_codebook_tuple_v1.hex"
+    ));
+
+    let codebook =
+        IvfPqCodebookTuple::decode(&bytes, 4).expect("ivf pq codebook tuple should decode");
+
+    assert_eq!(codebook.group_index, 2);
+    assert_eq!(
+        codebook.next_tid,
+        ItemPointer {
+            block_number: 9,
+            offset_number: 3
+        }
+    );
+    assert_eq!(
+        codebook
+            .centroids
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![
+            0.0_f32.to_bits(),
+            0.25_f32.to_bits(),
+            (-0.5_f32).to_bits(),
+            1.0_f32.to_bits()
+        ]
+    );
+}
+
+#[test]
+fn spire_local_store_config_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_local_store_config_v1.hex"
+    ));
+
+    let config =
+        SpireLocalStoreConfig::decode(&bytes).expect("spire local store config should decode");
+
+    assert_eq!(config.generation, 7);
+    assert_eq!(config.stores.len(), 2);
+    assert_eq!(config.stores[0].local_store_id, 2);
+    assert_eq!(config.stores[0].store_relid, 502);
+    assert_eq!(config.stores[0].tablespace_oid, 1002);
+    assert_eq!(config.stores[0].state, SpireLocalStoreState::Available);
+    assert_eq!(config.stores[1].local_store_id, 5);
+    assert_eq!(config.stores[1].store_relid, 505);
+    assert_eq!(config.stores[1].tablespace_oid, 1005);
+    assert_eq!(config.stores[1].state, SpireLocalStoreState::Available);
+}
+
+#[test]
+fn spire_local_store_config_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_local_store_config_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
+        SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireLocalStoreConfig::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_placement_entry_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_entry_v1.hex"
+    ));
+
+    let entry = SpirePlacementEntry::decode(&bytes).expect("spire placement entry should decode");
+
+    assert_eq!(entry.state, SpirePlacementState::Available);
+    assert_eq!(entry.epoch, 7);
+    assert_eq!(entry.pid, 17);
+    assert_eq!(entry.node_id, 0);
+    assert_eq!(entry.local_store_id, 2);
+    assert_eq!(entry.store_relid, 502);
+    assert_eq!(entry.object_version, 3);
+    assert_eq!(
+        entry.object_tid,
+        ItemPointer {
+            block_number: 20,
+            offset_number: 1
+        }
+    );
+    assert_eq!(entry.object_bytes, 108);
+}
+
+#[test]
+fn spire_placement_entry_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_entry_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET,
+        SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpirePlacementEntry::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_placement_directory_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_directory_v1.hex"
+    ));
+
+    let directory =
+        SpirePlacementDirectory::decode(&bytes).expect("spire placement directory should decode");
+
+    assert_eq!(directory.epoch, 7);
+    assert_eq!(directory.entries.len(), 1);
+    assert_eq!(directory.entries[0].pid, 17);
+    assert_eq!(directory.entries[0].local_store_id, 2);
+}
+
+#[test]
+fn spire_placement_directory_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_directory_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
+        SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err =
+        SpirePlacementDirectory::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_epoch_manifest_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_epoch_manifest_v1.hex"
+    ));
+
+    let manifest = SpireEpochManifest::decode(&bytes).expect("spire epoch manifest should decode");
+
+    assert_eq!(manifest.state, SpireEpochState::Published);
+    assert_eq!(manifest.consistency_mode, SpireConsistencyMode::Strict);
+    assert_eq!(manifest.epoch, 7);
+    assert_eq!(manifest.published_at_micros, 1_000);
+    assert_eq!(manifest.retain_until_micros, 2_000);
+    assert_eq!(manifest.active_query_count, 3);
+}
+
+#[test]
+fn spire_epoch_manifest_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_epoch_manifest_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
+        SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireEpochManifest::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_manifest_entry_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_manifest_entry_v1.hex"
+    ));
+
+    let entry = SpireManifestEntry::decode(&bytes).expect("spire manifest entry should decode");
+
+    assert_eq!(entry.epoch, 7);
+    assert_eq!(entry.pid, 17);
+    assert_eq!(entry.object_version, 3);
+    assert_eq!(
+        entry.placement_tid,
+        ItemPointer {
+            block_number: 30,
+            offset_number: 2
+        }
+    );
+}
+
+#[test]
+fn spire_manifest_entry_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_manifest_entry_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
+        SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireManifestEntry::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_object_manifest_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_object_manifest_v1.hex"
+    ));
+
+    let manifest =
+        SpireObjectManifest::decode(&bytes).expect("spire object manifest should decode");
+
+    assert_eq!(manifest.epoch, 7);
+    assert_eq!(manifest.entries.len(), 1);
+    assert_eq!(manifest.entries[0].pid, 17);
+    assert_eq!(manifest.entries[0].object_version, 3);
+}
+
+#[test]
+fn spire_object_manifest_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_object_manifest_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
+        SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireObjectManifest::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_leaf_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_partition_object_v1.hex"
+    ));
+
+    let object =
+        spire_decode_leaf_partition_object_fixture(&bytes).expect("spire leaf object decodes");
+
+    assert_eq!(object.header.kind, 3);
+    assert_eq!(object.header.pid, 17);
+    assert_eq!(object.header.object_version, 3);
+    assert_eq!(object.header.published_epoch_backref, 7);
+    assert_eq!(object.header.parent_pid, 5);
+    assert_eq!(object.header.assignment_count, 1);
+    assert_eq!(object.assignments.len(), 1);
+    assert_eq!(object.assignments[0].flags, 1);
+    assert_eq!(
+        object.assignments[0].vec_id,
+        vec![1, 5, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        object.assignments[0].heap_tid,
+        ItemPointer {
+            block_number: 100,
+            offset_number: 1
+        }
+    );
+    assert_eq!(object.assignments[0].payload_format, 1);
+    assert_eq!(object.assignments[0].gamma.to_bits(), 0.5_f32.to_bits());
+    assert_eq!(object.assignments[0].encoded_payload, vec![0xaa, 0xbb]);
+}
+
+#[test]
+fn spire_leaf_partition_object_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_partition_object_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = spire_decode_leaf_partition_object_fixture(&bytes)
+        .expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported partition object format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_routing_root_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_routing_root_partition_object_v1.hex"
+    ));
+
+    let object = spire_decode_routing_partition_object_fixture(&bytes)
+        .expect("spire routing object decodes");
+
+    assert_eq!(object.header.kind, 1);
+    assert_eq!(object.header.pid, 11);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.level, 1);
+    assert_eq!(object.header.child_count, 2);
+    assert_eq!(object.dimensions, 2);
+    assert_eq!(object.centroid_ordinals, vec![0, 1]);
+    assert_eq!(object.child_pids, vec![17, 18]);
+    assert_eq!(
+        object
+            .centroids
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![
+            1.0_f32.to_bits(),
+            0.0_f32.to_bits(),
+            (-1.0_f32).to_bits(),
+            0.0_f32.to_bits()
+        ]
+    );
+}
+
+#[test]
+fn spire_delta_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_delta_partition_object_v1.hex"
+    ));
+
+    let object =
+        spire_decode_delta_partition_object_fixture(&bytes).expect("spire delta object decodes");
+
+    assert_eq!(object.header.kind, 4);
+    assert_eq!(object.header.pid, 19);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.parent_pid, 17);
+    assert_eq!(object.header.assignment_count, 1);
+    assert_eq!(object.assignments.len(), 1);
+    assert_eq!(object.assignments[0].flags, 1 | 8);
+    assert_eq!(
+        object.assignments[0].vec_id,
+        vec![1, 6, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        object.assignments[0].heap_tid,
+        ItemPointer {
+            block_number: 101,
+            offset_number: 1
+        }
+    );
+    assert_eq!(object.assignments[0].gamma.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(object.assignments[0].encoded_payload, vec![0xcc, 0xdd]);
+}
+
+#[test]
+fn spire_top_graph_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_top_graph_partition_object_v1.hex"
+    ));
+
+    let object = spire_decode_top_graph_partition_object_fixture(&bytes)
+        .expect("spire top graph object decodes");
+
+    assert_eq!(object.header.kind, 5);
+    assert_eq!(object.header.pid, 21);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.level, 2);
+    assert_eq!(object.header.parent_pid, 11);
+    assert_eq!(object.root_pid, 11);
+    assert_eq!(object.dimensions, 2);
+    assert_eq!(object.graph_degree, 2);
+    assert_eq!(object.build_list_size, 16);
+    assert_eq!(object.alpha.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(object.entry_node, 1);
+    assert_eq!(object.nodes.len(), 2);
+    assert_eq!(object.nodes[0].child_pid, 17);
+    assert_eq!(object.nodes[0].centroid_ordinal, 0);
+    assert_eq!(object.nodes[0].neighbors, vec![1]);
+    assert_eq!(object.nodes[1].child_pid, 18);
+    assert_eq!(object.nodes[1].centroid_ordinal, 1);
+    assert_eq!(object.nodes[1].neighbors, vec![0]);
 }

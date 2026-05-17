@@ -86,23 +86,23 @@ const POSTING_FLAG_DELETED: u8 = 1 << 0;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct MetadataPage {
-    pub(super) format_version: u16,
-    pub(super) dimensions: u16,
-    pub(super) nlists: u32,
-    pub(super) nprobe: u32,
-    pub(super) training_sample_rows: u32,
-    pub(super) training_version: u16,
-    pub(super) seed: u64,
-    pub(super) storage_format: StorageFormat,
-    pub(super) rerank: RerankMode,
-    pub(super) centroid_head: ItemPointer,
-    pub(super) directory_head: ItemPointer,
-    pub(super) total_live_tuples: u64,
-    pub(super) total_dead_tuples: u64,
-    pub(super) inserted_since_build: u64,
-    pub(super) pq_codebook_head: ItemPointer,
-    pub(super) pq_group_size: u16,
+pub struct MetadataPage {
+    pub format_version: u16,
+    pub dimensions: u16,
+    pub nlists: u32,
+    pub nprobe: u32,
+    pub training_sample_rows: u32,
+    pub training_version: u16,
+    pub seed: u64,
+    pub storage_format: StorageFormat,
+    pub rerank: RerankMode,
+    pub centroid_head: ItemPointer,
+    pub directory_head: ItemPointer,
+    pub total_live_tuples: u64,
+    pub total_dead_tuples: u64,
+    pub inserted_since_build: u64,
+    pub pq_codebook_head: ItemPointer,
+    pub pq_group_size: u16,
 }
 
 impl MetadataPage {
@@ -150,7 +150,7 @@ impl MetadataPage {
         out
     }
 
-    pub(super) fn decode(bytes: &[u8]) -> Result<Self, String> {
+    pub fn decode(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < METADATA_BYTES {
             return Err(format!(
                 "ec_ivf metadata length mismatch: got {}, expected at least {METADATA_BYTES}",
@@ -243,8 +243,8 @@ fn write_item_pointer(out: &mut [u8], tid: ItemPointer) {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct BlockRef {
-    pub(super) block_number: u32,
+pub struct BlockRef {
+    pub block_number: u32,
 }
 
 impl BlockRef {
@@ -275,9 +275,9 @@ impl BlockRef {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct IvfCentroidTuple {
-    pub(super) list_id: u32,
-    pub(super) centroid: Vec<f32>,
+pub struct IvfCentroidTuple {
+    pub list_id: u32,
+    pub centroid: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -353,7 +353,7 @@ impl IvfCentroidTuple {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8], dimensions: usize) -> Result<Self, String> {
+    pub fn decode(input: &[u8], dimensions: usize) -> Result<Self, String> {
         let centroid = IvfCentroidTupleRef::decode(input, dimensions)?;
         Ok(Self {
             list_id: centroid.list_id,
@@ -367,13 +367,13 @@ impl IvfCentroidTuple {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct IvfListDirectoryTuple {
-    pub(super) list_id: u32,
-    pub(super) head_block: BlockRef,
-    pub(super) tail_block: BlockRef,
-    pub(super) live_count: u64,
-    pub(super) dead_count: u64,
-    pub(super) inserted_since_build: u64,
+pub struct IvfListDirectoryTuple {
+    pub list_id: u32,
+    pub head_block: BlockRef,
+    pub tail_block: BlockRef,
+    pub live_count: u64,
+    pub dead_count: u64,
+    pub inserted_since_build: u64,
 }
 
 impl IvfListDirectoryTuple {
@@ -400,7 +400,7 @@ impl IvfListDirectoryTuple {
         out
     }
 
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         if input.len() != Self::encoded_len() {
             return Err(format!(
                 "ec_ivf list directory tuple length mismatch: got {}, expected {}",
@@ -447,13 +447,13 @@ impl IvfListDirectoryTuple {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct IvfPostingTuple {
-    pub(super) list_id: u32,
-    pub(super) deleted: bool,
-    pub(super) heaptids: Vec<ItemPointer>,
-    pub(super) gamma: f32,
-    pub(super) rerank_tid: ItemPointer,
-    pub(super) payload: Vec<u8>,
+pub struct IvfPostingTuple {
+    pub list_id: u32,
+    pub deleted: bool,
+    pub heaptids: Vec<ItemPointer>,
+    pub gamma: f32,
+    pub rerank_tid: ItemPointer,
+    pub payload: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -570,7 +570,7 @@ impl IvfPostingTuple {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8], payload_len: usize) -> Result<Self, String> {
+    pub fn decode(input: &[u8], payload_len: usize) -> Result<Self, String> {
         let posting = IvfPostingTupleRef::decode(input, payload_len)?;
         Ok(Self {
             list_id: posting.list_id,
@@ -588,10 +588,10 @@ impl IvfPostingTuple {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct IvfPqCodebookTuple {
-    pub(super) group_index: u16,
-    pub(super) next_tid: ItemPointer,
-    pub(super) centroids: Vec<f32>,
+pub struct IvfPqCodebookTuple {
+    pub group_index: u16,
+    pub next_tid: ItemPointer,
+    pub centroids: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -655,7 +655,7 @@ impl IvfPqCodebookTuple {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8], centroid_count: usize) -> Result<Self, String> {
+    pub fn decode(input: &[u8], centroid_count: usize) -> Result<Self, String> {
         let tuple = IvfPqCodebookTupleRef::decode(input, centroid_count)?;
         Ok(Self {
             group_index: tuple.group_index,

@@ -1,9 +1,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SpireManifestEntry {
-    pub(super) epoch: u64,
-    pub(super) pid: u64,
-    pub(super) object_version: u64,
-    pub(super) placement_tid: ItemPointer,
+pub struct SpireManifestEntry {
+    pub epoch: u64,
+    pub pid: u64,
+    pub object_version: u64,
+    pub placement_tid: ItemPointer,
 }
 
 impl SpireManifestEntry {
@@ -21,7 +21,7 @@ impl SpireManifestEntry {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         if input.len() != MANIFEST_ENTRY_BYTES {
             return Err(format!(
                 "ec_spire manifest entry length mismatch: got {}, expected {MANIFEST_ENTRY_BYTES}",
@@ -66,9 +66,9 @@ impl SpireManifestEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SpireObjectManifest {
-    pub(super) epoch: u64,
-    pub(super) entries: Vec<SpireManifestEntry>,
+pub struct SpireObjectManifest {
+    pub epoch: u64,
+    pub entries: Vec<SpireManifestEntry>,
 }
 
 impl SpireObjectManifest {
@@ -104,7 +104,7 @@ impl SpireObjectManifest {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         if input.len() < OBJECT_MANIFEST_HEADER_BYTES {
             return Err(format!(
                 "ec_spire object manifest too short: got {}, expected at least {OBJECT_MANIFEST_HEADER_BYTES}",

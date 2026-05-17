@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SpirePlacementDirectory {
-    pub(super) epoch: u64,
-    pub(super) entries: Vec<SpirePlacementEntry>,
+pub struct SpirePlacementDirectory {
+    pub epoch: u64,
+    pub entries: Vec<SpirePlacementEntry>,
 }
 
 impl SpirePlacementDirectory {
@@ -37,7 +37,7 @@ impl SpirePlacementDirectory {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         if input.len() < PLACEMENT_DIRECTORY_HEADER_BYTES {
             return Err(format!(
                 "ec_spire placement directory too short: got {}, expected at least {PLACEMENT_DIRECTORY_HEADER_BYTES}",
