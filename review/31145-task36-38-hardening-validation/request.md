@@ -23,8 +23,10 @@ documentation for the PG-level fault matrix. The provider now hooks `open`,
 surfaces. Live lanes run AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, and `ec_spire`: cancellation and statement timeout use repeated
 AM KNN scans, lock timeout uses `REINDEX INDEX CONCURRENTLY` while the table is
-locked, memory smoke injects palloc failure at each AM scan allocation boundary,
-provider-backed slow-disk latency runs against a postmaster restarted through
+locked and rolls back the lock holder even if waiter cleanup errors, memory
+smoke uses `ecaz.fault_palloc_nth` and sweeps the currently instrumented scan
+allocation points for each AM, provider-backed slow-disk latency runs against a
+postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
 `--assume-prepared`. Those live lanes tag their sessions and assert
@@ -34,8 +36,8 @@ postconditions for leftover fault sessions, locks, and prepared transactions.
 
 Task 38 is still scope-bounded to smoke coverage. It now has live PG18
 EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
-but exhaustive Nth-allocation sweeps, OOM-kill campaigns, WAL/temp-spill
-targeting, SPIRE remote-object fetch faulting, and richer
+but exhaustive build/insert/vacuum palloc sweeps, OOM-kill campaigns,
+WAL/temp-spill targeting, SPIRE remote-object fetch faulting, and richer
 `pg_buffercache`/`pg_stat_io` accounting remain follow-on expansion.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
@@ -69,7 +71,7 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
 
 - SIMD tolerance choices and scalar reference isolation.
 - Whether the forced backend wrappers are narrow enough for bench/test use.
-- Whether the memory smoke boundary is the right first palloc-injection seam
-  before exhaustive Nth-allocation sweeps.
+- Whether the scan palloc sweep is enough for this smoke checkpoint before
+  expanding into exhaustive build/insert/vacuum allocation sweeps.
 - Whether the application-name based postcondition checks are the right minimum
   live leak checks for the built-in fault lanes.

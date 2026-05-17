@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `a2e441b1782caf0c1083ce2416debd69faed7b51`
+Code checkpoint SHA: `766c5a7a31cecc3dd1d65e873123dba51f2c084b`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T04:34:51Z`
+Timestamp: `2026-05-17T04:50:08Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -68,6 +68,24 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live memory/palloc smoke
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-smoke.log`
 - Key result: all four AMs completed palloc-failure smoke with postcondition probes asserted.
+
+## task38-pg18-install-palloc-sweep-sites.log
+
+- Lane: PG18 extension install for final `ecaz.fault_palloc_nth` scan-site sweep
+- Command: `script -q -e -c "cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-install-palloc-sweep-sites.log`
+- Key result: installed the extension after adding scan query/order-by palloc instrumentation and renaming the live fault GUC to `ecaz.fault_palloc_nth`.
+
+## task38-pg18-memory-palloc-sweep-sites.log
+
+- Lane: Task 38 live memory/palloc scan-site sweep
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-palloc-sweep-sites.log`
+- Key result: all four AMs completed the live palloc smoke. HNSW sweeps Nth failures 1..=4, IVF 1..=4, DiskANN 1, and SPIRE 1..=3, with postcondition probes asserted after each run.
+
+## task38-pg18-lock-rollback-guard.log
+
+- Lane: Task 38 live lock-timeout cleanup guard
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-lock-rollback-guard.log`
+- Key result: all four AMs completed lock-timeout smoke after changing the harness to attempt holder rollback before propagating waiter reset errors.
 
 ## Provider-Backed I/O Smoke
 
