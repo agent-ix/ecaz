@@ -14,7 +14,8 @@ timeout, `idle_in_transaction_session_timeout`, `pg_cancel_backend` and
 pressure across all four AMs, resource settings plus built-in
 `temp_file_limit` and provider-backed ENOSPC temp-spill failures, memory/palloc
 smoke across build, scan, insert, and vacuum AM callbacks, backend-SIGKILL
-OOM-proxy smoke during build/scan/insert for every AM, provider-backed slow-disk
+OOM-proxy smoke during build/scan/insert for every AM, backend `RLIMIT_AS` OOM
+pressure during AM build work for every AM, provider-backed slow-disk
 operation, and provider-backed EIO/ENOSPC against AM-specific `ec_hnsw`,
 `ec_ivf`, `ec_diskann`, and `ec_spire` fixtures, WAL-path ENOSPC smoke through
 `match=pg_wal` with explicit restore-required handling, resource-lane WAL
@@ -29,9 +30,9 @@ when those PG18 surfaces are available. Resource temp-spill probes also emit
 build, insert, and vacuum palloc fault ordinals up to the smoke cap instead of
 checking only the first injected allocation. The smoke surface is now in place;
 exhaustive
-per-allocation palloc sweeps, true kernel/cgroup OOM pressure campaigns, and
-SPIRE remote-object fetch faulting remain follow-on expansion beyond this smoke
-checkpoint.
+per-allocation palloc sweeps, cgroup OOM-kill campaigns beyond the current
+`RLIMIT_AS` and SIGKILL recovery surfaces, and SPIRE remote-object fetch
+faulting remain follow-on expansion beyond this smoke checkpoint.
 
 ## Scope
 

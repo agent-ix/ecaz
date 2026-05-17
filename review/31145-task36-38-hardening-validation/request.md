@@ -31,7 +31,9 @@ is touched inside an open transaction, lock timeout covers blocked
 back the lock holder even if waiter cleanup errors, memory smoke uses
 `ecaz.fault_palloc_nth` and sweeps the currently instrumented scan allocation
 points plus build/insert/vacuum callback fault ordinals for each AM and now
-SIGKILLs worker backends during build/scan/insert as an OOM-kill proxy,
+caps warmed backend address space with `RLIMIT_AS` during AM build work for
+every AM, then SIGKILLs worker backends during build/scan/insert as an
+OOM-kill proxy,
 resource smoke covers calibrated accumulator `work_mem` pressure with
 pressure-sized AM fixtures plus built-in `temp_file_limit` temp-spill failure
 and provider-backed ENOSPC on `pgsql_tmp`, plus WAL rotation accounting that
@@ -67,9 +69,9 @@ The Task 38 interrupt-site inventory is documented in `docs/hardening.md` under
 Task 38 is still scope-bounded to smoke coverage. It now has live PG18
 EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
 but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
-true kernel/cgroup OOM pressure campaigns, SPIRE remote-object fetch faulting,
-and full expected-vs-forced WAL/temp-spill accounting remain follow-on
-expansion.
+cgroup OOM-kill campaigns beyond the current `RLIMIT_AS` and SIGKILL recovery
+surfaces, SPIRE remote-object fetch faulting, and full expected-vs-forced
+WAL/temp-spill accounting remain follow-on expansion.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
@@ -102,8 +104,8 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   - `ecaz dev fault provider-restart --mode enospc-write --path-match pgsql_tmp ...`
   - `ecaz dev fault smoke --lane resource --rows 64 --provider-marker ...`
   - `ecaz dev fault smoke --lane memory --rows 64` including scan palloc
-    sweeps, build/insert/vacuum palloc ordinal sweeps, and backend-SIGKILL OOM
-    proxy build/scan/insert checks
+    sweeps, build/insert/vacuum palloc ordinal sweeps, backend `RLIMIT_AS` OOM
+    build checks, and backend-SIGKILL OOM proxy build/scan/insert checks
   - `ecaz dev fault provider-restart --mode slow-disk ...`
   - `ecaz dev fault smoke --lane slow-disk --rows 64 --provider-marker ...`
   - `ecaz dev fault provider-restart --mode eio-read/enospc-write --path-match <relation path> ...`

@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `81a5edd9905604cfd435abb8fc1baf8d9f5af09a`
+Code checkpoint SHA: `2b78b95fa2e96b27a384d519d7209ce467e6e465`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T17:01:04Z`
+Timestamp: `2026-05-17T17:12:29Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -106,6 +106,13 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Guard artifact: `task38-memory-palloc-sweep-hnsw.log` first verified the new sweep markers on HNSW only.
 - Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-memory-palloc-sweep-all.log dev fault smoke --lane memory --rows 32`
 - Key result: all four AMs emitted `memory_palloc_sweep_fault` at `nth=1` and `memory_palloc_sweep_completed ... first_success_nth=2` for build, insert, and vacuum. The scan palloc sweep and twelve backend-SIGKILL build/scan/insert OOM-proxy cases also passed; each SIGKILL logged `postmaster_recovered=true`. Shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`; `pg_stat_io` and `pg_stat_wal` lower after crash recovery were recorded as stats resets.
+
+## task38-rlimit-oom-all.log
+
+- Lane: Task 38 backend `RLIMIT_AS` OOM pressure
+- Guard artifact: `task38-rlimit-oom-hnsw.log` first verified the new rlimit path on HNSW only and caught the initial tuning issue where the cap was either too low before extension preload or too loose after preload.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-rlimit-oom-all.log dev fault smoke --lane memory --rows 32`
+- Key result: all four AMs emitted `memory rlimit-oom <am> build ... rlimit_as_bytes=...`, then `backend_disconnected=true`, then `postmaster_recovered=true` under an address-space cap applied with `prlimit64` after warming the backend extension. The same run also reran the palloc ordinal sweeps and twelve backend-SIGKILL build/scan/insert OOM-proxy cases; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`. `pg_stat_io` and `pg_stat_wal` lower after crash recovery were recorded as stats resets.
 
 ## task38-pg18-oom-kill-hnsw-smoke.log
 
