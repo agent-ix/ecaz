@@ -62,35 +62,42 @@
         .expect("payload slot relation oid query should succeed")
         .expect("payload slot relation oid should exist");
 
+        let relation =
+            crate::storage::relation_guard::HeapRelationGuard::try_access_share(relation_oid)
+                .expect("payload slot relation should open");
+        let slot =
+            crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(relation.as_ptr())
+                .expect("payload slot should allocate");
+        // SAFETY: `slot` is allocated for the live heap relation above, and
+        // the JSON payload only targets attributes from that relation.
         unsafe {
-            let relation =
-                pg_sys::table_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            let slot = pg_sys::MakeSingleTupleTableSlot(
-                (*relation).rd_att,
-                pg_sys::table_slot_callbacks(relation),
-            );
             am::spire_custom_scan_store_tuple_payload_json_for_test(
-                slot,
+                slot.as_ptr(),
                 r#"{"id":42,"title":"remote alpha"}"#,
             );
-
-            let mut id_is_null = false;
-            let id_datum = pg_sys::slot_getattr(slot, 1, &mut id_is_null);
-            let id = i64::from_datum(id_datum, id_is_null).expect("id should decode");
-            let mut title_is_null = false;
-            let title_datum = pg_sys::slot_getattr(slot, 2, &mut title_is_null);
-            let title =
-                String::from_datum(title_datum, title_is_null).expect("title should decode");
-            let mut embedding_is_null = false;
-            let _ = pg_sys::slot_getattr(slot, 3, &mut embedding_is_null);
-
-            pg_sys::ExecDropSingleTupleTableSlot(slot);
-            pg_sys::table_close(relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-
-            assert_eq!(id, 42);
-            assert_eq!(title, "remote alpha");
-            assert!(embedding_is_null);
         }
+
+        let mut id_is_null = false;
+        // SAFETY: attribute 1 exists in the test relation created above, and
+        // `slot` remains live until after the value is decoded.
+        let id_datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 1, &mut id_is_null) };
+        // SAFETY: `id_datum` was read from the bigint primary-key column.
+        let id = unsafe { i64::from_datum(id_datum, id_is_null) }.expect("id should decode");
+        let mut title_is_null = false;
+        // SAFETY: attribute 2 exists in the test relation created above, and
+        // `slot` remains live until after the value is decoded.
+        let title_datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 2, &mut title_is_null) };
+        // SAFETY: `title_datum` was read from the text column.
+        let title =
+            unsafe { String::from_datum(title_datum, title_is_null) }.expect("title should decode");
+        let mut embedding_is_null = false;
+        // SAFETY: attribute 3 exists in the test relation created above, and
+        // this read only observes the slot null flag for the optional payload.
+        let _ = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 3, &mut embedding_is_null) };
+
+        assert_eq!(id, 42);
+        assert_eq!(title, "remote alpha");
+        assert!(embedding_is_null);
     }
 
     #[pg_test]
