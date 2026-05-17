@@ -1,0 +1,12 @@
+Script started on 2026-05-17 10:21:23-07:00 [<not executed on terminal>]
+review/31145-task36-38-hardening-validation/request.md
+74:surfaces, SPIRE remote-object fetch faulting, and full expected-vs-forced
+
+plan/tasks/38-pg-fault-injection.md
+35:SIGKILL recovery surfaces, and SPIRE remote-object fetch faulting remain
+44:  file spill, and SPIRE remote object fetch.
+
+docs/SPIRE_DIAGNOSTICS.md
+215:across local and remote placement rows before live remote object reads exist.
+
+Script done on 2026-05-17 10:21:23-07:00 [COMMAND_EXIT_CODE="0"]

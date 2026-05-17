@@ -6,7 +6,7 @@ artifact_type: FR
 status: IMPLEMENTED
 object_type: process
 relationships:
-  - target: "ix://agent-ix/tqvector/US-013"
+  - target: "ix://agent-ix/ecaz/US-013"
     type: "implements"
     cardinality: "N:1"
 ---

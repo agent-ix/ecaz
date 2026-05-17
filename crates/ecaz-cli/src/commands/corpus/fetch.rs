@@ -140,7 +140,7 @@ pub async fn run(_conn: &ConnectionOptions, args: FetchArgs) -> Result<()> {
         data_dir.display()
     );
     crate::ecaz_eprintln!(
-        "[fetch] next: ecaz corpus prepare --profile ec_hnsw_real_10k --parquet {} --output-dir /path/to/staged",
+        "[fetch] next: ecaz corpus prepare --profile ec_real_10k --parquet {} --output-dir /path/to/staged",
         data_dir.display()
     );
     Ok(())

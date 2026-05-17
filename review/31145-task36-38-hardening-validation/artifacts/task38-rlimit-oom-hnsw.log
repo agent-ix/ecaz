@@ -1,0 +1,39 @@
+ec_hnsw-memory-palloc-nth-failure	memory	ec_hnsw	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_hnsw-memory-backend-sigkill-oom-proxy	memory	ec_hnsw	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_hnsw-memory-backend-rlimit-oom	memory	ec_hnsw	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=build first_success_nth=2
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8358359	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8358369
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=vacuum first_success_nth=2
+[fault] memory rlimit-oom ec_hnsw build pid=3829689 rlimit_as_bytes=247996416
+[fault] memory rlimit-oom ec_hnsw build backend_disconnected=true error=connection closed
+2026-05-17T17:10:23.784135Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory rlimit-oom ec_hnsw build postmaster_recovered=true
+[fault] memory oom-kill ec_hnsw build sigkill_pid=3829738
+2026-05-17T17:10:25.688881Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw build postmaster_recovered=true
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8374719	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8374729
+[fault] memory oom-kill ec_hnsw scan sigkill_pid=3829769
+2026-05-17T17:10:27.433431Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw scan postmaster_recovered=true
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8382911	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8382921
+[fault] memory oom-kill ec_hnsw insert sigkill_pid=3829809
+2026-05-17T17:10:28.326947Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw insert postmaster_recovered=true
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=1097 after=66
+[fault] pg_stat_io_reset_after_crash_recovery=true before=1097 after=66
+[fault] pg_stat_wal_records_before=16 after=3 bytes_before=68229 after=13312
+[fault] pg_stat_wal_reset_after_crash_recovery=true records_before=16 records_after=3 bytes_before=68229 bytes_after=13312

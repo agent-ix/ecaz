@@ -1,5 +1,5 @@
 locals {
-  name        = "ecaz-cloud-${var.profile}"
+  name = "ecaz-cloud-${var.profile}"
   common_tags = merge(var.tags, {
     "ecaz:profile" = var.profile
     "ecaz:harness" = "cloud"
@@ -7,7 +7,12 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# Network — single VPC, single private subnet, S3 + SSM VPC endpoints, no NAT.
+# Network — single VPC, single subnet with an Internet Gateway so cloud-init
+# can reach github.com + sh.rustup.rs to build ecaz from source. We avoid a
+# NAT gateway ($32/mo) by assigning public IPs to the instances directly;
+# the security groups still deny all inbound except 5432-from-inside-VPC,
+# so the public IPs do not expose anything new. S3 + SSM VPC endpoints stay
+# for cheap intra-VPC access to those services.
 # ---------------------------------------------------------------------------
 
 resource "aws_vpc" "this" {
@@ -15,6 +20,11 @@ resource "aws_vpc" "this" {
   enable_dns_support   = true
   enable_dns_hostnames = true
   tags                 = merge(local.common_tags, { Name = local.name })
+}
+
+resource "aws_internet_gateway" "this" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(local.common_tags, { Name = local.name })
 }
 
 resource "aws_subnet" "private" {
@@ -26,7 +36,13 @@ resource "aws_subnet" "private" {
 
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
-  tags   = merge(local.common_tags, { Name = "${local.name}-private" })
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.this.id
+  }
+
+  tags = merge(local.common_tags, { Name = "${local.name}-private" })
 }
 
 resource "aws_route_table_association" "private" {
@@ -96,12 +112,57 @@ resource "aws_security_group" "db" {
     cidr_blocks = [var.vpc_cidr]
   }
 
+  # SSH ingress is only allowed from the EC2 Instance Connect Endpoint
+  # (see aws_security_group.eice + aws_ec2_instance_connect_endpoint
+  # below). The endpoint is itself only reachable via the AWS API.
+  # No direct internet exposure of port 22.
+  dynamic "ingress" {
+    for_each = var.enable_eice_ssh ? [1] : []
+    content {
+      description     = "SSH from EC2 Instance Connect Endpoint"
+      from_port       = 22
+      to_port         = 22
+      protocol        = "tcp"
+      security_groups = [aws_security_group.eice[0].id]
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+}
+
+# EC2 Instance Connect Endpoint: lets operators SSH into the private-
+# subnet DB host via the AWS API without a NAT gateway, bastion, or
+# public IP. Acts as a fallback when SSM Session Manager is wedged
+# (observed during heavy cargo bench compiles starving the SSM agent
+# on m8g.large during the Graviton baseline cycle).
+resource "aws_security_group" "eice" {
+  count       = var.enable_eice_ssh ? 1 : 0
+  name        = "${local.name}-eice"
+  description = "ecaz EC2 Instance Connect Endpoint egress to instances"
+  vpc_id      = aws_vpc.this.id
+  tags        = local.common_tags
+
+  # Egress to the DB host's SSH port on the VPC CIDR.
+  egress {
+    description = "SSH egress to VPC instances"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+}
+
+resource "aws_ec2_instance_connect_endpoint" "this" {
+  count              = var.enable_eice_ssh ? 1 : 0
+  subnet_id          = aws_subnet.private.id
+  security_group_ids = [aws_security_group.eice[0].id]
+  preserve_client_ip = false
+  tags               = local.common_tags
 }
 
 resource "aws_security_group" "loader" {
@@ -261,7 +322,13 @@ resource "aws_instance" "db" {
   iam_instance_profile        = aws_iam_instance_profile.instance.name
   user_data                   = local.cloud_init_db
   user_data_replace_on_change = false
-  associate_public_ip_address = false
+  associate_public_ip_address = true
+  # key_name is intentionally NOT set here. EC2 Instance Connect pushes
+  # an ephemeral key at connect time via SendSSHPublicKey, so SSH works
+  # without baking a long-lived key into the instance. Setting key_name
+  # is a ForceNew attribute that would destroy the running instance --
+  # we use EICE precisely to avoid that. If you want a long-lived key
+  # too, set lifecycle.ignore_changes = [key_name] before plumbing it.
 
   root_block_device {
     volume_size = 20
@@ -288,7 +355,7 @@ resource "aws_instance" "loader" {
   subnet_id                   = aws_subnet.private.id
   vpc_security_group_ids      = [aws_security_group.loader.id]
   iam_instance_profile        = aws_iam_instance_profile.instance.name
-  associate_public_ip_address = false
+  associate_public_ip_address = true
 
   root_block_device {
     volume_size = 100

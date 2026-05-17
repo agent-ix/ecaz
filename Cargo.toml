@@ -66,6 +66,17 @@ codegen-units = 1
 [profile.bench]
 inherits = "release"
 debug = true
+# Override release's lto = "fat" + codegen-units = 1: those settings let
+# the LTO link peak at > 24 GB on the ecaz crate, which OOMs a 16 GB
+# bench host (observed 2026-05-16 during the Graviton baseline cycle).
+# Thin LTO + multi-unit codegen drops peak link memory to ~6-8 GB and
+# costs a few percent on benchmark binary codegen quality -- immaterial
+# for criterion microbench timing, which measures wall time of small
+# inlinable kernels that already get inlined the same way.
+# If you want fat LTO for a specific bench (e.g. to compare codegen),
+# pass `--profile release --bench ...` instead of `--profile bench`.
+lto = "thin"
+codegen-units = 4
 
 # --- Criterion benchmarks ---
 

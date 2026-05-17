@@ -12,7 +12,10 @@
 set -euxo pipefail
 
 PGDATA=/var/lib/pgsql/18/data
-PG_BIN_DIR=/usr/pgsql-18/bin
+# AL2023 installs PG18 binaries to /usr/bin (not the postgresql.org RPM
+# /usr/pgsql-18/bin layout).
+PG_BIN_DIR=/usr/bin
+PG_CONFIG=/usr/bin/pg_config
 DATA_DEV=/dev/nvme1n1   # EBS /dev/sdf maps to nvme1n1 on Nitro
 ECAZ_REF='${ecaz_git_ref}'
 ECAZ_URL='${ecaz_git_url}'
@@ -23,13 +26,14 @@ dnf -y update
 dnf -y install --allowerasing \
   git gcc gcc-c++ make clang clang-devel llvm llvm-devel \
   openssl-devel readline-devel zlib-devel bzip2-devel \
-  parquet-tools jq awscli2 cmake pkgconfig perl
+  jq cmake pkgconfig perl
+# Note: awscli v2 (`aws`) ships in the AL2023 base image; no dnf install needed.
+# `parquet-tools` is not available in AL2023; the bootstrap flow does not use it.
 
 # --- Postgres 18 -----------------------------------------------------------
-# AL2023 ships PG via the postgresql packages in the dnf module; pinning
-# specifically to 18 here. Adjust if AL2023 lags upstream PG18 GA.
-dnf -y module enable postgresql:18 || true
-dnf -y install postgresql18-server postgresql18-contrib postgresql18-devel
+# AL2023 ships PG18 as regular RPMs (not a dnf module). server-devel
+# provides /usr/bin/pg_config which pgrx needs.
+dnf -y install postgresql18-server postgresql18-contrib postgresql18-server-devel
 
 # --- Mount data volume -----------------------------------------------------
 if ! blkid "$DATA_DEV" >/dev/null 2>&1; then
@@ -48,12 +52,14 @@ fi
 cat > "$PGDATA/postgresql.auto.conf" <<EOF
 listen_addresses = '*'
 port = 5432
-shared_preload_libraries = 'ecaz'
 max_parallel_workers_per_gather = 4
 max_parallel_workers = 8
 work_mem = '64MB'
 maintenance_work_mem = '512MB'
 EOF
+# shared_preload_libraries = 'ecaz' is appended below, AFTER the pgrx
+# build installs ecaz.so. Setting it before the .so exists makes
+# postgresql.service fail to start.
 
 cat > "$PGDATA/pg_hba.conf" <<EOF
 local all all                     trust
@@ -61,16 +67,30 @@ host  all all 127.0.0.1/32        trust
 host  all all 10.42.0.0/16        trust
 EOF
 
-systemctl enable postgresql-18
-systemctl start postgresql-18
+# AL2023 unit is `postgresql.service` with default PGDATA=/var/lib/pgsql/data.
+# Drop-in overrides PGDATA to our EBS-backed location.
+mkdir -p /etc/systemd/system/postgresql.service.d
+cat > /etc/systemd/system/postgresql.service.d/pgdata.conf <<EOF
+[Service]
+Environment=PGDATA=$PGDATA
+EOF
+systemctl daemon-reload
+systemctl enable postgresql
+systemctl start postgresql
 
 # --- Rust toolchain (for cargo pgrx) --------------------------------------
+# `cargo pgrx install --sudo` needs passwordless sudo for the postgres
+# user (the install step copies ecaz.control + ecaz.so into root-owned
+# /usr/share/pgsql/extension and /usr/lib64/pgsql).
+echo 'postgres ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/postgres
+chmod 440 /etc/sudoers.d/postgres
+
 sudo -u postgres bash -c '
   curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal
   source $HOME/.cargo/env
-  cargo install --locked cargo-pgrx@0.17 --features pg18
-  cargo pgrx init --pg18 /usr/pgsql-18/bin/pg_config
+  cargo install --locked cargo-pgrx@^0.17
+  cargo pgrx init --pg18 /usr/bin/pg_config
 '
 
 # --- Build & install ecaz extension at the requested ref ------------------
@@ -83,10 +103,19 @@ sudo -u postgres bash -lc "
   git clone $ECAZ_URL ecaz
   cd ecaz
   git checkout $ECAZ_REF
-  cargo pgrx install --release --pg-config /usr/pgsql-18/bin/pg_config
+  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
+  # Build the ecaz CLI alongside the extension so `ecaz corpus`,
+  # `ecaz bench`, etc. are available on the DB host for in-VPC use.
+  cargo build --release -p ecaz-cli
 "
+install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
 
-systemctl restart postgresql-18
+# Now safe to enable shared_preload_libraries.
+cat >> "$PGDATA/postgresql.auto.conf" <<EOF
+shared_preload_libraries = 'ecaz'
+EOF
+systemctl restart postgresql
+sleep 3
 
 sudo -u postgres psql -c 'CREATE EXTENSION IF NOT EXISTS ecaz;'
 

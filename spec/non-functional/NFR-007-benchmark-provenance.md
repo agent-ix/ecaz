@@ -5,7 +5,7 @@ type: non-functional-requirement
 artifact_type: NFR
 status: APPROVED
 relationships:
-  - target: "ix://agent-ix/tqvector/StR-006"
+  - target: "ix://agent-ix/ecaz/StR-006"
     type: "constrains"
     cardinality: "N:1"
 ---

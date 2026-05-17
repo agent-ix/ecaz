@@ -193,6 +193,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambeginscan(
             }
 
             (*scan).parallel_scan = ptr::null_mut();
+            crate::fault::maybe_fail_palloc("ec_ivf ambeginscan opaque");
             (*scan).opaque = PgBox::<EcIvfScanOpaque>::alloc0().into_pg().cast();
             scan
         })
@@ -414,10 +415,12 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
 fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
     unsafe {
         if (*scan).xs_orderbyvals.is_null() {
+            crate::fault::maybe_fail_palloc("ec_ivf scan orderby values");
             (*scan).xs_orderbyvals =
                 pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
         }
         if (*scan).xs_orderbynulls.is_null() {
+            crate::fault::maybe_fail_palloc("ec_ivf scan orderby nulls");
             (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
         }
 
@@ -460,6 +463,7 @@ unsafe fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
     free_scan_query(opaque);
 
     let query_bytes = std::mem::size_of_val(query);
+    crate::fault::maybe_fail_palloc("ec_ivf scan query values");
     let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
     if query_values.is_null() {
         pgrx::error!("ec_ivf failed to allocate scan query state");
@@ -541,6 +545,7 @@ unsafe fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCen
     }
 
     let bytes = std::mem::size_of_val(scores);
+    crate::fault::maybe_fail_palloc("ec_ivf scan centroid scores");
     let score_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfCentroidScore>();
     if score_ptr.is_null() {
         pgrx::error!("ec_ivf failed to allocate centroid score state");
@@ -566,6 +571,7 @@ unsafe fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u
     }
 
     let bytes = std::mem::size_of_val(selected_lists);
+    crate::fault::maybe_fail_palloc("ec_ivf scan selected lists");
     let list_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<u32>();
     if list_ptr.is_null() {
         pgrx::error!("ec_ivf failed to allocate selected-list state");
@@ -594,6 +600,7 @@ unsafe fn store_posting_candidates(
     }
 
     let bytes = std::mem::size_of_val(candidates);
+    crate::fault::maybe_fail_palloc("ec_ivf scan posting candidates");
     let candidate_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfScoredCandidate>();
     if candidate_ptr.is_null() {
         pgrx::error!("ec_ivf failed to allocate posting candidate state");

@@ -1,0 +1,24 @@
+Script started on 2026-05-17 10:34:53-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_fault_injection-241745da5bec2e27)
+
+running 7 tests
+test tests::all_lanes_cover_every_access_method ... [32mok[m
+test tests::io_lane_covers_eio_and_enospc ... [32mok[m
+test tests::parser_accepts_documented_lane_names ... [32mok[m
+test tests::provider_environment_pins_provider_and_mode ... [32mok[m
+test tests::workload_sql_mentions_every_access_method ... [32mok[m
+test tests::ldpreload_provider_returns_eio_for_matched_read ... [32mok[m
+test tests::ldpreload_provider_returns_enospc_for_matched_create ... [32mok[m
+
+test result: [32mok[m. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ecaz_fault_injection
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-17 10:34:54-07:00 [COMMAND_EXIT_CODE="0"]

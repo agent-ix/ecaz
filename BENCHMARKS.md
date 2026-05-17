@@ -1,5 +1,9 @@
 # Ecaz Benchmark Report
 
+This is an older report template. New packet-backed benchmark rows should
+follow [docs/benchmark-reporting-standard.md](docs/benchmark-reporting-standard.md)
+and cite packet-local artifacts.
+
 ## Environment
 
 | Property | Value |

@@ -2,9 +2,12 @@
 id: US-002
 title: Query Nearest Neighbors via SQL
 type: user-story
+artifact_type: US
 status: APPROVED
-traces:
-  - StR-001
+relationships:
+  - target: "ix://agent-ix/ecaz/StR-001"
+    type: "derives_from"
+    cardinality: "N:1"
 ---
 # US-002: Query Nearest Neighbors via SQL
 
@@ -14,7 +17,21 @@ traces:
 
 ## Acceptance Criteria
 
-1. `SELECT * FROM memories ORDER BY tq_code <#> $query_embedding LIMIT 10` returns the approximate 10 nearest neighbors, where `$query_embedding` is `float4[]`
-2. The query uses the HNSW index (confirmed via EXPLAIN)
-3. Results are ordered by ascending negative inner product (highest similarity first)
-4. The query completes within the latency bounds defined in NFR-001
+### US-002-AC-1
+
+`SELECT * FROM memories ORDER BY tq_code <#> $query_embedding LIMIT 10`
+returns the approximate 10 nearest neighbors, where `$query_embedding` is
+`float4[]`.
+
+### US-002-AC-2
+
+The query uses the HNSW index, confirmed via EXPLAIN.
+
+### US-002-AC-3
+
+Results are ordered by ascending negative inner product, with highest
+similarity first.
+
+### US-002-AC-4
+
+The query completes within the latency bounds defined in `NFR-001`.

@@ -1,0 +1,21 @@
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=6880.96..6880.99 rows=10 width=12) (actual time=1340.225..1340.227 rows=10.00 loops=1)
+   Buffers: shared hit=900535 read=101167
+   ->  Sort  (cost=6880.96..7130.96 rows=100000 width=12) (actual time=1340.224..1340.225 rows=10.00 loops=1)
+         Sort Key: ((real_100k_diskann_corpus.embedding <#> (SubPlan 1)))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=900535 read=101167
+         ->  Seq Scan on real_100k_diskann_corpus  (cost=0.00..4720.00 rows=100000 width=12) (actual time=1.302..1328.501 rows=100000.00 loops=1)
+               Buffers: shared hit=900532 read=101167
+               SubPlan 1
+                 ->  Limit  (cost=0.00..0.02 rows=1 width=32) (actual time=0.002..0.002 rows=1.00 loops=100000)
+                       Buffers: shared hit=199998 read=3
+                       ->  Seq Scan on real_100k_diskann_queries  (cost=0.00..18.00 rows=1000 width=32) (actual time=0.001..0.001 rows=1.00 loops=100000)
+                             Buffers: shared hit=199998 read=3
+ Planning:
+   Buffers: shared hit=121 read=2
+ Planning Time: 0.901 ms
+ Execution Time: 1340.265 ms
+(17 rows)
+

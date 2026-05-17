@@ -24,6 +24,9 @@ relationships:
 standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
+  - iso-iec-ieee-42010
+  - iso-iec-25010
+  - iso-iec-ieee-15939
 ---
 # Master Requirements Specification
 ## Ecaz - PostgreSQL Extension for Compressed Vector Search
@@ -39,9 +42,9 @@ This specification is the top-level requirements artifact for the current main-b
 - `ec_hnsw`, the default general-purpose graph access method
 - `ec_ivf`, the optional IVF posting-list access method
 - `ec_diskann`, the optional DiskANN/Vamana-style graph access method
-- `ec_spire`, the planned SPIRE partition-object access method for recursive
-  IVF routing, local multi-NVMe partition stores, and future multi-machine
-  placement
+- `ec_spire`, the SPIRE partition-object access method for PID-addressed IVF
+  storage, local partition stores, CustomScan distributed reads, typed remote
+  tuple transport, and coordinator-routed writes
 - `ecaz`, the operator CLI for corpus, benchmark, comparison, stress, quantizer, and local development workflows
 - configured `ecaz bench suite` runs for repeatable long benchmark sequences and packet-local run manifests
 - Shared quantizer, scoring, planner, observability, WAL, and benchmark evidence requirements
@@ -61,10 +64,12 @@ This specification governs:
 - HNSW build, scan, insert, vacuum, page layout, reloptions, GUCs, planner costing, PG18 ReadStream, EXPLAIN, stats, and parallel build behavior
 - IVF centroid training, posting-list persistence, scan/rerank behavior, insert/vacuum/admin snapshots, reloptions, GUCs, planner costing, and measurement evidence
 - DiskANN/Vamana build, persisted graph format, binary sidecar prefilter, grouped-PQ traversal fallback, heap rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs, planner costing, and measurement evidence
-- SPIRE planning requirements for PID-addressed partition objects, logical
-  `(vec_id, pid)` assignment rows, epoch publication, local multi-NVMe
-  partition stores, configurable graceful degradation, and future
-  multi-machine placement over libpq
+- SPIRE partition-object storage and execution: PID-addressed root, routing,
+  leaf, delta, and top-graph objects; Leaf V2 columnar segments; epoch
+  publication; local partition stores; local eager bounded scans; split, merge,
+  vacuum, and replacement maintenance; placement directories; typed remote
+  transport; production remote execution; CustomScan distributed reads; and
+  coordinator-routed DML with two-phase commit recovery
 - WAL safety for index mutations and crash-safe page writes
 - The `ecaz` operator CLI command tree, access-method profiles, benchmark/comparison/stress workflows, and review-packet logging behavior
 - The `ecaz bench suite` configuration format, dry-run/execution/status/audit/report behavior, and suite manifest provenance
@@ -77,8 +82,10 @@ This specification does not govern:
 - The TurboQuant, HNSW, IVF, DiskANN, PQ-FastScan, or RaBitQ research papers themselves
 - Application schema design above the extension boundary
 - Query routing, cross-agent fan-out, and shard selection
-- Production distributed SPIRE serving before an accepted implementation ADR,
-  remote consistency model, and controlled multi-machine measurements
+- SPIRE cross-shard non-PK scatter-gather outside vector TopK, automatic DDL
+  propagation, cross-shard embedding UPDATE-as-move, background prepared-xact
+  recovery, true parallel local-store execution inside one backend, and product
+  distributed benchmark claims before controlled multi-node measurements
 - Product benchmark claims not backed by dedicated controlled hardware
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, Symphony, and parallel index scan unless reactivated by a later accepted ADR
 - Cosine and L2 operator families in the current v0 inner-product surface
@@ -104,7 +111,7 @@ This specification does not govern:
 | `ec_hnsw` | `ecvector_ip_ops`, `tqvector_ip_ops` | Default general-purpose ANN graph index | Implemented |
 | `ec_ivf` | `ecvector_ip_ops`, `tqvector_ip_ops` | Optional posting-list index for IVF tradeoff measurement | Implemented local v1 |
 | `ec_diskann` | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` | Optional Vamana/DiskANN-style graph index | Implemented local v1 |
-| `ec_spire` | `ecvector_spire_ip_ops`, `tqvector_spire_ip_ops` | Planned recursive IVF/SPIRE partition-object index | Phase 1 scaffold |
+| `ec_spire` | `ecvector_spire_ip_ops`, `tqvector_spire_ip_ops` | SPIRE partition-object local and distributed index | Implemented local and distributed v1 |
 
 All current index families expose inner-product ordering through `<#>` as negative inner product so `ORDER BY embedding <#> query ASC LIMIT k` returns highest-similarity rows first.
 
@@ -116,20 +123,16 @@ All current index families expose inner-product ordering through `<#>` as negati
 
 `ec_diskann` is an opt-in AM for Vamana/DiskANN research and disk-resident graph comparisons. Local Task 29 evidence is landed; the v0 distance wrapper requires finite unit-normalized source vectors.
 
-`ec_spire` is planned as a SPIRE-inspired access method. Its storage model is
-based on PID-addressed partition objects, not PostgreSQL declarative table
-partitions. The first implementation target is a local single-level foundation.
-Phase 1 starts as an opt-in `ec_spire` AM scaffold with explicit
-`ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` opclasses; build, scan,
-insert, and vacuum persistence remain unsupported until the single-level local
-path lands and the pre-persistence architecture gate in
-`plan/design/spire-foundation-architecture-feedback-response.md` is cleared.
-That gate requires segmented column-major leaf partition objects, borrowed
-leaf reads, validated snapshot PID caches, flat routing centroid arrays,
-bounded top-k heaps, explicit dedupe mode, and a typed publish coordinator.
-The design preserves a path to PostgreSQL-managed local multi-NVMe partition
-stores, configurable graceful degradation, and later multi-machine PID
-placement over libpq.
+`ec_spire` is the SPIRE-inspired AM for partition-object IVF. Its storage model
+uses PID-addressed objects, not PostgreSQL declarative table partitions. Local
+queries use epoch-pinned root/control metadata, flat routing arrays, bounded
+eager candidate materialization, segmented Leaf V2 reads, heap visibility
+checks, and strict or degraded placement handling. Distributed reads leave the
+index-AM executor boundary and use an `EcSpireDistributedScan` CustomScan that
+dispatches typed `remote_scan_v1` requests to origin nodes, merges remote tuple
+payloads, and returns rows without coordinator mirror tables. Coordinator writes
+route by placement metadata and use PostgreSQL two-phase commit for multi-node
+INSERT atomicity; broader shard SQL remains outside v1.
 
 ## 4. Architecture
 
@@ -143,7 +146,10 @@ graph TD
     H["ec_hnsw"]
     I["ec_ivf"]
     D["ec_diskann"]
-    S["ec_spire<br/>planned"]
+    S["ec_spire<br/>partition objects"]
+    CS["EcSpireDistributedScan<br/>CustomScan"]
+    RE["Remote Executor<br/>typed tuple transport"]
+    DML["Coordinator DML<br/>placement + 2PC"]
     PG18["PG18 Integration<br/>ReadStream, cost callbacks, EXPLAIN, stats"]
     CLI["ecaz CLI<br/>corpus, bench, compare, stress"]
     EVID["Review Packets<br/>benchmark and measurement evidence"]
@@ -157,6 +163,11 @@ graph TD
     AM --> I
     AM --> D
     AM --> S
+    SQL --> CS
+    SQL --> DML
+    CS --> RE
+    RE --> S
+    DML --> RE
     PG18 --> H
     PG18 --> I
     PG18 --> D
@@ -177,7 +188,7 @@ src/
 │   ├── ec_hnsw/
 │   ├── ec_ivf/
 │   ├── ec_diskann/
-│   └── ec_spire/   # planned
+│   └── ec_spire/
 ├── quant/
 ├── storage/
 ├── pg18_pgstat_shim.rs
@@ -216,9 +227,10 @@ Each AM owns its persisted index format:
 - `ec_hnsw`: layered HNSW element/neighbor tuples, optional binary sidecars, optional rerank payloads, and storage-format-specific tuple variants
 - `ec_ivf`: metadata, centroid directory, posting-list pages, optional PQ/RaBitQ payloads, slack pages, and admin/drift snapshots
 - `ec_diskann`: Vamana nodes, medoid metadata, grouped-PQ codebook chain, binary sidecars, duplicate overflow chains, and vacuum repair metadata
-- `ec_spire`: planned root/control metadata, top graph, PID placement map,
-  epoch metadata, internal partition objects, leaf assignment/posting objects,
-  local store configuration, and remote-node placement metadata
+- `ec_spire`: root/control objects, routing arrays, top graph, Leaf V2 segment
+  objects, delta objects, replacement manifests, epoch metadata, PID placement
+  map, store descriptors, local store configuration, remote endpoint metadata,
+  typed tuple payloads, DML intents, and prepared transaction recovery state
 
 Cross-AM page-layout reuse is allowed only through shared helpers with explicit format adapters.
 
@@ -253,7 +265,25 @@ The supported operator surface for repeatable corpus setup, benchmarking, compar
 
 Product benchmark claims require controlled cache state, hardware, storage, PostgreSQL settings, command provenance, and packet-local raw logs.
 
-## 8. Requirement Architecture
+Benchmark result tables use the shared reporting standard in `NFR-015` so
+access methods, quantizers, storage formats, trained formats, and option sets
+can be compared with stable candidate identity fields.
+
+## 8. Standards Alignment Targets
+
+The following standards are alignment targets for requirements quality,
+architecture description, configuration control, quality attributes, and
+measurement. They are not certification claims.
+
+| Standard | Ecaz interpretation | Required spec evidence |
+| --- | --- | --- |
+| ISO/IEC/IEEE 29148 | Requirements quality, traceability, verifiability, and scope control. | Atomic StR/US/FR/NFR artifacts, stable IDs, acceptance criteria, and AC-to-TC or gap traceability in `spec/tests.md`. |
+| IEEE 828 | Configuration management for requirement and ADR artifacts. | Immutable IDs, lifecycle statuses, supersession/tombstone history, and review-packet provenance for accepted changes. |
+| ISO/IEC/IEEE 42010 | Architecture description discipline for the PostgreSQL extension, operator CLI, SPIRE distributed topology, and external integrations. | Architecture views, component boundaries, sequence/flow diagrams for processes, and explicit relationships between architectural decisions and requirements. |
+| ISO/IEC 25010 | Quality model for non-functional requirements. | NFRs scoped to a primary quality attribute such as performance efficiency, reliability, security, maintainability, portability, or scalability. |
+| ISO/IEC/IEEE 15939 | Measurement process for benchmark, recall, storage, memory, hardening, and operational claims. | Metric definitions, measurement context, candidate identity fields, hardening-lane command provenance, artifact provenance, and documented decision thresholds or explicit gaps. |
+
+## 9. Requirement Architecture
 
 ```
 spec/
@@ -261,6 +291,11 @@ spec/
 ├── stakeholder/
 ├── usecase/
 ├── functional/
+│   └── spire/
+│       ├── storage/
+│       ├── local/
+│       ├── distributed/
+│       └── operations/
 ├── non-functional/
 ├── adr/
 ├── tests.md
@@ -278,7 +313,17 @@ Requirement identifiers are immutable once assigned:
 | Acceptance criterion | `{PARENT}-AC-N` |
 | Test case | `TC-XXX` |
 
-## 9. Lifecycle Status
+New or substantially rewritten artifacts SHALL use `relationships:` YAML
+frontmatter with semantic relationship types. Legacy artifacts that still use
+`traces:` remain readable historical inputs, but they are not considered fully
+migrated until their dependency and verification links are represented through
+structured relationships or the test matrix.
+
+Acceptance criteria SHALL be traceable at AC granularity. Grouped ranges are
+allowed only as summary rows when the same section also records individual FR or
+AC-level evidence rows or an explicit gap.
+
+## 10. Lifecycle Status
 
 Requirement and ADR statuses use:
 
@@ -290,20 +335,37 @@ Requirement and ADR statuses use:
 - `DEPRECATED`: retained for history but no longer part of the current product surface
 - `SUPERSEDED`: replaced by a newer artifact
 
-## 10. Known Deferrals
+Identifier gaps SHALL be represented by a retained artifact or an explicit
+tombstone entry when the assigned ID reached review or task planning. Tombstones
+SHALL state whether the requirement was `DEPRECATED`, `SUPERSEDED`, or folded
+into another artifact.
+
+Historical ADR numbers that were reused before this policy SHALL be referenced
+by filename or canonical topic in addition to numeric ID. Numeric-only
+references are not sufficient when the ADR index marks a duplicate identifier.
+
+## 11. Known Deferrals
 
 - Parallel index scan is shelved indefinitely; it is not the current scaling frontier.
 - Symphony is shelved indefinitely; RaBitQ remains landed as a reusable quantizer and IVF storage/profile option.
 - HNSW insert-throughput decontention remains future work.
 - Larger HNSW parallel build and product benchmark runs are deferred to AWS/RDS-class hardware.
 - IVF and DiskANN local evidence is landed, but larger product claims require controlled benchmark hardware.
+- SPIRE distributed v1 is specified for PostgreSQL-node deployments with typed
+  transport and CustomScan reads; AWS/RDS-class product claims remain deferred
+  until controlled multi-node evidence is packeted under `NFR-015` and the
+  ISO/IEC/IEEE 15939 measurement target.
+- SPIRE true parallel local-store execution, cross-shard non-vector query
+  planning, cross-shard embedding UPDATE-as-move, automatic DDL propagation, and
+  background prepared-xact recovery remain deferred.
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, and additional distance metrics remain outside the current implemented surface.
 
-## 11. References
+## 12. References
 
 - README: `README.md`
 - Usage docs: `docs/usage.md`
 - Benchmarks: `docs/benchmarks.md`
+- Hardening lanes: `docs/hardening.md`
 - Operator CLI: `crates/ecaz-cli/README.md`
 - Architecture docs: `docs/architecture.md`
 - ADR index: `spec/adr/index.md`

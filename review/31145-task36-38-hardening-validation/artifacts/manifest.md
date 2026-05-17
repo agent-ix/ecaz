@@ -1,0 +1,287 @@
+# Artifact Manifest
+
+Code checkpoint SHA: `70f8c28ac3485a0a5306d90f51e374e1eb1d5d9a`
+Packet: `review/31145-task36-38-hardening-validation`
+Timestamp: `2026-05-17T17:35:00Z`
+
+All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
+directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
+fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
+
+## task36-38-final-cargo-fmt-check.log
+
+- Lane: final formatting check
+- Command: `script -q -e -c "cargo fmt --all --check" review/31145-task36-38-hardening-validation/artifacts/task36-38-final-cargo-fmt-check.log`
+- Key result: exited 0; rustfmt printed existing stable-toolchain warnings for unstable import-formatting options.
+
+## task36-final-simd-diff.log
+
+- Lane: Task 36 SIMD/scalar differential
+- Fixture: `tests/simd_diff.rs`
+- Command: `script -q -e -c "cargo test --features bench --test simd_diff -- --test-threads=1" review/31145-task36-38-hardening-validation/artifacts/task36-final-simd-diff.log`
+- Key result: 9 passed, 0 failed. Coverage includes product-quantizer scoring, forced AVX2/FMA score/FWHT on this host, pack/unpack roundtrips, HNSW/DiskANN source inner-product SIMD, and the 1536/4 production score path.
+
+## task36-ci-matrix-simd-diff-local.log
+
+- Lane: Task 36 SIMD/scalar differential after adding the CI matrix
+- Fixture: `.github/workflows/ci.yml` now runs `cargo test --features bench --test simd_diff -- --test-threads=1` on `ubuntu-24.04` x64 and `ubuntu-24.04-arm` arm64 runners.
+- Command: `script -q -e -c "cargo test --features bench --test simd_diff -- --test-threads=1" review/31145-task36-38-hardening-validation/artifacts/task36-ci-matrix-simd-diff-local.log`
+- Key result: local x64 run passed 9/9; the PR CI matrix is the remote verifier for the arm64/NEON hosted runner.
+
+## task36-miri-scalar-reference.log
+
+- Lane: Task 36 Miri scalar-reference coverage
+- Command: `script -q -e -c "cargo +nightly miri test --lib -- miri_" review/31145-task36-38-hardening-validation/artifacts/task36-miri-scalar-reference.log`
+- Key result: 19 passed, 0 failed.
+
+## task36-simd-diff-mutation-control.log
+
+- Lane: Task 36 mutation control
+- Command: temporarily perturbed the 1536/4 production score assertion by `+0.01`, then ran `script -q -c "cargo test --features bench --test simd_diff production_1536_4bit_score_path_matches_scalar_reference -- --exact --nocapture" review/31145-task36-38-hardening-validation/artifacts/task36-simd-diff-mutation-control.log`
+- Key result: failed as expected with absolute diff `0.010000000` above tolerance `0.000010000`; the source was restored before the final passing SIMD run.
+
+## task38-final-fault-injection-crate.log
+
+- Lane: Task 38 matrix/provider unit tests
+- Command: `script -q -e -c "cargo test -p ecaz-fault-injection" review/31145-task36-38-hardening-validation/artifacts/task38-final-fault-injection-crate.log`
+- Key result: 7 passed, 0 failed, including matched `EIO` read and matched `ENOSPC` create provider self-tests.
+
+## task38-final-ecaz-cli-fault-parse-tests.log
+
+- Lane: Task 38 CLI parser coverage
+- Command: `script -q -e -c "cargo test -p ecaz-cli cli_parses_fault" review/31145-task36-38-hardening-validation/artifacts/task38-final-ecaz-cli-fault-parse-tests.log`
+- Key result: 6 passed, 0 failed, including `prepare` and prepared-fixture I/O smoke parsing.
+
+## task38-provider-fault-events-cargo-fmt-check.log
+
+- Lane: Task 38 provider fault-event marker formatting check
+- Command: `script -q -e -c "cargo fmt --package ecaz-cli --package ecaz-fault-injection -- --check" review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-cargo-fmt-check.log`
+- Key result: exited 0; rustfmt printed existing stable-toolchain warnings for unstable import-formatting options.
+
+## task38-provider-fault-events-crate-tests.log
+
+- Lane: Task 38 provider fault-event marker unit tests
+- Command: `script -q -e -c "cargo test -p ecaz-fault-injection" review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-crate-tests.log`
+- Key result: 7 passed, 0 failed. The LD_PRELOAD read and create self-tests now also assert `fault=1` marker lines for matched EIO and ENOSPC events.
+
+## task38-provider-fault-events-cli-tests.log
+
+- Lane: Task 38 provider marker CLI parser coverage
+- Command: `script -q -e -c "cargo test -p ecaz-cli cli_parses_fault -- --nocapture" review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-cli-tests.log`
+- Key result: 6 passed, 0 failed. The run emitted an existing unrelated `src/am/mod.rs` unused-import warning.
+
+## task38-pg18-install-memory-fault.log
+
+- Lane: PG18 extension install for live memory-fault GUC validation
+- Command: `script -q -e -c "cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-install-memory-fault.log`
+- Key result: installed `ecaz` into the PG18 pgrx tree.
+
+## task38-provider-restore-after-install.log
+
+- Lane: provider cleanup / normal postmaster restart after install
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- dev fault provider-restore" review/31145-task36-38-hardening-validation/artifacts/task38-provider-restore-after-install.log`
+- Key result: restarted PG18 without provider environment.
+
+## task38-reset-test-extension-local.log
+
+- Lane: refresh test database extension SQL after install
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- dev sql --db ecaz_fault_probe_36_38 --socket-dir /home/peter/.pgrx --sql 'DROP EXTENSION IF EXISTS ecaz CASCADE; CREATE EXTENSION ecaz;'" review/31145-task36-38-hardening-validation/artifacts/task38-reset-test-extension-local.log`
+- Key result: recreated the extension in `ecaz_fault_probe_36_38`.
+
+## task38-pg18-memory-smoke.log
+
+- Lane: Task 38 live memory/palloc smoke
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-smoke.log`
+- Key result: all four AMs completed palloc-failure smoke with postcondition probes asserted.
+
+## task38-pg18-install-palloc-sweep-sites.log
+
+- Lane: PG18 extension install for final `ecaz.fault_palloc_nth` scan-site sweep
+- Command: `script -q -e -c "cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-install-palloc-sweep-sites.log`
+- Key result: installed the extension after adding scan query/order-by palloc instrumentation and renaming the live fault GUC to `ecaz.fault_palloc_nth`.
+
+## task38-pg18-memory-palloc-sweep-sites.log
+
+- Lane: Task 38 live memory/palloc scan-site sweep
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-palloc-sweep-sites.log`
+- Key result: all four AMs completed the live palloc smoke. HNSW sweeps Nth failures 1..=4, IVF 1..=4, DiskANN 1, and SPIRE 1..=3, with postcondition probes asserted after each run.
+
+## task38-pg18-install-memory-major-workloads.log
+
+- Lane: PG18 extension install for build/scan/insert/vacuum memory smoke
+- Command: `script -q -e -c "cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-install-memory-major-workloads.log`
+- Key result: installed the extension after adding memory-fault checkpoints to each AM's build result, insert entry, and vacuum stats boundaries.
+
+## task38-pg18-memory-major-workloads.log
+
+- Lane: Task 38 live memory/palloc major-workload smoke
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-major-workloads.log`
+- Key result: all four AMs completed memory smoke across build, scan, insert, and vacuum probes, with shared postcondition probes asserted.
+
+## task38-memory-palloc-sweep-all.log
+
+- Lane: Task 38 live memory/palloc ordinal sweep expansion
+- Guard artifact: `task38-memory-palloc-sweep-hnsw.log` first verified the new sweep markers on HNSW only.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-memory-palloc-sweep-all.log dev fault smoke --lane memory --rows 32`
+- Key result: all four AMs emitted `memory_palloc_sweep_fault` at `nth=1` and `memory_palloc_sweep_completed ... first_success_nth=2` for build, insert, and vacuum. The scan palloc sweep and twelve backend-SIGKILL build/scan/insert OOM-proxy cases also passed; each SIGKILL logged `postmaster_recovered=true`. Shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`; `pg_stat_io` and `pg_stat_wal` lower after crash recovery were recorded as stats resets.
+
+## task38-rlimit-oom-all.log
+
+- Lane: Task 38 backend `RLIMIT_AS` OOM pressure
+- Guard artifact: `task38-rlimit-oom-hnsw.log` first verified the new rlimit path on HNSW only and caught the initial tuning issue where the cap was either too low before extension preload or too loose after preload.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-rlimit-oom-all.log dev fault smoke --lane memory --rows 32`
+- Key result: all four AMs emitted `memory rlimit-oom <am> build ... rlimit_as_bytes=...`, then `backend_disconnected=true`, then `postmaster_recovered=true` under an address-space cap applied with `prlimit64` after warming the backend extension. The same run also reran the palloc ordinal sweeps and twelve backend-SIGKILL build/scan/insert OOM-proxy cases; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`. `pg_stat_io` and `pg_stat_wal` lower after crash recovery were recorded as stats resets.
+
+## task38-palloc-sweep-exhaustive-all.log
+
+- Lane: Task 38 instrumented palloc ordinal sweep exhaustion
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-palloc-sweep-exhaustive-all.log dev fault smoke --lane memory --rows 32`
+- Key result: scan palloc sweeps now use the same cap-and-stop model as build/insert/vacuum instead of hardcoded per-AM scan limits. The all-AM run emitted scan faults through HNSW `nth=4` then `first_success_nth=5`, IVF `nth=7` then `first_success_nth=8`, DiskANN `nth=1` then `first_success_nth=2`, and SPIRE `nth=3` then `first_success_nth=4`. Build, insert, and vacuum each completed at `first_success_nth=2` for every AM. The same run reran backend `RLIMIT_AS` OOM build checks and backend-SIGKILL build/scan/insert checks for every AM; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`.
+
+## Task 38 Follow-Up Availability Audits
+
+- Cgroup availability: `task38-cgroup-availability-findmnt.log`, `task38-cgroup-availability-write-test.log`, `task38-cgroup-availability-controllers.log`, `task38-cgroup-availability-systemd-user.log`, and `task38-cgroup-availability-systemd-run.log`.
+- Key result: cgroup v2 memory controller is present and delegated, and a user `systemd-run --scope -p MemoryMax=256M true` probe succeeds when run through the packet PTY. The cgroup root is not directly writable from the repo process (`cgroup_root_writable=false`), so a future cgroup OOM lane should be implemented as an `ecaz`/systemd-scoped postmaster workflow rather than ad hoc writes under `/sys/fs/cgroup`.
+- SPIRE remote-object audit: `task38-spire-remote-object-audit.log`.
+- Key result: current docs still state boundary-replica diagnostics operate "before live remote object reads exist"; grep finds no implemented live SPIRE remote-object read/fetch surface to attach the LD_PRELOAD provider to yet. Existing packet coverage remains the Stage E `remote_oom` transport fault, not remote-object fetch faulting.
+
+## task38-pg18-oom-kill-hnsw-smoke.log
+
+- Lane: Task 38 backend-SIGKILL OOM-proxy smoke, single-AM guard
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --am hnsw --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-oom-kill-hnsw-smoke.log`
+- Key result: HNSW completed palloc smoke plus build, scan, and insert backend-SIGKILL checks. Each SIGKILL logged `postmaster_recovered=true`; shared postconditions passed with `pg_buffercache_fixture_pins=0`; `pg_stat_io` reset after crash recovery was recorded instead of treated as a monotonicity failure.
+
+## task38-pg18-oom-kill-all-ams.log
+
+- Lane: Task 38 backend-SIGKILL OOM-proxy smoke across all AMs
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-oom-kill-all-ams.log`
+- Key result: all four AMs completed palloc smoke plus backend-SIGKILL build, scan, and insert checks. Twelve SIGKILL cases recovered the postmaster; shared postconditions passed with `pg_buffercache_fixture_pins=0`; `pg_stat_io_ops_before=189 after=66` was recorded as a stats reset after crash recovery.
+
+## task38-pg18-memory-hnsw-pin-marker.log
+
+- Lane: Task 38 structured buffer-pin marker smoke
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --am hnsw --rows 32" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-hnsw-pin-marker.log`
+- Key result: HNSW memory smoke passed palloc plus backend-SIGKILL build/scan/insert checks and emitted the structured postcondition marker `pg_buffercache_fixture_pins_ok=true pins=0` with `pg_stat_io_ops_before=42 after=68`.
+
+## task38-pg18-lock-rollback-guard.log
+
+- Lane: Task 38 live lock-timeout cleanup guard
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-lock-rollback-guard.log`
+- Key result: all four AMs completed lock-timeout smoke after changing the harness to attempt holder rollback before propagating waiter reset errors.
+
+## task38-pg18-lock-ddl-matrix.log
+
+- Lane: Task 38 live lock-timeout DDL matrix
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-lock-ddl-matrix.log`
+- Key result: all four AMs completed lock-timeout smoke across blocked `REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)` cases, with shared postcondition probes asserted.
+
+## task38-pg18-cancel-terminate-matrix.log
+
+- Lane: Task 38 live cancellation/termination matrix
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane cancel --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-cancel-terminate-matrix.log`
+- Key result: all four AMs completed both `pg_cancel_backend` and `pg_terminate_backend` smoke cases, with shared postcondition probes asserted.
+
+## task38-pg18-postcondition-pgstat-probes.log
+
+- Lane: Task 38 live postcondition probe expansion
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane lock-timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-postcondition-pgstat-probes.log`
+- Key result: live lock-timeout smoke passed with optional probes enabled; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=731 after=762`.
+
+## task38-pg18-timeout-idle-tx.log
+
+- Lane: Task 38 live timeout matrix expansion
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-timeout-idle-tx.log`
+- Key result: all four AMs completed timeout smoke with both `statement-timeout` and `idle-in-transaction-timeout` cases listed in the matrix. The expected idle-timeout backend terminations were followed by shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=764 after=795`.
+
+## task38-pg18-resource-temp-spill.log
+
+- Lane: Task 38 live resource/temp-spill expansion
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-temp-spill.log`
+- Key result: all four AMs completed resource smoke with both `tiny-work-mem` and `temp-file-limit` cases listed in the matrix. The temp-spill subcase forced a `temp_file_limit = '64kB'` ERROR and verified backend usability before shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=799 after=843`.
+
+## task38-resource-accumulator-all.log
+
+- Lane: Task 38 calibrated accumulator `work_mem` pressure
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` tables/indexes; pressure fixtures were prepared with 8192 rows and pressure limit 1000.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-resource-accumulator-all.log dev fault smoke --lane resource --rows 64`
+- Key result: all four AMs emitted `resource_accumulator_pressure` with `rows=8192 limit=1000 returned=1000 work_mem=64kB effective_cache_size=1MB`; shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0` and `pg_stat_io_ops_before=2632 after=3530`.
+
+## task38-resource-accounting-all.log
+
+- Lane: Task 38 WAL/temp accounting marker expansion
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` tables/indexes; pressure fixtures were prepared with 8192 rows and pressure limit 1000.
+- Guard artifact: `task38-resource-accounting-smoke.log` first verified the new accounting markers on HNSW only.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-resource-accounting-all.log dev fault smoke --lane resource --rows 64`
+- Key result: all four AMs emitted `resource_accumulator_pressure` and `resource_temp_spill_accounting` markers. The lane asserted shared postconditions plus non-decreasing `pg_stat_io` and `pg_stat_wal`: `pg_stat_io_ops_before=3919 after=4744`, `pg_stat_wal_records_before=201474 after=270121`, and `bytes_before=31593642 after=40508396`. Temp-byte accounting remained readable and non-decreasing for every AM (`delta=0` after the forced `temp_file_limit` ERROR).
+
+## task38-wal-rotation-all.log
+
+- Lane: Task 38 WAL rotation accounting expansion
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` tables/indexes; pressure fixtures were prepared with 8192 rows and pressure limit 1000.
+- Guard artifact: `task38-wal-rotation-hnsw.log` first caught and then verified the `pg_lsn` bind/cast fix on HNSW only.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-wal-rotation-all.log dev fault smoke --lane resource --rows 64`
+- Key result: all four AMs emitted `wal_rotation_accounting` after AM-backed writes and `pg_switch_wal()`. Each marker showed LSN advancement plus non-decreasing `pg_stat_wal` counters: HNSW `records_before=104445 records_after=105349 bytes_before=24685362 bytes_after=29370080`, IVF `105349 -> 105856` and `29370080 -> 30327371`, DiskANN `105856 -> 106362` and `30327371 -> 31805981`, SPIRE `106362 -> 110350` and `31805981 -> 48061666`. Shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`, `pg_stat_io_ops_before=968 after=1875`, and `pg_stat_wal_records_before=36173 after=110350 bytes_before=15859318 after=48061666`.
+
+## task38-pg18-resource-provider-temp-spill.log
+
+- Lane: Task 38 provider-backed temp-spill ENOSPC
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64 --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-temp-spill.marker" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-provider-temp-spill.log`
+- Provider setup: `task38-provider-temp-spill-restart.log` restarted PG18 with `--mode enospc-write --path-match pgsql_tmp --after 1`; `task38-provider-temp-spill.marker` recorded `mode=enospc-write match=pgsql_tmp`; `task38-provider-temp-spill-restore.log` restored PG18 without provider environment.
+- Key result: all four AMs completed resource smoke under the provider, the resource lane printed `resource_temp_spill_provider=enospc-write match=pgsql_tmp`, and shared postconditions passed with `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=1392 after=1712`.
+
+## task38-provider-fault-events-temp-spill.log
+
+- Lane: Task 38 provider fault-event marker accounting
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw` table/index fixture; provider restarted with `--mode enospc-write --path-match pgsql_tmp --after 1` and an absolute marker path.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-temp-spill.log dev fault smoke --lane resource --am hnsw --rows 32 --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-fault-events-temp-spill.marker`
+- Provider setup: `task38-provider-fault-events-temp-spill-restart.log` restarted PG18 and printed the absolute marker path; `task38-provider-fault-events-temp-spill.marker` records two `fault=1 ... mode=enospc-write ... target=base/pgsql_tmp/...` entries; `task38-provider-fault-events-temp-spill-restore.log` restored PG18 without the provider environment. `task38-provider-fault-events-temp-spill-restore-before-rerun.log` and `task38-provider-fault-events-temp-spill-restore-before-absolute-rerun.log` are retained setup cleanup logs from the failed relative-marker attempt and the final absolute-marker rerun.
+- Key result: focused HNSW resource smoke exited 0 and emitted `provider_fault_events label=resource provider temp spill mode=enospc-write match=pgsql_tmp count=2`, proving the provider actually injected ENOSPC events instead of only observing a SQLSTATE. The run also emitted `wal_rotation_accounting ... records_before=27102 records_after=27911 bytes_before=9546039 bytes_after=13755407`, `pg_buffercache_fixture_pins_ok=true pins=0`, `pg_stat_io_ops_before=1242 after=1699`, and `pg_stat_wal_records_before=18366 after=27911 bytes_before=7826860 after=13755407`.
+
+## task38-spire-remote-oom.log
+
+- Lane: Task 38 SPIRE Stage E remote transport fault
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- dev spire-multicluster fault-pg18 --case remote_oom --artifact-dir review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom --run-id task38-spire-remote-oom-20260517T0538Z --coord-port 39425 --remote-ready-port 39424 --skip-install" review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom.log`
+- Key result: `SPIRE Stage E remote_oom PG18 fixture passed`. Strict mode observed `remote_transport_failed` with first failure category `remote_query_failed`; degraded mode observed `requires_compact_candidate_receive` with first degraded skip category `remote_query_failed`. The run also verified the Stage E fixture socket-path fix: the remote log shows the socket under `/home/peter/dev/ecaz/target/s-1656884002/.s.PGSQL.39424`.
+- Related logs: `task38-spire-remote-oom/stage_e_fault_remote_oom.log`, `stage_e_fault_remote_oom_strict.log`, `stage_e_fault_remote_oom_degraded.log`, `remote-ready-postgres.log`, and `coord-postgres.log`.
+
+## Provider-Backed I/O Smoke
+
+- HNSW EIO: `task38-pg18-hnsw-eio-smoke.log`, path match `base/8052051/8054466`, provider marker `/tmp/ecaz-fault-provider-eio-hnsw-task38-final.marker`.
+- HNSW ENOSPC: `task38-pg18-hnsw-enospc-smoke.log`, path match `base/8052051/8054456`, provider marker `/tmp/ecaz-fault-provider-enospc-hnsw-task38-final.marker`.
+- IVF EIO: `task38-pg18-ivf-eio-smoke.log`, path match `base/8052051/8054478`, provider marker `/tmp/ecaz-fault-provider-eio-ivf-task38-final.marker`.
+- IVF ENOSPC: `task38-pg18-ivf-enospc-smoke.log`, path match `base/8052051/8054468`, provider marker `/tmp/ecaz-fault-provider-enospc-ivf-task38-final.marker`.
+- DiskANN EIO: `task38-pg18-diskann-eio-smoke.log`, path match `base/8052051/8054490`, provider marker `/tmp/ecaz-fault-provider-eio-diskann-task38-final.marker`.
+- DiskANN ENOSPC: `task38-pg18-diskann-enospc-smoke.log`, path match `base/8052051/8054480`, provider marker `/tmp/ecaz-fault-provider-enospc-diskann-task38-final.marker`.
+- SPIRE EIO: `task38-pg18-spire-eio-smoke.log`, path match `base/8052051/8054502`, provider marker `/tmp/ecaz-fault-provider-eio-spire-task38-20260517.marker`.
+- SPIRE ENOSPC: `task38-pg18-spire-enospc-smoke.log`, path match `base/8052051/8054492`, provider marker `/tmp/ecaz-fault-provider-enospc-spire-task38-20260517.marker`.
+- Key result: all eight runs exited 0. Each run restarted PG18 with the provider, ran `ecaz dev fault smoke --lane io --am <am> --assume-prepared`, asserted the shared postcondition probes, and restored the postmaster.
+
+## Provider SQLSTATE Guard
+
+- Lane: Task 38 provider-backed I/O assertion tightening
+- Fixture: HNSW table path `base/8052051/8202610`, HNSW index path `base/8052051/8202620`.
+- EIO command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-eio.marker" review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-eio-smoke.log`
+- ENOSPC command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-enospc-rerun.marker" review/31145-task36-38-hardening-validation/artifacts/task38-provider-sqlstate-hnsw-enospc-rerun-smoke.log`
+- Key result: the EIO smoke exited 0 with `pg_stat_io_ops_before=352 after=441`; the first ENOSPC tightening attempt failed as intended in `task38-provider-sqlstate-hnsw-enospc-smoke.log` because PostgreSQL surfaced provider ENOSPC during `CHECKPOINT` as SQLSTATE `XX000` with message `checkpoint request failed`; the final narrowed allowance accepted that specific checkpoint path and the rerun exited 0 with `pg_stat_io_ops_before=42 after=134`. Provider restart/restore logs and marker files are stored alongside the smoke logs.
+
+## WAL-Path ENOSPC Smoke
+
+- Lane: Task 38 provider-backed WAL-path ENOSPC smoke
+- Fixture: HNSW table path `base/8052051/8227222`, HNSW index path `base/8052051/8227232`.
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane io --am hnsw --assume-prepared --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-wal-enospc-hnsw-final.marker" review/31145-task36-38-hardening-validation/artifacts/task38-wal-enospc-hnsw-final-smoke.log`
+- Provider setup: `task38-wal-enospc-hnsw-final-restart.log` restarted PG18 with `--mode enospc-write --path-match pg_wal --after 1`; `task38-wal-enospc-hnsw-final.marker` recorded `mode=enospc-write match=pg_wal`; `task38-wal-enospc-hnsw-final-restore.log` restored PG18 without provider environment.
+- Key result: final smoke exited 0 after recording `wal_enospc_backend_disconnected=true` and `wal_enospc_provider_restore_required=true match=pg_wal`. Earlier guard artifacts show why the CLI behavior was tightened: `task38-wal-enospc-hnsw-smoke.log` failed because WAL ENOSPC closed the backend before same-session postconditions, and `task38-wal-enospc-cli-restore-fallback.log` proves `ecaz dev fault provider-restore` falls back from failed fast restart to immediate stop/start. Final postmaster status is clean in `task38-final-pg18-status.log`.
+
+## Prior Live Smoke Artifacts Retained
+
+- `task38-pg18-cancel-smoke.log`: cancel smoke for all four AMs passed.
+- `task38-pg18-timeout-smoke.log`: statement-timeout smoke for all four AMs passed.
+- `task38-pg18-lock-timeout-smoke.log`: lock-timeout smoke for all four AMs passed.
+- `task38-pg18-slow-disk-smoke.log`: provider-backed slow-disk smoke for all four AMs passed.
+- `task38-provider-restart.log` and `task38-provider-restore.log`: slow-disk provider startup/cleanup.
+
+## task38-final-pg18-status.log
+
+- Lane: final postmaster state check
+- Command: `script -q -e -c "/home/peter/.pgrx/18.3/pgrx-install/bin/pg_ctl -D /home/peter/.pgrx/data-18 status" review/31145-task36-38-hardening-validation/artifacts/task38-final-pg18-status.log`
+- Key result: PG18 postmaster is running without provider environment in the command line.

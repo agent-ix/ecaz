@@ -2,10 +2,13 @@
 id: US-008
 title: Parallel Index Build
 type: user-story
+artifact_type: US
 status: DRAFT
 priority: P2-high
-traces:
-  - StR-004
+relationships:
+  - target: "ix://agent-ix/ecaz/StR-004"
+    type: "derives_from"
+    cardinality: "N:1"
 ---
 # US-008: Parallel Index Build
 
@@ -15,7 +18,22 @@ traces:
 
 ## Acceptance Criteria
 
-1. `SET max_parallel_maintenance_workers = 4; CREATE INDEX ... USING ec_hnsw ...` uses parallel workers for heap scanning
-2. Build completion time with 4 workers is ≤ 60% of serial build time on a 100K-row table
-3. The resulting index is identical in structure and recall to a serially-built index on the same data
-4. `CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` works correctly with parallel workers
+### US-008-AC-1
+
+`SET max_parallel_maintenance_workers = 4; CREATE INDEX ... USING ec_hnsw ...`
+uses parallel workers for heap scanning.
+
+### US-008-AC-2
+
+Build completion time with 4 workers is no more than 60% of serial build time
+on a 100K-row table.
+
+### US-008-AC-3
+
+The resulting index is identical in structure and recall to a serially-built
+index on the same data.
+
+### US-008-AC-4
+
+`CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` works correctly with parallel
+workers.

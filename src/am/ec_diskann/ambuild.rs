@@ -211,6 +211,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
                 );
             }
 
+            crate::fault::maybe_fail_palloc("ec_diskann ambuild result");
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
             result.index_tuples = index_tuples;
@@ -554,6 +555,27 @@ fn source_inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
         ip += *l * *r;
     }
     ip
+}
+
+#[cfg(any(test, feature = "bench"))]
+pub(super) fn source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
+    source_inner_product_scalar(left, right)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+pub(super) fn source_inner_product_avx2_fma_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
+        return None;
+    }
+    Some(unsafe { source_inner_product_avx2_fma(left, right) })
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub(super) fn source_inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option<f32> {
+    if !std::arch::is_aarch64_feature_detected!("neon") {
+        return None;
+    }
+    Some(unsafe { source_inner_product_neon(left, right) })
 }
 
 #[cfg(target_arch = "x86_64")]
