@@ -12,9 +12,11 @@ NEON entry points where the backend exists. `tests/simd_diff.rs` covers
 dispatched-vs-scalar score paths, forced host-backend score/FWHT paths,
 deterministic 3-bit and 4-bit width sampling, pack/unpack roundtrips across
 2..=8 bits, AM source inner-product SIMD, and the production 1536/4-bit score
-path. Miri covers the scalar reference path, and the packet includes a
-mutation-control artifact that proves the lane fails on a deliberate score
-perturbation.
+path. The CI workflow now runs a focused `simd-diff` matrix on `ubuntu-24.04`
+x64 and `ubuntu-24.04-arm` arm64 runners so AVX2/FMA and NEON coverage are
+PR-visible when the hosted CPU exposes those features. Miri covers the scalar
+reference path, and the packet includes a mutation-control artifact that proves
+the lane fails on a deliberate score perturbation.
 
 Task 38 adds `crates/ecaz-fault-injection`, an LD_PRELOAD provider for matched
 EIO/ENOSPC/slow-disk injection, `ecaz dev fault`, Makefile lanes, and
@@ -53,6 +55,9 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
 - `cargo test -p ecaz-fault-injection`
 - `cargo test -p ecaz-cli cli_parses_fault`
 - `cargo test --features bench --test simd_diff -- --test-threads=1`
+- `.github/workflows/ci.yml` `simd-diff` matrix:
+  - `ubuntu-24.04` / `avx2`
+  - `ubuntu-24.04-arm` / `neon`
 - `cargo +nightly miri test --lib -- miri_`
 - SIMD mutation control: the production 1536/4 score assertion fails when
   perturbed by `0.01`.

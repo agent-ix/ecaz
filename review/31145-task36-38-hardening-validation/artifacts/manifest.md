@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `766c5a7a31cecc3dd1d65e873123dba51f2c084b`
+Code checkpoint SHA: `63be6e2d6f4a3a1de2e611193ecdeac454ab8324`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T04:50:08Z`
+Timestamp: `2026-05-17T04:55:03Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -20,6 +20,13 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Fixture: `tests/simd_diff.rs`
 - Command: `script -q -e -c "cargo test --features bench --test simd_diff -- --test-threads=1" review/31145-task36-38-hardening-validation/artifacts/task36-final-simd-diff.log`
 - Key result: 9 passed, 0 failed. Coverage includes product-quantizer scoring, forced AVX2/FMA score/FWHT on this host, pack/unpack roundtrips, HNSW/DiskANN source inner-product SIMD, and the 1536/4 production score path.
+
+## task36-ci-matrix-simd-diff-local.log
+
+- Lane: Task 36 SIMD/scalar differential after adding the CI matrix
+- Fixture: `.github/workflows/ci.yml` now runs `cargo test --features bench --test simd_diff -- --test-threads=1` on `ubuntu-24.04` x64 and `ubuntu-24.04-arm` arm64 runners.
+- Command: `script -q -e -c "cargo test --features bench --test simd_diff -- --test-threads=1" review/31145-task36-38-hardening-validation/artifacts/task36-ci-matrix-simd-diff-local.log`
+- Key result: local x64 run passed 9/9; the PR CI matrix is the remote verifier for the arm64/NEON hosted runner.
 
 ## task36-miri-scalar-reference.log
 
