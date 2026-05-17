@@ -33,6 +33,21 @@ pub const VAMANA_SEARCH_CODEC_GROUPED_PQ: u8 = 2;
 /// Size of the encoded metadata page payload. Locked at 48 bytes for
 /// the v0 layout; any field additions must bump the format tag.
 pub const VAMANA_METADATA_BYTES: usize = 48;
+pub const VAMANA_METADATA_FORMAT_VERSION_OFFSET: usize = 0;
+pub const VAMANA_METADATA_ENTRY_POINT_OFFSET: usize = 2;
+pub const VAMANA_METADATA_GRAPH_DEGREE_R_OFFSET: usize = 8;
+pub const VAMANA_METADATA_BUILD_LIST_SIZE_L_OFFSET: usize = 10;
+pub const VAMANA_METADATA_ALPHA_OFFSET: usize = 12;
+pub const VAMANA_METADATA_DIMENSIONS_OFFSET: usize = 16;
+pub const VAMANA_METADATA_SEED_OFFSET: usize = 18;
+pub const VAMANA_METADATA_INSERTED_SINCE_REBUILD_OFFSET: usize = 26;
+pub const VAMANA_METADATA_NEEDS_MEDOID_REFRESH_OFFSET: usize = 34;
+pub const VAMANA_METADATA_TRANSFORM_KIND_OFFSET: usize = 35;
+pub const VAMANA_METADATA_SEARCH_CODEC_KIND_OFFSET: usize = 36;
+pub const VAMANA_METADATA_PAYLOAD_FLAGS_OFFSET: usize = 37;
+pub const VAMANA_METADATA_SEARCH_SUBVECTOR_COUNT_OFFSET: usize = 38;
+pub const VAMANA_METADATA_SEARCH_SUBVECTOR_DIM_OFFSET: usize = 40;
+pub const VAMANA_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET: usize = 42;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VamanaMetadataPage {
