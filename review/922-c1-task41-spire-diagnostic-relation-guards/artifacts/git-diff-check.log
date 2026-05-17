@@ -1,0 +1,5 @@
+command: git diff --check
+exit status: 0
+
+output:
+<no output>
