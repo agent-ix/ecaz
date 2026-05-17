@@ -40,10 +40,16 @@ if ! comparator_table_loaded "${prefix}_queries"; then
   comparator_load_vector_table "${prefix}_queries" "$QUERIES" "$DIM"
 fi
 
+# pgvectorscale's StreamingDiskANN builder also fills maintenance_work_mem
+# at scale: emits "Builder neighbor cache is full after processing N
+# vectors; consider increasing maintenance_work_mem" and falls back to
+# slow path. Same 4 GB default as load_pgvector.sh.
+MAINT_WORK_MEM="${MAINT_WORK_MEM:-4GB}"
+
 idx="${prefix}_diskann_idx"
 if ! psql -tAc "select 1 from pg_indexes where indexname='$idx';" | grep -q 1; then
-  comparator_log "building $idx (pgvectorscale StreamingDiskANN, default config)"
-  psql -c "CREATE INDEX $idx ON ${prefix}_corpus USING diskann (embedding vector_ip_ops);"
+  comparator_log "building $idx (pgvectorscale StreamingDiskANN, maintenance_work_mem=$MAINT_WORK_MEM)"
+  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $idx ON ${prefix}_corpus USING diskann (embedding vector_ip_ops);"
 fi
 
 comparator_log "done. tables: ${prefix}_corpus, ${prefix}_queries; index: $idx"

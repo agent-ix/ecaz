@@ -1,5 +1,5 @@
 .PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report cargo-geiger mirai build install clean
-.PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff layout-check miri miri-expanded careful
+.PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
 .PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full hardening-local hardening-nightly-local hardening-validate hardening-tiers-report
@@ -192,6 +192,12 @@ proptest:
 ## Run SIMD/scalar differential tests for host-reachable vector backends
 simd-diff:
 	cargo test --features bench --test simd_diff -- --test-threads=1
+
+# --- On-disk format ---
+
+## Decode golden on-disk fixtures and reject byte-swapped fields where bounded
+on-disk-fixtures:
+	cargo test --features bench --test on_disk_fixtures
 
 # --- Layout ---
 
