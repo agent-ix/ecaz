@@ -1,0 +1,20 @@
+Script started on 2026-05-16 20:18:27-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_fault_injection-117e0b57b31b63be)
+
+running 4 tests
+test tests::io_lane_covers_eio_and_enospc ... [32mok[m
+test tests::all_lanes_cover_every_access_method ... [32mok[m
+test tests::parser_accepts_documented_lane_names ... [32mok[m
+test tests::workload_sql_mentions_every_access_method ... [32mok[m
+
+test result: [32mok[m. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ecaz_fault_injection
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-16 20:18:28-07:00 [COMMAND_EXIT_CODE="0"]
