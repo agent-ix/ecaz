@@ -11,7 +11,7 @@ use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 
 use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
 use crate::am::common::training::{self, GroupedPq4Model};
-use crate::storage::wal;
+use crate::storage::{relation_guard::HeapRelationGuard, wal};
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
@@ -314,18 +314,15 @@ impl BuildState {
         let indexed_vector_kind = if heap_oid == pg_sys::InvalidOid {
             source::IndexedVectorKind::Ecvector
         } else {
-            let heap_relation = unsafe {
-                pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            let Some(heap_relation) = HeapRelationGuard::try_access_share(heap_oid) else {
+                pgrx::error!("ec_hnsw build could not open heap relation for indexed column")
             };
             let indexed_attribute = unsafe {
                 source::resolve_indexed_vector_attribute(
-                    heap_relation,
+                    heap_relation.as_ptr(),
                     index_relation,
                     "indexed column",
                 )
-            };
-            unsafe {
-                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
             };
             indexed_attribute.kind
         };
@@ -515,10 +512,10 @@ fn validate_grouped_rerank_source_column_for_empty_build(
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw rerank_source_column could not resolve heap relation for validation");
     }
-    let heap_relation =
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    validate_grouped_rerank_source_column(heap_relation, options);
-    unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let Some(heap_relation) = HeapRelationGuard::try_access_share(heap_oid) else {
+        pgrx::error!("ec_hnsw rerank_source_column could not open heap relation for validation")
+    };
+    validate_grouped_rerank_source_column(heap_relation.as_ptr(), options);
 }
 
 fn persisted_binary_sidecar_word_count(dimensions: u16, bits: u8, seed: u64) -> usize {
