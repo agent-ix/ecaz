@@ -8,6 +8,7 @@ use color_eyre::eyre::Result;
 
 use crate::psql::ConnectionOptions;
 
+mod fault;
 mod install;
 mod scratch;
 mod spire_multicluster;
@@ -26,6 +27,11 @@ pub enum DevCommand {
     Scratch {
         #[command(subcommand)]
         command: scratch::ScratchCommand,
+    },
+    /// PG-level fault-injection planning and smoke probes.
+    Fault {
+        #[command(subcommand)]
+        command: fault::FaultCommand,
     },
     /// SPIRE local multi-cluster fixture helpers.
     SpireMulticluster {
@@ -46,6 +52,7 @@ impl DevCommand {
         match self {
             DevCommand::Install { command } => command.run(&conn.database).await,
             DevCommand::Scratch { command } => command.run(&conn.database).await,
+            DevCommand::Fault { command } => command.run(conn).await,
             DevCommand::SpireMulticluster { command } => command.run(&conn.database).await,
             DevCommand::Sql(args) => sql::run(conn, args).await,
             DevCommand::Test { command } => command.run(&conn.database).await,

@@ -61,6 +61,8 @@ pub mod bench_api {
     };
 
     // Hadamard
+    #[cfg(feature = "bench")]
+    pub use crate::quant::hadamard::fwht_in_place_scalar_reference;
     pub use crate::quant::hadamard::{fwht_in_place, orthonormal_fwht_in_place};
     pub fn simd_backend() -> &'static str {
         crate::quant::simd_backend_name()

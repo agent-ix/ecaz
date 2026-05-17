@@ -38,6 +38,11 @@ pub(crate) fn fwht_in_place_scalar(values: &mut [f32]) {
     }
 }
 
+#[cfg(any(test, feature = "bench"))]
+pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+    fwht_in_place_scalar(values);
+}
+
 /// In-place tiled FWHT over equal-sized power-of-two chunks.
 pub fn fwht_tiled_in_place(values: &mut [f32], tile_size: usize) {
     assert!(

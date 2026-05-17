@@ -22,11 +22,11 @@ be attached to a review packet.
 - `make hardening-local` runs stable local checks that do not need a live
   cluster: format check, PG18 Clippy with the current repository lint baseline,
   CLI unit tests, a standalone pure Rust extension harness, property tests,
-  layout assertions, unsafe comment audit, full `cargo-deny`, and
+  SIMD/scalar differential tests, layout assertions, unsafe comment audit, full `cargo-deny`, and
   `cargo-audit`.
 - `make hardening-nightly-local` adds slower and toolchain-sensitive local
-  lanes: expanded Miri, `cargo-careful`, fuzz smoke, Kani, Loom, Shuttle, and
-  pure Rust ASan/LSan. `cargo-geiger` remains a standalone reporting lane
+  lanes: expanded Miri, `cargo-careful`, fuzz smoke, PG fault-injection dry-run
+  coverage, Kani, Loom, Shuttle, and pure Rust ASan/LSan. `cargo-geiger` remains a standalone reporting lane
   because it can force a large clean rebuild.
 
 ## Baseline
@@ -38,10 +38,12 @@ be attached to a review packet.
 - `make test-hardening-local`
 - `make pg-test`
 - `make proptest`
+- `make simd-diff`
 - `make layout-check`
 - `make audit-unsafe`
 - `make miri`
 - `make fuzz-all-short`
+- `make fault-full`
 - `make deny-full`
 - `make bench`
 - `make bench-iai`
@@ -94,6 +96,21 @@ Seeded Miri coverage now includes:
 - SPIRE leaf V2 object metadata and segment invariants through existing
   in-module tests with `miri_` prefixes.
 
+## SIMD/Scalar Differential Validation
+
+- `make simd-diff`: runs `tests/simd_diff.rs` with the `bench` feature. The
+  harness compares production-dispatched scoring/FWHT entry points against
+  scalar-reference entry points in the same process, covering the host-reachable
+  SIMD backend without relying on `ECAZ_SIMD` process-global dispatch.
+- Tolerances:
+  - FWHT lanes: absolute/relative `1e-5`.
+  - `score_ip_from_parts`: absolute/relative `1e-5`.
+  - `score_ip_codes_lite`: absolute/relative `1e-5`.
+
+Tolerance changes require a review packet that explains the numeric reason.
+The Miri scalar fallback remains useful for reference-path UB checks, but SIMD
+correctness is owned by this differential lane.
+
 ## Fuzzing
 
 - `make fuzz-all-short`: runs each libFuzzer target for `FUZZ_SECONDS`, default
@@ -114,6 +131,41 @@ make sqlsmith-pg18 SQLSMITH_DSN='postgresql://localhost/postgres'
 
 Use a PG18 cluster with `ecaz` installed. Capture crashes and raw SQLsmith logs
 under the relevant review packet before citing findings.
+
+## PG Fault Injection
+
+- `ecaz dev fault plan`: prints the required Task 38 fault matrix for every
+  ECAZ AM (`ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`) and every lane.
+- `make fault-io-smoke`, `make fault-mem-smoke`, `make fault-cancel-smoke`,
+  `make fault-timeout-smoke`, `make fault-lock-smoke`,
+  `make fault-resource-smoke`, and `make fault-slow-disk-smoke`: run the
+  operator smoke entry points. They default to `FAULT_SMOKE_FLAGS=--dry-run` so
+  local and nightly hardening can verify matrix coverage without a live
+  injection provider.
+- To run a live probe, clear the dry-run flag, for example:
+  `make fault-timeout-smoke FAULT_SMOKE_FLAGS=`.
+
+The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
+`ec_diskann`, and `ec_spire`, then directly exercises cancellation, statement
+timeout, lock timeout, scan, insert, vacuum, and resource settings on those
+fixtures. I/O, memory-allocation failure, and slow-disk lanes
+require a provider such as LD_PRELOAD/libfiu, a FUSE filter, or a PG test hook;
+until that provider is installed, the CLI refuses non-dry-run execution for
+those lanes rather than reporting a false pass. Every lane uses the shared
+post-condition probe inventory from `ecaz-fault-injection`.
+
+Current interrupt inventory:
+
+- DiskANN build/scan paths call `maybe_check_for_interrupts()` from
+  `src/am/ec_diskann/mod.rs`, including the scan loop and build/import loops in
+  `src/am/ec_diskann/scan.rs` and `src/am/ec_diskann/routine.rs`.
+- SPIRE remote candidate dispatch polls PostgreSQL interrupt and statement
+  timeout flags in `src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`.
+- HNSW parallel build calls `pg_sys::ProcessInterrupts()` in
+  `src/am/ec_hnsw/build_parallel.rs`.
+
+Missing or newly discovered long-running loops should be added to this list
+with either an interrupt check or a follow-up task.
 
 ## Concurrency And Formal Pilots
 

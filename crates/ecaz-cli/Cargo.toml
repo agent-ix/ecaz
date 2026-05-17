@@ -36,6 +36,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ecaz = { path = "../.." }
 ecaz-cloud = { path = "../ecaz-cloud" }
+ecaz-fault-injection = { path = "../ecaz-fault-injection" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 
 [dev-dependencies]

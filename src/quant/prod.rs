@@ -244,6 +244,17 @@ impl ProdQuantizer {
         self.score_ip_from_split_parts(prepared, gamma, mse_packed, qjl_packed)
     }
 
+    #[cfg(any(test, feature = "bench"))]
+    pub fn score_ip_from_parts_scalar_reference(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        code_bytes: &[u8],
+    ) -> f32 {
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
+    }
+
     pub fn prepare_ip_query_int8_approx_no_qjl_4bit(
         &self,
         query: &[f32],
@@ -685,6 +696,13 @@ impl ProdQuantizer {
         let (mse_a, _) = self.split_code_bytes(code_a);
         let (mse_b, _) = self.split_code_bytes(code_b);
         self.score_ip_mse_codes(mse_a, mse_b)
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn score_ip_codes_lite_scalar_reference(&self, code_a: &[u8], code_b: &[u8]) -> f32 {
+        let (mse_a, _) = self.split_code_bytes(code_a);
+        let (mse_b, _) = self.split_code_bytes(code_b);
+        self.score_ip_mse_codes_scalar(mse_a, mse_b)
     }
 
     fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {

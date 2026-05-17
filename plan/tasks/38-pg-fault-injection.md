@@ -1,8 +1,15 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **proposed** — extends Task 37 from "crash mid-write" to the broader
-class of operational faults that real production clusters hit and that no
-current ECAZ lane exercises.
+Status: **operator smoke surface implemented locally; provider-backed injection
+pending** — extends Task 37 from "crash mid-write" to the broader class of
+operational faults that real production clusters hit. The local implementation
+adds `crates/ecaz-fault-injection`, `ecaz dev fault`, Makefile smoke lanes, and
+`docs/hardening.md` coverage. Current validation passed the full dry-run matrix
+and live PG18 probes for cancellation, statement timeout, lock timeout, and
+resource settings against AM-specific `ec_hnsw`, `ec_ivf`, `ec_diskann`, and
+`ec_spire` fixtures. True EIO/ENOSPC, palloc-failure, and slow-disk latency
+injection still require an LD_PRELOAD/FUSE/PG-test-hook provider before this
+task can be called fully closed.
 
 ## Scope
 

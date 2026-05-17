@@ -1,8 +1,11 @@
 # Task 36: SIMD↔Scalar Differential Validation
 
-Status: **proposed** — successor to Task 34 (comprehensive hardening). Closes
-the highest-likelihood silent-correctness gap in ECAZ: bugs in the unsafe SIMD
-paths that diverge from scalar reference and degrade recall without panicking.
+Status: **implemented locally** — successor to Task 34 (comprehensive
+hardening). The local implementation adds scalar-reference hooks,
+`tests/simd_diff.rs`, `make simd-diff`, and `hardening-local` wiring. Current
+validation on Linux x86 passed `cargo test --features bench --test simd_diff
+-- --test-threads=1` with 5/5 tests passing, including the production 1536/4-bit
+score path.
 
 ## Scope
 

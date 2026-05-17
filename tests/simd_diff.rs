@@ -1,0 +1,123 @@
+//! SIMD/scalar differential tests for quantizer hot paths.
+//!
+//! These tests intentionally call the dispatched production entry points and
+//! bench-only scalar references in the same process. That keeps the comparison
+//! independent of `ECAZ_SIMD` and catches host-reachable SIMD divergence.
+
+#![cfg(feature = "bench")]
+
+use ecaz::bench_api::{
+    fwht_in_place, fwht_in_place_scalar_reference, pack_mse_indices, ProdQuantizer,
+};
+use proptest::prelude::*;
+use rand::Rng;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+
+fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut values: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
+    let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+    for value in &mut values {
+        *value /= norm.max(f32::EPSILON);
+    }
+    values
+}
+
+fn code_bytes(encoded: &ecaz::bench_api::EncodedTq) -> Vec<u8> {
+    let mut bytes = encoded.mse_packed.clone();
+    bytes.extend_from_slice(&encoded.qjl_packed);
+    bytes
+}
+
+fn assert_close(label: &str, dispatched: f32, scalar: f32, rel_tol: f32) {
+    let abs_tol = rel_tol.max(rel_tol * scalar.abs().max(dispatched.abs()).max(1.0));
+    assert!(
+        (dispatched - scalar).abs() <= abs_tol,
+        "{label}: dispatched={dispatched:.9}, scalar={scalar:.9}, abs_diff={:.9}, tol={abs_tol:.9}",
+        (dispatched - scalar).abs()
+    );
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+
+    #[test]
+    fn dispatched_score_ip_from_parts_matches_scalar_reference(
+        dim in prop::sample::select(&[8usize, 16, 32, 64, 128, 384][..]),
+        bits in 2u8..=8,
+        query_seed in 0u64..5000,
+        candidate_seed in 5000u64..10000,
+    ) {
+        let quantizer = ProdQuantizer::new(dim, bits, 42);
+        let query = random_unit_vector(dim, query_seed);
+        let candidate = quantizer.encode(&random_unit_vector(dim, candidate_seed));
+        let prepared = quantizer.prepare_ip_query(&query);
+        let codes = code_bytes(&candidate);
+
+        let dispatched = quantizer.score_ip_from_parts(&prepared, candidate.gamma, &codes);
+        let scalar = quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
+        assert_close("score_ip_from_parts", dispatched, scalar, 1.0e-5);
+    }
+
+    #[test]
+    fn dispatched_code_to_code_score_matches_scalar_reference(
+        dim in prop::sample::select(&[8usize, 16, 32, 64, 128, 384][..]),
+        bits in 2u8..=8,
+        left_seed in 10000u64..15000,
+        right_seed in 15000u64..20000,
+    ) {
+        let quantizer = ProdQuantizer::new(dim, bits, 42);
+        let left = code_bytes(&quantizer.encode(&random_unit_vector(dim, left_seed)));
+        let right = code_bytes(&quantizer.encode(&random_unit_vector(dim, right_seed)));
+
+        let dispatched = quantizer.score_ip_codes_lite(&left, &right);
+        let scalar = quantizer.score_ip_codes_lite_scalar_reference(&left, &right);
+        assert_close("score_ip_codes_lite", dispatched, scalar, 1.0e-5);
+    }
+
+    #[test]
+    fn dispatched_fwht_matches_scalar_reference(
+        len in prop::sample::select(&[4usize, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096][..]),
+        seed in 20000u64..25000,
+    ) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut dispatched = (0..len)
+            .map(|_| rng.gen_range(-1.0f32..1.0f32))
+            .collect::<Vec<_>>();
+        let mut scalar = dispatched.clone();
+
+        fwht_in_place(&mut dispatched);
+        fwht_in_place_scalar_reference(&mut scalar);
+
+        for (index, (actual, expected)) in dispatched.iter().zip(scalar.iter()).enumerate() {
+            assert_close(&format!("fwht lane {index}"), *actual, *expected, 1.0e-5);
+        }
+    }
+}
+
+#[test]
+fn production_1536_4bit_score_path_matches_scalar_reference() {
+    let quantizer = ProdQuantizer::new(1536, 4, 42);
+    let query = random_unit_vector(1536, 0x1536);
+    let candidate = quantizer.encode(&random_unit_vector(1536, 0x4B17));
+    let prepared = quantizer.prepare_ip_query(&query);
+    let codes = code_bytes(&candidate);
+
+    let dispatched = quantizer.score_ip_from_parts(&prepared, candidate.gamma, &codes);
+    let scalar = quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
+    assert_close(
+        "production 1536/4 score_ip_from_parts",
+        dispatched,
+        scalar,
+        1.0e-5,
+    );
+}
+
+#[test]
+fn three_bit_unpack_fixture_stays_bit_exact() {
+    let indices = [0u16, 7, 3, 5, 1, 6, 2, 4, 4, 2, 6, 1, 5, 3, 7, 0];
+    let packed = pack_mse_indices(&indices, 3);
+    let unpacked = ecaz::bench_api::unpack_mse_indices(&packed, indices.len(), 3);
+    assert_eq!(unpacked, indices);
+}

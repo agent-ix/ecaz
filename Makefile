@@ -1,8 +1,8 @@
 .PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe cargo-geiger rudra mirai flux build install clean
-.PHONY: bench bench-iai dhat-encode dhat-score proptest layout-check miri miri-expanded careful
+.PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani loom shuttle sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: hardening-local hardening-nightly-local
+.PHONY: fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full hardening-local hardening-nightly-local
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 
 ## Format all source files
@@ -191,6 +191,10 @@ dhat-score:
 proptest:
 	cargo test --features bench --test proptest_quant --test proptest_page -- --test-threads=1
 
+## Run SIMD/scalar differential tests for host-reachable vector backends
+simd-diff:
+	cargo test --features bench --test simd_diff -- --test-threads=1
+
 # --- Layout ---
 
 ## Run struct layout and payload size assertions
@@ -208,6 +212,33 @@ miri-expanded:
 
 careful:
 	bash scripts/hardening.sh cargo-careful
+
+# --- PG fault injection ---
+
+FAULT_SMOKE_FLAGS ?= --dry-run
+
+fault-io-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane io $(FAULT_SMOKE_FLAGS)
+
+fault-mem-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane memory $(FAULT_SMOKE_FLAGS)
+
+fault-cancel-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane cancel $(FAULT_SMOKE_FLAGS)
+
+fault-timeout-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane timeout $(FAULT_SMOKE_FLAGS)
+
+fault-lock-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane lock-timeout $(FAULT_SMOKE_FLAGS)
+
+fault-resource-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane resource $(FAULT_SMOKE_FLAGS)
+
+fault-slow-disk-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane slow-disk $(FAULT_SMOKE_FLAGS)
+
+fault-full: fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke
 
 # --- Fuzzing (requires cargo-fuzz + nightly) ---
 
@@ -308,6 +339,6 @@ ci-nightly: ci-quick bench bench-iai proptest miri
 
 # --- Hardening aggregates ---
 
-hardening-local: fmt-check lint-hardening test-hardening-local proptest layout-check audit-unsafe deny-full cargo-audit
+hardening-local: fmt-check lint-hardening test-hardening-local proptest simd-diff layout-check audit-unsafe deny-full cargo-audit
 
-hardening-nightly-local: hardening-local miri-expanded careful fuzz-all-short kani loom shuttle sanitizer-asan sanitizer-lsan
+hardening-nightly-local: hardening-local miri-expanded careful fuzz-all-short fault-full kani loom shuttle sanitizer-asan sanitizer-lsan
