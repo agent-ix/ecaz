@@ -83,6 +83,13 @@ before interpreting the rest of the payload:
 Any incompatible field addition or reinterpretation must add a new format tag
 and update the layout assertions, fixture golden files, and upgrade matrix.
 
+## Upgrade Matrix
+
+`fixtures/upgrade/matrix.csv` is the current `(format_version, AM, can_read,
+can_write)` table. `make upgrade-smoke` validates that the matrix has unique
+rows, that writable formats are readable, that each row points at a committed
+fixture, and that the current writable set is explicit.
+
 ## Remaining Task 42 Gaps
 
 - Extend fixture bytes under `fixtures/on-disk/` to any raw generic page
@@ -93,7 +100,7 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
   body prefixes if they become durable page-buffer contracts beyond the current
   partition-object and metadata codecs.
 - Add the qemu cross-arch decode lane in coordination with Task 48.
-- Add `fixtures/upgrade/{vN}/` and the `(format_version, AM, can_read,
-  can_write)` compatibility matrix.
+- Extend `fixtures/upgrade/` from the current matrix into historical corpus
+  directories when a new incompatible format version ships.
 - Add WAL record version tags with Task 37.
 - Add pg_upgrade smoke coverage with ECAZ data present.
