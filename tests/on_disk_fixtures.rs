@@ -1,6 +1,8 @@
 //! Golden on-disk fixture decode checks.
 
 use ecaz::bench_api::{
+    spire_decode_delta_partition_object_fixture, spire_decode_leaf_partition_object_fixture,
+    spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
     ItemPointer, IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage,
     IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode, IvfStorageFormat, MetadataPage,
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
@@ -11,9 +13,9 @@ use ecaz::bench_api::{
     EC_IVF_METADATA_FORMAT_VERSION_OFFSET, HNSW_METADATA_FORMAT_VERSION_OFFSET,
     INDEX_FORMAT_V3_DISKANN, SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
     SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET, SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
-    SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
-    SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
-    VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+    SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+    SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET,
+    VAMANA_METADATA_FORMAT_VERSION_OFFSET, VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
 };
 
 fn decode_hex_fixture(contents: &str) -> Vec<u8> {
@@ -695,4 +697,148 @@ fn spire_object_manifest_v1_byteswapped_version_is_rejected() {
         err.contains("ec_spire unsupported metadata format version: 256"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn spire_leaf_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_partition_object_v1.hex"
+    ));
+
+    let object =
+        spire_decode_leaf_partition_object_fixture(&bytes).expect("spire leaf object decodes");
+
+    assert_eq!(object.header.kind, 3);
+    assert_eq!(object.header.pid, 17);
+    assert_eq!(object.header.object_version, 3);
+    assert_eq!(object.header.published_epoch_backref, 7);
+    assert_eq!(object.header.parent_pid, 5);
+    assert_eq!(object.header.assignment_count, 1);
+    assert_eq!(object.assignments.len(), 1);
+    assert_eq!(object.assignments[0].flags, 1);
+    assert_eq!(
+        object.assignments[0].vec_id,
+        vec![1, 5, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        object.assignments[0].heap_tid,
+        ItemPointer {
+            block_number: 100,
+            offset_number: 1
+        }
+    );
+    assert_eq!(object.assignments[0].payload_format, 1);
+    assert_eq!(object.assignments[0].gamma.to_bits(), 0.5_f32.to_bits());
+    assert_eq!(object.assignments[0].encoded_payload, vec![0xaa, 0xbb]);
+}
+
+#[test]
+fn spire_leaf_partition_object_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_leaf_partition_object_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+        SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = spire_decode_leaf_partition_object_fixture(&bytes)
+        .expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported partition object format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_routing_root_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_routing_root_partition_object_v1.hex"
+    ));
+
+    let object = spire_decode_routing_partition_object_fixture(&bytes)
+        .expect("spire routing object decodes");
+
+    assert_eq!(object.header.kind, 1);
+    assert_eq!(object.header.pid, 11);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.level, 1);
+    assert_eq!(object.header.child_count, 2);
+    assert_eq!(object.dimensions, 2);
+    assert_eq!(object.centroid_ordinals, vec![0, 1]);
+    assert_eq!(object.child_pids, vec![17, 18]);
+    assert_eq!(
+        object
+            .centroids
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        vec![
+            1.0_f32.to_bits(),
+            0.0_f32.to_bits(),
+            (-1.0_f32).to_bits(),
+            0.0_f32.to_bits()
+        ]
+    );
+}
+
+#[test]
+fn spire_delta_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_delta_partition_object_v1.hex"
+    ));
+
+    let object =
+        spire_decode_delta_partition_object_fixture(&bytes).expect("spire delta object decodes");
+
+    assert_eq!(object.header.kind, 4);
+    assert_eq!(object.header.pid, 19);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.parent_pid, 17);
+    assert_eq!(object.header.assignment_count, 1);
+    assert_eq!(object.assignments.len(), 1);
+    assert_eq!(object.assignments[0].flags, 1 | 8);
+    assert_eq!(
+        object.assignments[0].vec_id,
+        vec![1, 6, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        object.assignments[0].heap_tid,
+        ItemPointer {
+            block_number: 101,
+            offset_number: 1
+        }
+    );
+    assert_eq!(object.assignments[0].gamma.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(object.assignments[0].encoded_payload, vec![0xcc, 0xdd]);
+}
+
+#[test]
+fn spire_top_graph_partition_object_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_top_graph_partition_object_v1.hex"
+    ));
+
+    let object = spire_decode_top_graph_partition_object_fixture(&bytes)
+        .expect("spire top graph object decodes");
+
+    assert_eq!(object.header.kind, 5);
+    assert_eq!(object.header.pid, 21);
+    assert_eq!(object.header.object_version, 2);
+    assert_eq!(object.header.level, 2);
+    assert_eq!(object.header.parent_pid, 11);
+    assert_eq!(object.root_pid, 11);
+    assert_eq!(object.dimensions, 2);
+    assert_eq!(object.graph_degree, 2);
+    assert_eq!(object.build_list_size, 16);
+    assert_eq!(object.alpha.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(object.entry_node, 1);
+    assert_eq!(object.nodes.len(), 2);
+    assert_eq!(object.nodes[0].child_pid, 17);
+    assert_eq!(object.nodes[0].centroid_ordinal, 0);
+    assert_eq!(object.nodes[0].neighbors, vec![1]);
+    assert_eq!(object.nodes[1].child_pid, 18);
+    assert_eq!(object.nodes[1].centroid_ordinal, 1);
+    assert_eq!(object.nodes[1].neighbors, vec![0]);
 }
