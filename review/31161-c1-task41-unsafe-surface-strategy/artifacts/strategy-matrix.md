@@ -13,6 +13,9 @@ Primary target:
 Action:
 
 - keep migrating production entrypoints to guard-owning code,
+- when a guard constructor depends on other PostgreSQL resources, take typed
+  `&Guard` references rather than raw pointers so composition boundaries
+  express the lifetime preconditions,
 - add a validation-only helper for callers that only need AM/relkind checks,
 - treat `AccessShareIndexRelation::as_ptr()` as a borrow only; the guard must
   remain live across every raw relation read, and graph-loader callers must keep
