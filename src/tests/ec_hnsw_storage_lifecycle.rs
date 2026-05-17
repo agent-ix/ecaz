@@ -1549,17 +1549,21 @@
                     panic!("PqFastScan insert test should still decode as PqFastScan storage")
                 }
             };
-        let index_relation = unsafe {
-            open_valid_ec_hnsw_index(
-                index_oid,
-                "test_ech_insert_appends_to_built_pq_fastscan_index",
+        let index_relation = open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "test_ech_insert_appends_to_built_pq_fastscan_index",
+        );
+        let new_hot = unsafe {
+            am::graph::load_grouped_graph_element(index_relation.as_ptr(), new_hot_tid, layout)
+        };
+        let rerank = unsafe {
+            am::graph::load_grouped_rerank_payload(
+                index_relation.as_ptr(),
+                new_hot.reranktid,
+                layout,
             )
         };
-        let new_hot =
-            unsafe { am::graph::load_grouped_graph_element(index_relation, new_hot_tid, layout) };
-        let rerank = unsafe {
-            am::graph::load_grouped_rerank_payload(index_relation, new_hot.reranktid, layout)
-        };
+        drop(index_relation);
         assert!(!new_hot.deleted);
         assert_eq!(new_hot.heaptids.len(), 1);
         assert_eq!(new_hot.search_code.len(), layout.search_code_len);
@@ -1567,7 +1571,6 @@
         assert_ne!(new_hot.neighbortid, am::page::ItemPointer::INVALID);
         assert_ne!(new_hot.reranktid, am::page::ItemPointer::INVALID);
         assert_eq!(rerank.code.len(), layout.rerank_code_len);
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
         let ctid_to_id = ctid_id_map("ec_hnsw_insert_pq_fastscan_live");
         let observed_ids = unsafe {
@@ -2530,4 +2533,3 @@
             "vacuum source-backed repair should choose the best source-space replacement candidate",
         );
     }
-

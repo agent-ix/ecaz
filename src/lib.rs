@@ -240,12 +240,6 @@ impl AccessShareIndexRelation {
     fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
     }
-
-    fn into_raw(self) -> pg_sys::Relation {
-        let relation = self.relation;
-        std::mem::forget(self);
-        relation
-    }
 }
 
 impl Drop for AccessShareIndexRelation {
@@ -301,25 +295,11 @@ fn open_valid_ec_hnsw_index_guard(
     )
 }
 
-unsafe fn open_valid_ec_hnsw_index(
-    index_oid: pg_sys::Oid,
-    caller_name: &'static str,
-) -> pg_sys::Relation {
-    open_valid_ec_hnsw_index_guard(index_oid, caller_name).into_raw()
-}
-
 fn open_valid_ec_ivf_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
 ) -> AccessShareIndexRelation {
     open_valid_ec_index_guard(index_oid, caller_name, ec_ivf_access_method_oid(), "ec_ivf")
-}
-
-unsafe fn open_valid_ec_ivf_index(
-    index_oid: pg_sys::Oid,
-    caller_name: &'static str,
-) -> pg_sys::Relation {
-    open_valid_ec_ivf_index_guard(index_oid, caller_name).into_raw()
 }
 
 fn open_valid_ec_spire_index_guard(
@@ -17239,10 +17219,9 @@ fn ec_ivf_index_page_ownership(
         name!(list_ids, String),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_page_ownership") };
-    let rows = unsafe { am::ivf_index_page_ownership(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_page_ownership");
+    let rows = unsafe { am::ivf_index_page_ownership(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -17427,10 +17406,9 @@ fn ec_ivf_index_cost_snapshot(
         name!(modeled_correlation, f64),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_cost_snapshot") };
-    let snapshot = unsafe { am::ivf_index_cost_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_cost_snapshot");
+    let snapshot = unsafe { am::ivf_index_cost_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         snapshot.planner_scan_enabled,
@@ -17504,10 +17482,9 @@ fn ec_hnsw_index_cost_snapshot(
         name!(gated_correlation, f64),
     ),
 > {
-    let index_relation =
-        unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_index_cost_snapshot") };
-    let snapshot = unsafe { am::index_cost_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_index_cost_snapshot");
+    let snapshot = unsafe { am::index_cost_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         snapshot.planner_scan_enabled,
@@ -17561,9 +17538,9 @@ fn ec_hnsw_planner_integration_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_planner_integration_snapshot") };
-    let snapshot = unsafe { am::planner_integration_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_planner_integration_snapshot");
+    let snapshot = unsafe { am::planner_integration_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         snapshot.planner_scan_enabled,

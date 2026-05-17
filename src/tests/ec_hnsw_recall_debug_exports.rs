@@ -716,11 +716,10 @@
             name!(expected_max_neighbors, i32),
         ),
     > {
-        let index_relation =
-            unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_graph_hierarchy_summary") };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "ec_hnsw_graph_hierarchy_summary",
+        ));
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let m = metadata.m as usize;
@@ -857,11 +856,10 @@
             name!(total_emitted_elements, i32),
         ),
     > {
-        let index_relation =
-            unsafe { open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_profile") };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "tests.ec_hnsw_debug_scan_profile",
+        ));
 
         let (
             rescan_elapsed_us,
@@ -987,12 +985,10 @@
             pgrx::error!("limit_count must be non-negative");
         }
 
-        let index_relation = unsafe {
-            open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_profile_limited")
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "tests.ec_hnsw_debug_scan_profile_limited",
+        ));
 
         let (
             rescan_elapsed_us,
@@ -1112,12 +1108,10 @@
             pgrx::error!("project_attnum must be non-negative");
         }
 
-        let index_relation = unsafe {
-            open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_heap_fetch_profile")
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "tests.ec_hnsw_debug_scan_heap_fetch_profile",
+        ));
 
         let (
             rescan_elapsed_us,
@@ -1231,25 +1225,24 @@
     fn current_pq_fastscan_runtime_settings_for_index(
         index_oid: pg_sys::Oid,
     ) -> PqFastScanIndexRuntimeSettings {
-        let index_relation = unsafe {
-            open_valid_ec_hnsw_index(
-                index_oid,
-                "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index",
-            )
-        };
+        let index_relation = open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index",
+        );
         let (_block_count, _m, _ef_construction, metadata) =
             unsafe { am::debug_index_metadata(index_oid) };
         let storage = unsafe {
-            am::graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata)
+            am::graph::GraphStorageDescriptor::from_index_relation(
+                index_relation.as_ptr(),
+                &metadata,
+            )
         }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
         let layout = match storage {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
             | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
-                unsafe {
-                    pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
-                };
+                drop(index_relation);
                 pgrx::error!(
                     "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index requires a pq_fastscan index"
                 );
@@ -1257,8 +1250,8 @@
         };
         let traversal = am::resolve_pq_fastscan_traversal_score_mode_decision(storage);
         let rerank =
-            unsafe { am::resolve_pq_fastscan_rerank_mode_decision(index_relation, storage) };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+            unsafe { am::resolve_pq_fastscan_rerank_mode_decision(index_relation.as_ptr(), storage) };
+        drop(index_relation);
         let mut base = current_pq_fastscan_runtime_settings();
         base.traversal_score_mode = Some(traversal.mode_name().to_owned());
         base.rerank_mode = Some(rerank.mode_name().to_owned());
@@ -1380,10 +1373,7 @@
     }
 
     fn validate_debug_index(index_oid: pg_sys::Oid, helper_name: &'static str) {
-        let index_relation = unsafe { open_valid_ec_hnsw_index(index_oid, helper_name) };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(index_oid, helper_name));
     }
 
     type PqFastScanScanOrderDriftSummaryValues = (
@@ -2086,11 +2076,10 @@
 
     #[pg_extern]
     fn ec_hnsw_debug_scan_result_count(index_oid: pg_sys::Oid, query: Vec<f32>) -> i32 {
-        let index_relation =
-            unsafe { open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_result_count") };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "tests.ec_hnsw_debug_scan_result_count",
+        ));
 
         i32::try_from(unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }.len())
             .expect("debug scan result count should fit in i32")
@@ -2101,11 +2090,10 @@
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<'static, (name!(block_number, i64), name!(offset_number, i32))> {
-        let index_relation =
-            unsafe { open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_heap_tids") };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "tests.ec_hnsw_debug_scan_heap_tids",
+        ));
 
         let rows = unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
             .into_iter()
@@ -2557,17 +2545,11 @@
 
     #[pg_extern]
     fn ec_hnsw_debug_reachable_live_element_count(index_oid: pg_sys::Oid) -> i32 {
-        let index_relation = unsafe {
-            open_valid_ec_hnsw_index(
-                index_oid,
-                "tests.ec_hnsw_debug_reachable_live_element_count",
-            )
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        drop(open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "tests.ec_hnsw_debug_reachable_live_element_count",
+        ));
 
         i32::try_from(unsafe { am::debug_layer0_reachable_live_element_tids(index_oid) }.len())
             .expect("debug reachable live element count should fit in i32")
     }
-

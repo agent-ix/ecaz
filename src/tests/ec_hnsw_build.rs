@@ -1955,11 +1955,11 @@
         };
 
         let index_relation =
-            unsafe { open_valid_ec_hnsw_index(index_oid, "test_pq_fastscan_graph_reads") };
+            open_valid_ec_hnsw_index_guard(index_oid, "test_pq_fastscan_graph_reads");
 
         unsafe {
             am::graph::with_graph_storage_tuple(
-                index_relation,
+                index_relation.as_ptr(),
                 metadata.entry_point,
                 am::graph::GraphStorageDescriptor::PqFastScan(layout),
                 |entry| match entry {
@@ -1976,7 +1976,11 @@
         }
 
         let (entry, neighbors) = unsafe {
-            am::graph::load_grouped_graph_adjacency(index_relation, metadata.entry_point, layout)
+            am::graph::load_grouped_graph_adjacency(
+                index_relation.as_ptr(),
+                metadata.entry_point,
+                layout,
+            )
         };
 
         assert_eq!(entry.tid, metadata.entry_point);
@@ -2002,7 +2006,11 @@
             .find(|tid| *tid != am::page::ItemPointer::INVALID)
             .expect("grouped entry should expose a readable neighbor");
         let neighbor = unsafe {
-            am::graph::load_grouped_graph_element(index_relation, first_neighbor_tid, layout)
+            am::graph::load_grouped_graph_element(
+                index_relation.as_ptr(),
+                first_neighbor_tid,
+                layout,
+            )
         };
 
         assert_eq!(neighbor.search_code.len(), layout.search_code_len);
@@ -2010,7 +2018,7 @@
         assert!(!neighbor.heaptids.is_empty());
         assert_ne!(neighbor.reranktid, am::page::ItemPointer::INVALID);
 
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
     }
 
     #[pg_test]
@@ -2063,17 +2071,23 @@
             }
         };
 
-        let index_relation = unsafe {
-            open_valid_ec_hnsw_index(
-                index_oid,
-                "test_pq_fastscan_graph_reads_load_cold_rerank_payload",
+        let index_relation = open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "test_pq_fastscan_graph_reads_load_cold_rerank_payload",
+        );
+        let entry = unsafe {
+            am::graph::load_grouped_graph_element(
+                index_relation.as_ptr(),
+                metadata.entry_point,
+                layout,
             )
         };
-        let entry = unsafe {
-            am::graph::load_grouped_graph_element(index_relation, metadata.entry_point, layout)
-        };
         let rerank = unsafe {
-            am::graph::load_grouped_rerank_payload(index_relation, entry.reranktid, layout)
+            am::graph::load_grouped_rerank_payload(
+                index_relation.as_ptr(),
+                entry.reranktid,
+                layout,
+            )
         };
 
         assert_eq!(rerank.tid, entry.reranktid);
@@ -2084,7 +2098,7 @@
             "cold rerank payload should contain a non-empty scalar code",
         );
 
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
     }
 
     #[pg_test]
@@ -2134,13 +2148,12 @@
             am::page::ItemPointer::INVALID
         );
 
-        let index_relation = unsafe {
-            open_valid_ec_hnsw_index(
-                index_oid,
-                "test_pq_fastscan_graph_reads_load_persisted_codebooks",
-            )
-        };
-        let model = unsafe { am::graph::load_grouped_codebook_model(index_relation, &metadata) };
+        let index_relation = open_valid_ec_hnsw_index_guard(
+            index_oid,
+            "test_pq_fastscan_graph_reads_load_persisted_codebooks",
+        );
+        let model =
+            unsafe { am::graph::load_grouped_codebook_model(index_relation.as_ptr(), &metadata) };
 
         assert_eq!(model.head_tid, metadata.grouped_codebook_head);
         assert_eq!(model.group_count, metadata.search_subvector_count as usize);
@@ -2156,7 +2169,7 @@
 
         let head = unsafe {
             am::graph::with_grouped_codebook_tuple(
-                index_relation,
+                index_relation.as_ptr(),
                 model.head_tid,
                 model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS,
                 |tuple| (tuple.group_index, tuple.nexttid),
@@ -2180,7 +2193,7 @@
             model.group_count * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS
         );
 
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
     }
 
     #[pg_test]
@@ -2451,4 +2464,3 @@
 
     type DebugScanComparisonRow = ((u32, u16), f32, Option<f32>, Option<i32>);
     type DebugGroupedComparisonRow = ((u32, u16), i32, f32, Option<f32>, Option<i32>, Option<i32>);
-

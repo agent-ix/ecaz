@@ -2212,15 +2212,15 @@
     }
 
     fn recall_index_block_count(index_oid: pg_sys::Oid, caller_name: &'static str) -> i32 {
-        let index_relation = unsafe { open_valid_ec_hnsw_index(index_oid, caller_name) };
+        let index_relation = open_valid_ec_hnsw_index_guard(index_oid, caller_name);
         let index_block_count = unsafe {
             i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation,
+                index_relation.as_ptr(),
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             ))
             .expect("block count should fit into int")
         };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
         index_block_count
     }
 

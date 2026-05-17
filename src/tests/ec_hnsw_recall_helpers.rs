@@ -2372,15 +2372,15 @@
             m,
         );
         let index_relation =
-            unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_graph_scan_recall_probe") };
+            open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_graph_scan_recall_probe");
         let index_block_count = unsafe {
             i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation,
+                index_relation.as_ptr(),
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             ))
             .expect("block count should fit into int")
         };
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        drop(index_relation);
 
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
@@ -2450,4 +2450,3 @@
             RECALL_QUERY_COUNT,
         )
     }
-
