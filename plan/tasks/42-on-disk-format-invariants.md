@@ -1,7 +1,9 @@
 # Task 42: On-Disk Format and Cross-Arch / Cross-Version Invariants
 
-Status: **complete** — locks down ECAZ's on-disk page formats so they survive
-endianness differences, version upgrades, and silent layout drift.
+Status: **partial smoke checkpoint** — current fixture, matrix, layout, qemu,
+WAL-policy, and PG18 same-binary `pg_upgrade` smoke infrastructure is in place.
+Broader CI stabilization and richer live-upgrade coverage remain deferred until
+the CI surface is steadier and a second writable format version ships.
 
 ## Scope
 
@@ -61,17 +63,21 @@ freshly built index).
    `(format_version, AM, can_read, can_write)` and a test that exercises
    every entry. While each AM has only one writable format, this is a
    registry-consistency check that pins read/write support and fixture
-   presence. Once a second writable format ships, the lane must build a corpus
-   with format vN, upgrade the extension to vN+1, scan and verify recall floor.
-   Stored corpora live under `fixtures/upgrade/{vN}/`.
+   presence. Once a second writable format ships, the lane must follow
+   NFR-016-EV-3 by building a corpus with format vN, upgrading the extension to
+   vN+1, scanning, and verifying a meaningful recall floor. Stored corpora live
+   under `fixtures/upgrade/{vN}/`.
 5. **WAL record version tags.** Pair with Task 37: current ECAZ writes use
    PostgreSQL GenericXLog page images/deltas and have no extension-owned WAL
    payload body. If Task 37 adds custom ECAZ redo/replay records, each custom
    record carries a version byte at offset 0 and replay rejects missing or
-   unknown versions cleanly.
+   unknown versions cleanly per ADR-070's default reject-unknown posture.
 6. **`pg_upgrade` smoke.** A separate lane that runs `pg_upgrade` from PG18
-   to itself (in-place) with ECAZ data present; verifies recall floor and
-   `pg_amcheck` parity post-upgrade. When PG19 lands, extends to PG18→PG19.
+   to itself (in-place) with ECAZ data present. The current smoke is HNSW-only
+   and verifies top-2 ID equality, index presence, heap count, and
+   `pg_amcheck` on the upgraded cluster. Richer recall-floor measurement and
+   `ec_ivf` / `ec_diskann` / `ec_spire` coverage remain future extensions.
+   When PG19 lands, extends to PG18→PG19.
 7. **Make lanes:**
    - `make layout-check` (existing) — extended assertions.
    - `make on-disk-fixtures` — decode golden fixtures, verify parity.
@@ -87,9 +93,11 @@ freshly built index).
 - A deliberately reordered struct field is caught by the size/offset
   assertions at compile time.
 - Upgrade matrix: index built at vN reads correctly at vN+1; vN+1 features
-  not enabled when reading vN data.
+  not enabled when reading vN data. Current validation is registry consistency
+  until a second writable version exists.
 - `pg_upgrade` smoke produces an upgraded cluster with ECAZ indexes that
-  pass `pg_amcheck` and meet recall floors.
+  pass `pg_amcheck` and preserve the smoke corpus' top-2 IDs. Meaningful recall
+  floors activate with a richer corpus.
 
 ## Exit Criteria
 
@@ -99,6 +107,8 @@ freshly built index).
   add a row.
 - `docs/on-disk-format.md` documents the version policy, the endian
   convention, the fixture process, and the upgrade matrix.
+- Deferred closeout: broader CI stabilization, richer `pg_upgrade` recall
+  coverage, and multi-AM `pg_upgrade` smoke coverage.
 
 ## Dependencies
 

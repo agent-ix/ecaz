@@ -92,9 +92,9 @@ fixture, and that the current writable set is explicit.
 
 Today there is only one writable format per AM, so this lane is a registry
 consistency check. When a second writable format ships, the matrix must grow a
-live upgrade rehearsal for the old writable version: build the old corpus,
-upgrade the extension, scan it with the new reader, and record the recall floor
-beside the historical fixture directory.
+live upgrade rehearsal for the old writable version per NFR-016-EV-3: build the
+old corpus, upgrade the extension, scan it with the new reader, and record the
+recall floor beside the historical fixture directory.
 
 ## Cross-Arch Decode
 
@@ -113,8 +113,14 @@ therefore allowed only for this target.
 `ecaz dev pg-upgrade-smoke`. The fixture creates an old cluster with ECAZ
 installed, inserts a small `ecvector` corpus, builds an `ec_hnsw` index, checks
 the pre-upgrade nearest-neighbor result, runs `pg_upgrade`, starts the upgraded
-cluster, verifies the same nearest-neighbor result and index presence, then
-runs `pg_amcheck` against the upgraded database.
+cluster, verifies the same top-2 IDs, index presence, and heap count, then runs
+`pg_amcheck` against the upgraded database.
+
+This is intentionally a narrow HNSW-only smoke today. The four-row corpus makes
+the top-2 equality check a trivial recall@2 proxy, not a substantive recall
+floor. Richer recall measurement and `ec_ivf` / `ec_diskann` / `ec_spire`
+coverage should be added when those AMs have corpus sizing that makes the
+upgrade lane load-bearing.
 
 ## WAL Format Policy
 
@@ -128,7 +134,9 @@ If Task 37 adds extension-owned WAL redo/replay payloads, byte 0 is reserved as
 the custom WAL record format tag. `src/storage/wal.rs` owns
 `ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION`, the byte-0 offset constant, and the
 validator that rejects missing or unknown custom WAL record versions before
-replay reads the body.
+replay reads the body. ADR-070 keeps custom WAL records on the conservative
+reject-unknown posture unless a later WAL-specific ADR justifies a different
+encoding.
 
 ## Future Conditional Extensions
 
@@ -141,3 +149,5 @@ replay reads the body.
   partition-object and metadata codecs.
 - Extend `fixtures/upgrade/` from the current matrix into historical corpus
   directories when a new incompatible format version ships.
+- Extend `pg_upgrade` smoke from the current HNSW-only top-2 equality probe to
+  richer recall-floor coverage and the other AMs when corpus sizing supports it.
