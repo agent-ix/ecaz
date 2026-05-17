@@ -9,6 +9,7 @@ use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
 use crate::storage::{
     page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+    snapshot_guard::RegisteredSnapshotGuard,
 };
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::{
@@ -70,39 +71,27 @@ impl ResolvedIvfScanHeapRelation {
 
 struct ResolvedIvfScanSnapshot {
     snapshot: pg_sys::Snapshot,
-    owned: bool,
+    _owned: Option<RegisteredSnapshotGuard>,
 }
 
 impl ResolvedIvfScanSnapshot {
     fn borrowed(snapshot: pg_sys::Snapshot) -> Self {
         Self {
             snapshot,
-            owned: false,
+            _owned: None,
         }
     }
 
-    fn owned(snapshot: pg_sys::Snapshot) -> Self {
+    fn owned(guard: RegisteredSnapshotGuard) -> Self {
+        let snapshot = guard.as_ptr();
         Self {
             snapshot,
-            owned: true,
+            _owned: Some(guard),
         }
     }
 
     fn as_ptr(&self) -> pg_sys::Snapshot {
         self.snapshot
-    }
-}
-
-impl Drop for ResolvedIvfScanSnapshot {
-    fn drop(&mut self) {
-        if self.owned && !self.snapshot.is_null() {
-            // SAFETY: `snapshot` was returned by `RegisterSnapshot` in
-            // `resolve_scan_snapshot`; this wrapper owns the matching
-            // unregister.
-            // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-            // re-audit on pgrx bumps or pg_guard behavior changes.
-            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
-        }
     }
 }
 
@@ -1230,11 +1219,11 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanS
         return ResolvedIvfScanSnapshot::borrowed(active_snapshot);
     }
 
-    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-    if registered_snapshot.is_null() {
-        pgrx::error!("ec_ivf heap_f32 rerank could not resolve an active snapshot");
-    }
-    ResolvedIvfScanSnapshot::owned(registered_snapshot)
+    RegisteredSnapshotGuard::latest()
+        .map(ResolvedIvfScanSnapshot::owned)
+        .unwrap_or_else(|| {
+            pgrx::error!("ec_ivf heap_f32 rerank could not resolve an active snapshot")
+        })
 }
 
 fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result<u32, String> {
