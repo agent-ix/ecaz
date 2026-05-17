@@ -1,8 +1,9 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **operator smoke surface implemented locally** — extends Task 37 from
-"crash mid-write" to the broader class of operational faults that real
-production clusters hit. The local implementation adds
+Status: **operator smoke surface implemented locally; needs follow-up for
+documented expansion gaps** — extends Task 37 from "crash mid-write" to the
+broader class of operational faults that real production clusters hit. The
+local implementation adds
 `crates/ecaz-fault-injection`, an LD_PRELOAD provider for matched-path EIO,
 ENOSPC, and slow-disk latency injection, extension-side palloc smoke injection
 through `ecaz.fault_palloc_nth`, `ecaz dev fault`, Makefile smoke lanes, and

@@ -1,10 +1,11 @@
 # Task 36: SIMD↔Scalar Differential Validation
 
-Status: **implemented locally for currently-present SIMD paths** — successor to
-Task 34 (comprehensive hardening). The local implementation adds
-scalar-reference hooks, forced test-only backend entry points, `tests/simd_diff.rs`,
-`make simd-diff`, `hardening-local` wiring, and a focused GitHub Actions
-`simd-diff` matrix over `ubuntu-24.04` x64 and `ubuntu-24.04-arm` arm64 runners.
+Status: **implemented locally for currently-present SIMD paths; needs follow-up
+as new SIMD paths land** — successor to Task 34 (comprehensive hardening).
+The local implementation adds scalar-reference hooks, forced test-only backend
+entry points, `tests/simd_diff.rs`, `make simd-diff`, `hardening-local`
+wiring, and a focused GitHub Actions `simd-diff` matrix over `ubuntu-24.04`
+x64 and `ubuntu-24.04-arm` arm64 runners.
 Current Linux x86 validation passes
 `cargo test --features bench --test simd_diff -- --test-threads=1` with 9/9
 tests passing, including product-quantizer scoring, FWHT, pack/unpack
