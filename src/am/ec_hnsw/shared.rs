@@ -179,9 +179,14 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
             } else {
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
-            unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-            count += unsafe { count_live_elements_on_buffer(storage, buffer, block_number) };
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            let buffer =
+                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_hnsw failed to open data buffer while counting live tuples"
+                        )
+                    });
+            count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };
         }
         unsafe { pg_sys::read_stream_end(stream) };
     }
@@ -190,17 +195,17 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
     {
         for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
             let buffer = unsafe {
-                pg_sys::ReadBufferExtended(
+                LockedBufferGuard::read_main(
                     index_relation,
-                    pg_sys::ForkNumber::MAIN_FORKNUM,
                     block_number,
                     pg_sys::ReadBufferMode::RBM_NORMAL,
-                    ptr::null_mut(),
+                    pg_sys::BUFFER_LOCK_SHARE as i32,
                 )
-            };
-            unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-            count += unsafe { count_live_elements_on_buffer(storage, buffer, block_number) };
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            }
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw failed to open data buffer while counting live tuples")
+            });
+            count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };
         }
     }
 
@@ -209,11 +214,11 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
 
 unsafe fn count_live_elements_on_buffer(
     storage: graph::GraphStorageDescriptor,
-    buffer: pg_sys::Buffer,
+    buffer: &LockedBufferGuard,
     block_number: u32,
 ) -> usize {
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     let mut count = 0_usize;
 
@@ -296,17 +301,18 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
-        };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        }
+        .unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to open data buffer while selecting live entry candidate")
+        });
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
@@ -416,8 +422,6 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                 }
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     best
@@ -480,21 +484,19 @@ pub(crate) unsafe fn debug_index_pages(
 
 pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             page::METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let raw_page = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    }
+    .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));
+    let raw_page = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
     let metadata =
         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     metadata
 }
 
@@ -822,17 +824,16 @@ unsafe fn read_data_page(
     block_number: u32,
 ) -> DebugIndexDataPage {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let raw_page = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    }
+    .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open data buffer for debug read"));
+    let raw_page = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let page_header = raw_page.cast::<pg_sys::PageHeaderData>();
     let line_pointer_count = ((unsafe { (*page_header).pd_lower } as usize
         - size_of::<pg_sys::PageHeaderData>())
@@ -862,7 +863,6 @@ unsafe fn read_data_page(
         );
     }
 
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     DebugIndexDataPage {
         block_number,
         tuples,

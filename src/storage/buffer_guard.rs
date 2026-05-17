@@ -92,6 +92,19 @@ impl LockedBufferGuard {
         Some(Self { buffer })
     }
 
+    pub(crate) unsafe fn lock_pinned(buffer: pg_sys::Buffer, lockmode: i32) -> Option<Self> {
+        // SAFETY: `buffer` is supplied by a PostgreSQL API that pins buffers
+        // for the caller, such as `read_stream_next_buffer`.
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return None;
+        }
+
+        // SAFETY: `buffer` is valid and pinned; this guard owns the matching
+        // `UnlockReleaseBuffer`.
+        unsafe { pg_sys::LockBuffer(buffer, lockmode) };
+        Some(Self { buffer })
+    }
+
     pub(crate) fn page(&self) -> pg_sys::Page {
         // SAFETY: this guard owns a valid locked buffer.
         unsafe { pg_sys::BufferGetPage(self.buffer) }
