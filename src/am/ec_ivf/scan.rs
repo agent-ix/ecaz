@@ -8,6 +8,8 @@ use crate::am::common::explain::IvfExplainCounters;
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
 use crate::storage::page::ItemPointer;
+#[cfg(any(test, feature = "pg_test"))]
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 
 use super::options::StorageFormat;
 use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer};
@@ -1360,8 +1362,8 @@ fn debug_selected_lists(opaque: &EcIvfScanOpaque) -> Vec<u32> {
 
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
+    _index_relation: IndexRelationGuard,
+    _heap_relation: HeapRelationGuard,
     scan: pg_sys::IndexScanDesc,
     registered_snapshot: pg_sys::Snapshot,
 }
@@ -1380,21 +1382,22 @@ unsafe fn debug_push_latest_snapshot() -> pg_sys::Snapshot {
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        IndexRelationGuard::access_share(index_oid, "ec_ivf debug begin heap backed scan");
+    let index_relation_ptr = index_relation.as_ptr();
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation_ptr).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!("ec_ivf debug scan could not resolve heap relation for index {index_oid}");
     }
 
-    let heap_relation =
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not open heap relation"));
+    let heap_relation_ptr = heap_relation.as_ptr();
     let registered_snapshot = unsafe { debug_push_latest_snapshot() };
     #[cfg(feature = "pg18")]
     let scan = unsafe {
         pg_sys::index_beginscan(
-            heap_relation,
-            index_relation,
+            heap_relation_ptr,
+            index_relation_ptr,
             registered_snapshot,
             ptr::null_mut(),
             0,
@@ -1403,21 +1406,25 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
     };
     #[cfg(not(feature = "pg18"))]
     let scan = unsafe {
-        pg_sys::index_beginscan(heap_relation, index_relation, registered_snapshot, 0, 1)
+        pg_sys::index_beginscan(
+            heap_relation_ptr,
+            index_relation_ptr,
+            registered_snapshot,
+            0,
+            1,
+        )
     };
     if scan.is_null() {
         unsafe {
             pg_sys::PopActiveSnapshot();
             pg_sys::UnregisterSnapshot(registered_snapshot);
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
         pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan");
     }
 
     DebugHeapBackedScan {
-        index_relation,
-        heap_relation,
+        _index_relation: index_relation,
+        _heap_relation: heap_relation,
         scan,
         registered_snapshot,
     }
@@ -1429,14 +1436,6 @@ unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
         pg_sys::index_endscan(state.scan);
         pg_sys::PopActiveSnapshot();
         pg_sys::UnregisterSnapshot(state.registered_snapshot);
-        pg_sys::index_close(
-            state.index_relation,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        );
-        pg_sys::table_close(
-            state.heap_relation,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        );
     }
 }
 
