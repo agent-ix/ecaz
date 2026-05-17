@@ -184,8 +184,11 @@ uses prebuilt fixtures and checks one provider mode at a time: `eio-read`
 expects clean ERROR from AM scan reads, while `enospc-write` expects clean
 ERROR from AM writes. Resource smoke runs AM scan/insert/vacuum under tiny
 `work_mem`/`maintenance_work_mem` settings and forces a temp-spill failure with
-`temp_file_limit = '64kB'`, then verifies the backend remains usable. Memory
-smoke injects palloc failures at the instrumented AM build/scan/insert/vacuum
+`temp_file_limit = '64kB'`, then verifies the backend remains usable. When the
+postmaster is restarted with an `enospc-write` provider whose marker records
+`match=pgsql_tmp`, the resource lane instead disables `temp_file_limit` and
+expects the temp-spill failure to come from provider-backed ENOSPC. Memory smoke
+injects palloc failures at the instrumented AM build/scan/insert/vacuum
 boundaries and verifies the backend remains usable after each ERROR. Every lane
 uses the shared post-condition probe inventory from `ecaz-fault-injection`:
 leftover fault sessions, surviving locks, prepared transactions, optional

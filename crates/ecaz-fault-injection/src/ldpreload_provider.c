@@ -105,13 +105,15 @@ __attribute__((constructor)) static void ecaz_fault_provider_loaded(void) {
         return;
     }
     const char *mode = getenv("ECAZ_FAULT_PROVIDER_MODE");
+    const char *match = getenv("ECAZ_FAULT_PROVIDER_MATCH");
     char line[256];
     int len = snprintf(
         line,
         sizeof(line),
-        "pid=%ld mode=%s\n",
+        "pid=%ld mode=%s match=%s\n",
         (long)getpid(),
-        mode ? mode : "unset");
+        mode ? mode : "unset",
+        match ? match : "unset");
     int fd = (int)syscall(
         SYS_openat,
         AT_FDCWD,

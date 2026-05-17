@@ -369,7 +369,12 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Resource => {
-            run_resource_probe(conn, args.rows, &ams).await?;
+            let provider_marker = args
+                .provider_marker
+                .as_deref()
+                .map(|marker| read_provider_marker(Some(marker), lane))
+                .transpose()?;
+            run_resource_probe(conn, args.rows, &ams, provider_marker.as_deref()).await?;
             assert_postconditions(conn, lane, pg_stat_io_before).await
         }
         FaultLane::Memory => {
@@ -620,9 +625,21 @@ fn timeout_probe_iterations(rows: i64) -> i64 {
     rows.saturating_mul(2_000).clamp(100_000, 1_000_000)
 }
 
-async fn run_resource_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_resource_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultAm],
+    provider_marker: Option<&str>,
+) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     let client = connect_fault(conn, "resource").await?;
+    let provider_temp_spill = provider_marker
+        .map(resource_provider_targets_temp_spill)
+        .transpose()?
+        .unwrap_or(false);
+    if provider_temp_spill {
+        crate::ecaz_println!("[fault] resource_temp_spill_provider=enospc-write match=pgsql_tmp");
+    }
     for &am in ams {
         client
             .batch_execute("SET work_mem = '64kB'; SET maintenance_work_mem = '1MB';")
@@ -646,30 +663,78 @@ async fn run_resource_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]
                  SELECT current_setting('work_mem'), current_setting('maintenance_work_mem');",
             )
             .await?;
-        let temp_spill = client
-            .batch_execute(&format!(
-                "SET work_mem = '64kB';
-                 SET temp_file_limit = '64kB';
-                 {}",
-                workload_temp_spill_sql(resource_temp_spill_rows(rows))
-            ))
-            .await;
-        client
-            .batch_execute("RESET temp_file_limit; RESET work_mem;")
-            .await?;
-        assert_temp_file_limit_error(&format!("resource temp spill {}", am.as_str()), temp_spill)?;
-        client.simple_query("SELECT 1").await.map_err(|error| {
-            eyre!(
-                "resource temp spill {} did not leave the backend usable: {error}",
-                am.as_str()
-            )
-        })?;
+        if provider_temp_spill {
+            run_provider_temp_spill_probe(&client, rows, am).await?;
+        } else {
+            run_temp_file_limit_probe(&client, rows, am).await?;
+        }
     }
     Ok(())
 }
 
+fn resource_provider_targets_temp_spill(marker: &str) -> Result<bool> {
+    let mode = provider_mode_from_marker(marker)?;
+    let path_match = provider_path_match_from_marker(marker)?;
+    Ok(mode == ProviderMode::EnospcWrite && path_match.contains("pgsql_tmp"))
+}
+
 fn resource_temp_spill_rows(rows: i64) -> i64 {
     rows.saturating_mul(2_000).clamp(100_000, 500_000)
+}
+
+async fn run_temp_file_limit_probe(
+    client: &tokio_postgres::Client,
+    rows: i64,
+    am: FaultAm,
+) -> Result<()> {
+    let temp_spill = client
+        .batch_execute(&format!(
+            "SET work_mem = '64kB';
+             SET temp_file_limit = '64kB';
+             {}",
+            workload_temp_spill_sql(resource_temp_spill_rows(rows))
+        ))
+        .await;
+    client
+        .batch_execute("RESET temp_file_limit; RESET work_mem;")
+        .await?;
+    assert_temp_file_limit_error(&format!("resource temp spill {}", am.as_str()), temp_spill)?;
+    client.simple_query("SELECT 1").await.map_err(|error| {
+        eyre!(
+            "resource temp spill {} did not leave the backend usable: {error}",
+            am.as_str()
+        )
+    })?;
+    Ok(())
+}
+
+async fn run_provider_temp_spill_probe(
+    client: &tokio_postgres::Client,
+    rows: i64,
+    am: FaultAm,
+) -> Result<()> {
+    let temp_spill = client
+        .batch_execute(&format!(
+            "SET work_mem = '64kB';
+             SET temp_file_limit = -1;
+             {}",
+            workload_temp_spill_sql(resource_temp_spill_rows(rows))
+        ))
+        .await;
+    client
+        .batch_execute("RESET temp_file_limit; RESET work_mem;")
+        .await?;
+    assert_provider_sql_error(
+        &format!("resource provider temp spill {}", am.as_str()),
+        temp_spill,
+    )?;
+    client.simple_query("SELECT 1").await.map_err(|error| {
+        eyre!(
+            "resource provider temp spill {} did not leave the backend usable: {error}",
+            am.as_str()
+        )
+    })?;
+    Ok(())
 }
 
 async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
@@ -849,6 +914,17 @@ fn provider_mode_from_marker(content: &str) -> Result<ProviderMode> {
             "provider marker did not include a supported mode line"
         ))
     }
+}
+
+fn provider_path_match_from_marker(content: &str) -> Result<String> {
+    content
+        .lines()
+        .find_map(|line| {
+            line.split_whitespace()
+                .find_map(|field| field.strip_prefix("match="))
+        })
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| eyre!("provider marker did not include a match field"))
 }
 
 async fn connect_fault(conn: &ConnectionOptions, label: &str) -> Result<tokio_postgres::Client> {
