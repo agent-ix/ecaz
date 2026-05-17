@@ -3,7 +3,9 @@ use std::{collections::HashSet, ffi::c_void, ptr};
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
 use super::{graph, options, page, search, shared, source};
-use crate::storage::wal;
+#[cfg(any(test, feature = "pg_test"))]
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::{slot_guard::TupleTableSlotGuard, wal};
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
@@ -24,7 +26,7 @@ enum VacuumSearchMetric {
 struct VacuumHeapSourceScorer {
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
+    slot: TupleTableSlotGuard,
     source_attribute: source::SourceAttribute,
 }
 
@@ -45,12 +47,9 @@ impl VacuumHeapSourceScorer {
         heap_relation: pg_sys::Relation,
         source_attribute: source::SourceAttribute,
     ) -> Self {
-        let slot = unsafe {
-            source::allocate_heap_slot(
-                heap_relation,
-                "ec_hnsw vacuum failed to allocate a heap source slot",
-            )
-        };
+        let slot = TupleTableSlotGuard::single_for_heap(heap_relation).unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw vacuum failed to allocate a heap source slot")
+        });
 
         Self {
             heap_relation,
@@ -74,7 +73,7 @@ impl VacuumHeapSourceScorer {
                     self.heap_relation,
                     heap_tid,
                     self.snapshot,
-                    self.slot,
+                    self.slot.as_ptr(),
                     self.source_attribute,
                     label,
                 )
@@ -90,7 +89,7 @@ impl VacuumHeapSourceScorer {
                 }
             }
             drop(source);
-            unsafe { pg_sys::ExecClearTuple(self.slot) };
+            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         }
 
         representative
@@ -125,14 +124,6 @@ impl VacuumHeapSourceScorer {
             &source_vector,
             &candidate_vector,
         ))
-    }
-}
-
-impl Drop for VacuumHeapSourceScorer {
-    fn drop(&mut self) {
-        if !self.slot.is_null() {
-            unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
-        }
     }
 }
 
@@ -1981,18 +1972,25 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[page::ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
-    let index_relation = unsafe {
-        pg_sys::index_open(
-            index_oid,
-            pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+    let index_relation_guard = IndexRelationGuard::try_open(
+        index_oid,
+        pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+    )
+    .unwrap_or_else(|| pgrx::error!("ec_hnsw debug vacuum could not open index relation"));
+    let index_relation = index_relation_guard.as_ptr();
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_relation_guard = if heap_oid == pg_sys::InvalidOid {
+        None
+    } else {
+        Some(
+            HeapRelationGuard::try_access_share(heap_oid).unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw debug vacuum could not open heap relation")
+            }),
         )
     };
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
-    let heap_relation = if heap_oid == pg_sys::InvalidOid {
-        ptr::null_mut()
-    } else {
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) }
-    };
+    let heap_relation = heap_relation_guard
+        .as_ref()
+        .map_or(ptr::null_mut(), HeapRelationGuard::as_ptr);
     let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
     info.index = index_relation;
     info.heaprel = heap_relation;
@@ -2011,16 +2009,8 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     };
     let stats = unsafe { ec_hnsw_amvacuumcleanup(info_ptr, stats) };
     let result = unsafe { *stats };
-
-    unsafe {
-        if !heap_relation.is_null() {
-            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
-        pg_sys::index_close(
-            index_relation,
-            pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
-        )
-    };
+    drop(heap_relation_guard);
+    drop(index_relation_guard);
     result
 }
 
