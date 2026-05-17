@@ -1414,25 +1414,22 @@ pub(super) unsafe fn add_backlinks_if_free(
     while start < targets.len() {
         let block_number = targets[start].block_number;
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_diskann backlink write could not open target block {block_number}"
-            ));
         }
+        .ok_or_else(|| {
+            format!("ec_diskann backlink write could not open target block {block_number}")
+        })?;
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_size = buffer.page_size();
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let writable_page =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let writable_page = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
         let mut page_changed = false;
         let page_result = (|| -> Result<usize, String> {
             let mut page_changes = 0usize;
@@ -1486,11 +1483,9 @@ pub(super) unsafe fn add_backlinks_if_free(
             }
             Err(error) => {
                 std::mem::drop(wal_txn);
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Err(error);
             }
         }
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     Ok(changed)
