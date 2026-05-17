@@ -202,10 +202,15 @@ if command -v perf >/dev/null 2>&1; then
   sleep "$INTER_RUN_SLEEP"
 
   # --- 4. perf-stat top-down ---
-  log "perf stat --topdown"
+  # --topdown requires system-wide mode (-a) on Neoverse-V2; without
+  # it perf prints "top down event configuration requires system-wide
+  # mode (-a)" and exits 0 with no data. -a measures every core for
+  # the duration so the bench itself only needs to pin its work onto
+  # the same host (which it does -- everything else is idle).
+  log "perf stat --topdown -a"
   record_cmd "$OUT/perf-stat-quant_score-topdown.log" \
-    "$NICE perf stat --topdown $CARGO bench --features bench --bench quant_score -- $CRIT_FLAGS"
-  $NICE perf stat --topdown \
+    "$NICE perf stat --topdown -a $CARGO bench --features bench --bench quant_score -- $CRIT_FLAGS"
+  $NICE perf stat --topdown -a \
     "$CARGO" bench --features bench --bench quant_score -- $CRIT_FLAGS \
     >> "$OUT/perf-stat-quant_score-topdown.log" 2>&1 || true
   sleep "$INTER_RUN_SLEEP"
@@ -226,13 +231,22 @@ else
 fi
 
 # --- 6. flamegraph ---
+# cargo-flamegraph runs `perf record` which can write a HUGE perf.data
+# file (hundreds of MB to a few GB for the criterion harness). Send it
+# to OUT so it lives on the same volume as the other artifacts -- on
+# small bench hosts the root volume can fill up if perf.data lands in
+# the cwd or /tmp.
 if [[ $SKIP_FLAMEGRAPH -eq 0 ]] && command -v cargo-flamegraph >/dev/null 2>&1; then
   log "cargo-flamegraph on quant_score"
-  record_cmd "$OUT/flame-quant_score.log" "$CARGO flamegraph --features bench --bench quant_score -- --bench"
-  $NICE "$CARGO" flamegraph --features bench --bench quant_score -- --bench >> "$OUT/flame-quant_score.log" 2>&1 || true
-  if [[ -f flamegraph.svg ]]; then
-    mv flamegraph.svg "$OUT/flame-quant_score.svg"
-  fi
+  record_cmd "$OUT/flame-quant_score.log" "$CARGO flamegraph --features bench --output $OUT/flame-quant_score.svg --bench quant_score -- --bench"
+  (
+    cd "$OUT" && \
+    $NICE "$CARGO" flamegraph --features bench --output "$OUT/flame-quant_score.svg" \
+      --bench quant_score -- --bench
+  ) >> "$OUT/flame-quant_score.log" 2>&1 || true
+  # Move any stray perf.data off the root volume
+  [[ -f "$OUT/perf.data" ]] && rm -f "$OUT/perf.data"
+  [[ -f "$OUT/perf.data.old" ]] && rm -f "$OUT/perf.data.old"
 else
   log "skipping flamegraph"
 fi
@@ -266,9 +280,12 @@ if [[ $SKIP_ASM -eq 0 ]] && command -v cargo-asm >/dev/null 2>&1; then
     "ecaz::quant::hadamard::fwht_in_place"
     "ecaz::quant::hadamard::fwht_in_place_scalar"
   )
+  # In a workspace, cargo-asm needs -p to disambiguate which crate the
+  # function lives in. All these kernels live in the `ecaz` crate.
   for fn in "${KERNELS[@]}"; do
     short="${fn##*::}"
-    "$CARGO" asm --features bench --release "$fn" > "$ASM_DIR/${short}.s" 2>&1 || true
+    "$CARGO" asm --package ecaz --features bench --release "$fn" \
+      > "$ASM_DIR/${short}.s" 2>&1 || true
   done
 else
   log "skipping cargo-asm (--skip-asm or cargo-show-asm not installed)"
