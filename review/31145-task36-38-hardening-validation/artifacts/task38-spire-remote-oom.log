@@ -1,0 +1,73 @@
+Script started on 2026-05-16 22:38:42-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+warning: unused imports: `SpireDmlFrontdoorCustomScanMode`, `SpireDmlFrontdoorPkValuePlan`, `coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql`, `dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes`, `dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision`, `dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan`, `dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row`, and `dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes`
+   --> src/am/mod.rs:49:5
+    |
+ 49 |     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 56 |     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 57 |     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+ 58 |     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 59 |     dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 60 |     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
+ 61 |     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 62 |     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
+ 63 |     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+183 |     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz` (lib) generated 1 warning (run `cargo fix --lib -p ecaz` to apply 1 suggestion)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 40.59s
+     Running `target/debug/ecaz dev spire-multicluster fault-pg18 --case remote_oom --artifact-dir review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom --run-id task38-spire-remote-oom-20260517T0538Z --coord-port 39425 --remote-ready-port 39424 --skip-install`
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] fault_case=remote_oom
+[spire-multicluster] artifact_dir=review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom
+run_dir=/home/peter/dev/ecaz/target/spire-stage-e-transport-fault-pg18-task38-spire-remote-oom-20260517T0538Z
+fault_case=remote_oom
+remote_ready_port=39424
+coord_port=39425
+matrix_row=remote_oom,remote_query_failed,fail_closed,remote_transport_failed,skip_node,degraded_skipped,remote_query_failed_count+1; degraded_skipped_dispatch_count+1
+injection=fault_node_sql=raise_exception_sqlstate_53200
+query_command=tests.ec_spire_test_production_transport_probe_case_summary(..., 'strict')
+expected_status=remote_transport_failed
+expected_transport_failed_dispatch_count=1
+expected_degraded_skipped_dispatch_count=0
+expected_cancelled_dispatch_count=0
+expected_first_transport_failure_category=remote_query_failed
+expected_first_cancellation_category=none
+expected_first_degraded_skip_category=none
+expected_next_executor_step=production_transport_adapter
+observed_transport_rows=2,remote_transport_failed,remote_query_failed,0
+3,ready,none,3
+observed_summary=spire_remote_fanout_executor_v1,2,2,1,1,remote_query_failed,1,0,none,production_transport_adapter,remote_transport_failed
+matrix_row=remote_oom,remote_query_failed,fail_closed,remote_transport_failed,skip_node,degraded_skipped,remote_query_failed_count+1; degraded_skipped_dispatch_count+1
+injection=fault_node_sql=raise_exception_sqlstate_53200
+query_command=tests.ec_spire_test_production_transport_probe_case_summary(..., 'degraded')
+expected_status=requires_compact_candidate_receive
+expected_transport_failed_dispatch_count=0
+expected_degraded_skipped_dispatch_count=1
+expected_cancelled_dispatch_count=0
+expected_first_transport_failure_category=none
+expected_first_cancellation_category=none
+expected_first_degraded_skip_category=remote_query_failed
+expected_next_executor_step=compact_candidate_receive
+observed_transport_rows=2,remote_transport_failed,remote_query_failed,0
+3,ready,none,3
+observed_summary=spire_remote_fanout_executor_v1,2,1,1,0,none,1,1,remote_query_failed,compact_candidate_receive,requires_compact_candidate_receive
+strict_log=review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom/stage_e_fault_remote_oom_strict.log
+degraded_log=review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom/stage_e_fault_remote_oom_degraded.log
+stage_e_fault_remote_oom_passed=true
+SPIRE Stage E remote_oom PG18 fixture passed
+
+Script done on 2026-05-16 22:39:25-07:00 [COMMAND_EXIT_CODE="0"]

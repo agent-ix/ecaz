@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `41ca19a44e0888a1ff3b45c135d02f87682a90b8`
+Code checkpoint SHA: `3c31a0f08a2a60cf0ec927acb2bfda27333ba7f4`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:31:43Z`
+Timestamp: `2026-05-17T05:39:25Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -135,6 +135,13 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live resource/temp-spill expansion
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-temp-spill.log`
 - Key result: all four AMs completed resource smoke with both `tiny-work-mem` and `temp-file-limit` cases listed in the matrix. The temp-spill subcase forced a `temp_file_limit = '64kB'` ERROR and verified backend usability before shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=799 after=843`.
+
+## task38-spire-remote-oom.log
+
+- Lane: Task 38 SPIRE Stage E remote transport fault
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- dev spire-multicluster fault-pg18 --case remote_oom --artifact-dir review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom --run-id task38-spire-remote-oom-20260517T0538Z --coord-port 39425 --remote-ready-port 39424 --skip-install" review/31145-task36-38-hardening-validation/artifacts/task38-spire-remote-oom.log`
+- Key result: `SPIRE Stage E remote_oom PG18 fixture passed`. Strict mode observed `remote_transport_failed` with first failure category `remote_query_failed`; degraded mode observed `requires_compact_candidate_receive` with first degraded skip category `remote_query_failed`. The run also verified the Stage E fixture socket-path fix: the remote log shows the socket under `/home/peter/dev/ecaz/target/s-1656884002/.s.PGSQL.39424`.
+- Related logs: `task38-spire-remote-oom/stage_e_fault_remote_oom.log`, `stage_e_fault_remote_oom_strict.log`, `stage_e_fault_remote_oom_degraded.log`, `remote-ready-postgres.log`, and `coord-postgres.log`.
 
 ## Provider-Backed I/O Smoke
 

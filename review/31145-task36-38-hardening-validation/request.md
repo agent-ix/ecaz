@@ -36,7 +36,11 @@ temp-spill failure,
 provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
-`--assume-prepared`. Those live lanes tag their sessions and assert
+`--assume-prepared`. The existing SPIRE Stage E remote fault surface now has a
+packet-local `remote_oom` run through
+`ecaz dev spire-multicluster fault-pg18`; that run also exposed and fixed a
+fixture bug where long run ids placed Unix sockets under paths longer than
+PostgreSQL allows. Those live lanes tag their sessions and assert
 postconditions for leftover fault sessions, locks, prepared transactions,
 optional `pg_buffercache` fixture pins, and optional `pg_stat_io`
 non-decreasing operation counters.
@@ -46,9 +50,10 @@ non-decreasing operation counters.
 Task 38 is still scope-bounded to smoke coverage. It now has live PG18
 EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
 but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
-OOM-kill campaigns, WAL rotation and provider-backed temp-spill I/O targeting,
-SPIRE remote-object fetch faulting, and full expected-vs-forced WAL/temp-spill
-accounting remain follow-on expansion.
+local OOM-kill campaigns during build/insert/scan, WAL rotation and
+provider-backed temp-spill I/O targeting, SPIRE remote-object fetch faulting,
+and full expected-vs-forced WAL/temp-spill accounting remain follow-on
+expansion.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
@@ -82,6 +87,7 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   - `ecaz dev fault provider-restart --mode eio-read/enospc-write --path-match <relation path> ...`
   - `ecaz dev fault smoke --lane io --am <hnsw|ivf|diskann|spire> --assume-prepared --provider-marker ...`
   - `ecaz dev fault provider-restore`
+  - `ecaz dev spire-multicluster fault-pg18 --case remote_oom ...`
 
 ## Reviewer Focus
 
