@@ -216,11 +216,12 @@ counters. Resource temp-spill probes also print
 readable before/after accounting; temp-file-limit failures may abort before the
 database temp-byte total advances, so the smoke asserts readability and
 non-decreasing totals rather than byte-perfect attribution. Memory smoke also
-SIGKILLs worker backends during AM
-build/scan/insert as an OOM-kill proxy and waits for postmaster recovery. Those
-subcases are crash-recovery checks; lower post-run `pg_stat_io` or
-`pg_stat_wal` totals are recorded as stats resets after recovery rather than
-treated as monotonicity failures.
+caps a warmed backend's `RLIMIT_AS` during AM build work, expecting an
+OOM-class ERROR or backend disconnect followed by a usable postmaster, then
+SIGKILLs worker backends during AM build/scan/insert as an OOM-kill proxy and
+waits for postmaster recovery. Those subcases are crash-recovery checks; lower
+post-run `pg_stat_io` or `pg_stat_wal` totals are recorded as stats resets
+after recovery rather than treated as monotonicity failures.
 
 SPIRE remote transport faults reuse `ecaz dev spire-multicluster fault-pg18`.
 The Stage E fixture scripts keep their PostgreSQL Unix sockets under a short

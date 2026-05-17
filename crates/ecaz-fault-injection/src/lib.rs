@@ -216,6 +216,13 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
                 "SIGKILL the backend while build/scan/insert work is active",
                 "postmaster recovers; no leaked fault state remains",
             ),
+            case(
+                lane,
+                access_method,
+                "backend-rlimit-oom",
+                "cap backend address space with prlimit while AM build work is active",
+                "backend reports an OOM-class failure or disconnects; new sessions remain usable",
+            ),
         ],
         FaultLane::Cancel => vec![
             case(

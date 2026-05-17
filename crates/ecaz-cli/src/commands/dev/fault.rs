@@ -1024,6 +1024,7 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
         run_memory_workload_palloc_sweep(&client, am, "vacuum", &workload_vacuum_sql(am)).await?;
     }
     drop(client);
+    run_memory_rlimit_oom_probe(conn, rows, ams).await?;
     run_memory_oom_kill_probe(conn, rows, ams).await?;
     Ok(())
 }
@@ -1130,6 +1131,85 @@ fn memory_scan_sweep_limit(am: FaultAm) -> i32 {
         FaultAm::DiskAnn => 1,
         FaultAm::Spire => 3,
     }
+}
+
+async fn run_memory_rlimit_oom_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultAm],
+) -> Result<()> {
+    for &am in ams {
+        let rows = rlimit_oom_workload_rows(rows);
+        let setup = connect_fault(conn, "rlimit-oom-setup").await?;
+        setup.batch_execute(&workload_table_sql(am, rows)).await?;
+        drop(setup);
+        run_memory_rlimit_oom_case(
+            conn,
+            am,
+            "build",
+            &ecaz_fault_injection::workload_create_index_sql(am, rows),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn run_memory_rlimit_oom_case(
+    conn: &ConnectionOptions,
+    am: FaultAm,
+    workload: &str,
+    sql: &str,
+) -> Result<()> {
+    let worker = connect_fault(conn, &format!("rlimit-oom-{workload}-worker")).await?;
+    let pid = worker
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    worker
+        .simple_query(
+            "SELECT encode_to_ecvector(ARRAY[0.0::real, 0.0::real, 0.0::real, 0.0::real], 4, 42)",
+        )
+        .await?;
+    let limit_bytes = rlimit_oom_limit_bytes(pid)?;
+    set_backend_address_space_limit(pid, limit_bytes)?;
+    let label = format!("memory rlimit-oom {} {workload}", am.as_str());
+    crate::ecaz_println!("[fault] {label} pid={pid} rlimit_as_bytes={limit_bytes}");
+
+    match worker.batch_execute(sql).await {
+        Ok(()) => Err(eyre!("{label} unexpectedly completed under RLIMIT_AS")),
+        Err(error) if is_oom_class_error(&error) => {
+            crate::ecaz_println!(
+                "[fault] {label} oom_error=true sqlstate={} message={}",
+                error
+                    .as_db_error()
+                    .map(|db| db.code().code())
+                    .unwrap_or("none"),
+                error
+                    .as_db_error()
+                    .map(|db| db.message())
+                    .unwrap_or("connection error")
+            );
+            assert_new_fault_session_usable(conn, &label).await
+        }
+        Err(error) if error.as_db_error().is_none() => {
+            crate::ecaz_println!("[fault] {label} backend_disconnected=true error={error}");
+            wait_for_postmaster_recovery(conn, &label).await
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn rlimit_oom_workload_rows(rows: i64) -> i64 {
+    rows.saturating_mul(500).clamp(20_000, 200_000)
+}
+
+fn rlimit_oom_limit_bytes(pid: i32) -> Result<u64> {
+    let vm_size_bytes = linux_backend_vm_size_bytes(pid)?;
+    Ok(vm_size_bytes.saturating_add(rlimit_oom_headroom_bytes()))
+}
+
+fn rlimit_oom_headroom_bytes() -> u64 {
+    1024 * 1024
 }
 
 async fn run_memory_oom_kill_probe(
@@ -1239,6 +1319,67 @@ async fn wait_for_postmaster_recovery(conn: &ConnectionOptions, label: &str) -> 
     }
     Err(eyre!(
         "{label} did not recover a usable postmaster within 10s"
+    ))
+}
+
+async fn assert_new_fault_session_usable(conn: &ConnectionOptions, label: &str) -> Result<()> {
+    let client = connect_fault(conn, "oom-recovery").await?;
+    client
+        .simple_query("SELECT 1")
+        .await
+        .map_err(|error| eyre!("{label} did not leave new sessions usable: {error}"))?;
+    crate::ecaz_println!("[fault] {label} new_session_usable=true");
+    Ok(())
+}
+
+fn is_oom_class_error(error: &tokio_postgres::Error) -> bool {
+    error.as_db_error().is_some_and(|db| {
+        db.code().code() == "53200" || db.message().to_ascii_lowercase().contains("memory")
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn linux_backend_vm_size_bytes(pid: i32) -> Result<u64> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status"))
+        .map_err(|error| eyre!("reading /proc/{pid}/status: {error}"))?;
+    let vm_size_kb = status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmSize:"))
+        .and_then(|value| value.split_whitespace().next())
+        .ok_or_else(|| eyre!("could not find VmSize in /proc/{pid}/status"))?
+        .parse::<u64>()
+        .map_err(|error| eyre!("parsing VmSize for backend {pid}: {error}"))?;
+    Ok(vm_size_kb.saturating_mul(1024))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_backend_vm_size_bytes(_pid: i32) -> Result<u64> {
+    Err(eyre!(
+        "RLIMIT_AS backend OOM probe is only supported on Linux"
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn set_backend_address_space_limit(pid: i32, limit_bytes: u64) -> Result<()> {
+    let limit = libc::rlimit64 {
+        rlim_cur: limit_bytes as libc::rlim64_t,
+        rlim_max: limit_bytes as libc::rlim64_t,
+    };
+    let result = unsafe { libc::prlimit64(pid, libc::RLIMIT_AS, &limit, std::ptr::null_mut()) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(eyre!(
+            "setting RLIMIT_AS for backend {pid} to {limit_bytes} bytes: {}",
+            std::io::Error::last_os_error()
+        ))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_backend_address_space_limit(_pid: i32, _limit_bytes: u64) -> Result<()> {
+    Err(eyre!(
+        "RLIMIT_AS backend OOM probe is only supported on Linux"
     ))
 }
 

@@ -28,6 +28,7 @@ sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 rand_distr = "0.4"
+libc = "0.2"
 parquet = { version = "55", default-features = false, features = ["arrow", "snap", "zstd", "flate2", "lz4"] }
 arrow-array = "55"
 arrow-schema = "55"
