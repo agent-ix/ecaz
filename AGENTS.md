@@ -33,6 +33,20 @@ Each review topic is a directory under `review/`:
       feedback/
         {YYYY-MM-DD}-{seq}-{agent}.md
 
+### Task File Lookup
+
+- Canonical task definitions live under `plan/tasks/`, not under `review/`.
+- Use `plan/tasks/README.md` as the task index. Numbered primary tasks use the
+  `NN-slug.md` filename pattern.
+- Review packet numbers can overlap task numbers; do not infer a task from a
+  similarly numbered review packet.
+- If a requested task is not present in the current checkout, refresh or inspect
+  `origin/main` before declaring it missing, for example:
+  `git fetch origin main` and
+  `git ls-tree --name-only origin/main:plan/tasks`.
+- Current hardening follow-up tasks are `35` through `49` in `plan/tasks/`.
+  Task 42 is `plan/tasks/42-on-disk-format-invariants.md`.
+
 ### Feedback Files
 
 - Feedback always lands as a file at
