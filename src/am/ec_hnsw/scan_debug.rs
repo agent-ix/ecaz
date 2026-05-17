@@ -1518,11 +1518,11 @@ pub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids(
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_all_top_level_heap_tids");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1547,7 +1547,6 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
     heap_tids.sort_unstable();
     heap_tids.dedup();
 
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     heap_tids
 }
 
@@ -1555,11 +1554,11 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
 pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
     index_oid: pg_sys::Oid,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_top_level_reachable_heap_tids");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1601,7 +1600,6 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
 
     heap_tids.sort_unstable();
     heap_tids.dedup();
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     heap_tids
 }
 
@@ -1609,11 +1607,11 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
 pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
     index_oid: pg_sys::Oid,
 ) -> Vec<page::ItemPointer> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_layer0_reachable_live_element_tids");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1649,7 +1647,6 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
             .cmp(&right.block_number)
             .then_with(|| left.offset_number.cmp(&right.offset_number))
     });
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     reachable
 }
 

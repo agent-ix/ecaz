@@ -1,3 +1,8 @@
+//! Low-level RAII wrappers for PostgreSQL relation handles.
+//!
+//! AM-type validation lives in the `open_valid_ec_*_index_guard`
+//! helpers, which build on `IndexRelationGuard::access_share`.
+
 use pgrx::pg_sys;
 
 pub(crate) struct IndexRelationGuard {
