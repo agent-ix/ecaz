@@ -247,13 +247,22 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             "SET lock_timeout while contended DDL waits on AM relations",
             "lock timeout ERROR; no relation lock survives the session",
         )],
-        FaultLane::Resource => vec![case(
-            lane,
-            access_method,
-            "tiny-work-mem",
-            "run build/scan with tiny work_mem and maintenance_work_mem",
-            "clean ERROR or successful bounded execution; no negative counters",
-        )],
+        FaultLane::Resource => vec![
+            case(
+                lane,
+                access_method,
+                "tiny-work-mem",
+                "run build/scan with tiny work_mem and maintenance_work_mem",
+                "clean ERROR or successful bounded execution; no negative counters",
+            ),
+            case(
+                lane,
+                access_method,
+                "temp-file-limit",
+                "force temp spill under a tiny temp_file_limit",
+                "clean ERROR; backend remains usable and temp state is released",
+            ),
+        ],
         FaultLane::SlowDisk => vec![case(
             lane,
             access_method,
@@ -433,6 +442,18 @@ pub fn workload_reindex_sql(access_method: FaultAm) -> String {
     )
 }
 
+pub fn workload_temp_spill_sql(rows: i64) -> String {
+    let rows = rows.max(100_000);
+    format!(
+        "SELECT count(*)
+         FROM (
+             SELECT repeat(md5(gs::text), 8) AS payload
+             FROM generate_series(1, {rows}) AS gs
+             ORDER BY payload
+         ) AS spilled"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,6 +505,7 @@ mod tests {
             assert!(workload_vacuum_sql(am).contains(workload_table(am)));
             assert!(workload_reindex_sql(am).contains(workload_index(am)));
         }
+        assert!(workload_temp_spill_sql(10).contains("generate_series(1, 100000)"));
     }
 
     #[test]

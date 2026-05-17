@@ -3,8 +3,8 @@ use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
     all_smoke_cases, leak_probe_sql, optional_leak_probe_sql, required_smoke_cases,
     workload_insert_sql, workload_reindex_sql, workload_repeated_scan_sql, workload_scan_sql,
-    workload_setup_sql, workload_table_sql, workload_vacuum_full_sql, workload_vacuum_sql, FaultAm,
-    FaultLane, ProviderMode,
+    workload_setup_sql, workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql,
+    workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
 };
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -646,8 +646,30 @@ async fn run_resource_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]
                  SELECT current_setting('work_mem'), current_setting('maintenance_work_mem');",
             )
             .await?;
+        let temp_spill = client
+            .batch_execute(&format!(
+                "SET work_mem = '64kB';
+                 SET temp_file_limit = '64kB';
+                 {}",
+                workload_temp_spill_sql(resource_temp_spill_rows(rows))
+            ))
+            .await;
+        client
+            .batch_execute("RESET temp_file_limit; RESET work_mem;")
+            .await?;
+        assert_temp_file_limit_error(&format!("resource temp spill {}", am.as_str()), temp_spill)?;
+        client.simple_query("SELECT 1").await.map_err(|error| {
+            eyre!(
+                "resource temp spill {} did not leave the backend usable: {error}",
+                am.as_str()
+            )
+        })?;
     }
     Ok(())
+}
+
+fn resource_temp_spill_rows(rows: i64) -> i64 {
+    rows.saturating_mul(2_000).clamp(100_000, 500_000)
 }
 
 async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
@@ -980,6 +1002,24 @@ fn assert_ecaz_palloc_error(label: &str, result: Result<(), tokio_postgres::Erro
             if error
                 .as_db_error()
                 .map(|db| db.message().contains("ecaz fault injection palloc failure"))
+                .unwrap_or(false) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn assert_temp_file_limit_error(
+    label: &str,
+    result: Result<(), tokio_postgres::Error>,
+) -> Result<()> {
+    match result {
+        Ok(()) => Err(eyre!("{label} probe unexpectedly succeeded")),
+        Err(error)
+            if error
+                .as_db_error()
+                .map(|db| db.message().contains("temporary file size exceeds"))
                 .unwrap_or(false) =>
         {
             Ok(())
