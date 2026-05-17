@@ -11,7 +11,7 @@ use crate::quant::prod::{
     BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
     PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
 };
-use crate::storage::relation_guard::HeapRelationGuard;
+use crate::storage::{relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard};
 
 use super::explain::TqExplainCounters;
 use super::graph;
@@ -1601,60 +1601,129 @@ fn resolve_grouped_live_rerank_window() -> usize {
     parsed_window
 }
 
-unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {
+struct ResolvedHnswScanHeapRelation {
+    relation: pg_sys::Relation,
+    _owned: Option<HeapRelationGuard>,
+}
+
+impl ResolvedHnswScanHeapRelation {
+    fn borrowed(relation: pg_sys::Relation) -> Self {
+        Self {
+            relation,
+            _owned: None,
+        }
+    }
+
+    fn owned(guard: HeapRelationGuard) -> Self {
+        let relation = guard.as_ptr();
+        Self {
+            relation,
+            _owned: Some(guard),
+        }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+struct ResolvedHnswScanSnapshot {
+    snapshot: pg_sys::Snapshot,
+    owned: bool,
+}
+
+impl ResolvedHnswScanSnapshot {
+    fn borrowed(snapshot: pg_sys::Snapshot) -> Self {
+        Self {
+            snapshot,
+            owned: false,
+        }
+    }
+
+    fn owned(snapshot: pg_sys::Snapshot) -> Self {
+        Self {
+            snapshot,
+            owned: true,
+        }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Snapshot {
+        self.snapshot
+    }
+}
+
+impl Drop for ResolvedHnswScanSnapshot {
+    fn drop(&mut self) {
+        if self.owned && !self.snapshot.is_null() {
+            // SAFETY: `snapshot` was returned by `RegisterSnapshot` in
+            // `resolve_scan_snapshot`; this wrapper owns the matching
+            // unregister.
+            // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+            // re-audit on pgrx bumps or pg_guard behavior changes.
+            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
+        }
+    }
+}
+
+struct GroupedHeapRerankState {
+    slot: TupleTableSlotGuard,
+    snapshot: ResolvedHnswScanSnapshot,
+    heap_relation: ResolvedHnswScanHeapRelation,
+    source_attribute: source::SourceAttribute,
+}
+
+impl GroupedHeapRerankState {
+    fn heap_relation(&self) -> pg_sys::Relation {
+        self.heap_relation.as_ptr()
+    }
+
+    fn snapshot(&self) -> pg_sys::Snapshot {
+        self.snapshot.as_ptr()
+    }
+
+    fn slot(&self) -> *mut pg_sys::TupleTableSlot {
+        self.slot.as_ptr()
+    }
+}
+
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanHeapRelation {
     if !unsafe { (*scan).heapRelation }.is_null() {
-        return (unsafe { (*scan).heapRelation }, false);
+        return ResolvedHnswScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
     }
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve heap relation");
     }
-    (
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
-        true,
-    )
+    let heap_relation = HeapRelationGuard::try_access_share(heap_oid).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw grouped heap-f32 rerank could not open heap relation")
+    });
+    ResolvedHnswScanHeapRelation::owned(heap_relation)
 }
 
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapshot, bool) {
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanSnapshot {
     if !unsafe { (*scan).xs_snapshot }.is_null() {
-        return (unsafe { (*scan).xs_snapshot }, false);
+        return ResolvedHnswScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
     }
 
     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
-        return (active_snapshot, false);
+        return ResolvedHnswScanSnapshot::borrowed(active_snapshot);
     }
 
     let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     if registered_snapshot.is_null() {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve an active snapshot");
     }
-    (registered_snapshot, true)
+    ResolvedHnswScanSnapshot::owned(registered_snapshot)
 }
 
 unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
-    if !opaque.grouped_heap_rerank_slot.is_null() {
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(opaque.grouped_heap_rerank_slot) };
-        opaque.grouped_heap_rerank_slot = ptr::null_mut();
+    if !opaque.grouped_heap_rerank_state.is_null() {
+        let state = opaque.grouped_heap_rerank_state;
+        opaque.grouped_heap_rerank_state = ptr::null_mut();
+        drop(unsafe { Box::from_raw(state) });
     }
-    if opaque.grouped_heap_rerank_snapshot_owned && !opaque.grouped_heap_rerank_snapshot.is_null() {
-        unsafe { pg_sys::UnregisterSnapshot(opaque.grouped_heap_rerank_snapshot) };
-    }
-    opaque.grouped_heap_rerank_snapshot = ptr::null_mut();
-    opaque.grouped_heap_rerank_snapshot_owned = false;
-    if opaque.grouped_heap_rerank_relation_owned && !opaque.grouped_heap_rerank_relation.is_null() {
-        unsafe {
-            pg_sys::table_close(
-                opaque.grouped_heap_rerank_relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
-    }
-    opaque.grouped_heap_rerank_relation = ptr::null_mut();
-    opaque.grouped_heap_rerank_relation_owned = false;
-    opaque.grouped_heap_rerank_source_attnum = 0;
-    opaque.grouped_heap_rerank_source_kind = source::SourceDatumKind::Unknown;
 }
 
 unsafe fn configure_grouped_heap_rerank_state(
@@ -1682,12 +1751,13 @@ unsafe fn configure_grouped_heap_rerank_state(
     } else {
         "indexed column"
     };
-    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
-    let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
+    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
+    let heap_relation_ptr = heap_relation.as_ptr();
+    let snapshot = unsafe { resolve_scan_snapshot(scan) };
     let source_attribute = if let Some(source_column) = rerank.source_column {
         unsafe {
             source::resolve_source_attribute(
-                heap_relation,
+                heap_relation_ptr,
                 &source_column,
                 source_label,
                 source::SourceTypePolicy::RerankSource,
@@ -1696,7 +1766,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     } else {
         let indexed_attribute = unsafe {
             source::resolve_indexed_vector_attribute(
-                heap_relation,
+                heap_relation_ptr,
                 (*scan).indexRelation,
                 source_label,
             )
@@ -1712,21 +1782,16 @@ unsafe fn configure_grouped_heap_rerank_state(
             ),
         }
     };
-    let slot = unsafe {
-        source::allocate_heap_slot(
-            heap_relation,
-            "ec_hnsw grouped heap-f32 rerank failed to allocate a heap tuple slot",
-        )
-    };
+    let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw grouped heap-f32 rerank failed to allocate a heap tuple slot")
+    });
 
-    opaque.grouped_heap_rerank_relation = heap_relation;
-    opaque.grouped_heap_rerank_relation_owned = heap_relation_owned;
-    opaque.grouped_heap_rerank_snapshot = snapshot;
-    opaque.grouped_heap_rerank_snapshot_owned = snapshot_owned;
-    opaque.grouped_heap_rerank_slot = slot;
-    opaque.grouped_heap_rerank_source_attnum = i16::try_from(source_attribute.attnum)
-        .expect("heap rerank source attnum should fit in i16");
-    opaque.grouped_heap_rerank_source_kind = source_attribute.kind;
+    opaque.grouped_heap_rerank_state = Box::into_raw(Box::new(GroupedHeapRerankState {
+        slot,
+        snapshot,
+        heap_relation,
+        source_attribute,
+    }));
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
@@ -2503,26 +2568,26 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     opaque: &mut TqScanOpaque,
     heap_tid: page::ItemPointer,
 ) -> f32 {
-    if opaque.grouped_heap_rerank_relation.is_null()
-        || opaque.grouped_heap_rerank_snapshot.is_null()
-        || opaque.grouped_heap_rerank_slot.is_null()
-        || opaque.grouped_heap_rerank_source_attnum <= 0
+    let Some(heap_rerank_state) = (unsafe { opaque.grouped_heap_rerank_state.as_ref() }) else {
+        pgrx::error!("ec_hnsw grouped heap-f32 rerank is missing heap fetch state");
+    };
+    if heap_rerank_state.heap_relation().is_null()
+        || heap_rerank_state.snapshot().is_null()
+        || heap_rerank_state.slot().is_null()
+        || heap_rerank_state.source_attribute.attnum <= 0
     {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank is missing heap fetch state");
     }
 
-    let source_attribute = source::SourceAttribute {
-        attnum: i32::from(opaque.grouped_heap_rerank_source_attnum),
-        kind: opaque.grouped_heap_rerank_source_kind,
-    };
+    let source_attribute = heap_rerank_state.source_attribute;
     #[cfg(any(test, feature = "pg_test"))]
     let fetch_started = Instant::now();
     unsafe {
         source::fetch_heap_row_version(
-            opaque.grouped_heap_rerank_relation,
+            heap_rerank_state.heap_relation(),
             heap_tid,
-            opaque.grouped_heap_rerank_snapshot,
-            opaque.grouped_heap_rerank_slot,
+            heap_rerank_state.snapshot(),
+            heap_rerank_state.slot(),
             "PqFastScan heap rerank source vector",
         )
     };
@@ -2537,7 +2602,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     let source = unsafe {
         source::FlatFloat4SourceRef::from_datum(
             source::required_slot_datum(
-                opaque.grouped_heap_rerank_slot,
+                heap_rerank_state.slot(),
                 source_attribute.attnum,
                 "PqFastScan heap rerank source vector",
             ),
@@ -2561,7 +2626,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     let dot_elapsed_us = 0;
     record_grouped_rerank_heap_dot_elapsed(opaque, dot_elapsed_us);
     drop(source);
-    unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
+    unsafe { pg_sys::ExecClearTuple(heap_rerank_state.slot()) };
     score
 }
 
@@ -5242,13 +5307,7 @@ pub(super) struct TqScanOpaque {
     grouped_live_rerank_window: u8,
     grouped_traversal_score_mode: GroupedTraversalScoreMode,
     grouped_rerank_mode: GroupedRerankMode,
-    grouped_heap_rerank_relation: pg_sys::Relation,
-    grouped_heap_rerank_relation_owned: bool,
-    grouped_heap_rerank_snapshot: pg_sys::Snapshot,
-    grouped_heap_rerank_snapshot_owned: bool,
-    grouped_heap_rerank_slot: *mut pg_sys::TupleTableSlot,
-    grouped_heap_rerank_source_attnum: i16,
-    grouped_heap_rerank_source_kind: source::SourceDatumKind,
+    grouped_heap_rerank_state: *mut GroupedHeapRerankState,
     grouped_exact_traversal_mode: GroupedExactTraversalMode,
     grouped_exact_traversal_strategy: GroupedExactTraversalStrategy,
     grouped_exact_traversal_limit: u8,
@@ -5318,13 +5377,7 @@ impl Default for TqScanOpaque {
             grouped_live_rerank_window: PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW as u8,
             grouped_traversal_score_mode: GroupedTraversalScoreMode::Binary,
             grouped_rerank_mode: GroupedRerankMode::Quantized,
-            grouped_heap_rerank_relation: ptr::null_mut(),
-            grouped_heap_rerank_relation_owned: false,
-            grouped_heap_rerank_snapshot: ptr::null_mut(),
-            grouped_heap_rerank_snapshot_owned: false,
-            grouped_heap_rerank_slot: ptr::null_mut(),
-            grouped_heap_rerank_source_attnum: 0,
-            grouped_heap_rerank_source_kind: source::SourceDatumKind::Unknown,
+            grouped_heap_rerank_state: ptr::null_mut(),
             grouped_exact_traversal_mode: GroupedExactTraversalMode::Disabled,
             grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
             grouped_exact_traversal_limit: 0,
