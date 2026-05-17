@@ -15,6 +15,21 @@ impl TupleTableSlotGuard {
         Some(Self { slot })
     }
 
+    pub(crate) fn single_for_heap(relation: pg_sys::Relation) -> Option<Self> {
+        // SAFETY: `relation` is an open heap relation. PostgreSQL owns the
+        // returned slot until `ExecDropSingleTupleTableSlot`.
+        let slot = unsafe {
+            pg_sys::MakeSingleTupleTableSlot(
+                (*relation).rd_att,
+                pg_sys::table_slot_callbacks(relation),
+            )
+        };
+        if slot.is_null() {
+            return None;
+        }
+        Some(Self { slot })
+    }
+
     pub(crate) fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
         self.slot
     }

@@ -72,24 +72,6 @@ impl Drop for ResolvedScanHeapRelation {
     }
 }
 
-struct HeapTupleSlot {
-    slot: *mut pg_sys::TupleTableSlot,
-}
-
-impl HeapTupleSlot {
-    fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
-        self.slot
-    }
-}
-
-impl Drop for HeapTupleSlot {
-    fn drop(&mut self) {
-        // SAFETY: `slot` was returned by `MakeSingleTupleTableSlot` in
-        // `allocate_heap_slot`; this guard owns the matching drop.
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
-    }
-}
-
 pub(super) unsafe fn load_relation_epoch_manifests(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -201,7 +183,7 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
             "ec_spire heap rerank indexed column",
         )
     };
-    let slot = unsafe { allocate_heap_slot(heap_relation_ptr)? };
+    let slot = allocate_heap_slot(heap_relation_ptr)?;
 
     let result = prepare_single_level_snapshot_scan_candidates_with_prefetch(
         snapshot,
@@ -341,21 +323,11 @@ fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
     pgrx::error!("ec_spire heap rerank requires an executor or active snapshot");
 }
 
-unsafe fn allocate_heap_slot(
+fn allocate_heap_slot(
     heap_relation: pg_sys::Relation,
-) -> Result<HeapTupleSlot, String> {
-    // SAFETY: `heap_relation` is a live relation from the current scan; the
-    // returned slot is owned by `HeapTupleSlot`.
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
-        )
-    };
-    if slot.is_null() {
-        return Err("ec_spire heap rerank failed to allocate a heap tuple slot".to_owned());
-    }
-    Ok(HeapTupleSlot { slot })
+) -> Result<crate::storage::slot_guard::TupleTableSlotGuard, String> {
+    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+        .ok_or_else(|| "ec_spire heap rerank failed to allocate a heap tuple slot".to_owned())
 }
 
 unsafe fn exact_heap_source_inner_product(
