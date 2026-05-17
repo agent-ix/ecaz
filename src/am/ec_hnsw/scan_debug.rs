@@ -2040,8 +2040,9 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
 
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_scan_uses_grouped_storage");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     let grouped_results = matches!(
         unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
@@ -2050,7 +2051,6 @@ unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
             }),
         graph::GraphStorageDescriptor::PqFastScan(_)
     );
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     grouped_results
 }
 
@@ -2473,8 +2473,9 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<HeapTidCoords>, bool, bool) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_exhaustion_state");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2497,7 +2498,6 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (tids, exhausted_once, exhausted_twice)
 }
 
@@ -2515,8 +2515,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
     bool,
     f32,
 ) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_state");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2541,7 +2542,6 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_found,
         before_tid,
@@ -2559,8 +2559,9 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, bool, f32) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_orderby_score");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2584,7 +2585,6 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (found, is_null, score)
 }
 
@@ -2631,8 +2631,9 @@ pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_orderby_score_lifecycle");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
@@ -2659,7 +2660,6 @@ pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (before, after_first, exhausted, rescanned)
 }
 
@@ -2668,8 +2668,9 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, HeapTidCoords, f32, bool, HeapTidCoords, f32) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_entry_candidate_state");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2698,7 +2699,6 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_valid,
         before_tid,
@@ -2721,8 +2721,9 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     HeapTidCoords,
     f32,
 ) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_successor_candidate_state");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2746,7 +2747,6 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         entry_tid,
         entry_neighbors,
@@ -2762,8 +2762,9 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapSeedState {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_rescan_candidate_frontier");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2781,7 +2782,6 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         head,
         frontier,
@@ -2796,8 +2796,9 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapConsumeState {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_gettuple_consumes_bootstrap_candidate");
+    let index_relation = index_relation_guard.as_ptr();
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2823,7 +2824,6 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         before_head,
         before_slots,
