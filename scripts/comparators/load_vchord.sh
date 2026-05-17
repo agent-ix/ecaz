@@ -41,10 +41,14 @@ if ! comparator_table_loaded "${prefix}_queries"; then
   comparator_load_vector_table "${prefix}_queries" "$QUERIES" "$DIM"
 fi
 
+# Belt-and-suspenders: SET mwm in case vchord also has a scale
+# threshold. Won't hurt if it doesn't.
+MAINT_WORK_MEM="${MAINT_WORK_MEM:-4GB}"
+
 idx="${prefix}_rabitq_idx"
 if ! psql -tAc "select 1 from pg_indexes where indexname='$idx';" | grep -q 1; then
-  comparator_log "building $idx (VectorChord vchordrq RaBitQ-on-IVF, default config)"
-  psql -c "CREATE INDEX $idx ON ${prefix}_corpus USING vchordrq (embedding vector_ip_ops);"
+  comparator_log "building $idx (VectorChord vchordrq RaBitQ-on-IVF, maintenance_work_mem=$MAINT_WORK_MEM)"
+  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $idx ON ${prefix}_corpus USING vchordrq (embedding vector_ip_ops);"
 fi
 
 comparator_log "done. tables: ${prefix}_corpus, ${prefix}_queries; index: $idx"
