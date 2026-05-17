@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `12b2d0091a9146fd8af70976a2b2e67c190f7866`
+Code checkpoint SHA: `b7b8c903ef1996965bcb4b3fd37efd76ce794df8`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:48:26Z`
+Timestamp: `2026-05-17T05:56:07Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -99,6 +99,18 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live memory/palloc major-workload smoke
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-major-workloads.log`
 - Key result: all four AMs completed memory smoke across build, scan, insert, and vacuum probes, with shared postcondition probes asserted.
+
+## task38-pg18-oom-kill-hnsw-smoke.log
+
+- Lane: Task 38 backend-SIGKILL OOM-proxy smoke, single-AM guard
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --am hnsw --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-oom-kill-hnsw-smoke.log`
+- Key result: HNSW completed palloc smoke plus build, scan, and insert backend-SIGKILL checks. Each SIGKILL logged `postmaster_recovered=true`; shared postconditions passed with `pg_buffercache_fixture_pins=0`; `pg_stat_io` reset after crash recovery was recorded instead of treated as a monotonicity failure.
+
+## task38-pg18-oom-kill-all-ams.log
+
+- Lane: Task 38 backend-SIGKILL OOM-proxy smoke across all AMs
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-oom-kill-all-ams.log`
+- Key result: all four AMs completed palloc smoke plus backend-SIGKILL build, scan, and insert checks. Twelve SIGKILL cases recovered the postmaster; shared postconditions passed with `pg_buffercache_fixture_pins=0`; `pg_stat_io_ops_before=189 after=66` was recorded as a stats reset after crash recovery.
 
 ## task38-pg18-lock-rollback-guard.log
 
