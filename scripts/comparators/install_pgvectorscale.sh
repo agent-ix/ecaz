@@ -73,7 +73,21 @@ rm -rf "$EXTRACT_DIR"
 mkdir -p "$EXTRACT_DIR"
 cd "$EXTRACT_DIR"
 ar x "../$DEB_FILE"
-tar xf data.tar.* 2>/dev/null || tar xf data.tar
+# Debian .deb data.tar is typically compressed: .gz / .xz / .zst.
+# AL2023 ships tar with zstd support but the compression has to be
+# specified explicitly (auto-detect via --auto-compress doesn't pick
+# .zst).
+if [[ -f data.tar.zst ]]; then
+  unzstd -q data.tar.zst && tar xf data.tar
+elif [[ -f data.tar.xz ]]; then
+  tar xJf data.tar.xz
+elif [[ -f data.tar.gz ]]; then
+  tar xzf data.tar.gz
+elif [[ -f data.tar ]]; then
+  tar xf data.tar
+else
+  comparator_log "no data.tar.* in extracted .deb"; ls; exit 1
+fi
 cd ..
 
 PG_PKGLIBDIR="$($PG_CONFIG --pkglibdir)"

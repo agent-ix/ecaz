@@ -68,7 +68,12 @@ if [[ -z "$SO_PATH" ]]; then
   rm -rf extracted && mkdir extracted && (
     cd extracted
     ar x "../$DEB_FILE"
-    tar xf data.tar.* 2>/dev/null || tar xf data.tar
+    if [[ -f data.tar.zst ]]; then unzstd -q data.tar.zst && tar xf data.tar
+    elif [[ -f data.tar.xz ]]; then tar xJf data.tar.xz
+    elif [[ -f data.tar.gz ]]; then tar xzf data.tar.gz
+    elif [[ -f data.tar ]]; then tar xf data.tar
+    else echo "no data.tar.* in extracted .deb"; ls; exit 1
+    fi
   )
   SO_PATH=$(find extracted -name 'vchord.so' -type f | head -1)
 fi
