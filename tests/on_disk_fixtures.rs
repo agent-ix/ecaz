@@ -3,11 +3,17 @@
 use ecaz::bench_api::{
     ItemPointer, IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage,
     IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode, IvfStorageFormat, MetadataPage,
-    TqElementTuple, TqGroupedCodebookTuple, TqNeighborTuple, VamanaCodebookTuple,
-    VamanaMetadataPage, VamanaNodeTuple, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
-    EC_IVF_INDEX_FORMAT_VERSION, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
-    HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
-    VAMANA_METADATA_FORMAT_VERSION_OFFSET, VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+    SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory,
+    SpirePlacementEntry, SpirePlacementState, TqElementTuple, TqGroupedCodebookTuple,
+    TqNeighborTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
+    EC_IVF_CENTROID_DIMENSIONS_OFFSET, EC_IVF_INDEX_FORMAT_VERSION,
+    EC_IVF_METADATA_FORMAT_VERSION_OFFSET, HNSW_METADATA_FORMAT_VERSION_OFFSET,
+    INDEX_FORMAT_V3_DISKANN, SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
+    SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET, SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
+    SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
+    SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
+    VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
 };
 
 fn decode_hex_fixture(contents: &str) -> Vec<u8> {
@@ -467,5 +473,226 @@ fn ivf_pq_codebook_tuple_v1_fixture_decodes() {
             (-0.5_f32).to_bits(),
             1.0_f32.to_bits()
         ]
+    );
+}
+
+#[test]
+fn spire_local_store_config_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_local_store_config_v1.hex"
+    ));
+
+    let config =
+        SpireLocalStoreConfig::decode(&bytes).expect("spire local store config should decode");
+
+    assert_eq!(config.generation, 7);
+    assert_eq!(config.stores.len(), 2);
+    assert_eq!(config.stores[0].local_store_id, 2);
+    assert_eq!(config.stores[0].store_relid, 502);
+    assert_eq!(config.stores[0].tablespace_oid, 1002);
+    assert_eq!(config.stores[0].state, SpireLocalStoreState::Available);
+    assert_eq!(config.stores[1].local_store_id, 5);
+    assert_eq!(config.stores[1].store_relid, 505);
+    assert_eq!(config.stores[1].tablespace_oid, 1005);
+    assert_eq!(config.stores[1].state, SpireLocalStoreState::Available);
+}
+
+#[test]
+fn spire_local_store_config_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_local_store_config_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
+        SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireLocalStoreConfig::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_placement_entry_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_entry_v1.hex"
+    ));
+
+    let entry = SpirePlacementEntry::decode(&bytes).expect("spire placement entry should decode");
+
+    assert_eq!(entry.state, SpirePlacementState::Available);
+    assert_eq!(entry.epoch, 7);
+    assert_eq!(entry.pid, 17);
+    assert_eq!(entry.node_id, 0);
+    assert_eq!(entry.local_store_id, 2);
+    assert_eq!(entry.store_relid, 502);
+    assert_eq!(entry.object_version, 3);
+    assert_eq!(
+        entry.object_tid,
+        ItemPointer {
+            block_number: 20,
+            offset_number: 1
+        }
+    );
+    assert_eq!(entry.object_bytes, 108);
+}
+
+#[test]
+fn spire_placement_entry_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_entry_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET,
+        SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpirePlacementEntry::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_placement_directory_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_directory_v1.hex"
+    ));
+
+    let directory =
+        SpirePlacementDirectory::decode(&bytes).expect("spire placement directory should decode");
+
+    assert_eq!(directory.epoch, 7);
+    assert_eq!(directory.entries.len(), 1);
+    assert_eq!(directory.entries[0].pid, 17);
+    assert_eq!(directory.entries[0].local_store_id, 2);
+}
+
+#[test]
+fn spire_placement_directory_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_placement_directory_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
+        SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err =
+        SpirePlacementDirectory::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_epoch_manifest_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_epoch_manifest_v1.hex"
+    ));
+
+    let manifest = SpireEpochManifest::decode(&bytes).expect("spire epoch manifest should decode");
+
+    assert_eq!(manifest.state, SpireEpochState::Published);
+    assert_eq!(manifest.consistency_mode, SpireConsistencyMode::Strict);
+    assert_eq!(manifest.epoch, 7);
+    assert_eq!(manifest.published_at_micros, 1_000);
+    assert_eq!(manifest.retain_until_micros, 2_000);
+    assert_eq!(manifest.active_query_count, 3);
+}
+
+#[test]
+fn spire_epoch_manifest_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_epoch_manifest_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
+        SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireEpochManifest::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_manifest_entry_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_manifest_entry_v1.hex"
+    ));
+
+    let entry = SpireManifestEntry::decode(&bytes).expect("spire manifest entry should decode");
+
+    assert_eq!(entry.epoch, 7);
+    assert_eq!(entry.pid, 17);
+    assert_eq!(entry.object_version, 3);
+    assert_eq!(
+        entry.placement_tid,
+        ItemPointer {
+            block_number: 30,
+            offset_number: 2
+        }
+    );
+}
+
+#[test]
+fn spire_manifest_entry_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_manifest_entry_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
+        SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireManifestEntry::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn spire_object_manifest_v1_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_object_manifest_v1.hex"
+    ));
+
+    let manifest =
+        SpireObjectManifest::decode(&bytes).expect("spire object manifest should decode");
+
+    assert_eq!(manifest.epoch, 7);
+    assert_eq!(manifest.entries.len(), 1);
+    assert_eq!(manifest.entries[0].pid, 17);
+    assert_eq!(manifest.entries[0].object_version, 3);
+}
+
+#[test]
+fn spire_object_manifest_v1_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/spire_object_manifest_v1.hex"
+    ));
+    bytes.swap(
+        SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
+        SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = SpireObjectManifest::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("ec_spire unsupported metadata format version: 256"),
+        "unexpected error: {err}"
     );
 }

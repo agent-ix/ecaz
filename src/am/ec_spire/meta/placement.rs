@@ -1,6 +1,6 @@
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SpireEpochState {
+pub enum SpireEpochState {
     Building = 1,
     Published = 2,
     Retired = 3,
@@ -21,7 +21,7 @@ impl SpireEpochState {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SpireConsistencyMode {
+pub enum SpireConsistencyMode {
     Strict = 1,
     Degraded = 2,
 }
@@ -37,16 +37,16 @@ impl SpireConsistencyMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SpirePlacementEntry {
-    pub(super) epoch: u64,
-    pub(super) pid: u64,
-    pub(super) node_id: u32,
-    pub(super) local_store_id: u32,
-    pub(super) store_relid: u32,
-    pub(super) object_version: u64,
-    pub(super) object_tid: ItemPointer,
-    pub(super) object_bytes: u32,
-    pub(super) state: SpirePlacementState,
+pub struct SpirePlacementEntry {
+    pub epoch: u64,
+    pub pid: u64,
+    pub node_id: u32,
+    pub local_store_id: u32,
+    pub store_relid: u32,
+    pub object_version: u64,
+    pub object_tid: ItemPointer,
+    pub object_bytes: u32,
+    pub state: SpirePlacementState,
 }
 
 impl SpirePlacementEntry {
@@ -226,7 +226,7 @@ impl SpirePlacementEntry {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         if input.len() != PLACEMENT_ENTRY_BYTES {
             return Err(format!(
                 "ec_spire placement entry length mismatch: got {}, expected {PLACEMENT_ENTRY_BYTES}",

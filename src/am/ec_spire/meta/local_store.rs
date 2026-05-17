@@ -1,9 +1,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SpireLocalStoreDescriptor {
-    pub(super) local_store_id: u32,
-    pub(super) store_relid: u32,
-    pub(super) tablespace_oid: u32,
-    pub(super) state: SpireLocalStoreState,
+pub struct SpireLocalStoreDescriptor {
+    pub local_store_id: u32,
+    pub store_relid: u32,
+    pub tablespace_oid: u32,
+    pub state: SpireLocalStoreState,
 }
 
 impl SpireLocalStoreDescriptor {
@@ -72,9 +72,9 @@ impl SpireLocalStoreDescriptor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SpireLocalStoreConfig {
-    pub(super) generation: u64,
-    pub(super) stores: Vec<SpireLocalStoreDescriptor>,
+pub struct SpireLocalStoreConfig {
+    pub generation: u64,
+    pub stores: Vec<SpireLocalStoreDescriptor>,
 }
 
 impl SpireLocalStoreConfig {
@@ -169,7 +169,7 @@ impl SpireLocalStoreConfig {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         if input.len() < LOCAL_STORE_CONFIG_HEADER_BYTES {
             return Err(format!(
                 "ec_spire local store config too short: got {}, expected at least {LOCAL_STORE_CONFIG_HEADER_BYTES}",

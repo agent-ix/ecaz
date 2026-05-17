@@ -55,6 +55,9 @@ pub(crate) use self::dml_frontdoor::{
     register_dml_frontdoor_planner_hook,
 };
 pub use self::meta::{
+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+    SpireLocalStoreDescriptor, SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest,
+    SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
     SPIRE_EPOCH_MANIFEST_ACTIVE_QUERY_COUNT_OFFSET, SPIRE_EPOCH_MANIFEST_BYTES,
     SPIRE_EPOCH_MANIFEST_CONSISTENCY_MODE_OFFSET, SPIRE_EPOCH_MANIFEST_EPOCH_OFFSET,
     SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_EPOCH_MANIFEST_MAGIC,

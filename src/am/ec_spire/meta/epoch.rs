@@ -1,11 +1,11 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SpireEpochManifest {
-    pub(super) epoch: u64,
-    pub(super) state: SpireEpochState,
-    pub(super) consistency_mode: SpireConsistencyMode,
-    pub(super) published_at_micros: i64,
-    pub(super) retain_until_micros: i64,
-    pub(super) active_query_count: u64,
+pub struct SpireEpochManifest {
+    pub epoch: u64,
+    pub state: SpireEpochState,
+    pub consistency_mode: SpireConsistencyMode,
+    pub published_at_micros: i64,
+    pub retain_until_micros: i64,
+    pub active_query_count: u64,
 }
 
 impl SpireEpochManifest {
@@ -29,7 +29,7 @@ impl SpireEpochManifest {
         Ok(out)
     }
 
-    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
         if input.len() != EPOCH_MANIFEST_BYTES {
             return Err(format!(
                 "ec_spire epoch manifest length mismatch: got {}, expected {EPOCH_MANIFEST_BYTES}",

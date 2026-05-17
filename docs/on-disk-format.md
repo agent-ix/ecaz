@@ -49,6 +49,12 @@ Current fixture coverage:
 | `ivf_list_directory_tuple_v1.hex` | IVF list-directory tuple decode |
 | `ivf_posting_tuple_v1.hex` | IVF posting tuple decode |
 | `ivf_pq_codebook_tuple_v1.hex` | IVF PQ-codebook shard decode |
+| `spire_local_store_config_v1.hex` | SPIRE local-store config decode and swapped-version rejection |
+| `spire_placement_entry_v1.hex` | SPIRE placement entry decode and swapped-version rejection |
+| `spire_placement_directory_v1.hex` | SPIRE placement directory decode and swapped-version rejection |
+| `spire_epoch_manifest_v1.hex` | SPIRE epoch manifest decode and swapped-version rejection |
+| `spire_manifest_entry_v1.hex` | SPIRE object-manifest entry decode and swapped-version rejection |
+| `spire_object_manifest_v1.hex` | SPIRE object manifest decode and swapped-version rejection |
 
 ## Version Policy
 
@@ -67,8 +73,8 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## Remaining Task 42 Gaps
 
-- Extend fixture bytes under `fixtures/on-disk/` to SPIRE and remaining
-  HNSW/DiskANN/IVF page kinds.
+- Extend fixture bytes under `fixtures/on-disk/` to SPIRE partition object
+  bodies and remaining HNSW/DiskANN/IVF page kinds.
 - Extend byte-swapped fixture rejection tests to additional bounded multi-byte
   fields where the current decoder can reject malformed values.
 - Extend static offset assertions to additional SPIRE routing/top-graph object
