@@ -32,6 +32,12 @@ jobs:
       - name: Unit tests
         run: cargo test
 
+      - name: On-disk fixtures
+        run: cargo test --features bench --test on_disk_fixtures
+
+      - name: Upgrade matrix smoke
+        run: cargo test --features bench --test upgrade_matrix
+
       - name: Layout assertions
         run: cargo test --features bench --test size_of_assertions
 

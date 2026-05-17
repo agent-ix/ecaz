@@ -352,7 +352,7 @@ bench-recall-sql:
 # --- CI Aggregates ---
 
 ## Quick checks (< 5 min, for every PR)
-ci-quick: fmt-check lint test layout-check audit-unsafe
+ci-quick: fmt-check lint test on-disk-fixtures upgrade-smoke layout-check audit-unsafe
 
 ## Full benchmark suite (nightly)
 ci-nightly: ci-quick bench bench-iai proptest miri
