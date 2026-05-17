@@ -1333,46 +1333,44 @@ unsafe fn append_raw_tuple_payload(
     required_bytes: usize,
     target_block: pg_sys::BlockNumber,
 ) -> Result<ItemPointer, String> {
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
+    let buffer = if target_block == P_NEW {
+        unsafe {
+            LockedBufferGuard::read_main_locked(
+                index_relation,
+                target_block,
+                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+            )
+        }
     } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_diskann failed to allocate append buffer".into());
+        unsafe {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     }
+    .ok_or_else(|| "ec_diskann failed to allocate append buffer".to_string())?;
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_raw_tuple_payload(index_relation, encoded, required_bytes, P_NEW)
             };
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let offset_number = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1387,7 +1385,6 @@ unsafe fn append_raw_tuple_payload(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(ItemPointer {
         block_number,
         offset_number,

@@ -118,6 +118,11 @@ impl LockedBufferGuard {
         // SAFETY: this guard owns a valid locked buffer.
         unsafe { pg_sys::BufferGetPageSize(self.buffer) as usize }
     }
+
+    pub(crate) fn block_number(&self) -> pg_sys::BlockNumber {
+        // SAFETY: this guard owns a valid locked buffer.
+        unsafe { pg_sys::BufferGetBlockNumber(self.buffer) }
+    }
 }
 
 impl Drop for LockedBufferGuard {
