@@ -50,10 +50,12 @@ impl PinnedBufferGuard {
         Some(Self { buffer })
     }
 
+    #[allow(dead_code)]
     pub(crate) fn buffer(&self) -> pg_sys::Buffer {
         self.buffer
     }
 
+    #[allow(dead_code)]
     pub(crate) fn block_number(&self) -> pg_sys::BlockNumber {
         // SAFETY: this guard owns a valid pinned buffer.
         unsafe { pg_sys::BufferGetBlockNumber(self.buffer) }
