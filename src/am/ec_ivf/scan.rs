@@ -1479,9 +1479,11 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> EcIvfRescanDebugSnapshot {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_ivf_ambeginscan(index_relation, 0, 1) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug rescan query prep",
+    );
+    let scan = unsafe { ec_ivf_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -1515,15 +1517,16 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
 
     unsafe { ec_ivf_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_ivf_ambeginscan(index_relation, 0, 1) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug pq fastscan cache",
+    );
+    let scan = unsafe { ec_ivf_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut first_orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(vec![1.0_f32, 0.0_f32])
@@ -1549,7 +1552,6 @@ pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_s
 
     unsafe { ec_ivf_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     first_ptr.is_some() && first_ptr == second_ptr
 }
@@ -1593,10 +1595,11 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u32, u64) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug metadata",
+    );
+    let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     (
         metadata.format_version,
         metadata.nlists,
@@ -1608,10 +1611,11 @@ pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32,
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug quantizer cache",
+    );
+    let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     if metadata.dimensions == 0 {
         return None;
     }
@@ -1624,10 +1628,11 @@ pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) ->
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug rerank mode",
+    );
+    let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     metadata.rerank.reloption_name()
 }
 
@@ -1635,10 +1640,11 @@ pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'stati
 pub(crate) unsafe fn debug_ec_ivf_build_metadata(
     index_oid: pg_sys::Oid,
 ) -> (u16, u32, u16, u64, bool, bool) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug build metadata",
+    );
+    let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     (
         metadata.dimensions,
         metadata.nlists,
@@ -1653,18 +1659,17 @@ pub(crate) unsafe fn debug_ec_ivf_build_metadata(
 pub(crate) unsafe fn debug_ec_ivf_directory_summary(
     index_oid: pg_sys::Oid,
 ) -> (u32, u32, u64, u64, u64) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug directory summary",
+    );
+    let index_relation_ptr = index_relation.as_ptr();
+    let metadata = unsafe { super::page::read_metadata_page(index_relation_ptr) };
 
     if metadata.directory_head == crate::storage::page::ItemPointer::INVALID {
         if metadata.total_live_tuples != 0 {
-            unsafe {
-                pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
-            };
             pgrx::error!("ec_ivf metadata has live tuples but no directory head");
         }
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return (metadata.nlists, metadata.nlists, 0, 0, 0);
     }
 
@@ -1675,13 +1680,10 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
     let mut inserted_sum = 0_u64;
     for expected_list_id in 0..metadata.nlists {
         let (directory, following_tid) = unsafe {
-            super::page::read_ivf_list_directory_and_next(index_relation, next_tid)
+            super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid)
                 .unwrap_or_else(|e| pgrx::error!("{e}"))
         };
         if directory.list_id != expected_list_id {
-            unsafe {
-                pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
-            };
             pgrx::error!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",
                 directory.list_id,
@@ -1697,7 +1699,6 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
         next_tid = following_tid;
     }
 
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
         metadata.nlists,
         empty_lists,
@@ -1712,10 +1713,12 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
     index_oid: pg_sys::Oid,
     list_id: u32,
 ) -> (u32, u32, u64, u64, u64) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
-    let directories = unsafe { load_directory_entries(index_relation, &metadata) }
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug directory entry",
+    );
+    let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
+    let directories = unsafe { load_directory_entries(index_relation.as_ptr(), &metadata) }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let directory = directories
         .get(list_id as usize)
@@ -1728,7 +1731,6 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
         directory.inserted_since_build,
     );
 
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
 
