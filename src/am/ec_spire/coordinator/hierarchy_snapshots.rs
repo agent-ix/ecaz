@@ -144,21 +144,6 @@ fn decode_remote_search_local_heap_locator(
     })
 }
 
-unsafe fn remote_search_heap_slot(
-    heap_relation: pg_sys::Relation,
-) -> Result<*mut pg_sys::TupleTableSlot, String> {
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
-        )
-    };
-    if slot.is_null() {
-        return Err("ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned());
-    }
-    Ok(slot)
-}
-
 fn remote_search_exact_heap_score(
     query: &[f32],
     source_vector: &[f32],
@@ -197,29 +182,27 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_spire remote heap resolution could not resolve heap relation".to_owned());
     }
-    let heap_relation =
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_relation = crate::storage::relation_guard::HeapRelationGuard::try_access_share(
+        heap_oid,
+    )
+    .ok_or_else(|| "ec_spire remote heap resolution could not open heap relation".to_owned())?;
     let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if snapshot.is_null() {
-        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Err("ec_spire remote heap resolution requires an active snapshot".to_owned());
     }
     let indexed_attribute = unsafe {
         crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
-            heap_relation,
+            heap_relation.as_ptr(),
             index_relation,
             "ec_spire remote heap resolution indexed column",
         )
     };
-    let slot = match unsafe { remote_search_heap_slot(heap_relation) } {
-        Ok(slot) => slot,
-        Err(error) => {
-            unsafe {
-                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
-            };
-            return Err(error);
-        }
-    };
+    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(
+        heap_relation.as_ptr(),
+    )
+    .ok_or_else(|| {
+        "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
+    })?;
 
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let mut rows = Vec::with_capacity(candidates.len());
@@ -227,9 +210,9 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
             let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
             let source_vector = unsafe {
                 scan::load_indexed_source_vector_from_heap_row(
-                    heap_relation,
+                    heap_relation.as_ptr(),
                     snapshot,
-                    slot,
+                    slot.as_ptr(),
                     indexed_attribute,
                     heap_tid,
                     "ec_spire remote heap resolution source vector",
@@ -267,10 +250,6 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
         }
         Ok(rows)
     })();
-    unsafe {
-        pg_sys::ExecDropSingleTupleTableSlot(slot);
-        pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-    }
     result
 }
 
