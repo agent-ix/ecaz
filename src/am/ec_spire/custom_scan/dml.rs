@@ -716,31 +716,44 @@ fn custom_scan_dml_pk_select_requested_columns(
 }
 
 unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
-    unsafe {
-        if (*state).loaded_outputs {
-            return;
-        }
-        let index_relation = pg_sys::index_open(
+    // SAFETY: the CustomScan executor passes the live `SpireCustomScanExecState`.
+    let loaded_outputs = unsafe { (*state).loaded_outputs };
+    if loaded_outputs {
+        return;
+    }
+    // SAFETY: the executor state remains live for this call; clone owned
+    // fields before building the remote stream so no borrowed Rust state is
+    // held across possible PostgreSQL error paths.
+    let (index_oid, query, top_k, tuple_payload_columns) = unsafe {
+        (
             (*state).index_oid,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        );
-        let stream = super::remote_search_production_scan_tuple_payload_result_stream(
-            index_relation,
             (*state).query.clone(),
             (*state).top_k,
-            &(*state).tuple_payload_columns,
+            (*state).tuple_payload_columns.clone(),
+        )
+    };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "EcSpireDistributedScan production executor",
+    );
+    let stream = super::remote_search_production_scan_tuple_payload_result_stream(
+        index_relation.as_ptr(),
+        query,
+        top_k,
+        &tuple_payload_columns,
+    );
+    if stream.summary.next_blocker != super::SPIRE_REMOTE_NONE {
+        pgrx::error!(
+            "EcSpireDistributedScan production executor blocked: status {}, next_blocker {}, recommendation {}",
+            stream.summary.status,
+            stream.summary.next_blocker,
+            stream.summary.recommendation
         );
-        pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        if stream.summary.next_blocker != super::SPIRE_REMOTE_NONE {
-            pgrx::error!(
-                "EcSpireDistributedScan production executor blocked: status {}, next_blocker {}, recommendation {}",
-                stream.summary.status,
-                stream.summary.next_blocker,
-                stream.summary.recommendation
-            );
-        }
+    }
+    // SAFETY: `state` is the live executor state and this function owns the
+    // transition from unloaded to loaded outputs.
+    unsafe {
         (*state).outputs = stream.outputs;
         (*state).loaded_outputs = true;
     }
 }
-
