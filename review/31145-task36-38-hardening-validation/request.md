@@ -34,7 +34,9 @@ points plus build/insert/vacuum callback fault ordinals for each AM and now
 SIGKILLs worker backends during build/scan/insert as an OOM-kill proxy,
 resource smoke covers calibrated accumulator `work_mem` pressure with
 pressure-sized AM fixtures plus built-in `temp_file_limit` temp-spill failure
-and provider-backed ENOSPC on `pgsql_tmp`,
+and provider-backed ENOSPC on `pgsql_tmp`, plus WAL rotation accounting that
+performs AM-backed writes, forces `pg_switch_wal()`, and checks LSN movement
+and `pg_stat_wal` record/byte monotonicity,
 provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
@@ -65,9 +67,9 @@ The Task 38 interrupt-site inventory is documented in `docs/hardening.md` under
 Task 38 is still scope-bounded to smoke coverage. It now has live PG18
 EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
 but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
-true kernel/cgroup OOM pressure campaigns, WAL rotation edge accounting beyond
-WAL-path ENOSPC smoke, SPIRE remote-object fetch faulting, and full
-expected-vs-forced WAL/temp-spill accounting remain follow-on expansion.
+true kernel/cgroup OOM pressure campaigns, SPIRE remote-object fetch faulting,
+and full expected-vs-forced WAL/temp-spill accounting remain follow-on
+expansion.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
@@ -95,7 +97,8 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   - `ecaz dev fault smoke --lane lock-timeout --rows 64`
   - `ecaz dev fault smoke --lane resource --rows 64` including calibrated
     accumulator pressure, tiny memory settings, and `temp_file_limit`
-    temp-spill failure with temp-byte accounting markers
+    temp-spill failure with temp-byte accounting markers plus WAL rotation
+    accounting markers
   - `ecaz dev fault provider-restart --mode enospc-write --path-match pgsql_tmp ...`
   - `ecaz dev fault smoke --lane resource --rows 64 --provider-marker ...`
   - `ecaz dev fault smoke --lane memory --rows 64` including scan palloc

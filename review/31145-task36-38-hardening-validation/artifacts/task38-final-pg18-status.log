@@ -1,5 +1,5 @@
-Script started on 2026-05-17 09:53:15-07:00 [<not executed on terminal>]
+Script started on 2026-05-17 10:01:32-07:00 [<not executed on terminal>]
 pg_ctl: server is running (PID: 3753423)
 /home/peter/.pgrx/18.3/pgrx-install/bin/postgres "-D" "/home/peter/.pgrx/data-18" "-i" "-p" "28818" "-c" "unix_socket_directories=/home/peter/.pgrx"
 
-Script done on 2026-05-17 09:53:15-07:00 [COMMAND_EXIT_CODE="0"]
+Script done on 2026-05-17 10:01:32-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `193dfad12c57247ea02ecee69ce8afdb31b10bce`
+Code checkpoint SHA: `81a5edd9905604cfd435abb8fc1baf8d9f5af09a`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T16:52:21Z`
+Timestamp: `2026-05-17T17:01:04Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -175,6 +175,14 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Guard artifact: `task38-resource-accounting-smoke.log` first verified the new accounting markers on HNSW only.
 - Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-resource-accounting-all.log dev fault smoke --lane resource --rows 64`
 - Key result: all four AMs emitted `resource_accumulator_pressure` and `resource_temp_spill_accounting` markers. The lane asserted shared postconditions plus non-decreasing `pg_stat_io` and `pg_stat_wal`: `pg_stat_io_ops_before=3919 after=4744`, `pg_stat_wal_records_before=201474 after=270121`, and `bytes_before=31593642 after=40508396`. Temp-byte accounting remained readable and non-decreasing for every AM (`delta=0` after the forced `temp_file_limit` ERROR).
+
+## task38-wal-rotation-all.log
+
+- Lane: Task 38 WAL rotation accounting expansion
+- Fixture: `ecaz_fault_probe_36_38`, isolated `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` tables/indexes; pressure fixtures were prepared with 8192 rows and pressure limit 1000.
+- Guard artifact: `task38-wal-rotation-hnsw.log` first caught and then verified the `pg_lsn` bind/cast fix on HNSW only.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-wal-rotation-all.log dev fault smoke --lane resource --rows 64`
+- Key result: all four AMs emitted `wal_rotation_accounting` after AM-backed writes and `pg_switch_wal()`. Each marker showed LSN advancement plus non-decreasing `pg_stat_wal` counters: HNSW `records_before=104445 records_after=105349 bytes_before=24685362 bytes_after=29370080`, IVF `105349 -> 105856` and `29370080 -> 30327371`, DiskANN `105856 -> 106362` and `30327371 -> 31805981`, SPIRE `106362 -> 110350` and `31805981 -> 48061666`. Shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`, `pg_stat_io_ops_before=968 after=1875`, and `pg_stat_wal_records_before=36173 after=110350 bytes_before=15859318 after=48061666`.
 
 ## task38-pg18-resource-provider-temp-spill.log
 
