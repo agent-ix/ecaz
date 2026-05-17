@@ -13,6 +13,7 @@ use super::{graph, page, search};
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::{
     relation_guard::{HeapRelationGuard, IndexRelationGuard},
+    scan_guard::IndexScanGuard,
     slot_guard::TupleTableSlotGuard,
     snapshot_guard::ActiveSnapshotGuard,
 };
@@ -461,66 +462,10 @@ struct DebugGroupedRankMetrics {
 
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    scan: DebugIndexScanGuard,
+    scan: IndexScanGuard,
     _snapshot: ActiveSnapshotGuard,
     _index_relation: IndexRelationGuard,
     _heap_relation: HeapRelationGuard,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-struct DebugIndexScanGuard {
-    scan: pg_sys::IndexScanDesc,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl DebugIndexScanGuard {
-    fn begin(
-        heap_relation: pg_sys::Relation,
-        index_relation: pg_sys::Relation,
-        snapshot: pg_sys::Snapshot,
-        nkeys: i32,
-        norderbys: i32,
-        failure_label: &str,
-    ) -> Self {
-        #[cfg(feature = "pg18")]
-        let scan = unsafe {
-            // SAFETY: `heap_relation` and `index_relation` are open relation
-            // handles kept alive by guards, and `snapshot` is registered and
-            // active for this scan guard's lifetime.
-            pg_sys::index_beginscan(
-                heap_relation,
-                index_relation,
-                snapshot,
-                std::ptr::null_mut(),
-                nkeys,
-                norderbys,
-            )
-        };
-        #[cfg(not(feature = "pg18"))]
-        let scan = unsafe {
-            // SAFETY: `heap_relation` and `index_relation` are open relation
-            // handles kept alive by guards, and `snapshot` is registered and
-            // active for this scan guard's lifetime.
-            pg_sys::index_beginscan(heap_relation, index_relation, snapshot, nkeys, norderbys)
-        };
-        if scan.is_null() {
-            pgrx::error!("{failure_label}");
-        }
-        Self { scan }
-    }
-
-    fn as_ptr(&self) -> pg_sys::IndexScanDesc {
-        self.scan
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl Drop for DebugIndexScanGuard {
-    fn drop(&mut self) {
-        // SAFETY: `scan` was returned by `index_beginscan` in
-        // `DebugIndexScanGuard::begin`; this guard owns the matching end.
-        unsafe { pg_sys::index_endscan(self.scan) };
-    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -537,14 +482,8 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
         .unwrap_or_else(|| pgrx::error!("debug scan failed to open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("debug scan could not acquire a fresh latest snapshot"));
-    let scan = DebugIndexScanGuard::begin(
-        heap_relation.as_ptr(),
-        index_relation.as_ptr(),
-        snapshot.as_ptr(),
-        0,
-        1,
-        "debug scan failed to begin heap-backed index scan",
-    );
+    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
+        .unwrap_or_else(|| pgrx::error!("debug scan failed to begin heap-backed index scan"));
 
     DebugHeapBackedScan {
         scan,
@@ -1022,14 +961,8 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     });
     let slot_guard = TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
         .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to allocate tuple slot"));
-    let scan_guard = DebugIndexScanGuard::begin(
-        heap_relation.as_ptr(),
-        index_relation.as_ptr(),
-        snapshot.as_ptr(),
-        0,
-        1,
-        "debug heap-fetch profile failed to begin index scan",
-    );
+    let scan_guard = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
+        .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to begin index scan"));
     let scan = scan_guard.as_ptr();
     let slot = slot_guard.as_ptr();
 

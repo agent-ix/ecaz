@@ -6,6 +6,7 @@
 
 pub mod page;
 pub(crate) mod relation_guard;
+pub(crate) mod scan_guard;
 pub(crate) mod slot_guard;
 pub(crate) mod snapshot_guard;
 pub mod wal;

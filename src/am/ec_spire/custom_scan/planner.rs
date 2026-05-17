@@ -111,44 +111,6 @@ unsafe fn load_custom_scan_placement_directory(
     Ok(placement_directory)
 }
 
-struct IndexScanGuard {
-    scan: pg_sys::IndexScanDesc,
-}
-
-impl IndexScanGuard {
-    fn begin(
-        relation: pg_sys::Relation,
-        index: pg_sys::Relation,
-        snapshot: pg_sys::Snapshot,
-    ) -> Option<Self> {
-        #[cfg(feature = "pg18")]
-        // SAFETY: `relation`, `index`, and `snapshot` are owned by live guards
-        // in the caller; this guard owns the matching `index_endscan`.
-        let scan =
-            unsafe { pg_sys::index_beginscan(relation, index, snapshot, ptr::null_mut(), 1, 0) };
-        #[cfg(not(feature = "pg18"))]
-        // SAFETY: `relation`, `index`, and `snapshot` are owned by live guards
-        // in the caller; this guard owns the matching `index_endscan`.
-        let scan = unsafe { pg_sys::index_beginscan(relation, index, snapshot, 1, 0) };
-        if scan.is_null() {
-            return None;
-        }
-        Some(Self { scan })
-    }
-
-    fn as_ptr(&self) -> pg_sys::IndexScanDesc {
-        self.scan
-    }
-}
-
-impl Drop for IndexScanGuard {
-    fn drop(&mut self) {
-        // SAFETY: `scan` was returned by `index_beginscan` in
-        // `IndexScanGuard::begin`; this guard owns the matching end call.
-        unsafe { pg_sys::index_endscan(self.scan) };
-    }
-}
-
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
     root: *mut pg_sys::PlannerInfo,
@@ -504,10 +466,12 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
         let Some(snapshot) = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest() else {
             return false;
         };
-        let Some(scan) = IndexScanGuard::begin(
-            placement_relation.as_ptr(),
-            placement_index.as_ptr(),
-            snapshot.as_ptr(),
+        let Some(scan) = crate::storage::scan_guard::IndexScanGuard::begin(
+            &placement_relation,
+            &placement_index,
+            &snapshot,
+            1,
+            0,
         ) else {
             return false;
         };
