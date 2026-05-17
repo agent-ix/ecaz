@@ -23,7 +23,6 @@ Coverage targets — every code path that has both a SIMD and a scalar variant:
 
 - `src/quant/prod.rs`:
   - `score_ip_from_split_parts_avx2_fma`
-  - `score_ip_from_split_parts_avx512`
   - `score_ip_from_split_parts_neon`
   - `score_ip_mse_codes_*` for `mse_bits` ∈ {3, 4}
   - `unpack_mse_indices` SIMD paths

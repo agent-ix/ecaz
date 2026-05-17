@@ -469,7 +469,7 @@ async fn run_backend_interrupt_case(
         .query_one("SELECT pg_backend_pid()", &[])
         .await?
         .get::<_, i32>(0);
-    let sql = workload_repeated_scan_sql(am, cancel_probe_iterations(rows));
+    let sql = workload_repeated_scan_sql(am, repeated_scan_probe_iterations(rows));
     let worker_task = tokio::spawn(async move {
         worker
             .batch_execute(&sql)
@@ -517,7 +517,7 @@ async fn run_statement_timeout_probe(
         let timeout = client
             .batch_execute(&format!(
                 "SET statement_timeout = '5ms'; {}",
-                workload_repeated_scan_sql(am, timeout_probe_iterations(rows))
+                workload_repeated_scan_sql(am, repeated_scan_probe_iterations(rows))
             ))
             .await;
         assert_query_canceled(&format!("statement_timeout {}", am.as_str()), timeout)?;
@@ -618,11 +618,7 @@ async fn run_lock_timeout_case(
     assert_sqlstate(&format!("lock_timeout {label}"), timeout, "55P03")
 }
 
-fn cancel_probe_iterations(rows: i64) -> i64 {
-    rows.saturating_mul(2_000).clamp(100_000, 1_000_000)
-}
-
-fn timeout_probe_iterations(rows: i64) -> i64 {
+fn repeated_scan_probe_iterations(rows: i64) -> i64 {
     rows.saturating_mul(2_000).clamp(100_000, 1_000_000)
 }
 
@@ -1167,10 +1163,10 @@ async fn pg_stat_io_total(client: &tokio_postgres::Client) -> Result<Option<i64>
     {
         Ok(row) => Ok(Some(row.get::<_, i64>(0))),
         Err(error)
-            if error
-                .as_db_error()
-                .map(|db| db.code().code() == "42P01")
-                .unwrap_or(false) =>
+            if error.as_db_error().is_some_and(|db| {
+                let sqlstate = db.code().code();
+                sqlstate == "42P01" || sqlstate == "42703"
+            }) =>
         {
             Ok(None)
         }
@@ -1185,9 +1181,22 @@ fn assert_query_canceled(label: &str, result: Result<(), tokio_postgres::Error>)
 fn assert_provider_sql_error(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
     match result {
         Ok(()) => Err(eyre!("{label} probe unexpectedly succeeded")),
-        Err(error) if error.as_db_error().is_some() => Ok(()),
+        Err(error) if error.as_db_error().is_some_and(provider_sqlstate_allowed) => Ok(()),
+        Err(error) if error.as_db_error().is_some() => {
+            let db = error.as_db_error().expect("checked above");
+            Err(eyre!(
+                "{label} returned unexpected provider SQLSTATE {} ({})",
+                db.code().code(),
+                db.message()
+            ))
+        }
         Err(error) => Err(error.into()),
     }
+}
+
+fn provider_sqlstate_allowed(db: &tokio_postgres::error::DbError) -> bool {
+    matches!(db.code().code(), "53100" | "58030")
+        || (db.code().code() == "XX000" && db.message().contains("checkpoint request failed"))
 }
 
 fn assert_ecaz_palloc_error(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
