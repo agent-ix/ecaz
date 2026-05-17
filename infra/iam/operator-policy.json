@@ -8,6 +8,9 @@
         "ec2:Describe*",
         "ec2:GetConsoleOutput",
         "ec2:GetConsoleScreenshot",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics",
         "sts:GetCallerIdentity"
       ],
       "Resource": "*",

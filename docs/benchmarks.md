@@ -11,10 +11,18 @@ New benchmark rows should follow the
 defines the common fields for comparing access methods, quantizers, storage
 formats, trained formats, and option sets.
 
+Legacy tables in this document are local summary rows unless they explicitly
+carry the full reporting-standard fields or cite a packet row that does. They
+are not standards-complete candidate comparisons: missing per-row fields such as
+command, cache state, planner path, reloptions, GUC overrides, and claim class
+must be recovered from the cited packet before using the row for an
+NFR-015-complete comparison.
+
 ## HNSW Baseline
 
 Measured on the [DBpedia OpenAI embeddings corpus](recall-methodology.md)
 (1536-dimensional `text-embedding-3-large` embeddings).
+This is a legacy local summary, not an NFR-015-complete comparison row.
 
 | Corpus | Configuration | Recall@10 |
 | --- | --- | ---: |
@@ -45,6 +53,11 @@ high-dimensional IVF surfaces where speed and index size dominate. RaBitQ is a
 SPIRE-facing serving candidate with strong local recall rows, but current IVF
 RaBitQ latency is not competitive and should be reported as an optimization
 lane rather than a current IVF latency default.
+
+The tables in this section are local summary rows. They preserve selected
+engineering results, but the section-level packet list is the pointer for
+recovering full command, environment, cache-state, planner-path, and claim-class
+metadata.
 
 10K and 25K matched shape:
 `nlists = 64`, `nprobe = 48`, `rerank = 'heap_f32'`,
@@ -88,6 +101,8 @@ Source packets:
 
 Task 29 landed the initial DiskANN/Vamana tuning lane. Final local PG18
 release-mode readiness used an isolated real-10K surface.
+The tables in this section are local summary rows; use the cited packet for the
+full NFR-015 reporting context.
 
 Build and storage:
 
