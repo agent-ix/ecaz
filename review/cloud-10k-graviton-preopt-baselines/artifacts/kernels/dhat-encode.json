@@ -1,0 +1,322 @@
+{
+"dhatFileVersion": 2,
+"mode": "rust-heap",
+"verb": "Allocated",
+"bklt": true,
+"bkacc": false,
+"tu": "µs",
+"Mtu": "s",
+"tuth": 10,
+"cmd": "target/release/dhat_encode",
+"pid": 7905,
+"tg": 2457,
+"te": 31545,
+"pps": [
+{
+"tb": 6144000,
+"tbk": 1000,
+"tl": 2927,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+2,
+3
+]
+},
+{
+"tb": 6144000,
+"tbk": 1000,
+"tl": 25741,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+4,
+5,
+3
+]
+},
+{
+"tb": 6144,
+"tbk": 1,
+"tl": 29051,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 6144,
+"ebk": 1,
+"fs": [
+1,
+6
+]
+},
+{
+"tb": 6144000,
+"tbk": 1000,
+"tl": 11518,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+7,
+3
+]
+},
+{
+"tb": 6144000,
+"tbk": 1000,
+"tl": 4955,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+8,
+9,
+3
+]
+},
+{
+"tb": 131008,
+"tbk": 11,
+"tl": 1993,
+"mb": 65536,
+"mbk": 1,
+"gb": 65536,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+10,
+11,
+12
+]
+},
+{
+"tb": 8320,
+"tbk": 65,
+"tl": 1349,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+13,
+11,
+12
+]
+},
+{
+"tb": 8320,
+"tbk": 65,
+"tl": 1466,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+14,
+11,
+12
+]
+},
+{
+"tb": 3072000,
+"tbk": 1000,
+"tl": 21563,
+"mb": 3072,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+15,
+3
+]
+},
+{
+"tb": 120,
+"tbk": 1,
+"tl": 1583,
+"mb": 120,
+"mbk": 1,
+"gb": 120,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+16,
+11,
+12
+]
+},
+{
+"tb": 6144000,
+"tbk": 1000,
+"tl": 13773,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+17,
+3
+]
+},
+{
+"tb": 64,
+"tbk": 1,
+"tl": 29065,
+"mb": 64,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 64,
+"ebk": 1,
+"fs": [
+1,
+18,
+12
+]
+},
+{
+"tb": 6144,
+"tbk": 1,
+"tl": 29062,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 6144,
+"ebk": 1,
+"fs": [
+1,
+19,
+20,
+12
+]
+},
+{
+"tb": 772000,
+"tbk": 1000,
+"tl": 80,
+"mb": 772,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+21
+]
+},
+{
+"tb": 128,
+"tbk": 1,
+"tl": 1586,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+22,
+11,
+12
+]
+},
+{
+"tb": 768000,
+"tbk": 1000,
+"tl": 2099,
+"mb": 768,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+23,
+3
+]
+},
+{
+"tb": 6144000,
+"tbk": 1000,
+"tl": 4654,
+"mb": 6144,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+24,
+9,
+3
+]
+}
+],
+"ftbl": [
+"[root]",
+"0xaaaab0c44408: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+"0xaaaab0c4905c: ecaz::quant::prod::ProdQuantizer::encode (???:0:0)",
+"0xaaaab0c1b864: dhat_encode::main (???:0:0)",
+"0xaaaab0c48470: ecaz::quant::rotation::srht_padded (???:0:0)",
+"0xaaaab0c48a38: ecaz::quant::prod::ProdQuantizer::encode (???:0:0)",
+"0xaaaab0c1a4f8: dhat_encode::main (???:0:0)",
+"0xaaaab0c48fe4: ecaz::quant::prod::ProdQuantizer::encode (???:0:0)",
+"0xaaaab0c45414: ecaz::quant::qjl::decode_mse_only (???:0:0)",
+"0xaaaab0c49038: ecaz::quant::prod::ProdQuantizer::encode (???:0:0)",
+"0xaaaab0c464f0: ecaz::quant::codebook::lloyd_max (???:0:0)",
+"0xaaaab0c4612c: ecaz::quant::prod::ProdQuantizer::new (???:0:0)",
+"0xaaaab0c1a484: dhat_encode::main (???:0:0)",
+"0xaaaab0c46a08: ecaz::quant::codebook::lloyd_max (???:0:0)",
+"0xaaaab0c469e8: ecaz::quant::codebook::lloyd_max (???:0:0)",
+"0xaaaab0c48a6c: ecaz::quant::prod::ProdQuantizer::encode (???:0:0)",
+"0xaaaab0c46798: ecaz::quant::codebook::lloyd_max (???:0:0)",
+"0xaaaab0c48f74: ecaz::quant::prod::ProdQuantizer::encode (???:0:0)",
+"0xaaaab0c461a4: ecaz::quant::prod::ProdQuantizer::new (???:0:0)",
+"0xaaaab0c4708c: ecaz::quant::rotation::sign_vector (???:0:0)",
+"0xaaaab0c46218: ecaz::quant::prod::ProdQuantizer::new (???:0:0)",
+"0xaaaab0c1b888: dhat_encode::main (???:0:0)",
+"0xaaaab0c46638: ecaz::quant::codebook::lloyd_max (???:0:0)",
+"0xaaaab0c4931c: ecaz::quant::prod::ProdQuantizer::encode (???:0:0)",
+"0xaaaab0c456b4: ecaz::quant::qjl::decode_mse_only (???:0:0)"
+]
+}

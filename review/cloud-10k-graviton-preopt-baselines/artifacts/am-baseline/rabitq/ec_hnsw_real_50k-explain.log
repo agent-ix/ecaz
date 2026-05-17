@@ -1,0 +1,26 @@
+# storage_format: rabitq
+# command: psql -c "EXPLAIN (ANALYZE, BUFFERS) SELECT id FROM ec_hnsw_real_50k_corpus ORDER BY embedding <#> (SELECT embedding FROM ec_hnsw_real_50k_queries LIMIT 1) LIMIT 10;"
+# date:    2026-05-16T21:16:42+00:00
+# host:    Linux ip-10-42-1-159.us-west-2.compute.internal 6.1.170-213.321.amzn2023.aarch64 #1 SMP Thu May 14 12:18:13 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+# ---
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=3440.48..3440.51 rows=10 width=12) (actual time=715.837..715.840 rows=10.00 loops=1)
+   Buffers: shared hit=449901 read=50966
+   ->  Sort  (cost=3440.48..3565.48 rows=50000 width=12) (actual time=715.836..715.837 rows=10.00 loops=1)
+         Sort Key: ((ec_hnsw_real_50k_corpus.embedding <#> (SubPlan 1)))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=449901 read=50966
+         ->  Seq Scan on ec_hnsw_real_50k_corpus  (cost=0.00..2360.00 rows=50000 width=12) (actual time=1.206..709.913 rows=50000.00 loops=1)
+               Buffers: shared hit=449898 read=50966
+               SubPlan 1
+                 ->  Limit  (cost=0.00..0.02 rows=1 width=32) (actual time=0.002..0.002 rows=1.00 loops=50000)
+                       Buffers: shared hit=99998 read=3
+                       ->  Seq Scan on ec_hnsw_real_50k_queries  (cost=0.00..18.00 rows=1000 width=32) (actual time=0.001..0.001 rows=1.00 loops=50000)
+                             Buffers: shared hit=99998 read=3
+ Planning:
+   Buffers: shared hit=121 read=2
+ Planning Time: 0.779 ms
+ Execution Time: 715.875 ms
+(17 rows)
+

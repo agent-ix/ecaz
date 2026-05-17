@@ -1,0 +1,15 @@
+# storage_format: rabitq
+# command: /usr/local/bin/ecaz bench storage --prefix ec_hnsw_real_50k
+# date:    2026-05-16T21:16:32+00:00
+# host:    Linux ip-10-42-1-159.us-west-2.compute.internal 6.1.170-213.321.amzn2023.aarch64 #1 SMP Thu May 14 12:18:13 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+# ---
+
+   0: [91mcounting rows in "ec_hnsw_real_50k_corpus"[0m
+   1: [91mdb error[0m
+   2: [91mERROR: ec_ivf scan currently requires exactly one ORDER BY query[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/psql.rs[0m:[35m135[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

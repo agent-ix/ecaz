@@ -1,0 +1,7 @@
+# command: nice -n 5 -- perf stat --topdown -a cargo bench --features bench --bench quant_score -- --sample-size 50 --warm-up-time 2 --measurement-time 3
+# date:    2026-05-17T03:23:05+00:00
+# host:    Linux ip-10-42-1-159.us-west-2.compute.internal 6.1.170-213.321.amzn2023.aarch64 #1 SMP Thu May 14 12:18:13 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+# profile: medium
+# crit_flags: --sample-size 50 --warm-up-time 2 --measurement-time 3
+# ---
+System does not support topdown

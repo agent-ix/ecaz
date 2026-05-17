@@ -1,0 +1,8 @@
+Cloning into '/tmp/artifacts/kernels-v2/stream/src'...
+make[2]: Entering directory '/tmp/artifacts/kernels-v2/stream/src'
+gcc -O3 -fopenmp   -c -o mysecond.o mysecond.c
+gcc -O3 -fopenmp -c mysecond.c
+gfortran -O2 -fopenmp -c stream.f
+make[2]: gfortran: No such file or directory
+make[2]: *** [Makefile:11: stream_f.exe] Error 127
+make[2]: Leaving directory '/tmp/artifacts/kernels-v2/stream/src'
