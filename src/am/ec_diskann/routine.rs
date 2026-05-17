@@ -2914,16 +2914,7 @@ mod tests {
         )
         .expect("second distinct insert should append a live node and backfill free backlinks");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'ec_diskann_unique_insert_append_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
-        let index_relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
-            .expect("materialize_chain_from_index should succeed");
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let (metadata, chain) = index_materialized_chain("ec_diskann_unique_insert_append_idx");
         assert_eq!(
             metadata.inserted_since_rebuild, 2,
             "true new-node inserts should increment inserted_since_rebuild",
@@ -3085,17 +3076,8 @@ mod tests {
         .expect("fifth insert should fill the seed node's backlink slice");
 
         let row1_heap_tid = heap_tid_for_row("ec_diskann_full_backlink_rewrite", 1);
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'ec_diskann_full_backlink_rewrite_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
-        let index_relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         let (prefill_metadata, prefill_chain) =
-            unsafe { scan_state::materialize_chain_from_index(index_relation) }
-                .expect("prefill materialize_chain_from_index should succeed");
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+            index_materialized_chain("ec_diskann_full_backlink_rewrite_idx");
         let prefill_reader = PersistedGraphReader::new(
             &prefill_chain,
             prefill_metadata.graph_degree_r,
@@ -3145,11 +3127,7 @@ mod tests {
             "insert-side full-slice rewrite should not set needs_medoid_refresh",
         );
 
-        let index_relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
-            .expect("materialize_chain_from_index should succeed");
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let (metadata, chain) = index_materialized_chain("ec_diskann_full_backlink_rewrite_idx");
         let reader = PersistedGraphReader::new(
             &chain,
             metadata.graph_degree_r,
