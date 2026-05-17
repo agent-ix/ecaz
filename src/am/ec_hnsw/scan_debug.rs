@@ -11,7 +11,11 @@ use super::scan::*;
 #[cfg(any(test, feature = "pg_test"))]
 use super::{graph, page, search};
 #[cfg(any(test, feature = "pg_test"))]
-use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::{
+    relation_guard::{HeapRelationGuard, IndexRelationGuard},
+    slot_guard::TupleTableSlotGuard,
+    snapshot_guard::ActiveSnapshotGuard,
+};
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) type HeapTidCoords = (u32, u16);
@@ -458,50 +462,9 @@ struct DebugGroupedRankMetrics {
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
     scan: DebugIndexScanGuard,
-    _snapshot: DebugActiveSnapshotGuard,
+    _snapshot: ActiveSnapshotGuard,
     _index_relation: IndexRelationGuard,
     _heap_relation: HeapRelationGuard,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-struct DebugActiveSnapshotGuard {
-    snapshot: pg_sys::Snapshot,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl DebugActiveSnapshotGuard {
-    fn latest(failure_label: &str) -> Self {
-        // SAFETY: `CommandCounterIncrement` is valid in these pg_test helper
-        // entry points before acquiring a fresh backend snapshot.
-        unsafe { pg_sys::CommandCounterIncrement() };
-        // SAFETY: `GetLatestSnapshot` returns a backend-owned snapshot pointer
-        // that PostgreSQL accepts for registration in the current backend.
-        let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-        if snapshot.is_null() {
-            pgrx::error!("{failure_label}");
-        }
-        // SAFETY: `snapshot` was registered above and remains registered until
-        // this guard drops.
-        unsafe { pg_sys::PushActiveSnapshot(snapshot) };
-        Self { snapshot }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Snapshot {
-        self.snapshot
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl Drop for DebugActiveSnapshotGuard {
-    fn drop(&mut self) {
-        // SAFETY: this guard pushed `snapshot` in
-        // `DebugActiveSnapshotGuard::latest`; Drop owns the matching pop and
-        // unregister.
-        unsafe {
-            pg_sys::PopActiveSnapshot();
-            pg_sys::UnregisterSnapshot(self.snapshot);
-        }
-    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -561,42 +524,6 @@ impl Drop for DebugIndexScanGuard {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-struct DebugTupleSlotGuard {
-    slot: *mut pg_sys::TupleTableSlot,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl DebugTupleSlotGuard {
-    fn single_for_heap(heap_relation: pg_sys::Relation, failure_label: &str) -> Self {
-        let slot = unsafe {
-            // SAFETY: `heap_relation` is an open table relation. PostgreSQL
-            // owns the returned slot until `ExecDropSingleTupleTableSlot`.
-            pg_sys::MakeSingleTupleTableSlot(
-                (*heap_relation).rd_att,
-                pg_sys::table_slot_callbacks(heap_relation),
-            )
-        };
-        if slot.is_null() {
-            pgrx::error!("{failure_label}");
-        }
-        Self { slot }
-    }
-
-    fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
-        self.slot
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl Drop for DebugTupleSlotGuard {
-    fn drop(&mut self) {
-        // SAFETY: `slot` was returned by `MakeSingleTupleTableSlot`; this
-        // guard owns the matching drop.
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
@@ -608,8 +535,8 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
 
     let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
         .unwrap_or_else(|| pgrx::error!("debug scan failed to open heap relation"));
-    let snapshot =
-        DebugActiveSnapshotGuard::latest("debug scan could not acquire a fresh latest snapshot");
+    let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
+        .unwrap_or_else(|| pgrx::error!("debug scan could not acquire a fresh latest snapshot"));
     let scan = DebugIndexScanGuard::begin(
         heap_relation.as_ptr(),
         index_relation.as_ptr(),
@@ -1090,13 +1017,11 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
         .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to open heap relation"));
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_profile_ordered_scan_with_heap_fetch");
-    let snapshot = DebugActiveSnapshotGuard::latest(
-        "debug heap-fetch profile could not acquire a fresh latest snapshot",
-    );
-    let slot_guard = DebugTupleSlotGuard::single_for_heap(
-        heap_relation.as_ptr(),
-        "debug heap-fetch profile failed to allocate tuple slot",
-    );
+    let snapshot = ActiveSnapshotGuard::latest_after_command_counter().unwrap_or_else(|| {
+        pgrx::error!("debug heap-fetch profile could not acquire a fresh latest snapshot")
+    });
+    let slot_guard = TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
+        .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to allocate tuple slot"));
     let scan_guard = DebugIndexScanGuard::begin(
         heap_relation.as_ptr(),
         index_relation.as_ptr(),
