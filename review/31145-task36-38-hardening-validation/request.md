@@ -30,7 +30,7 @@ is touched inside an open transaction, lock timeout covers blocked
 `REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)` while rolling
 back the lock holder even if waiter cleanup errors, memory smoke uses
 `ecaz.fault_palloc_nth` and sweeps the currently instrumented scan allocation
-points plus build/insert/vacuum callback boundaries for each AM and now
+points plus build/insert/vacuum callback fault ordinals for each AM and now
 SIGKILLs worker backends during build/scan/insert as an OOM-kill proxy,
 resource smoke covers calibrated accumulator `work_mem` pressure with
 pressure-sized AM fixtures plus built-in `temp_file_limit` temp-spill failure
@@ -98,8 +98,9 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
     temp-spill failure with temp-byte accounting markers
   - `ecaz dev fault provider-restart --mode enospc-write --path-match pgsql_tmp ...`
   - `ecaz dev fault smoke --lane resource --rows 64 --provider-marker ...`
-  - `ecaz dev fault smoke --lane memory --rows 64` including palloc smoke and
-    backend-SIGKILL OOM proxy build/scan/insert checks
+  - `ecaz dev fault smoke --lane memory --rows 64` including scan palloc
+    sweeps, build/insert/vacuum palloc ordinal sweeps, and backend-SIGKILL OOM
+    proxy build/scan/insert checks
   - `ecaz dev fault provider-restart --mode slow-disk ...`
   - `ecaz dev fault smoke --lane slow-disk --rows 64 --provider-marker ...`
   - `ecaz dev fault provider-restart --mode eio-read/enospc-write --path-match <relation path> ...`

@@ -1,0 +1,92 @@
+ec_hnsw-memory-palloc-nth-failure	memory	ec_hnsw	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_hnsw-memory-backend-sigkill-oom-proxy	memory	ec_hnsw	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_ivf-memory-palloc-nth-failure	memory	ec_ivf	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_ivf-memory-backend-sigkill-oom-proxy	memory	ec_ivf	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_diskann-memory-palloc-nth-failure	memory	ec_diskann	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_diskann-memory-backend-sigkill-oom-proxy	memory	ec_diskann	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_spire-memory-palloc-nth-failure	memory	ec_spire	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_spire-memory-backend-sigkill-oom-proxy	memory	ec_spire	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_ivf lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_diskann lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_diskann lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_spire lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_spire lane=build first_success_nth=2
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8251935	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8251945
+ec_ivf	table=ecaz_fault_ivf	table_path=base/8052051/8251947	index=ecaz_fault_ivf_idx	index_path=base/8052051/8251957
+ec_diskann	table=ecaz_fault_diskann	table_path=base/8052051/8251959	index=ecaz_fault_diskann_idx	index_path=base/8052051/8251969
+ec_spire	table=ecaz_fault_spire	table_path=base/8052051/8251971	index=ecaz_fault_spire_idx	index_path=base/8052051/8251981
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=vacuum first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_ivf lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_ivf lane=vacuum first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_diskann lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_diskann lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_diskann lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_diskann lane=vacuum first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_spire lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_spire lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_spire lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_spire lane=vacuum first_success_nth=2
+[fault] memory oom-kill ec_hnsw build sigkill_pid=3797842
+2026-05-17T16:51:31.725223Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw build postmaster_recovered=true
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8260031	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8260041
+[fault] memory oom-kill ec_hnsw scan sigkill_pid=3797954
+2026-05-17T16:51:33.675951Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw scan postmaster_recovered=true
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/8052051/8268223	index=ecaz_fault_hnsw_idx	index_path=base/8052051/8268233
+[fault] memory oom-kill ec_hnsw insert sigkill_pid=3798025
+2026-05-17T16:51:34.690927Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw insert postmaster_recovered=true
+[fault] memory oom-kill ec_ivf build sigkill_pid=3798123
+2026-05-17T16:51:36.603487Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_ivf build postmaster_recovered=true
+ec_ivf	table=ecaz_fault_ivf	table_path=base/8052051/8284607	index=ecaz_fault_ivf_idx	index_path=base/8052051/8284617
+[fault] memory oom-kill ec_ivf scan sigkill_pid=3798164
+2026-05-17T16:51:38.350851Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_ivf scan postmaster_recovered=true
+ec_ivf	table=ecaz_fault_ivf	table_path=base/8052051/8292799	index=ecaz_fault_ivf_idx	index_path=base/8052051/8292809
+[fault] memory oom-kill ec_ivf insert sigkill_pid=3798220
+2026-05-17T16:51:40.094488Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_ivf insert postmaster_recovered=true
+[fault] memory oom-kill ec_diskann build sigkill_pid=3798260
+2026-05-17T16:51:42.220456Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_diskann build postmaster_recovered=true
+ec_diskann	table=ecaz_fault_diskann	table_path=base/8052051/8309183	index=ecaz_fault_diskann_idx	index_path=base/8052051/8309193
+[fault] memory oom-kill ec_diskann scan sigkill_pid=3798316
+2026-05-17T16:51:43.977388Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_diskann scan postmaster_recovered=true
+ec_diskann	table=ecaz_fault_diskann	table_path=base/8052051/8317375	index=ecaz_fault_diskann_idx	index_path=base/8052051/8317385
+[fault] memory oom-kill ec_diskann insert sigkill_pid=3798416
+2026-05-17T16:51:45.738604Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_diskann insert postmaster_recovered=true
+[fault] memory oom-kill ec_spire build sigkill_pid=3798451
+2026-05-17T16:51:47.548886Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_spire build postmaster_recovered=true
+ec_spire	table=ecaz_fault_spire	table_path=base/8052051/8333759	index=ecaz_fault_spire_idx	index_path=base/8052051/8333769
+[fault] memory oom-kill ec_spire scan sigkill_pid=3798522
+2026-05-17T16:51:49.284350Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_spire scan postmaster_recovered=true
+ec_spire	table=ecaz_fault_spire	table_path=base/8052051/8341951	index=ecaz_fault_spire_idx	index_path=base/8052051/8341961
+[fault] memory oom-kill ec_spire insert sigkill_pid=3798552
+2026-05-17T16:51:51.022735Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_spire insert postmaster_recovered=true
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=189 after=69
+[fault] pg_stat_io_reset_after_crash_recovery=true before=189 after=69
+[fault] pg_stat_wal_records_before=13 after=2 bytes_before=50224 after=7139
+[fault] pg_stat_wal_reset_after_crash_recovery=true records_before=13 records_after=2 bytes_before=50224 bytes_after=7139

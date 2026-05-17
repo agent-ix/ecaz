@@ -197,8 +197,13 @@ postmaster is restarted with an `enospc-write` provider whose marker records
 `match=pgsql_tmp`, the resource lane instead disables `temp_file_limit` and
 expects the temp-spill failure to come from provider-backed ENOSPC. Memory smoke
 injects palloc failures at the
-instrumented AM build/scan/insert/vacuum
-boundaries and verifies the backend remains usable after each ERROR. Every lane
+instrumented AM build/scan/insert/vacuum boundaries. Scan probes use per-AM
+Nth-allocation sweeps; build, insert, and vacuum probes sweep
+`ecaz.fault_palloc_nth` from 1 through the smoke cap and stop at the first
+successful Nth value, emitting `memory_palloc_sweep_fault` and
+`memory_palloc_sweep_completed` markers so the log shows how many currently
+instrumented palloc boundaries were covered. The lane verifies the backend
+remains usable after each ERROR. Every lane
 uses the shared post-condition probe inventory from `ecaz-fault-injection`:
 leftover fault sessions, surviving locks, prepared transactions, optional
 `pg_buffercache` fixture pin counts, optional `pg_stat_io` non-decreasing

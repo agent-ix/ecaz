@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `e832d850408339f690916d350abcf75faa847302`
+Code checkpoint SHA: `193dfad12c57247ea02ecee69ce8afdb31b10bce`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T16:47:01Z`
+Timestamp: `2026-05-17T16:52:21Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -99,6 +99,13 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live memory/palloc major-workload smoke
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane memory --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-memory-major-workloads.log`
 - Key result: all four AMs completed memory smoke across build, scan, insert, and vacuum probes, with shared postcondition probes asserted.
+
+## task38-memory-palloc-sweep-all.log
+
+- Lane: Task 38 live memory/palloc ordinal sweep expansion
+- Guard artifact: `task38-memory-palloc-sweep-hnsw.log` first verified the new sweep markers on HNSW only.
+- Command: `target/debug/ecaz --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 --log-file review/31145-task36-38-hardening-validation/artifacts/task38-memory-palloc-sweep-all.log dev fault smoke --lane memory --rows 32`
+- Key result: all four AMs emitted `memory_palloc_sweep_fault` at `nth=1` and `memory_palloc_sweep_completed ... first_success_nth=2` for build, insert, and vacuum. The scan palloc sweep and twelve backend-SIGKILL build/scan/insert OOM-proxy cases also passed; each SIGKILL logged `postmaster_recovered=true`. Shared postconditions passed with `pg_buffercache_fixture_pins_ok=true pins=0`; `pg_stat_io` and `pg_stat_wal` lower after crash recovery were recorded as stats resets.
 
 ## task38-pg18-oom-kill-hnsw-smoke.log
 
