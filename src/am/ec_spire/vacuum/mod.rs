@@ -19,6 +19,8 @@ use super::storage::{
 };
 use super::{lock_publish_relation, page, scan};
 use crate::storage::page::ItemPointer;
+#[cfg(any(test, feature = "pg_test"))]
+use crate::storage::relation_guard::IndexRelationGuard;
 
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
@@ -604,55 +606,15 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-struct ShareUpdateExclusiveIndexRelation {
-    relation: pg_sys::Relation,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl ShareUpdateExclusiveIndexRelation {
-    fn open(index_oid: pg_sys::Oid, caller: &'static str) -> Self {
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `index_open`; this guard owns the matching
-        // ShareUpdateExclusiveLock close.
-        let relation = unsafe {
-            pg_sys::index_open(
-                index_oid,
-                pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
-            )
-        };
-        if relation.is_null() {
-            pgrx::error!("{caller} could not open ec_spire index relation");
-        }
-        Self { relation }
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl Drop for ShareUpdateExclusiveIndexRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by
-        // `ShareUpdateExclusiveIndexRelation::open`; this guard owns the
-        // matching close.
-        unsafe {
-            pg_sys::index_close(
-                self.relation,
-                pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
-            );
-        }
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
-    let index_relation =
-        ShareUpdateExclusiveIndexRelation::open(index_oid, "debug_spire_vacuum_remove_heap_tids");
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+        "debug_spire_vacuum_remove_heap_tids",
+    );
     let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
@@ -678,8 +640,9 @@ pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
-    let index_relation = ShareUpdateExclusiveIndexRelation::open(
+    let index_relation = IndexRelationGuard::open(
         index_oid,
+        pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         "debug_spire_vacuum_bulkdelete_heap_tids",
     );
     let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
