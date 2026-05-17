@@ -11,6 +11,7 @@ use crate::quant::prod::{
     BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
     PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
 };
+use crate::storage::relation_guard::HeapRelationGuard;
 
 use super::explain::TqExplainCounters;
 use super::graph;
@@ -1322,12 +1323,16 @@ unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) ->
     if heap_oid == pg_sys::InvalidOid {
         return false;
     }
-    let heap_relation =
-        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let indexed_attribute = unsafe {
-        source::resolve_indexed_vector_attribute(heap_relation, index_relation, "indexed column")
+    let Some(heap_relation) = HeapRelationGuard::try_access_share(heap_oid) else {
+        pgrx::error!("ec_hnsw scan could not open heap relation for indexed column")
     };
-    unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let indexed_attribute = unsafe {
+        source::resolve_indexed_vector_attribute(
+            heap_relation.as_ptr(),
+            index_relation,
+            "indexed column",
+        )
+    };
     matches!(indexed_attribute.kind, source::IndexedVectorKind::Ecvector)
 }
 
