@@ -71,6 +71,26 @@ struct VamanaOverflowTuple {
     heap_tid_count: u16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VamanaOverflowTupleFixture {
+    pub owner_tid: ItemPointer,
+    pub nexttid: ItemPointer,
+    pub heap_tids: Vec<ItemPointer>,
+    pub heap_tid_count: u16,
+}
+
+pub fn vamana_decode_overflow_tuple_fixture(
+    input: &[u8],
+) -> Result<VamanaOverflowTupleFixture, String> {
+    let tuple = VamanaOverflowTuple::decode(input)?;
+    Ok(VamanaOverflowTupleFixture {
+        owner_tid: tuple.owner_tid,
+        nexttid: tuple.nexttid,
+        heap_tids: tuple.heap_tids,
+        heap_tid_count: tuple.heap_tid_count,
+    })
+}
+
 impl VamanaOverflowTuple {
     fn encoded_len() -> usize {
         VAMANA_OVERFLOW_HEADER_BYTES + VAMANA_OVERFLOW_HEAPTID_CAPACITY * ITEM_POINTER_BYTES

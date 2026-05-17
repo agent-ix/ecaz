@@ -5,6 +5,9 @@ on:
     branches:
       - main
   pull_request:
+  schedule:
+    - cron: "37 9 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -31,6 +34,12 @@ jobs:
 
       - name: Unit tests
         run: cargo test
+
+      - name: On-disk fixtures
+        run: cargo test --features bench --test on_disk_fixtures
+
+      - name: Upgrade matrix smoke
+        run: cargo test --features bench --test upgrade_matrix
 
       - name: Layout assertions
         run: cargo test --features bench --test size_of_assertions
@@ -67,6 +76,37 @@ jobs:
         run: cargo test --features bench --test simd_diff -- --test-threads=1
         env:
           PROPTEST_CASES: 256
+
+  endian-qemu:
+    name: On-disk fixtures under qemu s390x
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    env:
+      PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: s390x-unknown-linux-gnu
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install qemu, s390x linker, and PostgreSQL headers
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y gcc-s390x-linux-gnu qemu-user postgresql-server-dev-18 clang llvm pkg-config libssl-dev
+
+      - name: Big-endian on-disk fixture decode
+        run: make endian-qemu
 
   pgrx-pg18:
     name: pgrx pg18

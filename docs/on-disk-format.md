@@ -39,10 +39,14 @@ Current fixture coverage:
 | --- | --- |
 | `hnsw_metadata_v3.hex` | HNSW current metadata decode and swapped-version rejection |
 | `hnsw_element_tuple_v3.hex` | HNSW element tuple decode |
+| `hnsw_grouped_hot_tuple_v2.hex` | HNSW grouped-hot tuple decode |
+| `hnsw_turbo_hot_tuple_v3.hex` | HNSW turbo-hot tuple decode |
+| `hnsw_rerank_tuple_v3.hex` | HNSW cold rerank tuple decode |
 | `hnsw_neighbor_tuple_v3.hex` | HNSW neighbor tuple decode |
 | `hnsw_grouped_codebook_tuple_v3.hex` | HNSW grouped-PQ codebook shard decode |
 | `diskann_vamana_metadata_v3.hex` | DiskANN Vamana metadata decode and swapped-version rejection |
 | `diskann_vamana_node_tuple_v3.hex` | DiskANN Vamana node tuple decode and swapped-neighbor-count rejection |
+| `diskann_vamana_overflow_tuple_v3.hex` | DiskANN duplicate heap-TID overflow tuple decode and swapped-count rejection |
 | `diskann_vamana_codebook_tuple_v3.hex` | DiskANN grouped-PQ codebook shard decode |
 | `ivf_metadata_v1.hex` | IVF metadata decode and swapped-version rejection |
 | `ivf_centroid_tuple_v1.hex` | IVF centroid tuple decode and swapped-dimension rejection |
@@ -59,6 +63,10 @@ Current fixture coverage:
 | `spire_routing_root_partition_object_v1.hex` | SPIRE root routing partition object body decode |
 | `spire_delta_partition_object_v1.hex` | SPIRE delta partition object body decode |
 | `spire_top_graph_partition_object_v1.hex` | SPIRE top-graph partition object body decode |
+| `spire_leaf_v2_meta_v2.hex` | SPIRE leaf V2 partition-object meta decode and swapped-version rejection |
+| `spire_leaf_v2_segment_v2.hex` | SPIRE leaf V2 partition-object segment decode |
+| `spire_partition_object_v2_chain_meta.hex` | SPIRE generic V2 chain meta decode and swapped-version rejection |
+| `spire_partition_object_v2_chain_segment.hex` | SPIRE generic V2 chain segment decode |
 
 ## Version Policy
 
@@ -75,17 +83,30 @@ before interpreting the rest of the payload:
 Any incompatible field addition or reinterpretation must add a new format tag
 and update the layout assertions, fixture golden files, and upgrade matrix.
 
+## Upgrade Matrix
+
+`fixtures/upgrade/matrix.csv` is the current `(format_version, AM, can_read,
+can_write)` table. `make upgrade-smoke` validates that the matrix has unique
+rows, that writable formats are readable, that each row points at a committed
+fixture, and that the current writable set is explicit.
+
+## Cross-Arch Decode
+
+`make endian-qemu` runs the on-disk fixture suite for the big-endian
+`s390x-unknown-linux-gnu` target through `qemu-s390x`. The GitHub Actions
+`endian-qemu` job installs the target, qemu user emulator, and cross linker,
+then runs this make target on `main`, manual dispatch, and the nightly schedule.
+
 ## Remaining Task 42 Gaps
 
-- Extend fixture bytes under `fixtures/on-disk/` to SPIRE leaf V2/chained
-  partition object bodies and remaining HNSW/DiskANN/IVF page kinds.
+- Extend fixture bytes under `fixtures/on-disk/` to any raw generic page
+  encoding that becomes a durable external byte contract.
 - Extend byte-swapped fixture rejection tests to additional bounded multi-byte
   fields where the current decoder can reject malformed values.
 - Extend static offset assertions to additional SPIRE routing/top-graph object
   body prefixes if they become durable page-buffer contracts beyond the current
   partition-object and metadata codecs.
-- Add the qemu cross-arch decode lane in coordination with Task 48.
-- Add `fixtures/upgrade/{vN}/` and the `(format_version, AM, can_read,
-  can_write)` compatibility matrix.
+- Extend `fixtures/upgrade/` from the current matrix into historical corpus
+  directories when a new incompatible format version ships.
 - Add WAL record version tags with Task 37.
 - Add pg_upgrade smoke coverage with ECAZ data present.

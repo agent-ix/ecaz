@@ -1,0 +1,6 @@
+Script started on 2026-05-17 14:39:57-07:00 [<not executed on terminal>]
+CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_LINKER="s390x-linux-gnu-gcc" \
+CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_RUNNER="qemu-s390x -L /usr/s390x-linux-gnu" \
+cargo test --target s390x-unknown-linux-gnu --features bench --test on_disk_fixtures
+
+Script done on 2026-05-17 14:39:57-07:00 [COMMAND_EXIT_CODE="0"]
