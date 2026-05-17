@@ -438,15 +438,16 @@ pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
     block_number: u32,
     offset_number: u16,
 ) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "debug_ec_ivf_validate_no_duplicate_heap_tid",
+    );
+    let metadata = unsafe { page::read_metadata_page(index_relation.as_ptr()) };
     let heap_tid = ItemPointer {
         block_number,
         offset_number,
     };
-    let result = unsafe { ensure_heap_tid_absent(index_relation, &metadata, heap_tid) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let result = unsafe { ensure_heap_tid_absent(index_relation.as_ptr(), &metadata, heap_tid) };
     result.unwrap_or_else(|e| pgrx::error!("ec_ivf duplicate heap tid validation failed: {e}"));
 }
 
