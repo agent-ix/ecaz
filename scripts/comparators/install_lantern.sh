@@ -40,7 +40,10 @@ if [[ ! -d lantern || $FORCE -eq 1 ]]; then
     https://github.com/lanterndata/lantern.git
 fi
 
-cd lantern
+# Lantern v0.5.x layout: CMakeLists.txt for the PG extension lives at
+# lantern/lantern_hnsw/CMakeLists.txt, not the repo root (which holds
+# the Rust extras crates). Build from the lantern_hnsw subdirectory.
+cd lantern/lantern_hnsw
 mkdir -p build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DPG_CONFIG="$PG_CONFIG" ..
 make -j"$(nproc)"

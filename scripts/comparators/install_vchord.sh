@@ -58,18 +58,24 @@ unzip -o "$ZIP_NAME" >/dev/null
 PG_PKGLIBDIR="$($PG_CONFIG --pkglibdir)"
 PG_SHAREDIR="$($PG_CONFIG --sharedir)"
 
-# vchord's zip layout puts files under a directory tree mirroring
-# the install destination, e.g.:
-#   ./usr/lib/postgresql/18/lib/vchord.so   (Ubuntu/Debian path)
-#   ./usr/share/postgresql/18/extension/vchord*.{sql,control}
-# OR flat:
-#   ./vchord.so + ./vchord*.{sql,control}
-# Find the .so and .control wherever they land.
-comparator_log "installing into $PG_PKGLIBDIR and $PG_SHAREDIR/extension"
+# The zip layout may be either flat files or a .deb. Handle both.
 SO_PATH=$(find . -name 'vchord.so' -type f | head -1)
-[[ -z "$SO_PATH" ]] && { comparator_log "no vchord.so found in zip"; exit 1; }
-sudo install -m 0755 "$SO_PATH" "$PG_PKGLIBDIR/"
+if [[ -z "$SO_PATH" ]]; then
+  # No .so directly — must contain a .deb
+  DEB_FILE=$(find . -maxdepth 1 -name '*.deb' | head -1)
+  [[ -z "$DEB_FILE" ]] && { comparator_log "no vchord.so and no .deb in zip"; ls; exit 1; }
+  comparator_log "zip contains .deb; extracting via ar + tar"
+  rm -rf extracted && mkdir extracted && (
+    cd extracted
+    ar x "../$DEB_FILE"
+    tar xf data.tar.* 2>/dev/null || tar xf data.tar
+  )
+  SO_PATH=$(find extracted -name 'vchord.so' -type f | head -1)
+fi
+[[ -z "$SO_PATH" ]] && { comparator_log "no vchord.so found anywhere"; exit 1; }
 
+comparator_log "installing into $PG_PKGLIBDIR and $PG_SHAREDIR/extension"
+sudo install -m 0755 "$SO_PATH" "$PG_PKGLIBDIR/"
 for ctl in $(find . -name 'vchord.control' -type f); do
   sudo install -m 0644 "$ctl" "$PG_SHAREDIR/extension/"
 done
