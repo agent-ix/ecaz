@@ -2,6 +2,11 @@
 //!
 //! AM-type validation lives in the `open_valid_ec_*_index_guard`
 //! helpers, which build on `IndexRelationGuard::access_share`.
+//!
+//! These are sibling primitives over different PostgreSQL open APIs:
+//! `IndexRelationGuard` uses `index_open`, `HeapRelationGuard` uses
+//! `table_open`, and `RelationGuard` uses generic `relation_open` for
+//! relkinds that are not known statically, such as SPIRE aux stores.
 
 use pgrx::pg_sys;
 

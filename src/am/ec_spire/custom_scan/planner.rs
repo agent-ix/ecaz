@@ -111,40 +111,6 @@ unsafe fn load_custom_scan_placement_directory(
     Ok(placement_directory)
 }
 
-struct ActiveSnapshotGuard {
-    snapshot: pg_sys::Snapshot,
-}
-
-impl ActiveSnapshotGuard {
-    fn latest() -> Option<Self> {
-        // SAFETY: `GetLatestSnapshot` returns a PostgreSQL snapshot pointer
-        // valid for registration in the current backend context.
-        let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-        if snapshot.is_null() {
-            return None;
-        }
-        // SAFETY: `snapshot` is registered above and remains registered until
-        // this guard drops.
-        unsafe { pg_sys::PushActiveSnapshot(snapshot) };
-        Some(Self { snapshot })
-    }
-
-    fn as_ptr(&self) -> pg_sys::Snapshot {
-        self.snapshot
-    }
-}
-
-impl Drop for ActiveSnapshotGuard {
-    fn drop(&mut self) {
-        // SAFETY: `snapshot` was pushed by `ActiveSnapshotGuard::latest` and
-        // remains registered until this drop runs.
-        unsafe {
-            pg_sys::PopActiveSnapshot();
-            pg_sys::UnregisterSnapshot(self.snapshot);
-        }
-    }
-}
-
 struct IndexScanGuard {
     scan: pg_sys::IndexScanDesc,
 }
@@ -180,34 +146,6 @@ impl Drop for IndexScanGuard {
         // SAFETY: `scan` was returned by `index_beginscan` in
         // `IndexScanGuard::begin`; this guard owns the matching end call.
         unsafe { pg_sys::index_endscan(self.scan) };
-    }
-}
-
-struct TupleTableSlotGuard {
-    slot: *mut pg_sys::TupleTableSlot,
-}
-
-impl TupleTableSlotGuard {
-    fn create(relation: pg_sys::Relation) -> Option<Self> {
-        // SAFETY: `relation` is owned by a live table-relation guard in the
-        // caller; this guard owns the returned slot.
-        let slot = unsafe { pg_sys::table_slot_create(relation, std::ptr::null_mut()) };
-        if slot.is_null() {
-            return None;
-        }
-        Some(Self { slot })
-    }
-
-    fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
-        self.slot
-    }
-}
-
-impl Drop for TupleTableSlotGuard {
-    fn drop(&mut self) {
-        // SAFETY: `slot` was returned by `table_slot_create` in
-        // `TupleTableSlotGuard::create`; this guard owns the matching drop.
-        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
     }
 }
 
@@ -563,7 +501,7 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
             pg_sys::F_OIDEQ.into(),
             index_oid.into(),
         );
-        let Some(snapshot) = ActiveSnapshotGuard::latest() else {
+        let Some(snapshot) = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest() else {
             return false;
         };
         let Some(scan) = IndexScanGuard::begin(
@@ -573,7 +511,9 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
         ) else {
             return false;
         };
-        let Some(slot) = TupleTableSlotGuard::create(placement_relation.as_ptr()) else {
+        let Some(slot) =
+            crate::storage::slot_guard::TupleTableSlotGuard::create(placement_relation.as_ptr())
+        else {
             return false;
         };
         pg_sys::index_rescan(scan.as_ptr(), &mut scan_key, 1, ptr::null_mut(), 0);
