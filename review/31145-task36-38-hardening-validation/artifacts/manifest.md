@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `3c31a0f08a2a60cf0ec927acb2bfda27333ba7f4`
+Code checkpoint SHA: `12b2d0091a9146fd8af70976a2b2e67c190f7866`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:39:25Z`
+Timestamp: `2026-05-17T05:48:26Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -135,6 +135,13 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live resource/temp-spill expansion
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-temp-spill.log`
 - Key result: all four AMs completed resource smoke with both `tiny-work-mem` and `temp-file-limit` cases listed in the matrix. The temp-spill subcase forced a `temp_file_limit = '64kB'` ERROR and verified backend usability before shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=799 after=843`.
+
+## task38-pg18-resource-provider-temp-spill.log
+
+- Lane: Task 38 provider-backed temp-spill ENOSPC
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64 --provider-marker review/31145-task36-38-hardening-validation/artifacts/task38-provider-temp-spill.marker" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-provider-temp-spill.log`
+- Provider setup: `task38-provider-temp-spill-restart.log` restarted PG18 with `--mode enospc-write --path-match pgsql_tmp --after 1`; `task38-provider-temp-spill.marker` recorded `mode=enospc-write match=pgsql_tmp`; `task38-provider-temp-spill-restore.log` restored PG18 without provider environment.
+- Key result: all four AMs completed resource smoke under the provider, the resource lane printed `resource_temp_spill_provider=enospc-write match=pgsql_tmp`, and shared postconditions passed with `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=1392 after=1712`.
 
 ## task38-spire-remote-oom.log
 

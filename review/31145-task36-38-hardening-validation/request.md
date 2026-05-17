@@ -32,7 +32,7 @@ back the lock holder even if waiter cleanup errors, memory smoke uses
 `ecaz.fault_palloc_nth` and sweeps the currently instrumented scan allocation
 points plus build/insert/vacuum callback boundaries for each AM,
 resource smoke covers tiny memory settings plus built-in `temp_file_limit`
-temp-spill failure,
+temp-spill failure and provider-backed ENOSPC on `pgsql_tmp`,
 provider-backed slow-disk latency runs against a postmaster restarted through
 `ecaz dev fault provider-restart`, and provider-backed I/O smoke now supports
 prebuilt relation-path fixtures through `ecaz dev fault prepare` plus
@@ -51,9 +51,8 @@ Task 38 is still scope-bounded to smoke coverage. It now has live PG18
 EIO/ENOSPC provider probes and a palloc-failure smoke lane for all four AMs,
 but exhaustive per-allocation sweeps inside each build/insert/vacuum callback,
 local OOM-kill campaigns during build/insert/scan, WAL rotation and
-provider-backed temp-spill I/O targeting, SPIRE remote-object fetch faulting,
-and full expected-vs-forced WAL/temp-spill accounting remain follow-on
-expansion.
+SPIRE remote-object fetch faulting, and full expected-vs-forced WAL/temp-spill
+accounting remain follow-on expansion.
 
 Task 36 covers the SIMD paths that exist in this tree. There is no AVX-512
 product-quantizer implementation, SIMD `unpack_mse_indices` implementation,
@@ -81,6 +80,8 @@ Artifacts are under `artifacts/` and recorded in `artifacts/manifest.md`.
   - `ecaz dev fault smoke --lane lock-timeout --rows 64`
   - `ecaz dev fault smoke --lane resource --rows 64` including tiny memory
     settings and `temp_file_limit` temp-spill failure
+  - `ecaz dev fault provider-restart --mode enospc-write --path-match pgsql_tmp ...`
+  - `ecaz dev fault smoke --lane resource --rows 64 --provider-marker ...`
   - `ecaz dev fault smoke --lane memory --rows 64`
   - `ecaz dev fault provider-restart --mode slow-disk ...`
   - `ecaz dev fault smoke --lane slow-disk --rows 64 --provider-marker ...`
