@@ -29,16 +29,21 @@ over encoded slices, so the stable contract is the codec offset table.
 ## Fixture Process
 
 `make on-disk-fixtures` decodes packetized hex fixtures under
-`fixtures/on-disk/` and asserts that they match the expected in-memory metadata.
-It also byte-swaps the exercised format-version fields and asserts those
-mutated fixtures are rejected instead of silently decoded.
+`fixtures/on-disk/` and asserts that they match the expected in-memory
+metadata/tuple representations. It also byte-swaps exercised bounded fields
+and asserts those mutated fixtures are rejected instead of silently decoded.
 
 Current fixture coverage:
 
 | Fixture | Coverage |
 | --- | --- |
 | `hnsw_metadata_v3.hex` | HNSW current metadata decode and swapped-version rejection |
+| `hnsw_element_tuple_v3.hex` | HNSW element tuple decode |
+| `hnsw_neighbor_tuple_v3.hex` | HNSW neighbor tuple decode |
+| `hnsw_grouped_codebook_tuple_v3.hex` | HNSW grouped-PQ codebook shard decode |
 | `diskann_vamana_metadata_v3.hex` | DiskANN Vamana metadata decode and swapped-version rejection |
+| `diskann_vamana_node_tuple_v3.hex` | DiskANN Vamana node tuple decode and swapped-neighbor-count rejection |
+| `diskann_vamana_codebook_tuple_v3.hex` | DiskANN grouped-PQ codebook shard decode |
 
 ## Version Policy
 
@@ -57,10 +62,10 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## Remaining Task 42 Gaps
 
-- Extend fixture bytes under `fixtures/on-disk/` beyond HNSW/DiskANN metadata to
-  IVF, SPIRE, codebook payloads, and remaining page kinds.
-- Extend byte-swapped fixture rejection tests beyond the HNSW/DiskANN metadata
-  version fields.
+- Extend fixture bytes under `fixtures/on-disk/` to IVF, SPIRE, and remaining
+  HNSW/DiskANN page kinds.
+- Extend byte-swapped fixture rejection tests to additional bounded multi-byte
+  fields where the current decoder can reject malformed values.
 - Extend static offset assertions to additional SPIRE routing/top-graph object
   body prefixes if they become durable page-buffer contracts beyond the current
   partition-object and metadata codecs.

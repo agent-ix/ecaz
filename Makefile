@@ -195,7 +195,7 @@ simd-diff:
 
 # --- On-disk format ---
 
-## Decode golden on-disk fixtures and reject byte-swapped version tags
+## Decode golden on-disk fixtures and reject byte-swapped fields where bounded
 on-disk-fixtures:
 	cargo test --features bench --test on_disk_fixtures
 
