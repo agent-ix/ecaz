@@ -3,7 +3,7 @@ use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
     all_smoke_cases, leak_probe_sql, required_smoke_cases, workload_insert_sql,
     workload_reindex_sql, workload_repeated_scan_sql, workload_scan_sql, workload_setup_sql,
-    workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
+    workload_table_sql, workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
 };
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -544,10 +544,13 @@ async fn run_resource_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]
 }
 
 async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
-    prepare_workloads(conn, rows, ams).await?;
     let client = connect_fault(conn, "memory").await?;
     for &am in ams {
-        let sweep_limit = memory_probe_sweep_limit(am);
+        run_memory_build_probe(&client, rows, am).await?;
+    }
+    prepare_workloads(conn, rows, ams).await?;
+    for &am in ams {
+        let sweep_limit = memory_scan_sweep_limit(am);
         for nth in 1..=sweep_limit {
             client
                 .batch_execute(&format!(
@@ -570,11 +573,55 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
                 )
             })?;
         }
+        run_memory_single_workload_probe(&client, am, "insert", &workload_insert_sql(am)).await?;
+        run_memory_single_workload_probe(&client, am, "vacuum", &workload_vacuum_sql(am)).await?;
     }
     Ok(())
 }
 
-fn memory_probe_sweep_limit(am: FaultAm) -> i32 {
+async fn run_memory_build_probe(
+    client: &tokio_postgres::Client,
+    rows: i64,
+    am: FaultAm,
+) -> Result<()> {
+    client.batch_execute(&workload_table_sql(am, rows)).await?;
+    run_memory_single_workload_probe(
+        client,
+        am,
+        "build",
+        &ecaz_fault_injection::workload_create_index_sql(am, rows),
+    )
+    .await?;
+    client
+        .batch_execute(&ecaz_fault_injection::workload_create_index_sql(am, rows))
+        .await?;
+    Ok(())
+}
+
+async fn run_memory_single_workload_probe(
+    client: &tokio_postgres::Client,
+    am: FaultAm,
+    lane: &str,
+    sql: &str,
+) -> Result<()> {
+    client
+        .batch_execute("SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = 1;")
+        .await?;
+    let result = client.batch_execute(sql).await;
+    client
+        .batch_execute("SET ecaz.fault_palloc_nth = -1; SELECT ecaz_fault_reset_palloc_counter();")
+        .await?;
+    assert_ecaz_palloc_error(&format!("memory palloc {} {lane}", am.as_str()), result)?;
+    client.simple_query("SELECT 1").await.map_err(|error| {
+        eyre!(
+            "memory palloc {} {lane} did not leave the backend usable: {error}",
+            am.as_str()
+        )
+    })?;
+    Ok(())
+}
+
+fn memory_scan_sweep_limit(am: FaultAm) -> i32 {
     match am {
         FaultAm::Hnsw => 4,
         FaultAm::Ivf => 4,

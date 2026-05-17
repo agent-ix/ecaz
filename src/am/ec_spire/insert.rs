@@ -34,6 +34,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_aminsert(
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            crate::fault::maybe_fail_palloc("ec_spire aminsert entry");
             publish_insert_delta_epoch(
                 index_relation,
                 values,

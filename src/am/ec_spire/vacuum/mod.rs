@@ -564,6 +564,7 @@ unsafe fn finish_vacuum_stats(
     removed_assignments: u64,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
+        crate::fault::maybe_fail_palloc("ec_spire vacuum stats");
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats

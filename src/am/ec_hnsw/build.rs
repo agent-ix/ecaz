@@ -289,6 +289,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                 write_us: flush_timing.write_us,
             });
 
+            crate::fault::maybe_fail_palloc("ec_hnsw ambuild result");
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
             result.index_tuples = index_tuples;

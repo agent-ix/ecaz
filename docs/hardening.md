@@ -167,7 +167,8 @@ under the relevant review packet before citing findings.
   `--provider-marker` so they cannot pass against a normal postmaster.
 - Live memory smoke uses the extension GUC `ecaz.fault_palloc_nth` and
   `ecaz_fault_reset_palloc_counter()` to raise a clean ERROR at instrumented
-  AM palloc boundaries. The current smoke sweeps the first few Nth allocation
+  AM memory-fault boundaries. The current smoke covers each AM's build,
+  insert, and vacuum callback boundary, and sweeps the first few Nth allocation
   points for each AM scan workload.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
@@ -179,8 +180,8 @@ provider-backed postmaster and requires a non-empty provider marker. I/O smoke
 uses prebuilt fixtures and checks one provider mode at a time: `eio-read`
 expects clean ERROR from AM scan reads, while `enospc-write` expects clean
 ERROR from AM writes. Memory smoke injects palloc failures at the instrumented
-AM scan allocation boundaries and verifies the backend remains usable after
-each ERROR. Every lane uses the shared post-condition probe inventory from
+AM build/scan/insert/vacuum boundaries and verifies the backend remains usable
+after each ERROR. Every lane uses the shared post-condition probe inventory from
 `ecaz-fault-injection`.
 
 Current interrupt inventory:

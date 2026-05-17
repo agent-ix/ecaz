@@ -295,26 +295,16 @@ pub fn workload_index(access_method: FaultAm) -> &'static str {
 }
 
 pub fn workload_setup_sql(access_method: FaultAm, rows: i64) -> String {
+    format!(
+        "{};
+         {};",
+        workload_table_sql(access_method, rows),
+        workload_create_index_sql(access_method, rows)
+    )
+}
+
+pub fn workload_table_sql(access_method: FaultAm, rows: i64) -> String {
     let table = workload_table(access_method);
-    let index = workload_index(access_method);
-    let index_sql = match access_method {
-        FaultAm::Hnsw => format!(
-            "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
-             WITH (m = 8, ef_construction = 16)"
-        ),
-        FaultAm::Ivf => format!(
-            "CREATE INDEX {index} ON {table} USING ec_ivf (embedding ecvector_ip_ops) \
-             WITH (nlists = 4, nprobe = 4, training_sample_rows = {rows}, storage_format = 'turboquant', rerank = 'heap_f32', rerank_width = 10)"
-        ),
-        FaultAm::DiskAnn => format!(
-            "CREATE INDEX {index} ON {table} USING ec_diskann (embedding ecvector_diskann_ip_ops) \
-             WITH (graph_degree = 8, build_list_size = 20, list_size = 20, rerank_budget = 8)"
-        ),
-        FaultAm::Spire => format!(
-            "CREATE INDEX {index} ON {table} USING ec_spire (embedding ecvector_spire_ip_ops) \
-             WITH (nlists = 4, nprobe = 4, storage_format = 'rabitq')"
-        ),
-    };
     format!(
         "DROP TABLE IF EXISTS {table} CASCADE;
          CREATE TABLE {table} (
@@ -332,9 +322,31 @@ pub fn workload_setup_sql(access_method: FaultAm, rows: i64) -> String {
              4,
              42
          )
-         FROM generate_series(1, {rows}) AS gs;
-         {index_sql};"
+         FROM generate_series(1, {rows}) AS gs"
     )
+}
+
+pub fn workload_create_index_sql(access_method: FaultAm, rows: i64) -> String {
+    let table = workload_table(access_method);
+    let index = workload_index(access_method);
+    match access_method {
+        FaultAm::Hnsw => format!(
+            "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
+             WITH (m = 8, ef_construction = 16)"
+        ),
+        FaultAm::Ivf => format!(
+            "CREATE INDEX {index} ON {table} USING ec_ivf (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 4, training_sample_rows = {rows}, storage_format = 'turboquant', rerank = 'heap_f32', rerank_width = 10)"
+        ),
+        FaultAm::DiskAnn => format!(
+            "CREATE INDEX {index} ON {table} USING ec_diskann (embedding ecvector_diskann_ip_ops) \
+             WITH (graph_degree = 8, build_list_size = 20, list_size = 20, rerank_budget = 8)"
+        ),
+        FaultAm::Spire => format!(
+            "CREATE INDEX {index} ON {table} USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, nprobe = 4, storage_format = 'rabitq')"
+        ),
+    }
 }
 
 pub fn workload_scan_sql(access_method: FaultAm) -> String {

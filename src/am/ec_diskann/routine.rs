@@ -201,6 +201,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            crate::fault::maybe_fail_palloc("ec_diskann aminsert entry");
             if values.is_null() || isnull.is_null() {
                 pgrx::error!("ec_diskann aminsert received null datum arrays");
             }
@@ -901,6 +902,7 @@ unsafe fn ec_diskann_noop_vacuum_stats(
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
     let stats = if stats.is_null() {
+        crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats
@@ -926,6 +928,7 @@ unsafe fn run_diskann_bulkdelete(
     callback_state: *mut c_void,
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
     let stats = if stats.is_null() {
+        crate::fault::maybe_fail_palloc("ec_diskann bulkdelete stats");
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats

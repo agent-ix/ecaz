@@ -211,6 +211,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
                 );
             }
 
+            crate::fault::maybe_fail_palloc("ec_diskann ambuild result");
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
             result.index_tuples = index_tuples;

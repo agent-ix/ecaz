@@ -263,6 +263,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
                     as f64
             };
 
+            crate::fault::maybe_fail_palloc("ec_spire ambuild result");
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
             result.index_tuples = index_tuples;

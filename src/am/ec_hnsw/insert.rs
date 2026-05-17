@@ -399,6 +399,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_aminsert(
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            crate::fault::maybe_fail_palloc("ec_hnsw aminsert entry");
             let heap_tid = shared::decode_heap_tid(heap_tid);
             let options = options::relation_options(index_relation);
             let metadata_snapshot = shared::read_metadata_page(index_relation);

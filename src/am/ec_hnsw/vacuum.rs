@@ -386,6 +386,7 @@ unsafe fn run_bulkdelete_with_adapter(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let storage = format.graph_storage();
     let stats = if stats.is_null() {
+        crate::fault::maybe_fail_palloc("ec_hnsw vacuum stats");
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats
