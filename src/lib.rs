@@ -14665,11 +14665,7 @@ fn ec_spire_delete_placement_row(index_oid: pg_sys::Oid, pk_value: &[u8]) -> Res
     })
 }
 
-fn ec_spire_index_heap_relation_oid(
-    index_oid: pg_sys::Oid,
-    caller_name: &'static str,
-) -> pg_sys::Oid {
-    let index_relation = open_valid_ec_spire_index_guard(index_oid, caller_name);
+fn ec_spire_heap_relation_oid_from_index(index_relation: &AccessShareIndexRelation) -> pg_sys::Oid {
     // SAFETY: `index_relation` is a live opened index relation for the duration
     // of this copy, and `rd_index` is PostgreSQL's index metadata for it.
     unsafe {
@@ -14679,6 +14675,14 @@ fn ec_spire_index_heap_relation_oid(
             .expect("opened index relation should expose pg_index metadata")
             .indrelid
     }
+}
+
+fn ec_spire_index_heap_relation_oid(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Oid {
+    let index_relation = open_valid_ec_spire_index_guard(index_oid, caller_name);
+    ec_spire_heap_relation_oid_from_index(&index_relation)
 }
 
 #[pg_extern(strict)]
@@ -15299,17 +15303,11 @@ fn ec_spire_remote_search_tuple_payload(
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_tuple_payload") };
-    let heap_relation_oid = unsafe {
-        (*index_relation)
-            .rd_index
-            .as_ref()
-            .expect("opened index relation should expose pg_index metadata")
-            .indrelid
-    };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload");
+    let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
     let rows = unsafe {
         am::spire_remote_search_local_heap_candidate_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -15317,7 +15315,7 @@ fn ec_spire_remote_search_tuple_payload(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     ec_spire_validate_tuple_payload_columns(heap_relation_oid, &requested_columns)
         .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload {e}"));
@@ -15433,19 +15431,12 @@ fn ec_spire_remote_search_tuple_payload_typed(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_tuple_payload_typed")
-    };
-    let heap_relation_oid = unsafe {
-        (*index_relation)
-            .rd_index
-            .as_ref()
-            .expect("opened index relation should expose pg_index metadata")
-            .indrelid
-    };
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload_typed");
+    let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
     let rows = unsafe {
         am::spire_remote_search_local_heap_candidate_rows(
-            index_relation,
+            index_relation.as_ptr(),
             requested_epoch,
             query,
             selected_pids,
@@ -15453,7 +15444,7 @@ fn ec_spire_remote_search_tuple_payload_typed(
             &consistency_mode,
         )
     };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    drop(index_relation);
 
     let columns = ec_spire_tuple_payload_column_metadata(
         heap_relation_oid,
