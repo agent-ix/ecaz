@@ -3,14 +3,49 @@ fn not_implemented(callback: &str) -> ! {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+struct DebugIndexRelation {
+    relation: pg_sys::Relation,
+    lockmode: pg_sys::LOCKMODE,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl DebugIndexRelation {
+    fn open(index_oid: pg_sys::Oid, lockmode: pg_sys::LOCKMODE) -> Self {
+        // SAFETY: PostgreSQL owns the relation cache entry returned by
+        // `index_open`; this guard owns the matching close for `lockmode`.
+        let relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+        if relation.is_null() {
+            pgrx::error!("ec_spire debug index_open returned NULL");
+        }
+        Self { relation, lockmode }
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl Drop for DebugIndexRelation {
+    fn drop(&mut self) {
+        // SAFETY: `relation` was returned by `index_open` in
+        // `DebugIndexRelation::open`; this guard owns the matching close.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::index_close(self.relation, self.lockmode) };
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
     index_oid: pg_sys::Oid,
 ) -> (u32, u16, u64, u32, u64, u64, u32, u64) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<(u32, u16, u64, u32, u64, u64, u32, u64), String> {
-        let store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let store = unsafe {
+            storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
+        };
         let object = storage::SpireRoutingPartitionObject::root(
             10,
             1,
@@ -23,7 +58,7 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
         )?;
 
         let placement = store.insert_routing_object(1, &object)?;
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let decoded = unsafe { store.read_routing_object(&placement)? };
         let child = decoded
             .children()
@@ -41,7 +76,6 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
             child.child_pid,
         ))
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -50,10 +84,11 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
     index_oid: pg_sys::Oid,
 ) -> (u32, u16, u32, u32, u64, u32) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<(u32, u16, u32, u32, u64, u32), String> {
-        let store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let store = unsafe {
+            storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
+        };
         let assignments = vec![
             storage::SpireLeafAssignmentRow {
                 flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
@@ -99,7 +134,6 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
             first_row.heap_tid.block_number,
         ))
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -108,7 +142,7 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
     index_oid: pg_sys::Oid,
 ) -> (u64, u64, u64, u32, u16, u32, u16, u32, u16) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<(u64, u64, u64, u32, u16, u32, u16, u32, u16), String> {
         let epoch_manifest = meta::SpireEpochManifest {
             epoch: 1,
@@ -125,18 +159,19 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
             object_manifest: &object_manifest,
             placement_directory: &placement_directory,
             local_store_config: meta::SpireLocalStoreConfig::embedded_single_store(
-                unsafe { (*index_relation).rd_id }.into(),
-                unsafe { (*(*index_relation).rd_rel).reltablespace }.into(),
+                unsafe { (*index_relation.as_ptr()).rd_id }.into(),
+                unsafe { (*(*index_relation.as_ptr()).rd_rel).reltablespace }.into(),
             )?,
             next_pid: assign::SPIRE_FIRST_PID,
             next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ,
         };
         let manifests = build::encode_manifest_bundle_for_publish(input.clone())?;
-        let locators =
-            unsafe { build::write_manifest_bundle_to_relation(index_relation, &manifests)? };
+        let locators = unsafe {
+            build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
+        };
         let root_control = build::root_control_state_for_publish(input, locators)?;
-        unsafe { page::initialize_root_control_page(index_relation, root_control) };
-        let persisted = unsafe { page::read_root_control_page(index_relation) };
+        unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
+        let persisted = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
 
         Ok((
             persisted.active_epoch,
@@ -150,7 +185,6 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
             persisted.placement_directory_tid.offset_number,
         ))
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -160,11 +194,11 @@ pub(crate) unsafe fn debug_spire_age_retired_epoch_manifests(
     retain_until_micros: i64,
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<u64, String> {
         let mut rewrites = Vec::new();
         unsafe {
-            page::scan_object_tuples(index_relation, |tid, tuple| {
+            page::scan_object_tuples(index_relation.as_ptr(), |tid, tuple| {
                 if tuple.len() != meta::SpireEpochManifest::encoded_len() {
                     return Ok(());
                 }
@@ -182,12 +216,13 @@ pub(crate) unsafe fn debug_spire_age_retired_epoch_manifests(
             })?
         };
         for (tid, payload) in &rewrites {
-            unsafe { page::rewrite_object_tuple_same_len(index_relation, *tid, payload)? };
+            unsafe {
+                page::rewrite_object_tuple_same_len(index_relation.as_ptr(), *tid, payload)?
+            };
         }
         u64::try_from(rewrites.len())
             .map_err(|_| "ec_spire debug retired epoch rewrite count exceeds u64".to_owned())
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -197,18 +232,22 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
     aux_store_oid: pg_sys::Oid,
 ) -> (u32, u32, u32, u32, u64, u64) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let root_relation = unsafe { pg_sys::index_open(root_index_oid, lockmode) };
-    let aux_relation = unsafe { pg_sys::index_open(aux_store_oid, lockmode) };
+    let root_relation = DebugIndexRelation::open(root_index_oid, lockmode);
+    let aux_relation = DebugIndexRelation::open(aux_store_oid, lockmode);
     let result = (|| -> Result<(u32, u32, u32, u32, u64, u64), String> {
         let root_relid: u32 = root_index_oid.into();
         let aux_relid: u32 = aux_store_oid.into();
         let root_store = storage::SpireRelationObjectStore::for_store_relation_id(
-            root_relation,
+            root_relation.as_ptr(),
             meta::SPIRE_SINGLE_LOCAL_STORE_ID,
             root_relid,
         );
         let aux_store =
-            storage::SpireRelationObjectStore::for_store_relation_id(aux_relation, 1, aux_relid);
+            storage::SpireRelationObjectStore::for_store_relation_id(
+                aux_relation.as_ptr(),
+                1,
+                aux_relid,
+            );
 
         let root_pid = assign::SPIRE_FIRST_PID;
         let left_leaf_pid = assign::SPIRE_FIRST_PID + 1;
@@ -282,7 +321,7 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
         ];
         let placement_directory = meta::SpirePlacementDirectory::from_entries(1, placements)?;
         let placement_evidence = unsafe {
-            build::write_placement_entries_to_relation(root_relation, &placement_directory)?
+            build::write_placement_entries_to_relation(root_relation.as_ptr(), &placement_directory)?
         };
         let object_manifest = build::object_manifest_from_placement_writes(
             1,
@@ -309,10 +348,11 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
             next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ + 2,
         };
         let manifests = build::encode_manifest_bundle_for_publish(input.clone())?;
-        let locators =
-            unsafe { build::write_manifest_bundle_to_relation(root_relation, &manifests)? };
+        let locators = unsafe {
+            build::write_manifest_bundle_to_relation(root_relation.as_ptr(), &manifests)?
+        };
         let root_control = build::root_control_state_for_publish(input, locators)?;
-        unsafe { page::initialize_root_control_page(root_relation, root_control) };
+        unsafe { page::initialize_root_control_page(root_relation.as_ptr(), root_control) };
 
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
             &epoch_manifest,
@@ -321,7 +361,7 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
         )?;
         let relation_store_set = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                root_relation,
+                root_relation.as_ptr(),
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?
@@ -389,17 +429,14 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
                 .ok_or_else(|| "ec_spire debug second candidate lost vec_id".to_owned())?,
         ))
     })();
-    unsafe { pg_sys::index_close(aux_relation, lockmode) };
-    unsafe { pg_sys::index_close(root_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
+    let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
     (
         root_control.active_epoch,
         root_control.next_pid,
@@ -414,17 +451,18 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
     state: &str,
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<u64, String> {
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let local_store_config =
-            unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
+            unsafe { scan::load_relation_local_store_config(index_relation.as_ptr(), root_control)? };
         let epoch_bytes =
-            unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+            unsafe { page::read_object_tuple(index_relation.as_ptr(), root_control.epoch_manifest_tid)? };
         let object_bytes =
-            unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
-        let placement_bytes =
-            unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+            unsafe { page::read_object_tuple(index_relation.as_ptr(), root_control.object_manifest_tid)? };
+        let placement_bytes = unsafe {
+            page::read_object_tuple(index_relation.as_ptr(), root_control.placement_directory_tid)?
+        };
         let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
         let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
         let mut placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
@@ -457,8 +495,9 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
             placement_directory: placement_directory.encode()?,
             local_store_config: local_store_config.encode()?,
         };
-        let locators =
-            unsafe { build::write_manifest_bundle_to_relation(index_relation, &manifests)? };
+        let locators = unsafe {
+            build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
+        };
         let root_control = meta::SpireRootControlState::published_with_store_config(
             root_control.active_epoch,
             root_control.next_pid,
@@ -468,10 +507,9 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
             locators.placement_directory_tid,
             locators.local_store_config_tid,
         )?;
-        unsafe { page::initialize_root_control_page(index_relation, root_control) };
+        unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
         Ok(root_control.active_epoch)
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -490,13 +528,16 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
     rewrites: &[(u64, u32)],
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<u64, String> {
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let local_store_config =
-            unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
+            unsafe { scan::load_relation_local_store_config(index_relation.as_ptr(), root_control)? };
         let (epoch_manifest, object_manifest, mut placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+            load_relation_epoch_manifests_for_coordinator_fanout(
+                index_relation.as_ptr(),
+                root_control,
+            )?
         };
         for (pid, node_id) in rewrites {
             let placement = placement_directory
@@ -516,8 +557,9 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
             placement_directory: placement_directory.encode()?,
             local_store_config: local_store_config.encode()?,
         };
-        let locators =
-            unsafe { build::write_manifest_bundle_to_relation(index_relation, &manifests)? };
+        let locators = unsafe {
+            build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
+        };
         let root_control = meta::SpireRootControlState::published_with_store_config(
             root_control.active_epoch,
             root_control.next_pid,
@@ -527,10 +569,9 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
             locators.placement_directory_tid,
             locators.local_store_config_tid,
         )?;
-        unsafe { page::initialize_root_control_page(index_relation, root_control) };
+        unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
         Ok(root_control.active_epoch)
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -540,13 +581,16 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
     mode: &str,
 ) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<u64, String> {
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let local_store_config =
-            unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
+            unsafe { scan::load_relation_local_store_config(index_relation.as_ptr(), root_control)? };
         let (mut epoch_manifest, object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+            load_relation_epoch_manifests_for_coordinator_fanout(
+                index_relation.as_ptr(),
+                root_control,
+            )?
         };
         epoch_manifest.consistency_mode = match mode {
             "strict" => meta::SpireConsistencyMode::Strict,
@@ -564,8 +608,9 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
             placement_directory: placement_directory.encode()?,
             local_store_config: local_store_config.encode()?,
         };
-        let locators =
-            unsafe { build::write_manifest_bundle_to_relation(index_relation, &manifests)? };
+        let locators = unsafe {
+            build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
+        };
         let root_control = meta::SpireRootControlState::published_with_store_config(
             root_control.active_epoch,
             root_control.next_pid,
@@ -575,10 +620,9 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
             locators.placement_directory_tid,
             locators.local_store_config_tid,
         )?;
-        unsafe { page::initialize_root_control_page(index_relation, root_control) };
+        unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
         Ok(root_control.active_epoch)
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -602,18 +646,19 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
     index_oid: pg_sys::Oid,
 ) -> SpireDebugSnapshotDiagnostics {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
-    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let index_relation = DebugIndexRelation::open(index_oid, lockmode);
     let result = (|| -> Result<SpireDebugSnapshotDiagnostics, String> {
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
         let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+            unsafe { scan::load_relation_epoch_manifests(index_relation.as_ptr(), root_control)? };
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
             &epoch_manifest,
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
+        };
         let diagnostics = diagnostics::collect_snapshot_diagnostics(&snapshot, &object_store)?;
 
         Ok(SpireDebugSnapshotDiagnostics {
@@ -629,6 +674,5 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
             available_object_bytes: diagnostics.available_object_bytes,
         })
     })();
-    unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
