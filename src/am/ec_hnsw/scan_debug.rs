@@ -1514,14 +1514,14 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
     query: Vec<f32>,
     top_level_seed_count: usize,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_top_level_oracle_k_seed_heap_tids");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || top_level_seed_count == 0
     {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1565,7 +1565,6 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     heap_tids
 }
 
@@ -1576,14 +1575,14 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
     ef_search: usize,
     top_level_seed_count: usize,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_top_level_oracle_k_seed_scan_heap_tids");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || top_level_seed_count == 0
     {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1658,7 +1657,6 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
 }
 
@@ -1670,8 +1668,11 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     layer: u8,
     seed_count: usize,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard = IndexRelationGuard::access_share(
+        index_oid,
+        "debug_layer_oracle_k_carrydown_scan_heap_tids",
+    );
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
@@ -1679,7 +1680,6 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         || layer == 0
         || layer > metadata.max_level
     {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1779,7 +1779,6 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
 }
 
@@ -1790,8 +1789,11 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     layer: u8,
     seed_count: usize,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard = IndexRelationGuard::access_share(
+        index_oid,
+        "debug_layer_oracle_k_seed_layer0_neighbor_heap_tids",
+    );
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
@@ -1799,7 +1801,6 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         || layer == 0
         || layer > metadata.max_level
     {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1886,7 +1887,6 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     heap_tids
 }
 
@@ -1897,14 +1897,14 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
     seed_heap_tids: Vec<HeapTidCoords>,
     ef_search: usize,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation_guard =
+        IndexRelationGuard::access_share(index_oid, "debug_exact_seed_scan_heap_tids");
+    let index_relation = index_relation_guard.as_ptr();
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || seed_heap_tids.is_empty()
     {
-        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();
     }
 
@@ -1980,7 +1980,6 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
 
     unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
 }
 
