@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-Code checkpoint SHA: `4692b087bab9ccd43d8804a9aee2e51b3c87d9a5`
+Code checkpoint SHA: `41ca19a44e0888a1ff3b45c135d02f87682a90b8`
 Packet: `review/31145-task36-38-hardening-validation`
-Timestamp: `2026-05-17T05:25:32Z`
+Timestamp: `2026-05-17T05:31:43Z`
 
 All live PG18 artifacts use database `ecaz_fault_probe_36_38`, socket
 directory `/home/peter/.pgrx`, port `28818`, and isolated one-index-per-table
@@ -129,6 +129,12 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: Task 38 live timeout matrix expansion
 - Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane timeout --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-timeout-idle-tx.log`
 - Key result: all four AMs completed timeout smoke with both `statement-timeout` and `idle-in-transaction-timeout` cases listed in the matrix. The expected idle-timeout backend terminations were followed by shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=764 after=795`.
+
+## task38-pg18-resource-temp-spill.log
+
+- Lane: Task 38 live resource/temp-spill expansion
+- Command: `script -q -e -c "cargo run -p ecaz-cli -- --database ecaz_fault_probe_36_38 --host /home/peter/.pgrx --port 28818 dev fault smoke --lane resource --rows 64" review/31145-task36-38-hardening-validation/artifacts/task38-pg18-resource-temp-spill.log`
+- Key result: all four AMs completed resource smoke with both `tiny-work-mem` and `temp-file-limit` cases listed in the matrix. The temp-spill subcase forced a `temp_file_limit = '64kB'` ERROR and verified backend usability before shared postcondition probes; `pg_buffercache_fixture_pins=0` and `pg_stat_io_ops_before=799 after=843`.
 
 ## Provider-Backed I/O Smoke
 
