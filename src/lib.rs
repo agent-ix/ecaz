@@ -16152,9 +16152,9 @@ fn ec_spire_index_object_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_object_snapshot") };
-    let rows = unsafe { am::spire_index_object_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_object_snapshot");
+    let rows = unsafe { am::spire_index_object_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -16218,9 +16218,9 @@ fn ec_spire_index_options_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_options_snapshot") };
-    let snapshot = unsafe { am::spire_index_options_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_options_snapshot");
+    let snapshot = unsafe { am::spire_index_options_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         snapshot.nlists,
@@ -16279,9 +16279,9 @@ fn ec_spire_index_writer_identity_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_writer_identity_snapshot") };
-    let snapshot = unsafe { am::spire_index_writer_identity_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_writer_identity_snapshot");
+    let snapshot = unsafe { am::spire_index_writer_identity_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         snapshot.source_identity_provider.to_owned(),
@@ -16313,14 +16313,13 @@ fn ec_spire_index_boundary_replica_identity_snapshot(
         name!(recommendation, String),
     ),
 > {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
-            index_oid,
-            "ec_spire_index_boundary_replica_identity_snapshot",
-        )
-    };
-    let rows = unsafe { am::spire_index_boundary_replica_identity_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_index_boundary_replica_identity_snapshot",
+    );
+    let rows =
+        unsafe { am::spire_index_boundary_replica_identity_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -16372,14 +16371,13 @@ fn ec_spire_index_boundary_replica_placement_diagnostics(
     if unsafe { !relation_oid_exists(index_oid) } {
         return TableIterator::new(Vec::new().into_iter());
     }
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(
-            index_oid,
-            "ec_spire_index_boundary_replica_placement_diagnostics",
-        )
-    };
-    let rows = unsafe { am::spire_index_boundary_replica_placement_diagnostics(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_index_boundary_replica_placement_diagnostics",
+    );
+    let rows =
+        unsafe { am::spire_index_boundary_replica_placement_diagnostics(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -16432,9 +16430,9 @@ fn ec_spire_index_level_parameter_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_level_parameter_snapshot") };
-    let rows = unsafe { am::spire_index_level_parameter_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_level_parameter_snapshot");
+    let rows = unsafe { am::spire_index_level_parameter_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -16479,9 +16477,9 @@ fn ec_spire_index_scan_sanity_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_sanity_snapshot") };
-    let snapshot = unsafe { am::spire_index_scan_sanity_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_sanity_snapshot");
+    let snapshot = unsafe { am::spire_index_scan_sanity_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -16525,9 +16523,9 @@ fn ec_spire_index_health_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_health_snapshot") };
-    let snapshot = unsafe { am::spire_index_health_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_health_snapshot");
+    let snapshot = unsafe { am::spire_index_health_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -16573,9 +16571,9 @@ fn ec_spire_index_relation_storage_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_relation_storage_snapshot") };
-    let snapshot = unsafe { am::spire_index_relation_storage_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_relation_storage_snapshot");
+    let snapshot = unsafe { am::spire_index_relation_storage_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -16619,9 +16617,9 @@ fn ec_spire_index_epoch_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_epoch_snapshot") };
-    let rows = unsafe { am::spire_index_epoch_snapshot(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_snapshot");
+    let rows = unsafe { am::spire_index_epoch_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
