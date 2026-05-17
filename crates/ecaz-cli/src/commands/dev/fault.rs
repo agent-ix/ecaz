@@ -3,7 +3,8 @@ use color_eyre::eyre::{eyre, Result};
 use ecaz_fault_injection::{
     all_smoke_cases, leak_probe_sql, required_smoke_cases, workload_insert_sql,
     workload_reindex_sql, workload_repeated_scan_sql, workload_scan_sql, workload_setup_sql,
-    workload_table_sql, workload_vacuum_sql, FaultAm, FaultLane, ProviderMode,
+    workload_table_sql, workload_vacuum_full_sql, workload_vacuum_sql, FaultAm, FaultLane,
+    ProviderMode,
 };
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -489,20 +490,58 @@ async fn run_lock_timeout_probe(
     let waiter = connect_fault(conn, "lock-waiter").await?;
     for &am in ams {
         let table = ecaz_fault_injection::workload_table(am);
-        holder
-            .batch_execute(&format!(
-                "BEGIN; LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE;"
-            ))
-            .await?;
-        waiter.batch_execute("SET lock_timeout = '10ms';").await?;
-        let timeout = waiter.batch_execute(&workload_reindex_sql(am)).await;
-        let reset = waiter.batch_execute("RESET lock_timeout;").await;
-        let rollback = holder.batch_execute("ROLLBACK;").await;
-        reset?;
-        rollback?;
-        assert_sqlstate(&format!("lock_timeout {}", am.as_str()), timeout, "55P03")?;
+        run_lock_timeout_case(
+            &holder,
+            &waiter,
+            table,
+            &format!("reindex {}", am.as_str()),
+            &workload_reindex_sql(am),
+        )
+        .await?;
+        let create_index = ecaz_fault_injection::workload_create_named_index_sql(
+            am,
+            &format!("{}_lock_probe_idx", table),
+            rows,
+        );
+        run_lock_timeout_case(
+            &holder,
+            &waiter,
+            table,
+            &format!("create_index {}", am.as_str()),
+            &create_index,
+        )
+        .await?;
+        run_lock_timeout_case(
+            &holder,
+            &waiter,
+            table,
+            &format!("vacuum_full {}", am.as_str()),
+            &workload_vacuum_full_sql(am),
+        )
+        .await?;
     }
     Ok(())
+}
+
+async fn run_lock_timeout_case(
+    holder: &tokio_postgres::Client,
+    waiter: &tokio_postgres::Client,
+    table: &str,
+    label: &str,
+    sql: &str,
+) -> Result<()> {
+    holder
+        .batch_execute(&format!(
+            "BEGIN; LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE;"
+        ))
+        .await?;
+    waiter.batch_execute("SET lock_timeout = '10ms';").await?;
+    let timeout = waiter.batch_execute(sql).await;
+    let reset = waiter.batch_execute("RESET lock_timeout;").await;
+    let rollback = holder.batch_execute("ROLLBACK;").await;
+    reset?;
+    rollback?;
+    assert_sqlstate(&format!("lock_timeout {label}"), timeout, "55P03")
 }
 
 fn cancel_probe_iterations(rows: i64) -> i64 {

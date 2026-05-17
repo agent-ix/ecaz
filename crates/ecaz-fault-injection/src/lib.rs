@@ -327,8 +327,11 @@ pub fn workload_table_sql(access_method: FaultAm, rows: i64) -> String {
 }
 
 pub fn workload_create_index_sql(access_method: FaultAm, rows: i64) -> String {
+    workload_create_named_index_sql(access_method, workload_index(access_method), rows)
+}
+
+pub fn workload_create_named_index_sql(access_method: FaultAm, index: &str, rows: i64) -> String {
     let table = workload_table(access_method);
-    let index = workload_index(access_method);
     match access_method {
         FaultAm::Hnsw => format!(
             "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
@@ -390,6 +393,10 @@ pub fn workload_insert_sql(access_method: FaultAm) -> String {
 
 pub fn workload_vacuum_sql(access_method: FaultAm) -> String {
     format!("VACUUM (ANALYZE) {}", workload_table(access_method))
+}
+
+pub fn workload_vacuum_full_sql(access_method: FaultAm) -> String {
+    format!("VACUUM (FULL) {}", workload_table(access_method))
 }
 
 pub fn workload_reindex_sql(access_method: FaultAm) -> String {
