@@ -997,29 +997,7 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
     }
     prepare_workloads(conn, rows, ams).await?;
     for &am in ams {
-        let sweep_limit = memory_scan_sweep_limit(am);
-        for nth in 1..=sweep_limit {
-            client
-                .batch_execute(&format!(
-                    "SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = {nth};"
-                ))
-                .await?;
-            let result = client
-                .batch_execute(&workload_repeated_scan_sql(am, i64::from(sweep_limit)))
-                .await;
-            client
-                .batch_execute(
-                    "SET ecaz.fault_palloc_nth = -1; SELECT ecaz_fault_reset_palloc_counter();",
-                )
-                .await?;
-            assert_ecaz_palloc_error(&format!("memory palloc {} nth {nth}", am.as_str()), result)?;
-            client.simple_query("SELECT 1").await.map_err(|error| {
-                eyre!(
-                    "memory palloc {} nth {nth} did not leave the backend usable: {error}",
-                    am.as_str()
-                )
-            })?;
-        }
+        run_memory_workload_palloc_sweep(&client, am, "scan", &workload_scan_sql(am)).await?;
         run_memory_workload_palloc_sweep(&client, am, "insert", &workload_insert_sql(am)).await?;
         run_memory_workload_palloc_sweep(&client, am, "vacuum", &workload_vacuum_sql(am)).await?;
     }
@@ -1121,16 +1099,7 @@ async fn run_memory_expected_palloc_probe(
 }
 
 fn memory_major_workload_sweep_limit() -> i32 {
-    8
-}
-
-fn memory_scan_sweep_limit(am: FaultAm) -> i32 {
-    match am {
-        FaultAm::Hnsw => 4,
-        FaultAm::Ivf => 4,
-        FaultAm::DiskAnn => 1,
-        FaultAm::Spire => 3,
-    }
+    100
 }
 
 async fn run_memory_rlimit_oom_probe(
@@ -1814,16 +1783,6 @@ fn assert_provider_sql_error(label: &str, result: Result<(), tokio_postgres::Err
 fn provider_sqlstate_allowed(db: &tokio_postgres::error::DbError) -> bool {
     matches!(db.code().code(), "53100" | "58030")
         || (db.code().code() == "XX000" && db.message().contains("checkpoint request failed"))
-}
-
-// pgrx reports the injected fault as an internal ERROR, so match the extension
-// diagnostic instead of accepting all XX000 failures.
-fn assert_ecaz_palloc_error(label: &str, result: Result<(), tokio_postgres::Error>) -> Result<()> {
-    match result {
-        Ok(()) => Err(eyre!("{label} probe unexpectedly succeeded")),
-        Err(error) if is_ecaz_palloc_error(&error) => Ok(()),
-        Err(error) => Err(error.into()),
-    }
 }
 
 fn is_ecaz_palloc_error(error: &tokio_postgres::Error) -> bool {

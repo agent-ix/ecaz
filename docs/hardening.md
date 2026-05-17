@@ -200,11 +200,10 @@ resource lane now performs AM-backed writes, forces `pg_switch_wal()`, and
 emits `wal_rotation_accounting` markers proving WAL LSN advancement plus
 non-decreasing `pg_stat_wal` record/byte counters after stats flush. Memory smoke
 injects palloc failures at the
-instrumented AM build/scan/insert/vacuum boundaries. Scan probes use per-AM
-Nth-allocation sweeps; build, insert, and vacuum probes sweep
-`ecaz.fault_palloc_nth` from 1 through the smoke cap and stop at the first
-successful Nth value, emitting `memory_palloc_sweep_fault` and
-`memory_palloc_sweep_completed` markers so the log shows how many currently
+instrumented AM build/scan/insert/vacuum boundaries. Build, scan, insert, and
+vacuum probes sweep `ecaz.fault_palloc_nth` from 1 through the smoke cap and
+stop at the first successful Nth value, emitting `memory_palloc_sweep_fault`
+and `memory_palloc_sweep_completed` markers so the log shows how many currently
 instrumented palloc boundaries were covered. The lane verifies the backend
 remains usable after each ERROR. Every lane
 uses the shared post-condition probe inventory from `ecaz-fault-injection`:
