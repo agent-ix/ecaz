@@ -6,13 +6,13 @@ use ecaz::bench_api::{
     spire_decode_partition_object_v2_chain_meta_fixture,
     spire_decode_partition_object_v2_chain_segment_fixture,
     spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
-    ItemPointer, IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage,
-    IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode, IvfStorageFormat, MetadataPage,
-    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
-    SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory,
-    SpirePlacementEntry, SpirePlacementState, TqElementTuple, TqGroupedCodebookTuple,
-    TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple, TqTurboHotTuple, VamanaCodebookTuple,
-    VamanaMetadataPage, VamanaNodeTuple, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+    vamana_decode_overflow_tuple_fixture, ItemPointer, IvfBlockRef, IvfCentroidTuple,
+    IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode,
+    IvfStorageFormat, MetadataPage, SpireConsistencyMode, SpireEpochManifest, SpireEpochState,
+    SpireLocalStoreConfig, SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest,
+    SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState, TqElementTuple,
+    TqGroupedCodebookTuple, TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple, TqTurboHotTuple,
+    VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
     EC_IVF_INDEX_FORMAT_VERSION, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
     HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
     SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
@@ -359,6 +359,64 @@ fn diskann_vamana_node_tuple_v3_byteswapped_neighbor_count_is_rejected() {
 
     assert!(
         err.contains("neighbor_count 512 exceeds graph_degree_r 4"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn diskann_vamana_overflow_tuple_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_overflow_tuple_v3.hex"
+    ));
+
+    let overflow =
+        vamana_decode_overflow_tuple_fixture(&bytes).expect("diskann overflow tuple decodes");
+
+    assert_eq!(
+        overflow.owner_tid,
+        ItemPointer {
+            block_number: 100,
+            offset_number: 1
+        }
+    );
+    assert_eq!(
+        overflow.nexttid,
+        ItemPointer {
+            block_number: 200,
+            offset_number: 2
+        }
+    );
+    assert_eq!(overflow.heap_tid_count, 2);
+    assert_eq!(
+        &overflow.heap_tids[..2],
+        &[
+            ItemPointer {
+                block_number: 300,
+                offset_number: 1
+            },
+            ItemPointer {
+                block_number: 301,
+                offset_number: 2
+            }
+        ]
+    );
+    assert!(overflow.heap_tids[2..]
+        .iter()
+        .all(|tid| *tid == ItemPointer::INVALID));
+}
+
+#[test]
+fn diskann_vamana_overflow_tuple_v3_byteswapped_count_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/diskann_vamana_overflow_tuple_v3.hex"
+    ));
+    bytes.swap(1, 2);
+
+    let err = vamana_decode_overflow_tuple_fixture(&bytes)
+        .expect_err("byte-swapped heap tid count should fail");
+
+    assert!(
+        err.contains("ec_diskann overflow tuple heap_tid_count 512 exceeds capacity 10"),
         "unexpected error: {err}"
     );
 }

@@ -10,6 +10,7 @@ pub mod build;
 mod cost;
 pub mod diagnostics;
 mod insert;
+pub use self::insert::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTupleFixture};
 mod options;
 pub mod page;
 pub mod persist;

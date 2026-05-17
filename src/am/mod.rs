@@ -32,6 +32,7 @@ pub use self::ec_diskann::vamana::{
     build_vamana_graph_with_stats, greedy_search, greedy_search_view, MetricSummary,
     VamanaBuildPassStats, VamanaBuildStats, VamanaGraph, VamanaGraphView,
 };
+pub use self::ec_diskann::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTupleFixture};
 #[allow(unused_imports)]
 pub(crate) use self::ec_hnsw::{
     graph, page, IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
