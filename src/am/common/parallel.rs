@@ -545,7 +545,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
     _nkeys: c_int,
     _norderbys: c_int,
 ) -> pg_sys::Size {
-    ec_parallel_scan_descriptor_size()
+    unsafe { pgrx::pgrx_extern_c_guard(ec_parallel_scan_descriptor_size) }
 }
 
 #[cfg(feature = "pg18")]
@@ -554,7 +554,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
     _nkeys: c_int,
     _norderbys: c_int,
 ) -> pg_sys::Size {
-    ec_parallel_scan_descriptor_size()
+    unsafe { pgrx::pgrx_extern_c_guard(ec_parallel_scan_descriptor_size) }
 }
 
 pub(crate) unsafe extern "C-unwind" fn ec_aminitparallelscan(target: *mut c_void) {
