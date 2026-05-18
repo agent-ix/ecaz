@@ -16,6 +16,11 @@ use crate::storage::{
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 
+enum SpireObjectTupleVisit<R> {
+    Unused,
+    Present(R),
+}
+
 pub(super) unsafe fn initialize_root_control_page(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -214,9 +219,18 @@ where
                         block_number,
                         offset_number,
                     },
-                    &mut visit,
+                    |tuple| {
+                        visit(
+                            crate::storage::page::ItemPointer {
+                                block_number,
+                                offset_number,
+                            },
+                            tuple,
+                        )
+                    },
                 )
-            };
+            }
+            .map(|_| ());
             if result.is_err() {
                 break;
             }
@@ -251,12 +265,13 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
                     payload.len()
                 ));
             }
-            Ok(tuple.as_ptr() as *mut u8)
+
+            ptr::copy_nonoverlapping(payload.as_ptr(), tuple.as_ptr() as *mut u8, payload.len());
+            Ok(())
         })
     };
     match result {
-        Ok(tuple_ptr) => unsafe {
-            ptr::copy_nonoverlapping(payload.as_ptr(), tuple_ptr, payload.len());
+        Ok(()) => unsafe {
             wal_txn.finish();
             Ok(())
         },
@@ -481,49 +496,23 @@ where
         ));
     }
 
-    let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
-    if item_id.is_null() {
-        return Err(format!(
-            "ec_spire object tuple ({},{}) returned a null item id",
-            tid.block_number, tid.offset_number
-        ));
-    }
-    let item_id_ref = unsafe { &*item_id };
-    if item_id_ref.lp_flags() == 0 {
-        return Err(format!(
+    match unsafe { visit_object_tuple_from_locked_page(page, page_size, tid, f)? } {
+        SpireObjectTupleVisit::Unused => Err(format!(
             "ec_spire object tuple ({},{}) points at an unused slot",
             tid.block_number, tid.offset_number
-        ));
+        )),
+        SpireObjectTupleVisit::Present(result) => Ok(result),
     }
-
-    let tuple_offset = item_id_ref.lp_off() as usize;
-    let tuple_len = item_id_ref.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_spire object tuple ({},{}) has invalid bounds",
-            tid.block_number, tid.offset_number
-        ));
-    }
-
-    let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
-    if tuple_ptr.is_null() {
-        return Err(format!(
-            "ec_spire object tuple ({},{}) returned a null tuple pointer",
-            tid.block_number, tid.offset_number
-        ));
-    }
-    let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
-    f(tuple)
 }
 
-unsafe fn visit_object_tuple_from_locked_page<F>(
+unsafe fn visit_object_tuple_from_locked_page<F, R>(
     page: pg_sys::Page,
     page_size: usize,
     tid: crate::storage::page::ItemPointer,
-    visit: &mut F,
-) -> Result<(), String>
+    visit: F,
+) -> Result<SpireObjectTupleVisit<R>, String>
 where
-    F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
+    F: FnOnce(&[u8]) -> Result<R, String>,
 {
     let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
     if item_id.is_null() {
@@ -534,7 +523,7 @@ where
     }
     let item_id_ref = unsafe { &*item_id };
     if item_id_ref.lp_flags() == 0 {
-        return Ok(());
+        return Ok(SpireObjectTupleVisit::Unused);
     }
 
     let tuple_offset = item_id_ref.lp_off() as usize;
@@ -554,5 +543,5 @@ where
         ));
     }
     let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
-    visit(tid, tuple)
+    visit(tuple).map(SpireObjectTupleVisit::Present)
 }
