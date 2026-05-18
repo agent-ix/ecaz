@@ -11,6 +11,7 @@ use crate::profiles::IndexProfile;
 use crate::psql::ConnectionOptions;
 
 mod build_probe;
+mod cross_am;
 mod graph;
 pub mod latency;
 mod overhead;
@@ -20,6 +21,7 @@ mod storage;
 mod suite;
 
 pub use build_probe::BuildProbeArgs;
+pub use cross_am::CrossAmArgs;
 pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
@@ -119,6 +121,8 @@ pub(crate) fn append_adaptive_nprobe_label(
 pub enum BenchCommand {
     /// Recall@k sweep: measure accuracy vs ground truth for a set of tuning points.
     Recall(RecallArgs),
+    /// Cross-AM consistency: compare per-query top-k predictions across AMs.
+    CrossAm(CrossAmArgs),
     /// End-to-end SQL latency at k: wall-clock p50/p95/p99 under configurable concurrency.
     Latency(LatencyArgs),
     /// Storage accounting: corpus table size, per-index size, per-vector datum size.
@@ -139,6 +143,7 @@ impl BenchCommand {
     pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
             BenchCommand::Recall(a) => recall::run(conn, a).await,
+            BenchCommand::CrossAm(a) => cross_am::run(a).await,
             BenchCommand::Latency(a) => latency::run(conn, a).await,
             BenchCommand::Storage(a) => storage::run(conn, a).await,
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,

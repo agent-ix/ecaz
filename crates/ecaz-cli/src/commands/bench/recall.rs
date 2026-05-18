@@ -87,6 +87,9 @@ pub struct RecallArgs {
     /// Write the final recall table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
+    /// Write per-query top-k prediction rows for cross-AM consistency checks.
+    #[arg(long)]
+    pub predictions_output: Option<PathBuf>,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
@@ -205,6 +208,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         "ndcg@k",
         "mean q-time",
     ]);
+    let mut prediction_rows = Vec::new();
 
     let rerank_width_guc = rerank_width_guc(profile);
     for value in &sweep_values {
@@ -288,6 +292,12 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             Cell::new(format!("{:.4}", ndcg)),
             Cell::new(format!("{:.2} ms", mean_ms)),
         ]);
+        prediction_rows.push(PredictionSweep {
+            sweep_axis: profile.sweep_axis_label().to_string(),
+            sweep_value: *value,
+            rerank_width: args.rerank_width,
+            predictions: pred,
+        });
     }
 
     let output = t.to_string();
@@ -302,6 +312,34 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             .await
             .wrap_err_with(|| format!("writing {}", path.display()))?;
     }
+    if let Some(path) = args.predictions_output {
+        write_prediction_file(
+            &path,
+            PredictionFile {
+                version: 1,
+                prefix: args.prefix,
+                profile: profile.name.to_string(),
+                k: args.k,
+                query_ids,
+                rows: prediction_rows,
+            },
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn write_prediction_file(path: &Path, predictions: PredictionFile) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let bytes = serde_json::to_vec_pretty(&predictions)?;
+    tokio::fs::write(path, bytes)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))?;
+    eprintln!("[recall] wrote predictions {}", path.display());
     Ok(())
 }
 
@@ -501,6 +539,24 @@ impl TruthCacheDescriptor {
 struct TruthCacheFile {
     descriptor: TruthCacheDescriptor,
     truth: TruthSet,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PredictionFile {
+    pub version: u32,
+    pub prefix: String,
+    pub profile: String,
+    pub k: usize,
+    pub query_ids: Vec<i64>,
+    pub rows: Vec<PredictionSweep>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PredictionSweep {
+    pub sweep_axis: String,
+    pub sweep_value: i32,
+    pub rerank_width: Option<i32>,
+    pub predictions: Vec<Vec<i64>>,
 }
 
 fn truth_cache_path(cache_dir: &Path, descriptor: &TruthCacheDescriptor) -> PathBuf {

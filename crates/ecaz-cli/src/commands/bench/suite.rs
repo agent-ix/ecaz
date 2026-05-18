@@ -194,6 +194,7 @@ enum SuiteStep {
     CorpusPrepare(CorpusPrepareStep),
     Load(LoadStep),
     Recall(RecallStep),
+    CrossAm(CrossAmStep),
     Latency(LatencyStep),
     Storage(StorageStep),
     Explain(ExplainStep),
@@ -295,6 +296,19 @@ struct RecallStep {
     truth_cache_dir: Option<PathBuf>,
     #[serde(default)]
     log_output: Option<PathBuf>,
+    #[serde(default)]
+    predictions_output: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CrossAmStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    inputs: Vec<String>,
+    #[serde(default)]
+    k: Option<usize>,
+    log_output: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1029,6 +1043,17 @@ fn parse_result_rows(
                 values,
             })
             .collect(),
+        "cross-am" => parse_table_rows(raw)
+            .into_iter()
+            .map(|values| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric: "cross_am".into(),
+                artifact: artifact.into(),
+                values,
+            })
+            .collect(),
         "storage" => parse_storage_rows(raw)
             .into_iter()
             .map(|(metric, values)| ResultRow {
@@ -1432,6 +1457,7 @@ impl SuiteStep {
             SuiteStep::CorpusPrepare(step) => &step.name,
             SuiteStep::Load(step) => &step.name,
             SuiteStep::Recall(step) => &step.name,
+            SuiteStep::CrossAm(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
@@ -1447,6 +1473,7 @@ impl SuiteStep {
             SuiteStep::CorpusPrepare(_) => "corpus-prepare",
             SuiteStep::Load(_) => "load",
             SuiteStep::Recall(_) => "recall",
+            SuiteStep::CrossAm(_) => "cross-am",
             SuiteStep::Latency(_) => "latency",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
@@ -1462,6 +1489,7 @@ impl SuiteStep {
             SuiteStep::CorpusPrepare(step) => &step.tags,
             SuiteStep::Load(step) => &step.tags,
             SuiteStep::Recall(step) => &step.tags,
+            SuiteStep::CrossAm(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
@@ -1532,6 +1560,34 @@ impl SuiteStep {
                 }
                 Ok(())
             }
+            SuiteStep::CrossAm(step) => {
+                if step.inputs.len() < 2 {
+                    bail!(
+                        "cross-am step {:?} must include at least two input entries",
+                        step.name
+                    )
+                }
+                for input in &step.inputs {
+                    let Some((label, path)) = input.split_once('=') else {
+                        bail!(
+                            "cross-am step {:?} input {:?} must use label=path",
+                            step.name,
+                            input
+                        );
+                    };
+                    if label.trim().is_empty() || path.trim().is_empty() {
+                        bail!(
+                            "cross-am step {:?} input {:?} must include non-empty label and path",
+                            step.name,
+                            input
+                        );
+                    }
+                }
+                if step.k == Some(0) {
+                    bail!("cross-am step {:?} must set k >= 1", step.name)
+                }
+                Ok(())
+            }
             SuiteStep::Latency(step) => {
                 validate_profile_name("latency profile", step.profile.as_deref())?;
                 if step.sweep.is_empty() {
@@ -1578,6 +1634,7 @@ impl SuiteStep {
             SuiteStep::CorpusPrepare(step) => Ok(expand_corpus_prepare(step)),
             SuiteStep::Load(step) => Ok(expand_load(step, defaults)),
             SuiteStep::Recall(step) => Ok(expand_recall(step, defaults)),
+            SuiteStep::CrossAm(step) => Ok(expand_cross_am(step)),
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
@@ -1606,7 +1663,13 @@ impl SuiteStep {
                 }
             }
             SuiteStep::Load(step) => step.log_file.iter().cloned().collect(),
-            SuiteStep::Recall(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::Recall(step) => step
+                .log_output
+                .iter()
+                .chain(step.predictions_output.iter())
+                .cloned()
+                .collect(),
+            SuiteStep::CrossAm(step) => vec![step.log_output.clone()],
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
@@ -1632,6 +1695,11 @@ impl SuiteStep {
                 }
                 paths
             }
+            SuiteStep::CrossAm(step) => step
+                .inputs
+                .iter()
+                .filter_map(|input| input.split_once('=').map(|(_, path)| PathBuf::from(path)))
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -1662,6 +1730,12 @@ impl SuiteStep {
                 paths
             }
             SuiteStep::Explain(step) => vec![step.sql_file.clone()],
+            SuiteStep::Recall(step) => step
+                .log_output
+                .iter()
+                .chain(step.predictions_output.iter())
+                .cloned()
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -1826,6 +1900,23 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
         step.truth_cache_dir.as_deref(),
     );
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
+    push_opt_path(
+        &mut args,
+        "--predictions-output",
+        step.predictions_output.as_deref(),
+    );
+    args
+}
+
+fn expand_cross_am(step: &CrossAmStep) -> Vec<String> {
+    let mut args = vec!["bench".into(), "cross-am".into()];
+    for input in &step.inputs {
+        push_arg(&mut args, "--input", input);
+    }
+    if let Some(k) = step.k {
+        push_arg(&mut args, "--k", &k.to_string());
+    }
+    push_arg_path(&mut args, "--log-output", &step.log_output);
     args
 }
 
@@ -2439,12 +2530,68 @@ mod tests {
             truth_cache_file: Some("truth.json".into()),
             truth_cache_dir: None,
             log_output: Some("recall.log".into()),
+            predictions_output: Some("predictions.json".into()),
         };
         let args = expand_recall(&step, &defaults);
         assert!(args.windows(2).any(|w| w == ["--profile", "ec_ivf"]));
         assert!(args.windows(2).any(|w| w == ["--queries-limit", "100"]));
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--predictions-output", "predictions.json"]));
+    }
+
+    #[test]
+    fn expands_cross_am_with_inputs_and_log_output() {
+        let step = CrossAmStep {
+            name: "consistency".into(),
+            tags: vec!["cross-am".into()],
+            inputs: vec![
+                "hnsw=target/hnsw-predictions.json".into(),
+                "diskann=target/diskann-predictions.json".into(),
+            ],
+            k: Some(10),
+            log_output: "target/cross-am.log".into(),
+        };
+
+        let args = expand_cross_am(&step);
+
+        assert_eq!(args[..2], ["bench", "cross-am"]);
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--input", "hnsw=target/hnsw-predictions.json"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--input", "diskann=target/diskann-predictions.json"]));
+        assert!(args.windows(2).any(|w| w == ["--k", "10"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--log-output", "target/cross-am.log"]));
+    }
+
+    #[test]
+    fn validates_cross_am_inputs_are_labeled_paths() {
+        let cfg: SuiteConfig = serde_json::from_str(
+            r#"{
+              "name": "cross-am",
+              "schema_version": 1,
+              "steps": [
+                {
+                  "kind": "cross-am",
+                  "name": "bad",
+                  "inputs": ["hnsw=target/hnsw.json", "target/diskann.json"],
+                  "log_output": "target/cross-am.log"
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(validate_config(&cfg)
+            .unwrap_err()
+            .to_string()
+            .contains("must use label=path"));
     }
 
     #[test]
@@ -2537,6 +2684,7 @@ mod tests {
             truth_cache_file: None,
             truth_cache_dir: None,
             log_output: None,
+            predictions_output: None,
         });
         let args = SuiteRunOptions {
             config: "suite.json".into(),
@@ -2569,6 +2717,45 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].get("nprobe").map(String::as_str), Some("96"));
         assert_eq!(rows[0].get("recall@k").map(String::as_str), Some("0.9980"));
+    }
+
+    #[test]
+    fn parses_cross_am_result_table_for_thresholds() {
+        let rows = parse_table_rows(
+            "┌──────────────┬─────────┬───┬───────────┬───────────────┐\n\
+             │ pair         ┆ queries ┆ k ┆ jaccard@k ┆ kendall_tau@k │\n\
+             ╞══════════════╪═════════╪═══╪═══════════╪═══════════════╡\n\
+             │ hnsw~diskann ┆ 2       ┆ 3 ┆ 0.7500    ┆ -0.3333       │\n\
+             └──────────────┴─────────┴───┴───────────┴───────────────┘\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].get("pair").map(String::as_str),
+            Some("hnsw~diskann")
+        );
+
+        let threshold = ThresholdConfig {
+            name: "jaccard-floor".into(),
+            step: "consistency".into(),
+            metric: "cross_am".into(),
+            filters: BTreeMap::from([("pair".into(), "hnsw~diskann".into())]),
+            field: "jaccard@k".into(),
+            op: ThresholdOp::Gte,
+            value: 0.7,
+        };
+        let result = evaluate_threshold(
+            &threshold,
+            &[ResultRow {
+                suite: "suite".into(),
+                step: "consistency".into(),
+                kind: "cross-am".into(),
+                metric: "cross_am".into(),
+                artifact: "cross-am.log".into(),
+                values: rows[0].clone(),
+            }],
+        );
+        assert!(result.passed);
+        assert_eq!(result.actual, Some(0.7500));
     }
 
     #[test]

@@ -24,6 +24,24 @@
       "field": "recall@k",
       "op": "gte",
       "value": 0.55
+    },
+    {
+      "name": "hnsw-diskann-jaccard-report-floor",
+      "step": "hnsw-diskann-consistency",
+      "metric": "cross_am",
+      "filters": { "pair": "hnsw~diskann" },
+      "field": "jaccard@k",
+      "op": "gte",
+      "value": 0.1
+    },
+    {
+      "name": "hnsw-diskann-kendall-valid-range",
+      "step": "hnsw-diskann-consistency",
+      "metric": "cross_am",
+      "filters": { "pair": "hnsw~diskann" },
+      "field": "kendall_tau@k",
+      "op": "gte",
+      "value": -1.0
     }
   ],
   "steps": [
@@ -36,7 +54,8 @@
       "k": 10,
       "sweep": [128],
       "truth_cache_file": "target/gates/cross-am-small/real10k-truth-k10.json",
-      "log_output": "target/gates/cross-am-small/hnsw-real10k-k10.log"
+      "log_output": "target/gates/cross-am-small/hnsw-real10k-k10.log",
+      "predictions_output": "target/gates/cross-am-small/hnsw-real10k-k10-predictions.json"
     },
     {
       "kind": "recall",
@@ -47,7 +66,19 @@
       "k": 10,
       "sweep": [200],
       "truth_cache_file": "target/gates/cross-am-small/real10k-truth-k10.json",
-      "log_output": "target/gates/cross-am-small/diskann-real10k-k10.log"
+      "log_output": "target/gates/cross-am-small/diskann-real10k-k10.log",
+      "predictions_output": "target/gates/cross-am-small/diskann-real10k-k10-predictions.json"
+    },
+    {
+      "kind": "cross-am",
+      "name": "hnsw-diskann-consistency",
+      "tags": ["cross-am", "small", "pr"],
+      "inputs": [
+        "hnsw=target/gates/cross-am-small/hnsw-real10k-k10-predictions.json",
+        "diskann=target/gates/cross-am-small/diskann-real10k-k10-predictions.json"
+      ],
+      "k": 10,
+      "log_output": "target/gates/cross-am-small/hnsw-diskann-consistency.log"
     }
   ]
 }

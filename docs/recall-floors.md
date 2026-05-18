@@ -10,7 +10,7 @@ before becoming full release criteria.
 | --- | --- | --- | --- |
 | `make recall-gate` | `fixtures/gates/recall-gate-small.json` | PR | Fast exact-KNN recall floor check on generated small fixtures. |
 | `make recall-gate-full` | `fixtures/gates/recall-gate-full.json` | Nightly | Larger HNSW sweep over the same fixture and truth-cache path. |
-| `make cross-am-gate` | `fixtures/gates/cross-am-gate-small.json` | PR candidate, report-first | Runs multiple AMs against the same exact truth cache so cross-AM drift is visible in one suite manifest. |
+| `make cross-am-gate` | `fixtures/gates/cross-am-gate-small.json` | PR candidate, report-first | Runs multiple AMs against the same exact truth cache and writes per-query top-k predictions so cross-AM drift is visible in one suite manifest. |
 | `make cost-gate` | `fixtures/gates/cost-gate-small.json` | PR | Captures cost-model snapshot rows, enforces positive modeled total cost, and compares against `fixtures/cost-queries/baseline.json`. |
 
 All gate configs write transient local output under `target/gates/`. Reviewable
@@ -41,10 +41,15 @@ query/source rows.
 | HNSW, `k=10`, `ef_search=200` | `recall@k >= 0.93` | NFR-003 headline floor for the 50k shape, reused here as a conservative burn-in floor. |
 | IVF, `k=10`, `nprobe=48`, `rerank_width=750` | `recall@k >= 0.84` | Burn-in floor from `reviews/task-47/002-live-small-gate`; the 512-row synthetic CI fixture measured `0.8500`. |
 | DiskANN, `k=10`, `list_size=200` | `recall@k >= 0.55` | Burn-in floor from `reviews/task-47/002-live-small-gate`; the 512-row synthetic CI fixture measured `0.5660`. |
+| HNSW vs DiskANN, `k=10` | `jaccard@k >= 0.10` | Report-first cross-AM floor. `jaccard@k` is averaged per-query top-k membership intersection over union. |
+| HNSW vs DiskANN, `k=10` | `kendall_tau@k >= -1.00` | Report-first validity range. `kendall_tau@k` is averaged over the union of both top-k lists with missing entries ranked at `k+1`. |
 
 Floor changes require a review packet that includes the raw recall table, exact
 truth-cache descriptor, corpus identity, query count, profile reloptions, and a
-short rationale for the new value.
+short rationale for the new value. Cross-AM floor changes also require the
+per-query prediction JSON files and the generated cross-AM metric table so a
+reviewer can inspect whether drift is membership loss, rank-order movement, or
+both.
 
 ## Cost Gate Status
 
