@@ -1629,22 +1629,7 @@ where
         );
     }
 
-    let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        pgrx::error!(
-            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
-            tuple_tid.block_number
-        );
-    }
-
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    decode(tuple_bytes)
+    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
 }
 
 #[cfg(feature = "pg18")]
@@ -1668,6 +1653,19 @@ where
         );
     }
 
+    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
+}
+
+unsafe fn with_page_tuple_bytes<T, DecodeFn>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    tuple_tid: page::ItemPointer,
+    tuple_kind: &str,
+    decode: DecodeFn,
+) -> Result<T, String>
+where
+    DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+{
     let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");
