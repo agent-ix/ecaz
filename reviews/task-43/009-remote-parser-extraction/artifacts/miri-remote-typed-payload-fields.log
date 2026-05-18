@@ -1,0 +1,26 @@
+Script started on 2026-05-18 13:03:12-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/ecaz-76140ec678fb61eb)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:42:8
+   |
+42 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:47:8
+   |
+47 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+running 2 tests
+test am::ec_spire::production_executor_state_tests::miri_remote_typed_payload_fields_accept_valid_row_independent_payload ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_typed_payload_fields_reject_adversarial_shapes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1794 filtered out; finished in 9.44s
+
+
+Script done on 2026-05-18 13:04:00-07:00 [COMMAND_EXIT_CODE="0"]

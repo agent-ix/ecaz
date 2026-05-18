@@ -35,8 +35,8 @@ evidence or a concrete blocker with the extraction work needed.
 | --- | --- | --- | --- |
 | G1 | Default Miri and Tree Borrows are first-class hardening lanes. | Done | Packets 002 and 005; `miri-full` is in `hardening-nightly-local`; `make-miri-tree.log` passed 35 tests. |
 | G2 | `miri-many-seeds` includes at least one real threaded/atomic `miri_` test. | Done | Packet 007 adds `miri_parallel_worker_slots_are_unique_under_threaded_contention`; targeted `0..128` many-seeds passed. |
-| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | Packet 008 closes DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, and SPIRE routing breadth rows. Remote typed payloads, SPIRE delete-delta/vacuum, SPIRE serialization deltas, and mutation probes remain open. |
-| G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Not done | Extract/test parser helpers from remote candidate payload handling. |
+| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | Packets 008 and 009 close DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, SPIRE routing, and remote parser breadth rows. SPIRE delete-delta/vacuum, SPIRE serialization deltas, and mutation probes remain open. |
+| G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Done | Packet 009 extracts field-level typed payload validation and covers valid/adversarial fields under Miri. |
 | G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Not done | Cover pure object-store/delete-delta tests or document exact blocker. |
 | G6 | cargo-careful mirrors every path-liftable Miri surface. | Partial | Packet 008 proves the path-lifted DiskANN/HNSW careful harness at 69 tests; SPIRE scan/routing and future extracted helpers still need mirroring or blockers. |
 | G7 | Mutation/sensitivity probes exist for each major subsystem. | Not done | Add temporary diffs and failure logs by subsystem. |
@@ -53,6 +53,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `005-coordinator-serialization-miri-prefixes` | 35-test aggregate, Tree Borrows, many-seeds execution, careful 67-test harness, coordinator/serialization additions. | Real concurrent many-seeds coverage; mutation probes; full strategy breadth. |
 | `007-real-many-seeds-parallel-state` | Real threaded common-parallel shared-state test passes under default Miri, Tree Borrows, and `0..128` many-seeds. | Full campaign breadth; mutation probe for common parallel state. |
 | `008-breadth-closure-existing-tests` | 32 targeted Miri tests across DiskANN graph, DiskANN vacuum, HNSW graph, SPIRE top-k, and SPIRE routing; careful harness passes 69 tests. | Remote typed payload validation; SPIRE delete-delta/vacuum visibility; SPIRE serialization delta helpers; mutation probes; final aggregate campaign. |
+| `009-remote-parser-extraction` | Row-independent remote typed payload validation passes targeted Miri, including valid fields, invalid hex, byte caps, width mismatches, OID/collation parsing, and transport/format constraints. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 
 ## Subsystem Coverage Matrix
 
@@ -161,12 +162,12 @@ Status values:
 | --- | --- | --- |
 | Row byte cap | Done | `miri_remote_payload_caps_reject_oversized_rows_and_batches`. |
 | Batch row cap | Done | Same test. |
-| Valid typed payload hex byte count | Partial | Existing test covers valid count only as part of cap test. |
-| Odd-length hex rejection | Not done | Add/promote dedicated Miri test. |
-| Invalid hex rejection | Not done | Extract validation beyond length if production parser currently relies on Row decode. |
-| Payload width mismatch | Not done | Extract Row-independent typed-payload schema validation. |
-| OID / collation / format / transport constraints | Not done | Extract pure descriptor validation where possible. |
-| cargo-careful mirror | Not done | Mirror extracted pure helper if dependency closure permits. |
+| Valid typed payload hex byte count | Done | Packet 009 `miri_remote_typed_payload_fields_accept_valid_row_independent_payload`. |
+| Odd-length hex rejection | Done | Packet 009 `miri_remote_typed_payload_fields_reject_adversarial_shapes`. |
+| Invalid hex rejection | Done | Packet 009 `miri_remote_typed_payload_fields_reject_adversarial_shapes`. |
+| Payload width mismatch | Done | Packet 009 covers payload vector and collation width mismatches before Row decoding. |
+| OID / collation / format / transport constraints | Done | Packet 009 covers invalid type OID, invalid collation OID, non-ready transport status, unsupported transport, and bad per-column format. |
+| cargo-careful mirror | Blocked | The extracted helper still lives inside the pgrx SPIRE coordinator include module and returns `pg_sys::Oid` values in `SpireRemoteTypedTuplePayload`. Careful mirroring requires either a pgrx-free OID newtype/adapter or a remote-payload micro-harness that shims only this type boundary. |
 | Mutation probe | Not done | Accept invalid hex or skip cap check temporarily and record failure. |
 
 ### Serialization / Layout
@@ -208,7 +209,7 @@ claims, then the final campaign packet must run the aggregate matrix.
 | `006-safety-campaign-tracker` | Install this tracker and commit reviewer feedback. | Done |
 | `007-real-many-seeds-parallel-state` | Add threaded/atomic Miri coverage for real common parallel shared state. | Done |
 | `008-breadth-closure-existing-tests` | Promote existing small pure tests named in packet 001 across DiskANN, HNSW, SPIRE top-k, routing, and vacuum. | Done |
-| `009-remote-parser-extraction` | Extract/test Row-independent typed payload parser validation. | Not started |
+| `009-remote-parser-extraction` | Extract/test Row-independent typed payload parser validation. | Done |
 | `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Not started |
 | `011-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Not started |
 | `012-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Not started |
