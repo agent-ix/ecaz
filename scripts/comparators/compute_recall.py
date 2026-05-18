@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 SAMPLE_RE = re.compile(
-    r"INFO:\s+SAMPLE\s+qid=(\d+)\s+ms=([\d.]+)\s+ids=\{([\d,]+)\}"
+    r"INFO:\s+(?:SAMPLE|GT)\s+qid=(\d+)\s+ms=([\d.]+)\s+ids=\{([\d,]+)\}"
 )
 
 
