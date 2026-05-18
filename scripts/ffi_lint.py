@@ -140,6 +140,18 @@ def self_test() -> int:
             "}\n",
         ),
         (
+            "src/am/raw_spi.rs",
+            "fn leaked_tuptable(table: *mut pg_sys::SPITupleTable) {\n"
+            "    unsafe { pg_sys::SPI_freetuptable(table) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/spi_guard.rs",
+            "fn wrapper_only(table: *mut pg_sys::SPITupleTable) {\n"
+            "    unsafe { pg_sys::SPI_freetuptable(table) };\n"
+            "}\n",
+        ),
+        (
             "src/am/read_stream_leak.rs",
             "fn leaked_stream(stream: *mut pg_sys::ReadStream) {\n"
             "    let _buffer = unsafe { pg_sys::read_stream_next_buffer(stream) };\n"
@@ -157,6 +169,7 @@ def self_test() -> int:
     expected_fragments = [
         "src/am/leaky_buffer.rs:2: raw buffer pin/lock APIs",
         "src/am/raw_lwlock.rs:2: raw LWLock APIs",
+        "src/am/raw_spi.rs:2: raw SPI tuptable release API",
         "src/am/read_stream_leak.rs:2: read_stream_next_buffer result must be adopted",
     ]
     missing = [
@@ -169,6 +182,7 @@ def self_test() -> int:
         for violation in violations
         if violation.startswith("src/storage/buffer_guard.rs:")
         or violation.startswith("src/storage/lock_guard.rs:")
+        or violation.startswith("src/storage/spi_guard.rs:")
         or violation.startswith("src/am/read_stream_adopted.rs:")
     ]
     if missing or unexpected_allowed or len(violations) != len(expected_fragments):

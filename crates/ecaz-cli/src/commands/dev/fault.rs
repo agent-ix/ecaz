@@ -1141,6 +1141,7 @@ fn memory_major_workload_sweep_limit() -> i32 {
     100
 }
 
+#[cfg(target_os = "linux")]
 async fn run_memory_rlimit_oom_probe(
     conn: &ConnectionOptions,
     rows: i64,
@@ -1162,6 +1163,25 @@ async fn run_memory_rlimit_oom_probe(
     Ok(())
 }
 
+#[cfg(not(target_os = "linux"))]
+async fn run_memory_rlimit_oom_probe(
+    _conn: &ConnectionOptions,
+    _rows: i64,
+    ams: &[FaultAm],
+) -> Result<()> {
+    let am_names = ams
+        .iter()
+        .map(|am| am.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    crate::ecaz_println!(
+        "[fault] memory_rlimit_oom_skipped target_os={} ams={am_names} reason=linux-only",
+        std::env::consts::OS
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 async fn run_memory_rlimit_oom_case(
     conn: &ConnectionOptions,
     am: FaultAm,
@@ -1207,15 +1227,18 @@ async fn run_memory_rlimit_oom_case(
     }
 }
 
+#[cfg(target_os = "linux")]
 fn rlimit_oom_workload_rows(rows: i64) -> i64 {
     rows.saturating_mul(500).clamp(20_000, 200_000)
 }
 
+#[cfg(target_os = "linux")]
 fn rlimit_oom_limit_bytes(pid: i32) -> Result<u64> {
     let vm_size_bytes = linux_backend_vm_size_bytes(pid)?;
     Ok(vm_size_bytes.saturating_add(rlimit_oom_headroom_bytes()))
 }
 
+#[cfg(target_os = "linux")]
 fn rlimit_oom_headroom_bytes() -> u64 {
     1024 * 1024
 }
@@ -1330,6 +1353,7 @@ async fn wait_for_postmaster_recovery(conn: &ConnectionOptions, label: &str) -> 
     ))
 }
 
+#[cfg(target_os = "linux")]
 async fn assert_new_fault_session_usable(conn: &ConnectionOptions, label: &str) -> Result<()> {
     let client = connect_fault(conn, "oom-recovery").await?;
     client
@@ -1340,6 +1364,7 @@ async fn assert_new_fault_session_usable(conn: &ConnectionOptions, label: &str) 
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn is_oom_class_error(error: &tokio_postgres::Error) -> bool {
     error.as_db_error().is_some_and(|db| {
         db.code().code() == "53200" || db.message().to_ascii_lowercase().contains("memory")
@@ -1360,13 +1385,6 @@ fn linux_backend_vm_size_bytes(pid: i32) -> Result<u64> {
     Ok(vm_size_kb.saturating_mul(1024))
 }
 
-#[cfg(not(target_os = "linux"))]
-fn linux_backend_vm_size_bytes(_pid: i32) -> Result<u64> {
-    Err(eyre!(
-        "RLIMIT_AS backend OOM probe is only supported on Linux"
-    ))
-}
-
 #[cfg(target_os = "linux")]
 fn set_backend_address_space_limit(pid: i32, limit_bytes: u64) -> Result<()> {
     let limit = libc::rlimit64 {
@@ -1382,13 +1400,6 @@ fn set_backend_address_space_limit(pid: i32, limit_bytes: u64) -> Result<()> {
             std::io::Error::last_os_error()
         ))
     }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn set_backend_address_space_limit(_pid: i32, _limit_bytes: u64) -> Result<()> {
-    Err(eyre!(
-        "RLIMIT_AS backend OOM probe is only supported on Linux"
-    ))
 }
 
 async fn run_slow_disk_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
