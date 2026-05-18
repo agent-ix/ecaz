@@ -1508,24 +1508,22 @@ unsafe fn apply_repair_plans_on_page(
     plans: &[LayerRepairPlan],
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to open layer0-repair block {block_number}");
-    }
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut changed = false;
 
     let mut start = 0;
@@ -1602,7 +1600,6 @@ unsafe fn apply_repair_plans_on_page(
     } else {
         std::mem::drop(wal_txn);
     }
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 fn apply_repair_plan(
@@ -1809,21 +1806,19 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     tids: &[page::ItemPointer],
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to open finalize block {block_number}");
-    }
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let mut updates = Vec::new();
 
     for tid in tids {
@@ -1901,17 +1896,15 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     }
 
     if updates.is_empty() {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
 
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let wal_page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates) };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 fn compare_item_pointers(
