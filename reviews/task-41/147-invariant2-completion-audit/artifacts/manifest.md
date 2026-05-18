@@ -37,8 +37,7 @@
 ### `task41-packet-index.log`
 
 - command: `find reviews/task-41 -maxdepth 2 -name request.md -printf '%h\\n' | sed 's#reviews/task-41/##' | sort`
-- result: recorded packet sequence through packet 146 before this request was
-  written.
+- result: recorded packet sequence through packet 147.
 
 ### `cargo-fmt-check.log`
 
