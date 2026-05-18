@@ -10,8 +10,8 @@ set -euo pipefail
 
 COMPARATOR_NAME="pgvector"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
-source "$SCRIPT_DIR/_bench_lib.sh"
+source "$SCRIPT_DIR/../_common.sh"
+source "$SCRIPT_DIR/../_bench_lib.sh"
 
 OUT="" SIZE="" DB="${PGDATABASE:-tqvector_bench}" ITERATIONS=200 K=10
 

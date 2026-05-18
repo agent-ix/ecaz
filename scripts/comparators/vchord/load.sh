@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Load corpus into pgvectorscale tables + build StreamingDiskANN index.
+# Load corpus into vchord (VectorChord) tables + build RaBitQ-on-IVF
+# index. The most relevant comparator for ecaz's RaBitQ-on-IVF work.
 set -euo pipefail
 
-COMPARATOR_NAME="pgvectorscale"
+COMPARATOR_NAME="vchord"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
 
 SIZE="" CORPUS="" QUERIES="" DIM="" DB="${PGDATABASE:-tqvector_bench}"
 
@@ -26,13 +27,13 @@ done
 
 export PGDATABASE="$DB" PGHOST="${PGHOST:-/tmp}" PGUSER="${PGUSER:-postgres}"
 
-if ! comparator_extension_available_in_pg vectorscale; then
-  comparator_log "vectorscale ext not installed; run install_pgvectorscale.sh"; exit 1
+if ! comparator_extension_available_in_pg vchord; then
+  comparator_log "vchord ext not installed; run install_vchord.sh"; exit 1
 fi
 comparator_require_pgvector
-psql -c "CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;" >/dev/null 2>&1
+psql -c "CREATE EXTENSION IF NOT EXISTS vchord CASCADE;" >/dev/null 2>&1
 
-prefix="real_${SIZE}_pgvscale"
+prefix="real_${SIZE}_vchord"
 if ! comparator_table_loaded "${prefix}_corpus"; then
   comparator_load_vector_table "${prefix}_corpus" "$CORPUS" "$DIM"
 fi
@@ -40,16 +41,24 @@ if ! comparator_table_loaded "${prefix}_queries"; then
   comparator_load_vector_table "${prefix}_queries" "$QUERIES" "$DIM"
 fi
 
-# pgvectorscale's StreamingDiskANN builder also fills maintenance_work_mem
-# at scale: emits "Builder neighbor cache is full after processing N
-# vectors; consider increasing maintenance_work_mem" and falls back to
-# slow path. Same 4 GB default as load_pgvector.sh.
 MAINT_WORK_MEM="${MAINT_WORK_MEM:-4GB}"
 
-idx="${prefix}_diskann_idx"
+# IVF list count: sqrt(N) heuristic — matches the pgvector IVFFlat
+# defaults so the two IVF-family comparators run on equal footing.
+LISTS="$(comparator_nlists_for_size "$SIZE")"
+
+idx="${prefix}_rabitq_idx"
 if ! psql -tAc "select 1 from pg_indexes where indexname='$idx';" | grep -q 1; then
-  comparator_log "building $idx (pgvectorscale StreamingDiskANN, maintenance_work_mem=$MAINT_WORK_MEM)"
-  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $idx ON ${prefix}_corpus USING diskann (embedding vector_ip_ops);"
+  comparator_log "building $idx (vchordrq RaBitQ-on-IVF, lists=$LISTS, maintenance_work_mem=$MAINT_WORK_MEM)"
+  psql -v ON_ERROR_STOP=1 <<SQL
+SET maintenance_work_mem = '$MAINT_WORK_MEM';
+CREATE INDEX $idx ON ${prefix}_corpus USING vchordrq (embedding vector_ip_ops)
+WITH (options = \$vco\$
+residual_quantization = true
+[build.internal]
+lists = [$LISTS]
+\$vco\$);
+SQL
 fi
 
 comparator_log "done. tables: ${prefix}_corpus, ${prefix}_queries; index: $idx"

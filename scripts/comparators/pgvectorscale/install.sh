@@ -9,7 +9,7 @@ set -euo pipefail
 
 COMPARATOR_NAME="pgvectorscale"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
 
 PGVECTORSCALE_VERSION="${PGVECTORSCALE_VERSION:-0.9.0}"
 PG_MAJOR="${PG_MAJOR:-18}"

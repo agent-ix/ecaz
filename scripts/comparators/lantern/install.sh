@@ -7,7 +7,7 @@ set -euo pipefail
 
 COMPARATOR_NAME="lantern"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
 
 LANTERN_VERSION="${LANTERN_VERSION:-v0.5.0}"
 BUILD_DIR="${BUILD_DIR:-$COMPARATORS_BUILD_DIR_DEFAULT}"

@@ -12,7 +12,7 @@ set -euo pipefail
 
 COMPARATOR_NAME="pgvector"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
 
 SIZE="" CORPUS="" QUERIES="" DIM="" DB="${PGDATABASE:-tqvector_bench}"
 HNSW_M=16 HNSW_EFC=64 IVFFLAT_LISTS=""

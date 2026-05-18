@@ -10,7 +10,7 @@ set -euo pipefail
 
 COMPARATOR_NAME="vchord"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
 
 VCHORD_VERSION="${VCHORD_VERSION:-1.1.1}"
 PG_MAJOR="${PG_MAJOR:-18}"

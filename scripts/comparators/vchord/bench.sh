@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Latency bench for pgvectorscale (StreamingDiskANN). Writes to
-# <out>/<size>/pgvscale/diskann/.
+# Latency bench for VectorChord (vchord) RaBitQ-on-IVF.
 set -euo pipefail
 
-COMPARATOR_NAME="pgvectorscale"
+COMPARATOR_NAME="vchord"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
-source "$SCRIPT_DIR/_bench_lib.sh"
+source "$SCRIPT_DIR/../_common.sh"
+source "$SCRIPT_DIR/../_bench_lib.sh"
 
 OUT="" SIZE="" DB="${PGDATABASE:-tqvector_bench}" ITERATIONS=200 K=10
 while [[ $# -gt 0 ]]; do
@@ -25,7 +24,7 @@ done
 export PGDATABASE="$DB" PGHOST="${PGHOST:-/tmp}" PGUSER="${PGUSER:-postgres}"
 
 comparator_bench_latency \
-  --prefix "real_${SIZE}_pgvscale" \
+  --prefix "real_${SIZE}_vchord" \
   --op "<#>" \
-  --outdir "$OUT/$SIZE/pgvscale/diskann" \
+  --outdir "$OUT/$SIZE/vchord/rabitq" \
   --iterations "$ITERATIONS" --k "$K"

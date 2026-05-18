@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Latency bench for Lantern HNSW.
+# Latency bench for pgvectorscale (StreamingDiskANN). Writes to
+# <out>/<size>/pgvscale/diskann/.
 set -euo pipefail
 
-COMPARATOR_NAME="lantern"
+COMPARATOR_NAME="pgvectorscale"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
-source "$SCRIPT_DIR/_bench_lib.sh"
+source "$SCRIPT_DIR/../_common.sh"
+source "$SCRIPT_DIR/../_bench_lib.sh"
 
 OUT="" SIZE="" DB="${PGDATABASE:-tqvector_bench}" ITERATIONS=200 K=10
 while [[ $# -gt 0 ]]; do
@@ -23,9 +24,8 @@ done
 [[ -z "$OUT" || -z "$SIZE" ]] && { echo "Usage: $0 --out <dir> --size <S>"; exit 1; }
 export PGDATABASE="$DB" PGHOST="${PGHOST:-/tmp}" PGUSER="${PGUSER:-postgres}"
 
-# Lantern HNSW uses cosine distance by default (dist_cos_ops).
 comparator_bench_latency \
-  --prefix "real_${SIZE}_lantern" \
-  --op "<=>" \
-  --outdir "$OUT/$SIZE/lantern/hnsw" \
+  --prefix "real_${SIZE}_pgvscale" \
+  --op "<#>" \
+  --outdir "$OUT/$SIZE/pgvscale/diskann" \
   --iterations "$ITERATIONS" --k "$K"

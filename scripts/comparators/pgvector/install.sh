@@ -6,7 +6,7 @@ set -euo pipefail
 
 COMPARATOR_NAME="pgvector"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
 
 PGVECTOR_VERSION="${PGVECTOR_VERSION:-master}"
 BUILD_DIR="${BUILD_DIR:-$COMPARATORS_BUILD_DIR_DEFAULT}"
