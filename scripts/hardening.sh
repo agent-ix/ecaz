@@ -221,12 +221,15 @@ EOF
     exit 2
   fi
   mkdir -p "$output_dir"
-  local args=(mutants --file "$file" --output "$output_dir/$(basename "$file").mutants")
+  local mutate_file="$file"
+  local args=(mutants)
   case "$file" in
     src/quant/*|src/storage/page.rs)
-      args+=(--test-package ecaz-careful-hardening)
+      mutate_file="hardening/careful/src/../../../$file"
+      args+=(--package ecaz-careful-hardening)
       ;;
   esac
+  args+=(--file "$mutate_file" --output "$output_dir/$(basename "$file").mutants")
   if [ "$jobs" != "0" ]; then
     args+=(--jobs "$jobs")
   fi
