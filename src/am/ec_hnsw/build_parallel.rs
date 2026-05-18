@@ -10,6 +10,7 @@ use std::time::Instant;
 use pgrx::pg_sys;
 
 use super::{build, graph, insert, options, page, search, shared, source};
+use crate::storage::lock_guard::LwLockGuard;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
@@ -423,48 +424,25 @@ impl EcHnswConcurrentDsmInsertScratch {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub(super) struct EcHnswConcurrentDsmLockOps {
-    acquire_shared: unsafe fn(*mut pg_sys::LWLock),
-    acquire_exclusive: unsafe fn(*mut pg_sys::LWLock),
-    release: unsafe fn(*mut pg_sys::LWLock),
+    acquire_shared: unsafe fn(*mut pg_sys::LWLock) -> LwLockGuard,
+    acquire_exclusive: unsafe fn(*mut pg_sys::LWLock) -> LwLockGuard,
 }
 
 #[allow(dead_code)]
 impl EcHnswConcurrentDsmLockOps {
     pub(super) fn postgres() -> Self {
         Self {
-            acquire_shared: concurrent_dsm_lwlock_acquire_shared,
-            acquire_exclusive: concurrent_dsm_lwlock_acquire_exclusive,
-            release: concurrent_dsm_lwlock_release,
+            acquire_shared: LwLockGuard::acquire_shared,
+            acquire_exclusive: LwLockGuard::acquire_exclusive,
         }
     }
 
-    unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> EcHnswConcurrentDsmLockGuard {
-        unsafe { (self.acquire_shared)(lock) };
-        EcHnswConcurrentDsmLockGuard {
-            lock,
-            release: self.release,
-        }
+    unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        unsafe { (self.acquire_shared)(lock) }
     }
 
-    unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> EcHnswConcurrentDsmLockGuard {
-        unsafe { (self.acquire_exclusive)(lock) };
-        EcHnswConcurrentDsmLockGuard {
-            lock,
-            release: self.release,
-        }
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-struct EcHnswConcurrentDsmLockGuard {
-    lock: *mut pg_sys::LWLock,
-    release: unsafe fn(*mut pg_sys::LWLock),
-}
-
-impl Drop for EcHnswConcurrentDsmLockGuard {
-    fn drop(&mut self) {
-        unsafe { (self.release)(self.lock) };
+    unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        unsafe { (self.acquire_exclusive)(lock) }
     }
 }
 
@@ -1798,18 +1776,6 @@ unsafe fn concurrent_dsm_node_slots_mut<'a>(
             (*node).neighbor_slot_count as usize,
         )
     }
-}
-
-unsafe fn concurrent_dsm_lwlock_acquire_shared(lock: *mut pg_sys::LWLock) {
-    unsafe { pg_sys::LWLockAcquire(lock, pg_sys::LWLockMode::LW_SHARED) };
-}
-
-unsafe fn concurrent_dsm_lwlock_acquire_exclusive(lock: *mut pg_sys::LWLock) {
-    unsafe { pg_sys::LWLockAcquire(lock, pg_sys::LWLockMode::LW_EXCLUSIVE) };
-}
-
-unsafe fn concurrent_dsm_lwlock_release(lock: *mut pg_sys::LWLock) {
-    unsafe { pg_sys::LWLockRelease(lock) };
 }
 
 impl EcHnswParallelBuildSharedHeader {
@@ -3906,13 +3872,16 @@ mod tests {
 
     fn test_lock_ops() -> EcHnswConcurrentDsmLockOps {
         EcHnswConcurrentDsmLockOps {
-            acquire_shared: test_lock_noop,
-            acquire_exclusive: test_lock_noop,
-            release: test_lock_noop,
+            acquire_shared: test_lock_guard,
+            acquire_exclusive: test_lock_guard,
         }
     }
 
-    unsafe fn test_lock_noop(_lock: *mut pg_sys::LWLock) {}
+    unsafe fn test_lock_guard(lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        unsafe { LwLockGuard::from_acquired_with_release(lock, test_lock_noop_release) }
+    }
+
+    unsafe fn test_lock_noop_release(_lock: *mut pg_sys::LWLock) {}
 
     fn test_insert_config(dimensions: usize) -> EcHnswConcurrentDsmInsertConfig {
         EcHnswConcurrentDsmInsertConfig {

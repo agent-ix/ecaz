@@ -65,9 +65,9 @@ None.
 | `src/am/ec_hnsw/build.rs:96` | `ec_hnsw_build_callback` | guarded | `pgrx::pgrx_extern_c_guard` |
 | `src/am/ec_hnsw/build.rs:178` | `ec_hnsw_ambuild` | guarded | `pgrx::pgrx_extern_c_guard` |
 | `src/am/ec_hnsw/build.rs:303` | `ec_hnsw_ambuildempty` | guarded | `pgrx::pgrx_extern_c_guard` |
-| `src/am/ec_hnsw/build_parallel.rs:2478` | `ec_hnsw_parallel_build_callback` | guarded | `pgrx::pgrx_extern_c_guard` |
-| `src/am/ec_hnsw/build_parallel.rs:2501` | `ec_hnsw_parallel_build_main` | guarded | `#[pg_guard]` |
-| `src/am/ec_hnsw/build_parallel.rs:2514` | `ec_hnsw_parallel_graph_build_main` | guarded | `#[pg_guard]` |
+| `src/am/ec_hnsw/build_parallel.rs:2444` | `ec_hnsw_parallel_build_callback` | guarded | `pgrx::pgrx_extern_c_guard` |
+| `src/am/ec_hnsw/build_parallel.rs:2467` | `ec_hnsw_parallel_build_main` | guarded | `#[pg_guard]` |
+| `src/am/ec_hnsw/build_parallel.rs:2480` | `ec_hnsw_parallel_graph_build_main` | guarded | `#[pg_guard]` |
 | `src/am/ec_hnsw/insert.rs:381` | `ec_hnsw_aminsert` | guarded | `pgrx::pgrx_extern_c_guard` |
 | `src/am/ec_hnsw/options.rs:155` | `ec_hnsw_amoptions` | guarded | `pgrx::pgrx_extern_c_guard` |
 | `src/am/ec_hnsw/routine.rs:78` | `ec_hnsw_amvalidate` | guarded | `#[pg_guard]` |

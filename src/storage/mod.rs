@@ -5,6 +5,7 @@
 //! tuple codecs (e.g. `TqElementTuple`) stay under their owning AM.
 
 pub(crate) mod buffer_guard;
+pub(crate) mod lock_guard;
 pub mod page;
 pub(crate) mod relation_guard;
 pub(crate) mod scan_guard;
