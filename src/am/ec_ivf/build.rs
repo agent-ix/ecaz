@@ -694,19 +694,43 @@ fn build_tqvector_tuple(
 }
 
 unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
-    let original = datum
-        .cast_mut_ptr::<std::ffi::c_void>()
-        .cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-    if varlena.is_null() {
-        pgrx::error!("ec_ivf could not detoast {label}");
+    unsafe { DetoastedBuildDatum::from_datum(datum, label) }.to_vec()
+}
+
+#[derive(Debug)]
+struct DetoastedBuildDatum {
+    varlena: *mut pg_sys::varlena,
+    owned: bool,
+}
+
+impl DetoastedBuildDatum {
+    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+        let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+        if varlena.is_null() {
+            pgrx::error!("ec_ivf could not detoast {label}");
+        }
+        Self {
+            varlena,
+            owned: !ptr::eq(varlena, original),
+        }
     }
-    let owned = !ptr::eq(varlena, original);
-    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
-    if owned {
-        unsafe { pg_sys::pfree(varlena.cast()) };
+
+    fn as_bytes(&self) -> &[u8] {
+        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
     }
-    bytes
+
+    fn to_vec(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+}
+
+impl Drop for DetoastedBuildDatum {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { pg_sys::pfree(self.varlena.cast()) };
+        }
+    }
 }
 
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
