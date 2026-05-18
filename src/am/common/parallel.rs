@@ -1,5 +1,6 @@
 use std::ffi::{c_int, c_void};
 use std::mem::size_of;
+use std::ptr::{addr_of, addr_of_mut};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use pgrx::pg_sys;
@@ -189,8 +190,10 @@ unsafe fn worker_slots_ptr(state: *mut EcParallelScanState) -> *mut EcParallelWo
 }
 
 unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
-    let state_ref = unsafe { &mut *state };
-    state_ref.reserved_worker_slots = 0;
+    let worker_slot_count = unsafe { addr_of!((*state).worker_slot_count).read() };
+    let worker_slot_bytes = unsafe { addr_of!((*state).worker_slot_bytes).read() };
+    let rescan_epoch = unsafe { addr_of!((*state).rescan_epoch).read() };
+    unsafe { addr_of_mut!((*state).reserved_worker_slots).write(0) };
 
     unsafe {
         *coordinator_ptr(state) = EcParallelCoordinatorState {
@@ -201,12 +204,12 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
         };
     }
 
-    for slot_index in 0..state_ref.worker_slot_count {
+    for slot_index in 0..worker_slot_count {
         let slot = unsafe {
             worker_slots_ptr(state)
                 .cast::<u8>()
                 .add(checked_mul_size(
-                    state_ref.worker_slot_bytes,
+                    worker_slot_bytes,
                     slot_index as pg_sys::Size,
                     "parallel worker slot reset offset",
                 ))
@@ -216,7 +219,7 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             *slot = EcParallelWorkerSlot {
                 flags: AtomicU32::new(EC_PARALLEL_WORKER_SLOT_FREE),
                 slot_index,
-                observed_rescan_epoch: AtomicU32::new(state_ref.rescan_epoch),
+                observed_rescan_epoch: AtomicU32::new(rescan_epoch),
                 execution_phase: AtomicU32::new(EC_PARALLEL_WORKER_PHASE_IDLE),
                 scan_dimensions: AtomicU32::new(0),
                 bootstrap_frontier_limit: AtomicU32::new(0),
@@ -275,20 +278,22 @@ fn load_worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlo
     }
 }
 
-fn initialize_parallel_scan_state(state: &mut EcParallelScanState, worker_slot_count: u32) {
-    *state = EcParallelScanState {
-        magic: EC_PARALLEL_SCAN_STATE_MAGIC,
-        version: EC_PARALLEL_SCAN_STATE_VERSION,
-        flags: 0,
-        descriptor_bytes: ec_parallel_scan_descriptor_size_for(worker_slot_count),
-        coordinator_bytes: ec_parallel_scan_coordinator_size(),
-        worker_slot_bytes: ec_parallel_scan_worker_slot_size(),
-        worker_slot_count,
-        reserved_worker_slots: 0,
-        rescan_epoch: 0,
-        reserved0: 0,
-    };
-    unsafe { reset_parallel_scan_layout(state) };
+unsafe fn initialize_parallel_scan_state(state: *mut EcParallelScanState, worker_slot_count: u32) {
+    unsafe {
+        state.write(EcParallelScanState {
+            magic: EC_PARALLEL_SCAN_STATE_MAGIC,
+            version: EC_PARALLEL_SCAN_STATE_VERSION,
+            flags: 0,
+            descriptor_bytes: ec_parallel_scan_descriptor_size_for(worker_slot_count),
+            coordinator_bytes: ec_parallel_scan_coordinator_size(),
+            worker_slot_bytes: ec_parallel_scan_worker_slot_size(),
+            worker_slot_count,
+            reserved_worker_slots: 0,
+            rescan_epoch: 0,
+            reserved0: 0,
+        });
+        reset_parallel_scan_layout(state);
+    }
 }
 
 unsafe fn validate_parallel_scan_state(
@@ -377,10 +382,7 @@ pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
         return Err("AM-private parallel scan target was null");
     }
     unsafe {
-        initialize_parallel_scan_state(
-            &mut *target.cast::<EcParallelScanState>(),
-            worker_slot_count,
-        )
+        initialize_parallel_scan_state(target.cast::<EcParallelScanState>(), worker_slot_count)
     };
     Ok(())
 }
@@ -581,7 +583,23 @@ pub(crate) unsafe extern "C-unwind" fn ec_amparallelrescan(scan: pg_sys::IndexSc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::ptr;
+    use std::sync::{Arc, Barrier, Mutex};
+    use std::thread;
+
+    #[derive(Copy, Clone)]
+    struct SharedParallelScanState(*mut EcParallelScanState);
+
+    unsafe impl Send for SharedParallelScanState {}
+    unsafe impl Sync for SharedParallelScanState {}
+
+    impl SharedParallelScanState {
+        unsafe fn attachment(self) -> ParallelScanAttachment {
+            unsafe { validate_parallel_scan_state(self.0) }
+                .expect("shared parallel scan state should validate")
+        }
+    }
 
     fn worker_slot_header_snapshot(slot: &EcParallelWorkerSlot) -> (u32, u32, u32) {
         (
@@ -621,6 +639,23 @@ mod tests {
             unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
         }
         parallel_scan
+    }
+
+    unsafe fn test_parallel_scan_desc_and_target(
+        storage: &mut TestParallelScanStorage,
+    ) -> (pg_sys::ParallelIndexScanDesc, *mut c_void) {
+        let base = storage.bytes.as_mut_ptr();
+        let parallel_scan = base.cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        {
+            unsafe { (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET };
+        }
+        #[cfg(feature = "pg18")]
+        {
+            unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
+        }
+        let target = unsafe { base.add(TEST_PARALLEL_SCAN_OFFSET) }.cast::<c_void>();
+        (parallel_scan, target)
     }
 
     unsafe fn test_parallel_scan_target(storage: &mut TestParallelScanStorage) -> *mut c_void {
@@ -886,10 +921,130 @@ mod tests {
     }
 
     #[test]
-    fn publish_parallel_scan_worker_slot_runtime_snapshot_rejects_stale_epoch() {
+    fn miri_parallel_worker_slots_are_unique_under_threaded_contention() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
         let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let shared_state = SharedParallelScanState(target.cast::<EcParallelScanState>());
+        let worker_count = TEST_WORKER_SLOT_COUNT as usize + 2;
+        let start = Arc::new(Barrier::new(worker_count));
+        let claimed = Arc::new(Mutex::new(Vec::new()));
+        let attempted = Arc::new(Barrier::new(worker_count));
+
+        thread::scope(|scope| {
+            for worker_id in 0..worker_count {
+                let start = Arc::clone(&start);
+                let claimed = Arc::clone(&claimed);
+                let attempted = Arc::clone(&attempted);
+                scope.spawn(move || {
+                    start.wait();
+                    let attachment = unsafe { shared_state.attachment() };
+                    let claim = unsafe { claim_parallel_scan_worker_slot(&attachment) };
+                    match claim {
+                        Ok(slot_index) => {
+                            let runtime = EcParallelWorkerSlotRuntimeSnapshot {
+                                execution_phase: EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL,
+                                scan_dimensions: 768 + worker_id as u32,
+                                bootstrap_frontier_limit: 32,
+                                visible_frontier_len: worker_id as u32,
+                                scheduler_frontier_len: worker_id as u32 + 1,
+                                visited_count: worker_id as u32 + 2,
+                                emitted_count: worker_id as u32,
+                                active_result_pending_count: 1,
+                                active_result_has_current: worker_id % 2 == 0,
+                            };
+                            assert!(
+                                unsafe {
+                                    publish_parallel_scan_worker_slot_runtime_snapshot(
+                                        attachment.state,
+                                        slot_index,
+                                        attachment.rescan_epoch,
+                                        runtime,
+                                    )
+                                }
+                                .expect("claimed worker should publish runtime"),
+                                "claimed worker should publish into its active epoch slot"
+                            );
+                            claimed.lock().expect("claim log lock").push((
+                                worker_id as u32,
+                                slot_index,
+                                runtime,
+                            ));
+                            attempted.wait();
+                            assert!(
+                                unsafe {
+                                    release_parallel_scan_worker_slot(
+                                        attachment.state,
+                                        slot_index,
+                                        attachment.rescan_epoch,
+                                    )
+                                }
+                                .expect("claimed worker should release"),
+                                "claimed worker should release exactly once"
+                            );
+                        }
+                        Err(err) => {
+                            assert!(
+                                err.contains("capacity"),
+                                "unclaimed workers should fail only because slot capacity is exhausted: {err}"
+                            );
+                            attempted.wait();
+                        }
+                    }
+                });
+            }
+        });
+
+        let attachment = unsafe { shared_state.attachment() };
+        let claimed = claimed.lock().expect("claim log lock");
+        assert_eq!(
+            claimed.len(),
+            TEST_WORKER_SLOT_COUNT as usize,
+            "contention should allow exactly one live claim per worker slot"
+        );
+        let claimed_slots = claimed
+            .iter()
+            .map(|(_, slot_index, _)| *slot_index)
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            claimed_slots.len(),
+            TEST_WORKER_SLOT_COUNT as usize,
+            "concurrent claims must not duplicate a worker slot"
+        );
+        for slot_index in 0..TEST_WORKER_SLOT_COUNT {
+            assert!(
+                claimed_slots.contains(&slot_index),
+                "slot {slot_index} should be claimed exactly once under contention"
+            );
+            assert_eq!(
+                unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
+                    .expect("worker slot snapshot should read back after threaded release"),
+                EcParallelWorkerSlotSnapshot {
+                    flags: EC_PARALLEL_WORKER_SLOT_FREE,
+                    slot_index,
+                    observed_rescan_epoch: attachment.rescan_epoch,
+                    runtime: EcParallelWorkerSlotRuntimeSnapshot::idle(),
+                },
+                "threaded release should reset slot {slot_index} before making it free"
+            );
+        }
+        assert_eq!(
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .load(Ordering::Acquire),
+            0,
+            "all threaded releases should return the coordinator claim count to zero"
+        );
+    }
+
+    #[test]
+    fn miri_publish_parallel_scan_worker_slot_runtime_snapshot_rejects_stale_epoch() {
+        let mut storage = TestParallelScanStorage::default();
+        let (parallel_scan, target) = unsafe { test_parallel_scan_desc_and_target(&mut storage) };
 
         unsafe {
             initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
