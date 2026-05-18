@@ -1900,14 +1900,6 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
     opaque.query_values = query_values;
 }
 
-fn scan_query_values(opaque: &TqScanOpaque) -> &[f32] {
-    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
-        pgrx::error!("ec_hnsw scan state is missing raw query values");
-    }
-
-    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
-}
-
 unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
     if !opaque.query_values.is_null() {
         unsafe { pg_sys::pfree(opaque.query_values.cast()) };
@@ -2611,7 +2603,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
                 #[cfg(any(test, feature = "pg_test"))]
                 let dot_started = Instant::now();
                 let score =
-                    source::negative_inner_product(scan_query_values(opaque), source.as_slice());
+                    source::negative_inner_product(opaque.query_values(), source.as_slice());
                 #[cfg(any(test, feature = "pg_test"))]
                 let dot_elapsed_us = u64::try_from(dot_started.elapsed().as_micros())
                     .expect("timing should fit in u64");
@@ -5326,6 +5318,16 @@ pub(super) struct TqScanOpaque {
     stats_scan_finalized: bool,
     #[cfg(any(test, feature = "pg_test"))]
     pub(super) debug_profile: ScanDebugProfile,
+}
+
+impl TqScanOpaque {
+    fn query_values(&self) -> &[f32] {
+        if self.query_values.is_null() || self.query_dimensions == 0 {
+            pgrx::error!("ec_hnsw scan state is missing raw query values");
+        }
+
+        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+    }
 }
 
 impl Default for TqScanOpaque {
