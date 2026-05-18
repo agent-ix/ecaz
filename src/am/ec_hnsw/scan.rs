@@ -2592,8 +2592,8 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     record_grouped_rerank_heap_fetch(opaque, fetch_elapsed_us);
     #[cfg(any(test, feature = "pg_test"))]
     let decode_started = Instant::now();
-    let source = unsafe {
-        source::FlatFloat4SourceRef::from_datum(
+    let score = unsafe {
+        source::with_flat_float4_source_from_datum(
             source::required_slot_datum(
                 heap_rerank_state.slot(),
                 source_attribute.attnum,
@@ -2601,24 +2601,27 @@ unsafe fn score_grouped_heap_source_from_scan_state(
             ),
             source_attribute.kind,
             "PqFastScan heap rerank source vector",
+            |source| {
+                #[cfg(any(test, feature = "pg_test"))]
+                let decode_elapsed_us = u64::try_from(decode_started.elapsed().as_micros())
+                    .expect("timing should fit in u64");
+                #[cfg(not(any(test, feature = "pg_test")))]
+                let decode_elapsed_us = 0;
+                record_grouped_rerank_heap_decode_elapsed(opaque, decode_elapsed_us);
+                #[cfg(any(test, feature = "pg_test"))]
+                let dot_started = Instant::now();
+                let score =
+                    source::negative_inner_product(scan_query_values(opaque), source.as_slice());
+                #[cfg(any(test, feature = "pg_test"))]
+                let dot_elapsed_us = u64::try_from(dot_started.elapsed().as_micros())
+                    .expect("timing should fit in u64");
+                #[cfg(not(any(test, feature = "pg_test")))]
+                let dot_elapsed_us = 0;
+                record_grouped_rerank_heap_dot_elapsed(opaque, dot_elapsed_us);
+                score
+            },
         )
     };
-    #[cfg(any(test, feature = "pg_test"))]
-    let decode_elapsed_us =
-        u64::try_from(decode_started.elapsed().as_micros()).expect("timing should fit in u64");
-    #[cfg(not(any(test, feature = "pg_test")))]
-    let decode_elapsed_us = 0;
-    record_grouped_rerank_heap_decode_elapsed(opaque, decode_elapsed_us);
-    #[cfg(any(test, feature = "pg_test"))]
-    let dot_started = Instant::now();
-    let score = source::negative_inner_product(scan_query_values(opaque), source.as_slice());
-    #[cfg(any(test, feature = "pg_test"))]
-    let dot_elapsed_us =
-        u64::try_from(dot_started.elapsed().as_micros()).expect("timing should fit in u64");
-    #[cfg(not(any(test, feature = "pg_test")))]
-    let dot_elapsed_us = 0;
-    record_grouped_rerank_heap_dot_elapsed(opaque, dot_elapsed_us);
-    drop(source);
     unsafe { pg_sys::ExecClearTuple(heap_rerank_state.slot()) };
     score
 }

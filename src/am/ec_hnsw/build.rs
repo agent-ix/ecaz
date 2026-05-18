@@ -602,15 +602,14 @@ unsafe fn build_heap_tuple_from_indexed_datum(
 ) -> BuildTuple {
     match indexed_vector_kind {
         source::IndexedVectorKind::Ecvector => {
-            let indexed_vector = unsafe {
-                source::FlatFloat4SourceRef::from_datum(
+            let index_vector = unsafe {
+                source::with_flat_float4_source_from_datum(
                     vector_datum,
                     source::SourceDatumKind::Ecvector,
                     "indexed ecvector column",
+                    |indexed_vector| indexed_vector.as_slice().to_vec(),
                 )
             };
-            let index_vector = indexed_vector.as_slice().to_vec();
-            drop(indexed_vector);
             let (dimensions, gamma, code) = crate::quantize_embedding_to_code(
                 &index_vector,
                 crate::DEFAULT_QUANT_BITS,
@@ -732,13 +731,13 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
             )
         };
         let source_vector = unsafe {
-            source::FlatFloat4SourceRef::from_datum(
+            source::with_flat_float4_source_from_datum(
                 source_datum,
                 source_attribute.kind,
                 "ec_hnsw build_source_column",
+                |source_vector| source_vector.as_slice().to_vec(),
             )
         };
-        let source_vector = source_vector.as_slice().to_vec();
 
         let tuple = unsafe {
             build_heap_tuple_with_source(
