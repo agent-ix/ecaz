@@ -1,5 +1,5 @@
 use std::{
-    ffi::{c_int, CStr},
+    ffi::{c_int, c_void, CStr},
     marker::PhantomData,
     ptr,
 };
@@ -488,9 +488,49 @@ pub(crate) unsafe fn required_slot_datum(
     unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
-pub(crate) struct FlatFloat4ArrayRef<'datum> {
-    array_ptr: *mut pg_sys::ArrayType,
+#[derive(Debug)]
+struct DetoastedFloat4Datum {
+    varlena: *mut pg_sys::varlena,
     owned: bool,
+}
+
+impl DetoastedFloat4Datum {
+    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+        if datum.is_null() {
+            pgrx::error!("ec_hnsw does not support NULL {label}");
+        }
+
+        let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+        if varlena.is_null() {
+            pgrx::error!("ec_hnsw could not detoast {label}");
+        }
+
+        Self {
+            varlena,
+            owned: !ptr::eq(varlena, original),
+        }
+    }
+
+    fn as_array_ptr(&self) -> *mut pg_sys::ArrayType {
+        self.varlena.cast::<pg_sys::ArrayType>()
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+    }
+}
+
+impl Drop for DetoastedFloat4Datum {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { pg_sys::pfree(self.varlena.cast()) };
+        }
+    }
+}
+
+pub(crate) struct FlatFloat4ArrayRef<'datum> {
+    _detoasted: DetoastedFloat4Datum,
     data_ptr: *const f32,
     len: usize,
     _datum: PhantomData<&'datum [f32]>,
@@ -502,15 +542,8 @@ impl<'datum> FlatFloat4ArrayRef<'datum> {
             pgrx::error!("ec_hnsw does not support NULL {label}");
         }
 
-        let original = datum
-            .cast_mut_ptr::<std::ffi::c_void>()
-            .cast::<pg_sys::varlena>();
-        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
-        if varlena.is_null() {
-            pgrx::error!("ec_hnsw could not detoast {label}");
-        }
-        let array_ptr = varlena.cast::<pg_sys::ArrayType>();
-        let owned = !ptr::eq(varlena, original);
+        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+        let array_ptr = detoasted.as_array_ptr();
 
         let ndim = match usize::try_from(unsafe { (*array_ptr).ndim }) {
             Ok(value) => value,
@@ -540,8 +573,7 @@ impl<'datum> FlatFloat4ArrayRef<'datum> {
         }
 
         Self {
-            array_ptr,
-            owned,
+            _detoasted: detoasted,
             data_ptr,
             len,
             _datum: PhantomData,
@@ -553,17 +585,8 @@ impl<'datum> FlatFloat4ArrayRef<'datum> {
     }
 }
 
-impl Drop for FlatFloat4ArrayRef<'_> {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.array_ptr.cast()) };
-        }
-    }
-}
-
 pub(crate) struct FlatFloat4VarlenaRef<'datum> {
-    varlena_ptr: *mut pg_sys::varlena,
-    owned: bool,
+    _detoasted: DetoastedFloat4Datum,
     data_ptr: *const f32,
     len: usize,
     _datum: PhantomData<&'datum [f32]>,
@@ -575,42 +598,29 @@ impl<'datum> FlatFloat4VarlenaRef<'datum> {
             pgrx::error!("ec_hnsw does not support NULL {label}");
         }
 
-        let original = datum
-            .cast_mut_ptr::<std::ffi::c_void>()
-            .cast::<pg_sys::varlena>();
-        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
-        if varlena.is_null() {
-            pgrx::error!("ec_hnsw could not detoast {label}");
-        }
-        let owned = !ptr::eq(varlena, original);
-        let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) };
-        if bytes.len() % std::mem::size_of::<f32>() != 0 {
-            pgrx::error!("ec_hnsw {label} bytea payload length must be a multiple of 4 bytes");
-        }
-        let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
-        if !prefix.is_empty() || !suffix.is_empty() {
-            pgrx::error!("ec_hnsw {label} bytea payload is not aligned for float4 access");
-        }
+        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+        let (data_ptr, len) = {
+            let bytes = detoasted.as_bytes();
+            if bytes.len() % std::mem::size_of::<f32>() != 0 {
+                pgrx::error!("ec_hnsw {label} bytea payload length must be a multiple of 4 bytes");
+            }
+            let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
+            if !prefix.is_empty() || !suffix.is_empty() {
+                pgrx::error!("ec_hnsw {label} bytea payload is not aligned for float4 access");
+            }
+            (body.as_ptr(), body.len())
+        };
 
         Self {
-            varlena_ptr: varlena,
-            owned,
-            data_ptr: body.as_ptr(),
-            len: body.len(),
+            _detoasted: detoasted,
+            data_ptr,
+            len,
             _datum: PhantomData,
         }
     }
 
     pub(crate) fn as_slice(&self) -> &[f32] {
         unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
-    }
-}
-
-impl Drop for FlatFloat4VarlenaRef<'_> {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.varlena_ptr.cast()) };
-        }
     }
 }
 
