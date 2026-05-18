@@ -419,6 +419,8 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<V
 }
 
 #[derive(Debug)]
+// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
+// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
 struct DetoastedScanDatum {
     varlena: *mut pg_sys::varlena,
     owned: bool,

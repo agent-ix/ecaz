@@ -865,6 +865,8 @@ pub unsafe extern "C-unwind" fn ecvector_typmod_in(
 }
 
 #[derive(Debug)]
+// Detoast copies are palloc-owned. Drop frees copied arrays on normal Rust
+// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
 struct DetoastedTypmodArray {
     array: *mut pg_sys::ArrayType,
     owned: bool,

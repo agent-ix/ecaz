@@ -489,6 +489,8 @@ pub(crate) unsafe fn required_slot_datum(
 }
 
 #[derive(Debug)]
+// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
+// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
 struct DetoastedFloat4Datum {
     varlena: *mut pg_sys::varlena,
     owned: bool,

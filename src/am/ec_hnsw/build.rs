@@ -642,6 +642,8 @@ unsafe fn build_heap_tuple_from_indexed_datum(
 }
 
 #[derive(Debug)]
+// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
+// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
 struct DetoastedBuildDatum {
     varlena: *mut pg_sys::varlena,
     owned: bool,
