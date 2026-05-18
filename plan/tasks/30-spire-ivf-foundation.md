@@ -80,7 +80,7 @@ diagnostics now expose per-leaf base/delta/effective assignment counts plus
 read-only split/merge threshold recommendations for follow-up scheduling;
 insert-debt diagnostics now expose per-leaf delta fanout and batching
 recommendations while actual insert batching remains open. Packet
-`review/30530-spire-phase1-recall-latency-gate/` now records local real 10k
+`benchmarks/30530-spire-phase1-recall-latency-gate/` now records local real 10k
 SPIRE recall/latency evidence for the single-store `nlists=32`,
 `rerank_width=25` foundation: recall@10 is `0.9985` at `nprobe=8` and
 `1.0000` from `nprobe=16` through `32`, with latency p50/p95 `62.1/70.2 ms`
@@ -88,7 +88,7 @@ at `nprobe=8`. Phase 4 relation-backed live insert, delete-delta publication,
 delta compaction, and live-assignment counting now route through the active
 local store set instead of falling back to the root/control relation store;
 packet `reviews/task-30/458-30531-spire-mutation-local-store-routing/` covers that
-checkpoint. Packet `review/30533-spire-local-placement-benchmark/` now records
+checkpoint. Packet `benchmarks/30533-spire-local-placement-benchmark/` now records
 the first local placement benchmark: same-device two-store and `/mnt/e`
 two-store lanes preserve recall, keep build time near the one-store baseline,
 and show comparable local latency while explicitly stopping short of production
@@ -469,7 +469,7 @@ diagnostics without scoring assignments.
   published-epoch back-reference, store placement, assignment count, and
   insert/delete assignment counts. Operator-facing diagnostic guidance now
   lives in `docs/SPIRE_DIAGNOSTICS.md`. Packet
-  `review/30530-spire-phase1-recall-latency-gate/` now carries the Phase 1
+  `benchmarks/30530-spire-phase1-recall-latency-gate/` now carries the Phase 1
   measured recall/latency summary; those rows remain intentionally packet-local
   rather than part of the Phase 1 admin diagnostic surface.
 - [x] **Validation.** Add focused PG18 behavior tests for build, scan, empty
@@ -540,7 +540,7 @@ diagnostics without scoring assignments.
   epochs. Real SQL VACUUM end-to-end coverage now exercises insert-delta
   compaction and deleted-row routed scan suppression; physical page reclamation
   and old-epoch cleanup remain open. Packet-local recall/latency evidence now
-  lives in `review/30530-spire-phase1-recall-latency-gate/` rather than in this
+  lives in `benchmarks/30530-spire-phase1-recall-latency-gate/` rather than in this
   behavior-validation checklist item.
 - [x] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row. Review packet
@@ -1335,7 +1335,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   query-specific SQL scan placement snapshot reports scan-touched leaf/delta
   PID counts and candidate rows per local store.
 - [x] **Local placement benchmark.** Packet
-  `review/30533-spire-local-placement-benchmark/` measures one-store,
+  `benchmarks/30533-spire-local-placement-benchmark/` measures one-store,
   same-device two-store, and `/mnt/e` two-store behavior on the local real 10k
   fixture. The same-device two-store lane uses repeated `pg_default`
   tablespace selection, and the extra-drive lane places store 1 in
@@ -1386,7 +1386,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   boundary-replica rows as scored-visible and uses the existing
   `VecIdDedupeEnabled` mode for replica-capable scan plans; the default
   primary-only path still resolves to `NoReplicaDedupeDisabled`.
-- [x] **Recall study.** Packet `review/30548-spire-boundary-recall-study/`
+- [x] **Recall study.** Packet `benchmarks/30548-spire-boundary-recall-study/`
   measures real-10k recall/storage with boundary replication off/on. With
   `boundary_replica_count=1`, base assignment rows double from 10,000 to
   20,000 and SPIRE index bytes rise from 8.2 MiB to 16.0 MiB. Recall@10 improves

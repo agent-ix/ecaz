@@ -8,7 +8,7 @@
   - `reviews/task-30/471-30545-spire-recursive-boundary-replica-build/feedback/2026-05-06-01-reviewer.md`
   - `reviews/task-30/472-30546-spire-split-replacement-boundary-fanout/feedback/2026-05-06-01-reviewer.md`
   - `reviews/task-30/473-30547-spire-boundary-storage-accounting/feedback/2026-05-06-01-reviewer.md`
-  - `review/30548-spire-boundary-recall-study/feedback/2026-05-06-01-reviewer.md`
+  - `benchmarks/30548-spire-boundary-recall-study/feedback/2026-05-06-01-reviewer.md`
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 5 feedback follow-ups
 - Agent: coder1

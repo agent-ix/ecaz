@@ -92,8 +92,7 @@ Packet directories inside a task bucket must sort in chronological order.
 ### Legacy `review/` Holding Area
 
 `review/` is now a temporary legacy holding area only. It currently contains
-deferred Task 41 and historical review packets that will be migrated in
-focused follow-up passes. Do not add new packets there.
+deferred Task 41 packets only. Do not add new packets there.
 
 ### Benchmark Data Packets
 

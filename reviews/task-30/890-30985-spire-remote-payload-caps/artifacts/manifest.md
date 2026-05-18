@@ -13,8 +13,8 @@
 
 - packet/topic: `30975-spire-tuple-transport-measurement`
 - committed source artifacts:
-  - `review/30975-spire-tuple-transport-measurement/artifacts/manifest.md`
-  - `review/30975-spire-tuple-transport-measurement/request.md`
+  - `benchmarks/30975-spire-tuple-transport-measurement/artifacts/manifest.md`
+  - `benchmarks/30975-spire-tuple-transport-measurement/request.md`
 - key cited result:
   - `payload materialized by each run: 200 rows and 31,510 text bytes`
   - row-cap rationale: 31,510 / 200 = about 158 bytes per row; default

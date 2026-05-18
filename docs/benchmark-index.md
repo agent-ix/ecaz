@@ -40,7 +40,7 @@ than inventing an empty result.
 | IVF current auto recommendation | packet synthesis over 10K and 100K evidence | `reviews/task-28/094-30096-task28-ivf-current-auto-recommendation/` |
 | IVF RaBitQ A10 fill | 10K / 25K local RaBitQ rows | `reviews/task-28/136-30144-task28-ivf-a10-rabitq-fill/` |
 | SPIRE RaBitQ remote endpoint gate | PG18 loopback remote-serving readiness | `reviews/task-30/631-30709-spire-remote-heap-endpoint-gate/` |
-| SPIRE tuple transport measurement | PG18 loopback, `storage_format=rabitq` | `review/30975-spire-tuple-transport-measurement/` |
+| SPIRE tuple transport measurement | PG18 loopback, `storage_format=rabitq` | `benchmarks/30975-spire-tuple-transport-measurement/` |
 
 ## HNSW
 

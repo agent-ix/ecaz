@@ -4,7 +4,7 @@
 
 Prior C1 packets:
 
-- `review/247-c1-real-corpus-latency-10k-verified-run/request.md`
+- `benchmarks/247-c1-real-corpus-latency-10k-verified-run/request.md`
 - `reviews/task-05/143-248-c1-ordered-scan-runtime-fix/request.md`
 - `reviews/task-11/014-249-c1-per-cell-planner-verification/request.md`
 - `reviews/task-11/015-250-c1-ef200-planner-cost-crossover/request.md`

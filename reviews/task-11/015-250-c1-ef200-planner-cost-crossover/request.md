@@ -6,7 +6,7 @@ Branch:
 - `main`
 
 Prior packets:
-- `review/247-c1-real-corpus-latency-10k-verified-run/request.md`
+- `benchmarks/247-c1-real-corpus-latency-10k-verified-run/request.md`
 - `reviews/task-11/014-249-c1-per-cell-planner-verification/request.md`
 
 Packet `247` captured the first real `m=8` `10k` latency surface.
