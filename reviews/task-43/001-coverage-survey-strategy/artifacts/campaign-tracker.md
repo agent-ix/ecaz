@@ -34,7 +34,7 @@ evidence or a concrete blocker with the extraction work needed.
 | Gate | Requirement | Status | Evidence / next action |
 | --- | --- | --- | --- |
 | G1 | Default Miri and Tree Borrows are first-class hardening lanes. | Done | Packets 002 and 005; `miri-full` is in `hardening-nightly-local`; `make-miri-tree.log` passed 35 tests. |
-| G2 | `miri-many-seeds` includes at least one real threaded/atomic `miri_` test. | Not done | Add actual concurrent coverage, preferably in `src/am/common/parallel.rs`. |
+| G2 | `miri-many-seeds` includes at least one real threaded/atomic `miri_` test. | Done | Packet 007 adds `miri_parallel_worker_slots_are_unique_under_threaded_contention`; targeted `0..128` many-seeds passed. |
 | G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | See subsystem matrix below. |
 | G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Not done | Extract/test parser helpers from remote candidate payload handling. |
 | G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Not done | Cover pure object-store/delete-delta tests or document exact blocker. |
@@ -51,6 +51,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `003-pure-graph-miri-prefixes` | First DiskANN/HNSW graph tests pass under Miri. | Full graph-helper breadth. |
 | `004-spire-vacuum-miri-prefixes` | First DiskANN vacuum and SPIRE top-k tests pass under Miri. | Full vacuum/top-k breadth; SPIRE vacuum. |
 | `005-coordinator-serialization-miri-prefixes` | 35-test aggregate, Tree Borrows, many-seeds execution, careful 67-test harness, coordinator/serialization additions. | Real concurrent many-seeds coverage; mutation probes; full strategy breadth. |
+| `007-real-many-seeds-parallel-state` | Real threaded common-parallel shared-state test passes under default Miri, Tree Borrows, and `0..128` many-seeds. | Full campaign breadth; mutation probe for common parallel state. |
 
 ## Subsystem Coverage Matrix
 
@@ -68,17 +69,17 @@ Status values:
 | Default `miri_` prefix | Done | Existing `make miri` / `miri-expanded` lane. |
 | Tree Borrows `miri-tree` | Done | Packet 005 `make-miri-tree.log`: 35 passed. |
 | Many-seeds range syntax | Done | Packet 005 `make-miri-many-seeds.log`: 128 seed attempts; `0..128` syntax. |
-| Real many-seeds interleaving | Not done | Add threaded/atomic `miri_` test and run targeted many-seeds plus aggregate many-seeds. |
+| Real many-seeds interleaving | Done | Packet 007 targeted threaded many-seeds log records 128 seed attempts and exit 0. Final campaign still needs aggregate `make miri-many-seeds`. |
 | SB/TB disagreement triage runbook | Partial | Docs exist; no real disagreement to triage. Future disagreement must produce paired logs and classification. |
 
 ### Common Parallel Shared State
 
 | Target | Current status | Required action |
 | --- | --- | --- |
-| Worker slot claim/release atomics | Not done | Add `miri_` test around real `EcParallelCoordinatorState` / `EcParallelWorkerSlot` claim and release paths. |
-| Concurrent slot contention | Not done | Spawn multiple Rust threads contending for real slots; assert unique claims and correct claim counts. |
-| Rescan/epoch stale-publish rejection under contention | Not done | Add concurrent or sequenced Miri coverage where stale publishes fail benignly. |
-| Many-seeds coverage | Not done | Run `MIRI_MANY_SEEDS=0..128` against the threaded test and aggregate lane. |
+| Worker slot claim/release atomics | Done | `miri_parallel_worker_slots_are_unique_under_threaded_contention` claims, publishes, and releases real worker slots. |
+| Concurrent slot contention | Done | The threaded test spawns more workers than slots, holds live claims until all threads have attempted a claim, and asserts unique slot ownership. |
+| Rescan/epoch stale-publish rejection under contention | Done | `miri_publish_parallel_scan_worker_slot_runtime_snapshot_rejects_stale_epoch` covers stale publish rejection after rescan. |
+| Many-seeds coverage | Done | `miri-parallel-threaded-many-seeds.log` records 128 seed attempts for the threaded test with exit 0. |
 | Mutation probe | Not done | Temporarily weaken compare-exchange or claim counter update and prove the test fails. |
 
 ### DiskANN Graph
@@ -204,7 +205,7 @@ claims, then the final campaign packet must run the aggregate matrix.
 | Packet | Purpose | Status |
 | --- | --- | --- |
 | `006-safety-campaign-tracker` | Install this tracker and commit reviewer feedback. | Done |
-| `007-real-many-seeds-parallel-state` | Add threaded/atomic Miri coverage for real common parallel shared state. | Not started |
+| `007-real-many-seeds-parallel-state` | Add threaded/atomic Miri coverage for real common parallel shared state. | Done |
 | `008-breadth-closure-existing-tests` | Promote existing small pure tests named in packet 001 across DiskANN, HNSW, SPIRE top-k, routing, vacuum, serialization. | Not started |
 | `009-remote-parser-extraction` | Extract/test Row-independent typed payload parser validation. | Not started |
 | `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Not started |
