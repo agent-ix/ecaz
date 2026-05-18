@@ -46,6 +46,31 @@ RAW_API_RULES = [
         frozenset({"src/storage/relation_guard.rs"}),
     ),
     RawApiRule(
+        "heap relation open/close APIs",
+        re.compile(r"pg_sys::(?:table_open|table_close)\b"),
+        frozenset({"src/storage/relation_guard.rs"}),
+    ),
+    RawApiRule(
+        "generic relation open/close APIs",
+        re.compile(r"pg_sys::(?:relation_open|relation_close)\b"),
+        frozenset({"src/storage/relation_guard.rs"}),
+    ),
+    RawApiRule(
+        "active snapshot stack APIs",
+        re.compile(r"pg_sys::(?:PushActiveSnapshot|PopActiveSnapshot)\b"),
+        frozenset({"src/storage/snapshot_guard.rs"}),
+    ),
+    RawApiRule(
+        "index scan lifecycle APIs",
+        re.compile(r"pg_sys::(?:index_beginscan|index_endscan)\b"),
+        frozenset({"src/storage/scan_guard.rs"}),
+    ),
+    RawApiRule(
+        "heap scan lifecycle APIs",
+        re.compile(r"pg_sys::(?:heap_beginscan|heap_endscan)\b"),
+        frozenset({"src/storage/scan_guard.rs"}),
+    ),
+    RawApiRule(
         "SPI tuptable release API",
         re.compile(r"pg_sys::SPI_freetuptable\b"),
         frozenset({"src/storage/spi_guard.rs"}),
@@ -147,6 +172,57 @@ def self_test() -> int:
             "}\n",
         ),
         (
+            "src/am/raw_relation.rs",
+            "fn leaked_relation(relid: pg_sys::Oid) {\n"
+            "    unsafe { pg_sys::relation_open(relid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };\n"
+            "}\n",
+        ),
+        (
+            "src/am/raw_heap_relation.rs",
+            "fn leaked_heap_relation(relid: pg_sys::Oid) {\n"
+            "    unsafe { pg_sys::table_open(relid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/relation_guard.rs",
+            "fn wrapper_only(relid: pg_sys::Oid, relation: pg_sys::Relation) {\n"
+            "    unsafe { pg_sys::table_open(relid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };\n"
+            "    unsafe { pg_sys::relation_close(relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };\n"
+            "}\n",
+        ),
+        (
+            "src/am/raw_snapshot.rs",
+            "fn leaked_snapshot(snapshot: pg_sys::Snapshot) {\n"
+            "    unsafe { pg_sys::PushActiveSnapshot(snapshot) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/snapshot_guard.rs",
+            "fn wrapper_only(snapshot: pg_sys::Snapshot) {\n"
+            "    unsafe { pg_sys::PushActiveSnapshot(snapshot) };\n"
+            "    unsafe { pg_sys::PopActiveSnapshot() };\n"
+            "}\n",
+        ),
+        (
+            "src/am/raw_index_scan.rs",
+            "fn leaked_index_scan(scan: pg_sys::IndexScanDesc) {\n"
+            "    unsafe { pg_sys::index_endscan(scan) };\n"
+            "}\n",
+        ),
+        (
+            "src/am/raw_heap_scan.rs",
+            "fn leaked_heap_scan(scan: pg_sys::TableScanDesc) {\n"
+            "    unsafe { pg_sys::heap_endscan(scan) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/scan_guard.rs",
+            "fn wrapper_only(scan: pg_sys::IndexScanDesc, heap_scan: pg_sys::TableScanDesc) {\n"
+            "    unsafe { pg_sys::index_endscan(scan) };\n"
+            "    unsafe { pg_sys::heap_endscan(heap_scan) };\n"
+            "}\n",
+        ),
+        (
             "src/am/raw_spi.rs",
             "fn leaked_tuptable(table: *mut pg_sys::SPITupleTable) {\n"
             "    unsafe { pg_sys::SPI_freetuptable(table) };\n"
@@ -188,6 +264,11 @@ def self_test() -> int:
     expected_fragments = [
         "src/am/leaky_buffer.rs:2: raw buffer pin/lock APIs",
         "src/am/raw_lwlock.rs:2: raw LWLock APIs",
+        "src/am/raw_relation.rs:2: raw generic relation open/close APIs",
+        "src/am/raw_heap_relation.rs:2: raw heap relation open/close APIs",
+        "src/am/raw_snapshot.rs:2: raw active snapshot stack APIs",
+        "src/am/raw_index_scan.rs:2: raw index scan lifecycle APIs",
+        "src/am/raw_heap_scan.rs:2: raw heap scan lifecycle APIs",
         "src/am/raw_spi.rs:2: raw SPI tuptable release API",
         "src/am/raw_slot.rs:2: raw tuple slot allocation/release APIs",
         "src/am/read_stream_leak.rs:2: read_stream_next_buffer result must be adopted",
@@ -202,6 +283,9 @@ def self_test() -> int:
         for violation in violations
         if violation.startswith("src/storage/buffer_guard.rs:")
         or violation.startswith("src/storage/lock_guard.rs:")
+        or violation.startswith("src/storage/relation_guard.rs:")
+        or violation.startswith("src/storage/snapshot_guard.rs:")
+        or violation.startswith("src/storage/scan_guard.rs:")
         or violation.startswith("src/storage/spi_guard.rs:")
         or violation.startswith("src/storage/slot_guard.rs:")
         or violation.startswith("src/am/read_stream_adopted.rs:")
