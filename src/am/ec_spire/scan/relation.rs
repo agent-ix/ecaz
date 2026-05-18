@@ -243,7 +243,8 @@ unsafe fn prefetch_heap_rerank_blocks(
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
+        let _buffer = unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
+            .unwrap_or_else(|| pgrx::error!("ec_spire read stream returned an invalid buffer"));
     }
 
     unsafe { pg_sys::read_stream_end(stream) };

@@ -25,6 +25,7 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
 use crate::am::common::training;
 use crate::quant::prod::ProdQuantizer;
+use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
 use crate::storage::wal;
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
@@ -681,57 +682,44 @@ unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: V
     } else {
         METADATA_BLOCK_NUMBER
     };
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
-    } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+    let buffer = if target_block == P_NEW {
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             target_block,
-            read_mode,
-            ptr::null_mut(),
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_diskann failed to allocate metadata buffer");
+    } else {
+        LockedBufferGuard::read_main(
+            index_relation,
+            target_block,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
     }
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-    write_metadata_to_buffer(index_relation, buffer, &metadata);
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    .unwrap_or_else(|| pgrx::error!("ec_diskann failed to allocate metadata buffer"));
+    write_metadata_to_buffer(index_relation, &buffer, &metadata);
 }
 
 unsafe fn overwrite_metadata_page(index_relation: pg_sys::Relation, metadata: &VamanaMetadataPage) {
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            METADATA_BLOCK_NUMBER,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_diskann failed to open metadata buffer");
-    }
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    write_metadata_to_buffer(index_relation, buffer, metadata);
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    let buffer = LockedBufferGuard::read_main(
+        index_relation,
+        METADATA_BLOCK_NUMBER,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .unwrap_or_else(|| pgrx::error!("ec_diskann failed to open metadata buffer"));
+    write_metadata_to_buffer(index_relation, &buffer, metadata);
 }
 
 fn write_metadata_to_buffer(
     index_relation: pg_sys::Relation,
-    buffer: pg_sys::Buffer,
+    buffer: &LockedBufferGuard,
     metadata: &VamanaMetadataPage,
 ) {
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
     unsafe { pg_sys::PageInit(page_ptr, page_size, special_size) };
@@ -744,26 +732,22 @@ fn write_metadata_to_buffer(
 
 pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
     for staged_page in chain.pages() {
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                P_NEW,
-                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-                ptr::null_mut(),
-            )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        let buffer = LockedBufferGuard::read_main_locked(
+            index_relation,
+            P_NEW,
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+        )
+        .unwrap_or_else(|| {
             pgrx::error!(
                 "ec_diskann failed to allocate data buffer for block {}",
                 staged_page.block_number()
-            );
-        }
-
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+            )
+        });
+        let page_size = buffer.page_size();
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let page_ptr =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let page_ptr = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
         for tuple in staged_page.tuples() {
@@ -785,7 +769,6 @@ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &
         }
 
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 }
 

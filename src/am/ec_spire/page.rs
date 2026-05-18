@@ -6,6 +6,7 @@ use pgrx::pg_sys;
 
 use super::meta::SpireRootControlState;
 use crate::storage::{
+    buffer_guard::LockedBufferGuard,
     page::{
         align_up, raw_tuple_storage_bytes, ALIGNMENT_BYTES, FIRST_DATA_BLOCK_NUMBER,
         METADATA_BLOCK_NUMBER,
@@ -38,31 +39,25 @@ unsafe fn initialize_spire_metadata_block_zero(
     } else {
         METADATA_BLOCK_NUMBER
     };
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
-    } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+    let buffer = if target_block == P_NEW {
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             target_block,
-            read_mode,
-            ptr::null_mut(),
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_spire failed to allocate root/control buffer");
+    } else {
+        LockedBufferGuard::read_main(
+            index_relation,
+            target_block,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
     }
-
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    .unwrap_or_else(|| pgrx::error!("ec_spire failed to allocate root/control buffer"));
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let root_control_bytes = root_control
         .encode()
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -78,27 +73,19 @@ unsafe fn initialize_spire_metadata_block_zero(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 pub(super) unsafe fn read_root_control_page(
     index_relation: pg_sys::Relation,
 ) -> SpireRootControlState {
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            METADATA_BLOCK_NUMBER,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_spire failed to open root/control buffer");
-    }
-
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    let buffer = LockedBufferGuard::read_main(
+        index_relation,
+        METADATA_BLOCK_NUMBER,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .unwrap_or_else(|| pgrx::error!("ec_spire failed to open root/control buffer"));
+    let page = buffer.page();
     let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };
     if special_size < SpireRootControlState::encoded_len() {
         pgrx::error!(
@@ -112,7 +99,6 @@ pub(super) unsafe fn read_root_control_page(
     };
     let root_control =
         SpireRootControlState::decode(root_control_bytes).unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     root_control
 }
 
@@ -180,27 +166,16 @@ where
         ));
     }
 
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_spire failed to open object block {}",
-            tid.block_number
-        ));
-    }
-
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let buffer = LockedBufferGuard::read_main(
+        index_relation,
+        tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;
+    let page = buffer.page();
+    let page_size = buffer.page_size();
     let result = unsafe { with_object_tuple_from_locked_page(page, page_size, tid, f) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     result
 }
 
@@ -219,24 +194,15 @@ where
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
-            )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_spire failed to open object block {block_number}"
-            ));
-        }
-
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page = unsafe { pg_sys::BufferGetPage(buffer) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = LockedBufferGuard::read_main(
+            index_relation,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
+        let page = buffer.page();
+        let page_size = buffer.page_size();
         let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
         let mut result = Ok(());
         for offset_number in 1..=max_offset {
@@ -255,7 +221,6 @@ where
                 break;
             }
         }
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         result?;
     }
     Ok(())
@@ -266,26 +231,17 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
     tid: crate::storage::page::ItemPointer,
     payload: &[u8],
 ) -> Result<(), String> {
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_spire failed to open object block {}",
-            tid.block_number
-        ));
-    }
-
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let buffer = LockedBufferGuard::read_main(
+        index_relation,
+        tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page_size = buffer.page_size();
     let result = unsafe {
         with_object_tuple_from_locked_page(page, page_size, tid, |tuple| {
             if tuple.len() != payload.len() {
@@ -302,12 +258,10 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
         Ok(tuple_ptr) => unsafe {
             ptr::copy_nonoverlapping(payload.as_ptr(), tuple_ptr, payload.len());
             wal_txn.finish();
-            pg_sys::UnlockReleaseBuffer(buffer);
             Ok(())
         },
         Err(error) => {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             Err(error)
         }
     }
@@ -336,32 +290,23 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
     for (block_number, mut offsets) in offsets_by_block {
         offsets.sort_unstable();
         offsets.dedup();
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
-            )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_spire failed to open object block {block_number}"
-            ));
-        }
-
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+        let buffer = LockedBufferGuard::read_main(
+            index_relation,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let page =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
+        let page_size = buffer.page_size();
         let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
         let mut changed = false;
         for offset in offsets.into_iter().rev() {
             if offset == pg_sys::InvalidOffsetNumber || offset > max_offset {
                 std::mem::drop(wal_txn);
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Err(format!(
                     "ec_spire object tuple delete offset {} out of range on block {}",
                     offset, block_number
@@ -370,7 +315,6 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
             let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };
             if item_id.is_null() {
                 std::mem::drop(wal_txn);
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Err(format!(
                     "ec_spire object tuple delete ({block_number},{offset}) returned a null item id"
                 ));
@@ -383,7 +327,6 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
             let tuple_len = item_id_ref.lp_len() as usize;
             if tuple_offset + tuple_len > page_size {
                 std::mem::drop(wal_txn);
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Err(format!(
                     "ec_spire object tuple delete ({block_number},{offset}) has invalid bounds"
                 ));
@@ -405,7 +348,6 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
         }
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
     Ok((removed_tuple_count, removed_tuple_bytes))
 }
@@ -415,28 +357,19 @@ unsafe fn try_append_object_tuple_to_block(
     block_number: pg_sys::BlockNumber,
     payload: &[u8],
 ) -> Result<Option<crate::storage::page::ItemPointer>, String> {
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_spire failed to open object block {block_number}"
-        ));
-    }
-
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let buffer = LockedBufferGuard::read_main(
+        index_relation,
+        block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page_size = buffer.page_size();
     if raw_tuple_storage_bytes(payload.len()) > page_size {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_spire object tuple payload {} exceeds page size {page_size}",
             payload.len()
@@ -447,7 +380,6 @@ unsafe fn try_append_object_tuple_to_block(
     if free_space < raw_tuple_storage_bytes(payload.len()) {
         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Ok(None);
     }
 
@@ -462,7 +394,6 @@ unsafe fn try_append_object_tuple_to_block(
     };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_spire failed to append object tuple to block {block_number}"
         ));
@@ -471,7 +402,6 @@ unsafe fn try_append_object_tuple_to_block(
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(Some(crate::storage::page::ItemPointer {
         block_number,
         offset_number: offset,
@@ -491,26 +421,19 @@ unsafe fn append_object_tuple_to_new_block(
         );
     }
 
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            P_NEW,
-            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_spire failed to allocate object block".to_owned());
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let buffer = LockedBufferGuard::read_main_locked(
+        index_relation,
+        P_NEW,
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+    )
+    .ok_or_else(|| "ec_spire failed to allocate object block".to_owned())?;
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page, page_size, 0) };
     if unsafe { pg_sys::PageGetFreeSpace(page) as usize } < raw_tuple_storage_bytes(payload.len()) {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_spire object tuple payload {} exceeds page capacity",
             payload.len()
@@ -528,15 +451,13 @@ unsafe fn append_object_tuple_to_new_block(
     };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_spire failed to append object tuple to new block".to_owned());
     }
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer.buffer()) };
 
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(crate::storage::page::ItemPointer {
         block_number,
         offset_number: offset,

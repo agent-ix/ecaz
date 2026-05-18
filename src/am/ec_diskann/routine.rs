@@ -10,6 +10,7 @@ use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts
 use crate::{
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
+        buffer_guard::{LockedBufferGuard, PinnedBufferGuard},
         page::{DataPageChain, ItemPointer},
         relation_guard::HeapRelationGuard,
         wal,
@@ -1654,23 +1655,19 @@ unsafe fn apply_tuple_rewrites(
         }
         let block_rewrites = &rewrites[block_start..cursor];
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_diskann vacuum rewrite could not open data block {block_number}"
-            ));
         }
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+        .ok_or_else(|| {
+            format!("ec_diskann vacuum rewrite could not open data block {block_number}")
+        })?;
         let page_result = (|| -> Result<VacuumRewriteApplyOutcome, String> {
-            let page = unsafe { pg_sys::BufferGetPage(buffer) };
-            let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+            let page = buffer.page();
+            let page_size = buffer.page_size();
             for rewrite in block_rewrites {
                 let (tuple_ptr, tuple_len) =
                     unsafe { vacuum_page_tuple_location(page, page_size, rewrite.tid)? };
@@ -1682,8 +1679,9 @@ unsafe fn apply_tuple_rewrites(
             }
 
             let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-            let writable_page =
-                unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+            let writable_page = unsafe {
+                wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+            };
             for rewrite in block_rewrites {
                 let (tuple_ptr, tuple_len) =
                     unsafe { vacuum_page_tuple_location(writable_page, page_size, rewrite.tid)? };
@@ -1707,7 +1705,6 @@ unsafe fn apply_tuple_rewrites(
             unsafe { wal_txn.finish() };
             Ok(VacuumRewriteApplyOutcome::Applied)
         })();
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         match page_result? {
             VacuumRewriteApplyOutcome::Applied => {}
             VacuumRewriteApplyOutcome::RetryReplan => {
@@ -1725,27 +1722,26 @@ unsafe fn write_raw_tuple_bytes(
     replacement_raw: &[u8],
 ) -> Result<(), String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_diskann vacuum test rewrite could not open data block {}",
             tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let page_result = (|| -> Result<(), String> {
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_size = buffer.page_size();
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let writable_page =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let writable_page = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
         let (tuple_ptr, tuple_len) =
             unsafe { vacuum_page_tuple_location(writable_page, page_size, tid)? };
         if tuple_len != replacement_raw.len() {
@@ -1763,7 +1759,6 @@ unsafe fn write_raw_tuple_bytes(
         unsafe { wal_txn.finish() };
         Ok(())
     })();
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page_result
 }
 
@@ -1880,7 +1875,8 @@ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
+        let _buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
+            .unwrap_or_else(|| pgrx::error!("ec_diskann prefetch returned invalid buffer"));
     }
     unsafe { pg_sys::read_stream_end(stream) };
 }

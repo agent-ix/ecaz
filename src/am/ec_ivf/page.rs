@@ -12,6 +12,7 @@ use super::P_NEW;
 #[cfg(feature = "pg18")]
 use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 use crate::storage::{
+    buffer_guard::LockedBufferGuard,
     page::{
         align_up, aligned_tuple_bytes, raw_tuple_storage_bytes, usable_page_bytes, DataPage,
         DataPageChain, ItemPointer, ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
@@ -1127,15 +1128,19 @@ where
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        let block_number = if per_buffer_data.is_null() {
-            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
-        } else {
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        let result = {
+            let buffer =
+                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+            let block_number = if per_buffer_data.is_null() {
+                buffer.block_number()
+            } else {
+                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+            };
+            unsafe {
+                visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
+            }
         };
-        let result = unsafe {
-            visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
-        };
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
             unsafe { pg_sys::read_stream_end(stream) };
             return Err(err);
@@ -1175,15 +1180,19 @@ where
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        let block_number = if per_buffer_data.is_null() {
-            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
-        } else {
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        let result = {
+            let buffer =
+                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+            let block_number = if per_buffer_data.is_null() {
+                buffer.block_number()
+            } else {
+                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+            };
+            unsafe {
+                visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor)
+            }
         };
-        let result = unsafe {
-            visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor)
-        };
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
             unsafe { pg_sys::read_stream_end(stream) };
             return Err(err);
@@ -1223,15 +1232,19 @@ where
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        let block_number = if per_buffer_data.is_null() {
-            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
-        } else {
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        let result = {
+            let buffer =
+                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
+            let block_number = if per_buffer_data.is_null() {
+                buffer.block_number()
+            } else {
+                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+            };
+            unsafe {
+                visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
+            }
         };
-        let result = unsafe {
-            visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
-        };
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
             unsafe { pg_sys::read_stream_end(stream) };
             return Err(err);
@@ -1254,24 +1267,18 @@ where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
     let result = unsafe {
-        visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
+        visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
     };
-    unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
 
@@ -1286,23 +1293,17 @@ where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
     let result =
-        unsafe { visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor) };
-    unsafe { pg_sys::ReleaseBuffer(buffer) };
+        unsafe { visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor) };
     result
 }
 
@@ -1317,29 +1318,23 @@ where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
     let result = unsafe {
-        visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
+        visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
     };
-    unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
 
 unsafe fn visit_ivf_postings_from_buffer<F>(
-    buffer: pg_sys::Buffer,
+    buffer: &LockedBufferGuard,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -1364,7 +1359,7 @@ where
 }
 
 unsafe fn visit_all_ivf_postings_from_buffer<F>(
-    buffer: pg_sys::Buffer,
+    buffer: &LockedBufferGuard,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
     visitor: &mut F,
@@ -1372,49 +1367,43 @@ unsafe fn visit_all_ivf_postings_from_buffer<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let result = (|| -> Result<(), String> {
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-        let line_pointer_count = page_line_pointer_count(page_ptr);
-        for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                continue;
-            }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                return Err(format!(
-                    "ec_ivf posting tuple bounds exceed block {block_number}"
-                ));
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                continue;
-            }
-
-            let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
-            visitor(
-                ItemPointer {
-                    block_number,
-                    offset_number: offset,
-                },
-                posting,
-            )?;
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
+    let line_pointer_count = page_line_pointer_count(page_ptr);
+    for offset in 1..=line_pointer_count {
+        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+        if item_id.lp_flags() == 0 {
+            continue;
         }
-        Ok(())
-    })();
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
-    result
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            return Err(format!(
+                "ec_ivf posting tuple bounds exceed block {block_number}"
+            ));
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+            continue;
+        }
+
+        let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+        visitor(
+            ItemPointer {
+                block_number,
+                offset_number: offset,
+            },
+            posting,
+        )?;
+    }
+    Ok(())
 }
 
 unsafe fn visit_all_ivf_posting_refs_from_buffer<F>(
-    buffer: pg_sys::Buffer,
+    buffer: &LockedBufferGuard,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
     visitor: &mut F,
@@ -1422,45 +1411,39 @@ unsafe fn visit_all_ivf_posting_refs_from_buffer<F>(
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let result = (|| -> Result<(), String> {
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-        let line_pointer_count = page_line_pointer_count(page_ptr);
-        for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                continue;
-            }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                return Err(format!(
-                    "ec_ivf posting tuple bounds exceed block {block_number}"
-                ));
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                continue;
-            }
-
-            let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
-            visitor(
-                ItemPointer {
-                    block_number,
-                    offset_number: offset,
-                },
-                posting,
-            )?;
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
+    let line_pointer_count = page_line_pointer_count(page_ptr);
+    for offset in 1..=line_pointer_count {
+        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+        if item_id.lp_flags() == 0 {
+            continue;
         }
-        Ok(())
-    })();
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
-    result
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            return Err(format!(
+                "ec_ivf posting tuple bounds exceed block {block_number}"
+            ));
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+            continue;
+        }
+
+        let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
+        visitor(
+            ItemPointer {
+                block_number,
+                offset_number: offset,
+            },
+            posting,
+        )?;
+    }
+    Ok(())
 }
 
 pub(super) unsafe fn append_ivf_posting_to_list_range(
@@ -1580,28 +1563,22 @@ unsafe fn try_append_ivf_posting_to_block(
     payload: &[u8],
 ) -> Result<Option<ItemPointer>, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     if free_space < raw_tuple_storage_bytes(payload.len()) {
         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Ok(None);
     }
 
@@ -1616,7 +1593,6 @@ unsafe fn try_append_ivf_posting_to_block(
     };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf failed to append posting tuple to block {block_number}"
         ));
@@ -1625,7 +1601,6 @@ unsafe fn try_append_ivf_posting_to_block(
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(Some(ItemPointer {
         block_number,
         offset_number: offset,
@@ -1637,21 +1612,18 @@ unsafe fn append_ivf_posting_to_new_block(
     payload: &[u8],
 ) -> Result<ItemPointer, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             P_NEW,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            ptr::null_mut(),
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_ivf failed to allocate posting-list block".to_owned());
     }
+    .ok_or_else(|| "ec_ivf failed to allocate posting-list block".to_owned())?;
 
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page, page_size, 0) };
 
     let offset = unsafe {
@@ -1665,15 +1637,13 @@ unsafe fn append_ivf_posting_to_new_block(
     };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_ivf failed to append posting tuple to new block".to_owned());
     }
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
 
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(ItemPointer {
         block_number,
         offset_number: offset,
@@ -1687,30 +1657,28 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
 ) -> Result<(), String> {
     let encoded = directory.encode();
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             directory_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_ivf failed to open directory block {}",
             directory_tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     if directory_tid.offset_number == 0 || directory_tid.offset_number > line_pointer_count {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple offset {} out of range on block {}",
             directory_tid.offset_number, directory_tid.block_number
@@ -1720,14 +1688,12 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     let item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_ivf directory tuple slot is unused".to_owned());
     }
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple bounds exceed block {}",
             directory_tid.block_number
@@ -1735,7 +1701,6 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     }
     if tuple_len != encoded.len() {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple size changed from {} to {}",
             tuple_len,
@@ -1747,7 +1712,6 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(())
 }
 
@@ -1760,30 +1724,28 @@ where
     F: FnOnce(&mut IvfListDirectoryTuple) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             directory_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_ivf failed to open directory block {}",
             directory_tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     if directory_tid.offset_number == 0 || directory_tid.offset_number > line_pointer_count {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple offset {} out of range on block {}",
             directory_tid.offset_number, directory_tid.block_number
@@ -1793,14 +1755,12 @@ where
     let item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_ivf directory tuple slot is unused".to_owned());
     }
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple bounds exceed block {}",
             directory_tid.block_number
@@ -1808,7 +1768,6 @@ where
     }
     if tuple_len != IvfListDirectoryTuple::encoded_len() {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf directory tuple size changed from {} to {}",
             tuple_len,
@@ -1821,13 +1780,11 @@ where
         Ok(directory) => directory,
         Err(err) => {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return Err(err);
         }
     };
     if let Err(err) = update(&mut directory) {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(err);
     }
 
@@ -1836,7 +1793,6 @@ where
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(directory)
 }
 
@@ -1847,30 +1803,28 @@ pub(super) unsafe fn rewrite_ivf_posting(
 ) -> Result<(), String> {
     let encoded = posting.encode()?;
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             posting_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_ivf failed to open posting block {}",
             posting_tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     if posting_tid.offset_number == 0 || posting_tid.offset_number > line_pointer_count {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf posting tuple offset {} out of range on block {}",
             posting_tid.offset_number, posting_tid.block_number
@@ -1880,14 +1834,12 @@ pub(super) unsafe fn rewrite_ivf_posting(
     let item_id = unsafe { &*page_item_id(page_ptr, posting_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err("ec_ivf posting tuple slot is unused".to_owned());
     }
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf posting tuple bounds exceed block {}",
             posting_tid.block_number
@@ -1895,7 +1847,6 @@ pub(super) unsafe fn rewrite_ivf_posting(
     }
     if tuple_len != encoded.len() {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf posting tuple size changed from {} to {}",
             tuple_len,
@@ -1907,7 +1858,6 @@ pub(super) unsafe fn rewrite_ivf_posting(
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(())
 }
 
@@ -1965,25 +1915,19 @@ where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
-            "ec_ivf failed to open posting-list block {block_number}"
-        ));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let result = unsafe {
         rewrite_ivf_postings_from_exclusive_buffer(
             index_relation,
-            buffer,
+            &buffer,
             list_id,
             block_number,
             payload_len,
@@ -1991,7 +1935,6 @@ where
             rewrite,
         )
     };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     result
 }
 
@@ -2001,22 +1944,18 @@ unsafe fn debug_ivf_posting_block_summary(
     payload_len: usize,
 ) -> Result<IvfPostingBlockSummary, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!("ec_ivf failed to open block {block_number}"));
     }
+    .ok_or_else(|| format!("ec_ivf failed to open block {block_number}"))?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     let result = (|| -> Result<IvfPostingBlockSummary, String> {
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = page_line_pointer_count(page_ptr);
         let mut unused_line_pointers = 0_u16;
         let mut non_posting_tuples = 0_u16;
@@ -2072,14 +2011,12 @@ unsafe fn debug_ivf_posting_block_summary(
             list_ids: list_ids.into_iter().collect(),
         })
     })();
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
-    unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
 
 unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
     index_relation: pg_sys::Relation,
-    buffer: pg_sys::Buffer,
+    buffer: &LockedBufferGuard,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -2090,9 +2027,10 @@ where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     let mut delete_offsets = Vec::new();
     let mut changed = false;
@@ -2240,27 +2178,24 @@ where
     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             tuple_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err(format!(
+    }
+    .ok_or_else(|| {
+        format!(
             "ec_ivf failed to open block {} for {tuple_kind} tuple",
             tuple_tid.block_number
-        ));
-    }
+        )
+    })?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf {tuple_kind} tuple offset {} out of range on block {}",
             tuple_tid.offset_number, tuple_tid.block_number
@@ -2269,14 +2204,12 @@ where
 
     let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!("ec_ivf {tuple_kind} tuple slot is unused"));
     }
 
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(format!(
             "ec_ivf {tuple_kind} tuple bounds exceed block {}",
             tuple_tid.block_number
@@ -2285,7 +2218,6 @@ where
 
     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
     let decoded = decode(tuple_bytes);
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     decoded.map(|tuple| (tuple, line_pointer_count))
 }
 
@@ -2302,23 +2234,19 @@ unsafe fn find_next_tuple_with_tag(
     let mut offset_number = start_tid.offset_number;
     while block_number < block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_ivf failed to open block {block_number} while locating next {tuple_kind}"
-            ));
         }
+        .ok_or_else(|| {
+            format!("ec_ivf failed to open block {block_number} while locating next {tuple_kind}")
+        })?;
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = page_line_pointer_count(page_ptr);
         let result = (|| -> Result<Option<ItemPointer>, String> {
             for offset in offset_number..=line_pointer_count {
@@ -2349,7 +2277,6 @@ unsafe fn find_next_tuple_with_tag(
             }
             Ok(None)
         })();
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         if let Some(next_tid) = result? {
             return Ok(next_tid);
         }
@@ -2437,26 +2364,24 @@ pub(super) unsafe fn initialize_metadata_page(
     } else {
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_ivf failed to allocate metadata buffer");
+    let buffer = if target_block == P_NEW {
+        unsafe { LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode) }
+    } else {
+        unsafe {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     }
+    .unwrap_or_else(|| pgrx::error!("ec_ivf failed to allocate metadata buffer"));
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
     let special_size = align_up(metadata_bytes.len(), ALIGNMENT_BYTES);
     unsafe { pg_sys::PageInit(page, page_size, special_size) };
@@ -2466,30 +2391,23 @@ pub(super) unsafe fn initialize_metadata_page(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("ec_ivf failed to open metadata buffer");
-    }
+    let buffer = buffer.unwrap_or_else(|| pgrx::error!("ec_ivf failed to open metadata buffer"));
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    let page = buffer.page();
     let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
-    let metadata = MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"));
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    metadata
+    MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(super) unsafe fn update_metadata_page<F>(
@@ -2500,41 +2418,35 @@ where
     F: FnOnce(&mut MetadataPage) -> Result<(), String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_ivf failed to open metadata buffer".to_owned());
-    }
+    let buffer = buffer.ok_or_else(|| "ec_ivf failed to open metadata buffer".to_owned())?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
     let mut metadata = match MetadataPage::decode(metadata_bytes) {
         Ok(metadata) => metadata,
         Err(err) => {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return Err(err);
         }
     };
     if let Err(err) = update(&mut metadata) {
         std::mem::drop(wal_txn);
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Err(err);
     }
 
     let encoded = metadata.encode();
     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), metadata_ptr, encoded.len()) };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(metadata)
 }
 

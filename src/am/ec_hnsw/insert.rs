@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::HashMap, ptr};
 use pgrx::pg_sys;
 
 use super::{build, graph, options, page, search, shared, source};
-use crate::storage::{slot_guard::TupleTableSlotGuard, wal};
+use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
@@ -1105,24 +1105,22 @@ unsafe fn add_backlinks_on_page(
 
     let block_number = mutations[0].neighbor_tid.block_number;
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to open backlink neighbor block {block_number}");
-    }
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut changed = false;
     let mut retries = Vec::new();
 
@@ -1203,7 +1201,6 @@ unsafe fn add_backlinks_on_page(
     } else {
         std::mem::drop(wal_txn);
     }
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     retries
 }
 
@@ -1446,40 +1443,39 @@ unsafe fn append_heap_tuple(
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
+        if target_block == P_NEW {
+            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
+        } else {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate data buffer for aminsert");
-    }
+    });
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
             };
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1521,7 +1517,6 @@ unsafe fn append_heap_tuple(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: element_offset,
@@ -1535,25 +1530,23 @@ unsafe fn append_heap_tuple_to_new_page(
     neighbor_payload: &[u8],
 ) -> page::ItemPointer {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             P_NEW,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            ptr::null_mut(),
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate fallback data buffer for aminsert");
-    }
+    });
 
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1595,7 +1588,6 @@ unsafe fn append_heap_tuple_to_new_page(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: element_offset,
@@ -1680,33 +1672,32 @@ unsafe fn append_turbo_hot_cold_tuple(
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
+        if target_block == P_NEW {
+            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
+        } else {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate TurboQuant V3 data buffer for aminsert");
-    }
+    });
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_turbo_hot_cold_tuple_to_new_page(
                     index_relation,
@@ -1720,7 +1711,7 @@ unsafe fn append_turbo_hot_cold_tuple(
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1776,7 +1767,6 @@ unsafe fn append_turbo_hot_cold_tuple(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -1792,25 +1782,23 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
     layout: graph::TurboQuantHotColdLayout,
 ) -> page::ItemPointer {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             P_NEW,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            ptr::null_mut(),
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate fallback TurboQuant V3 data buffer for aminsert");
-    }
+    });
 
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1882,7 +1870,6 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -2019,33 +2006,32 @@ unsafe fn append_pq_fastscan_tuple(
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
+        if target_block == P_NEW {
+            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
+        } else {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate PqFastScan data buffer for aminsert");
-    }
+    });
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_pq_fastscan_tuple_to_new_page(
                     index_relation,
@@ -2059,7 +2045,7 @@ unsafe fn append_pq_fastscan_tuple(
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2117,7 +2103,6 @@ unsafe fn append_pq_fastscan_tuple(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -2133,25 +2118,23 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     search_code: Vec<u8>,
 ) -> page::ItemPointer {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main_locked(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             P_NEW,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            ptr::null_mut(),
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate fallback PqFastScan data buffer for aminsert");
-    }
+    });
 
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2215,7 +2198,6 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -2240,17 +2222,19 @@ unsafe fn find_duplicate_element_tid(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to open duplicate scan block {block_number}")
+        });
+
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
@@ -2280,15 +2264,12 @@ unsafe fn find_duplicate_element_tid(
                 continue;
             }
             if element.code == code && element.gamma.to_bits() == gamma.to_bits() {
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
                     offset_number: offset,
                 });
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     let _ = dimensions;
@@ -2311,17 +2292,19 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to open TurboQuant V3 duplicate scan block {block_number}")
+        });
+
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
@@ -2360,15 +2343,12 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
                 )
             };
             if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
                     offset_number: offset,
                 });
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     None
@@ -2389,17 +2369,19 @@ unsafe fn find_duplicate_grouped_element_tid(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to open grouped duplicate scan block {block_number}")
+        });
+
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
@@ -2438,15 +2420,12 @@ unsafe fn find_duplicate_grouped_element_tid(
                 graph::load_grouped_rerank_payload(index_relation, element.reranktid, layout)
             };
             if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
                     offset_number: offset,
                 });
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     None
@@ -2459,27 +2438,25 @@ unsafe fn coalesce_duplicate_heap_tid(
     heap_tid: page::ItemPointer,
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             element_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate element block {}",
             element_tid.block_number
-        );
-    }
+        )
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw duplicate element tuple slot is unused");
@@ -2498,7 +2475,6 @@ unsafe fn coalesce_duplicate_heap_tid(
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode duplicate element tuple: {e}"));
     if element.heaptids.contains(&heap_tid) {
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
     if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
@@ -2523,7 +2499,6 @@ unsafe fn coalesce_duplicate_heap_tid(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
@@ -2533,27 +2508,25 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
     heap_tid: page::ItemPointer,
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             element_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate TurboQuant V3 element block {}",
             element_tid.block_number
-        );
-    }
+        )
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw duplicate TurboQuant V3 tuple slot is unused");
@@ -2574,7 +2547,6 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
         });
     if element.heaptids.contains(&heap_tid) {
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
     if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
@@ -2599,7 +2571,6 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 unsafe fn coalesce_duplicate_grouped_heap_tid(
@@ -2609,27 +2580,25 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     heap_tid: page::ItemPointer,
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             element_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate PqFastScan element block {}",
             element_tid.block_number
-        );
-    }
+        )
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw duplicate PqFastScan element tuple slot is unused");
@@ -2654,7 +2623,6 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     });
     if element.heaptids.contains(&heap_tid) {
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
     if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
@@ -2679,7 +2647,6 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 #[cfg(test)]

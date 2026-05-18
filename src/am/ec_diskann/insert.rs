@@ -20,11 +20,14 @@ use pgrx::pg_sys;
 use crate::am::common::training;
 use crate::quant::grouped_pq::{encode_grouped_pq, GROUPED_PQ_CENTROIDS};
 use crate::quant::prod::ProdQuantizer;
-use crate::storage::page::{
-    element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, DataPageChain, ItemPointer,
-    FIRST_DATA_BLOCK_NUMBER, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
-};
 use crate::storage::wal;
+use crate::storage::{
+    buffer_guard::LockedBufferGuard,
+    page::{
+        element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, DataPageChain, ItemPointer,
+        FIRST_DATA_BLOCK_NUMBER, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+    },
+};
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 
 use super::scan_query::{encode_query_srht, read_grouped_codebook_chain};
@@ -675,25 +678,22 @@ unsafe fn apply_duplicate_bind_patches(
     while start < sorted.len() {
         let block_number = sorted[start].target_tid.block_number;
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_diskann duplicate bind could not open target block {block_number}"
-            ));
         }
+        .ok_or_else(|| {
+            format!("ec_diskann duplicate bind could not open target block {block_number}")
+        })?;
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_size = buffer.page_size();
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let writable_page =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let writable_page = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
         let mut page_changed = false;
         let mut page_retry = false;
 
@@ -812,11 +812,9 @@ unsafe fn apply_duplicate_bind_patches(
             }
             Err(error) => {
                 std::mem::drop(wal_txn);
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Err(error);
             }
         }
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 
         if page_retry {
             return Ok(DuplicateBindApplyOutcome::RetryReplan);
@@ -1143,24 +1141,18 @@ pub(super) unsafe fn read_metadata_page(
     index_relation: pg_sys::Relation,
 ) -> Result<VamanaMetadataPage, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             crate::storage::page::METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_diskann failed to open metadata buffer".into());
     }
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
+    let page = buffer.page();
     let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
-    let metadata = VamanaMetadataPage::decode(metadata_bytes);
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    metadata
+    VamanaMetadataPage::decode(metadata_bytes)
 }
 
 pub(super) unsafe fn with_locked_metadata_page<T>(
@@ -1168,21 +1160,17 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     f: impl FnOnce(&mut VamanaMetadataPage) -> Result<T, String>,
 ) -> Result<T, String> {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             crate::storage::page::METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_diskann failed to open metadata buffer".into());
     }
+    .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    let page = unsafe { pg_sys::BufferGetPage(buffer) };
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page = buffer.page();
+    let page_size = buffer.page_size();
     let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
     let mut metadata = VamanaMetadataPage::decode(metadata_bytes)?;
@@ -1192,12 +1180,11 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     let special_size = (encoded.len() + 7) & !7;
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let writable_page =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(writable_page, page_size, special_size) };
     let dst = unsafe { pg_sys::PageGetSpecialPointer(writable_page) }.cast::<u8>();
     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len()) };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(result)
 }
 
@@ -1346,46 +1333,44 @@ unsafe fn append_raw_tuple_payload(
     required_bytes: usize,
     target_block: pg_sys::BlockNumber,
 ) -> Result<ItemPointer, String> {
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
+    let buffer = if target_block == P_NEW {
+        unsafe {
+            LockedBufferGuard::read_main_locked(
+                index_relation,
+                target_block,
+                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+            )
+        }
     } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
-    };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        return Err("ec_diskann failed to allocate append buffer".into());
+        unsafe {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     }
+    .ok_or_else(|| "ec_diskann failed to allocate append buffer".to_string())?;
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_raw_tuple_payload(index_relation, encoded, required_bytes, P_NEW)
             };
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let offset_number = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1400,7 +1385,6 @@ unsafe fn append_raw_tuple_payload(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(ItemPointer {
         block_number,
         offset_number,
@@ -1430,25 +1414,22 @@ pub(super) unsafe fn add_backlinks_if_free(
     while start < targets.len() {
         let block_number = targets[start].block_number;
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_diskann backlink write could not open target block {block_number}"
-            ));
         }
+        .ok_or_else(|| {
+            format!("ec_diskann backlink write could not open target block {block_number}")
+        })?;
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_size = buffer.page_size();
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let writable_page =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let writable_page = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
         let mut page_changed = false;
         let page_result = (|| -> Result<usize, String> {
             let mut page_changes = 0usize;
@@ -1502,11 +1483,9 @@ pub(super) unsafe fn add_backlinks_if_free(
             }
             Err(error) => {
                 std::mem::drop(wal_txn);
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Err(error);
             }
         }
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     Ok(changed)
@@ -1535,25 +1514,22 @@ pub(super) unsafe fn apply_backlink_mutations(
     while start < sorted.len() {
         let block_number = sorted[start].target_tid.block_number;
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_diskann backlink rewrite could not open target block {block_number}"
-            ));
         }
+        .ok_or_else(|| {
+            format!("ec_diskann backlink rewrite could not open target block {block_number}")
+        })?;
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_size = buffer.page_size();
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let writable_page =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let writable_page = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
         let mut page_changed = false;
         let page_result = (|| -> Result<(), String> {
             while start < sorted.len() && sorted[start].target_tid.block_number == block_number {
@@ -1612,11 +1588,9 @@ pub(super) unsafe fn apply_backlink_mutations(
             }
             Err(error) => {
                 std::mem::drop(wal_txn);
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Err(error);
             }
         }
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     sort_and_dedup_backlink_targets(&mut retries);

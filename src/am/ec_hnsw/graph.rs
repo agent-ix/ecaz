@@ -1,12 +1,12 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
-use std::ptr;
 
 use hashbrown::HashSet;
 use pgrx::pg_sys;
 
 use super::{options, page, search};
 use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
+use crate::storage::buffer_guard::LockedBufferGuard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PqFastScanLayout {
@@ -1605,20 +1605,23 @@ where
     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
 {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             tuple_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
     };
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let buffer = buffer.unwrap_or_else(|| {
+        pgrx::error!(
+            "ec_hnsw graph read failed to open block {} for {tuple_kind} tuple",
+            tuple_tid.block_number
+        )
+    });
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
     if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         pgrx::error!(
             "ec_hnsw graph read found {tuple_kind} tuple offset {} out of range on block {}",
             tuple_tid.offset_number,
@@ -1628,14 +1631,12 @@ where
 
     let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");
     }
 
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         pgrx::error!(
             "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
             tuple_tid.block_number
@@ -1643,9 +1644,7 @@ where
     }
 
     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let decoded = decode(tuple_bytes);
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    decoded
+    decode(tuple_bytes)
 }
 
 #[cfg(feature = "pg18")]

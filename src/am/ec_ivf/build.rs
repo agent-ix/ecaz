@@ -8,6 +8,7 @@ use super::{options, page, training, P_NEW};
 use crate::am::common::training as common_training;
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::{
+    buffer_guard::LockedBufferGuard,
     page::{DataPageChain, ItemPointer},
     wal,
 };
@@ -543,25 +544,24 @@ pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &I
 unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
     for staged_page in data_pages.pages() {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main_locked(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 P_NEW,
                 pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-                ptr::null_mut(),
             )
         };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        let buffer = buffer.unwrap_or_else(|| {
             pgrx::error!(
                 "ec_ivf failed to allocate data buffer for block {}",
                 staged_page.block_number()
-            );
-        }
+            )
+        });
 
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_size = buffer.page_size();
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let page_ptr =
-            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let page_ptr = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
         for tuple in staged_page.tuples() {
@@ -583,7 +583,6 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPa
         }
 
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 }
 

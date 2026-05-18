@@ -1,8 +1,9 @@
-use std::{ptr, slice};
+use std::slice;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys};
 
 use crate::storage::{
+    buffer_guard::LockedBufferGuard,
     page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
     relation_guard::HeapRelationGuard,
     snapshot_guard::RegisteredSnapshotGuard,
@@ -140,22 +141,16 @@ pub(super) fn metadata_search_code_len(metadata: &VamanaMetadataPage) -> usize {
 pub(super) unsafe fn materialize_chain_from_index(
     index_relation: pg_sys::Relation,
 ) -> Result<(VamanaMetadataPage, DataPageChain), String> {
-    let metadata_buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+    let metadata_result: Result<(VamanaMetadataPage, usize), String> = {
+        let metadata_buffer = LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             0,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    };
-    if !unsafe { pg_sys::BufferIsValid(metadata_buffer) } {
-        return Err("ec_diskann beginscan could not open metadata page".into());
-    }
-    unsafe { pg_sys::LockBuffer(metadata_buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let metadata_result = (|| -> Result<(VamanaMetadataPage, usize), String> {
-        let page = unsafe { pg_sys::BufferGetPage(metadata_buffer) };
-        let page_size = unsafe { pg_sys::BufferGetPageSize(metadata_buffer) as usize };
+        .ok_or_else(|| "ec_diskann beginscan could not open metadata page".to_owned())?;
+        let page = metadata_buffer.page();
+        let page_size = metadata_buffer.page_size();
         let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };
         if special_size < VAMANA_METADATA_BYTES {
             return Err(format!(
@@ -174,8 +169,7 @@ pub(super) unsafe fn materialize_chain_from_index(
         }
         let metadata = VamanaMetadataPage::decode(metadata_bytes)?;
         Ok((metadata, page_size))
-    })();
-    unsafe { pg_sys::UnlockReleaseBuffer(metadata_buffer) };
+    };
     let (metadata, page_size) = metadata_result?;
 
     let block_count = unsafe {
@@ -183,23 +177,17 @@ pub(super) unsafe fn materialize_chain_from_index(
     };
     let mut chain = DataPageChain::new(page_size);
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+        let page_result: Result<(), String> = {
+            let buffer = LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
-        };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!(
-                "ec_diskann beginscan could not open data block {block_number}"
-            ));
-        }
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_result = (|| -> Result<(), String> {
-            let page = unsafe { pg_sys::BufferGetPage(buffer) };
+            .ok_or_else(|| {
+                format!("ec_diskann beginscan could not open data block {block_number}")
+            })?;
+            let page = buffer.page();
             let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
             for offset in 1..=max_offset {
                 let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };
@@ -224,8 +212,7 @@ pub(super) unsafe fn materialize_chain_from_index(
                 chain.insert_raw_tuple(tuple_bytes)?;
             }
             Ok(())
-        })();
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        };
         page_result?;
     }
 
