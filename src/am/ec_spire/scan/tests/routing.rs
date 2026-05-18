@@ -1,5 +1,5 @@
     #[test]
-    fn route_root_object_to_leaf_pids_keeps_bounded_best_routes() {
+    fn miri_route_root_object_to_leaf_pids_keeps_bounded_best_routes() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,
             1,
@@ -25,7 +25,7 @@
     }
 
     #[test]
-    fn route_routing_object_to_child_pids_routes_internal_level() {
+    fn miri_route_routing_object_to_child_pids_routes_internal_level() {
         let internal = SpireRoutingPartitionObject::internal(
             SPIRE_FIRST_PID + 10,
             1,
@@ -47,7 +47,7 @@
     }
 
     #[test]
-    fn adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large() {
+    fn miri_adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,
             1,
@@ -109,7 +109,7 @@
     }
 
     #[test]
-    fn route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes() {
+    fn miri_route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,
             1,
@@ -185,7 +185,7 @@
     }
 
     #[test]
-    fn route_top_graph_to_child_pids_rejects_root_mismatch() {
+    fn miri_route_top_graph_to_child_pids_rejects_root_mismatch() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,
             1,
@@ -215,7 +215,7 @@
     }
 
     #[test]
-    fn route_root_object_to_leaf_pids_still_rejects_internal_parent() {
+    fn miri_route_root_object_to_leaf_pids_still_rejects_internal_parent() {
         let internal = SpireRoutingPartitionObject::internal(
             SPIRE_FIRST_PID + 10,
             1,
@@ -232,7 +232,7 @@
     }
 
     #[test]
-    fn route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level() {
+    fn miri_route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level() {
         let root = SpireRoutingPartitionObject::root_at_level(
             SPIRE_FIRST_PID,
             1,
@@ -286,7 +286,7 @@
     }
 
     #[test]
-    fn route_recursive_routing_objects_to_leaf_pids_rejects_missing_internal_child() {
+    fn miri_route_recursive_routing_objects_to_leaf_pids_rejects_missing_internal_child() {
         let root = SpireRoutingPartitionObject::root_at_level(
             SPIRE_FIRST_PID,
             1,
@@ -309,7 +309,7 @@
     }
 
     #[test]
-    fn route_recursive_routing_objects_to_leaf_pids_rejects_wrong_child_level() {
+    fn miri_route_recursive_routing_objects_to_leaf_pids_rejects_wrong_child_level() {
         let root = SpireRoutingPartitionObject::root_at_level(
             SPIRE_FIRST_PID,
             1,
@@ -342,7 +342,7 @@
     }
 
     #[test]
-    fn route_recursive_routing_objects_to_leaf_pids_uses_conservative_upper_level_nprobe() {
+    fn miri_route_recursive_routing_objects_to_leaf_pids_uses_conservative_upper_level_nprobe() {
         let root = SpireRoutingPartitionObject::root_at_level(
             SPIRE_FIRST_PID,
             1,

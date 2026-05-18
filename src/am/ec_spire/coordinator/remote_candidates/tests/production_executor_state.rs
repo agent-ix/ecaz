@@ -133,6 +133,27 @@ mod production_executor_state_tests {
         }
     }
 
+    fn valid_typed_payload_fields() -> RemoteTypedTuplePayloadFields {
+        RemoteTypedTuplePayloadFields {
+            payload_attnums: vec![1, 2],
+            payload_names: vec!["id".to_owned(), "embedding".to_owned()],
+            payload_type_oids: vec!["20".to_owned(), "17".to_owned()],
+            payload_typmods: vec![-1, -1],
+            payload_collations: Some(vec![
+                pg_sys::InvalidOid.to_string(),
+                pg_sys::InvalidOid.to_string(),
+            ]),
+            payload_nulls: vec![false, true],
+            payload_values_hex: vec!["0000000000000007".to_owned(), String::new()],
+            payload_formats: vec![
+                SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned(),
+                SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned(),
+            ],
+            tuple_transport: SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned(),
+            tuple_transport_status: SPIRE_REMOTE_STATUS_READY.to_owned(),
+        }
+    }
+
     fn ready_heap_receive_result(
         node_id: u32,
         pid: u64,
@@ -373,7 +394,7 @@ mod production_executor_state_tests {
     }
 
     #[test]
-    fn production_executor_state_moves_ready_transport_to_candidate_receive() {
+    fn miri_production_executor_state_moves_ready_transport_to_candidate_receive() {
         let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 2)];
         let transport_rows = vec![ready_transport_row(2, 4), ready_transport_row(3, 5)];
         let row = remote_search_production_executor_state_summary_from_transport_probe_rows(
@@ -519,7 +540,7 @@ mod production_executor_state_tests {
     }
 
     #[test]
-    fn remote_payload_caps_reject_oversized_rows_and_batches() {
+    fn miri_remote_payload_caps_reject_oversized_rows_and_batches() {
         let row_error =
             validate_remote_payload_row_bytes_with_limit(17, 16, "remote typed tuple payload")
                 .expect_err("row over cap should fail");
@@ -534,6 +555,138 @@ mod production_executor_state_tests {
 
         let payload_values = vec!["0a0b".to_owned(), "ff".to_owned()];
         assert_eq!(typed_payload_hex_decoded_bytes(&payload_values).unwrap(), 3);
+    }
+
+    #[test]
+    fn miri_remote_typed_payload_fields_accept_valid_row_independent_payload() {
+        let payload =
+            decode_remote_typed_tuple_payload_fields_with_limit(valid_typed_payload_fields(), 64)
+                .expect("valid typed payload fields should decode");
+
+        assert_eq!(payload.payload_attnums, vec![1, 2]);
+        assert_eq!(payload.payload_names, vec!["id", "embedding"]);
+        assert_eq!(
+            payload.payload_type_oids,
+            vec![pg_sys::Oid::from(20), pg_sys::Oid::from(17)]
+        );
+        assert_eq!(
+            payload.payload_collations,
+            vec![pg_sys::InvalidOid, pg_sys::InvalidOid]
+        );
+        assert_eq!(payload.payload_values[0], vec![0, 0, 0, 0, 0, 0, 0, 7]);
+        assert!(payload.payload_values[1].is_empty());
+        assert_eq!(
+            payload.tuple_transport,
+            SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
+        );
+
+        let mut omitted_collations = valid_typed_payload_fields();
+        omitted_collations.payload_collations = None;
+        let payload =
+            decode_remote_typed_tuple_payload_fields_with_limit(omitted_collations, 64)
+                .expect("omitted collations should default to InvalidOid");
+        assert_eq!(
+            payload.payload_collations,
+            vec![pg_sys::InvalidOid, pg_sys::InvalidOid]
+        );
+    }
+
+    #[test]
+    fn miri_remote_typed_payload_fields_reject_adversarial_shapes() {
+        let mut odd_hex = valid_typed_payload_fields();
+        odd_hex.payload_values_hex[0] = "abc".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(odd_hex, 64)
+                .unwrap_err()
+                .contains("payload_values_hex is invalid")
+        );
+
+        let mut invalid_hex = valid_typed_payload_fields();
+        invalid_hex.payload_values_hex[0] = "zz".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(invalid_hex, 64)
+                .unwrap_err()
+                .contains("payload_values_hex is invalid")
+        );
+
+        let mut over_cap = valid_typed_payload_fields();
+        over_cap.payload_values_hex[0] = "0000000000000007".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(over_cap, 7)
+                .unwrap_err()
+                .contains(SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE)
+        );
+
+        let mut width_mismatch = valid_typed_payload_fields();
+        width_mismatch.payload_names.pop();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(width_mismatch, 64)
+                .unwrap_err()
+                .contains("payload_names width")
+        );
+
+        let mut collation_width_mismatch = valid_typed_payload_fields();
+        collation_width_mismatch
+            .payload_collations
+            .as_mut()
+            .expect("collations should exist")
+            .pop();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(collation_width_mismatch, 64)
+                .unwrap_err()
+                .contains("payload_collations width")
+        );
+
+        let mut invalid_attnum = valid_typed_payload_fields();
+        invalid_attnum.payload_attnums[0] = 0;
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(invalid_attnum, 64)
+                .unwrap_err()
+                .contains("payload_attnum is invalid")
+        );
+
+        let mut invalid_type_oid = valid_typed_payload_fields();
+        invalid_type_oid.payload_type_oids[0] = "not-an-oid".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(invalid_type_oid, 64)
+                .unwrap_err()
+                .contains("payload_type_oid is invalid")
+        );
+
+        let mut invalid_collation = valid_typed_payload_fields();
+        invalid_collation
+            .payload_collations
+            .as_mut()
+            .expect("collations should exist")[0] = "not-an-oid".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(invalid_collation, 64)
+                .unwrap_err()
+                .contains("payload_collation is invalid")
+        );
+
+        let mut bad_transport = valid_typed_payload_fields();
+        bad_transport.tuple_transport = "json-text-v1".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(bad_transport, 64)
+                .unwrap_err()
+                .contains("unsupported tuple transport")
+        );
+
+        let mut bad_status = valid_typed_payload_fields();
+        bad_status.tuple_transport_status = "degraded".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(bad_status, 64)
+                .unwrap_err()
+                .contains("is not ready")
+        );
+
+        let mut bad_format = valid_typed_payload_fields();
+        bad_format.payload_formats[1] = "text".to_owned();
+        assert!(
+            decode_remote_typed_tuple_payload_fields_with_limit(bad_format, 64)
+                .unwrap_err()
+                .contains("payload format mismatch")
+        );
     }
 
     #[test]
@@ -1350,7 +1503,7 @@ mod production_executor_state_tests {
     }
 
     #[test]
-    fn prepared_transaction_intent_transitions_cannot_bypass_prepare_ack() {
+    fn miri_prepared_transaction_intent_transitions_cannot_bypass_prepare_ack() {
         assert!(coordinator_prepared_xact_intent_transition_is_valid(
             SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED,
             SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,

@@ -1,0 +1,60 @@
+Script started on 2026-05-18 11:06:39-07:00 [<not executed on terminal>]
+bash scripts/hardening.sh miri-tree
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/ecaz-76140ec678fb61eb)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:42:8
+   |
+42 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:47:8
+   |
+47 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+running 35 tests
+test am::ec_diskann::page::tests::miri_vamana_metadata_roundtrip_with_codebook_head ... ok
+test am::ec_diskann::tuple::tests::miri_la_011_filled_node_roundtrip ... ok
+test am::ec_diskann::tuple::tests::miri_la_030_codebook_tuple_roundtrip ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_006_repair_neighbors_compacts_and_pads ... ok
+test am::ec_diskann::vacuum::tests::miri_vc_009_repair_preserves_encoded_length ... ok
+test am::ec_diskann::vamana::tests::miri_greedy_search_finds_nearest ... ok
+test am::ec_diskann::vamana::tests::miri_robust_prune_excludes_alpha_dominated ... ok
+test am::ec_hnsw::page::tests::miri_element_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_grouped_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_metadata_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_neighbor_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_rerank_tuple_roundtrip ... ok
+test am::ec_hnsw::page::tests::miri_turbo_hot_tuple_roundtrip ... ok
+test am::ec_hnsw::scan::tests::miri_score_scan_element_result_via_raw_opaque_ptr_updates_stats_delta ... ok
+test am::ec_hnsw::search::tests::miri_beam_search_deduplicates_self_loops_and_parallel_edges ... ok
+test am::ec_hnsw::search::tests::miri_visible_frontier_best_candidate_prefers_live_scheduler_node ... ok
+test am::ec_spire::production_executor_state_tests::miri_prepared_transaction_intent_transitions_cannot_bypass_prepare_ack ... ok
+test am::ec_spire::production_executor_state_tests::miri_production_executor_state_moves_ready_transport_to_candidate_receive ... ok
+test am::ec_spire::production_executor_state_tests::miri_remote_payload_caps_reject_oversized_rows_and_batches ... ok
+test am::ec_spire::scan::tests::miri_adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large ... ok
+test am::ec_spire::scan::tests::miri_rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates ... ok
+test am::ec_spire::scan::tests::miri_route_root_object_to_leaf_pids_keeps_bounded_best_routes ... ok
+test am::ec_spire::scan::tests::miri_scan_candidate_cursor_emits_ranked_candidates_once ... ok
+test am::ec_spire::storage::tests::miri_leaf_v2_empty_meta_rejects_segment_locator ... ok
+test am::ec_spire::storage::tests::miri_leaf_v2_segment_rows_roundtrip_through_columns ... ok
+test am::ec_spire::storage::tests::miri_top_graph_partition_object_round_trips_nodes ... ok
+test quant::hadamard::tests::miri_fwht_small ... ok
+test quant::hadamard::tests::miri_orthonormal_fwht_small ... ok
+test quant::prod::tests::miri_encode_decode_roundtrip ... ok
+test quant::prod::tests::miri_pack_unpack_mse ... ok
+test quant::prod::tests::miri_pack_unpack_qjl ... ok
+test quant::prod::tests::miri_score_ip_codes_lite ... ok
+test quant::prod::tests::miri_score_ip_encoded ... ok
+test storage::page::tests::miri_data_page_chain_preserves_tuple_lookup_across_pages ... ok
+test storage::page::tests::miri_item_pointer_roundtrip ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 1756 filtered out; finished in 29.00s
+
+
+Script done on 2026-05-18 11:07:55-07:00 [COMMAND_EXIT_CODE="0"]

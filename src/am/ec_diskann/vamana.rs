@@ -728,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn robust_prune_excludes_alpha_dominated() {
+    fn miri_robust_prune_excludes_alpha_dominated() {
         // Pivot is node 0. Candidates 1, 2, 3 all near pivot, but
         // candidates 2 and 3 are very close to candidate 1 (so 1
         // α-dominates them with α = 1.2).
@@ -781,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn greedy_search_finds_nearest() {
+    fn miri_greedy_search_finds_nearest() {
         // Linear-chain graph: 0 - 1 - 2 - ... - 19. Distance to node 19
         // is just the index. Search from node 0 should converge to 19.
         let n = 20;
@@ -845,6 +845,46 @@ mod tests {
             medoid,
             8,
             16,
+            1.2,
+            11,
+            &extra,
+            dist,
+        );
+        assert!(
+            stats.passes[0].candidate_pool.mean > stats.passes[0].visited.mean,
+            "pass-1 extra candidates should enlarge the candidate pool"
+        );
+    }
+
+    #[test]
+    fn miri_build_small_graph_is_connected() {
+        let points = synth_2d(16, 7);
+        let dist = l2(&points);
+        let medoid = approximate_medoid(points.len(), points.len(), 7, dist);
+        let (graph, stats) =
+            build_vamana_graph_with_stats(points.len(), medoid, 4, 8, 1.2, 11, dist);
+
+        for (i, neighbors) in graph.neighbors.iter().enumerate() {
+            assert!(!neighbors.is_empty(), "node {i} should have out-edges");
+            assert!(neighbors.len() <= graph.max_degree, "node {i} exceeds R");
+        }
+        assert_eq!(bfs_reachable(&graph, medoid).len(), graph.node_count());
+        assert_eq!(stats.passes.len(), 2);
+        assert_eq!(stats.final_out_degree.count, points.len());
+        assert_eq!(stats.final_in_degree.count, points.len());
+    }
+
+    #[test]
+    fn miri_build_stats_include_pass1_extra_candidates() {
+        let points = synth_2d(12, 7);
+        let dist = l2(&points);
+        let medoid = approximate_medoid(points.len(), points.len(), 7, dist);
+        let extra = vec![vec![1, 2, 3, 4]; points.len()];
+        let (_graph, stats) = build_vamana_graph_with_pass1_extra_candidates(
+            points.len(),
+            medoid,
+            4,
+            8,
             1.2,
             11,
             &extra,

@@ -1,5 +1,5 @@
     #[test]
-    fn local_vec_id_round_trips_sequence() {
+    fn miri_local_vec_id_round_trips_sequence() {
         let vec_id = SpireVecId::local(42);
 
         assert_eq!(vec_id.discriminator(), SPIRE_LOCAL_VEC_ID_DISCRIMINATOR);
@@ -13,7 +13,7 @@
     }
 
     #[test]
-    fn vec_id_rejects_invalid_shapes() {
+    fn miri_vec_id_rejects_invalid_shapes() {
         assert!(SpireVecId::from_bytes(&[]).is_err());
         assert!(SpireVecId::from_bytes(&[0xff, 1, 2]).is_err());
         assert!(SpireVecId::from_bytes(&[SPIRE_LOCAL_VEC_ID_DISCRIMINATOR, 1]).is_err());
@@ -23,7 +23,7 @@
     }
 
     #[test]
-    fn global_vec_id_preserves_payload() {
+    fn miri_global_vec_id_preserves_payload() {
         let vec_id = SpireVecId::global(&[9, 8, 7]).unwrap();
 
         assert_eq!(vec_id.discriminator(), SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR);

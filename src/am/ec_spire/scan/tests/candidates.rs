@@ -1545,7 +1545,7 @@
     }
 
     #[test]
-    fn rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates() {
+    fn miri_rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates() {
         let routed = vec![SpireRoutedLeafScanRows {
             epoch: 1,
             root_pid: SPIRE_FIRST_PID,
@@ -1630,7 +1630,7 @@
     }
 
     #[test]
-    fn rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe() {
+    fn miri_rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe() {
         let routed = vec![SpireRoutedLeafScanRows {
             epoch: 1,
             root_pid: SPIRE_FIRST_PID,
@@ -1679,7 +1679,7 @@
     }
 
     #[test]
-    fn scored_candidate_tie_break_prefers_newer_epoch_then_primary_role() {
+    fn miri_scored_candidate_tie_break_prefers_newer_epoch_then_primary_role() {
         let older_primary = scored_candidate(1, 10, 1, 1.0);
         let mut newer_replica = scored_candidate(2, 10, 2, 1.0);
         newer_replica.epoch = 2;

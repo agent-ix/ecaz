@@ -1,5 +1,5 @@
     #[test]
-    fn delta_partition_object_round_trips_insert_and_delete_rows() {
+    fn miri_delta_partition_object_round_trips_insert_and_delete_rows() {
         let object = SpireDeltaPartitionObject::new(
             19,
             4,
@@ -41,7 +41,7 @@
     }
 
     #[test]
-    fn delta_partition_object_rejects_invalid_header_shape() {
+    fn miri_delta_partition_object_rejects_invalid_header_shape() {
         assert!(SpireDeltaPartitionObject::new(19, 4, 0, Vec::new()).is_err());
 
         let row = SpireLeafAssignmentRow {
@@ -70,7 +70,7 @@
     }
 
     #[test]
-    fn delta_partition_object_rejects_invalid_delta_flags() {
+    fn miri_delta_partition_object_rejects_invalid_delta_flags() {
         let valid_row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
             vec_id: SpireVecId::local(1),
@@ -144,7 +144,7 @@
     }
 
     #[test]
-    fn delta_partition_object_rejects_delete_payloads() {
+    fn miri_delta_partition_object_rejects_delete_payloads() {
         let valid_delete_row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
             vec_id: SpireVecId::local(1),
@@ -171,7 +171,7 @@
     }
 
     #[test]
-    fn delta_partition_object_rejects_duplicate_vec_ids() {
+    fn miri_delta_partition_object_rejects_duplicate_vec_ids() {
         let insert_row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
             vec_id: SpireVecId::local(1),

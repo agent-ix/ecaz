@@ -1,0 +1,13 @@
+diff --git a/src/am/ec_spire/scan/routing.rs b/src/am/ec_spire/scan/routing.rs
+index a2a3fb23..4cc9fb87 100644
+--- a/src/am/ec_spire/scan/routing.rs
++++ b/src/am/ec_spire/scan/routing.rs
+@@ -728,7 +728,7 @@ where
+     };
+     if gap_micros >= nprobe_policy.adaptive_score_gap_micros() {
+         SpireAdaptiveNprobeChoice {
+-            effective_nprobe: adaptive_nprobe,
++            effective_nprobe: requested_nprobe,
+             effective_nprobe_source: "adaptive",
+             decision: "reduced_score_gap",
+         }

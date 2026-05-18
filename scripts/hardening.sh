@@ -2,8 +2,10 @@
 set -euo pipefail
 
 export PATH="${HOME}/.cargo/bin:${PATH}"
-RUSTUP_CARGO="${RUSTUP_CARGO:-/opt/homebrew/opt/rustup/bin/cargo}"
-RUSTUP_BIN="${RUSTUP_BIN:-/opt/homebrew/opt/rustup/bin/rustup}"
+DEFAULT_CARGO="$(command -v cargo 2>/dev/null || true)"
+DEFAULT_RUSTUP="$(command -v rustup 2>/dev/null || true)"
+RUSTUP_CARGO="${RUSTUP_CARGO:-${DEFAULT_CARGO:-/opt/homebrew/opt/rustup/bin/cargo}}"
+RUSTUP_BIN="${RUSTUP_BIN:-${DEFAULT_RUSTUP:-/opt/homebrew/opt/rustup/bin/rustup}}"
 ECAZ_HARDENING_TOOLS_DIR="${ECAZ_HARDENING_TOOLS_DIR:-$HOME/.ecaz/hardening-tools}"
 
 usage() {
@@ -20,6 +22,7 @@ lane flags:
   flake-hunt --seeds N [--fuzz-seconds N]
   fuzz-all-short --seconds N
   sqlsmith-pg18 --dsn LIBPQ_DSN
+  miri-many-seeds uses MIRI_MANY_SEEDS, default 0..128
   any lane --log-file FILE
 EOF
 }
@@ -82,6 +85,12 @@ nightly_path() {
   export PATH
   RUSTUP_TOOLCHAIN=nightly
   export RUSTUP_TOOLCHAIN
+}
+
+run_miri_prefix() {
+  need_nightly_miri
+  nightly_path
+  cargo miri test --lib -- miri_
 }
 
 host_triple() {
@@ -420,9 +429,22 @@ EOF
     cargo mirai --manifest-path hardening/careful/Cargo.toml
     ;;
   miri-expanded)
-    need_nightly_miri
-    nightly_path
-    cargo miri test --lib -- miri_
+    run_miri_prefix
+    ;;
+  miri-tree)
+    MIRIFLAGS="${MIRIFLAGS:-} -Zmiri-tree-borrows"
+    export MIRIFLAGS
+    run_miri_prefix
+    ;;
+  miri-many-seeds)
+    MIRIFLAGS="${MIRIFLAGS:-} -Zmiri-many-seeds=${MIRI_MANY_SEEDS:-0..128}"
+    export MIRIFLAGS
+    run_miri_prefix
+    ;;
+  miri-full)
+    "$0" miri-expanded
+    "$0" miri-tree
+    "$0" miri-many-seeds
     ;;
   cargo-careful)
     need_nightly

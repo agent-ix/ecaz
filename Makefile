@@ -1,5 +1,5 @@
 .PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report ffi-audit ffi-lint ffi-dylint ffi-dylint-self-test cargo-geiger mirai build install clean
-.PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded careful
+.PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded miri-tree miri-many-seeds miri-full careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
 .PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report mutants mutants-full flake-hunt
@@ -255,6 +255,15 @@ miri:
 miri-expanded:
 	bash scripts/hardening.sh miri-expanded
 
+miri-tree:
+	bash scripts/hardening.sh miri-tree
+
+miri-many-seeds:
+	bash scripts/hardening.sh miri-many-seeds
+
+miri-full:
+	bash scripts/hardening.sh miri-full
+
 careful:
 	bash scripts/hardening.sh cargo-careful
 
@@ -444,7 +453,7 @@ ci-nightly: ci-quick bench bench-iai proptest miri
 
 hardening-local: fmt-check lint-hardening test-hardening-local proptest simd-diff layout-check audit-unsafe deny-full cargo-audit
 
-hardening-nightly-local: hardening-local miri-expanded careful fuzz-all-short fault-full kani sanitizer-asan sanitizer-lsan
+hardening-nightly-local: hardening-local miri-full careful fuzz-all-short fault-full kani sanitizer-asan sanitizer-lsan
 
 hardening-validate:
 	bash scripts/hardening_validate.sh
