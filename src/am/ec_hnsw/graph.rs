@@ -7,6 +7,8 @@ use pgrx::pg_sys;
 use super::{options, page, search};
 use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 use crate::storage::buffer_guard::LockedBufferGuard;
+#[cfg(feature = "pg18")]
+use crate::storage::buffer_guard::PinnedBufferLockGuard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PqFastScanLayout {
@@ -517,7 +519,7 @@ where
 
 #[cfg(feature = "pg18")]
 pub(crate) unsafe fn with_graph_storage_tuple_from_buffer<R, F>(
-    buffer: pg_sys::Buffer,
+    buffer: &PinnedBufferLockGuard<'_>,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
     f: F,
@@ -1649,7 +1651,7 @@ where
 
 #[cfg(feature = "pg18")]
 unsafe fn read_page_tuple_from_buffer<T, DecodeFn>(
-    buffer: pg_sys::Buffer,
+    buffer: &PinnedBufferLockGuard<'_>,
     tuple_tid: page::ItemPointer,
     tuple_kind: &str,
     decode: DecodeFn,
@@ -1657,8 +1659,8 @@ unsafe fn read_page_tuple_from_buffer<T, DecodeFn>(
 where
     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
 {
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
     if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
         pgrx::error!(
