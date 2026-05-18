@@ -2,8 +2,9 @@
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report
+.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report mutants mutants-full flake-hunt
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
+.PHONY: recall-gate recall-gate-full cross-am-gate cost-gate
 
 ## Format all source files
 fmt:
@@ -342,6 +343,32 @@ afl-decoders:
 kani:
 	bash scripts/hardening.sh kani
 
+# --- Test quality measurement ---
+
+COVERAGE_OUTPUT_DIR ?= target/quality/coverage
+COVERAGE_REPORT_DIR ?= $(COVERAGE_OUTPUT_DIR)/html
+MUTANTS_OUTPUT_DIR ?= target/quality/mutants
+MUTANTS_MODULE ?=
+MUTANTS_JOBS ?= 0
+FLAKE_HUNT_SEEDS ?= 8
+FLAKE_HUNT_FUZZ_SECONDS ?= 10
+
+coverage:
+	bash scripts/hardening.sh coverage --output-dir $(COVERAGE_OUTPUT_DIR)
+
+coverage-report:
+	bash scripts/hardening.sh coverage --output-dir $(COVERAGE_OUTPUT_DIR) --html --report-dir $(COVERAGE_REPORT_DIR)
+
+mutants:
+	@if [ -z "$(MUTANTS_MODULE)" ]; then echo "error: set MUTANTS_MODULE=src/path.rs"; exit 2; fi
+	bash scripts/hardening.sh mutants --file $(MUTANTS_MODULE) --output-dir $(MUTANTS_OUTPUT_DIR) --jobs $(MUTANTS_JOBS)
+
+mutants-full:
+	bash scripts/hardening.sh mutants-full --output-dir $(MUTANTS_OUTPUT_DIR) --jobs $(MUTANTS_JOBS)
+
+flake-hunt:
+	bash scripts/hardening.sh flake-hunt --seeds $(FLAKE_HUNT_SEEDS) --fuzz-seconds $(FLAKE_HUNT_FUZZ_SECONDS)
+
 # --- Sanitizers / live-cluster hardening ---
 
 SQLSMITH_DSN ?=
@@ -373,6 +400,24 @@ sqlsmith-pg18:
 ## Run pure-Rust recall benchmark (slow, ~5 min for 10K vectors)
 recall:
 	cargo test --features bench --release --test recall_integration -- --ignored --nocapture
+
+RECALL_GATE_CONFIG ?= fixtures/gates/recall-gate-small.json
+RECALL_GATE_FULL_CONFIG ?= fixtures/gates/recall-gate-full.json
+CROSS_AM_GATE_CONFIG ?= fixtures/gates/cross-am-gate-small.json
+COST_GATE_CONFIG ?= fixtures/gates/cost-gate-small.json
+GATE_ARGS ?=
+
+recall-gate:
+	cargo run -p ecaz-cli -- bench suite run --config $(RECALL_GATE_CONFIG) $(GATE_ARGS)
+
+recall-gate-full:
+	cargo run -p ecaz-cli -- bench suite run --config $(RECALL_GATE_FULL_CONFIG) $(GATE_ARGS)
+
+cross-am-gate:
+	cargo run -p ecaz-cli -- bench suite run --config $(CROSS_AM_GATE_CONFIG) $(GATE_ARGS)
+
+cost-gate:
+	cargo run -p ecaz-cli -- bench suite run --config $(COST_GATE_CONFIG) $(GATE_ARGS)
 
 # --- SQL Benchmarks (requires running PG with extension installed) ---
 

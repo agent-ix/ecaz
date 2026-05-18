@@ -1,0 +1,44 @@
+{
+  "name": "task47-recall-gate-full",
+  "schema_version": 1,
+  "artifact_dir": "target/gates/recall-full",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "force_index": true
+  },
+  "thresholds": [
+    {
+      "name": "hnsw-real10k-k10-p128-floor",
+      "step": "hnsw-real10k-k10-sweep",
+      "metric": "recall",
+      "filters": { "ef_search": "128" },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.89
+    },
+    {
+      "name": "hnsw-real10k-k10-p200-floor",
+      "step": "hnsw-real10k-k10-sweep",
+      "metric": "recall",
+      "filters": { "ef_search": "200" },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.93
+    }
+  ],
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "hnsw-real10k-k10-sweep",
+      "tags": ["recall", "full", "nightly"],
+      "prefix": "task47_hnsw_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 128, 200],
+      "truth_cache_file": "target/gates/recall-full/real10k-truth-k10.json",
+      "log_output": "target/gates/recall-full/hnsw-real10k-k10-sweep.log"
+    }
+  ]
+}

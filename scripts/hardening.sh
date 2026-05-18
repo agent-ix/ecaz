@@ -14,6 +14,10 @@ Local-first hardening lanes. Each lane checks for optional tooling before it
 runs and prints install/setup guidance when the tool is missing.
 
 lane flags:
+  coverage --output-dir DIR [--html --report-dir DIR]
+  mutants --file PATH --output-dir DIR [--jobs N]
+  mutants-full --output-dir DIR [--jobs N]
+  flake-hunt --seeds N [--fuzz-seconds N]
   fuzz-all-short --seconds N
   sqlsmith-pg18 --dsn LIBPQ_DSN
   any lane --log-file FILE
@@ -82,6 +86,201 @@ nightly_path() {
 
 host_triple() {
   rustc -vV | awk '/host:/ {print $2}'
+}
+
+quality_mutation_targets() {
+  cat <<'EOF'
+src/quant/prod.rs
+src/quant/qjl.rs
+src/quant/mse.rs
+src/quant/simd.rs
+src/storage/page.rs
+src/am/common/cost.rs
+src/am/ec_spire/cost/mod.rs
+src/am/ec_spire/coordinator/diagnostics.rs
+src/am/ec_diskann/routine.rs
+src/am/ec_diskann/scan.rs
+src/am/ec_diskann/build.rs
+EOF
+}
+
+run_coverage_lane() {
+  need_cmd cargo-llvm-cov "cargo install cargo-llvm-cov"
+  local output_dir="target/quality/coverage"
+  local report_dir=""
+  local html=false
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --output-dir)
+        output_dir="${2:-}"
+        if [ -z "$output_dir" ]; then
+          echo "missing value for --output-dir" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      --html)
+        html=true
+        shift
+        ;;
+      --report-dir)
+        report_dir="${2:-}"
+        if [ -z "$report_dir" ]; then
+          echo "missing value for --report-dir" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      *)
+        echo "unknown coverage flag: $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+  mkdir -p "$output_dir"
+  cargo llvm-cov clean --workspace
+  cargo llvm-cov --no-report -p ecaz-cli
+  cargo llvm-cov --no-report --manifest-path hardening/careful/Cargo.toml --lib
+  cargo llvm-cov report --summary-only > "$output_dir/summary.txt"
+  cargo llvm-cov report --json --output-path "$output_dir/coverage.json"
+  if [ "$html" = true ]; then
+    if [ -z "$report_dir" ]; then
+      report_dir="$output_dir/html"
+    fi
+    cargo llvm-cov report --html --output-dir "$report_dir"
+  fi
+  echo "coverage summary: $output_dir/summary.txt"
+  echo "coverage json: $output_dir/coverage.json"
+}
+
+run_mutants_lane() {
+  need_cmd cargo-mutants "cargo install cargo-mutants"
+  local file=""
+  local output_dir="target/quality/mutants"
+  local jobs="0"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --file)
+        file="${2:-}"
+        if [ -z "$file" ]; then
+          echo "missing value for --file" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      --output-dir)
+        output_dir="${2:-}"
+        if [ -z "$output_dir" ]; then
+          echo "missing value for --output-dir" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      --jobs)
+        jobs="${2:-}"
+        if [ -z "$jobs" ]; then
+          echo "missing value for --jobs" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      *)
+        echo "unknown mutants flag: $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+  if [ -z "$file" ]; then
+    cat >&2 <<'EOF'
+missing mutation target
+usage:
+  make mutants MUTANTS_MODULE=src/quant/prod.rs
+EOF
+    exit 2
+  fi
+  mkdir -p "$output_dir"
+  local args=(mutants --file "$file" --output "$output_dir/$(basename "$file").mutants")
+  if [ "$jobs" != "0" ]; then
+    args+=(--jobs "$jobs")
+  fi
+  cargo "${args[@]}"
+}
+
+run_mutants_full_lane() {
+  local output_dir="target/quality/mutants"
+  local jobs="0"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --output-dir)
+        output_dir="${2:-}"
+        if [ -z "$output_dir" ]; then
+          echo "missing value for --output-dir" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      --jobs)
+        jobs="${2:-}"
+        if [ -z "$jobs" ]; then
+          echo "missing value for --jobs" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      *)
+        echo "unknown mutants-full flag: $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+  while IFS= read -r target; do
+    [ -z "$target" ] && continue
+    run_mutants_lane --file "$target" --output-dir "$output_dir" --jobs "$jobs"
+  done < <(quality_mutation_targets)
+}
+
+run_flake_hunt_lane() {
+  local seeds=8
+  local fuzz_seconds=10
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --seeds)
+        seeds="${2:-}"
+        if [ -z "$seeds" ]; then
+          echo "missing value for --seeds" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      --fuzz-seconds)
+        fuzz_seconds="${2:-}"
+        if [ -z "$fuzz_seconds" ]; then
+          echo "missing value for --fuzz-seconds" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
+      *)
+        echo "unknown flake-hunt flag: $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+  need_nightly
+  need_cmd cargo-fuzz "cargo install cargo-fuzz"
+  nightly_path
+  for seed in $(seq 1 "$seeds"); do
+    echo "[flake-hunt] proptest seed=$seed"
+    PROPTEST_RNG_SEED="$seed" cargo test --features bench --test proptest_quant --test proptest_page -- --test-threads=1
+    echo "[flake-hunt] fuzz seed=$seed seconds=$fuzz_seconds"
+    (
+      cd fuzz
+      for target in fuzz_parse_text fuzz_unpack_mse fuzz_element_tuple_decode fuzz_neighbor_tuple_decode fuzz_diskann_metadata_decode fuzz_item_pointer_decode fuzz_vector_normalize
+      do
+        cargo fuzz run "$target" -- -seed="$seed" -max_total_time="$fuzz_seconds"
+      done
+    )
+  done
 }
 
 run_sanitized_lib_tests() {
@@ -166,6 +365,18 @@ if [ -n "$log_file" ]; then
 fi
 
 case "$lane" in
+  coverage)
+    run_coverage_lane "$@"
+    ;;
+  mutants)
+    run_mutants_lane "$@"
+    ;;
+  mutants-full)
+    run_mutants_full_lane "$@"
+    ;;
+  flake-hunt)
+    run_flake_hunt_lane "$@"
+    ;;
   cargo-audit)
     need_cmd cargo-audit "cargo install cargo-audit"
     cargo audit

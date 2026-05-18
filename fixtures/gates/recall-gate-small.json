@@ -1,0 +1,76 @@
+{
+  "name": "task47-recall-gate-small",
+  "schema_version": 1,
+  "artifact_dir": "target/gates/recall-small",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 50,
+    "force_index": true
+  },
+  "thresholds": [
+    {
+      "name": "hnsw-real10k-k10-floor",
+      "step": "hnsw-real10k-k10",
+      "metric": "recall",
+      "filters": { "ef_search": "128" },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.89
+    },
+    {
+      "name": "ivf-real10k-k10-floor",
+      "step": "ivf-real10k-k10",
+      "metric": "recall",
+      "filters": { "nprobe": "48" },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.80
+    },
+    {
+      "name": "diskann-real10k-k10-floor",
+      "step": "diskann-real10k-k10",
+      "metric": "recall",
+      "filters": { "list_size": "200" },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.80
+    }
+  ],
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "hnsw-real10k-k10",
+      "tags": ["recall", "small", "pr"],
+      "prefix": "task47_hnsw_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [128],
+      "truth_cache_file": "target/gates/recall-small/real10k-truth-k10.json",
+      "log_output": "target/gates/recall-small/hnsw-real10k-k10.log"
+    },
+    {
+      "kind": "recall",
+      "name": "ivf-real10k-k10",
+      "tags": ["recall", "small", "pr"],
+      "prefix": "task47_ivf_real10k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "target/gates/recall-small/real10k-truth-k10.json",
+      "log_output": "target/gates/recall-small/ivf-real10k-k10.log"
+    },
+    {
+      "kind": "recall",
+      "name": "diskann-real10k-k10",
+      "tags": ["recall", "small", "pr"],
+      "prefix": "task47_diskann_real10k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [200],
+      "truth_cache_file": "target/gates/recall-small/real10k-truth-k10.json",
+      "log_output": "target/gates/recall-small/diskann-real10k-k10.log"
+    }
+  ]
+}

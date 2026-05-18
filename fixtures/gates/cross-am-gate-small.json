@@ -1,0 +1,53 @@
+{
+  "name": "task47-cross-am-gate-small",
+  "schema_version": 1,
+  "artifact_dir": "target/gates/cross-am-small",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 50,
+    "force_index": true
+  },
+  "thresholds": [
+    {
+      "name": "hnsw-cross-am-floor",
+      "step": "hnsw-real10k-k10",
+      "metric": "recall",
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.89
+    },
+    {
+      "name": "diskann-cross-am-floor",
+      "step": "diskann-real10k-k10",
+      "metric": "recall",
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.80
+    }
+  ],
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "hnsw-real10k-k10",
+      "tags": ["cross-am", "small", "pr"],
+      "prefix": "task47_hnsw_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [128],
+      "truth_cache_file": "target/gates/cross-am-small/real10k-truth-k10.json",
+      "log_output": "target/gates/cross-am-small/hnsw-real10k-k10.log"
+    },
+    {
+      "kind": "recall",
+      "name": "diskann-real10k-k10",
+      "tags": ["cross-am", "small", "pr"],
+      "prefix": "task47_diskann_real10k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [200],
+      "truth_cache_file": "target/gates/cross-am-small/real10k-truth-k10.json",
+      "log_output": "target/gates/cross-am-small/diskann-real10k-k10.log"
+    }
+  ]
+}
