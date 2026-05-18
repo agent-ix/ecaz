@@ -1,0 +1,12 @@
+329:        load_indexed_source_vector_from_heap_row(
+344:pub(super) unsafe fn load_indexed_source_vector_from_heap_row(
+352:    if !unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? } {
+355:    let datum = unsafe { required_slot_datum(slot, indexed_attribute.attnum, label)? };
+357:        unsafe { indexed_vector_datum_to_source_vector(datum, indexed_attribute.kind, label) };
+358:    unsafe { pg_sys::ExecClearTuple(slot) };
+362:unsafe fn fetch_heap_row_version(
+370:    unsafe { pg_sys::ExecClearTuple(slot) };
+379:unsafe fn required_slot_datum(
+395:unsafe fn indexed_vector_datum_to_source_vector(
+400:    let bytes = unsafe { detoasted_varlena_bytes(datum, label)? };
+417:unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<Vec<u8>, String> {

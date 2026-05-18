@@ -198,6 +198,8 @@ if [ "$CHECK_ONLY" = true ]; then
   check_tool cargo-vet cargo-vet
   check_tool cargo-geiger cargo-geiger
   check_tool cargo-careful cargo-careful
+  check_tool cargo-llvm-cov cargo-llvm-cov
+  check_tool cargo-mutants cargo-mutants
   check_tool cargo-fuzz cargo-fuzz
   check_tool cargo-afl cargo-afl
   check_tool cargo-kani cargo-kani

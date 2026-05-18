@@ -25,7 +25,7 @@ use super::storage::{
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};
-use crate::am::common::training as common_training;
+use crate::am::common::{detoast::DetoastedVarlena, training as common_training};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;
 

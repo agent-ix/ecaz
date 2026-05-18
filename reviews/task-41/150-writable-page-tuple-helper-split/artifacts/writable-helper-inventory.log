@@ -1,0 +1,17 @@
+src/am/ec_hnsw/shared.rs:466:pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(
+src/am/ec_hnsw/vacuum.rs:679:            shared::with_writable_page_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:1539:            shared::with_writable_page_tuple_bytes(
+src/am/ec_hnsw/vacuum.rs:1739:            shared::with_writable_page_tuple_bytes(
+src/am/ec_hnsw/insert.rs:1139:            shared::with_writable_page_tuple_bytes(
+src/am/ec_hnsw/insert.rs:2469:        shared::with_writable_page_tuple_bytes(
+src/am/ec_hnsw/insert.rs:2539:        shared::with_writable_page_tuple_bytes(
+src/am/ec_hnsw/insert.rs:2612:        shared::with_writable_page_tuple_bytes(
+src/am/ec_diskann/routine.rs:1673:                    with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |current_raw| {
+src/am/ec_diskann/routine.rs:1688:                    with_vacuum_page_tuple_bytes_mut(
+src/am/ec_diskann/routine.rs:1749:            with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
+src/am/ec_diskann/routine.rs:1826:unsafe fn with_vacuum_page_tuple_bytes<R, F>(
+src/am/ec_diskann/routine.rs:1840:unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
+src/am/ec_diskann/insert.rs:706:                    with_page_tuple_bytes_mut(
+src/am/ec_diskann/insert.rs:1443:                    with_page_tuple_bytes_mut(writable_page, page_size, target_tid, |tuple_bytes| {
+src/am/ec_diskann/insert.rs:1546:                    with_page_tuple_bytes_mut(
+src/am/ec_diskann/insert.rs:1685:unsafe fn with_page_tuple_bytes_mut<R, F>(

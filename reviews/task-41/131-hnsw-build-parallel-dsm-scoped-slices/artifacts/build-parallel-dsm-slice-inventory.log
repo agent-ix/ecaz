@@ -1,0 +1,15 @@
+1085:    let nodes = unsafe { slice::from_raw_parts(parts.nodes, layout.node_count as usize) };
+1094:            slice::from_raw_parts(
+1704:            with_concurrent_dsm_source_for_node(parts, layout, query_idx, |query_source| {
+1705:                with_concurrent_dsm_source_for_node(
+1717:            with_concurrent_dsm_code_for_node(parts, layout, query_idx, |query_code| {
+1718:                with_concurrent_dsm_code_for_node(parts, layout, candidate_idx, |candidate_code| {
+1734:unsafe fn with_concurrent_dsm_code_for_node<R>(
+1747:    let code = unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) };
+1751:unsafe fn with_concurrent_dsm_source_for_node<R>(
+1767:    let source = unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) };
+1780:        slice::from_raw_parts(
+2418:                            let bytes = unsafe { slice::from_raw_parts(data.cast::<u8>(), nbytes) };
+3415:            let nodes = slice::from_raw_parts(parts.nodes, plan.graph_layout.node_count as usize);
+3434:            let neighbor_slots = slice::from_raw_parts(
+3442:            let codes = slice::from_raw_parts(parts.codes, plan.code_corpus.bytes.len());

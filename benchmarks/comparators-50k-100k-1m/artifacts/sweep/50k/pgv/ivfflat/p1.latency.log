@@ -1,0 +1,7 @@
+# iterations: 200, k: 10
+# mean: 4.270 ms
+# min: 0.362 ms
+# p50: 1.067 ms
+# p95: 16.462 ms
+# p99: 22.049 ms
+# max: 27.280 ms

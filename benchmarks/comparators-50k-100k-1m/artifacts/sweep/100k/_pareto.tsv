@@ -1,0 +1,14 @@
+system	variant	setting	p50_ms	p95_ms	recall_at_10	n
+pgv	hnsw	ef100	102.600	801.916	0.9620	200
+pgv	hnsw	ef16	1.112	1.920	0.7560	200
+pgv	hnsw	ef40	1.698	2.953	0.8830	200
+pgv	hnsw	ef400	32.650	185.397	0.9920	200
+pgv	ivfflat	p1	0.764	16.379	0.3650	200
+pgv	ivfflat	p100	69.863	125.728	0.9810	200
+pgv	ivfflat	p32	19.121	23.880	0.9225	200
+pgv	ivfflat	p8	4.512	6.658	0.7830	200
+pgvscale	diskann	sl100	28.175	80.463	0.9775	200
+pgvscale	diskann	sl1000	15.503	19.372	0.9805	200
+pgvscale	diskann	sl40	2.645	4.947	0.9730	200
+pgvscale	diskann	sl400	7.405	9.058	0.9810	200
+vchord	rabitq	default	19.701	28.052	0.9985	200

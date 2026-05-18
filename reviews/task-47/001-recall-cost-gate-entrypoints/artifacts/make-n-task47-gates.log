@@ -1,0 +1,4 @@
+cargo run -p ecaz-cli -- bench suite run --config fixtures/gates/recall-gate-small.json 
+cargo run -p ecaz-cli -- bench suite run --config fixtures/gates/recall-gate-full.json 
+cargo run -p ecaz-cli -- bench suite run --config fixtures/gates/cross-am-gate-small.json 
+cargo run -p ecaz-cli -- bench suite run --config fixtures/gates/cost-gate-small.json 

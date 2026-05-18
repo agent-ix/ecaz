@@ -1,0 +1,13 @@
+src/lib.rs:848:        let array = pg_sys::pg_detoast_datum_packed(original.cast()).cast::<pg_sys::ArrayType>();
+src/am/ec_diskann/ambuild.rs:855:        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+src/am/ec_diskann/ambuild.rs:866:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+src/am/ec_ivf/build.rs:709:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+src/am/ec_ivf/build.rs:720:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+src/am/ec_hnsw/source.rs:504:        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+src/am/ec_hnsw/source.rs:520:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+src/am/ec_hnsw/build.rs:653:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+src/am/ec_hnsw/build.rs:664:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+src/am/ec_spire/scan/relation.rs:433:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+src/am/ec_spire/scan/relation.rs:444:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+src/am/ec_spire/build/tuples.rs:68:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+src/am/ec_spire/build/tuples.rs:79:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }

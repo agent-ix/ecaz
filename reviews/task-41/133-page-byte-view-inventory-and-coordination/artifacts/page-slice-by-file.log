@@ -1,0 +1,16 @@
+      5 src/am/ec_diskann/insert.rs
+      1 src/am/ec_diskann/routine.rs
+      2 src/am/ec_diskann/scan_state.rs
+     17 src/am/ec_hnsw/build_parallel.rs
+      2 src/am/ec_hnsw/graph.rs
+      7 src/am/ec_hnsw/insert.rs
+      3 src/am/ec_hnsw/scan.rs
+      3 src/am/ec_hnsw/scan_debug.rs
+      5 src/am/ec_hnsw/shared.rs
+      2 src/am/ec_hnsw/source.rs
+      7 src/am/ec_hnsw/vacuum.rs
+      9 src/am/ec_ivf/page.rs
+      3 src/am/ec_ivf/scan.rs
+      1 src/am/ec_spire/build/drafts.rs
+      3 src/am/ec_spire/page.rs
+      3 src/lib.rs

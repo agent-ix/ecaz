@@ -1,0 +1,4 @@
+2606:                    source::negative_inner_product(opaque.query_values(), source.as_slice());
+4758:            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+5324:    fn query_values(&self) -> &[f32] {
+5329:        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }

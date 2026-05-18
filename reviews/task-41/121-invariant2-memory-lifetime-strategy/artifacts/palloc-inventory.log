@@ -1,0 +1,89 @@
+src/lib.rs:856:                pg_sys::pfree(array.cast());
+src/lib.rs:861:            pg_sys::pfree(array.cast());
+src/am/ec_diskann/routine.rs:8:use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts};
+src/am/ec_diskann/routine.rs:232:            crate::fault::maybe_fail_palloc("ec_diskann aminsert entry");
+src/am/ec_diskann/routine.rs:544:            crate::fault::maybe_fail_palloc("ec_diskann ambeginscan opaque");
+src/am/ec_diskann/routine.rs:546:                PgMemoryContexts::CurrentMemoryContext,
+src/am/ec_diskann/routine.rs:762:                pg_sys::pfree(opaque_ptr.cast());
+src/am/ec_diskann/routine.rs:785:    unsafe { pg_sys::pfree(index_info.cast()) };
+src/am/ec_diskann/routine.rs:937:        crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
+src/am/ec_diskann/routine.rs:963:        crate::fault::maybe_fail_palloc("ec_diskann bulkdelete stats");
+src/am/common/explain.rs:374:    unsafe { pg_sys::pfree(am_name_ptr.cast()) };
+src/am/common/explain.rs:418:            let state = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+src/am/ec_diskann/ambuild.rs:215:            crate::fault::maybe_fail_palloc("ec_diskann ambuild result");
+src/am/ec_diskann/ambuild.rs:823:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_diskann/ambuild.rs:873:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_ivf/insert.rs:32:            crate::fault::maybe_fail_palloc("ec_ivf aminsert entry");
+src/am/ec_ivf/vacuum.rs:80:        crate::fault::maybe_fail_palloc("ec_ivf bulkdelete stats");
+src/am/ec_ivf/vacuum.rs:262:        crate::fault::maybe_fail_palloc("ec_ivf vacuum stats");
+src/am/ec_ivf/build.rs:164:            crate::fault::maybe_fail_palloc("ec_ivf ambuild result");
+src/am/ec_ivf/build.rs:731:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_ivf/build.rs:793:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_hnsw/scan_debug.rs:659:    let unused_keys = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
+src/am/ec_hnsw/scan_debug.rs:689:    unsafe { pg_sys::pfree(unused_keys.cast()) };
+src/am/ec_hnsw/insert.rs:394:            crate::fault::maybe_fail_palloc("ec_hnsw aminsert entry");
+src/am/ec_spire/dml_frontdoor/mod.rs:1502:    unsafe { pg_sys::pfree(type_name.cast()) };
+src/am/ec_hnsw/vacuum.rs:384:        crate::fault::maybe_fail_palloc("ec_hnsw vacuum stats");
+src/am/ec_ivf/scan.rs:274:            crate::fault::maybe_fail_palloc("ec_ivf ambeginscan opaque");
+src/am/ec_ivf/scan.rs:460:                pg_sys::pfree(opaque_ptr);
+src/am/ec_ivf/scan.rs:496:            crate::fault::maybe_fail_palloc("ec_ivf scan orderby values");
+src/am/ec_ivf/scan.rs:498:                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
+src/am/ec_ivf/scan.rs:501:            crate::fault::maybe_fail_palloc("ec_ivf scan orderby nulls");
+src/am/ec_ivf/scan.rs:502:            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+src/am/ec_ivf/scan.rs:544:    crate::fault::maybe_fail_palloc("ec_ivf scan query values");
+src/am/ec_ivf/scan.rs:545:    let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+src/am/ec_ivf/scan.rs:556:        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+src/am/ec_ivf/scan.rs:626:    crate::fault::maybe_fail_palloc("ec_ivf scan centroid scores");
+src/am/ec_ivf/scan.rs:627:    let score_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfCentroidScore>();
+src/am/ec_ivf/scan.rs:639:        unsafe { pg_sys::pfree(opaque.centroid_scores.cast()) };
+src/am/ec_ivf/scan.rs:652:    crate::fault::maybe_fail_palloc("ec_ivf scan selected lists");
+src/am/ec_ivf/scan.rs:653:    let list_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<u32>();
+src/am/ec_ivf/scan.rs:665:        unsafe { pg_sys::pfree(opaque.selected_lists.cast()) };
+src/am/ec_ivf/scan.rs:681:    crate::fault::maybe_fail_palloc("ec_ivf scan posting candidates");
+src/am/ec_ivf/scan.rs:682:    let candidate_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfScoredCandidate>();
+src/am/ec_ivf/scan.rs:695:        unsafe { pg_sys::pfree(opaque.posting_candidates.cast()) };
+src/am/ec_hnsw/build.rs:295:            crate::fault::maybe_fail_palloc("ec_hnsw ambuild result");
+src/am/ec_hnsw/build.rs:675:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_hnsw/source.rs:355:    unsafe { pg_sys::pfree(index_info.cast()) };
+src/am/ec_hnsw/source.rs:393:    unsafe { pg_sys::pfree(index_info.cast()) };
+src/am/ec_hnsw/source.rs:406:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_hnsw/source.rs:428:            unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_hnsw/source.rs:527:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_spire/scan.rs:33:use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgMemoryContexts};
+src/am/ec_spire/custom_scan/mod.rs:137:    allocation_context: pg_sys::MemoryContext,
+src/am/ec_spire/custom_scan/mod.rs:195:pub(crate) struct SpireCustomScanMemoryContextSnapshot {
+src/am/ec_spire/insert.rs:37:            crate::fault::maybe_fail_palloc("ec_spire aminsert entry");
+src/am/ec_hnsw/scan.rs:842:            crate::fault::maybe_fail_palloc("ec_hnsw ambeginscan opaque");
+src/am/ec_hnsw/scan.rs:1859:                pg_sys::pfree(opaque_ptr);
+src/am/ec_hnsw/scan.rs:1890:    crate::fault::maybe_fail_palloc("ec_hnsw scan query values");
+src/am/ec_hnsw/scan.rs:1891:    let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+src/am/ec_hnsw/scan.rs:1913:        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+src/am/ec_hnsw/scan.rs:4952:            crate::fault::maybe_fail_palloc("ec_hnsw scan orderby values");
+src/am/ec_hnsw/scan.rs:4954:                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
+src/am/ec_hnsw/scan.rs:4957:            crate::fault::maybe_fail_palloc("ec_hnsw scan orderby nulls");
+src/am/ec_hnsw/scan.rs:4958:            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+src/am/ec_spire/custom_scan/begin_exec.rs:6:        let allocation_context = pg_sys::CurrentMemoryContext;
+src/am/ec_spire/custom_scan/begin_exec.rs:8:        let state = pg_sys::palloc0(std::mem::size_of::<SpireCustomScanExecState>())
+src/am/ec_spire/custom_scan/begin_exec.rs:190:        pg_sys::pfree(state.cast());
+src/am/ec_spire/custom_scan/begin_exec.rs:238:fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext) -> u64 {
+src/am/ec_spire/custom_scan/begin_exec.rs:242:    let mut counters = pg_sys::MemoryContextCounters::default();
+src/am/ec_spire/custom_scan/begin_exec.rs:244:        pg_sys::MemoryContextMemConsumed(context, &mut counters);
+src/am/ec_spire/custom_scan/begin_exec.rs:250:fn custom_scan_note_memory_baseline_for_test(context: pg_sys::MemoryContext) {
+src/am/ec_spire/custom_scan/begin_exec.rs:258:fn custom_scan_note_memory_baseline_for_test(_context: pg_sys::MemoryContext) {}
+src/am/ec_spire/custom_scan/begin_exec.rs:261:fn custom_scan_note_memory_after_end_for_test(context: pg_sys::MemoryContext) {
+src/am/ec_spire/custom_scan/begin_exec.rs:269:fn custom_scan_note_memory_after_end_for_test(_context: pg_sys::MemoryContext) {}
+src/am/ec_spire/custom_scan/begin_exec.rs:290:) -> SpireCustomScanMemoryContextSnapshot {
+src/am/ec_spire/custom_scan/begin_exec.rs:295:    SpireCustomScanMemoryContextSnapshot {
+src/am/ec_spire/build/tuples.rs:90:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_spire/build/tuples.rs:201:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_spire/build/tuples.rs:292:            crate::fault::maybe_fail_palloc("ec_spire ambuild result");
+src/am/ec_spire/vacuum/mod.rs:565:        crate::fault::maybe_fail_palloc("ec_spire vacuum stats");
+src/am/ec_spire/scan/relation.rs:14:            crate::fault::maybe_fail_palloc("ec_spire scan orderby values");
+src/am/ec_spire/scan/relation.rs:16:                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
+src/am/ec_spire/scan/relation.rs:19:            crate::fault::maybe_fail_palloc("ec_spire scan orderby nulls");
+src/am/ec_spire/scan/relation.rs:20:            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+src/am/ec_spire/scan/relation.rs:455:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_spire/scan/callbacks.rs:13:            crate::fault::maybe_fail_palloc("ec_spire ambeginscan opaque");
+src/am/ec_spire/scan/callbacks.rs:14:            let opaque = PgBox::<SpireScanOpaque>::alloc_in_context(PgMemoryContexts::For(
+src/am/ec_spire/scan/callbacks.rs:15:                pg_sys::CurrentMemoryContext,
+src/am/ec_spire/scan/callbacks.rs:128:                pg_sys::pfree(opaque_ptr.cast());

@@ -86,6 +86,11 @@ const IVF_PQ_CODEBOOK_TAG: u8 = 0x24;
 const POSTING_FLAG_DELETED: u8 = 1 << 0;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 
+enum PageTupleVisit<R> {
+    Unused,
+    Present(R),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MetadataPage {
     pub format_version: u16,
@@ -1371,33 +1376,29 @@ where
     let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     for offset in 1..=line_pointer_count {
-        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-        if item_id.lp_flags() == 0 {
-            continue;
-        }
-
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            return Err(format!(
-                "ec_ivf posting tuple bounds exceed block {block_number}"
-            ));
-        }
-
-        let tuple_bytes =
-            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-            continue;
-        }
-
-        let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
-        visitor(
-            ItemPointer {
+        unsafe {
+            with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
                 block_number,
-                offset_number: offset,
-            },
-            posting,
-        )?;
+                offset,
+                "posting",
+                |tuple_bytes| {
+                    if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                        return Ok(());
+                    }
+
+                    let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+                    visitor(
+                        ItemPointer {
+                            block_number,
+                            offset_number: offset,
+                        },
+                        posting,
+                    )
+                },
+            )?
+        };
     }
     Ok(())
 }
@@ -1415,33 +1416,29 @@ where
     let page_size = buffer.page_size();
     let line_pointer_count = page_line_pointer_count(page_ptr);
     for offset in 1..=line_pointer_count {
-        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-        if item_id.lp_flags() == 0 {
-            continue;
-        }
-
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            return Err(format!(
-                "ec_ivf posting tuple bounds exceed block {block_number}"
-            ));
-        }
-
-        let tuple_bytes =
-            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-            continue;
-        }
-
-        let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
-        visitor(
-            ItemPointer {
+        unsafe {
+            with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
                 block_number,
-                offset_number: offset,
-            },
-            posting,
-        )?;
+                offset,
+                "posting",
+                |tuple_bytes| {
+                    if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                        return Ok(());
+                    }
+
+                    let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
+                    visitor(
+                        ItemPointer {
+                            block_number,
+                            offset_number: offset,
+                        },
+                        posting,
+                    )
+                },
+            )?
+        };
     }
     Ok(())
 }
@@ -1752,31 +1749,25 @@ where
         ));
     }
 
-    let item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        std::mem::drop(wal_txn);
-        return Err("ec_ivf directory tuple slot is unused".to_owned());
-    }
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf directory tuple bounds exceed block {}",
-            directory_tid.block_number
-        ));
-    }
-    if tuple_len != IvfListDirectoryTuple::encoded_len() {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf directory tuple size changed from {} to {}",
-            tuple_len,
-            IvfListDirectoryTuple::encoded_len()
-        ));
-    }
+    let mut directory = match unsafe {
+        with_required_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            directory_tid,
+            "directory",
+            |tuple_bytes| {
+                if tuple_bytes.len() != IvfListDirectoryTuple::encoded_len() {
+                    return Err(format!(
+                        "ec_ivf directory tuple size changed from {} to {}",
+                        tuple_bytes.len(),
+                        IvfListDirectoryTuple::encoded_len()
+                    ));
+                }
 
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let mut directory = match IvfListDirectoryTuple::decode(tuple_bytes) {
+                IvfListDirectoryTuple::decode(tuple_bytes)
+            },
+        )
+    } {
         Ok(directory) => directory,
         Err(err) => {
             std::mem::drop(wal_txn);
@@ -1789,6 +1780,8 @@ where
     }
 
     let encoded = directory.encode();
+    let directory_item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
+    let tuple_offset = directory_item_id.lp_off() as usize;
     unsafe {
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
@@ -1972,31 +1965,41 @@ unsafe fn debug_ivf_posting_block_summary(
                 continue;
             }
 
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                return Err(format!("ec_ivf tuple bounds exceed block {block_number}"));
-            }
+            match unsafe {
+                with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
+                    block_number,
+                    offset,
+                    "posting",
+                    |tuple_bytes| {
+                        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                            return Ok(false);
+                        }
 
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                non_posting_tuples = non_posting_tuples.saturating_add(1);
-                continue;
+                        let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
+                        posting_tuples = posting_tuples.saturating_add(1);
+                        if posting.deleted {
+                            deleted_posting_tuples = deleted_posting_tuples.saturating_add(1);
+                        } else {
+                            live_posting_tuples = live_posting_tuples.saturating_add(1);
+                        }
+                        heap_tid_refs = heap_tid_refs.saturating_add(
+                            u32::try_from(posting.heaptid_count()).map_err(|_| {
+                                "ec_ivf posting heap tid count exceeds u32".to_owned()
+                            })?,
+                        );
+                        list_ids.insert(posting.list_id);
+                        Ok(true)
+                    },
+                )?
+            } {
+                PageTupleVisit::Unused => unreachable!("unused line pointers are skipped above"),
+                PageTupleVisit::Present(false) => {
+                    non_posting_tuples = non_posting_tuples.saturating_add(1);
+                }
+                PageTupleVisit::Present(true) => {}
             }
-
-            let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
-            posting_tuples = posting_tuples.saturating_add(1);
-            if posting.deleted {
-                deleted_posting_tuples = deleted_posting_tuples.saturating_add(1);
-            } else {
-                live_posting_tuples = live_posting_tuples.saturating_add(1);
-            }
-            heap_tid_refs = heap_tid_refs.saturating_add(
-                u32::try_from(posting.heaptid_count())
-                    .map_err(|_| "ec_ivf posting heap tid count exceeds u32".to_owned())?,
-            );
-            list_ids.insert(posting.list_id);
         }
 
         Ok(IvfPostingBlockSummary {
@@ -2037,61 +2040,62 @@ where
     let mut saw_non_posting_tuple = false;
 
     for offset in 1..=line_pointer_count {
-        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-        if item_id.lp_flags() == 0 {
-            continue;
-        }
+        let tuple_visit = unsafe {
+            with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "posting",
+                |tuple_bytes| {
+                    if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                        return Ok(false);
+                    }
 
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            std::mem::drop(wal_txn);
-            return Err(format!(
-                "ec_ivf posting tuple bounds exceed block {block_number}"
-            ));
-        }
+                    let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+                    if posting.list_id != list_id {
+                        return Ok(true);
+                    }
 
-        let tuple_bytes =
-            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-            saw_non_posting_tuple = true;
-            continue;
-        }
+                    let posting_tid = ItemPointer {
+                        block_number,
+                        offset_number: offset,
+                    };
+                    match rewrite(posting_tid, posting)? {
+                        IvfPostingRewrite::Keep => {}
+                        IvfPostingRewrite::Rewrite(updated) => {
+                            let encoded = updated.encode()?;
+                            if encoded.len() != tuple_bytes.len() {
+                                return Err(format!(
+                                    "ec_ivf posting tuple size changed from {} to {}",
+                                    tuple_bytes.len(),
+                                    encoded.len()
+                                ));
+                            }
 
-        let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
-        if posting.list_id != list_id {
-            continue;
-        }
-
-        let posting_tid = ItemPointer {
-            block_number,
-            offset_number: offset,
+                            ptr::copy_nonoverlapping(
+                                encoded.as_ptr(),
+                                page_ptr.add((*page_item_id(page_ptr, offset)).lp_off() as usize),
+                                encoded.len(),
+                            );
+                            changed = true;
+                        }
+                        IvfPostingRewrite::Delete => {
+                            delete_offsets.push(offset);
+                            changed = true;
+                        }
+                    }
+                    Ok(true)
+                },
+            )
         };
-        match rewrite(posting_tid, posting)? {
-            IvfPostingRewrite::Keep => {}
-            IvfPostingRewrite::Rewrite(updated) => {
-                let encoded = updated.encode()?;
-                if encoded.len() != tuple_len {
-                    std::mem::drop(wal_txn);
-                    return Err(format!(
-                        "ec_ivf posting tuple size changed from {} to {}",
-                        tuple_len,
-                        encoded.len()
-                    ));
-                }
-
-                unsafe {
-                    ptr::copy_nonoverlapping(
-                        encoded.as_ptr(),
-                        page_ptr.add(tuple_offset),
-                        encoded.len(),
-                    )
-                };
-                changed = true;
-            }
-            IvfPostingRewrite::Delete => {
-                delete_offsets.push(offset);
-                changed = true;
+        match tuple_visit {
+            Ok(PageTupleVisit::Unused) => {}
+            Ok(PageTupleVisit::Present(false)) => saw_non_posting_tuple = true,
+            Ok(PageTupleVisit::Present(true)) => {}
+            Err(err) => {
+                std::mem::drop(wal_txn);
+                return Err(err);
             }
         }
     }
@@ -2175,7 +2179,7 @@ unsafe fn read_page_tuple<T, DecodeFn>(
     decode: DecodeFn,
 ) -> Result<(T, u16), String>
 where
-    DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+    DecodeFn: for<'a> FnOnce(&'a [u8]) -> Result<T, String>,
 {
     let buffer = unsafe {
         LockedBufferGuard::read_main(
@@ -2202,22 +2206,9 @@ where
         ));
     }
 
-    let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        return Err(format!("ec_ivf {tuple_kind} tuple slot is unused"));
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_ivf {tuple_kind} tuple bounds exceed block {}",
-            tuple_tid.block_number
-        ));
-    }
-
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let decoded = decode(tuple_bytes);
+    let decoded = unsafe {
+        with_required_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
+    };
     decoded.map(|tuple| (tuple, line_pointer_count))
 }
 
@@ -2250,25 +2241,17 @@ unsafe fn find_next_tuple_with_tag(
         let line_pointer_count = page_line_pointer_count(page_ptr);
         let result = (|| -> Result<Option<ItemPointer>, String> {
             for offset in offset_number..=line_pointer_count {
-                let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-                if item_id.lp_flags() == 0 {
-                    continue;
-                }
-
-                let tuple_offset = item_id.lp_off() as usize;
-                let tuple_len = item_id.lp_len() as usize;
-                if tuple_offset + tuple_len > page_size {
-                    return Err(format!(
-                        "ec_ivf {tuple_kind} tuple bounds exceed block {block_number}"
-                    ));
-                }
-                if tuple_len == 0 {
-                    continue;
-                }
-
-                let tuple_bytes =
-                    unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-                if tuple_bytes.first().copied() == Some(tag) {
+                let visit = unsafe {
+                    with_page_line_tuple_bytes(
+                        page_ptr,
+                        page_size,
+                        block_number,
+                        offset,
+                        tuple_kind,
+                        |tuple_bytes| Ok(tuple_bytes.first().copied() == Some(tag)),
+                    )?
+                };
+                if matches!(visit, PageTupleVisit::Present(true)) {
                     return Ok(Some(ItemPointer {
                         block_number,
                         offset_number: offset,
@@ -2318,6 +2301,64 @@ unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdD
         page_ptr
             .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
             .cast::<pg_sys::ItemIdData>()
+    }
+}
+
+unsafe fn with_page_line_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: pg_sys::BlockNumber,
+    offset: u16,
+    tuple_kind: &str,
+    visit: F,
+) -> Result<PageTupleVisit<R>, String>
+where
+    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
+{
+    if offset == 0 {
+        return Err(format!(
+            "ec_ivf {tuple_kind} tuple offset 0 out of range on block {block_number}"
+        ));
+    }
+
+    let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+    if item_id.lp_flags() == 0 {
+        return Ok(PageTupleVisit::Unused);
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        return Err(format!(
+            "ec_ivf {tuple_kind} tuple bounds exceed block {block_number}"
+        ));
+    }
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    visit(tuple_bytes).map(PageTupleVisit::Present)
+}
+
+unsafe fn with_required_page_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    tuple_tid: ItemPointer,
+    tuple_kind: &str,
+    visit: F,
+) -> Result<R, String>
+where
+    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
+{
+    match unsafe {
+        with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            tuple_tid.block_number,
+            tuple_tid.offset_number,
+            tuple_kind,
+            visit,
+        )?
+    } {
+        PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
+        PageTupleVisit::Present(tuple) => Ok(tuple),
     }
 }
 

@@ -1,0 +1,86 @@
+src/lib.rs:419:        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+src/lib.rs:420:            .to_string_lossy()
+src/lib.rs:427:        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+src/lib.rs:428:            .to_string_lossy()
+src/lib.rs:765:        .to_str()
+src/lib.rs:896:            unsafe { pg_sys::pfree(self.array.cast()) };
+src/lib.rs:910:        .to_str()
+src/am/ec_diskann/routine.rs:762:                pg_sys::pfree(opaque_ptr.cast());
+src/am/ec_diskann/routine.rs:785:    unsafe { pg_sys::pfree(index_info.cast()) };
+src/am/ec_diskann/ambuild.rs:441:    unsafe { CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+src/am/ec_diskann/ambuild.rs:442:        .to_string_lossy()
+src/am/ec_diskann/ambuild.rs:816:    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+src/am/ec_diskann/ambuild.rs:820:    let name = unsafe { CStr::from_ptr(formatted) }
+src/am/ec_diskann/ambuild.rs:821:        .to_string_lossy()
+src/am/ec_diskann/ambuild.rs:823:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_diskann/ambuild.rs:875:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_spire/dml_frontdoor/mod.rs:1487:    unsafe { CStr::from_ptr((*attr).attname.data.as_ptr()) }
+src/am/ec_spire/dml_frontdoor/mod.rs:1488:        .to_str()
+src/am/ec_spire/dml_frontdoor/mod.rs:1494:    let type_name = unsafe { pg_sys::format_type_be(type_oid) };
+src/am/ec_spire/dml_frontdoor/mod.rs:1498:    let decoded = unsafe { CStr::from_ptr(type_name) }
+src/am/ec_spire/dml_frontdoor/mod.rs:1499:        .to_str()
+src/am/ec_spire/dml_frontdoor/mod.rs:1502:    unsafe { pg_sys::pfree(type_name.cast()) };
+src/am/ec_spire/dml_frontdoor/mod.rs:2436:            if let Ok(column) = unsafe { CStr::from_ptr(target_entry.resname) }.to_str() {
+src/am/ec_ivf/scan.rs:503:                pg_sys::pfree(opaque_ptr);
+src/am/ec_ivf/scan.rs:583:        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+src/am/ec_ivf/scan.rs:666:        unsafe { pg_sys::pfree(opaque.centroid_scores.cast()) };
+src/am/ec_ivf/scan.rs:692:        unsafe { pg_sys::pfree(opaque.selected_lists.cast()) };
+src/am/ec_ivf/scan.rs:722:        unsafe { pg_sys::pfree(opaque.posting_candidates.cast()) };
+src/am/ec_ivf/options.rs:387:    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+src/am/ec_ivf/options.rs:388:        .to_str()
+src/am/ec_spire/build/tuples.rs:92:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_spire/build/tuples.rs:196:    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+src/am/ec_spire/build/tuples.rs:200:    let name = unsafe { CStr::from_ptr(formatted) }
+src/am/ec_spire/build/tuples.rs:201:        .to_string_lossy()
+src/am/ec_spire/build/tuples.rs:203:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_ivf/build.rs:733:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_ivf/build.rs:788:    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+src/am/ec_ivf/build.rs:792:    let name = unsafe { CStr::from_ptr(formatted) }
+src/am/ec_ivf/build.rs:793:        .to_string_lossy()
+src/am/ec_ivf/build.rs:795:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_hnsw/scan_debug.rs:682:    unsafe { pg_sys::pfree(unused_keys.cast()) };
+src/am/ec_spire/custom_scan/begin_exec.rs:190:        pg_sys::pfree(state.cast());
+src/am/ec_spire/custom_scan/tuple_payload.rs:68:            let attr_name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+src/am/ec_spire/custom_scan/tuple_payload.rs:69:                .to_str()
+src/am/ec_spire/custom_scan/tuple_payload.rs:195:            let attr_name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+src/am/ec_spire/custom_scan/tuple_payload.rs:196:                .to_str()
+src/am/common/explain.rs:371:    let name = unsafe { CStr::from_ptr(am_name_ptr) }
+src/am/common/explain.rs:372:        .to_string_lossy()
+src/am/common/explain.rs:374:    unsafe { pg_sys::pfree(am_name_ptr.cast()) };
+src/am/ec_spire/custom_scan/dml.rs:246:            let name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+src/am/ec_spire/custom_scan/dml.rs:247:                .to_str()
+src/am/ec_spire/custom_scan/dml.rs:626:        let value = std::ffi::CStr::from_ptr(output)
+src/am/ec_spire/custom_scan/dml.rs:627:            .to_str()
+src/am/ec_spire/options/mod.rs:1588:    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+src/am/ec_spire/options/mod.rs:1589:        .to_str()
+src/am/ec_hnsw/options.rs:249:    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+src/am/ec_hnsw/options.rs:250:        .to_str()
+src/am/ec_hnsw/build.rs:677:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_spire/scan/relation.rs:457:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_hnsw/source.rs:240:            source_column.to_string_lossy()
+src/am/ec_hnsw/source.rs:355:    unsafe { pg_sys::pfree(index_info.cast()) };
+src/am/ec_hnsw/source.rs:393:    unsafe { pg_sys::pfree(index_info.cast()) };
+src/am/ec_hnsw/source.rs:399:    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+src/am/ec_hnsw/source.rs:403:    let name = unsafe { CStr::from_ptr(formatted) }
+src/am/ec_hnsw/source.rs:404:        .to_string_lossy()
+src/am/ec_hnsw/source.rs:406:    unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_hnsw/source.rs:421:            let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+src/am/ec_hnsw/source.rs:425:            let name = unsafe { CStr::from_ptr(formatted) }
+src/am/ec_hnsw/source.rs:426:                .to_string_lossy()
+src/am/ec_hnsw/source.rs:428:            unsafe { pg_sys::pfree(formatted.cast()) };
+src/am/ec_hnsw/source.rs:529:            unsafe { pg_sys::pfree(self.varlena.cast()) };
+src/am/ec_spire/scan/callbacks.rs:128:                pg_sys::pfree(opaque_ptr.cast());
+src/am/ec_hnsw/scan.rs:1242:    let mode = match raw_mode.to_string_lossy().as_ref() {
+src/am/ec_hnsw/scan.rs:1283:    match raw_mode.to_string_lossy().as_ref() {
+src/am/ec_hnsw/scan.rs:1394:    .map(|value| value.to_string_lossy().into_owned())
+src/am/ec_hnsw/scan.rs:1419:    let mode = match raw_mode.to_string_lossy().as_ref() {
+src/am/ec_hnsw/scan.rs:1482:    match raw_scope.to_string_lossy().as_ref() {
+src/am/ec_hnsw/scan.rs:1510:    match raw_strategy.to_string_lossy().as_ref() {
+src/am/ec_hnsw/scan.rs:1535:    let raw_limit = raw_limit.to_string_lossy();
+src/am/ec_hnsw/scan.rs:1589:    let raw_window = raw_window.to_string_lossy();
+src/am/ec_hnsw/scan.rs:1859:                pg_sys::pfree(opaque_ptr);
+src/am/ec_hnsw/scan.rs:1905:        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+src/am/ec_diskann/options.rs:268:    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+src/am/ec_diskann/options.rs:269:        .to_str()
+src/am/ec_spire/custom_scan/plan_private.rs:233:        std::ffi::CStr::from_ptr((*value_node).sval)
+src/am/ec_spire/custom_scan/plan_private.rs:234:            .to_str()

@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
-use crate::am::common::training;
+use crate::am::common::{detoast::DetoastedVarlena, training};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
@@ -829,35 +829,19 @@ unsafe fn validate_single_ecvector_attribute(
 
 pub(super) unsafe fn with_ecvector_datum_slice<T>(
     datum: pg_sys::Datum,
-    f: impl FnOnce(&[f32]) -> T,
+    f: impl for<'a> FnOnce(&'a [f32]) -> T,
 ) -> T {
-    let original = datum
-        .cast_mut_ptr::<std::ffi::c_void>()
-        .cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
-    if varlena.is_null() {
-        pgrx::error!("ec_diskann could not detoast indexed ecvector");
-    }
-    let owned = !ptr::eq(varlena, original);
-    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) };
+    let detoasted = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+        .unwrap_or_else(|| pgrx::error!("ec_diskann could not detoast indexed ecvector"));
+    let bytes = detoasted.as_bytes();
     if bytes.len() % std::mem::size_of::<f32>() != 0 {
-        if owned {
-            unsafe { pg_sys::pfree(varlena.cast()) };
-        }
         pgrx::error!("ec_diskann indexed ecvector payload length must be a multiple of 4 bytes");
     }
     let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
     if !prefix.is_empty() || !suffix.is_empty() {
-        if owned {
-            unsafe { pg_sys::pfree(varlena.cast()) };
-        }
         pgrx::error!("ec_diskann indexed ecvector payload is not aligned for float4 access");
     }
-    let result = f(body);
-    if owned {
-        unsafe { pg_sys::pfree(varlena.cast()) };
-    }
-    result
+    f(body)
 }
 
 pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {

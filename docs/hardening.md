@@ -170,6 +170,36 @@ make sqlsmith-pg18 SQLSMITH_DSN='postgresql://localhost/postgres'
 Use a PG18 cluster with `ecaz` installed. Capture crashes and raw SQLsmith logs
 under the relevant review packet before citing findings.
 
+## Test Quality
+
+Task 39 adds measurement lanes for the quality of existing tests:
+
+- `make coverage`: checks for `cargo-llvm-cov`, runs the local pure-Rust
+  hardening subset currently safe outside a live PostgreSQL backend
+  (`ecaz-cli` and `hardening/careful`), and writes `summary.txt` plus
+  `coverage.json` under `target/quality/coverage`.
+- `make coverage-report`: same lane with an HTML report under
+  `target/quality/coverage/html`.
+- `make mutants MUTANTS_MODULE=src/quant/prod.rs`: checks for
+  `cargo-mutants` and runs a bounded mutation campaign for one critical module.
+- `make mutants-full`: runs the initial critical-module target list from Task
+  39. This is weekly/manual until survivor volume is triaged.
+- `make flake-hunt`: re-runs proptest and short fuzz targets across multiple
+  seeds. Override with `FLAKE_HUNT_SEEDS=N` and
+  `FLAKE_HUNT_FUZZ_SECONDS=N`.
+
+Current interpretation:
+
+| Lane | Gate Level | Artifact | Rule |
+| --- | --- | --- | --- |
+| `make coverage` | Report-first / PR candidate after burn-in | summary, JSON, optional HTML | No repository-wide threshold yet; touched production files should not drop by more than 2 percentage points once a baseline packet exists. |
+| `make mutants` | Weekly/manual | cargo-mutants output directory | Each survivor is triaged as equivalent, test gap, or follow-up bug. |
+| `make flake-hunt` | Nightly candidate | seed sweep log | Any nondeterministic failure or new fuzz crash becomes a follow-up with the seed and minimized input attached. |
+
+The first coverage scope intentionally avoids claiming live pgrx callback
+coverage. PG18 integration coverage is still a gap until instrumentation is
+stable for `cargo pgrx test pg18` and the resulting logs are packeted.
+
 ## PG Fault Injection
 
 - `ecaz dev fault plan`: prints the required Task 38 fault matrix for every

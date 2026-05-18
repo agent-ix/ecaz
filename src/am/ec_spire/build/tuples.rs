@@ -53,17 +53,9 @@ fn build_dimensions(dimensions: usize, context: &str, label: &str) -> u16 {
 }
 
 unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
-    let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-    if varlena.is_null() {
-        pgrx::error!("ec_spire could not detoast {label}");
-    }
-    let owned = !ptr::eq(varlena, original);
-    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
-    if owned {
-        unsafe { pg_sys::pfree(varlena.cast()) };
-    }
-    bytes
+    unsafe { DetoastedVarlena::packed_from_datum(datum) }
+        .unwrap_or_else(|| pgrx::error!("ec_spire could not detoast {label}"))
+        .to_vec()
 }
 
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {

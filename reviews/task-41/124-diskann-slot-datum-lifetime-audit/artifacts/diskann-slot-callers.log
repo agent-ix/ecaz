@@ -1,0 +1,10 @@
+src/am/ec_diskann/routine.rs:1906:        with_heap_source_vector(
+src/am/ec_diskann/routine.rs:1936:    unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
+src/am/ec_diskann/routine.rs:1937:    let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };
+src/am/ec_diskann/routine.rs:1938:    let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };
+src/am/ec_diskann/routine.rs:1939:    unsafe { pg_sys::ExecClearTuple(slot) };
+src/am/ec_diskann/routine.rs:1952:        with_heap_source_vector(
+src/am/ec_diskann/ambuild.rs:881:    unsafe { with_ecvector_datum_slice(datum, |body| body.to_vec()) }
+src/am/ec_diskann/scan_state.rs:259:pub(super) unsafe fn fetch_heap_row_version(
+src/am/ec_diskann/scan_state.rs:272:        pg_sys::ExecClearTuple(slot);
+src/am/ec_diskann/scan_state.rs:285:pub(super) unsafe fn required_slot_datum(

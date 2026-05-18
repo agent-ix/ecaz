@@ -418,17 +418,9 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<V
     if datum.is_null() {
         return Err(format!("ec_spire does not support NULL {label}"));
     }
-    let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-    if varlena.is_null() {
-        return Err(format!("ec_spire could not detoast {label}"));
-    }
-    let owned = !ptr::eq(varlena, original);
-    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
-    if owned {
-        unsafe { pg_sys::pfree(varlena.cast()) };
-    }
-    Ok(bytes)
+    unsafe { DetoastedVarlena::packed_from_datum(datum) }
+        .ok_or_else(|| format!("ec_spire could not detoast {label}"))
+        .map(|datum| datum.to_vec())
 }
 
 fn exact_source_inner_product(query: &[f32], source_vector: &[f32]) -> Result<f32, String> {

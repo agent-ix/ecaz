@@ -1,0 +1,28 @@
+                *(*slot).tts_isnull.add(attr_index as usize) = true;
+                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+                continue;
+            }
+            let attr_name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+                .to_str()
+                .unwrap_or_else(|_| {
+                    pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
+                });
+            match payload_object.get(attr_name) {
+                None | Some(serde_json::Value::Null) => {
+                    *(*slot).tts_isnull.add(attr_index as usize) = true;
+                    *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+                }
+                Some(value) => {
+                    *(*slot).tts_isnull.add(attr_index as usize) = false;
+                    let Some(attr_input) = attr_inputs
+                        .get_mut(attr_index as usize)
+                        .and_then(Option::as_mut)
+                    else {
+                        pgrx::error!(
+                            "EcSpireDistributedScan tuple payload input cache missing attribute {}",
+                            attr_index + 1
+                        );
+                    };
+                    *(*slot).tts_values.add(attr_index as usize) =
+                        custom_scan_json_value_to_datum(value, attr_name, attr_input);
+                }

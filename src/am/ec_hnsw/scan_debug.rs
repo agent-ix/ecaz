@@ -106,6 +106,29 @@ fn debug_graph_tuple_tag(storage: graph::GraphStorageDescriptor) -> u8 {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_with_page_line_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    offset: u16,
+    visit: F,
+) -> Option<R>
+where
+    F: for<'a> FnOnce(&'a [u8]) -> R,
+{
+    unsafe {
+        super::shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            0,
+            offset,
+            "debug scanning page tuples",
+            visit,
+        )
+    }
+    .unwrap_or(None)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_load_neighbor_tids_for_layer(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
@@ -164,14 +187,7 @@ fn debug_runtime_ordered_provenance_slots(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
-    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
-        return Vec::new();
-    }
-
-    let query = unsafe {
-        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
-    };
-    query.to_vec()
+    opaque.query_values_or_empty().to_vec()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1180,20 +1196,16 @@ unsafe fn debug_collect_element_tids_at_level(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset_number) };
-            if item_id.lp_flags() == 0 {
-                continue;
+            let matches_element_tag = unsafe {
+                debug_with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
+                    offset_number,
+                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+                )
             }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_len == 0 || tuple_offset + tuple_len > page_size {
-                continue;
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(element_tag) {
+            .unwrap_or(false);
+            if !matches_element_tag {
                 continue;
             }
 
@@ -1250,20 +1262,16 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset_number) };
-            if item_id.lp_flags() == 0 {
-                continue;
+            let matches_element_tag = unsafe {
+                debug_with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
+                    offset_number,
+                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+                )
             }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_len == 0 || tuple_offset + tuple_len > page_size {
-                continue;
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(element_tag) {
+            .unwrap_or(false);
+            if !matches_element_tag {
                 continue;
             }
 
@@ -1319,20 +1327,16 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset_number) };
-            if item_id.lp_flags() == 0 {
-                continue;
+            let matches_element_tag = unsafe {
+                debug_with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
+                    offset_number,
+                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+                )
             }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_len == 0 || tuple_offset + tuple_len > page_size {
-                continue;
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(element_tag) {
+            .unwrap_or(false);
+            if !matches_element_tag {
                 continue;
             }
 
