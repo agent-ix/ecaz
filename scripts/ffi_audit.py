@@ -89,9 +89,7 @@ def classify_extern(path: str, name: str, attrs: list[str], excerpt: str) -> tup
     return ("unguarded", "missing `#[pg_guard]`, `pgrx_extern_c_guard`, or `catch_unwind`")
 
 
-def collect_extern_entries(path: Path) -> list[Entry]:
-    text = path.read_text()
-    rel = path.relative_to(ROOT).as_posix()
+def collect_extern_entries_from_text(rel: str, text: str) -> list[Entry]:
     lines = text.splitlines()
     entries: list[Entry] = []
     for match in EXTERN_FN_RE.finditer(text):
@@ -116,9 +114,14 @@ def collect_extern_entries(path: Path) -> list[Entry]:
     return entries
 
 
-def collect_pgrx_entries(path: Path) -> list[Entry]:
-    text = path.read_text()
-    rel = path.relative_to(ROOT).as_posix()
+def collect_extern_entries(path: Path) -> list[Entry]:
+    return collect_extern_entries_from_text(
+        path.relative_to(ROOT).as_posix(),
+        path.read_text(),
+    )
+
+
+def collect_pgrx_entries_from_text(rel: str, text: str) -> list[Entry]:
     entries: list[Entry] = []
     for match in PGRX_ATTR_RE.finditer(text):
         fn_match = FN_NAME_RE.search(text[match.end() :])
@@ -135,6 +138,13 @@ def collect_pgrx_entries(path: Path) -> list[Entry]:
             )
         )
     return entries
+
+
+def collect_pgrx_entries(path: Path) -> list[Entry]:
+    return collect_pgrx_entries_from_text(
+        path.relative_to(ROOT).as_posix(),
+        path.read_text(),
+    )
 
 
 def markdown_table(entries: list[Entry]) -> list[str]:
@@ -196,12 +206,50 @@ def collect() -> tuple[list[Entry], list[Entry]]:
     return sorted(extern_entries, key=Entry.key), sorted(pgrx_entries, key=Entry.key)
 
 
+def self_test() -> int:
+    samples = {
+        "fixture/unguarded.rs": 'unsafe extern "C-unwind" fn unguarded() { panic!("boom") }\n',
+        "fixture/guarded_attr.rs": '#[pg_guard]\nunsafe extern "C-unwind" fn guarded_attr() {}\n',
+        "fixture/guarded_call.rs": (
+            'unsafe extern "C-unwind" fn guarded_call() {\n'
+            "    unsafe { pgrx::pgrx_extern_c_guard(|| panic!(\"boom\")) }\n"
+            "}\n"
+        ),
+        "fixture/metadata.rs": (
+            'pub extern "C-unwind" fn pg_finfo_fixture() -> *const pg_sys::Pg_finfo_record {\n'
+            "    core::ptr::null()\n"
+            "}\n"
+        ),
+    }
+    entries = [
+        entry
+        for path, text in samples.items()
+        for entry in collect_extern_entries_from_text(path, text)
+    ]
+    statuses = {entry.name: entry.status for entry in entries}
+    expected = {
+        "unguarded": "unguarded",
+        "guarded_attr": "guarded",
+        "guarded_call": "guarded",
+        "pg_finfo_fixture": "documented exception",
+    }
+    if statuses != expected:
+        print(f"ffi audit self-test failed: expected {expected}, got {statuses}", file=sys.stderr)
+        return 1
+    print("ffi audit self-test passed")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--write", action="store_true", help="rewrite docs/ffi-inventory.md")
     group.add_argument("--check", action="store_true", help="verify inventory and fail on gaps")
+    group.add_argument("--self-test", action="store_true", help="run built-in verifier fixtures")
     args = parser.parse_args()
+
+    if args.self_test:
+        return self_test()
 
     extern_entries, pgrx_entries = collect()
     inventory = render_inventory(extern_entries, pgrx_entries)

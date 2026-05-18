@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report ffi-audit cargo-geiger mirai build install clean
+.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report ffi-audit ffi-lint cargo-geiger mirai build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
@@ -100,6 +100,10 @@ unsafe-baseline-report:
 
 ffi-audit:
 	python3 scripts/ffi_audit.py --check
+
+ffi-lint: ffi-audit
+	python3 scripts/ffi_audit.py --self-test
+	python3 scripts/ffi_lint.py --check
 
 cargo-geiger:
 	bash scripts/hardening.sh cargo-geiger
@@ -373,7 +377,7 @@ bench-recall-sql:
 # --- CI Aggregates ---
 
 ## Quick checks (< 5 min, for every PR)
-ci-quick: fmt-check lint test on-disk-fixtures upgrade-smoke layout-check audit-unsafe
+ci-quick: fmt-check lint test on-disk-fixtures upgrade-smoke layout-check audit-unsafe ffi-lint
 
 ## Full benchmark suite (nightly)
 ci-nightly: ci-quick bench bench-iai proptest miri
