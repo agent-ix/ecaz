@@ -1,0 +1,42 @@
+--- hardening/careful/src/../../../src/quant/simd.rs
++++ replace detect_backend -> SimdBackend with Default::default()
+@@ -13,38 +13,17 @@
+ }
+ 
+ pub(crate) fn backend() -> SimdBackend {
+     static BACKEND: OnceLock<SimdBackend> = OnceLock::new();
+     *BACKEND.get_or_init(detect_backend)
+ }
+ 
+ fn detect_backend() -> SimdBackend {
+-    if let Some(forced) = forced_backend_from_env() {
+-        return forced;
+-    }
+-
+-    #[cfg(target_arch = "x86_64")]
+-    {
+-        if has_avx2_fma(
+-            std::arch::is_x86_feature_detected!("avx2"),
+-            std::arch::is_x86_feature_detected!("fma"),
+-        ) {
+-            return SimdBackend::Avx2Fma;
+-        }
+-    }
+-
+-    #[cfg(target_arch = "aarch64")]
+-    {
+-        if std::arch::is_aarch64_feature_detected!("neon") {
+-            return SimdBackend::Neon;
+-        }
+-    }
+-
+-    SimdBackend::Scalar
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ #[cfg(any(target_arch = "x86_64", test))]
+ fn has_avx2_fma(avx2: bool, fma: bool) -> bool {
+     avx2 && fma
+ }
+ 
+ fn forced_backend_from_env() -> Option<SimdBackend> {

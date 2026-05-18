@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/simd.rs
++++ replace && with || in has_avx2_fma
+@@ -39,17 +39,17 @@
+         }
+     }
+ 
+     SimdBackend::Scalar
+ }
+ 
+ #[cfg(any(target_arch = "x86_64", test))]
+ fn has_avx2_fma(avx2: bool, fma: bool) -> bool {
+-    avx2 && fma
++    avx2 || /* ~ changed by cargo-mutants ~ */ fma
+ }
+ 
+ fn forced_backend_from_env() -> Option<SimdBackend> {
+     let requested = env::var("ECAZ_SIMD").ok()?;
+     match requested.trim().to_ascii_lowercase().as_str() {
+         "" | "auto" => None,
+         "scalar" => Some(SimdBackend::Scalar),
+         #[cfg(target_arch = "x86_64")]

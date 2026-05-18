@@ -1,0 +1,14 @@
+   Compiling ecaz-careful-hardening v0.1.0 (/Users/peter/dev/tqvector/hardening/careful)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.65s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-c6d0dcfc6cd7dc04)
+
+running 6 tests
+test quant::simd::tests::backend_name_matches_detected_backend ... ok
+test quant::simd::tests::detect_backend_honors_forced_scalar ... ok
+test quant::simd::tests::forced_backend_accepts_auto_empty_and_absent ... ok
+test quant::simd::tests::forced_backend_accepts_supported_backend_names ... ok
+test quant::simd::tests::forced_backend_rejects_unknown_name ... ok
+test quant::simd::tests::x86_backend_gate_requires_avx2_and_fma ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 90 filtered out; finished in 0.00s
+

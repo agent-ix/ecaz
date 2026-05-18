@@ -1,0 +1,9 @@
+hardening/careful/src/../../../src/quant/simd.rs:16:5: replace backend -> SimdBackend with Default::default()
+hardening/careful/src/../../../src/quant/simd.rs:21:5: replace detect_backend -> SimdBackend with Default::default()
+hardening/careful/src/../../../src/quant/simd.rs:47:5: replace has_avx2_fma -> bool with true
+hardening/careful/src/../../../src/quant/simd.rs:47:5: replace has_avx2_fma -> bool with false
+hardening/careful/src/../../../src/quant/simd.rs:47:10: replace && with || in has_avx2_fma
+hardening/careful/src/../../../src/quant/simd.rs:51:5: replace forced_backend_from_env -> Option<SimdBackend> with None
+hardening/careful/src/../../../src/quant/simd.rs:51:5: replace forced_backend_from_env -> Option<SimdBackend> with Some(Default::default())
+hardening/careful/src/../../../src/quant/simd.rs:64:5: replace backend_name -> &'static str with ""
+hardening/careful/src/../../../src/quant/simd.rs:64:5: replace backend_name -> &'static str with "xyzzy"
