@@ -1,5 +1,5 @@
     #[test]
-    fn delta_epoch_draft_from_snapshot_carries_base_entries() {
+    fn miri_delta_epoch_draft_from_snapshot_carries_base_entries() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -76,7 +76,7 @@
     }
 
     #[test]
-    fn replacement_leaf_rows_fold_active_deltas_into_base_leaf_rows() {
+    fn miri_replacement_leaf_rows_fold_active_deltas_into_base_leaf_rows() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -201,7 +201,7 @@
     }
 
     #[test]
-    fn delta_epoch_draft_from_snapshot_rejects_unknown_delete_vec_id() {
+    fn miri_delta_epoch_draft_from_snapshot_rejects_unknown_delete_vec_id() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -239,7 +239,7 @@
     }
 
     #[test]
-    fn delta_epoch_draft_from_snapshot_rejects_mismatched_delete_heap_tid() {
+    fn miri_delta_epoch_draft_from_snapshot_rejects_mismatched_delete_heap_tid() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -274,7 +274,7 @@
     }
 
     #[test]
-    fn delta_epoch_draft_from_snapshot_rejects_stale_delete_target() {
+    fn miri_delta_epoch_draft_from_snapshot_rejects_stale_delete_target() {
         let mut pid_allocator = SpirePidAllocator::new(2).unwrap();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::new(2).unwrap();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -332,7 +332,7 @@
     }
 
     #[test]
-    fn delta_epoch_draft_from_snapshot_rejects_duplicate_delete_vec_id() {
+    fn miri_delta_epoch_draft_from_snapshot_rejects_duplicate_delete_vec_id() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -370,7 +370,7 @@
     }
 
     #[test]
-    fn delta_epoch_draft_from_snapshot_rejects_already_deleted_vec_id() {
+    fn miri_delta_epoch_draft_from_snapshot_rejects_already_deleted_vec_id() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
