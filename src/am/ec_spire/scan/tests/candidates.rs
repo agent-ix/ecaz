@@ -1545,7 +1545,7 @@
     }
 
     #[test]
-    fn rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates() {
+    fn miri_rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates() {
         let routed = vec![SpireRoutedLeafScanRows {
             epoch: 1,
             root_pid: SPIRE_FIRST_PID,

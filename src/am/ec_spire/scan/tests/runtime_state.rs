@@ -136,7 +136,7 @@
     }
 
     #[test]
-    fn scan_candidate_cursor_emits_ranked_candidates_once() {
+    fn miri_scan_candidate_cursor_emits_ranked_candidates_once() {
         let mut cursor = SpireScanCandidateCursor::new(vec![
             scored_candidate(2, 10, 2, -10.0),
             scored_candidate(1, 10, 1, -1.0),

@@ -223,7 +223,7 @@ mod tests {
     // VC-006: repair_neighbors removes dead, compacts live, pads
     // INVALID, updates neighbor_count.
     #[test]
-    fn vc_006_repair_neighbors_compacts_and_pads() {
+    fn miri_vc_006_repair_neighbors_compacts_and_pads() {
         let mut t = make_tuple(&[tid(1, 1), tid(2, 2), tid(3, 3), tid(4, 4)], 6);
         assert_eq!(t.neighbor_count, 4);
 
@@ -273,7 +273,7 @@ mod tests {
     // Critical for the placeholder-then-patch / update_raw_tuple
     // contract.
     #[test]
-    fn vc_009_repair_preserves_encoded_length() {
+    fn miri_vc_009_repair_preserves_encoded_length() {
         let r = 8u16;
         let w = 4usize;
         let c = 8usize;
