@@ -1,0 +1,6 @@
+Script started on 2026-05-17 21:24:15-07:00 [<not executed on terminal>]
+[33m56c6ed63[m[33m ([m[1;36mHEAD -> [m[1;32mtask41-invariant2-lifetimes[m[33m)[m Scope HNSW build DSM neighbor slot slices
+ src/am/ec_hnsw/build_parallel.rs | 149 [32m+++++++++++++++++++++[m[31m------------------[m
+ 1 file changed, 81 insertions(+), 68 deletions(-)
+
+Script done on 2026-05-17 21:24:15-07:00 [COMMAND_EXIT_CODE="0"]

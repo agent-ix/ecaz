@@ -1,0 +1,7 @@
+Script started on 2026-05-17 21:25:43-07:00 [<not executed on terminal>]
+## [32mtask41-invariant2-lifetimes[m...[31morigin/task41-invariant2-lifetimes[m [ahead [32m50[m]
+ [31mM[m scripts/comparators/compute_recall.py
+[31m??[m benchmarks/comparators-50k-100k-1m/artifacts/sweep/
+[31m??[m reviews/task-41/147-invariant2-completion-audit/
+
+Script done on 2026-05-17 21:25:43-07:00 [COMMAND_EXIT_CODE="0"]
