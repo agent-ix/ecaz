@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::HashMap, ptr};
 use pgrx::pg_sys;
 
 use super::{build, graph, options, page, search, shared, source};
-use crate::storage::{slot_guard::TupleTableSlotGuard, wal};
+use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
@@ -2459,27 +2459,25 @@ unsafe fn coalesce_duplicate_heap_tid(
     heap_tid: page::ItemPointer,
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             element_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate element block {}",
             element_tid.block_number
-        );
-    }
+        )
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw duplicate element tuple slot is unused");
@@ -2498,7 +2496,6 @@ unsafe fn coalesce_duplicate_heap_tid(
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode duplicate element tuple: {e}"));
     if element.heaptids.contains(&heap_tid) {
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
     if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
@@ -2523,7 +2520,6 @@ unsafe fn coalesce_duplicate_heap_tid(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
@@ -2533,27 +2529,25 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
     heap_tid: page::ItemPointer,
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             element_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate TurboQuant V3 element block {}",
             element_tid.block_number
-        );
-    }
+        )
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw duplicate TurboQuant V3 tuple slot is unused");
@@ -2574,7 +2568,6 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
         });
     if element.heaptids.contains(&heap_tid) {
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
     if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
@@ -2599,7 +2592,6 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 unsafe fn coalesce_duplicate_grouped_heap_tid(
@@ -2609,27 +2601,25 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     heap_tid: page::ItemPointer,
 ) {
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
+        LockedBufferGuard::read_main(
             index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
             element_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate PqFastScan element block {}",
             element_tid.block_number
-        );
-    }
+        )
+    });
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw duplicate PqFastScan element tuple slot is unused");
@@ -2654,7 +2644,6 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     });
     if element.heaptids.contains(&heap_tid) {
         unsafe { wal_txn.finish() };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
     if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
@@ -2679,7 +2668,6 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 #[cfg(test)]
