@@ -12,6 +12,7 @@ use super::scan::*;
 use super::{graph, page, search};
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::{
+    buffer_guard::LockedBufferGuard,
     relation_guard::{HeapRelationGuard, IndexRelationGuard},
     scan_guard::IndexScanGuard,
     slot_guard::TupleTableSlotGuard,
@@ -1164,17 +1165,18 @@ unsafe fn debug_collect_element_tids_at_level(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
+        });
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
@@ -1214,8 +1216,6 @@ unsafe fn debug_collect_element_tids_at_level(
                 offset_number,
             });
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     tids
@@ -1235,17 +1235,18 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
+        });
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
@@ -1285,8 +1286,6 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
                 offset_number,
             });
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     tids
@@ -1305,17 +1304,18 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
+        });
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
@@ -1358,8 +1358,6 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
                 map.insert((heap_tid.block_number, heap_tid.offset_number), element_tid);
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     map
