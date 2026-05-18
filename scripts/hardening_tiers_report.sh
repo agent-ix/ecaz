@@ -17,6 +17,8 @@ test-hardening-local    local       <5 min        macOS-safe local unit subset
 deny-full               local       <5 min        cargo-deny full policy
 cargo-audit             local       <1 min        RustSec advisory scan
 miri-expanded           nightly     variable     pure-Rust Miri prefixes
+miri-tree               nightly     variable     Tree Borrows Miri prefixes
+miri-many-seeds         nightly     variable     many-seeds Miri prefixes
 careful                 nightly     variable     cargo-careful standalone harness
 fuzz-all-short          nightly     variable     short libFuzzer smoke
 kani                    nightly     variable     ItemPointer decode proof

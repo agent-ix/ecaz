@@ -38,6 +38,8 @@ Use `make hardening-tiers-report` for the current SHA-local report.
 | `deny-full` | Local | <5 min | packet evidence |
 | `cargo-audit` | Local | <1 min | packet evidence |
 | `miri-expanded` | Nightly | variable | packet evidence |
+| `miri-tree` | Nightly | variable | packet evidence |
+| `miri-many-seeds` | Nightly | variable | packet evidence |
 | `careful` | Nightly | variable | packet evidence |
 | `fuzz-all-short` | Nightly | variable | packet evidence |
 | `kani` | Nightly | variable | packet evidence |

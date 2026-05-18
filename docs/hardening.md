@@ -96,7 +96,16 @@ the temporary exception and a reviewer accepts it.
 ## Miri And Cargo-Careful
 
 - `make miri-expanded`: runs the expanded `miri_` pure-Rust test set through
-  the repo hardening script.
+  the repo hardening script with Miri's default aliasing model.
+- `make miri-tree`: reruns the same `miri_` prefix with
+  `-Zmiri-tree-borrows` so Tree Borrows and the default model can be compared
+  in packet-local evidence.
+- `make miri-many-seeds`: reruns the `miri_` prefix with
+  `-Zmiri-many-seeds=128` by default. Override the count with
+  `MIRI_MANY_SEEDS=N` when a packet needs a smaller triage run or a deeper
+  campaign.
+- `make miri-full`: runs the default, Tree Borrows, and many-seeds Miri lanes.
+  `hardening-nightly-local` uses this aggregate.
 - `make careful`: runs a standalone pure-Rust harness under
   `hardening/careful/` so PostgreSQL callback symbols are kept out of the
   `cargo-careful` test binary.
@@ -104,6 +113,12 @@ the temporary exception and a reviewer accepts it.
 Miri and Kani cover only pure Rust paths. pgrx, SPI, libpq, PostgreSQL memory
 contexts, and C callback entrypoints are outside their model and must stay in
 PG18 pgrx or live-cluster lanes.
+
+Review packets for Miri depth work should keep the default, Tree Borrows, and
+many-seeds logs separate. If Tree Borrows and the default model disagree, the
+packet should identify the exact test, preserve both logs, and classify the
+difference as likely UB, model-specific false positive, or a test harness
+problem before promoting a new default.
 
 Seeded Miri coverage now includes:
 
