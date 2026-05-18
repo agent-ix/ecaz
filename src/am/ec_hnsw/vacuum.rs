@@ -678,49 +678,81 @@ unsafe fn apply_page_pass1_updates(
             | ElementVacuumUpdate::TurboQuantHot { tid, .. }
             | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
         };
-        let item_id = unsafe { &*shared::page_item_id(page_ptr, tid.offset_number) };
-        if item_id.lp_flags() == 0 {
-            pgrx::error!(
-                "ec_hnsw vacuum element tuple slot {}/{} is unused",
-                tid.block_number,
-                tid.offset_number
-            );
-        }
-
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            pgrx::error!("ec_hnsw found invalid vacuum rewrite bounds on block {block_number}");
-        }
-
-        let encoded = match update {
-            ElementVacuumUpdate::TurboQuant { tuple, .. } => tuple.encode().unwrap_or_else(|e| {
-                pgrx::error!("ec_hnsw failed to encode vacuum element tuple: {e}")
-            }),
-            ElementVacuumUpdate::TurboQuantHot { tuple, .. } => {
-                tuple.encode().unwrap_or_else(|e| {
-                    pgrx::error!("ec_hnsw failed to encode vacuum TurboQuant V3 tuple: {e}")
-                })
-            }
-            ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
-                tuple.encode().unwrap_or_else(|e| {
-                    pgrx::error!("ec_hnsw failed to encode vacuum grouped hot tuple: {e}")
-                })
-            }
-        };
-        if encoded.len() != tuple_len {
-            pgrx::error!(
-                "ec_hnsw vacuum element tuple size changed from {} to {} on block {}",
-                tuple_len,
-                encoded.len(),
-                block_number
-            );
-        }
-
         unsafe {
-            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), tuple_len);
+            with_writable_vacuum_tuple_bytes(
+                page_ptr,
+                page_size,
+                tid,
+                "vacuum element",
+                |tuple_ptr, tuple_bytes| {
+                    let encoded = match update {
+                        ElementVacuumUpdate::TurboQuant { tuple, .. } => {
+                            tuple.encode().unwrap_or_else(|e| {
+                                pgrx::error!("ec_hnsw failed to encode vacuum element tuple: {e}")
+                            })
+                        }
+                        ElementVacuumUpdate::TurboQuantHot { tuple, .. } => {
+                            tuple.encode().unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "ec_hnsw failed to encode vacuum TurboQuant V3 tuple: {e}"
+                                )
+                            })
+                        }
+                        ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
+                            tuple.encode().unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "ec_hnsw failed to encode vacuum grouped hot tuple: {e}"
+                                )
+                            })
+                        }
+                    };
+                    if encoded.len() != tuple_bytes.len() {
+                        pgrx::error!(
+                            "ec_hnsw vacuum element tuple size changed from {} to {} on block {}",
+                            tuple_bytes.len(),
+                            encoded.len(),
+                            block_number
+                        );
+                    }
+
+                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, tuple_bytes.len());
+                },
+            )
         }
     }
+}
+
+unsafe fn with_writable_vacuum_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    tuple_tid: page::ItemPointer,
+    tuple_kind: &str,
+    visit: F,
+) -> R
+where
+    F: FnOnce(*mut u8, &[u8]) -> R,
+{
+    let item_id = unsafe { &*shared::page_item_id(page_ptr, tuple_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!(
+            "ec_hnsw {tuple_kind} tuple slot {}/{} is unused",
+            tuple_tid.block_number,
+            tuple_tid.offset_number
+        );
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
+            tuple_tid.block_number
+        );
+    }
+
+    let tuple_ptr = unsafe { page_ptr.add(tuple_offset) };
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
+    visit(tuple_ptr, tuple_bytes)
 }
 
 unsafe fn repair_graph_connections_with_storage(
@@ -1538,62 +1570,60 @@ unsafe fn apply_repair_plans_on_page(
             end += 1;
         }
 
-        let item_id = unsafe { &*shared::page_item_id(page_ptr, neighbor_tid.offset_number) };
-        if item_id.lp_flags() == 0 {
-            pgrx::error!(
-                "ec_hnsw repair neighbor tuple slot {}/{} is unused",
-                neighbor_tid.block_number,
-                neighbor_tid.offset_number
-            );
-        }
+        let tuple_changed = unsafe {
+            with_writable_vacuum_tuple_bytes(
+                page_ptr,
+                page_size,
+                neighbor_tid,
+                "repair neighbor",
+                |tuple_ptr, tuple_bytes| {
+                    let mut neighbor =
+                        page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
+                        });
+                    if neighbor.count as usize > neighbor.tids.len() {
+                        pgrx::error!(
+                            "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
+                            neighbor.count,
+                            neighbor.tids.len()
+                        );
+                    }
+                    let mut tuple_changed =
+                        unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids);
+                    for plan in &plans[start..end] {
+                        tuple_changed |= apply_repair_plan(
+                            &mut neighbor.tids,
+                            plan.source_level,
+                            m,
+                            plan.layer,
+                            deleted_tids,
+                            &plan.replacement_tids,
+                        );
+                    }
+                    if !tuple_changed {
+                        return false;
+                    }
 
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            pgrx::error!("ec_hnsw found invalid repair rewrite bounds on block {block_number}");
-        }
+                    let encoded = neighbor.encode().unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
+                    });
+                    if encoded.len() != tuple_bytes.len() {
+                        pgrx::error!(
+                            "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
+                            tuple_bytes.len(),
+                            encoded.len(),
+                            block_number
+                        );
+                    }
 
-        let tuple_bytes =
-            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
-            pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
-        });
-        if neighbor.count as usize > neighbor.tids.len() {
-            pgrx::error!(
-                "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
-                neighbor.count,
-                neighbor.tids.len()
-            );
-        }
-        let mut tuple_changed = unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids);
-        for plan in &plans[start..end] {
-            tuple_changed |= apply_repair_plan(
-                &mut neighbor.tids,
-                plan.source_level,
-                m,
-                plan.layer,
-                deleted_tids,
-                &plan.replacement_tids,
-            );
-        }
+                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                    true
+                },
+            )
+        };
         if !tuple_changed {
             start = end;
             continue;
-        }
-
-        let encoded = neighbor.encode().unwrap_or_else(|e| {
-            pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
-        });
-        if encoded.len() != tuple_len {
-            pgrx::error!(
-                "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
-                tuple_len,
-                encoded.len(),
-                block_number
-            );
-        }
-        unsafe {
-            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
         }
         changed = true;
         start = end;
@@ -1737,35 +1767,28 @@ unsafe fn apply_page_pass2_updates(
     updates: &[NeighborVacuumUpdate],
 ) {
     for update in updates {
-        let item_id = unsafe { &*shared::page_item_id(page_ptr, update.tid.offset_number) };
-        if item_id.lp_flags() == 0 {
-            pgrx::error!(
-                "ec_hnsw repair neighbor tuple slot {}/{} is unused",
-                update.tid.block_number,
-                update.tid.offset_number
-            );
-        }
-
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            pgrx::error!("ec_hnsw found invalid repair rewrite bounds on block {block_number}");
-        }
-
-        let encoded = update.tuple.encode().unwrap_or_else(|e| {
-            pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
-        });
-        if encoded.len() != tuple_len {
-            pgrx::error!(
-                "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
-                tuple_len,
-                encoded.len(),
-                block_number
-            );
-        }
-
         unsafe {
-            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), tuple_len);
+            with_writable_vacuum_tuple_bytes(
+                page_ptr,
+                page_size,
+                update.tid,
+                "repair neighbor",
+                |tuple_ptr, tuple_bytes| {
+                    let encoded = update.tuple.encode().unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
+                    });
+                    if encoded.len() != tuple_bytes.len() {
+                        pgrx::error!(
+                            "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
+                            tuple_bytes.len(),
+                            encoded.len(),
+                            block_number
+                        );
+                    }
+
+                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, tuple_bytes.len());
+                },
+            )
         }
     }
 }
