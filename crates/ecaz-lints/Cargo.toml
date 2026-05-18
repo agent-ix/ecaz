@@ -1,0 +1,16 @@
+[package]
+name = "ecaz_lints"
+version = "0.1.0"
+authors = ["ECAZ maintainers"]
+description = "ECAZ-specific dylint lints"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dylint_linting = "6.0.0"
+
+[package.metadata.rust-analyzer]
+rustc_private = true

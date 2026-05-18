@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report ffi-audit ffi-lint cargo-geiger mirai build install clean
+.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report ffi-audit ffi-lint ffi-dylint ffi-dylint-self-test cargo-geiger mirai build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
@@ -105,6 +105,14 @@ ffi-lint: ffi-audit
 	python3 scripts/ffi_audit.py --self-test
 	python3 scripts/ffi_lint.py --self-test
 	python3 scripts/ffi_lint.py --check
+	bash scripts/run_dylint_self_test.sh
+	bash scripts/run_dylint.sh --no-deps -p ecaz -- --all-targets --no-default-features --features pg18,bench
+
+ffi-dylint:
+	bash scripts/run_dylint.sh --no-deps -p ecaz -- --all-targets --no-default-features --features pg18,bench
+
+ffi-dylint-self-test:
+	bash scripts/run_dylint_self_test.sh
 
 cargo-geiger:
 	bash scripts/hardening.sh cargo-geiger

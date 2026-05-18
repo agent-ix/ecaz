@@ -1,0 +1,10 @@
+[package]
+name = "panic_across_ffi_fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
