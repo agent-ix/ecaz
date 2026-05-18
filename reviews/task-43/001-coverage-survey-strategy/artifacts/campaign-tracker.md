@@ -35,10 +35,10 @@ evidence or a concrete blocker with the extraction work needed.
 | --- | --- | --- | --- |
 | G1 | Default Miri and Tree Borrows are first-class hardening lanes. | Done | Packets 002 and 005; `miri-full` is in `hardening-nightly-local`; `make-miri-tree.log` passed 35 tests. |
 | G2 | `miri-many-seeds` includes at least one real threaded/atomic `miri_` test. | Done | Packet 007 adds `miri_parallel_worker_slots_are_unique_under_threaded_contention`; targeted `0..128` many-seeds passed. |
-| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | See subsystem matrix below. |
+| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | Packet 008 closes DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, and SPIRE routing breadth rows. Remote typed payloads, SPIRE delete-delta/vacuum, SPIRE serialization deltas, and mutation probes remain open. |
 | G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Not done | Extract/test parser helpers from remote candidate payload handling. |
 | G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Not done | Cover pure object-store/delete-delta tests or document exact blocker. |
-| G6 | cargo-careful mirrors every path-liftable Miri surface. | Partial | Current careful harness covers 67 storage/DiskANN/HNSW tests; new surfaces need mirroring or blockers. |
+| G6 | cargo-careful mirrors every path-liftable Miri surface. | Partial | Packet 008 proves the path-lifted DiskANN/HNSW careful harness at 69 tests; SPIRE scan/routing and future extracted helpers still need mirroring or blockers. |
 | G7 | Mutation/sensitivity probes exist for each major subsystem. | Not done | Add temporary diffs and failure logs by subsystem. |
 | G8 | Final audit maps task-file requirements and reviewer findings to evidence. | Not done | Produce final packet only after G2-G7 are complete. |
 
@@ -52,6 +52,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `004-spire-vacuum-miri-prefixes` | First DiskANN vacuum and SPIRE top-k tests pass under Miri. | Full vacuum/top-k breadth; SPIRE vacuum. |
 | `005-coordinator-serialization-miri-prefixes` | 35-test aggregate, Tree Borrows, many-seeds execution, careful 67-test harness, coordinator/serialization additions. | Real concurrent many-seeds coverage; mutation probes; full strategy breadth. |
 | `007-real-many-seeds-parallel-state` | Real threaded common-parallel shared-state test passes under default Miri, Tree Borrows, and `0..128` many-seeds. | Full campaign breadth; mutation probe for common parallel state. |
+| `008-breadth-closure-existing-tests` | 32 targeted Miri tests across DiskANN graph, DiskANN vacuum, HNSW graph, SPIRE top-k, and SPIRE routing; careful harness passes 69 tests. | Remote typed payload validation; SPIRE delete-delta/vacuum visibility; SPIRE serialization delta helpers; mutation probes; final aggregate campaign. |
 
 ## Subsystem Coverage Matrix
 
@@ -88,9 +89,9 @@ Status values:
 | --- | --- | --- |
 | `robust_prune` alpha dominance | Done | `miri_robust_prune_excludes_alpha_dominated`. |
 | `greedy_search` convergence | Done | `miri_greedy_search_finds_nearest`. |
-| `build_vamana_graph_with_stats` | Not done | Promote/add bounded `miri_` build test, likely smaller than the existing 100-node test if needed. |
-| `build_vamana_graph_with_pass1_extra_candidates` | Not done | Promote/add bounded `miri_` test proving pass-1 extras enlarge candidate pools. |
-| cargo-careful mirror | Partial | Current careful harness path-lifts Vamana and runs existing build tests; mirror any new Miri additions explicitly. |
+| `build_vamana_graph_with_stats` | Done | Packet 008 adds `miri_build_small_graph_is_connected`, a bounded 16-node production-helper build test. |
+| `build_vamana_graph_with_pass1_extra_candidates` | Done | Packet 008 adds `miri_build_stats_include_pass1_extra_candidates`, proving pass-1 extras enlarge candidate pools. |
+| cargo-careful mirror | Done | Packet 008 `careful-harness-cargo-test.log`: 69 passed, including both new bounded Vamana Miri tests. |
 | Mutation probe | Not done | Break alpha dominance or pass-1 candidate injection and record failure. |
 
 ### HNSW Graph
@@ -99,10 +100,10 @@ Status values:
 | --- | --- | --- |
 | `BeamSearch` dedupe / best-first path | Done | `miri_beam_search_deduplicates_self_loops_and_parallel_edges`. |
 | `VisibleFrontier` live scheduler preference | Done | `miri_visible_frontier_best_candidate_prefers_live_scheduler_node`. |
-| Stale-candidate removal | Not done | Promote stale-frontier tests, e.g. `beam_search_peek_best_matching_skips_stale_leaders` and fully stale frontier case. |
-| `select_next_with_refill` | Not done | Promote `visible_frontier_select_next_with_refill_skips_until_selected_then_advances`. |
-| Deterministic frontier ordering | Not done | Promote or add bounded order test covering score/tie/sequence behavior. |
-| cargo-careful mirror | Partial | HNSW search is already path-lifted; ensure new promoted tests are in careful count. |
+| Stale-candidate removal | Done | Packet 008 promotes `miri_beam_search_peek_best_matching_skips_stale_leaders` and `miri_beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier`. |
+| `select_next_with_refill` | Done | Packet 008 promotes `miri_visible_frontier_select_next_with_refill_skips_until_selected_then_advances`. |
+| Deterministic frontier ordering | Done | Packet 008 promotes `miri_beam_search_forget_queued_removes_frontier_node_and_allows_reseed`, covering frontier removal and reseed order. |
+| cargo-careful mirror | Done | Packet 008 `careful-harness-cargo-test.log`: 69 passed, including promoted HNSW `miri_` tests. |
 | Mutation probe | Not done | Break stale filtering/refill advancement and record failure. |
 
 ### DiskANN Vacuum
@@ -111,11 +112,11 @@ Status values:
 | --- | --- | --- |
 | `repair_neighbors` compaction and padding | Done | `miri_vc_006_repair_neighbors_compacts_and_pads`. |
 | `repair_neighbors` encoded length | Done | `miri_vc_009_repair_preserves_encoded_length`. |
-| `mark_deleted` | Not done | Promote `vc_001_mark_deleted_is_idempotent` and/or payload preservation. |
-| `strip_dead_primary_heaptid` | Not done | Promote predicate and already-invalid behavior. |
-| `is_fully_dead` | Not done | Promote overflow/live primary semantics. |
-| Deletion state-machine composition | Not done | Promote `vc_010_full_deletion_state_machine`. |
-| cargo-careful mirror | Partial | Vacuum is already path-lifted; ensure promoted tests are in careful count. |
+| `mark_deleted` | Done | Packet 008 promotes `miri_vc_001_mark_deleted_is_idempotent` and `miri_vc_002_mark_deleted_preserves_payload`. |
+| `strip_dead_primary_heaptid` | Done | Packet 008 promotes `miri_vc_003_strip_dead_primary_heaptid_predicate` and `miri_vc_004_strip_skips_already_invalid`. |
+| `is_fully_dead` | Done | Packet 008 promotes `miri_vc_005_is_fully_dead_semantics`. |
+| Deletion state-machine composition | Done | Packet 008 promotes `miri_vc_010_full_deletion_state_machine`. |
+| cargo-careful mirror | Done | Packet 008 `careful-harness-cargo-test.log`: 69 passed, including the promoted DiskANN vacuum tests. |
 | Mutation probe | Not done | Break fully-dead overflow guard or encoded-length repair and record failure. |
 
 ### SPIRE Top-K / Candidate Merge
@@ -124,10 +125,10 @@ Status values:
 | --- | --- | --- |
 | Bounded vec-id dedupe | Done | `miri_rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates`. |
 | Candidate cursor emission | Done | `miri_scan_candidate_cursor_emits_ranked_candidates_once`. |
-| `scored_candidate_cmp` tie order | Not done | Promote `scored_candidate_tie_break_prefers_newer_epoch_then_primary_role`. |
-| Primary-vs-boundary tie under bounded dedupe | Not done | Promote `rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe`. |
-| `rerank_scored_candidates_by_ip` prefix replacement | Not done | Promote prefix/truncate and invisible-candidate tests. |
-| Non-finite rerank rejection | Not done | Promote rejection test. |
+| `scored_candidate_cmp` tie order | Done | Packet 008 promotes `miri_scored_candidate_tie_break_prefers_newer_epoch_then_primary_role`. |
+| Primary-vs-boundary tie under bounded dedupe | Done | Packet 008 promotes `miri_rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe`. |
+| `rerank_scored_candidates_by_ip` prefix replacement | Done | Packet 008 promotes `miri_rerank_scored_candidates_by_ip_rescores_prefix_and_truncates` and invisible-candidate behavior. |
+| Non-finite rerank rejection | Done | Packet 008 promotes `miri_rerank_scored_candidates_by_ip_rejects_non_finite_scores`. |
 | cargo-careful mirror | Not done | Determine if scan candidate helpers can be path-lifted; otherwise document blocker and extraction plan. |
 | Mutation probe | Not done | Invert comparator or skip rerank score replacement and record failure. |
 
@@ -137,10 +138,10 @@ Status values:
 | --- | --- | --- |
 | Root-to-leaf routing | Done | `miri_route_root_object_to_leaf_pids_keeps_bounded_best_routes`. |
 | Adaptive nprobe reduction | Done | `miri_adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large`. |
-| Internal routing | Not done | Promote bounded internal routing test. |
-| Top-graph deterministic routing | Not done | Promote deterministic top-graph route test. |
-| Recursive routing to leaf level | Not done | Promote bounded recursive descent test. |
-| Route rejection paths | Not done | Promote at least one missing/wrong-child rejection if Miri cost allows. |
+| Internal routing | Done | Packet 008 promotes `miri_route_routing_object_to_child_pids_routes_internal_level`. |
+| Top-graph deterministic routing | Done | Packet 008 promotes `miri_route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes`. |
+| Recursive routing to leaf level | Done | Packet 008 promotes `miri_route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level` and conservative upper-level nprobe coverage. |
+| Route rejection paths | Done | Packet 008 promotes root mismatch, internal-parent, missing-child, and wrong-child-level rejection tests. |
 | cargo-careful mirror | Not done | Determine path-lift feasibility or extract pure routing helpers. |
 | Mutation probe | Not done | Corrupt route ordering or budget dedupe and record failure. |
 
@@ -206,7 +207,7 @@ claims, then the final campaign packet must run the aggregate matrix.
 | --- | --- | --- |
 | `006-safety-campaign-tracker` | Install this tracker and commit reviewer feedback. | Done |
 | `007-real-many-seeds-parallel-state` | Add threaded/atomic Miri coverage for real common parallel shared state. | Done |
-| `008-breadth-closure-existing-tests` | Promote existing small pure tests named in packet 001 across DiskANN, HNSW, SPIRE top-k, routing, vacuum, serialization. | Not started |
+| `008-breadth-closure-existing-tests` | Promote existing small pure tests named in packet 001 across DiskANN, HNSW, SPIRE top-k, routing, and vacuum. | Done |
 | `009-remote-parser-extraction` | Extract/test Row-independent typed payload parser validation. | Not started |
 | `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Not started |
 | `011-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Not started |
