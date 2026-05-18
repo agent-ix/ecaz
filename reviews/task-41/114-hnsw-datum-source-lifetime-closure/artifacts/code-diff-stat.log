@@ -1,0 +1,8 @@
+e5dbe022 Constrain HNSW Datum source lifetimes
+ src/am/ec_hnsw/build.rs  | 11 ++++-----
+ src/am/ec_hnsw/insert.rs | 37 ++++++++++++++++-------------
+ src/am/ec_hnsw/scan.rs   | 39 ++++++++++++++++--------------
+ src/am/ec_hnsw/source.rs | 62 ++++++++++++++++++++++++++++++------------------
+ src/am/ec_hnsw/vacuum.rs | 30 +++++++++++++----------
+ src/am/ec_ivf/scan.rs    | 13 ++++++----
+ 6 files changed, 110 insertions(+), 82 deletions(-)

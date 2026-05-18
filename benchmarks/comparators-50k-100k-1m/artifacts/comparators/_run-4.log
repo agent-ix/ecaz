@@ -1,0 +1,99 @@
+==== SIZE=50k ====
+[comparator:pgvector] 22:20:23 done. tables: real_50k_pgv_corpus, real_50k_pgv_queries; indexes: real_50k_pgv_hnsw_idx, real_50k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 22:20:23 done. tables: real_50k_pgvscale_corpus, real_50k_pgvscale_queries; index: real_50k_pgvscale_diskann_idx
+[comparator:vchord] 22:20:23   COPY real_50k_vchord_corpus from /var/lib/pgsql/18/datasets/staged-50k/ec_real_50k_corpus.tsv (dim=1536)
+NOTICE:  table "real_50k_vchord_corpus" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 50000
+[comparator:vchord] 22:20:34   COPY real_50k_vchord_queries from /var/lib/pgsql/18/datasets/staged-50k/ec_real_50k_queries.tsv (dim=1536)
+NOTICE:  table "real_50k_vchord_queries" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 1000
+[comparator:vchord] 22:20:35 building real_50k_vchord_rabitq_idx (VectorChord vchordrq RaBitQ-on-IVF, maintenance_work_mem=4GB)
+INFO:  maintain: number_of_formerly_allocated_pages = 3
+INFO:  maintain: number_of_freshly_allocated_pages = 1561
+INFO:  maintain: number_of_freed_pages = 1518
+SET
+CREATE INDEX
+[comparator:vchord] 22:20:40 done. tables: real_50k_vchord_corpus, real_50k_vchord_queries; index: real_50k_vchord_rabitq_idx
+DROP INDEX
+[comparator:pgvector] 22:20:40   bench prefix=real_50k_pgv op=<#> iters=200 k=10
+[comparator:pgvector] 22:20:53     wrote /var/lib/pgsql/18/artifacts/comparators/50k/pgv/hnsw/latency.log (0 samples)
+DROP INDEX
+[comparator:pgvector] 22:20:53   bench prefix=real_50k_pgv op=<#> iters=200 k=10
+[comparator:pgvector] 22:22:05     wrote /var/lib/pgsql/18/artifacts/comparators/50k/pgv/ivfflat/latency.log (0 samples)
+[comparator:pgvector] 22:22:05 building real_50k_pgv_hnsw_idx (hnsw m=16 ef_construction=64, maintenance_work_mem=4GB)
+SET
+CREATE INDEX
+[comparator:pgvector] 22:22:41 building real_50k_pgv_ivfflat_idx (ivfflat lists=224, maintenance_work_mem=4GB)
+SET
+CREATE INDEX
+[comparator:pgvector] 22:22:54 done. tables: real_50k_pgv_corpus, real_50k_pgv_queries; indexes: real_50k_pgv_hnsw_idx, real_50k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 22:22:54   bench prefix=real_50k_pgvscale op=<=> iters=200 k=10
+[comparator:pgvectorscale] 22:24:07     wrote /var/lib/pgsql/18/artifacts/comparators/50k/pgvscale/diskann/latency.log (0 samples)
+[comparator:vchord] 22:24:07   bench prefix=real_50k_vchord op=<#> iters=200 k=10
+[comparator:vchord] 22:24:08     wrote /var/lib/pgsql/18/artifacts/comparators/50k/vchord/rabitq/latency.log (0 samples)
+==== SIZE=100k ====
+[comparator:pgvector] 22:24:08 done. tables: real_100k_pgv_corpus, real_100k_pgv_queries; indexes: real_100k_pgv_hnsw_idx, real_100k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 22:24:08 done. tables: real_100k_pgvscale_corpus, real_100k_pgvscale_queries; index: real_100k_pgvscale_diskann_idx
+[comparator:vchord] 22:24:08   COPY real_100k_vchord_corpus from /var/lib/pgsql/18/datasets/staged-100k/ec_real_100k_corpus.tsv (dim=1536)
+NOTICE:  table "real_100k_vchord_corpus" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 100000
+[comparator:vchord] 22:24:31   COPY real_100k_vchord_queries from /var/lib/pgsql/18/datasets/staged-100k/ec_real_100k_queries.tsv (dim=1536)
+NOTICE:  table "real_100k_vchord_queries" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 1000
+[comparator:vchord] 22:24:31 building real_100k_vchord_rabitq_idx (VectorChord vchordrq RaBitQ-on-IVF, maintenance_work_mem=4GB)
+INFO:  maintain: number_of_formerly_allocated_pages = 12
+INFO:  maintain: number_of_freshly_allocated_pages = 3116
+INFO:  maintain: number_of_freed_pages = 3033
+SET
+CREATE INDEX
+[comparator:vchord] 22:24:45 done. tables: real_100k_vchord_corpus, real_100k_vchord_queries; index: real_100k_vchord_rabitq_idx
+DROP INDEX
+[comparator:pgvector] 22:24:45   bench prefix=real_100k_pgv op=<#> iters=200 k=10
+[comparator:pgvector] 22:25:09     wrote /var/lib/pgsql/18/artifacts/comparators/100k/pgv/hnsw/latency.log (0 samples)
+DROP INDEX
+[comparator:pgvector] 22:25:09   bench prefix=real_100k_pgv op=<#> iters=200 k=10
+[comparator:pgvector] 22:27:36     wrote /var/lib/pgsql/18/artifacts/comparators/100k/pgv/ivfflat/latency.log (0 samples)
+[comparator:pgvector] 22:27:36 building real_100k_pgv_hnsw_idx (hnsw m=16 ef_construction=64, maintenance_work_mem=4GB)
+SET
+CREATE INDEX
+[comparator:pgvector] 22:29:09 building real_100k_pgv_ivfflat_idx (ivfflat lists=320, maintenance_work_mem=4GB)
+SET
+CREATE INDEX
+[comparator:pgvector] 22:29:40 done. tables: real_100k_pgv_corpus, real_100k_pgv_queries; indexes: real_100k_pgv_hnsw_idx, real_100k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 22:29:40   bench prefix=real_100k_pgvscale op=<=> iters=200 k=10
+[comparator:pgvectorscale] 22:32:05     wrote /var/lib/pgsql/18/artifacts/comparators/100k/pgvscale/diskann/latency.log (0 samples)
+[comparator:vchord] 22:32:05   bench prefix=real_100k_vchord op=<#> iters=200 k=10
+[comparator:vchord] 22:32:06     wrote /var/lib/pgsql/18/artifacts/comparators/100k/vchord/rabitq/latency.log (0 samples)
+==== SIZE=1m ====
+[comparator:pgvector] 22:32:06 done. tables: real_1m_pgv_corpus, real_1m_pgv_queries; indexes: real_1m_pgv_hnsw_idx, real_1m_pgv_ivfflat_idx
+[comparator:pgvectorscale] 22:32:06 done. tables: real_1m_pgvscale_corpus, real_1m_pgvscale_queries; index: real_1m_pgvscale_diskann_idx
+[comparator:vchord] 22:32:06   COPY real_1m_vchord_corpus from /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv (dim=1536)
+NOTICE:  table "real_1m_vchord_corpus" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 990000
+[comparator:vchord] 22:37:04   COPY real_1m_vchord_queries from /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv (dim=1536)
+NOTICE:  table "real_1m_vchord_queries" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 10000
+[comparator:vchord] 22:37:06 building real_1m_vchord_rabitq_idx (VectorChord vchordrq RaBitQ-on-IVF, maintenance_work_mem=4GB)
+SET
+ERROR:  could not extend file "base/16874/10541179.2": No space left on device
+HINT:  Check free disk space.
+WARNING:  terminating connection because of crash of another server process
+DETAIL:  The postmaster has commanded this server process to roll back the current transaction and exit, because another server process exited abnormally and possibly corrupted shared memory.
+HINT:  In a moment you should be able to reconnect to the database and repeat your command.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+connection to server was lost
+ALL_DONE

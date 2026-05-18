@@ -198,7 +198,7 @@ A1-A10 packets and the landing-status packet above.
 landed on `main`; current status is summarized at the top of this file. These
 items came out of the reviewer
 code-read recorded in
-`review/30070-task28-ivf-borrowed-scan-recall/feedback/2026-04-27-02-reviewer.md`.
+`benchmarks/30070-task28-ivf-borrowed-scan-recall/feedback/2026-04-27-02-reviewer.md`.
 
 Each item is independent of the others in implementation but ordered
 in the sequencing section below for impact and risk.

@@ -1135,17 +1135,20 @@ unsafe fn rerank_probe_candidates_heap_f32(
                 "ec_ivf heap_f32 rerank source vector",
             )
         };
-        let source_vector = unsafe {
-            source::load_indexed_ecvector_from_slot(
+        unsafe {
+            source::with_indexed_ecvector_from_slot(
                 slot,
                 source_attnum,
                 "ec_ivf heap_f32 rerank source vector",
+                |source_vector| {
+                    candidate.score = source::negative_inner_product_index_internal(
+                        query_values,
+                        source_vector.as_slice(),
+                    );
+                },
             )
         };
-        candidate.score =
-            source::negative_inner_product_index_internal(query_values, source_vector.as_slice());
         opaque.explain_counters.record_rerank_row();
-        drop(source_vector);
     }
 }
 

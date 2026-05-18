@@ -1,5 +1,6 @@
 use std::{
     ffi::{c_int, CStr},
+    marker::PhantomData,
     ptr,
 };
 
@@ -487,15 +488,16 @@ pub(crate) unsafe fn required_slot_datum(
     unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
-pub(crate) struct FlatFloat4ArrayRef {
+pub(crate) struct FlatFloat4ArrayRef<'datum> {
     array_ptr: *mut pg_sys::ArrayType,
     owned: bool,
     data_ptr: *const f32,
     len: usize,
+    _datum: PhantomData<&'datum [f32]>,
 }
 
-impl FlatFloat4ArrayRef {
-    pub(crate) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+impl<'datum> FlatFloat4ArrayRef<'datum> {
+    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
         if datum.is_null() {
             pgrx::error!("ec_hnsw does not support NULL {label}");
         }
@@ -542,6 +544,7 @@ impl FlatFloat4ArrayRef {
             owned,
             data_ptr,
             len,
+            _datum: PhantomData,
         }
     }
 
@@ -550,7 +553,7 @@ impl FlatFloat4ArrayRef {
     }
 }
 
-impl Drop for FlatFloat4ArrayRef {
+impl Drop for FlatFloat4ArrayRef<'_> {
     fn drop(&mut self) {
         if self.owned {
             unsafe { pg_sys::pfree(self.array_ptr.cast()) };
@@ -558,15 +561,16 @@ impl Drop for FlatFloat4ArrayRef {
     }
 }
 
-pub(crate) struct FlatFloat4VarlenaRef {
+pub(crate) struct FlatFloat4VarlenaRef<'datum> {
     varlena_ptr: *mut pg_sys::varlena,
     owned: bool,
     data_ptr: *const f32,
     len: usize,
+    _datum: PhantomData<&'datum [f32]>,
 }
 
-impl FlatFloat4VarlenaRef {
-    pub(crate) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+impl<'datum> FlatFloat4VarlenaRef<'datum> {
+    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
         if datum.is_null() {
             pgrx::error!("ec_hnsw does not support NULL {label}");
         }
@@ -593,6 +597,7 @@ impl FlatFloat4VarlenaRef {
             owned,
             data_ptr: body.as_ptr(),
             len: body.len(),
+            _datum: PhantomData,
         }
     }
 
@@ -601,7 +606,7 @@ impl FlatFloat4VarlenaRef {
     }
 }
 
-impl Drop for FlatFloat4VarlenaRef {
+impl Drop for FlatFloat4VarlenaRef<'_> {
     fn drop(&mut self) {
         if self.owned {
             unsafe { pg_sys::pfree(self.varlena_ptr.cast()) };
@@ -609,17 +614,13 @@ impl Drop for FlatFloat4VarlenaRef {
     }
 }
 
-pub(crate) enum FlatFloat4SourceRef {
-    Array(FlatFloat4ArrayRef),
-    Varlena(FlatFloat4VarlenaRef),
+pub(crate) enum FlatFloat4SourceRef<'datum> {
+    Array(FlatFloat4ArrayRef<'datum>),
+    Varlena(FlatFloat4VarlenaRef<'datum>),
 }
 
-impl FlatFloat4SourceRef {
-    pub(crate) unsafe fn from_datum(
-        datum: pg_sys::Datum,
-        kind: SourceDatumKind,
-        label: &str,
-    ) -> Self {
+impl<'datum> FlatFloat4SourceRef<'datum> {
+    unsafe fn from_datum(datum: pg_sys::Datum, kind: SourceDatumKind, label: &str) -> Self {
         match kind {
             SourceDatumKind::RealArray => {
                 Self::Array(unsafe { FlatFloat4ArrayRef::from_datum(datum, label) })
@@ -639,26 +640,41 @@ impl FlatFloat4SourceRef {
     }
 }
 
-pub(crate) unsafe fn load_source_from_heap_row(
+pub(crate) unsafe fn with_flat_float4_source_from_datum<R>(
+    datum: pg_sys::Datum,
+    kind: SourceDatumKind,
+    label: &str,
+    f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
+) -> R {
+    // The higher-ranked closure keeps Datum-backed slices local to this call:
+    // callers may copy or score from them, but cannot return the borrowed view.
+    let source = unsafe { FlatFloat4SourceRef::from_datum(datum, kind, label) };
+    f(source)
+}
+
+pub(crate) unsafe fn with_source_from_heap_row<R>(
     heap_relation: pg_sys::Relation,
     heap_tid: page::ItemPointer,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
     source_attribute: SourceAttribute,
     label: &str,
-) -> FlatFloat4SourceRef {
+    f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
+) -> R {
     unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, label) };
     let source_datum = unsafe { required_slot_datum(slot, source_attribute.attnum, label) };
-    unsafe { FlatFloat4SourceRef::from_datum(source_datum, source_attribute.kind, label) }
+    unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
 }
 
-pub(crate) unsafe fn load_indexed_ecvector_from_slot(
+pub(crate) unsafe fn with_indexed_ecvector_from_slot<R>(
     slot: *mut pg_sys::TupleTableSlot,
     attnum: i32,
     label: &str,
-) -> FlatFloat4VarlenaRef {
+    f: impl for<'datum> FnOnce(FlatFloat4VarlenaRef<'datum>) -> R,
+) -> R {
     let source_datum = unsafe { required_slot_datum(slot, attnum, label) };
-    unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) }
+    let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
+    f(source)
 }
 
 pub(crate) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {

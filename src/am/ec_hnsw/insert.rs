@@ -55,18 +55,17 @@ impl InsertHeapSourceScorer {
     }
 
     unsafe fn load_source_vector(&mut self, heap_tid: page::ItemPointer, label: &str) -> Vec<f32> {
-        let source = unsafe {
-            source::load_source_from_heap_row(
+        let vector = unsafe {
+            source::with_source_from_heap_row(
                 self.heap_relation,
                 heap_tid,
                 self.snapshot,
                 self.slot.as_ptr(),
                 self.source_attribute,
                 label,
+                |source| source.as_slice().to_vec(),
             )
         };
-        let vector = source.as_slice().to_vec();
-        drop(source);
         unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         vector
     }
@@ -80,27 +79,31 @@ impl InsertHeapSourceScorer {
         let mut count = 0usize;
 
         for heap_tid in heap_tids.iter().copied() {
-            let source = unsafe {
-                source::load_source_from_heap_row(
+            unsafe {
+                source::with_source_from_heap_row(
                     self.heap_relation,
                     heap_tid,
                     self.snapshot,
                     self.slot.as_ptr(),
                     self.source_attribute,
                     label,
+                    |source| match representative.as_mut() {
+                        Some(existing) => {
+                            source::average_source_representatives(
+                                existing,
+                                count,
+                                source.as_slice(),
+                                1,
+                            );
+                            count += 1;
+                        }
+                        None => {
+                            representative = Some(source.as_slice().to_vec());
+                            count = 1;
+                        }
+                    },
                 )
             };
-            match representative.as_mut() {
-                Some(existing) => {
-                    source::average_source_representatives(existing, count, source.as_slice(), 1);
-                    count += 1;
-                }
-                None => {
-                    representative = Some(source.as_slice().to_vec());
-                    count = 1;
-                }
-            }
-            drop(source);
             unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         }
 

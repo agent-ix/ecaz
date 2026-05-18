@@ -27,9 +27,18 @@ comparator-specific behavior lives.
    already installed". Use `comparator_extension_installed <control-name>`.
 2. Add `load_<name>.sh` that creates `real_<size>_<name>_corpus`
    (use `comparator_load_vector_table`) and builds the extension's
-   recommended index via `CREATE INDEX`. Be idempotent.
+   recommended index via `CREATE INDEX`. Be idempotent. If the
+   extension ships multiple index types you want to bench
+   side-by-side (as pgvector does with HNSW + IVFFlat), create one
+   replicated corpus table per index variant
+   (`real_<size>_<name>_<variant>_corpus`) so the bench harness
+   doesn't need to drop+rebuild swap between passes. CTAS the second
+   table from the first instead of re-reading the TSV.
 3. Add `bench_<name>.sh` that calls `comparator_bench_latency` with
-   the right operator (`<#>` IP, `<->` L2, `<=>` cosine).
+   the right operator (`<#>` IP, `<->` L2, `<=>` cosine). Pass
+   `--corpus-table` / `--queries-table` explicitly when bench targets
+   are per-variant replicated tables; otherwise `--prefix` infers
+   `<prefix>_corpus` + `<prefix>_queries`.
 4. Optionally extend `run_all.sh`'s case statements if you want it in
    the convenience orchestrator.
 

@@ -44,6 +44,5 @@ lines cited by `request.md`.
 ## Migration Notes
 
 `reviews/MIGRATION.md` records the first flat-to-task migration. Legacy
-`review/` remains only as a temporary holding area for deferred Task 41 and
-active benchmark/measurement packets that require a focused follow-up pass.
-Do not add new packets to `review/`.
+`review/` remains only as a temporary holding area for deferred Task 41
+packets. Do not add new packets to `review/`.

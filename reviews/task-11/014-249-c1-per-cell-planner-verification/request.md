@@ -6,8 +6,8 @@ Branch:
 - `main`
 
 Prior packets:
-- `review/246-c1-latency-launcher-plan-verification/request.md`
-- `review/247-c1-real-corpus-latency-10k-verified-run/request.md`
+- `benchmarks/246-c1-latency-launcher-plan-verification/request.md`
+- `benchmarks/247-c1-real-corpus-latency-10k-verified-run/request.md`
 
 Packet `246` added the first verified launcher so C1 would stop timing obvious
 `Sort -> Seq Scan` plans.

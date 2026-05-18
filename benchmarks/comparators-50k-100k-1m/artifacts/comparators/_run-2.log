@@ -1,0 +1,35 @@
+==== SIZE=50k ====
+[comparator:pgvector] 19:49:49 done. tables: real_50k_pgv_corpus, real_50k_pgv_queries; indexes: real_50k_pgv_hnsw_idx, real_50k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 19:49:49 done. tables: real_50k_pgvscale_corpus, real_50k_pgvscale_queries; index: real_50k_pgvscale_diskann_idx
+==== SIZE=100k ====
+[comparator:pgvector] 19:49:50 done. tables: real_100k_pgv_corpus, real_100k_pgv_queries; indexes: real_100k_pgv_hnsw_idx, real_100k_pgv_ivfflat_idx
+[comparator:pgvectorscale] 19:49:50 done. tables: real_100k_pgvscale_corpus, real_100k_pgvscale_queries; index: real_100k_pgvscale_diskann_idx
+==== SIZE=1m ====
+[comparator:pgvector] 19:49:50 building real_1m_pgv_hnsw_idx (hnsw m=16 ef_construction=64, maintenance_work_mem=4GB)
+NOTICE:  hnsw graph no longer fits into maintenance_work_mem after 628598 tuples
+DETAIL:  Building will take significantly more time.
+HINT:  Increase maintenance_work_mem to speed up builds.
+SET
+CREATE INDEX
+[comparator:pgvector] 20:12:03 building real_1m_pgv_ivfflat_idx (ivfflat lists=1024, maintenance_work_mem=4GB)
+SET
+CREATE INDEX
+[comparator:pgvector] 20:18:19 done. tables: real_1m_pgv_corpus, real_1m_pgv_queries; indexes: real_1m_pgv_hnsw_idx, real_1m_pgv_ivfflat_idx
+[comparator:pgvectorscale] 20:18:19   COPY real_1m_pgvscale_corpus from /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv (dim=1536)
+NOTICE:  table "real_1m_pgvscale_corpus" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 990000
+[comparator:pgvectorscale] 20:23:19   COPY real_1m_pgvscale_queries from /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv (dim=1536)
+NOTICE:  table "real_1m_pgvscale_queries" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+COPY 10000
+[comparator:pgvectorscale] 20:23:22 building real_1m_pgvscale_diskann_idx (pgvectorscale StreamingDiskANN, default config)
+NOTICE:  Starting index build with num_neighbors=-1, search_list_size=100, max_alpha=1.2, storage_layout=SbqCompression.
+WARNING:  Builder neighbor cache is full after processing 117735 vectors; consider increasing maintenance_work_mem
+FATAL:  terminating connection due to administrator command
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+connection to server was lost

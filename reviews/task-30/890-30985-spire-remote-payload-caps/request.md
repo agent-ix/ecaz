@@ -32,8 +32,8 @@ matching the Phase 12 local capacity target for selected PIDs per remote node.
 
 Source evidence remains in:
 
-- `review/30975-spire-tuple-transport-measurement/artifacts/manifest.md`
-- `review/30975-spire-tuple-transport-measurement/request.md`
+- `benchmarks/30975-spire-tuple-transport-measurement/artifacts/manifest.md`
+- `benchmarks/30975-spire-tuple-transport-measurement/request.md`
 
 This packet's evidence summary is in
 `reviews/task-30/890-30985-spire-remote-payload-caps/artifacts/manifest.md`.
