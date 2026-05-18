@@ -703,11 +703,11 @@ unsafe fn apply_duplicate_bind_patches(
                 start += 1;
 
                 let patch_outcome = unsafe {
-                    with_page_tuple_bytes(
+                    with_page_tuple_bytes_mut(
                         writable_page,
                         page_size,
                         patch.target_tid,
-                        |tuple_ptr, tuple_bytes| match &patch.kind {
+                        |tuple_bytes| match &patch.kind {
                             DuplicateBindPatchKind::SetNodeOverflowFlag => {
                                 let mut tuple = VamanaNodeTuple::decode(
                                     tuple_bytes,
@@ -733,11 +733,7 @@ unsafe fn apply_duplicate_bind_patches(
                                         patch.target_tid.offset_number
                                     ));
                                 }
-                                ptr::copy_nonoverlapping(
-                                    encoded.as_ptr(),
-                                    tuple_ptr,
-                                    encoded.len(),
-                                );
+                                tuple_bytes.copy_from_slice(&encoded);
                                 Ok(DuplicateBindApplyOutcome::Changed)
                             }
                             DuplicateBindPatchKind::AppendHeapTidToOverflow {
@@ -765,11 +761,7 @@ unsafe fn apply_duplicate_bind_patches(
                                         patch.target_tid.offset_number
                                     ));
                                 }
-                                ptr::copy_nonoverlapping(
-                                    encoded.as_ptr(),
-                                    tuple_ptr,
-                                    encoded.len(),
-                                );
+                                tuple_bytes.copy_from_slice(&encoded);
                                 Ok(DuplicateBindApplyOutcome::Changed)
                             }
                             DuplicateBindPatchKind::SetOverflowNextTid { expected_nexttid } => {
@@ -791,11 +783,7 @@ unsafe fn apply_duplicate_bind_patches(
                                         patch.target_tid.offset_number
                                     ));
                                 }
-                                ptr::copy_nonoverlapping(
-                                    encoded.as_ptr(),
-                                    tuple_ptr,
-                                    encoded.len(),
-                                );
+                                tuple_bytes.copy_from_slice(&encoded);
                                 Ok(DuplicateBindApplyOutcome::Changed)
                             }
                         },
@@ -1452,44 +1440,39 @@ pub(super) unsafe fn add_backlinks_if_free(
                 start += 1;
 
                 unsafe {
-                    with_page_tuple_bytes(
-                        writable_page,
-                        page_size,
-                        target_tid,
-                        |tuple_ptr, tuple_bytes| {
-                            let mut tuple = VamanaNodeTuple::decode(
-                                tuple_bytes,
-                                metadata.graph_degree_r,
-                                binary_word_count,
-                                search_code_len,
-                            )?;
-                            if !tuple.is_live() {
-                                return Ok(());
-                            }
-                            if !insert_backlink_if_free(&mut tuple, new_tid) {
-                                return Ok(());
-                            }
+                    with_page_tuple_bytes_mut(writable_page, page_size, target_tid, |tuple_bytes| {
+                        let mut tuple = VamanaNodeTuple::decode(
+                            tuple_bytes,
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if !tuple.is_live() {
+                            return Ok(());
+                        }
+                        if !insert_backlink_if_free(&mut tuple, new_tid) {
+                            return Ok(());
+                        }
 
-                            let encoded = tuple.encode(
-                                metadata.graph_degree_r,
-                                binary_word_count,
-                                search_code_len,
-                            )?;
-                            if encoded.len() != tuple_bytes.len() {
-                                return Err(format!(
+                        let encoded = tuple.encode(
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if encoded.len() != tuple_bytes.len() {
+                            return Err(format!(
                                     "ec_diskann backlink target tuple size changed from {} to {} at ({},{})",
                                     tuple_bytes.len(),
                                     encoded.len(),
                                     target_tid.block_number,
                                     target_tid.offset_number
                                 ));
-                            }
-                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
-                            page_changed = true;
-                            page_changes += 1;
-                            Ok(())
-                        },
-                    )
+                        }
+                        tuple_bytes.copy_from_slice(&encoded);
+                        page_changed = true;
+                        page_changes += 1;
+                        Ok(())
+                    })
                 }?;
             }
             Ok(page_changes)
@@ -1560,11 +1543,11 @@ pub(super) unsafe fn apply_backlink_mutations(
                 start += 1;
 
                 unsafe {
-                    with_page_tuple_bytes(
+                    with_page_tuple_bytes_mut(
                         writable_page,
                         page_size,
                         mutation.target_tid,
-                        |tuple_ptr, tuple_bytes| {
+                        |tuple_bytes| {
                             let mut tuple = VamanaNodeTuple::decode(
                                 tuple_bytes,
                                 metadata.graph_degree_r,
@@ -1595,11 +1578,7 @@ pub(super) unsafe fn apply_backlink_mutations(
                                             mutation.target_tid.offset_number
                                         ));
                                     }
-                                    ptr::copy_nonoverlapping(
-                                        encoded.as_ptr(),
-                                        tuple_ptr,
-                                        encoded.len(),
-                                    );
+                                    tuple_bytes.copy_from_slice(&encoded);
                                     page_changed = true;
                                 }
                             }
@@ -1703,18 +1682,18 @@ unsafe fn page_tuple_location(
     Ok((tuple_ptr, tuple_len))
 }
 
-unsafe fn with_page_tuple_bytes<R, F>(
+unsafe fn with_page_tuple_bytes_mut<R, F>(
     page: pg_sys::Page,
     page_size: usize,
     tid: ItemPointer,
     visit: F,
 ) -> Result<R, String>
 where
-    F: FnOnce(*mut u8, &[u8]) -> Result<R, String>,
+    F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
 {
     let (tuple_ptr, tuple_len) = unsafe { page_tuple_location(page, page_size, tid)? };
-    let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
-    visit(tuple_ptr, tuple_bytes)
+    let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
+    visit(tuple_bytes)
 }
 
 fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, String> {

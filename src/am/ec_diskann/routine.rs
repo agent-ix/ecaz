@@ -1670,7 +1670,7 @@ unsafe fn apply_tuple_rewrites(
             let page_size = buffer.page_size();
             for rewrite in block_rewrites {
                 let matches_expected = unsafe {
-                    with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |_, current_raw| {
+                    with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |current_raw| {
                         Ok(current_raw == rewrite.expected_raw.as_slice())
                     })
                 }?;
@@ -1685,11 +1685,11 @@ unsafe fn apply_tuple_rewrites(
             };
             for rewrite in block_rewrites {
                 unsafe {
-                    with_vacuum_page_tuple_bytes(
+                    with_vacuum_page_tuple_bytes_mut(
                         writable_page,
                         page_size,
                         rewrite.tid,
-                        |tuple_ptr, tuple_bytes| {
+                        |tuple_bytes| {
                             if tuple_bytes.len() != rewrite.replacement_raw.len() {
                                 return Err(format!(
                                     "ec_diskann vacuum rewrite length mismatch at ({},{}): got {}, expected {}",
@@ -1699,11 +1699,7 @@ unsafe fn apply_tuple_rewrites(
                                     tuple_bytes.len()
                                 ));
                             }
-                            ptr::copy_nonoverlapping(
-                                rewrite.replacement_raw.as_ptr(),
-                                tuple_ptr,
-                                rewrite.replacement_raw.len(),
-                            );
+                            tuple_bytes.copy_from_slice(&rewrite.replacement_raw);
                             Ok(())
                         },
                     )
@@ -1750,7 +1746,7 @@ unsafe fn write_raw_tuple_bytes(
             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
         };
         unsafe {
-            with_vacuum_page_tuple_bytes(writable_page, page_size, tid, |tuple_ptr, tuple_bytes| {
+            with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
                 if tuple_bytes.len() != replacement_raw.len() {
                     return Err(format!(
                             "ec_diskann vacuum test rewrite length mismatch at ({},{}): got {}, expected {}",
@@ -1760,11 +1756,7 @@ unsafe fn write_raw_tuple_bytes(
                             tuple_bytes.len()
                         ));
                 }
-                ptr::copy_nonoverlapping(
-                    replacement_raw.as_ptr(),
-                    tuple_ptr,
-                    replacement_raw.len(),
-                );
+                tuple_bytes.copy_from_slice(replacement_raw);
                 Ok(())
             })
         }?;
@@ -1838,11 +1830,25 @@ unsafe fn with_vacuum_page_tuple_bytes<R, F>(
     visit: F,
 ) -> Result<R, String>
 where
-    F: FnOnce(*mut u8, &[u8]) -> Result<R, String>,
+    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
 {
     let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };
     let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
-    visit(tuple_ptr, tuple_bytes)
+    visit(tuple_bytes)
+}
+
+unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
+    page: pg_sys::Page,
+    page_size: usize,
+    tid: ItemPointer,
+    visit: F,
+) -> Result<R, String>
+where
+    F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
+{
+    let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };
+    let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
+    visit(tuple_bytes)
 }
 
 fn expand_scan_results_with_bound_heap_tids(

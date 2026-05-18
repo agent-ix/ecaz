@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, ptr};
+use std::{cmp::Ordering, collections::HashMap};
 
 use pgrx::pg_sys;
 
@@ -1136,12 +1136,12 @@ unsafe fn add_backlinks_on_page(
         }
 
         let tuple_changed = unsafe {
-            with_writable_page_tuple_bytes(
+            shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
                 neighbor_tid,
                 "backlink neighbor",
-                |tuple_ptr, tuple_bytes| {
+                |tuple_bytes| {
                     let mut neighbor =
                         page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
                             pgrx::error!("ec_hnsw failed to decode backlink neighbor tuple: {e}")
@@ -1186,7 +1186,7 @@ unsafe fn add_backlinks_on_page(
                             encoded.len()
                         );
                     }
-                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                    tuple_bytes.copy_from_slice(&encoded);
                     true
                 },
             )
@@ -1205,39 +1205,6 @@ unsafe fn add_backlinks_on_page(
         std::mem::drop(wal_txn);
     }
     retries
-}
-
-unsafe fn with_writable_page_tuple_bytes<R, F>(
-    page_ptr: *mut u8,
-    page_size: usize,
-    tuple_tid: page::ItemPointer,
-    tuple_kind: &str,
-    visit: F,
-) -> R
-where
-    F: FnOnce(*mut u8, &[u8]) -> R,
-{
-    let item_id = unsafe { &*shared::page_item_id(page_ptr, tuple_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        pgrx::error!(
-            "ec_hnsw {tuple_kind} tuple slot {}/{} is unused",
-            tuple_tid.block_number,
-            tuple_tid.offset_number
-        );
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        pgrx::error!(
-            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
-            tuple_tid.block_number
-        );
-    }
-
-    let tuple_ptr = unsafe { page_ptr.add(tuple_offset) };
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
-    visit(tuple_ptr, tuple_bytes)
 }
 
 unsafe fn plan_backlink_mutation(
@@ -2499,12 +2466,12 @@ unsafe fn coalesce_duplicate_heap_tid(
             .cast::<u8>();
     let page_size = buffer.page_size();
     let tuple_changed = unsafe {
-        with_writable_page_tuple_bytes(
+        shared::with_writable_page_tuple_bytes(
             page_ptr,
             page_size,
             element_tid,
             "duplicate element",
-            |tuple_ptr, tuple_bytes| {
+            |tuple_bytes| {
                 let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
                     .unwrap_or_else(|e| {
                         pgrx::error!("ec_hnsw failed to decode duplicate element tuple: {e}")
@@ -2529,7 +2496,7 @@ unsafe fn coalesce_duplicate_heap_tid(
                         encoded.len()
                     );
                 }
-                ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                tuple_bytes.copy_from_slice(&encoded);
                 true
             },
         )
@@ -2569,12 +2536,12 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
             .cast::<u8>();
     let page_size = buffer.page_size();
     let tuple_changed = unsafe {
-        with_writable_page_tuple_bytes(
+        shared::with_writable_page_tuple_bytes(
             page_ptr,
             page_size,
             element_tid,
             "duplicate TurboQuant V3 element",
-            |tuple_ptr, tuple_bytes| {
+            |tuple_bytes| {
                 let mut element =
                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                         .unwrap_or_else(|e| {
@@ -2602,7 +2569,7 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
                         encoded.len()
                     );
                 }
-                ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                tuple_bytes.copy_from_slice(&encoded);
                 true
             },
         )
@@ -2642,12 +2609,12 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
             .cast::<u8>();
     let page_size = buffer.page_size();
     let tuple_changed = unsafe {
-        with_writable_page_tuple_bytes(
+        shared::with_writable_page_tuple_bytes(
             page_ptr,
             page_size,
             element_tid,
             "duplicate PqFastScan element",
-            |tuple_ptr, tuple_bytes| {
+            |tuple_bytes| {
                 let mut element = page::TqGroupedHotTuple::decode(
                     tuple_bytes,
                     layout.binary_word_count,
@@ -2676,7 +2643,7 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
                         encoded.len()
                     );
                 }
-                ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                tuple_bytes.copy_from_slice(&encoded);
                 true
             },
         )

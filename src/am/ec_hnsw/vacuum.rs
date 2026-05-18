@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ffi::c_void, ptr};
+use std::{collections::HashSet, ffi::c_void};
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
@@ -676,12 +676,12 @@ unsafe fn apply_page_pass1_updates(
             | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
         };
         unsafe {
-            with_writable_vacuum_tuple_bytes(
+            shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
                 tid,
                 "vacuum element",
-                |tuple_ptr, tuple_bytes| {
+                |tuple_bytes| {
                     let encoded = match update {
                         ElementVacuumUpdate::TurboQuant { tuple, .. } => {
                             tuple.encode().unwrap_or_else(|e| {
@@ -712,44 +712,11 @@ unsafe fn apply_page_pass1_updates(
                         );
                     }
 
-                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, tuple_bytes.len());
+                    tuple_bytes.copy_from_slice(&encoded);
                 },
             )
         }
     }
-}
-
-unsafe fn with_writable_vacuum_tuple_bytes<R, F>(
-    page_ptr: *mut u8,
-    page_size: usize,
-    tuple_tid: page::ItemPointer,
-    tuple_kind: &str,
-    visit: F,
-) -> R
-where
-    F: FnOnce(*mut u8, &[u8]) -> R,
-{
-    let item_id = unsafe { &*shared::page_item_id(page_ptr, tuple_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        pgrx::error!(
-            "ec_hnsw {tuple_kind} tuple slot {}/{} is unused",
-            tuple_tid.block_number,
-            tuple_tid.offset_number
-        );
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        pgrx::error!(
-            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
-            tuple_tid.block_number
-        );
-    }
-
-    let tuple_ptr = unsafe { page_ptr.add(tuple_offset) };
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
-    visit(tuple_ptr, tuple_bytes)
 }
 
 unsafe fn repair_graph_connections_with_storage(
@@ -1569,12 +1536,12 @@ unsafe fn apply_repair_plans_on_page(
         }
 
         let tuple_changed = unsafe {
-            with_writable_vacuum_tuple_bytes(
+            shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
                 neighbor_tid,
                 "repair neighbor",
-                |tuple_ptr, tuple_bytes| {
+                |tuple_bytes| {
                     let mut neighbor =
                         page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
                             pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
@@ -1614,7 +1581,7 @@ unsafe fn apply_repair_plans_on_page(
                         );
                     }
 
-                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                    tuple_bytes.copy_from_slice(&encoded);
                     true
                 },
             )
@@ -1769,12 +1736,12 @@ unsafe fn apply_page_pass2_updates(
 ) {
     for update in updates {
         unsafe {
-            with_writable_vacuum_tuple_bytes(
+            shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
                 update.tid,
                 "repair neighbor",
-                |tuple_ptr, tuple_bytes| {
+                |tuple_bytes| {
                     let encoded = update.tuple.encode().unwrap_or_else(|e| {
                         pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
                     });
@@ -1787,7 +1754,7 @@ unsafe fn apply_page_pass2_updates(
                         );
                     }
 
-                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, tuple_bytes.len());
+                    tuple_bytes.copy_from_slice(&encoded);
                 },
             )
         }

@@ -463,6 +463,39 @@ where
     Some(visit(tuple_bytes))
 }
 
+pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    tuple_tid: page::ItemPointer,
+    tuple_kind: &str,
+    visit: F,
+) -> R
+where
+    F: for<'a> FnOnce(&'a mut [u8]) -> R,
+{
+    let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!(
+            "ec_hnsw {tuple_kind} tuple slot {}/{} is unused",
+            tuple_tid.block_number,
+            tuple_tid.offset_number
+        );
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
+            tuple_tid.block_number
+        );
+    }
+
+    let tuple_bytes =
+        unsafe { std::slice::from_raw_parts_mut(page_ptr.add(tuple_offset), tuple_len) };
+    visit(tuple_bytes)
+}
+
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_hnsw ambuild received a null heap tid");
