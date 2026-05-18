@@ -4,12 +4,16 @@
 //! `read_main` wraps `ReadBufferExtended`, and `from_pinned` adopts buffers
 //! returned by APIs such as `read_stream_next_buffer`.
 //!
+//! Use `PinnedBufferLockGuard` when the caller needs a temporary lock on a
+//! separately owned pin; it unlocks but does not release the pin.
+//!
 //! Use `LockedBufferGuard` when the caller owns both pin and lock:
 //! `read_main` wraps `ReadBufferExtended` plus `LockBuffer`,
 //! `read_main_locked` wraps modes that return an already-locked buffer such as
 //! `RBM_ZERO_AND_LOCK`, and `lock_pinned` adopts a pre-pinned buffer before
 //! locking it.
 
+use std::marker::PhantomData;
 use std::ptr;
 
 use pgrx::pg_sys;
@@ -60,6 +64,16 @@ impl PinnedBufferGuard {
         // SAFETY: this guard owns a valid pinned buffer.
         unsafe { pg_sys::BufferGetBlockNumber(self.buffer) }
     }
+
+    pub(crate) fn lock(&self, lockmode: i32) -> PinnedBufferLockGuard<'_> {
+        // SAFETY: this guard owns a valid pinned buffer, so a short-lived
+        // lock-only guard may borrow that pin and unlock without releasing it.
+        unsafe { pg_sys::LockBuffer(self.buffer, lockmode) };
+        PinnedBufferLockGuard {
+            buffer: self.buffer,
+            _pin: PhantomData,
+        }
+    }
 }
 
 impl Drop for PinnedBufferGuard {
@@ -69,6 +83,35 @@ impl Drop for PinnedBufferGuard {
         // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
         // re-audit on pgrx bumps or pg_guard behavior changes.
         unsafe { pg_sys::ReleaseBuffer(self.buffer) };
+    }
+}
+
+pub(crate) struct PinnedBufferLockGuard<'a> {
+    buffer: pg_sys::Buffer,
+    _pin: PhantomData<&'a PinnedBufferGuard>,
+}
+
+impl PinnedBufferLockGuard<'_> {
+    pub(crate) fn page(&self) -> pg_sys::Page {
+        // SAFETY: this guard owns a valid lock on a pinned buffer borrowed
+        // from `PinnedBufferGuard`.
+        unsafe { pg_sys::BufferGetPage(self.buffer) }
+    }
+
+    pub(crate) fn page_size(&self) -> usize {
+        // SAFETY: this guard owns a valid lock on a pinned buffer borrowed
+        // from `PinnedBufferGuard`.
+        unsafe { pg_sys::BufferGetPageSize(self.buffer) as usize }
+    }
+}
+
+impl Drop for PinnedBufferLockGuard<'_> {
+    fn drop(&mut self) {
+        // SAFETY: this guard locked a buffer whose pin is owned by the
+        // borrowed `PinnedBufferGuard`; only the lock is released here.
+        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
+        // re-audit on pgrx bumps or pg_guard behavior changes.
+        unsafe { pg_sys::LockBuffer(self.buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
     }
 }
 

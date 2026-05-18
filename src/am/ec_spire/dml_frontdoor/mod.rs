@@ -234,25 +234,29 @@ unsafe extern "C-unwind" fn dml_frontdoor_relation_context_relcache_callback(
     _arg: pg_sys::Datum,
     relid: pg_sys::Oid,
 ) {
-    let Some(cache) = RELATION_CONTEXT_CACHE.get() else {
-        return;
-    };
-    let Ok(mut guard) = cache.lock() else {
-        return;
-    };
-    let before = guard.len();
-    if relid == pg_sys::InvalidOid {
-        guard.clear();
-    } else {
-        guard.retain(|_heap_oid, entry| {
-            !entry
-                .watched_relation_oids
-                .iter()
-                .any(|watched_oid| *watched_oid == relid)
-        });
-    }
-    if guard.len() != before {
-        RELATION_CONTEXT_CACHE_INVALIDATIONS.fetch_add(1, Ordering::Relaxed);
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let Some(cache) = RELATION_CONTEXT_CACHE.get() else {
+                return;
+            };
+            let Ok(mut guard) = cache.lock() else {
+                return;
+            };
+            let before = guard.len();
+            if relid == pg_sys::InvalidOid {
+                guard.clear();
+            } else {
+                guard.retain(|_heap_oid, entry| {
+                    !entry
+                        .watched_relation_oids
+                        .iter()
+                        .any(|watched_oid| *watched_oid == relid)
+                });
+            }
+            if guard.len() != before {
+                RELATION_CONTEXT_CACHE_INVALIDATIONS.fetch_add(1, Ordering::Relaxed);
+            }
+        })
     }
 }
 

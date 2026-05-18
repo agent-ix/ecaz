@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "crates/*"]
+exclude = ["crates/ecaz-lints"]
 resolver = "2"
 
 [package]

@@ -10,7 +10,9 @@ use std::time::Instant;
 use pgrx::pg_sys;
 
 use super::{build, graph, insert, options, page, search, shared, source};
+use crate::storage::lock_guard::LwLockGuard;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
 const EC_HNSW_PARALLEL_BUILD_MAGIC: u32 = u32::from_le_bytes(*b"ECBP");
 const EC_HNSW_PARALLEL_BUILD_VERSION: u16 = 1;
@@ -422,19 +424,25 @@ impl EcHnswConcurrentDsmInsertScratch {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub(super) struct EcHnswConcurrentDsmLockOps {
-    acquire_shared: unsafe fn(*mut pg_sys::LWLock),
-    acquire_exclusive: unsafe fn(*mut pg_sys::LWLock),
-    release: unsafe fn(*mut pg_sys::LWLock),
+    acquire_shared: unsafe fn(*mut pg_sys::LWLock) -> LwLockGuard,
+    acquire_exclusive: unsafe fn(*mut pg_sys::LWLock) -> LwLockGuard,
 }
 
 #[allow(dead_code)]
 impl EcHnswConcurrentDsmLockOps {
     pub(super) fn postgres() -> Self {
         Self {
-            acquire_shared: concurrent_dsm_lwlock_acquire_shared,
-            acquire_exclusive: concurrent_dsm_lwlock_acquire_exclusive,
-            release: concurrent_dsm_lwlock_release,
+            acquire_shared: LwLockGuard::acquire_shared,
+            acquire_exclusive: LwLockGuard::acquire_exclusive,
         }
+    }
+
+    unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        unsafe { (self.acquire_shared)(lock) }
+    }
+
+    unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        unsafe { (self.acquire_exclusive)(lock) }
     }
 }
 
@@ -1291,29 +1299,21 @@ unsafe fn begin_concurrent_dsm_graph_node_insert(
 ) -> Option<u8> {
     let node = unsafe { parts.nodes.add(node_idx as usize) };
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
-    unsafe { (locks.acquire_exclusive)(lock) };
+    let _lock_guard = unsafe { locks.exclusive(lock) };
     let state = unsafe { (*node).insert_state.value };
     let level = unsafe { (*node).level };
     match state {
-        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY => {
-            unsafe { (locks.release)(lock) };
-            None
-        }
+        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY => None,
         EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED => {
             unsafe {
                 (*node).insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING;
-                (locks.release)(lock);
             }
             Some(level)
         }
         EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING => {
-            unsafe { (locks.release)(lock) };
             pgrx::error!("concurrent DSM graph insert saw a duplicate in-progress node");
         }
-        _ => {
-            unsafe { (locks.release)(lock) };
-            pgrx::error!("concurrent DSM graph insert saw an unknown node state");
-        }
+        _ => pgrx::error!("concurrent DSM graph insert saw an unknown node state"),
     }
 }
 
@@ -1325,17 +1325,15 @@ unsafe fn complete_concurrent_dsm_graph_node_insert(
 ) {
     let node = unsafe { parts.nodes.add(node_idx as usize) };
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
-    unsafe { (locks.acquire_exclusive)(lock) };
+    let _lock_guard = unsafe { locks.exclusive(lock) };
     let slot_count = unsafe { (*node).neighbor_slot_count as usize };
     if selected_slots.len() != slot_count {
-        unsafe { (locks.release)(lock) };
         pgrx::error!("concurrent DSM graph insert selected slot count mismatch");
     }
     let slots = unsafe { concurrent_dsm_node_slots_mut(parts, node) };
     slots.copy_from_slice(selected_slots);
     unsafe {
         (*node).insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY;
-        (locks.release)(lock);
     }
 }
 
@@ -1500,23 +1498,24 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
 
     let source = unsafe { parts.nodes.add(source_idx as usize) };
     let source_lock = unsafe { ptr::addr_of_mut!((*source).lock) };
-    unsafe { (locks.acquire_shared)(source_lock) };
-    let source_state = unsafe { (*source).insert_state.value };
-    if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
-        let source_level = unsafe { (*source).level };
-        if let Some((start, end)) = graph::layer_slot_bounds(source_level, config.m, layer) {
-            let raw_slots = unsafe { concurrent_dsm_node_slots(parts, source) };
-            for neighbor_idx in raw_slots[start.min(raw_slots.len())..end.min(raw_slots.len())]
-                .iter()
-                .copied()
-            {
-                if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
-                    neighbor_idxs.push(neighbor_idx);
+    {
+        let _source_lock_guard = unsafe { locks.shared(source_lock) };
+        let source_state = unsafe { (*source).insert_state.value };
+        if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
+            let source_level = unsafe { (*source).level };
+            if let Some((start, end)) = graph::layer_slot_bounds(source_level, config.m, layer) {
+                let raw_slots = unsafe { concurrent_dsm_node_slots(parts, source) };
+                for neighbor_idx in raw_slots[start.min(raw_slots.len())..end.min(raw_slots.len())]
+                    .iter()
+                    .copied()
+                {
+                    if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
+                        neighbor_idxs.push(neighbor_idx);
+                    }
                 }
             }
         }
     }
-    unsafe { (locks.release)(source_lock) };
 
     for neighbor_idx in neighbor_idxs.iter().copied() {
         if neighbor_idx >= layout.node_count {
@@ -1596,10 +1595,9 @@ unsafe fn add_concurrent_dsm_backlinks(
         }
         let target = unsafe { parts.nodes.add(selection.node_idx as usize) };
         let target_lock = unsafe { ptr::addr_of_mut!((*target).lock) };
-        unsafe { (locks.acquire_exclusive)(target_lock) };
+        let _target_lock_guard = unsafe { locks.exclusive(target_lock) };
         let target_state = unsafe { (*target).insert_state.value };
         if target_state != EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
-            unsafe { (locks.release)(target_lock) };
             continue;
         }
 
@@ -1608,12 +1606,10 @@ unsafe fn add_concurrent_dsm_backlinks(
             unsafe { (*target).neighbor_slot_count as usize },
             selection.layer,
         ) else {
-            unsafe { (locks.release)(target_lock) };
             continue;
         };
         let layer_slice = unsafe { &mut concurrent_dsm_node_slots_mut(parts, target)[start..end] };
         if layer_slice.contains(&new_node_idx) {
-            unsafe { (locks.release)(target_lock) };
             continue;
         }
         if let Some(slot) = layer_slice
@@ -1621,7 +1617,6 @@ unsafe fn add_concurrent_dsm_backlinks(
             .find(|slot| **slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
         {
             *slot = new_node_idx;
-            unsafe { (locks.release)(target_lock) };
             continue;
         }
 
@@ -1663,7 +1658,6 @@ unsafe fn add_concurrent_dsm_backlinks(
         if replacement.contains(&new_node_idx) {
             layer_slice.copy_from_slice(&replacement);
         }
-        unsafe { (locks.release)(target_lock) };
     }
 }
 
@@ -1782,18 +1776,6 @@ unsafe fn concurrent_dsm_node_slots_mut<'a>(
             (*node).neighbor_slot_count as usize,
         )
     }
-}
-
-unsafe fn concurrent_dsm_lwlock_acquire_shared(lock: *mut pg_sys::LWLock) {
-    unsafe { pg_sys::LWLockAcquire(lock, pg_sys::LWLockMode::LW_SHARED) };
-}
-
-unsafe fn concurrent_dsm_lwlock_acquire_exclusive(lock: *mut pg_sys::LWLock) {
-    unsafe { pg_sys::LWLockAcquire(lock, pg_sys::LWLockMode::LW_EXCLUSIVE) };
-}
-
-unsafe fn concurrent_dsm_lwlock_release(lock: *mut pg_sys::LWLock) {
-    unsafe { pg_sys::LWLockRelease(lock) };
 }
 
 impl EcHnswParallelBuildSharedHeader {
@@ -2195,8 +2177,7 @@ impl EcHnswParallelGraphBuildLeader {
 
 struct EcHnswParallelBuildLeader {
     pcxt: *mut pg_sys::ParallelContext,
-    snapshot: pg_sys::Snapshot,
-    unregister_snapshot: bool,
+    snapshot_guard: Option<RegisteredSnapshotGuard>,
     queue_handles: Vec<*mut pg_sys::shm_mq_handle>,
     walusage: *mut pg_sys::WalUsage,
     bufferusage: *mut pg_sys::BufferUsage,
@@ -2225,12 +2206,18 @@ impl EcHnswParallelBuildLeader {
         }
 
         let is_concurrent = unsafe { !index_info.is_null() && (*index_info).ii_Concurrent };
-        let snapshot = if is_concurrent {
-            unsafe { pg_sys::RegisterSnapshot(pg_sys::GetTransactionSnapshot()) }
+        let snapshot_guard = if is_concurrent {
+            Some(RegisteredSnapshotGuard::transaction().unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw parallel build failed to register transaction snapshot")
+            }))
         } else {
-            ptr::addr_of_mut!(pg_sys::SnapshotAnyData)
+            None
         };
-        let unregister_snapshot = is_concurrent;
+        let snapshot = snapshot_guard
+            .as_ref()
+            .map_or(ptr::addr_of_mut!(pg_sys::SnapshotAnyData), |guard| {
+                guard.as_ptr()
+            });
 
         let shared_bytes = unsafe { parallel_build_shared_workspace_size(heap_relation, snapshot) };
         unsafe {
@@ -2262,9 +2249,6 @@ impl EcHnswParallelBuildLeader {
 
         unsafe { pg_sys::InitializeParallelDSM(pcxt) };
         if unsafe { (*pcxt).seg.is_null() } {
-            if unregister_snapshot {
-                unsafe { pg_sys::UnregisterSnapshot(snapshot) };
-            }
             unsafe {
                 pg_sys::DestroyParallelContext(pcxt);
                 pg_sys::ExitParallelMode();
@@ -2348,8 +2332,7 @@ impl EcHnswParallelBuildLeader {
 
         let mut leader = Self {
             pcxt,
-            snapshot,
-            unregister_snapshot,
+            snapshot_guard,
             queue_handles: Vec::with_capacity(workers_launched.max(0) as usize),
             walusage,
             bufferusage,
@@ -2431,7 +2414,7 @@ impl EcHnswParallelBuildLeader {
         }
     }
 
-    unsafe fn finish(self) {
+    unsafe fn finish(mut self) {
         unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
 
         let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
@@ -2444,9 +2427,7 @@ impl EcHnswParallelBuildLeader {
             }
         }
 
-        if self.unregister_snapshot {
-            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
-        }
+        drop(self.snapshot_guard.take());
 
         unsafe {
             pg_sys::DestroyParallelContext(self.pcxt);
@@ -3891,13 +3872,16 @@ mod tests {
 
     fn test_lock_ops() -> EcHnswConcurrentDsmLockOps {
         EcHnswConcurrentDsmLockOps {
-            acquire_shared: test_lock_noop,
-            acquire_exclusive: test_lock_noop,
-            release: test_lock_noop,
+            acquire_shared: test_lock_guard,
+            acquire_exclusive: test_lock_guard,
         }
     }
 
-    unsafe fn test_lock_noop(_lock: *mut pg_sys::LWLock) {}
+    unsafe fn test_lock_guard(lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        unsafe { LwLockGuard::from_acquired_with_release(lock, test_lock_noop_release) }
+    }
+
+    unsafe fn test_lock_noop_release(_lock: *mut pg_sys::LWLock) {}
 
     fn test_insert_config(dimensions: usize) -> EcHnswConcurrentDsmInsertConfig {
         EcHnswConcurrentDsmInsertConfig {

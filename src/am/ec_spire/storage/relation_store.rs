@@ -1183,7 +1183,10 @@ unsafe fn prefetch_relation_blocks_with_read_stream(
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
+        let _buffer = unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_spire relation store prefetch returned invalid buffer")
+            });
     }
 
     unsafe { pg_sys::read_stream_end(stream) };
@@ -1245,42 +1248,11 @@ pub(super) struct SpireRelationObjectStoreSet {
     config: Option<SpireLocalStoreConfig>,
     stores: Vec<SpireRelationObjectStore>,
     store_indexes_by_key: HashMap<(u32, u32), usize>,
-    opened_relations: Vec<OpenedStoreRelation>,
-}
-
-struct OpenedStoreRelation {
-    relation: pg_sys::Relation,
-    lockmode: pg_sys::LOCKMODE,
-}
-
-impl OpenedStoreRelation {
-    fn open(relid: pg_sys::Oid, lockmode: pg_sys::LOCKMODE) -> Option<Self> {
-        // SAFETY: PostgreSQL owns the relation cache entry returned by
-        // `relation_open`; this wrapper owns the matching close for `lockmode`.
-        let relation = unsafe { pg_sys::relation_open(relid, lockmode) };
-        if relation.is_null() {
-            return None;
-        }
-        Some(Self { relation, lockmode })
-    }
-
-    fn as_ptr(&self) -> pg_sys::Relation {
-        self.relation
-    }
-}
-
-impl Drop for OpenedStoreRelation {
-    fn drop(&mut self) {
-        // SAFETY: `relation` was returned by `relation_open` in
-        // `OpenedStoreRelation::open`; this wrapper owns the matching close.
-        // SAFETY: pgrx ERROR paths must unwind Rust frames so Drop runs;
-        // re-audit on pgrx bumps or pg_guard behavior changes.
-        unsafe { pg_sys::relation_close(self.relation, self.lockmode) };
-    }
+    opened_relations: Vec<crate::storage::relation_guard::RelationGuard>,
 }
 
 struct OpenedRelationsGuard {
-    relations: Vec<OpenedStoreRelation>,
+    relations: Vec<crate::storage::relation_guard::RelationGuard>,
 }
 
 impl OpenedRelationsGuard {
@@ -1295,13 +1267,13 @@ impl OpenedRelationsGuard {
         relid: pg_sys::Oid,
         lockmode: pg_sys::LOCKMODE,
     ) -> Option<pg_sys::Relation> {
-        let relation = OpenedStoreRelation::open(relid, lockmode)?;
+        let relation = crate::storage::relation_guard::RelationGuard::try_open(relid, lockmode)?;
         let ptr = relation.as_ptr();
         self.relations.push(relation);
         Some(ptr)
     }
 
-    fn into_inner(mut self) -> Vec<OpenedStoreRelation> {
+    fn into_inner(mut self) -> Vec<crate::storage::relation_guard::RelationGuard> {
         std::mem::take(&mut self.relations)
     }
 }

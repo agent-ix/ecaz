@@ -453,7 +453,7 @@ unsafe fn append_object_tuple_to_new_block(
         std::mem::drop(wal_txn);
         return Err("ec_spire failed to append object tuple to new block".to_owned());
     }
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer.buffer()) };
+    let block_number = buffer.block_number();
 
     unsafe { wal_txn.finish() };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };

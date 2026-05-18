@@ -68,6 +68,7 @@ fn build_ec_ivf_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine
 }
 
+#[pg_guard]
 unsafe extern "C-unwind" fn ec_ivf_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
     true
 }

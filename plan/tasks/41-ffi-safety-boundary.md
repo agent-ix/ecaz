@@ -129,6 +129,30 @@ recovery starts (best case) or memory is corrupted (worst case).
 - `docs/ffi-inventory.md` is authoritative and verified weekly.
 - `make ffi-audit` runs in PR CI per Task 49 governance.
 
+## Closeout Notes
+
+- `python3 scripts/ffi_audit.py --check` compares the committed
+  `docs/ffi-inventory.md` to the live generated inventory and fails when it
+  drifts. This is the PR-time enforcement point for the inventory freshness
+  criterion; the separate weekly cadence is operational policy.
+- `pg_finfo_*` metadata symbols are documented exceptions because they only
+  return static `Pg_finfo_record` metadata and are not executor, access-method,
+  planner, hook, relcache, DSM, or vacuum callbacks. The test-only panic stub
+  remains the only explicitly named non-metadata exception.
+- ECAZ currently has no direct `ResourceOwner` acquisition surface in `src/`.
+  ResourceOwner handling is therefore non-applicable for this closeout unless a
+  future patch introduces direct `ResourceOwner` APIs.
+- Direct `pg_sys::SPI_*` tuptable ownership is confined to
+  `src/storage/spi_guard.rs`; production SQL execution uses pgrx-managed
+  `Spi` helpers.
+- The shipped `ecaz_panic_across_ffi` Dylint is syntactic: it rejects direct
+  C ABI bodies that do not name an accepted guard mechanism. Semantic panic
+  reachability analysis is intentionally left as future hardening scope.
+- `make ffi-leak-smoke` exists as the Task 41 aggregate lane. Full forced-ERROR
+  content continues to expand with Task 38 fault-injection plumbing; Task 41
+  closeout evidence includes representative PG18 HNSW live smoke plus static
+  all-source resource gating.
+
 ## Dependencies
 
 - Independent of Tasks 36–40; can land in parallel.

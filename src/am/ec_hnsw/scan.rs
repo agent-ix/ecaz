@@ -12,7 +12,9 @@ use crate::quant::prod::{
     PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
 };
 use crate::storage::{
-    relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+    buffer_guard::{LockedBufferGuard, PinnedBufferGuard, PinnedBufferLockGuard},
+    relation_guard::HeapRelationGuard,
+    slot_guard::TupleTableSlotGuard,
     snapshot_guard::RegisteredSnapshotGuard,
 };
 
@@ -61,6 +63,8 @@ pub(crate) const PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME: &str = "binary";
 pub(crate) const PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME: &str = "heap_f32";
 const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
     "ec_hnsw PqFastScan exact scoring requires the cold rerank payload path";
+
+type PrefetchedGraphBuffers = HashMap<u32, PinnedBufferGuard>;
 
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2360,7 +2364,7 @@ unsafe fn cached_graph_element(
 #[cfg(feature = "pg18")]
 unsafe fn cached_graph_element_from_buffer(
     opaque: *mut TqScanOpaque,
-    buffer: pg_sys::Buffer,
+    buffer: &PinnedBufferLockGuard<'_>,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
     let opaque_ref = unsafe { &mut *opaque };
@@ -2972,7 +2976,7 @@ unsafe fn prefetch_graph_buffers(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     neighbor_tids: &[page::ItemPointer],
-) -> HashMap<u32, pg_sys::Buffer> {
+) -> HashMap<u32, PinnedBufferGuard> {
     let mut blocks = Vec::new();
     let mut seen_blocks = HashSet::new();
     for neighbor_tid in neighbor_tids.iter().copied() {
@@ -2999,8 +3003,10 @@ unsafe fn prefetch_graph_buffers(
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
+        let buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw graph prefetch read stream returned an invalid buffer")
+        });
         let block_number = if per_buffer_data.is_null() {
-            unsafe { pg_sys::ReleaseBuffer(buffer) };
             continue;
         } else {
             unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
@@ -3012,38 +3018,33 @@ unsafe fn prefetch_graph_buffers(
 }
 
 #[cfg(feature = "pg18")]
-fn release_prefetched_graph_buffers(prefetched_buffers: HashMap<u32, pg_sys::Buffer>) {
-    for buffer in prefetched_buffers.into_values() {
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
-    }
+fn release_prefetched_graph_buffers(prefetched_buffers: HashMap<u32, PinnedBufferGuard>) {
+    drop(prefetched_buffers);
 }
 
-fn release_prefetched_graph_buffers_if_any(
-    prefetched_buffers: Option<HashMap<u32, pg_sys::Buffer>>,
-) {
+fn release_prefetched_graph_buffers_if_any(prefetched_buffers: Option<PrefetchedGraphBuffers>) {
+    #[cfg(not(feature = "pg18"))]
+    let _ = prefetched_buffers;
+
     #[cfg(feature = "pg18")]
     if let Some(prefetched_buffers) = prefetched_buffers {
         release_prefetched_graph_buffers(prefetched_buffers);
     }
-
-    #[cfg(not(feature = "pg18"))]
-    let _ = prefetched_buffers;
 }
 
 unsafe fn cached_graph_element_with_prefetch(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
     #[cfg_attr(not(feature = "pg18"), allow(unused_variables))] prefetched_buffers: Option<
-        &HashMap<u32, pg_sys::Buffer>,
+        &PrefetchedGraphBuffers,
     >,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
     #[cfg(feature = "pg18")]
     if let Some(prefetched_buffers) = prefetched_buffers {
-        if let Some(buffer) = prefetched_buffers.get(&element_tid.block_number).copied() {
-            unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-            let loaded = unsafe { cached_graph_element_from_buffer(opaque, buffer, element_tid) };
-            unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
+        if let Some(buffer) = prefetched_buffers.get(&element_tid.block_number) {
+            let buffer = buffer.lock(pg_sys::BUFFER_LOCK_SHARE as i32);
+            let loaded = unsafe { cached_graph_element_from_buffer(opaque, &buffer, element_tid) };
             return loaded;
         }
     }
@@ -3080,7 +3081,7 @@ where
     let prefetched_buffers =
         Some(unsafe { prefetch_graph_buffers(index_relation, &mut *opaque, &neighbor_tids) });
     #[cfg(not(feature = "pg18"))]
-    let prefetched_buffers: Option<HashMap<u32, pg_sys::Buffer>> = None;
+    let prefetched_buffers: Option<PrefetchedGraphBuffers> = None;
 
     let binary_query = unsafe { (*opaque).binary_sign_query.as_ref() };
     if binary_query.is_none() {
@@ -4690,10 +4691,14 @@ unsafe fn select_next_linear_scan_result(
             } else {
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
+            let buffer =
+                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                    .unwrap_or_else(|| {
+                        pgrx::error!("ec_hnsw read stream returned an invalid buffer")
+                    });
             let selected = unsafe {
                 select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
             };
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             if selected.is_some() {
                 return selected;
             }
@@ -4708,18 +4713,17 @@ unsafe fn select_next_linear_scan_result(
             .reset(opaque.next_block_number, max_block);
         while let Some(block_number) = opaque.linear_prefetch_state.next_block() {
             let buffer = unsafe {
-                pg_sys::ReadBufferExtended(
+                LockedBufferGuard::read_main(
                     index_relation,
-                    pg_sys::ForkNumber::MAIN_FORKNUM,
                     block_number,
                     pg_sys::ReadBufferMode::RBM_NORMAL,
-                    ptr::null_mut(),
+                    pg_sys::BUFFER_LOCK_SHARE as i32,
                 )
-            };
+            }
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open linear scan buffer"));
             let selected = unsafe {
                 select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
             };
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             if selected.is_some() {
                 return selected;
             }
@@ -4733,15 +4737,14 @@ unsafe fn select_next_linear_scan_result(
 unsafe fn select_linear_scan_result_from_buffer(
     opaque: &mut TqScanOpaque,
     code_len: usize,
-    buffer: pg_sys::Buffer,
+    buffer: LockedBufferGuard,
     block_number: u32,
 ) -> Option<SelectedScanResult> {
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     opaque.explain_counters.record_linear_page_read();
     super::stats::record_linear_page();
     opaque.stats_delta.record_linear_page();
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
     let offset_start = if block_number == opaque.next_block_number {
         opaque.next_offset_number.max(1)
@@ -4790,20 +4793,22 @@ unsafe fn select_linear_scan_result_from_buffer(
             opaque.explain_counters.record_element_skipped();
             continue;
         }
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
+        let gamma = element.gamma;
+        let code = element.code;
+        let heap_tids = CachedHeapTids::from_iter(element.heaptids.iter().copied());
+        drop(buffer);
         opaque.explain_counters.record_element_scored();
-        let score = score_scan_element_result(opaque, element.gamma, &element.code);
+        let score = score_scan_element_result(opaque, gamma, &code);
         return Some(SelectedScanResult {
             element_tid,
             score,
             approx_score: None,
             approx_rank_base: None,
             comparison_score: None,
-            heap_tids: CachedHeapTids::from_iter(element.heaptids.iter().copied()),
+            heap_tids,
         });
     }
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
     opaque.next_block_number = block_number + 1;
     opaque.next_offset_number = 1;
     None

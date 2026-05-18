@@ -1,0 +1,15 @@
+src/storage/scan_guard.rs:25:            pg_sys::index_beginscan(
+src/storage/scan_guard.rs:39:            pg_sys::index_beginscan(
+src/storage/scan_guard.rs:64:        unsafe { pg_sys::index_endscan(self.scan) };
+src/storage/scan_guard.rs:82:            pg_sys::heap_beginscan(
+src/storage/scan_guard.rs:108:        unsafe { pg_sys::heap_endscan(self.scan) };
+src/storage/slot_guard.rs:12:        let slot = unsafe { pg_sys::table_slot_create(relation, std::ptr::null_mut()) };
+src/storage/slot_guard.rs:23:            pg_sys::MakeSingleTupleTableSlot(
+src/storage/slot_guard.rs:45:        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+src/storage/snapshot_guard.rs:61:        unsafe { pg_sys::PushActiveSnapshot(snapshot) };
+src/storage/snapshot_guard.rs:85:            pg_sys::PopActiveSnapshot();
+src/storage/spi_guard.rs:26:        unsafe { pg_sys::SPI_freetuptable(self.tuptable.as_ptr()) };
+src/storage/relation_guard.rs:74:        let relation = unsafe { pg_sys::table_open(relation_oid, lockmode) };
+src/storage/relation_guard.rs:96:        unsafe { pg_sys::table_close(self.relation, self.lockmode) };
+src/storage/relation_guard.rs:109:        let relation = unsafe { pg_sys::relation_open(relation_oid, lockmode) };
+src/storage/relation_guard.rs:127:        unsafe { pg_sys::relation_close(self.relation, self.lockmode) };

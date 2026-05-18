@@ -1,0 +1,4 @@
+src/storage/wal.rs
+52:        let state = unsafe { pg_sys::GenericXLogStart(relation) };
+83:        unsafe { pg_sys::GenericXLogFinish(self.state) }
+92:            unsafe { pg_sys::GenericXLogAbort(self.state) };

@@ -1,8 +1,8 @@
-.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report cargo-geiger mirai build install clean
+.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report ffi-audit ffi-lint ffi-dylint ffi-dylint-self-test cargo-geiger mirai build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full hardening-local hardening-nightly-local hardening-validate hardening-tiers-report
+.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 
 ## Format all source files
@@ -97,6 +97,22 @@ audit-unsafe:
 
 unsafe-baseline-report:
 	bash scripts/unsafe_baseline_report.sh
+
+ffi-audit:
+	python3 scripts/ffi_audit.py --check
+
+ffi-lint: ffi-audit
+	python3 scripts/ffi_audit.py --self-test
+	python3 scripts/ffi_lint.py --self-test
+	python3 scripts/ffi_lint.py --check
+	bash scripts/run_dylint_self_test.sh
+	bash scripts/run_dylint.sh --no-deps -p ecaz -- --all-targets --no-default-features --features pg18,bench
+
+ffi-dylint:
+	bash scripts/run_dylint.sh --no-deps -p ecaz -- --all-targets --no-default-features --features pg18,bench
+
+ffi-dylint-self-test:
+	bash scripts/run_dylint_self_test.sh
 
 cargo-geiger:
 	bash scripts/hardening.sh cargo-geiger
@@ -284,6 +300,8 @@ fault-slow-disk-smoke:
 
 fault-full: fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke
 
+ffi-leak-smoke: fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke
+
 # --- Fuzzing (requires cargo-fuzz + nightly) ---
 
 FUZZ_SECONDS ?= 30
@@ -370,7 +388,7 @@ bench-recall-sql:
 # --- CI Aggregates ---
 
 ## Quick checks (< 5 min, for every PR)
-ci-quick: fmt-check lint test on-disk-fixtures upgrade-smoke layout-check audit-unsafe
+ci-quick: fmt-check lint test on-disk-fixtures upgrade-smoke layout-check audit-unsafe ffi-lint
 
 ## Full benchmark suite (nightly)
 ci-nightly: ci-quick bench bench-iai proptest miri

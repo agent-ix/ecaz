@@ -1961,6 +1961,7 @@ unsafe fn fetch_heap_source_vector(
     }
 }
 
+#[pg_guard]
 unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
     true
 }
@@ -2493,13 +2494,16 @@ mod tests {
         itemptr: pg_sys::ItemPointer,
         state: *mut c_void,
     ) -> bool {
-        let state = unsafe { &*(state.cast::<DebugVacuumCallbackState>()) };
-        let (block_number, offset_number) =
-            pgrx::itemptr::item_pointer_get_both(unsafe { *itemptr });
-        state.dead_tids.contains(&ItemPointer {
-            block_number,
-            offset_number,
-        })
+        unsafe {
+            pgrx::pgrx_extern_c_guard(|| {
+                let state = &*(state.cast::<DebugVacuumCallbackState>());
+                let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(*itemptr);
+                state.dead_tids.contains(&ItemPointer {
+                    block_number,
+                    offset_number,
+                })
+            })
+        }
     }
 
     unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {

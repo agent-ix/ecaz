@@ -1941,10 +1941,12 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
 ) -> bool {
-    let state = unsafe { &*(state.cast::<DebugVacuumCallbackState>()) };
-    state
-        .dead_tids
-        .contains(&unsafe { shared::decode_heap_tid(itemptr) })
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let state = &*(state.cast::<DebugVacuumCallbackState>());
+            state.dead_tids.contains(&shared::decode_heap_tid(itemptr))
+        })
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
