@@ -45,7 +45,8 @@ impl Drop for Detoasted...Datum {
 
 Then either:
 
-- expose `with_..._slice(datum, |slice| ...)` so borrows cannot escape; or
+- expose `with_..._slice(datum, |slice| ...)` with a higher-ranked callback
+  bound (`for<'a> FnOnce(&'a [T]) -> R`) so borrows cannot escape; or
 - expose `to_vec()` only, so callers receive owned bytes.
 
 Do this locally per AM/file unless a repeated shape proves worth extracting.
@@ -62,6 +63,8 @@ Preferred local pattern:
 - `with_slot_datum(slot, attnum, label, |datum| ...)` for borrowed access;
 - copy/decode inside the closure;
 - do not return `Datum`, `&[u8]`, `&[f32]`, or wrappers backed by slot storage.
+- use higher-ranked callback bounds for scoped slice closures so the return
+  type cannot be chosen as the borrowed slice lifetime.
 
 The HNSW source closure packet started this pattern for source vectors. Apply
 it only to call paths where a real borrow can escape or where the current API
