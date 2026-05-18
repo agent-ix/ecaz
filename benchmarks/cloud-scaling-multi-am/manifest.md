@@ -328,7 +328,7 @@ scripts/run_full_sweep.sh \
 ## See also
 
 - Prior cycle (kernel attribution, 10k+50k only):
-  [`review/cloud-10k-graviton-preopt-baselines/manifest.md`](../cloud-10k-graviton-preopt-baselines/manifest.md)
+  [`benchmarks/cloud-10k-graviton-preopt-baselines/manifest.md`](../cloud-10k-graviton-preopt-baselines/manifest.md)
 - Reporting standard: [`docs/benchmark-reporting-standard.md`](../../docs/benchmark-reporting-standard.md)
 - Suite runner spec (this packet's
   `scripts/run_full_sweep.sh` is a narrower companion to FR-038's
