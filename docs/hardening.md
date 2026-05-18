@@ -225,6 +225,8 @@ Baseline sources:
 - `reviews/task-39/004-quant-careful-coverage/artifacts/coverage/summary.txt`
   adds the quant modules and `storage/page.rs` through the `hardening/careful`
   harness.
+- `reviews/task-39/005-simd-mutation-triage/artifacts/coverage/summary.txt`
+  raises `src/quant/simd.rs` after adding explicit backend override tests.
 
 The current local coverage lane executes `ecaz-cli` tests and
 `hardening/careful`; it does not execute extension in-module tests, so AM page
@@ -234,7 +236,7 @@ callbacks, and storage guard drops remain recorded gaps.
 | Critical area | Baseline line coverage |
 | --- | ---: |
 | `src/quant/{codebook,grouped_pq,hadamard,mse,prod,qjl,rabitq,rotation}.rs` | `81.43%` to `100.00%` |
-| `src/quant/simd.rs` | `48.00%` |
+| `src/quant/simd.rs` | `94.59%` |
 | `src/quant/mod.rs` | `0.00%` |
 | `src/storage/page.rs` | `76.57%` |
 | `src/am/*/page.rs` | `0.00%` |

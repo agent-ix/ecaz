@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/*"]
+members = [".", "crates/*", "hardening/careful"]
 exclude = ["crates/ecaz-lints"]
 resolver = "2"
 

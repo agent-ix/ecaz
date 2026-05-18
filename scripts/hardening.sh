@@ -222,6 +222,11 @@ EOF
   fi
   mkdir -p "$output_dir"
   local args=(mutants --file "$file" --output "$output_dir/$(basename "$file").mutants")
+  case "$file" in
+    src/quant/*|src/storage/page.rs)
+      args+=(--test-package ecaz-careful-hardening)
+      ;;
+  esac
   if [ "$jobs" != "0" ]; then
     args+=(--jobs "$jobs")
   fi
