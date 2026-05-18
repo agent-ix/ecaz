@@ -2,6 +2,23 @@
 
 Planning packet only. No code changes are under review in this packet.
 
+## Campaign Tracking Addendum
+
+Status: **in progress, not complete**.
+
+Reviewer feedback showed that this packet was too loose for the actual Task 43
+bar. The campaign now has a canonical tracking document:
+
+- `artifacts/campaign-tracker.md`
+
+That tracker defines the non-negotiable completion gates, subsystem coverage
+matrix, mutation/sensitivity requirements, validation matrix, and planned
+follow-up packets. Future Task 43 packets must update it before requesting
+review. Completion is judged from that tracker, not from any single review
+packet.
+
+The original survey below remains as historical baseline context.
+
 ## Context
 
 - Branch: `task43-miri-careful-depth`
