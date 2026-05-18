@@ -103,6 +103,7 @@ ffi-audit:
 
 ffi-lint: ffi-audit
 	python3 scripts/ffi_audit.py --self-test
+	python3 scripts/ffi_lint.py --self-test
 	python3 scripts/ffi_lint.py --check
 
 cargo-geiger:

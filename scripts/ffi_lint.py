@@ -63,15 +63,18 @@ def iter_rs_files() -> list[Path]:
     return sorted(path for path in SRC.rglob("*.rs") if path.is_file())
 
 
+def iter_rs_sources() -> list[tuple[str, str]]:
+    return [(path.relative_to(ROOT).as_posix(), path.read_text()) for path in iter_rs_files()]
+
+
 def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def check_raw_api_boundaries() -> list[str]:
+def check_raw_api_boundaries(sources: list[tuple[str, str]] | None = None) -> list[str]:
     violations: list[str] = []
-    for path in iter_rs_files():
-        rel = path.relative_to(ROOT).as_posix()
-        text = path.read_text()
+    source_list = sources if sources is not None else iter_rs_sources()
+    for rel, text in source_list:
         for rule in RAW_API_RULES:
             if rel in rule.allowed_paths:
                 continue
@@ -83,11 +86,10 @@ def check_raw_api_boundaries() -> list[str]:
     return violations
 
 
-def check_read_stream_adoption() -> list[str]:
+def check_read_stream_adoption(sources: list[tuple[str, str]] | None = None) -> list[str]:
     violations: list[str] = []
-    for path in iter_rs_files():
-        rel = path.relative_to(ROOT).as_posix()
-        text = path.read_text()
+    source_list = sources if sources is not None else iter_rs_sources()
+    for rel, text in source_list:
         lines = text.splitlines()
         for match in READ_STREAM_NEXT_RE.finditer(text):
             line = line_number(text, match.start())
@@ -111,10 +113,84 @@ def run_check() -> int:
     return 0
 
 
+def self_test() -> int:
+    sources = [
+        (
+            "src/am/leaky_buffer.rs",
+            "fn leaked_pin() {\n"
+            "    unsafe { pg_sys::ReadBufferExtended(rel, fork, block, mode, strategy) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/buffer_guard.rs",
+            "fn wrapper_only(buffer: pg_sys::Buffer) {\n"
+            "    unsafe { pg_sys::ReleaseBuffer(buffer) };\n"
+            "}\n",
+        ),
+        (
+            "src/am/raw_lwlock.rs",
+            "fn leaked_lock(lock: *mut pg_sys::LWLock) {\n"
+            "    unsafe { pg_sys::LWLockAcquire(lock, pg_sys::LW_EXCLUSIVE as i32) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/lock_guard.rs",
+            "fn wrapper_only(lock: *mut pg_sys::LWLock) {\n"
+            "    unsafe { pg_sys::LWLockRelease(lock) };\n"
+            "}\n",
+        ),
+        (
+            "src/am/read_stream_leak.rs",
+            "fn leaked_stream(stream: *mut pg_sys::ReadStream) {\n"
+            "    let _buffer = unsafe { pg_sys::read_stream_next_buffer(stream) };\n"
+            "}\n",
+        ),
+        (
+            "src/am/read_stream_adopted.rs",
+            "fn adopted_stream(stream: *mut pg_sys::ReadStream) {\n"
+            "    let buffer = unsafe { pg_sys::read_stream_next_buffer(stream) };\n"
+            "    let _guard = PinnedBufferGuard::from_pinned(buffer);\n"
+            "}\n",
+        ),
+    ]
+    violations = check_raw_api_boundaries(sources) + check_read_stream_adoption(sources)
+    expected_fragments = [
+        "src/am/leaky_buffer.rs:2: raw buffer pin/lock APIs",
+        "src/am/raw_lwlock.rs:2: raw LWLock APIs",
+        "src/am/read_stream_leak.rs:2: read_stream_next_buffer result must be adopted",
+    ]
+    missing = [
+        fragment
+        for fragment in expected_fragments
+        if not any(fragment in violation for violation in violations)
+    ]
+    unexpected_allowed = [
+        violation
+        for violation in violations
+        if violation.startswith("src/storage/buffer_guard.rs:")
+        or violation.startswith("src/storage/lock_guard.rs:")
+        or violation.startswith("src/am/read_stream_adopted.rs:")
+    ]
+    if missing or unexpected_allowed or len(violations) != len(expected_fragments):
+        print("ffi lint self-test failed", file=sys.stderr)
+        for fragment in missing:
+            print(f"missing expected violation: {fragment}", file=sys.stderr)
+        for violation in unexpected_allowed:
+            print(f"unexpected allowed-fixture violation: {violation}", file=sys.stderr)
+        for violation in violations:
+            print(f"observed violation: {violation}", file=sys.stderr)
+        return 1
+    print("ffi lint self-test passed")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="run lint checks")
+    parser.add_argument("--self-test", action="store_true", help="run built-in verifier fixtures")
     args = parser.parse_args()
+    if args.self_test:
+        return self_test()
     if args.check:
         return run_check()
     parser.print_help()
