@@ -39,7 +39,7 @@ evidence or a concrete blocker with the extraction work needed.
 | G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Done | Packet 009 extracts field-level typed payload validation and covers valid/adversarial fields under Miri. |
 | G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Done | Packet 010 covers delete-delta visibility, active delta folding, and invalid delete-target rejection under Miri. |
 | G6 | cargo-careful mirrors every path-liftable Miri surface. | Done | Packet 012 proves the current path-lifted careful harness under normal Rust and `make careful` at 69 tests. SPIRE mirrors are blocked by pgrx/SPIRE include boundaries and need extraction or a SPIRE-specific careful micro-harness. |
-| G7 | Mutation/sensitivity probes exist for each major subsystem. | Not done | Add temporary diffs and failure logs by subsystem. |
+| G7 | Mutation/sensitivity probes exist for each major subsystem. | Done | Packet 013 records temporary diffs and failing Miri logs for common parallel, DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, SPIRE routing, SPIRE vacuum/delete-delta, remote typed payload, and SPIRE serialization. |
 | G8 | Final audit maps task-file requirements and reviewer findings to evidence. | Not done | Produce final packet only after G2-G7 are complete. |
 
 ## Existing Evidence Baseline
@@ -57,6 +57,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `010-spire-vacuum-delete-delta` | SPIRE vacuum/delete-delta visibility and rejection coverage passes targeted Miri: 1 vacuum visibility test, 6 delta snapshot tests, and 1 replacement fold test. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 | `011-spire-serialization-layout` | SPIRE assignment row, delta object, and vec-id serialization/layout helpers pass targeted Miri. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 | `012-careful-mirroring` | The path-lifted cargo-careful harness passes 69 tests under both normal Rust and cargo-careful; non-lifted SPIRE mirrors have explicit blockers and extraction plans. | Mutation probe; final aggregate campaign. |
+| `013-mutation-probes` | Nine temporary mutations failed the targeted Miri tests that protect the campaign's major safety contracts. Each mutation diff was saved and reverted before commit. | Final aggregate campaign. |
 
 ## Subsystem Coverage Matrix
 
@@ -85,7 +86,7 @@ Status values:
 | Concurrent slot contention | Done | The threaded test spawns more workers than slots, holds live claims until all threads have attempted a claim, and asserts unique slot ownership. |
 | Rescan/epoch stale-publish rejection under contention | Done | `miri_publish_parallel_scan_worker_slot_runtime_snapshot_rejects_stale_epoch` covers stale publish rejection after rescan. |
 | Many-seeds coverage | Done | `miri-parallel-threaded-many-seeds.log` records 128 seed attempts for the threaded test with exit 0. |
-| Mutation probe | Not done | Temporarily weaken compare-exchange or claim counter update and prove the test fails. |
+| Mutation probe | Done | Packet 013 `common-parallel-claim-expected.patch` changes the slot claim compare-exchange expected value; `mutation-common-parallel.log` fails `miri_parallel_worker_slots_are_unique_under_threaded_contention` with 0 live claims instead of 3. |
 
 ### DiskANN Graph
 
@@ -96,7 +97,7 @@ Status values:
 | `build_vamana_graph_with_stats` | Done | Packet 008 adds `miri_build_small_graph_is_connected`, a bounded 16-node production-helper build test. |
 | `build_vamana_graph_with_pass1_extra_candidates` | Done | Packet 008 adds `miri_build_stats_include_pass1_extra_candidates`, proving pass-1 extras enlarge candidate pools. |
 | cargo-careful mirror | Done | Packet 008 `careful-harness-cargo-test.log`: 69 passed, including both new bounded Vamana Miri tests. |
-| Mutation probe | Not done | Break alpha dominance or pass-1 candidate injection and record failure. |
+| Mutation probe | Done | Packet 013 `diskann-robust-prune-alpha.patch` inverts the alpha-dominance pruning condition; `mutation-diskann-robust-prune.log` fails `miri_robust_prune_excludes_alpha_dominated`. |
 
 ### HNSW Graph
 
@@ -108,7 +109,7 @@ Status values:
 | `select_next_with_refill` | Done | Packet 008 promotes `miri_visible_frontier_select_next_with_refill_skips_until_selected_then_advances`. |
 | Deterministic frontier ordering | Done | Packet 008 promotes `miri_beam_search_forget_queued_removes_frontier_node_and_allows_reseed`, covering frontier removal and reseed order. |
 | cargo-careful mirror | Done | Packet 008 `careful-harness-cargo-test.log`: 69 passed, including promoted HNSW `miri_` tests. |
-| Mutation probe | Not done | Break stale filtering/refill advancement and record failure. |
+| Mutation probe | Done | Packet 013 `hnsw-stale-filter-inverted.patch` inverts stale-candidate matching; `mutation-hnsw-stale-filter.log` fails `miri_beam_search_peek_best_matching_skips_stale_leaders`. |
 
 ### DiskANN Vacuum
 
@@ -121,7 +122,7 @@ Status values:
 | `is_fully_dead` | Done | Packet 008 promotes `miri_vc_005_is_fully_dead_semantics`. |
 | Deletion state-machine composition | Done | Packet 008 promotes `miri_vc_010_full_deletion_state_machine`. |
 | cargo-careful mirror | Done | Packet 008 `careful-harness-cargo-test.log`: 69 passed, including the promoted DiskANN vacuum tests. |
-| Mutation probe | Not done | Break fully-dead overflow guard or encoded-length repair and record failure. |
+| Mutation probe | Done | Packet 013 `diskann-vacuum-fully-dead-overflow.patch` weakens the overflow-chain guard; `mutation-diskann-vacuum-fully-dead.log` fails `miri_vc_005_is_fully_dead_semantics`. |
 
 ### SPIRE Top-K / Candidate Merge
 
@@ -134,7 +135,7 @@ Status values:
 | `rerank_scored_candidates_by_ip` prefix replacement | Done | Packet 008 promotes `miri_rerank_scored_candidates_by_ip_rescores_prefix_and_truncates` and invisible-candidate behavior. |
 | Non-finite rerank rejection | Done | Packet 008 promotes `miri_rerank_scored_candidates_by_ip_rejects_non_finite_scores`. |
 | cargo-careful mirror | Blocked | Packet 012 records the blocker: the covered scan/top-k tests live in the SPIRE scan test include tree and depend on SPIRE `meta`, `storage`, `quantizer`, `options`, `SpirePublishedEpochSnapshot`, `SpireObjectReader`, and pgrx-facing `ItemPointer`/OID context. Mirroring requires either extracting the comparator/rerank/bounded-merge helpers behind pgrx-free DTOs or adding a SPIRE careful micro-harness with narrow shims for those boundaries. |
-| Mutation probe | Not done | Invert comparator or skip rerank score replacement and record failure. |
+| Mutation probe | Done | Packet 013 `spire-topk-epoch-tie-order.patch` reverses epoch tie ordering; `mutation-spire-topk-comparator.log` fails `miri_scored_candidate_tie_break_prefers_newer_epoch_then_primary_role`. |
 
 ### SPIRE Routing
 
@@ -147,7 +148,7 @@ Status values:
 | Recursive routing to leaf level | Done | Packet 008 promotes `miri_route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level` and conservative upper-level nprobe coverage. |
 | Route rejection paths | Done | Packet 008 promotes root mismatch, internal-parent, missing-child, and wrong-child-level rejection tests. |
 | cargo-careful mirror | Blocked | Packet 012 records the blocker: routing helpers depend on the SPIRE scan/meta/storage/top-graph object reader contracts and pgrx-facing tuple identity types. Mirroring requires extraction of the route-ranking/adaptive-nprobe core behind pgrx-free graph/object DTOs or a SPIRE careful micro-harness that shims only the object-reader and `ItemPointer` boundary. |
-| Mutation probe | Not done | Corrupt route ordering or budget dedupe and record failure. |
+| Mutation probe | Done | Packet 013 `spire-routing-adaptive-nprobe.patch` keeps the requested nprobe despite a large score gap; `mutation-spire-routing-adaptive-nprobe.log` fails `miri_adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large`. |
 
 ### SPIRE Vacuum / Delete-Delta Visibility
 
@@ -157,7 +158,7 @@ Status values:
 | Visible assignments exclude delete-delta targets | Done | Packet 010 adds `miri_collect_visible_assignments_excludes_delete_delta_targets`. |
 | Duplicate/stale delete target rejection | Done | Packet 010 promotes unknown, mismatched, stale, duplicate, and already-deleted delete-target rejection tests. |
 | cargo-careful mirror | Blocked | Packet 012 confirms the blocker: the covered SPIRE vacuum/update paths depend on the SPIRE storage/meta/update modules and pgrx-facing crate context. Mirroring requires a SPIRE-focused careful harness with pgrx-free shims for the local object store, manifest types, and `ItemPointer` boundary. |
-| Mutation probe | Not done | Break delete filtering or duplicate-target rejection and record failure. |
+| Mutation probe | Done | Packet 013 `spire-vacuum-delete-filter.patch` disables delete-delta filtering for leaf and delta assignments; `mutation-spire-vacuum-delete-filter.log` fails `miri_collect_visible_assignments_excludes_delete_delta_targets`. |
 
 ### Remote Parser / Typed Payload
 
@@ -171,7 +172,7 @@ Status values:
 | Payload width mismatch | Done | Packet 009 covers payload vector and collation width mismatches before Row decoding. |
 | OID / collation / format / transport constraints | Done | Packet 009 covers invalid type OID, invalid collation OID, non-ready transport status, unsupported transport, and bad per-column format. |
 | cargo-careful mirror | Blocked | Packet 012 confirms the blocker: the extracted helper still lives inside the pgrx SPIRE coordinator include module and returns `pg_sys::Oid` values in `SpireRemoteTypedTuplePayload`. Careful mirroring requires either a pgrx-free OID newtype/adapter or a remote-payload micro-harness that shims only this type boundary. |
-| Mutation probe | Not done | Accept invalid hex or skip cap check temporarily and record failure. |
+| Mutation probe | Done | Packet 013 `remote-typed-payload-cap.patch` bypasses the typed-payload row byte limit; `mutation-remote-typed-payload-cap.log` fails `miri_remote_typed_payload_fields_reject_adversarial_shapes` after an over-cap tuple is accepted. |
 
 ### Serialization / Layout
 
@@ -186,7 +187,7 @@ Status values:
 | SPIRE top graph | Done | `miri_top_graph_partition_object_round_trips_nodes`. |
 | SPIRE delta / assignment / vec-id helpers | Done | Packet 011 promotes assignment row, delta partition object, and vec-id helper tests under Miri. |
 | SPIRE serialization cargo-careful mirror | Blocked | Packet 012 records the blocker: the SPIRE serialization tests live behind the SPIRE storage/meta/update include graph and share pgrx-facing tuple identity and object-manifest types. Mirroring requires a SPIRE careful micro-harness or extraction of the assignment/delta/vec-id codecs behind pgrx-free DTOs. |
-| Mutation probe | Not done | Corrupt an encode/decode invariant and record failure. |
+| Mutation probe | Done | Packet 013 `spire-serialization-delta-duplicate-vec-id.patch` disables duplicate vec-id rejection for delta objects; `mutation-spire-serialization-delta-duplicate.log` fails `miri_delta_partition_object_rejects_duplicate_vec_ids`. |
 
 ## Validation Matrix
 
@@ -217,7 +218,7 @@ claims, then the final campaign packet must run the aggregate matrix.
 | `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Done |
 | `011-spire-serialization-layout` | Close the remaining SPIRE delta / assignment / vec-id serialization/layout breadth row. | Done |
 | `012-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Done |
-| `013-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Not started |
+| `013-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Done |
 | `014-final-campaign-audit` | Run aggregate lanes and map every gate/finding to evidence. | Not started |
 
 ## Reviewer Feedback Disposition
