@@ -92,8 +92,20 @@ Packet directories inside a task bucket must sort in chronological order.
 ### Legacy `review/` Holding Area
 
 `review/` is now a temporary legacy holding area only. It currently contains
-deferred Task 41 and active benchmark/measurement packets that will be migrated
-in focused follow-up passes. Do not add new packets there.
+deferred Task 41 and historical review packets that will be migrated in
+focused follow-up passes. Do not add new packets there.
+
+### Benchmark Data Packets
+
+Pure benchmark/measurement packets (no code change under review, just
+measurement evidence) live under top-level `benchmarks/<topic>/`, with
+`manifest.md` at the packet root and raw logs under `artifacts/`.
+Code-review packets that happen to include benchmark evidence stay under
+`reviews/task-{id}/{ordinal}-<topic>/` with their own
+`artifacts/manifest.md`, and SHOULD cite the owning `benchmarks/<topic>/`
+packet by path when one exists. See
+`spec/non-functional/NFR-007-benchmark-provenance.md` for the normative
+storage rule.
 
 ### Push and Visibility
 
@@ -147,8 +159,10 @@ Invoked to implement, continue, or close out a task on the current branch.
 
 - At the start of a turn, scan the owning task bucket under `reviews/` for new
   feedback files you have not processed.
-- Also scan legacy `review/` only when working on a deferred Task 41 or
-  benchmark packet that has not been migrated yet.
+- Also scan legacy `review/` only when working on a deferred Task 41 packet
+  that has not been migrated yet.
+- For benchmark/measurement work, scan `benchmarks/<topic>/` for the latest
+  packet manifests in the same lane.
 - If new feedback is present for a topic you own, process it before starting
   new implementation work.
 - Do not close review requests yourself. Leave requests open until an outside

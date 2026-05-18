@@ -52,6 +52,6 @@ Date: 2026-05-17
   not confuse prose with live filesystem references.
 - Files touched by this prose/path cleanup pass: 20.
 - Fixed malformed numeric-collision references caused by old shorthand packet
-  numbers such as `review/30` overlapping longer legacy benchmark packet IDs
-  such as `review/30035`.
+  numbers such as packet `30` overlapping longer legacy benchmark packet IDs
+  such as packet `30035`.
 - Files touched by the stale numbered-path reconciliation pass: 1046.

@@ -432,6 +432,6 @@ matched within 0–4% on the TurboQuant rows after the
 - [`spec/functional/FR-038-configured-benchmark-suite-runner.md`](../../spec/functional/FR-038-configured-benchmark-suite-runner.md)
   (the suite runner that this packet's AM-baseline script complements
   for the snapshot-restore case)
-- Prior cycle: [`review/cloud-10k-real-baselines/manifest.md`](../cloud-10k-real-baselines/manifest.md)
+- Prior cycle: [`benchmarks/cloud-10k-real-baselines/manifest.md`](../cloud-10k-real-baselines/manifest.md)
   (TurboQuant-only baseline before the `target-cpu=native` and bench-
   profile fixes landed)

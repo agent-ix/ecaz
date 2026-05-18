@@ -214,10 +214,11 @@ loads corpora, builds profile-specific indexes, runs recall/latency/storage
 benchmarks, compares external engines, and writes packet-local logs:
 
 ```bash
+PACKET=benchmarks/<topic>
 ecaz corpus prepare --profile ec_real_10k --parquet /path/to/parquet --output-dir /path/to/staged
-ecaz corpus load --prefix ec_real_10k --corpus-file /path/to/staged/ec_real_10k_corpus.tsv --queries-file /path/to/staged/ec_real_10k_queries.tsv --profile ec_hnsw --log-file reviews/task-{id}/001-example/artifacts/load.log
-ecaz bench recall --prefix ec_real_10k --profile ec_hnsw --log-file reviews/task-{id}/001-example/artifacts/recall.log
-ecaz bench latency --prefix ec_real_10k --profile ec_hnsw --log-file reviews/task-{id}/001-example/artifacts/latency.log
+ecaz corpus load --prefix ec_real_10k --corpus-file /path/to/staged/ec_real_10k_corpus.tsv --queries-file /path/to/staged/ec_real_10k_queries.tsv --profile ec_hnsw --log-file "$PACKET/artifacts/load.log"
+ecaz bench recall --prefix ec_real_10k --profile ec_hnsw --log-file "$PACKET/artifacts/recall.log"
+ecaz bench latency --prefix ec_real_10k --profile ec_hnsw --log-file "$PACKET/artifacts/latency.log"
 ```
 
 See the [Operator CLI README](../crates/ecaz-cli/README.md) for all command
