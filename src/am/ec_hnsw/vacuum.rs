@@ -5,7 +5,7 @@ use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 use super::{graph, options, page, search, shared, source};
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
-use crate::storage::{slot_guard::TupleTableSlotGuard, wal};
+use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
@@ -391,33 +391,32 @@ unsafe fn run_bulkdelete_with_adapter(
     let mut finalize_tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        let share_buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
-            )
-        };
-        if !unsafe { pg_sys::BufferIsValid(share_buffer) } {
-            pgrx::error!("ec_hnsw failed to open vacuum block {block_number}");
-        }
+        let share_plan = {
+            let share_buffer = unsafe {
+                LockedBufferGuard::read_main(
+                    index_relation,
+                    block_number,
+                    pg_sys::ReadBufferMode::RBM_NORMAL,
+                    pg_sys::BUFFER_LOCK_SHARE as i32,
+                )
+            };
+            let share_buffer = share_buffer.unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw failed to open vacuum block {block_number}")
+            });
 
-        unsafe { pg_sys::LockBuffer(share_buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let share_page_ptr = unsafe { pg_sys::BufferGetPage(share_buffer) }.cast::<u8>();
-        let share_page_size = unsafe { pg_sys::BufferGetPageSize(share_buffer) as usize };
-        let share_plan = unsafe {
-            plan_page_pass1(
-                share_page_ptr,
-                share_page_size,
-                block_number,
-                storage,
-                callback,
-                callback_state,
-            )
+            let share_page_ptr = share_buffer.page().cast::<u8>();
+            let share_page_size = share_buffer.page_size();
+            unsafe {
+                plan_page_pass1(
+                    share_page_ptr,
+                    share_page_size,
+                    block_number,
+                    storage,
+                    callback,
+                    callback_state,
+                )
+            }
         };
-        unsafe { pg_sys::UnlockReleaseBuffer(share_buffer) };
 
         if share_plan.updates.is_empty() {
             live_elements += share_plan.live_elements;
@@ -766,21 +765,19 @@ unsafe fn collect_repair_requests(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        let buffer = buffer.unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to open repair-request block {block_number}");
-        }
+        });
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         unsafe {
             collect_repair_requests_on_page(
                 index_relation,
@@ -793,7 +790,6 @@ unsafe fn collect_repair_requests(
                 &mut requests,
             )
         };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     requests.sort_unstable_by(|left, right| {
@@ -934,25 +930,23 @@ unsafe fn unlink_deleted_graph_connections(
     };
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        let share_buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
-            )
-        };
-        if !unsafe { pg_sys::BufferIsValid(share_buffer) } {
-            pgrx::error!("ec_hnsw failed to open repair block {block_number}");
-        }
+        let share_updates = {
+            let share_buffer = unsafe {
+                LockedBufferGuard::read_main(
+                    index_relation,
+                    block_number,
+                    pg_sys::ReadBufferMode::RBM_NORMAL,
+                    pg_sys::BUFFER_LOCK_SHARE as i32,
+                )
+            };
+            let share_buffer = share_buffer.unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw failed to open repair block {block_number}")
+            });
 
-        unsafe { pg_sys::LockBuffer(share_buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let share_page_ptr = unsafe { pg_sys::BufferGetPage(share_buffer) }.cast::<u8>();
-        let share_page_size = unsafe { pg_sys::BufferGetPageSize(share_buffer) as usize };
-        let share_updates =
-            unsafe { plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids) };
-        unsafe { pg_sys::UnlockReleaseBuffer(share_buffer) };
+            let share_page_ptr = share_buffer.page().cast::<u8>();
+            let share_page_size = share_buffer.page_size();
+            unsafe { plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids) }
+        };
 
         if share_updates.is_empty() {
             continue;
@@ -1262,21 +1256,19 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        let buffer = buffer.unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to open linear-repair block {block_number}");
-        }
+        });
 
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         unsafe {
             collect_linear_repair_candidates_on_page(
                 index_relation,
@@ -1289,7 +1281,6 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
                 &mut scored,
             )
         };
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     scored.sort_unstable_by(|left, right| {
