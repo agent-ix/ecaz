@@ -1968,7 +1968,7 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     };
     let heap_relation = heap_relation_guard
         .as_ref()
-        .map_or(ptr::null_mut(), HeapRelationGuard::as_ptr);
+        .map_or(std::ptr::null_mut(), HeapRelationGuard::as_ptr);
     let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
     info.index = index_relation;
     info.heaprel = heap_relation;
@@ -1980,7 +1980,7 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     let stats = unsafe {
         ec_hnsw_ambulkdelete(
             info_ptr,
-            ptr::null_mut(),
+            std::ptr::null_mut(),
             Some(debug_vacuum_dead_tid_callback),
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
         )

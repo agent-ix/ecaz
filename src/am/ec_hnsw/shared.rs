@@ -905,9 +905,11 @@ unsafe fn read_data_page(
                 block_number,
                 offset,
                 "debug read",
-                |tuple_bytes| Some(tuple_bytes.to_vec()),
+                |tuple_bytes| tuple_bytes.to_vec(),
             )
-        } {
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+        {
             tuples.push(tuple);
         }
     }
