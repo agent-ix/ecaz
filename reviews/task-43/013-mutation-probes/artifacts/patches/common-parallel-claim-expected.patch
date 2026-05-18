@@ -1,0 +1,13 @@
+diff --git a/src/am/common/parallel.rs b/src/am/common/parallel.rs
+index 73258b35..5a529a5d 100644
+--- a/src/am/common/parallel.rs
++++ b/src/am/common/parallel.rs
+@@ -412,7 +412,7 @@ pub(crate) unsafe fn claim_parallel_scan_worker_slot(
+         if slot_ref
+             .flags
+             .compare_exchange(
+-                EC_PARALLEL_WORKER_SLOT_FREE,
++                EC_PARALLEL_WORKER_SLOT_CLAIMED,
+                 EC_PARALLEL_WORKER_SLOT_CLAIMED,
+                 Ordering::AcqRel,
+                 Ordering::Acquire,

@@ -1,0 +1,13 @@
+diff --git a/src/am/ec_hnsw/search.rs b/src/am/ec_hnsw/search.rs
+index 30ac3396..931debb3 100644
+--- a/src/am/ec_hnsw/search.rs
++++ b/src/am/ec_hnsw/search.rs
+@@ -406,7 +406,7 @@ where
+     {
+         loop {
+             let best = self.peek_best()?;
+-            if matches(best.node) {
++            if !matches(best.node) {
+                 return Some(best);
+             }
+ 

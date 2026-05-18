@@ -1,0 +1,13 @@
+diff --git a/src/am/ec_spire/scan/candidates.rs b/src/am/ec_spire/scan/candidates.rs
+index 69fb3b38..e77523b5 100644
+--- a/src/am/ec_spire/scan/candidates.rs
++++ b/src/am/ec_spire/scan/candidates.rs
+@@ -896,7 +896,7 @@ fn scored_candidate_cmp(
+ ) -> Ordering {
+     left.score
+         .total_cmp(&right.score)
+-        .then_with(|| right.epoch.cmp(&left.epoch))
++        .then_with(|| left.epoch.cmp(&right.epoch))
+         .then_with(|| {
+             candidate_assignment_role_rank(left).cmp(&candidate_assignment_role_rank(right))
+         })
