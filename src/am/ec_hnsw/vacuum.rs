@@ -657,6 +657,7 @@ unsafe fn plan_page_pass1(
                     }
                 },
             )
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
         };
     }
 
@@ -877,6 +878,7 @@ unsafe fn collect_repair_requests_on_page(
                 },
             )
         }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         let Some((level, deleted, heaptids_empty, neighbortid)) = element_fields else {
             continue;
@@ -1410,7 +1412,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
                 },
             )
         };
-        let Some(candidate) = candidate.flatten() else {
+        let Some(candidate) = candidate.unwrap_or_else(|e| pgrx::error!("{e}")).flatten() else {
             continue;
         };
         if candidate.deleted || candidate.heaptids.is_empty() || candidate.level < planner.layer {
@@ -1461,6 +1463,7 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
             },
         )
     }
+    .unwrap_or_else(|e| pgrx::error!("{e}"))
     .unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw linear-repair rerank tuple slot {}/{} is unused",
@@ -1705,6 +1708,7 @@ unsafe fn plan_page_pass2(
                 },
             )
         }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         if let Some(update) = update {
             updates.push(update);
@@ -1880,6 +1884,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
                 },
             )
         }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
         .unwrap_or_else(|| {
             pgrx::error!(
                 "ec_hnsw finalize element tuple slot {}/{} is unused",

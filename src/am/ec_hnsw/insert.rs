@@ -2270,6 +2270,7 @@ unsafe fn find_duplicate_element_tid(
                     },
                 )
             }
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
                 return duplicate_tid;
@@ -2349,6 +2350,7 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
                     },
                 )
             }
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
                 return duplicate_tid;
@@ -2429,6 +2431,7 @@ unsafe fn find_duplicate_grouped_element_tid(
                     },
                 )
             }
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
                 return duplicate_tid;

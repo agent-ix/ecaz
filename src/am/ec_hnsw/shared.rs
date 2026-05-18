@@ -279,6 +279,7 @@ unsafe fn count_live_elements_on_buffer(
                     }
                 },
             )
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
         };
     }
 
@@ -389,6 +390,7 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                     },
                 )
             }
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if let Some(candidate) = candidate {
                 match best_level {
@@ -444,23 +446,25 @@ pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
     offset: u16,
     context: &str,
     visit: F,
-) -> Option<R>
+) -> Result<Option<R>, String>
 where
     F: for<'a> FnOnce(&'a [u8]) -> R,
 {
     let item_id = unsafe { &*page_item_id(page_ptr, offset) };
     if item_id.lp_flags() == 0 {
-        return None;
+        return Ok(None);
     }
 
     let tuple_offset = item_id.lp_off() as usize;
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
-        pgrx::error!("ec_hnsw found invalid tuple bounds while {context} on block {block_number}");
+        return Err(format!(
+            "ec_hnsw found invalid tuple bounds while {context} on block {block_number}"
+        ));
     }
 
     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    Some(visit(tuple_bytes))
+    Ok(Some(visit(tuple_bytes)))
 }
 
 pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(

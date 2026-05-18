@@ -4762,6 +4762,7 @@ unsafe fn select_linear_scan_result_from_buffer(
                 },
             )
         }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         let Some(element) = element else {
             opaque.explain_counters.record_element_skipped();
