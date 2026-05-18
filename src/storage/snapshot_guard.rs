@@ -19,6 +19,16 @@ impl RegisteredSnapshotGuard {
         Some(Self { snapshot })
     }
 
+    pub(crate) fn transaction() -> Option<Self> {
+        // SAFETY: `GetTransactionSnapshot` returns a PostgreSQL snapshot
+        // pointer valid for registration in the current backend context.
+        let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetTransactionSnapshot()) };
+        if snapshot.is_null() {
+            return None;
+        }
+        Some(Self { snapshot })
+    }
+
     pub(crate) fn as_ptr(&self) -> pg_sys::Snapshot {
         self.snapshot
     }

@@ -11,6 +11,7 @@ use pgrx::pg_sys;
 
 use super::{build, graph, insert, options, page, search, shared, source};
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
 const EC_HNSW_PARALLEL_BUILD_MAGIC: u32 = u32::from_le_bytes(*b"ECBP");
 const EC_HNSW_PARALLEL_BUILD_VERSION: u16 = 1;
@@ -2195,8 +2196,7 @@ impl EcHnswParallelGraphBuildLeader {
 
 struct EcHnswParallelBuildLeader {
     pcxt: *mut pg_sys::ParallelContext,
-    snapshot: pg_sys::Snapshot,
-    unregister_snapshot: bool,
+    snapshot_guard: Option<RegisteredSnapshotGuard>,
     queue_handles: Vec<*mut pg_sys::shm_mq_handle>,
     walusage: *mut pg_sys::WalUsage,
     bufferusage: *mut pg_sys::BufferUsage,
@@ -2225,12 +2225,18 @@ impl EcHnswParallelBuildLeader {
         }
 
         let is_concurrent = unsafe { !index_info.is_null() && (*index_info).ii_Concurrent };
-        let snapshot = if is_concurrent {
-            unsafe { pg_sys::RegisterSnapshot(pg_sys::GetTransactionSnapshot()) }
+        let snapshot_guard = if is_concurrent {
+            Some(RegisteredSnapshotGuard::transaction().unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw parallel build failed to register transaction snapshot")
+            }))
         } else {
-            ptr::addr_of_mut!(pg_sys::SnapshotAnyData)
+            None
         };
-        let unregister_snapshot = is_concurrent;
+        let snapshot = snapshot_guard
+            .as_ref()
+            .map_or(ptr::addr_of_mut!(pg_sys::SnapshotAnyData), |guard| {
+                guard.as_ptr()
+            });
 
         let shared_bytes = unsafe { parallel_build_shared_workspace_size(heap_relation, snapshot) };
         unsafe {
@@ -2262,9 +2268,6 @@ impl EcHnswParallelBuildLeader {
 
         unsafe { pg_sys::InitializeParallelDSM(pcxt) };
         if unsafe { (*pcxt).seg.is_null() } {
-            if unregister_snapshot {
-                unsafe { pg_sys::UnregisterSnapshot(snapshot) };
-            }
             unsafe {
                 pg_sys::DestroyParallelContext(pcxt);
                 pg_sys::ExitParallelMode();
@@ -2348,8 +2351,7 @@ impl EcHnswParallelBuildLeader {
 
         let mut leader = Self {
             pcxt,
-            snapshot,
-            unregister_snapshot,
+            snapshot_guard,
             queue_handles: Vec::with_capacity(workers_launched.max(0) as usize),
             walusage,
             bufferusage,
@@ -2431,7 +2433,7 @@ impl EcHnswParallelBuildLeader {
         }
     }
 
-    unsafe fn finish(self) {
+    unsafe fn finish(mut self) {
         unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
 
         let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
@@ -2444,9 +2446,7 @@ impl EcHnswParallelBuildLeader {
             }
         }
 
-        if self.unregister_snapshot {
-            unsafe { pg_sys::UnregisterSnapshot(self.snapshot) };
-        }
+        drop(self.snapshot_guard.take());
 
         unsafe {
             pg_sys::DestroyParallelContext(self.pcxt);
