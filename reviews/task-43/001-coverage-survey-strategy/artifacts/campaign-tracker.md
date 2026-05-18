@@ -2,7 +2,7 @@
 
 Canonical task: `plan/tasks/43-miri-careful-depth.md`
 
-Tracking status: **in progress, not complete**
+Tracking status: **complete on branch, pending external review**
 
 Last updated: `2026-05-18`
 
@@ -40,7 +40,7 @@ evidence or a concrete blocker with the extraction work needed.
 | G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Done | Packet 010 covers delete-delta visibility, active delta folding, and invalid delete-target rejection under Miri. |
 | G6 | cargo-careful mirrors every path-liftable Miri surface. | Done | Packet 012 proves the current path-lifted careful harness under normal Rust and `make careful` at 69 tests. SPIRE mirrors are blocked by pgrx/SPIRE include boundaries and need extraction or a SPIRE-specific careful micro-harness. |
 | G7 | Mutation/sensitivity probes exist for each major subsystem. | Done | Packet 013 records temporary diffs and failing Miri logs for common parallel, DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, SPIRE routing, SPIRE vacuum/delete-delta, remote typed payload, and SPIRE serialization. |
-| G8 | Final audit maps task-file requirements and reviewer findings to evidence. | Not done | Produce final packet only after G2-G7 are complete. |
+| G8 | Final audit maps task-file requirements and reviewer findings to evidence. | Done | Packet 014 runs the aggregate validation matrix and maps task-file requirements plus reviewer findings to packet-local evidence. |
 
 ## Existing Evidence Baseline
 
@@ -58,6 +58,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `011-spire-serialization-layout` | SPIRE assignment row, delta object, and vec-id serialization/layout helpers pass targeted Miri. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 | `012-careful-mirroring` | The path-lifted cargo-careful harness passes 69 tests under both normal Rust and cargo-careful; non-lifted SPIRE mirrors have explicit blockers and extraction plans. | Mutation probe; final aggregate campaign. |
 | `013-mutation-probes` | Nine temporary mutations failed the targeted Miri tests that protect the campaign's major safety contracts. Each mutation diff was saved and reverted before commit. | Final aggregate campaign. |
+| `014-final-campaign-audit` | Final aggregate campaign evidence: fmt check clean, diff check clean, careful harness 69/0, `make careful` 69/0 plus doctests 0/0, default Miri aggregate 87/0, Tree Borrows aggregate 87/0, and many-seeds `0..128` exit 0 with 128 distinct seed attempts. Maps all task requirements and reviewer findings to evidence. | External reviewer approval; future SPIRE careful extraction work remains blocked and explicitly tracked. |
 
 ## Subsystem Coverage Matrix
 
@@ -75,7 +76,7 @@ Status values:
 | Default `miri_` prefix | Done | Existing `make miri` / `miri-expanded` lane. |
 | Tree Borrows `miri-tree` | Done | Packet 005 `make-miri-tree.log`: 35 passed. |
 | Many-seeds range syntax | Done | Packet 005 `make-miri-many-seeds.log`: 128 seed attempts; `0..128` syntax. |
-| Real many-seeds interleaving | Done | Packet 007 targeted threaded many-seeds log records 128 seed attempts and exit 0. Final campaign still needs aggregate `make miri-many-seeds`. |
+| Real many-seeds interleaving | Done | Packet 007 targeted threaded many-seeds log records 128 seed attempts and exit 0. Packet 014 aggregate `make miri-many-seeds` records 128 distinct seed attempts, includes the threaded common-parallel test, and exits 0. |
 | SB/TB disagreement triage runbook | Partial | Docs exist; no real disagreement to triage. Future disagreement must produce paired logs and classification. |
 
 ### Common Parallel Shared State
@@ -219,7 +220,7 @@ claims, then the final campaign packet must run the aggregate matrix.
 | `011-spire-serialization-layout` | Close the remaining SPIRE delta / assignment / vec-id serialization/layout breadth row. | Done |
 | `012-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Done |
 | `013-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Done |
-| `014-final-campaign-audit` | Run aggregate lanes and map every gate/finding to evidence. | Not started |
+| `014-final-campaign-audit` | Run aggregate lanes and map every gate/finding to evidence. | Done |
 
 ## Reviewer Feedback Disposition
 
@@ -233,8 +234,16 @@ claims, then the final campaign packet must run the aggregate matrix.
 | SPIRE top-k comparator/rerank skipped. | SPIRE top-k matrix requires comparator, tie-break, rerank, rejection tests. |
 | SPIRE vacuum has zero Miri coverage. | G5 and packet 010 require coverage or a precise extraction blocker. |
 | Remote parser only covers caps. | G4 and packet 009 require Row-independent parser extraction and adversarial tests. |
-| No mutation/bug-injection verification. | G7 and packet 012 require mutation probes per major subsystem. |
+| No mutation/bug-injection verification. | G7 and packet 013 require mutation probes per major subsystem. |
 | Careful coverage claim too broad. | G6 requires mirroring path-liftable surfaces and explicit blockers for the rest. |
+| Packet 006 reviewer: G8 is the only remaining gate. | Packet 014 closes G8 after G2-G7 were accepted by packet-local reviewer feedback. |
+| Packet 007 reviewer: many-seeds has only one concurrent surface and mutation evidence was still pending. | Packet 013 adds the common-parallel mutation probe; broader future concurrent primitives are roadmap work, not an open Task 43 gate. |
+| Packet 008 reviewer: breadth slice promotes existing tests but adds no adversarial inputs. | Packet 013 mutation probes provide the sensitivity counterpart for each major subsystem. |
+| Packet 009 reviewer: cargo-careful mirror blocker for remote typed payload is well-scoped. | G6 keeps the remote payload careful mirror blocked on pgrx/OID extraction or a micro-harness. |
+| Packet 010 reviewer: SPIRE delete-delta grouping lacks a dedicated isolated helper test. | Packet 010 end-to-end fold and visibility tests are accepted for G5; a dedicated grouping-helper Miri test remains optional future depth work. |
+| Packet 011 reviewer: SPIRE serialization tests are bounded and small. | Accepted for Miri scope; mutation probe for duplicate vec-id rejection lands in packet 013. |
+| Packet 012 reviewer: SPIRE coverage in the careful harness is still zero. | G6 remains Done-with-blockers: every path-liftable surface is mirrored, and SPIRE mirrors require extraction or a SPIRE careful micro-harness. |
+| Packet 013 reviewer: one probe per subsystem is the minimum bar, not exhaustive depth. | Accepted for G7; final audit states this as campaign sensitivity evidence, not exhaustive mutation testing. |
 
 ## Completion Rule
 
@@ -246,3 +255,6 @@ Task 43 may be called complete only when:
 - every reviewer finding has evidence or a blocker,
 - packet-local artifacts support all claims,
 - the final campaign audit is committed and pushed.
+
+As of packet 014, the branch satisfies this rule for Task 43. Review requests
+remain open for outside reviewer disposition; do not self-close them.
