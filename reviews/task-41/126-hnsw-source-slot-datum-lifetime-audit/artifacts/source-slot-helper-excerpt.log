@@ -1,0 +1,34 @@
+    slot: *mut pg_sys::TupleTableSlot,
+    label: &str,
+) {
+    let mut tid = pg_sys::ItemPointerData::default();
+    item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
+    unsafe { pg_sys::ExecClearTuple(slot) };
+    let fetched =
+        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
+    if !fetched {
+        pgrx::error!(
+            "ec_hnsw {label} could not fetch heap tuple at ({},{})",
+            heap_tid.block_number,
+            heap_tid.offset_number
+        );
+    }
+}
+
+pub(crate) unsafe fn required_slot_datum(
+    slot: *mut pg_sys::TupleTableSlot,
+    attnum: i32,
+    label: &str,
+) -> pg_sys::Datum {
+    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
+        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+    }
+    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
+    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+        pgrx::error!("ec_hnsw does not support NULL {label}");
+    }
+    unsafe { *(*slot).tts_values.add(attr_index) }
+}
+
+#[derive(Debug)]
+// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
