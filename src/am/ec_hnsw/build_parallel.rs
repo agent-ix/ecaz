@@ -1700,30 +1700,43 @@ unsafe fn score_concurrent_dsm_code_with_cache(
         return score;
     }
     let score = if layout.source_dim > 0 {
-        let query_source = unsafe { concurrent_dsm_source_for_node(parts, layout, query_idx) };
-        let candidate_source =
-            unsafe { concurrent_dsm_source_for_node(parts, layout, candidate_idx) };
-        -score_concurrent_dsm_source_inner_product(query_source, candidate_source)
+        unsafe {
+            with_concurrent_dsm_source_for_node(parts, layout, query_idx, |query_source| {
+                with_concurrent_dsm_source_for_node(
+                    parts,
+                    layout,
+                    candidate_idx,
+                    |candidate_source| {
+                        -score_concurrent_dsm_source_inner_product(query_source, candidate_source)
+                    },
+                )
+            })
+        }
     } else {
-        let query_code = unsafe { concurrent_dsm_code_for_node(parts, layout, query_idx) };
-        let candidate_code = unsafe { concurrent_dsm_code_for_node(parts, layout, candidate_idx) };
-        -crate::score_code_inner_product(
-            config.dimensions,
-            config.bits,
-            config.seed,
-            query_code,
-            candidate_code,
-        )
+        unsafe {
+            with_concurrent_dsm_code_for_node(parts, layout, query_idx, |query_code| {
+                with_concurrent_dsm_code_for_node(parts, layout, candidate_idx, |candidate_code| {
+                    -crate::score_code_inner_product(
+                        config.dimensions,
+                        config.bits,
+                        config.seed,
+                        query_code,
+                        candidate_code,
+                    )
+                })
+            })
+        }
     };
     cache.insert(candidate_idx, score);
     score
 }
 
-unsafe fn concurrent_dsm_code_for_node(
+unsafe fn with_concurrent_dsm_code_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
-) -> &'static [u8] {
+    f: impl FnOnce(&[u8]) -> R,
+) -> R {
     if node_idx >= layout.node_count {
         pgrx::error!("concurrent DSM code node index out of bounds");
     }
@@ -1731,14 +1744,16 @@ unsafe fn concurrent_dsm_code_for_node(
     let start = (node_idx as usize)
         .checked_mul(code_len)
         .unwrap_or_else(|| pgrx::error!("concurrent DSM code offset overflow"));
-    unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) }
+    let code = unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) };
+    f(code)
 }
 
-unsafe fn concurrent_dsm_source_for_node(
+unsafe fn with_concurrent_dsm_source_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
-) -> &'static [f32] {
+    f: impl FnOnce(&[f32]) -> R,
+) -> R {
     if node_idx >= layout.node_count {
         pgrx::error!("concurrent DSM graph source node index out of bounds");
     }
@@ -1749,7 +1764,8 @@ unsafe fn concurrent_dsm_source_for_node(
     let start = (node_idx as usize)
         .checked_mul(source_dim)
         .unwrap_or_else(|| pgrx::error!("concurrent DSM source offset overflow"));
-    unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) }
+    let source = unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) };
+    f(source)
 }
 
 fn score_concurrent_dsm_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
