@@ -1,0 +1,29 @@
+    f(source)
+}
+
+pub(crate) unsafe fn with_source_from_heap_row<R>(
+    heap_relation: pg_sys::Relation,
+    heap_tid: page::ItemPointer,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attribute: SourceAttribute,
+    label: &str,
+    f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
+) -> R {
+    unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, label) };
+    let source_datum = unsafe { required_slot_datum(slot, source_attribute.attnum, label) };
+    unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
+}
+
+pub(crate) unsafe fn with_indexed_ecvector_from_slot<R>(
+    slot: *mut pg_sys::TupleTableSlot,
+    attnum: i32,
+    label: &str,
+    f: impl for<'datum> FnOnce(FlatFloat4VarlenaRef<'datum>) -> R,
+) -> R {
+    let source_datum = unsafe { required_slot_datum(slot, attnum, label) };
+    let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
+    f(source)
+}
+
+pub(crate) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {

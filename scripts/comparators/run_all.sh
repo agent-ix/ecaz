@@ -15,15 +15,14 @@ Usage:
     [--db <database>] [--exts "pgvector pgvectorscale vchord lantern"]
     [--phases "install load bench"]
 
-  --exts selects which comparators run (each is its own per-ext script).
+  --exts selects which comparators run (each is its own subdir).
   --phases selects which phases run per comparator. Skip "install"
   if extensions are already installed.
 
-Comparators in order:
-  pgvector       -> install_pgvector.sh, load_pgvector.sh, bench_pgvector.sh
-  pgvectorscale  -> install_pgvectorscale.sh, load_pgvectorscale.sh, bench_pgvectorscale.sh
-  vchord         -> install_vchord.sh,        load_vchord.sh,        bench_vchord.sh
-  lantern        -> install_lantern.sh,       load_lantern.sh,       bench_lantern.sh
+Per comparator the orchestrator runs:
+  <ext>/install.sh
+  <ext>/load.sh    --size --dim --corpus-file --queries-file --db
+  <ext>/bench.sh   --out --size --db
 EOF
 }
 
@@ -50,29 +49,16 @@ done
 for phase in install load bench; do
   if ! [[ " $PHASES " == *" $phase "* ]]; then continue; fi
   for ext in $EXTS; do
-    case "$phase:$ext" in
-      install:pgvector|install:pgvectorscale|install:vchord|install:lantern)
-        "$SCRIPT_DIR/install_${ext}.sh"
+    case "$phase" in
+      install)
+        "$SCRIPT_DIR/$ext/install.sh"
         ;;
-      load:pgvector)
-        "$SCRIPT_DIR/load_pgvector.sh" --size "$SIZE" --dim "$DIM" \
+      load)
+        "$SCRIPT_DIR/$ext/load.sh" --size "$SIZE" --dim "$DIM" \
           --corpus-file "$CORPUS" --queries-file "$QUERIES" --db "$DB"
         ;;
-      load:pgvectorscale)
-        "$SCRIPT_DIR/load_pgvectorscale.sh" --size "$SIZE" --dim "$DIM" \
-          --corpus-file "$CORPUS" --queries-file "$QUERIES" --db "$DB"
-        ;;
-      load:vchord)
-        "$SCRIPT_DIR/load_vchord.sh" --size "$SIZE" --dim "$DIM" \
-          --corpus-file "$CORPUS" --queries-file "$QUERIES" --db "$DB"
-        ;;
-      load:lantern)
-        "$SCRIPT_DIR/load_lantern.sh" --size "$SIZE" --dim "$DIM" \
-          --corpus-file "$CORPUS" --queries-file "$QUERIES" --db "$DB"
-        ;;
-      bench:*)
-        # bench script names are bench_<ext>.sh
-        "$SCRIPT_DIR/bench_${ext}.sh" --out "$OUT" --size "$SIZE" --db "$DB"
+      bench)
+        "$SCRIPT_DIR/$ext/bench.sh" --out "$OUT" --size "$SIZE" --db "$DB"
         ;;
     esac
   done

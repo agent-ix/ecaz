@@ -1,0 +1,85 @@
+    slot: *mut pg_sys::TupleTableSlot,
+    payload: &super::SpireRemoteTypedTuplePayload,
+    attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe {
+        if slot.is_null() {
+            pgrx::error!("EcSpireDistributedScan tuple payload slot is null");
+        }
+        let tuple_desc = (*slot).tts_tupleDescriptor;
+        if tuple_desc.is_null() {
+            pgrx::error!("EcSpireDistributedScan tuple payload slot has no tuple descriptor");
+        }
+        if attr_inputs.len() != usize::try_from((*tuple_desc).natts).unwrap_or(usize::MAX) {
+            pgrx::error!("EcSpireDistributedScan tuple payload input cache width mismatch");
+        }
+        let payload_width = payload.payload_attnums.len();
+        for (label, width) in [
+            ("payload_names", payload.payload_names.len()),
+            ("payload_type_oids", payload.payload_type_oids.len()),
+            ("payload_typmods", payload.payload_typmods.len()),
+            ("payload_collations", payload.payload_collations.len()),
+            ("payload_nulls", payload.payload_nulls.len()),
+            ("payload_values", payload.payload_values.len()),
+            ("payload_formats", payload.payload_formats.len()),
+        ] {
+            if width != payload_width {
+                pgrx::error!(
+                    "EcSpireDistributedScan typed tuple payload {label} width {width} does not match attnum width {payload_width}"
+                );
+            }
+        }
+        if payload.tuple_transport != super::SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
+            || payload.tuple_transport_status != super::SPIRE_REMOTE_STATUS_READY
+        {
+            pgrx::error!(
+                "EcSpireDistributedScan unsupported typed tuple transport {} status {}",
+                payload.tuple_transport,
+                payload.tuple_transport_status
+            );
+        }
+
+        pg_sys::ExecClearTuple(slot);
+        let natts = (*tuple_desc).natts;
+        for attr_index in 0..natts {
+            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
+            if attr.is_null() || (*attr).attisdropped {
+                *(*slot).tts_isnull.add(attr_index as usize) = true;
+                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+                continue;
+            }
+            let attr_name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+                .to_str()
+                .unwrap_or_else(|_| {
+                    pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
+                });
+            let attr_attnum = (*attr).attnum;
+            let payload_position = payload
+                .payload_attnums
+                .iter()
+                .position(|attnum| *attnum == attr_attnum);
+            let Some(payload_position) = payload_position else {
+                *(*slot).tts_isnull.add(attr_index as usize) = true;
+                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+                continue;
+            };
+            custom_scan_validate_typed_payload_attr(payload, payload_position, attr_name);
+            if payload.payload_nulls[payload_position] {
+                *(*slot).tts_isnull.add(attr_index as usize) = true;
+                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+                continue;
+            }
+            let Some(attr_input) = attr_inputs
+                .get_mut(attr_index as usize)
+                .and_then(Option::as_mut)
+            else {
+                pgrx::error!(
+                    "EcSpireDistributedScan tuple payload input cache missing attribute {}",
+                    attr_index + 1
+                );
+            };
+            *(*slot).tts_isnull.add(attr_index as usize) = false;
+            *(*slot).tts_values.add(attr_index as usize) = custom_scan_binary_value_to_datum(
+                &payload.payload_values[payload_position],
+                attr_name,
+                attr_input,

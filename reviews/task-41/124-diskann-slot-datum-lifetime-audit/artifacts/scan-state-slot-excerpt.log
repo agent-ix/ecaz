@@ -1,0 +1,42 @@
+pub(super) unsafe fn fetch_heap_row_version(
+    heap_relation: pg_sys::Relation,
+    heap_tid: ItemPointer,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+) -> Result<(), String> {
+    let mut tid = pg_sys::ItemPointerData::default();
+    unsafe {
+        pgrx::itemptr::item_pointer_set_all(
+            &mut tid,
+            heap_tid.block_number,
+            heap_tid.offset_number,
+        );
+        pg_sys::ExecClearTuple(slot);
+    }
+    let fetched =
+        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
+    if !fetched {
+        return Err(format!(
+            "ec_diskann scan could not fetch heap tuple at ({},{})",
+            heap_tid.block_number, heap_tid.offset_number
+        ));
+    }
+    Ok(())
+}
+
+pub(super) unsafe fn required_slot_datum(
+    slot: *mut pg_sys::TupleTableSlot,
+    attnum: i32,
+    label: &str,
+) -> Result<pg_sys::Datum, String> {
+    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
+        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+    }
+    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
+    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+        return Err(format!("ec_diskann does not support NULL {label}"));
+    }
+    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
+}
+
+pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPointer, String> {

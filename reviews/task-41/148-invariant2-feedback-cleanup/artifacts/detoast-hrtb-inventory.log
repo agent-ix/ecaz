@@ -1,0 +1,32 @@
+src/lib.rs:868:    array: am::common::detoast::DetoastedVarlena,
+src/lib.rs:873:        let array = unsafe { am::common::detoast::DetoastedVarlena::packed_from_datum(datum) }
+src/am/ec_diskann/routine.rs:1960:    f: impl for<'a> FnOnce(&'a [f32]) -> Result<T, String>,
+src/am/ec_diskann/routine.rs:1964:    let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };
+src/am/common/detoast.rs:11:pub(crate) struct DetoastedVarlena {
+src/am/common/detoast.rs:16:impl DetoastedVarlena {
+src/am/common/detoast.rs:19:        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+src/am/common/detoast.rs:25:        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+src/am/common/detoast.rs:44:        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
+src/am/common/detoast.rs:52:impl Drop for DetoastedVarlena {
+src/am/ec_diskann/ambuild.rs:26:use crate::am::common::{detoast::DetoastedVarlena, training};
+src/am/ec_diskann/ambuild.rs:830:pub(super) unsafe fn with_ecvector_datum_slice<T>(
+src/am/ec_diskann/ambuild.rs:832:    f: impl for<'a> FnOnce(&'a [f32]) -> T,
+src/am/ec_diskann/ambuild.rs:834:    let detoasted = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+src/am/ec_diskann/ambuild.rs:848:    unsafe { with_ecvector_datum_slice(datum, |body| body.to_vec()) }
+src/am/ec_spire/scan.rs:29:use crate::am::common::detoast::DetoastedVarlena;
+src/am/ec_ivf/build.rs:8:use crate::am::common::{detoast::DetoastedVarlena, training as common_training};
+src/am/ec_ivf/build.rs:697:    unsafe { DetoastedVarlena::packed_from_datum(datum) }
+src/am/ec_hnsw/build.rs:14:    detoast::DetoastedVarlena,
+src/am/ec_hnsw/build.rs:628:            let bytes = unsafe { DetoastedVarlena::packed_from_datum(vector_datum) }
+src/am/ec_hnsw/source.rs:8:use crate::am::common::detoast::DetoastedVarlena;
+src/am/ec_hnsw/source.rs:492:struct DetoastedFloat4Datum {
+src/am/ec_hnsw/source.rs:493:    varlena: DetoastedVarlena,
+src/am/ec_hnsw/source.rs:496:impl DetoastedFloat4Datum {
+src/am/ec_hnsw/source.rs:502:        let varlena = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+src/am/ec_hnsw/source.rs:518:    _detoasted: DetoastedFloat4Datum,
+src/am/ec_hnsw/source.rs:530:        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+src/am/ec_hnsw/source.rs:574:    _detoasted: DetoastedFloat4Datum,
+src/am/ec_hnsw/source.rs:586:        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+src/am/ec_spire/build.rs:28:use crate::am::common::{detoast::DetoastedVarlena, training as common_training};
+src/am/ec_spire/build/tuples.rs:56:    unsafe { DetoastedVarlena::packed_from_datum(datum) }
+src/am/ec_spire/scan/relation.rs:421:    unsafe { DetoastedVarlena::packed_from_datum(datum) }

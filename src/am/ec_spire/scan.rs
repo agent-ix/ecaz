@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
-use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr;
 
@@ -27,6 +26,7 @@ use super::storage::{
     SpireRoutingPartitionObject, SpireTopGraphPartitionObject, SpireVecId,
     SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
+use crate::am::common::detoast::DetoastedVarlena;
 use crate::am::ec_hnsw::source;
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;

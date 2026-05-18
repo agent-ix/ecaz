@@ -1669,11 +1669,12 @@ unsafe fn apply_tuple_rewrites(
             let page = buffer.page();
             let page_size = buffer.page_size();
             for rewrite in block_rewrites {
-                let (tuple_ptr, tuple_len) =
-                    unsafe { vacuum_page_tuple_location(page, page_size, rewrite.tid)? };
-                let current_raw =
-                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
-                if current_raw != rewrite.expected_raw.as_slice() {
+                let matches_expected = unsafe {
+                    with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |current_raw| {
+                        Ok(current_raw == rewrite.expected_raw.as_slice())
+                    })
+                }?;
+                if !matches_expected {
                     return Ok(VacuumRewriteApplyOutcome::RetryReplan);
                 }
             }
@@ -1683,24 +1684,26 @@ unsafe fn apply_tuple_rewrites(
                 wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
             };
             for rewrite in block_rewrites {
-                let (tuple_ptr, tuple_len) =
-                    unsafe { vacuum_page_tuple_location(writable_page, page_size, rewrite.tid)? };
-                if tuple_len != rewrite.replacement_raw.len() {
-                    return Err(format!(
-                        "ec_diskann vacuum rewrite length mismatch at ({},{}): got {}, expected {}",
-                        rewrite.tid.block_number,
-                        rewrite.tid.offset_number,
-                        rewrite.replacement_raw.len(),
-                        tuple_len
-                    ));
-                }
                 unsafe {
-                    ptr::copy_nonoverlapping(
-                        rewrite.replacement_raw.as_ptr(),
-                        tuple_ptr,
-                        rewrite.replacement_raw.len(),
-                    );
-                }
+                    with_vacuum_page_tuple_bytes_mut(
+                        writable_page,
+                        page_size,
+                        rewrite.tid,
+                        |tuple_bytes| {
+                            if tuple_bytes.len() != rewrite.replacement_raw.len() {
+                                return Err(format!(
+                                    "ec_diskann vacuum rewrite length mismatch at ({},{}): got {}, expected {}",
+                                    rewrite.tid.block_number,
+                                    rewrite.tid.offset_number,
+                                    rewrite.replacement_raw.len(),
+                                    tuple_bytes.len()
+                                ));
+                            }
+                            tuple_bytes.copy_from_slice(&rewrite.replacement_raw);
+                            Ok(())
+                        },
+                    )
+                }?;
             }
             unsafe { wal_txn.finish() };
             Ok(VacuumRewriteApplyOutcome::Applied)
@@ -1742,20 +1745,21 @@ unsafe fn write_raw_tuple_bytes(
         let writable_page = unsafe {
             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
         };
-        let (tuple_ptr, tuple_len) =
-            unsafe { vacuum_page_tuple_location(writable_page, page_size, tid)? };
-        if tuple_len != replacement_raw.len() {
-            return Err(format!(
-                "ec_diskann vacuum test rewrite length mismatch at ({},{}): got {}, expected {}",
-                tid.block_number,
-                tid.offset_number,
-                replacement_raw.len(),
-                tuple_len
-            ));
-        }
         unsafe {
-            ptr::copy_nonoverlapping(replacement_raw.as_ptr(), tuple_ptr, replacement_raw.len())
-        };
+            with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
+                if tuple_bytes.len() != replacement_raw.len() {
+                    return Err(format!(
+                            "ec_diskann vacuum test rewrite length mismatch at ({},{}): got {}, expected {}",
+                            tid.block_number,
+                            tid.offset_number,
+                            replacement_raw.len(),
+                            tuple_bytes.len()
+                        ));
+                }
+                tuple_bytes.copy_from_slice(replacement_raw);
+                Ok(())
+            })
+        }?;
         unsafe { wal_txn.finish() };
         Ok(())
     })();
@@ -1817,6 +1821,34 @@ unsafe fn vacuum_page_tuple_location(
 
     let tuple_ptr = unsafe { (page as *mut u8).add(tuple_offset) };
     Ok((tuple_ptr, tuple_len))
+}
+
+unsafe fn with_vacuum_page_tuple_bytes<R, F>(
+    page: pg_sys::Page,
+    page_size: usize,
+    tid: ItemPointer,
+    visit: F,
+) -> Result<R, String>
+where
+    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
+{
+    let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };
+    let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+    visit(tuple_bytes)
+}
+
+unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
+    page: pg_sys::Page,
+    page_size: usize,
+    tid: ItemPointer,
+    visit: F,
+) -> Result<R, String>
+where
+    F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
+{
+    let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };
+    let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
+    visit(tuple_bytes)
 }
 
 fn expand_scan_results_with_bound_heap_tids(
@@ -1931,7 +1963,7 @@ unsafe fn with_heap_source_vector<T>(
     source_attnum: i32,
     heap_tid: ItemPointer,
     context: &str,
-    f: impl FnOnce(&[f32]) -> Result<T, String>,
+    f: impl for<'a> FnOnce(&'a [f32]) -> Result<T, String>,
 ) -> Result<T, String> {
     unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
     let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };

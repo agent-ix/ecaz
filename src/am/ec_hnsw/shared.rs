@@ -223,67 +223,64 @@ unsafe fn count_live_elements_on_buffer(
     let mut count = 0_usize;
 
     for offset in 1..=line_pointer_count {
-        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-        if item_id.lp_flags() == 0 {
-            continue;
-        }
-
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            pgrx::error!(
-                "ec_hnsw found invalid tuple bounds while counting vacuum tuples on block {block_number}"
-            );
-        }
-
-        let tuple_bytes =
-            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        match storage {
-            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
-                    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                        .unwrap_or_else(|e| {
-                            pgrx::error!(
-                                "ec_hnsw failed to decode element tuple while counting: {e}"
-                            )
-                        });
-                    if !element.deleted && !element.heaptids.is_empty() {
-                        count += 1;
+        unsafe {
+            with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "counting vacuum tuples",
+                |tuple_bytes| match storage {
+                    graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                        if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
+                            let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                                    .unwrap_or_else(|e| {
+                                        pgrx::error!(
+                                            "ec_hnsw failed to decode element tuple while counting: {e}"
+                                        )
+                                    });
+                            if !element.deleted && !element.heaptids.is_empty() {
+                                count += 1;
+                            }
+                        }
                     }
-                }
-            }
-            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
-                    let element =
-                        page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!(
-                            "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
-                        )
-                            });
-                    if !element.deleted && !element.heaptids.is_empty() {
-                        count += 1;
+                    graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                        if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
+                            let element = page::TqTurboHotTuple::decode(
+                                    tuple_bytes,
+                                    layout.binary_word_count,
+                                )
+                                .unwrap_or_else(|e| {
+                                    pgrx::error!(
+                                        "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
+                                    )
+                                });
+                            if !element.deleted && !element.heaptids.is_empty() {
+                                count += 1;
+                            }
+                        }
                     }
-                }
-            }
-            graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
-                    let element = page::TqGroupedHotTuple::decode(
-                        tuple_bytes,
-                        layout.binary_word_count,
-                        layout.search_code_len,
-                    )
-                    .unwrap_or_else(|e| {
-                        pgrx::error!(
-                            "ec_hnsw failed to decode grouped hot tuple while counting: {e}"
-                        )
-                    });
-                    if !element.deleted && !element.heaptids.is_empty() {
-                        count += 1;
+                    graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                        if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
+                            let element = page::TqGroupedHotTuple::decode(
+                                    tuple_bytes,
+                                    layout.binary_word_count,
+                                    layout.search_code_len,
+                                )
+                                .unwrap_or_else(|e| {
+                                    pgrx::error!(
+                                        "ec_hnsw failed to decode grouped hot tuple while counting: {e}"
+                                    )
+                                });
+                            if !element.deleted && !element.heaptids.is_empty() {
+                                count += 1;
+                            }
+                        }
                     }
-                }
-            }
-        }
+                },
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
+        };
     }
 
     count
@@ -316,86 +313,85 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
         let line_pointer_count = page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                continue;
-            }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                pgrx::error!(
-                    "ec_hnsw found invalid tuple bounds while selecting a live entry candidate on block {block_number}"
-                );
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
             let tid = page::ItemPointer {
                 block_number,
                 offset_number: offset,
             };
-            let candidate = match storage {
-                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-                        None
-                    } else {
-                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!(
-                                    "ec_hnsw failed to decode element tuple while selecting a live entry candidate: {e}"
+            let candidate = unsafe {
+                with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
+                    block_number,
+                    offset,
+                    "selecting a live entry candidate",
+                    |tuple_bytes| match storage {
+                        graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                                None
+                            } else {
+                                let element =
+                                    page::TqElementTuple::decode(tuple_bytes, code_len)
+                                        .unwrap_or_else(|e| {
+                                            pgrx::error!(
+                                                "ec_hnsw failed to decode element tuple while selecting a live entry candidate: {e}"
+                                            )
+                                        });
+                                (!element.deleted && !element.heaptids.is_empty()).then_some(
+                                    LiveEntryCandidate {
+                                        tid,
+                                        level: element.level,
+                                    },
                                 )
-                            });
-                        (!element.deleted && !element.heaptids.is_empty()).then_some(
-                            LiveEntryCandidate {
-                                tid,
-                                level: element.level,
-                            },
-                        )
-                    }
-                }
-                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                    if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
-                        None
-                    } else {
-                        let element =
-                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                            }
+                        }
+                        graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                            if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                                None
+                            } else {
+                                let element = page::TqTurboHotTuple::decode(
+                                    tuple_bytes,
+                                    layout.binary_word_count,
+                                )
                                 .unwrap_or_else(|e| {
                                     pgrx::error!(
                                         "ec_hnsw failed to decode TurboQuant V3 tuple while selecting a live entry candidate: {e}"
                                     )
                                 });
-                        (!element.deleted && !element.heaptids.is_empty()).then_some(
-                            LiveEntryCandidate {
-                                tid,
-                                level: element.level,
-                            },
-                        )
-                    }
-                }
-                graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                    if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
-                        None
-                    } else {
-                        let element = page::TqGroupedHotTuple::decode(
-                            tuple_bytes,
-                            layout.binary_word_count,
-                            layout.search_code_len,
-                        )
-                        .unwrap_or_else(|e| {
-                            pgrx::error!(
-                                "ec_hnsw failed to decode grouped hot tuple while selecting a live entry candidate: {e}"
-                            )
-                        });
-                        (!element.deleted && !element.heaptids.is_empty()).then_some(
-                            LiveEntryCandidate {
-                                tid,
-                                level: element.level,
-                            },
-                        )
-                    }
-                }
-            };
+                                (!element.deleted && !element.heaptids.is_empty()).then_some(
+                                    LiveEntryCandidate {
+                                        tid,
+                                        level: element.level,
+                                    },
+                                )
+                            }
+                        }
+                        graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                            if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                                None
+                            } else {
+                                let element = page::TqGroupedHotTuple::decode(
+                                    tuple_bytes,
+                                    layout.binary_word_count,
+                                    layout.search_code_len,
+                                )
+                                .unwrap_or_else(|e| {
+                                    pgrx::error!(
+                                        "ec_hnsw failed to decode grouped hot tuple while selecting a live entry candidate: {e}"
+                                    )
+                                });
+                                (!element.deleted && !element.heaptids.is_empty()).then_some(
+                                    LiveEntryCandidate {
+                                        tid,
+                                        level: element.level,
+                                    },
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
+            .flatten();
             if let Some(candidate) = candidate {
                 match best_level {
                     None => {
@@ -441,6 +437,67 @@ pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
     let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
     ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
         / size_of::<pg_sys::ItemIdData>()) as u16
+}
+
+pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: pg_sys::BlockNumber,
+    offset: u16,
+    context: &str,
+    visit: F,
+) -> Result<Option<R>, String>
+where
+    F: for<'a> FnOnce(&'a [u8]) -> R,
+{
+    let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+    if item_id.lp_flags() == 0 {
+        return Ok(None);
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        return Err(format!(
+            "ec_hnsw found invalid tuple bounds while {context} on block {block_number}"
+        ));
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    Ok(Some(visit(tuple_bytes)))
+}
+
+pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    tuple_tid: page::ItemPointer,
+    tuple_kind: &str,
+    visit: F,
+) -> R
+where
+    F: for<'a> FnOnce(&'a mut [u8]) -> R,
+{
+    let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!(
+            "ec_hnsw {tuple_kind} tuple slot {}/{} is unused",
+            tuple_tid.block_number,
+            tuple_tid.offset_number
+        );
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
+            tuple_tid.block_number
+        );
+    }
+
+    let tuple_bytes =
+        unsafe { std::slice::from_raw_parts_mut(page_ptr.add(tuple_offset), tuple_len) };
+    visit(tuple_bytes)
 }
 
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPointer {
@@ -841,26 +898,20 @@ unsafe fn read_data_page(
 
     let mut tuples = Vec::with_capacity(line_pointer_count as usize);
     for offset in 1..=line_pointer_count {
-        let item_id_ptr = unsafe {
-            raw_page
-                .add(
-                    page::PAGE_HEADER_BYTES
-                        + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()),
-                )
-                .cast::<pg_sys::ItemIdData>()
-        };
-        let item_id = unsafe { &*item_id_ptr };
-        if item_id.lp_flags() == 0 {
-            continue;
+        if let Some(tuple) = unsafe {
+            with_page_line_tuple_bytes(
+                raw_page,
+                page_size,
+                block_number,
+                offset,
+                "debug read",
+                |tuple_bytes| tuple_bytes.to_vec(),
+            )
         }
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            pgrx::error!("ec_hnsw debug read found invalid tuple bounds on block {block_number}");
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+        {
+            tuples.push(tuple);
         }
-        tuples.push(
-            unsafe { std::slice::from_raw_parts(raw_page.add(tuple_offset), tuple_len) }.to_vec(),
-        );
     }
 
     DebugIndexDataPage {

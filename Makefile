@@ -24,12 +24,14 @@ lint-pg17:
 CLIPPY_HARDENING_BASELINE_ALLOW = \
 	-A unknown-lints \
 	-A unused-imports \
+	-A clippy::assertions-on-constants \
 	-A clippy::clone-on-copy \
 	-A clippy::derivable-impls \
 	-A clippy::enum-variant-names \
 	-A clippy::field-reassign-with-default \
 	-A clippy::if-same-then-else \
 	-A clippy::int-plus-one \
+	-A clippy::let-and-return \
 	-A clippy::manual-contains \
 	-A clippy::manual-range-contains \
 	-A clippy::needless-lifetimes \

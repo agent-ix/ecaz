@@ -842,24 +842,8 @@ pub unsafe extern "C-unwind" fn ecvector_typmod_in(
 ) -> pg_sys::Datum {
     pgrx::pgrx_extern_c_guard(|| unsafe {
         let datum = pgrx::fcinfo::pg_getarg_datum_raw(fcinfo, 0);
-        let original = datum
-            .cast_mut_ptr::<std::ffi::c_void>()
-            .cast::<pg_sys::ArrayType>();
-        let array = pg_sys::pg_detoast_datum_packed(original.cast()).cast::<pg_sys::ArrayType>();
-        let is_copy = !std::ptr::eq(array, original);
-        let mut count = 0;
-        let raw_typmods = pg_sys::ArrayGetIntegerTypmods(array, &mut count);
-        let dim = if count == 1 {
-            *raw_typmods
-        } else {
-            if is_copy {
-                pg_sys::pfree(array.cast());
-            }
-            pgrx::error!("invalid type modifier");
-        };
-        if is_copy {
-            pg_sys::pfree(array.cast());
-        }
+        let array = DetoastedTypmodArray::from_datum(datum);
+        let dim = array.single_typmod();
         if dim < 1 {
             pgrx::error!("dimensions for type ecvector must be at least 1");
         }
@@ -872,6 +856,39 @@ pub unsafe extern "C-unwind" fn ecvector_typmod_in(
         dim.into_datum()
             .expect("typmod integer should convert to datum")
     })
+}
+
+/// Detoast copies are palloc-owned. Drop runs whenever Rust frames unwind
+/// (including `pgrx::error!`, which raises a Rust panic before re-raising the
+/// PG ERROR), freeing the copy. PostgreSQL memory-context cleanup at (sub)txn
+/// abort is the fallback for paths where control leaves Rust without unwinding
+/// these frames.
+#[derive(Debug)]
+struct DetoastedTypmodArray {
+    array: am::common::detoast::DetoastedVarlena,
+}
+
+impl DetoastedTypmodArray {
+    unsafe fn from_datum(datum: pg_sys::Datum) -> Self {
+        let array = unsafe { am::common::detoast::DetoastedVarlena::packed_from_datum(datum) }
+            .unwrap_or_else(|| pgrx::error!("invalid type modifier"));
+        Self { array }
+    }
+
+    fn single_typmod(&self) -> i32 {
+        let mut count = 0;
+        let raw_typmods = unsafe {
+            pg_sys::ArrayGetIntegerTypmods(
+                self.array.as_ptr().cast::<pg_sys::ArrayType>(),
+                &mut count,
+            )
+        };
+        if count == 1 {
+            unsafe { *raw_typmods }
+        } else {
+            pgrx::error!("invalid type modifier");
+        }
+    }
 }
 
 #[no_mangle]

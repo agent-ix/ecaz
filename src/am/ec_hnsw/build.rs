@@ -10,7 +10,10 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 
 use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
-use crate::am::common::training::{self, GroupedPq4Model};
+use crate::am::common::{
+    detoast::DetoastedVarlena,
+    training::{self, GroupedPq4Model},
+};
 use crate::storage::{
     buffer_guard::LockedBufferGuard, relation_guard::HeapRelationGuard, scan_guard::HeapScanGuard,
     slot_guard::TupleTableSlotGuard, snapshot_guard::ActiveSnapshotGuard, wal,
@@ -622,15 +625,9 @@ unsafe fn build_heap_tuple_from_indexed_datum(
             build_quantized_build_tuple(dimensions, gamma, code, heap_tid, source_vector)
         }
         source::IndexedVectorKind::Tqvector => {
-            let original = vector_datum
-                .cast_mut_ptr::<std::ffi::c_void>()
-                .cast::<pg_sys::varlena>();
-            let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-            let is_copy = !std::ptr::eq(varlena, original);
-            let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
-            if is_copy {
-                unsafe { pg_sys::pfree(varlena.cast()) };
-            }
+            let bytes = unsafe { DetoastedVarlena::packed_from_datum(vector_datum) }
+                .unwrap_or_else(|| pgrx::error!("ec_hnsw could not detoast indexed tqvector"))
+                .to_vec();
 
             let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes).unwrap_or_else(|e| {
                 pgrx::error!("ec_hnsw ambuild found invalid indexed tqvector: {e}")

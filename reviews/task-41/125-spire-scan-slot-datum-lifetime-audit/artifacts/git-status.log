@@ -1,0 +1,20 @@
+## task41-invariant2-lifetimes...origin/task41-invariant2-lifetimes [ahead 9]
+ M scripts/comparators/README.md
+ D scripts/comparators/bench_lantern.sh
+ D scripts/comparators/bench_pgvector.sh
+ D scripts/comparators/bench_pgvectorscale.sh
+ D scripts/comparators/bench_vchord.sh
+ D scripts/comparators/install_lantern.sh
+ D scripts/comparators/install_pgvector.sh
+ D scripts/comparators/install_pgvectorscale.sh
+ D scripts/comparators/install_vchord.sh
+ D scripts/comparators/load_lantern.sh
+ D scripts/comparators/load_pgvector.sh
+ D scripts/comparators/load_pgvectorscale.sh
+ D scripts/comparators/load_vchord.sh
+ M scripts/comparators/run_all.sh
+?? reviews/task-41/125-spire-scan-slot-datum-lifetime-audit/
+?? scripts/comparators/lantern/
+?? scripts/comparators/pgvector/
+?? scripts/comparators/pgvectorscale/
+?? scripts/comparators/vchord/

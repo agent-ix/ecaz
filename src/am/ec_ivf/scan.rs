@@ -45,6 +45,49 @@ struct EcIvfScanOpaque {
     stats_delta: TqStatsCounters,
 }
 
+impl EcIvfScanOpaque {
+    fn query_values(&self) -> &[f32] {
+        if self.query_values.is_null() || self.query_dimensions == 0 {
+            pgrx::error!("ec_ivf scan query state is missing");
+        }
+        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+    }
+
+    fn next_posting_candidate(&mut self) -> Option<EcIvfScoredCandidate> {
+        if self.posting_candidates.is_null()
+            || self.next_candidate_index >= self.posting_candidate_count
+        {
+            return None;
+        }
+
+        let candidate = unsafe {
+            *self
+                .posting_candidates
+                .add(self.next_candidate_index as usize)
+        };
+        self.next_candidate_index += 1;
+        Some(candidate)
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    fn query_values_or_empty(&self) -> &[f32] {
+        if self.query_values.is_null() || self.query_dimensions == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    fn selected_lists(&self) -> &[u32] {
+        if self.selected_lists.is_null() || self.selected_list_count == 0 {
+            return &[];
+        }
+        unsafe {
+            std::slice::from_raw_parts(self.selected_lists, self.selected_list_count as usize)
+        }
+    }
+}
+
 struct ResolvedIvfScanHeapRelation {
     relation: pg_sys::Relation,
     _owned: Option<HeapRelationGuard>,
@@ -428,7 +471,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
                 clear_scan_orderby_output(scan);
                 return false;
             }
-            match next_posting_candidate(opaque) {
+            match opaque.next_posting_candidate() {
                 Some(candidate) => {
                     set_scan_heap_tid(scan, candidate.heap_tid);
                     set_scan_orderby_score(scan, candidate.score);
@@ -462,22 +505,6 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
             }
         })
     }
-}
-
-fn next_posting_candidate(opaque: &mut EcIvfScanOpaque) -> Option<EcIvfScoredCandidate> {
-    if opaque.posting_candidates.is_null()
-        || opaque.next_candidate_index >= opaque.posting_candidate_count
-    {
-        return None;
-    }
-
-    let candidate = unsafe {
-        *opaque
-            .posting_candidates
-            .add(opaque.next_candidate_index as usize)
-    };
-    opaque.next_candidate_index += 1;
-    Some(candidate)
 }
 
 fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
@@ -823,13 +850,6 @@ fn inner_product(left: &[f32], right: &[f32]) -> f32 {
         .sum()
 }
 
-fn scan_query_values(opaque: &EcIvfScanOpaque) -> &[f32] {
-    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
-        pgrx::error!("ec_ivf scan query state is missing");
-    }
-    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
-}
-
 fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> Ordering {
     left.score
         .total_cmp(&right.score)
@@ -1119,35 +1139,40 @@ unsafe fn rerank_probe_candidates_heap_f32(
         pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
     }
     let source_attnum = i32::from(state.source_attnum);
-    let query_values = unsafe {
-        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
-    };
 
     unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
 
-    for candidate in candidates {
-        unsafe {
-            source::fetch_heap_row_version(
-                heap_relation,
-                candidate.heap_tid,
-                snapshot,
-                slot,
-                "ec_ivf heap_f32 rerank source vector",
-            )
-        };
-        unsafe {
-            source::with_indexed_ecvector_from_slot(
-                slot,
-                source_attnum,
-                "ec_ivf heap_f32 rerank source vector",
-                |source_vector| {
-                    candidate.score = source::negative_inner_product_index_internal(
-                        query_values,
-                        source_vector.as_slice(),
-                    );
-                },
-            )
-        };
+    let rerank_rows = {
+        let query_values = opaque.query_values();
+        let mut rerank_rows = 0usize;
+        for candidate in candidates {
+            unsafe {
+                source::fetch_heap_row_version(
+                    heap_relation,
+                    candidate.heap_tid,
+                    snapshot,
+                    slot,
+                    "ec_ivf heap_f32 rerank source vector",
+                )
+            };
+            unsafe {
+                source::with_indexed_ecvector_from_slot(
+                    slot,
+                    source_attnum,
+                    "ec_ivf heap_f32 rerank source vector",
+                    |source_vector| {
+                        candidate.score = source::negative_inner_product_index_internal(
+                            query_values,
+                            source_vector.as_slice(),
+                        );
+                    },
+                )
+            };
+            rerank_rows += 1;
+        }
+        rerank_rows
+    };
+    for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
 }
@@ -1418,22 +1443,12 @@ unsafe fn load_directory_entries(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_query(opaque: &EcIvfScanOpaque) -> Vec<f32> {
-    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
-        return Vec::new();
-    }
-    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
-        .to_vec()
+    opaque.query_values_or_empty().to_vec()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_selected_lists(opaque: &EcIvfScanOpaque) -> Vec<u32> {
-    if opaque.selected_lists.is_null() || opaque.selected_list_count == 0 {
-        return Vec::new();
-    }
-    unsafe {
-        std::slice::from_raw_parts(opaque.selected_lists, opaque.selected_list_count as usize)
-    }
-    .to_vec()
+    opaque.selected_lists().to_vec()
 }
 
 #[cfg(any(test, feature = "pg_test"))]

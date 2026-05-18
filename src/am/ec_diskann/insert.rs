@@ -702,100 +702,102 @@ unsafe fn apply_duplicate_bind_patches(
                 let patch = &sorted[start];
                 start += 1;
 
-                let (tuple_ptr, tuple_len) =
-                    unsafe { page_tuple_location(writable_page, page_size, patch.target_tid)? };
-                let tuple_bytes =
-                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
-
-                match &patch.kind {
-                    DuplicateBindPatchKind::SetNodeOverflowFlag => {
-                        let mut tuple = VamanaNodeTuple::decode(
-                            tuple_bytes,
-                            metadata.graph_degree_r,
-                            binary_word_count,
-                            search_code_len,
-                        )?;
-                        if tuple.has_overflow_heaptids {
-                            continue;
-                        }
-                        tuple.has_overflow_heaptids = true;
-                        let encoded = tuple.encode(
-                            metadata.graph_degree_r,
-                            binary_word_count,
-                            search_code_len,
-                        )?;
-                        if encoded.len() != tuple_len {
-                            return Err(format!(
-                                "ec_diskann duplicate bind node tuple size changed from {} to {} at ({},{})",
-                                tuple_len,
-                                encoded.len(),
-                                patch.target_tid.block_number,
-                                patch.target_tid.offset_number
-                            ));
-                        }
-                        unsafe {
-                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
-                        };
+                let patch_outcome = unsafe {
+                    with_page_tuple_bytes_mut(
+                        writable_page,
+                        page_size,
+                        patch.target_tid,
+                        |tuple_bytes| match &patch.kind {
+                            DuplicateBindPatchKind::SetNodeOverflowFlag => {
+                                let mut tuple = VamanaNodeTuple::decode(
+                                    tuple_bytes,
+                                    metadata.graph_degree_r,
+                                    binary_word_count,
+                                    search_code_len,
+                                )?;
+                                if tuple.has_overflow_heaptids {
+                                    return Ok(DuplicateBindApplyOutcome::NoChange);
+                                }
+                                tuple.has_overflow_heaptids = true;
+                                let encoded = tuple.encode(
+                                    metadata.graph_degree_r,
+                                    binary_word_count,
+                                    search_code_len,
+                                )?;
+                                if encoded.len() != tuple_bytes.len() {
+                                    return Err(format!(
+                                        "ec_diskann duplicate bind node tuple size changed from {} to {} at ({},{})",
+                                        tuple_bytes.len(),
+                                        encoded.len(),
+                                        patch.target_tid.block_number,
+                                        patch.target_tid.offset_number
+                                    ));
+                                }
+                                tuple_bytes.copy_from_slice(&encoded);
+                                Ok(DuplicateBindApplyOutcome::Changed)
+                            }
+                            DuplicateBindPatchKind::AppendHeapTidToOverflow {
+                                expected_nexttid,
+                                expected_heap_tid_count,
+                                heap_tid,
+                            } => {
+                                let mut tuple = VamanaOverflowTuple::decode(tuple_bytes)?;
+                                if tuple.contains(*heap_tid) {
+                                    return Ok(DuplicateBindApplyOutcome::NoChange);
+                                }
+                                if tuple.nexttid != *expected_nexttid
+                                    || tuple.heap_tid_count != *expected_heap_tid_count
+                                {
+                                    return Ok(DuplicateBindApplyOutcome::RetryReplan);
+                                }
+                                tuple.push_heap_tid(*heap_tid)?;
+                                let encoded = tuple.encode()?;
+                                if encoded.len() != tuple_bytes.len() {
+                                    return Err(format!(
+                                        "ec_diskann duplicate bind overflow tuple size changed from {} to {} at ({},{})",
+                                        tuple_bytes.len(),
+                                        encoded.len(),
+                                        patch.target_tid.block_number,
+                                        patch.target_tid.offset_number
+                                    ));
+                                }
+                                tuple_bytes.copy_from_slice(&encoded);
+                                Ok(DuplicateBindApplyOutcome::Changed)
+                            }
+                            DuplicateBindPatchKind::SetOverflowNextTid { expected_nexttid } => {
+                                let mut tuple = VamanaOverflowTuple::decode(tuple_bytes)?;
+                                if tuple.nexttid == appended_overflow_tid {
+                                    return Ok(DuplicateBindApplyOutcome::NoChange);
+                                }
+                                if tuple.nexttid != *expected_nexttid {
+                                    return Ok(DuplicateBindApplyOutcome::RetryReplan);
+                                }
+                                tuple.nexttid = appended_overflow_tid;
+                                let encoded = tuple.encode()?;
+                                if encoded.len() != tuple_bytes.len() {
+                                    return Err(format!(
+                                        "ec_diskann duplicate bind overflow tuple size changed from {} to {} at ({},{})",
+                                        tuple_bytes.len(),
+                                        encoded.len(),
+                                        patch.target_tid.block_number,
+                                        patch.target_tid.offset_number
+                                    ));
+                                }
+                                tuple_bytes.copy_from_slice(&encoded);
+                                Ok(DuplicateBindApplyOutcome::Changed)
+                            }
+                        },
+                    )
+                }?;
+                match patch_outcome {
+                    DuplicateBindApplyOutcome::NoChange => {}
+                    DuplicateBindApplyOutcome::Changed => {
                         page_changed = true;
                         changed_any = true;
                     }
-                    DuplicateBindPatchKind::AppendHeapTidToOverflow {
-                        expected_nexttid,
-                        expected_heap_tid_count,
-                        heap_tid,
-                    } => {
-                        let mut tuple = VamanaOverflowTuple::decode(tuple_bytes)?;
-                        if tuple.contains(*heap_tid) {
-                            continue;
-                        }
-                        if tuple.nexttid != *expected_nexttid
-                            || tuple.heap_tid_count != *expected_heap_tid_count
-                        {
-                            page_retry = true;
-                            break;
-                        }
-                        tuple.push_heap_tid(*heap_tid)?;
-                        let encoded = tuple.encode()?;
-                        if encoded.len() != tuple_len {
-                            return Err(format!(
-                                "ec_diskann duplicate bind overflow tuple size changed from {} to {} at ({},{})",
-                                tuple_len,
-                                encoded.len(),
-                                patch.target_tid.block_number,
-                                patch.target_tid.offset_number
-                            ));
-                        }
-                        unsafe {
-                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
-                        };
-                        page_changed = true;
-                        changed_any = true;
-                    }
-                    DuplicateBindPatchKind::SetOverflowNextTid { expected_nexttid } => {
-                        let mut tuple = VamanaOverflowTuple::decode(tuple_bytes)?;
-                        if tuple.nexttid == appended_overflow_tid {
-                            continue;
-                        }
-                        if tuple.nexttid != *expected_nexttid {
-                            page_retry = true;
-                            break;
-                        }
-                        tuple.nexttid = appended_overflow_tid;
-                        let encoded = tuple.encode()?;
-                        if encoded.len() != tuple_len {
-                            return Err(format!(
-                                "ec_diskann duplicate bind overflow tuple size changed from {} to {} at ({},{})",
-                                tuple_len,
-                                encoded.len(),
-                                patch.target_tid.block_number,
-                                patch.target_tid.offset_number
-                            ));
-                        }
-                        unsafe {
-                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
-                        };
-                        page_changed = true;
-                        changed_any = true;
+                    DuplicateBindApplyOutcome::RetryReplan => {
+                        page_retry = true;
+                        break;
                     }
                 }
             }
@@ -1437,37 +1439,41 @@ pub(super) unsafe fn add_backlinks_if_free(
                 let target_tid = targets[start];
                 start += 1;
 
-                let (tuple_ptr, tuple_len) =
-                    unsafe { page_tuple_location(writable_page, page_size, target_tid)? };
-                let tuple_bytes =
-                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
-                let mut tuple = VamanaNodeTuple::decode(
-                    tuple_bytes,
-                    metadata.graph_degree_r,
-                    binary_word_count,
-                    search_code_len,
-                )?;
-                if !tuple.is_live() {
-                    continue;
-                }
-                if !insert_backlink_if_free(&mut tuple, new_tid) {
-                    continue;
-                }
+                unsafe {
+                    with_page_tuple_bytes_mut(writable_page, page_size, target_tid, |tuple_bytes| {
+                        let mut tuple = VamanaNodeTuple::decode(
+                            tuple_bytes,
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if !tuple.is_live() {
+                            return Ok(());
+                        }
+                        if !insert_backlink_if_free(&mut tuple, new_tid) {
+                            return Ok(());
+                        }
 
-                let encoded =
-                    tuple.encode(metadata.graph_degree_r, binary_word_count, search_code_len)?;
-                if encoded.len() != tuple_len {
-                    return Err(format!(
-                        "ec_diskann backlink target tuple size changed from {} to {} at ({},{})",
-                        tuple_len,
-                        encoded.len(),
-                        target_tid.block_number,
-                        target_tid.offset_number
-                    ));
-                }
-                unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len()) };
-                page_changed = true;
-                page_changes += 1;
+                        let encoded = tuple.encode(
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if encoded.len() != tuple_bytes.len() {
+                            return Err(format!(
+                                    "ec_diskann backlink target tuple size changed from {} to {} at ({},{})",
+                                    tuple_bytes.len(),
+                                    encoded.len(),
+                                    target_tid.block_number,
+                                    target_tid.offset_number
+                                ));
+                        }
+                        tuple_bytes.copy_from_slice(&encoded);
+                        page_changed = true;
+                        page_changes += 1;
+                        Ok(())
+                    })
+                }?;
             }
             Ok(page_changes)
         })();
@@ -1536,44 +1542,50 @@ pub(super) unsafe fn apply_backlink_mutations(
                 let mutation = &sorted[start];
                 start += 1;
 
-                let (tuple_ptr, tuple_len) =
-                    unsafe { page_tuple_location(writable_page, page_size, mutation.target_tid)? };
-                let tuple_bytes =
-                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
-                let mut tuple = VamanaNodeTuple::decode(
-                    tuple_bytes,
-                    metadata.graph_degree_r,
-                    binary_word_count,
-                    search_code_len,
-                )?;
-                if !tuple.is_live() {
-                    continue;
-                }
+                unsafe {
+                    with_page_tuple_bytes_mut(
+                        writable_page,
+                        page_size,
+                        mutation.target_tid,
+                        |tuple_bytes| {
+                            let mut tuple = VamanaNodeTuple::decode(
+                                tuple_bytes,
+                                metadata.graph_degree_r,
+                                binary_word_count,
+                                search_code_len,
+                            )?;
+                            if !tuple.is_live() {
+                                return Ok(());
+                            }
 
-                match apply_backlink_mutation(&mut tuple, new_tid, mutation) {
-                    BacklinkMutationOutcome::NoChange => {}
-                    BacklinkMutationOutcome::RetryReplan => retries.push(mutation.target_tid),
-                    BacklinkMutationOutcome::Changed => {
-                        let encoded = tuple.encode(
-                            metadata.graph_degree_r,
-                            binary_word_count,
-                            search_code_len,
-                        )?;
-                        if encoded.len() != tuple_len {
-                            return Err(format!(
-                                "ec_diskann backlink rewrite target tuple size changed from {} to {} at ({},{})",
-                                tuple_len,
-                                encoded.len(),
-                                mutation.target_tid.block_number,
-                                mutation.target_tid.offset_number
-                            ));
-                        }
-                        unsafe {
-                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
-                        };
-                        page_changed = true;
-                    }
-                }
+                            match apply_backlink_mutation(&mut tuple, new_tid, mutation) {
+                                BacklinkMutationOutcome::NoChange => {}
+                                BacklinkMutationOutcome::RetryReplan => {
+                                    retries.push(mutation.target_tid)
+                                }
+                                BacklinkMutationOutcome::Changed => {
+                                    let encoded = tuple.encode(
+                                        metadata.graph_degree_r,
+                                        binary_word_count,
+                                        search_code_len,
+                                    )?;
+                                    if encoded.len() != tuple_bytes.len() {
+                                        return Err(format!(
+                                            "ec_diskann backlink rewrite target tuple size changed from {} to {} at ({},{})",
+                                            tuple_bytes.len(),
+                                            encoded.len(),
+                                            mutation.target_tid.block_number,
+                                            mutation.target_tid.offset_number
+                                        ));
+                                    }
+                                    tuple_bytes.copy_from_slice(&encoded);
+                                    page_changed = true;
+                                }
+                            }
+                            Ok(())
+                        },
+                    )
+                }?;
             }
             Ok(())
         })();
@@ -1668,6 +1680,20 @@ unsafe fn page_tuple_location(
         ));
     }
     Ok((tuple_ptr, tuple_len))
+}
+
+unsafe fn with_page_tuple_bytes_mut<R, F>(
+    page: pg_sys::Page,
+    page_size: usize,
+    tid: ItemPointer,
+    visit: F,
+) -> Result<R, String>
+where
+    F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
+{
+    let (tuple_ptr, tuple_len) = unsafe { page_tuple_location(page, page_size, tid)? };
+    let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
+    visit(tuple_bytes)
 }
 
 fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, String> {

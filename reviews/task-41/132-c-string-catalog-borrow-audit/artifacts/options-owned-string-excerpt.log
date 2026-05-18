@@ -1,0 +1,16 @@
+    }
+
+    let value_ptr = unsafe {
+        rd_options
+            .cast::<u8>()
+            .add(offset as usize)
+            .cast::<std::ffi::c_char>()
+    };
+    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+        .to_str()
+        .unwrap_or_else(|e| pgrx::error!("invalid ec_spire {name} reloption: {e}"));
+    if value.is_empty() {
+        pgrx::error!("invalid ec_spire {name} reloption: value must not be empty");
+    }
+    Some(value.to_owned())
+}

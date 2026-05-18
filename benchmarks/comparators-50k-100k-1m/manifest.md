@@ -196,14 +196,88 @@ done
 Then `scp -r` the `comparators/` tree back into this packet's
 `artifacts/`.
 
-## Not included
+## Recall + Pareto sweep
 
-- Recall measurement — only latency was captured this pass
-- IVFFlat probe sweeps / DiskANN search-depth sweeps — defaults only
-- Lantern — no PG18 support upstream; see install_lantern.sh GAP
-- pgvector cosine / L2 opclasses — IP only
-- ecaz access-method comparison numbers (those live in
-  `benchmarks/cloud-scaling-multi-am/`); this packet is comparator-side only
+Second sweep cycle adds recall@10 and a multi-operating-point grid
+on top of the single-point latency table above. All three pgvector
+comparators run on per-variant isolated corpus tables (HNSW and
+IVFFlat each own a `real_<size>_pgv_<variant>_corpus`) so there is no
+planner ambiguity; vchord was rebuilt with explicit IVF lists matching
+the IVFFlat baseline (sqrt(N): 224 / 320 / 1024) so `vchordrq.probes`
+is meaningful.
+
+Ground truth: `SET enable_indexscan = off; SET enable_bitmapscan = off;`
+parallel seqscan top-10 over the corpus, 200 queries per size, run
+once per size. Stored under `artifacts/sweep/<size>/_groundtruth.out`.
+
+Grid (200 queries × k=10 × IP opclass × serial, 39 cells total):
+
+| System | GUC | Values |
+|---|---|---|
+| pgvector HNSW | `hnsw.ef_search` | 16, 40, 100, 400 |
+| pgvector IVFFlat | `ivfflat.probes` | 1, 8, 32, 100 |
+| pgvectorscale DiskANN | `diskann.query_search_list_size` | 40, 100, 400, 1000 |
+| vchord RaBitQ-on-IVF | `vchordrq.probes` | default only — single-level IVF, no probe sweep ran this cycle |
+
+Per-cell artifacts under `artifacts/sweep/<size>/<system>/<variant>/<setting>.{out,latency.log,recall.txt}`,
+aggregate `_pareto.tsv` per size. Methodology and grid are reproducible
+via `scripts/comparators/sweep.sh` + `scripts/comparators/compute_recall.py`.
+
+### Pareto at 1m (the size that matters most)
+
+p50 / p95 / recall@10:
+
+| System / setting | p50 ms | p95 ms | recall@10 | Pareto? |
+|---|--:|--:|--:|:--|
+| pgv HNSW ef16 | 1.8 | 3.0 | 0.844 | ✓ low-recall corner |
+| pgv HNSW ef40 | 2.9 | 4.7 | 0.932 | ✓ |
+| pgvscale DiskANN sl40 | 6.5 | 13.3 | 0.980 | ✓ best ~98% |
+| pgvscale DiskANN sl400 | 19.5 | 32.0 | 0.984 | ✓ |
+| pgvscale DiskANN sl1000 | 46.4 | 75.5 | 0.985 | ✓ |
+| vchord RaBitQ default | 90.3 | 100.0 | 0.9995 | ✓ best ~100% |
+| pgv IVFFlat p1 | 4.4 | 53.2 | 0.599 | dominated by HNSW ef16 |
+| pgv IVFFlat p8 | 20.2 | 27.7 | 0.894 | dominated |
+| pgv IVFFlat p32 | 77.1 | 93.2 | 0.962 | dominated |
+| pgv IVFFlat p100 | 265 | 1132 | 0.987 | dominated by pgvscale |
+| pgv HNSW ef100 | 857 | 1834 | 0.968 | dominated — cold-cache collapse |
+| pgv HNSW ef400 | 893 | 2709 | 0.989 | dominated — cold-cache collapse |
+
+The bar for ecaz at 1m:
+- **~98% recall band**: pgvectorscale DiskANN sl40 at **6.5 ms p50** is
+  the comparator to beat. The competitor's index is also the smallest
+  on disk (645 MB) — that's the value of the SBQ-compressed DiskANN
+  graph.
+- **~99.95% recall ceiling**: vchord RaBitQ-on-IVF default at
+  **90 ms p50**. This is what ec_ivf with `storage_format=rabitq`
+  must approach to be competitive.
+
+pgvector HNSW p50 collapses past ef=100 (3 ms at ef40 → 857 ms at
+ef100). Cold-cache-dominated: at higher ef the traversal visits enough
+graph pages to overflow the buffer pool. p95 follows the same shape
+(4.7 ms → 1834 ms). Not a real frontier — just a measurement note.
+
+50k and 100k Pareto tables are in
+`artifacts/sweep/{50k,100k}/_pareto.tsv` with the same shape; same
+qualitative ordering (pgvscale DiskANN wins ~98% band, vchord wins
+~100% ceiling, pgv HNSW competitive at lower ef, pgv IVFFlat
+dominated).
+
+### Source files added in the same series
+
+- `scripts/comparators/sweep.sh` — runs the grid locally against PG socket
+- `scripts/comparators/compute_recall.py` — derives latency.log + recall.txt + _pareto.tsv from sweep output
+- `scripts/comparators/<name>/{install,load,bench}.sh` — per-comparator scripts grouped by DB (previous flat layout flattened into subdirs)
+- `scripts/comparators/load_vchord.sh` (now `vchord/load.sh`) — builds vchordrq with explicit IVF lists matching the pgvector IVFFlat baseline
+- `scripts/comparators/bench_pgvectorscale.sh` (now `pgvectorscale/bench.sh`) — uses `<#>` to match the vector_ip_ops opclass
+
+## Not included this cycle
+
+- vchord probe sweep — would require dropping + rebuilding the vchordrq index; deferred to a separate cycle to keep this packet under "no rebuilds of indexes already built for this measurement"
+- Concurrency curves — serial only
+- k≠10
+- Distance metrics other than IP
+- Lantern — no PG18 support upstream
+- ecaz access-method comparison — lives in `benchmarks/cloud-scaling-multi-am/`
 
 ## Snapshot / state
 

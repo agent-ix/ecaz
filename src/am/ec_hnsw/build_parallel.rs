@@ -1061,23 +1061,27 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
             initialize_node_lock(ptr::addr_of_mut!((*node).lock));
         }
 
-        slice::from_raw_parts_mut(parts.neighbor_slots, layout.total_neighbor_slots as usize)
-            .fill(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
+        with_concurrent_dsm_neighbor_slots_init(parts, layout, |slots| {
+            slots.fill(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
+        });
 
         let code_bytes = checked_mul_size(
             layout.code_len as pg_sys::Size,
             layout.node_count as pg_sys::Size,
             "concurrent DSM graph initialized code bytes",
         );
-        slice::from_raw_parts_mut(parts.codes, code_bytes).copy_from_slice(&plan.code_corpus.bytes);
+        with_concurrent_dsm_codes_init(parts, code_bytes, |codes| {
+            codes.copy_from_slice(&plan.code_corpus.bytes);
+        });
         if let Some(source_corpus) = &plan.source_corpus {
             let source_values = checked_mul_size(
                 layout.source_dim as pg_sys::Size,
                 layout.node_count as pg_sys::Size,
                 "concurrent DSM graph initialized source values",
             ) as usize;
-            slice::from_raw_parts_mut(parts.sources, source_values)
-                .copy_from_slice(&source_corpus.values);
+            with_concurrent_dsm_sources_init(parts, source_values, |sources| {
+                sources.copy_from_slice(&source_corpus.values);
+            });
         }
     }
 
@@ -1330,8 +1334,11 @@ unsafe fn complete_concurrent_dsm_graph_node_insert(
     if selected_slots.len() != slot_count {
         pgrx::error!("concurrent DSM graph insert selected slot count mismatch");
     }
-    let slots = unsafe { concurrent_dsm_node_slots_mut(parts, node) };
-    slots.copy_from_slice(selected_slots);
+    unsafe {
+        with_concurrent_dsm_node_slots_mut(parts, node, |slots| {
+            slots.copy_from_slice(selected_slots);
+        })
+    };
     unsafe {
         (*node).insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY;
     }
@@ -1504,15 +1511,19 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
         if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
             let source_level = unsafe { (*source).level };
             if let Some((start, end)) = graph::layer_slot_bounds(source_level, config.m, layer) {
-                let raw_slots = unsafe { concurrent_dsm_node_slots(parts, source) };
-                for neighbor_idx in raw_slots[start.min(raw_slots.len())..end.min(raw_slots.len())]
-                    .iter()
-                    .copied()
-                {
-                    if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
-                        neighbor_idxs.push(neighbor_idx);
-                    }
-                }
+                unsafe {
+                    with_concurrent_dsm_node_slots(parts, source, |raw_slots| {
+                        for neighbor_idx in raw_slots
+                            [start.min(raw_slots.len())..end.min(raw_slots.len())]
+                            .iter()
+                            .copied()
+                        {
+                            if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
+                                neighbor_idxs.push(neighbor_idx);
+                            }
+                        }
+                    })
+                };
             }
         }
     }
@@ -1608,56 +1619,59 @@ unsafe fn add_concurrent_dsm_backlinks(
         ) else {
             continue;
         };
-        let layer_slice = unsafe { &mut concurrent_dsm_node_slots_mut(parts, target)[start..end] };
-        if layer_slice.contains(&new_node_idx) {
-            continue;
-        }
-        if let Some(slot) = layer_slice
-            .iter_mut()
-            .find(|slot| **slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
-        {
-            *slot = new_node_idx;
-            continue;
-        }
+        unsafe {
+            with_concurrent_dsm_node_slots_mut(parts, target, |slots| {
+                let layer_slice = &mut slots[start..end];
+                if layer_slice.contains(&new_node_idx) {
+                    return;
+                }
+                if let Some(slot) = layer_slice
+                    .iter_mut()
+                    .find(|slot| **slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
+                {
+                    *slot = new_node_idx;
+                    return;
+                }
 
-        let mut candidates = layer_slice
-            .iter()
-            .copied()
-            .filter(|neighbor_idx| *neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
-            .map(|neighbor_idx| insert::ScoredBacklinkNode {
-                node: neighbor_idx,
-                score: unsafe {
-                    score_concurrent_dsm_code(
+                let mut candidates = layer_slice
+                    .iter()
+                    .copied()
+                    .filter(|neighbor_idx| *neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
+                    .map(|neighbor_idx| insert::ScoredBacklinkNode {
+                        node: neighbor_idx,
+                        score: score_concurrent_dsm_code(
+                            parts,
+                            layout,
+                            config,
+                            selection.node_idx,
+                            neighbor_idx,
+                            scratch,
+                        ),
+                        is_new: false,
+                    })
+                    .collect::<Vec<_>>();
+                candidates.push(insert::ScoredBacklinkNode {
+                    node: new_node_idx,
+                    score: score_concurrent_dsm_code(
                         parts,
                         layout,
                         config,
                         selection.node_idx,
-                        neighbor_idx,
+                        new_node_idx,
                         scratch,
-                    )
-                },
-                is_new: false,
+                    ),
+                    is_new: true,
+                });
+                let replacement = insert::select_best_backlink_candidates(
+                    candidates,
+                    layer_slice.len(),
+                    u32::cmp,
+                );
+                if replacement.contains(&new_node_idx) {
+                    layer_slice.copy_from_slice(&replacement);
+                }
             })
-            .collect::<Vec<_>>();
-        candidates.push(insert::ScoredBacklinkNode {
-            node: new_node_idx,
-            score: unsafe {
-                score_concurrent_dsm_code(
-                    parts,
-                    layout,
-                    config,
-                    selection.node_idx,
-                    new_node_idx,
-                    scratch,
-                )
-            },
-            is_new: true,
-        });
-        let replacement =
-            insert::select_best_backlink_candidates(candidates, layer_slice.len(), u32::cmp);
-        if replacement.contains(&new_node_idx) {
-            layer_slice.copy_from_slice(&replacement);
-        }
+        };
     }
 }
 
@@ -1694,30 +1708,43 @@ unsafe fn score_concurrent_dsm_code_with_cache(
         return score;
     }
     let score = if layout.source_dim > 0 {
-        let query_source = unsafe { concurrent_dsm_source_for_node(parts, layout, query_idx) };
-        let candidate_source =
-            unsafe { concurrent_dsm_source_for_node(parts, layout, candidate_idx) };
-        -score_concurrent_dsm_source_inner_product(query_source, candidate_source)
+        unsafe {
+            with_concurrent_dsm_source_for_node(parts, layout, query_idx, |query_source| {
+                with_concurrent_dsm_source_for_node(
+                    parts,
+                    layout,
+                    candidate_idx,
+                    |candidate_source| {
+                        -score_concurrent_dsm_source_inner_product(query_source, candidate_source)
+                    },
+                )
+            })
+        }
     } else {
-        let query_code = unsafe { concurrent_dsm_code_for_node(parts, layout, query_idx) };
-        let candidate_code = unsafe { concurrent_dsm_code_for_node(parts, layout, candidate_idx) };
-        -crate::score_code_inner_product(
-            config.dimensions,
-            config.bits,
-            config.seed,
-            query_code,
-            candidate_code,
-        )
+        unsafe {
+            with_concurrent_dsm_code_for_node(parts, layout, query_idx, |query_code| {
+                with_concurrent_dsm_code_for_node(parts, layout, candidate_idx, |candidate_code| {
+                    -crate::score_code_inner_product(
+                        config.dimensions,
+                        config.bits,
+                        config.seed,
+                        query_code,
+                        candidate_code,
+                    )
+                })
+            })
+        }
     };
     cache.insert(candidate_idx, score);
     score
 }
 
-unsafe fn concurrent_dsm_code_for_node(
+unsafe fn with_concurrent_dsm_code_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
-) -> &'static [u8] {
+    f: impl for<'a> FnOnce(&'a [u8]) -> R,
+) -> R {
     if node_idx >= layout.node_count {
         pgrx::error!("concurrent DSM code node index out of bounds");
     }
@@ -1725,14 +1752,16 @@ unsafe fn concurrent_dsm_code_for_node(
     let start = (node_idx as usize)
         .checked_mul(code_len)
         .unwrap_or_else(|| pgrx::error!("concurrent DSM code offset overflow"));
-    unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) }
+    let code = unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) };
+    f(code)
 }
 
-unsafe fn concurrent_dsm_source_for_node(
+unsafe fn with_concurrent_dsm_source_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
-) -> &'static [f32] {
+    f: impl for<'a> FnOnce(&'a [f32]) -> R,
+) -> R {
     if node_idx >= layout.node_count {
         pgrx::error!("concurrent DSM graph source node index out of bounds");
     }
@@ -1743,39 +1772,73 @@ unsafe fn concurrent_dsm_source_for_node(
     let start = (node_idx as usize)
         .checked_mul(source_dim)
         .unwrap_or_else(|| pgrx::error!("concurrent DSM source offset overflow"));
-    unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) }
+    let source = unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) };
+    f(source)
 }
 
 fn score_concurrent_dsm_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     source::inner_product(left, right)
 }
 
-unsafe fn concurrent_dsm_node_slots<'a>(
+unsafe fn with_concurrent_dsm_node_slots<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     node: *const EcHnswConcurrentDsmNode,
-) -> &'a [u32] {
-    unsafe {
+    f: impl for<'a> FnOnce(&'a [u32]) -> R,
+) -> R {
+    let slots = unsafe {
         slice::from_raw_parts(
             parts
                 .neighbor_slots
                 .add((*node).neighbor_slot_offset as usize),
             (*node).neighbor_slot_count as usize,
         )
-    }
+    };
+    f(slots)
 }
 
-unsafe fn concurrent_dsm_node_slots_mut<'a>(
+unsafe fn with_concurrent_dsm_node_slots_mut<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     node: *mut EcHnswConcurrentDsmNode,
-) -> &'a mut [u32] {
-    unsafe {
+    f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
+) -> R {
+    let slots = unsafe {
         slice::from_raw_parts_mut(
             parts
                 .neighbor_slots
                 .add((*node).neighbor_slot_offset as usize),
             (*node).neighbor_slot_count as usize,
         )
-    }
+    };
+    f(slots)
+}
+
+unsafe fn with_concurrent_dsm_neighbor_slots_init<R>(
+    parts: EcHnswConcurrentDsmGraphParts,
+    layout: EcHnswConcurrentDsmGraphLayout,
+    f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
+) -> R {
+    let slots = unsafe {
+        slice::from_raw_parts_mut(parts.neighbor_slots, layout.total_neighbor_slots as usize)
+    };
+    f(slots)
+}
+
+unsafe fn with_concurrent_dsm_codes_init<R>(
+    parts: EcHnswConcurrentDsmGraphParts,
+    code_bytes: usize,
+    f: impl for<'a> FnOnce(&'a mut [u8]) -> R,
+) -> R {
+    let codes = unsafe { slice::from_raw_parts_mut(parts.codes, code_bytes) };
+    f(codes)
+}
+
+unsafe fn with_concurrent_dsm_sources_init<R>(
+    parts: EcHnswConcurrentDsmGraphParts,
+    source_values: usize,
+    f: impl for<'a> FnOnce(&'a mut [f32]) -> R,
+) -> R {
+    let sources = unsafe { slice::from_raw_parts_mut(parts.sources, source_values) };
+    f(sources)
 }
 
 impl EcHnswParallelBuildSharedHeader {
@@ -3707,10 +3770,11 @@ mod tests {
         assert!(!inserted);
         unsafe {
             let entry = parts.nodes.add(0);
-            let entry_slots = concurrent_dsm_node_slots(parts, entry);
-            assert!(entry_slots
-                .iter()
-                .all(|slot| *slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX));
+            with_concurrent_dsm_node_slots(parts, entry, |entry_slots| {
+                assert!(entry_slots
+                    .iter()
+                    .all(|slot| *slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX));
+            });
         }
     }
 
