@@ -51,6 +51,14 @@ per-query prediction JSON files and the generated cross-AM metric table so a
 reviewer can inspect whether drift is membership loss, rank-order movement, or
 both.
 
+Recall tables report both the legacy aggregate `recall@k` and a Wilson 95%
+confidence interval over `queries * k` hit/miss trials. They also report
+per-query recall percentiles (`recall_p10`, `recall_p50`, `recall_p90`) so a
+gate packet can distinguish a uniform quality drop from a small number of bad
+queries. Current floors still compare against `recall@k` during burn-in; moving
+the hard threshold to `recall_ci95_low` requires a calibration packet because
+the existing small-fixture floors were set from single observed runs.
+
 ## Cost Gate Status
 
 `make cost-gate` first runs the configured explain suite, then

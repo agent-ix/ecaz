@@ -10,7 +10,8 @@
 //!    source ids, source values, dimensions, query limit, and k.
 //! 3. For each sweep value, set the profile's tuning GUC and run one
 //!    `ORDER BY embedding <#> $1::real[] LIMIT k` per query.
-//! 4. Print a comfy-table: sweep value, recall@k, NDCG@k, mean query time.
+//! 4. Print a comfy-table: sweep value, recall@k, confidence interval,
+//!    per-query recall percentiles, NDCG@k, mean query time.
 //!
 //! # Purity boundary
 //!
@@ -204,7 +205,14 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     t.load_preset(UTF8_FULL);
     t.set_header(vec![
         profile.sweep_axis_label(),
+        "queries",
+        "recall_trials",
         "recall@k",
+        "recall_ci95_low",
+        "recall_ci95_high",
+        "recall_p10",
+        "recall_p50",
+        "recall_p90",
         "ndcg@k",
         "mean q-time",
     ]);
@@ -276,7 +284,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         }
         bar.finish_and_clear();
 
-        let recall = recall_at_k(&truth.ids, &pred, args.k);
+        let recall = recall_summary_at_k(&truth.ids, &pred, args.k);
         let ndcg = if let Some((corpus_ids, corpus)) = &corpus_for_ndcg {
             ndcg_at_k_from_sources(&truth.scores, &pred, corpus_ids, corpus, &queries, args.k)
         } else {
@@ -288,7 +296,14 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
 
         t.add_row(vec![
             Cell::new(value),
-            Cell::new(format!("{:.4}", recall)),
+            Cell::new(recall.queries),
+            Cell::new(recall.trials),
+            Cell::new(format!("{:.4}", recall.recall)),
+            Cell::new(format!("{:.4}", recall.ci95_low)),
+            Cell::new(format!("{:.4}", recall.ci95_high)),
+            Cell::new(format!("{:.4}", recall.p10)),
+            Cell::new(format!("{:.4}", recall.p50)),
+            Cell::new(format!("{:.4}", recall.p90)),
             Cell::new(format!("{:.4}", ndcg)),
             Cell::new(format!("{:.2} ms", mean_ms)),
         ]);
@@ -767,19 +782,98 @@ pub fn map_indices_to_ids(indices: &[Vec<usize>], ids: &[i64]) -> Vec<Vec<i64>> 
 /// predicted top-k ids, averaged over queries. Per-query denominator is
 /// `k` (not `min(k, len(pred))`) to match the legacy benchmark.
 pub fn recall_at_k(truth: &[Vec<i64>], pred: &[Vec<i64>], k: usize) -> f64 {
+    recall_summary_at_k(truth, pred, k).recall
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RecallSummary {
+    pub recall: f64,
+    pub ci95_low: f64,
+    pub ci95_high: f64,
+    pub p10: f64,
+    pub p50: f64,
+    pub p90: f64,
+    pub queries: usize,
+    pub hits: usize,
+    pub trials: usize,
+}
+
+/// Recall distribution summary. Overall recall keeps the legacy denominator:
+/// every query contributes `k` trials, so short prediction rows count as misses.
+/// The confidence interval is a Wilson 95% interval over those hit/miss trials,
+/// while percentiles summarize per-query recall to preserve worst-case signal.
+pub fn recall_summary_at_k(truth: &[Vec<i64>], pred: &[Vec<i64>], k: usize) -> RecallSummary {
     if truth.is_empty() || k == 0 {
-        return 0.0;
+        return RecallSummary {
+            recall: 0.0,
+            ci95_low: 0.0,
+            ci95_high: 0.0,
+            p10: 0.0,
+            p50: 0.0,
+            p90: 0.0,
+            queries: truth.len(),
+            hits: 0,
+            trials: 0,
+        };
     }
     let mut hits = 0usize;
-    for (t, p) in truth.iter().zip(pred.iter()) {
+    let mut per_query = Vec::with_capacity(truth.len());
+    for (idx, t) in truth.iter().enumerate() {
         let t_set: std::collections::HashSet<i64> = t.iter().take(k).copied().collect();
-        for pid in p.iter().take(k) {
-            if t_set.contains(pid) {
-                hits += 1;
+        let mut query_hits = 0usize;
+        if let Some(p) = pred.get(idx) {
+            for pid in p.iter().take(k) {
+                if t_set.contains(pid) {
+                    query_hits += 1;
+                    hits += 1;
+                }
             }
         }
+        per_query.push(query_hits as f64 / k as f64);
     }
-    hits as f64 / (truth.len() * k) as f64
+    let trials = truth.len() * k;
+    let (ci95_low, ci95_high) = wilson_interval(hits, trials);
+    RecallSummary {
+        recall: hits as f64 / trials as f64,
+        ci95_low,
+        ci95_high,
+        p10: percentile(&per_query, 0.10),
+        p50: percentile(&per_query, 0.50),
+        p90: percentile(&per_query, 0.90),
+        queries: truth.len(),
+        hits,
+        trials,
+    }
+}
+
+fn wilson_interval(successes: usize, trials: usize) -> (f64, f64) {
+    if trials == 0 {
+        return (0.0, 0.0);
+    }
+    let n = trials as f64;
+    let p = successes as f64 / n;
+    let z = 1.959_963_984_540_054_f64;
+    let z2 = z * z;
+    let denom = 1.0 + z2 / n;
+    let center = (p + z2 / (2.0 * n)) / denom;
+    let half = (z / denom) * ((p * (1.0 - p) + z2 / (4.0 * n)) / n).sqrt();
+    ((center - half).max(0.0), (center + half).min(1.0))
+}
+
+fn percentile(values: &[f64], p: f64) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let rank = p.clamp(0.0, 1.0) * (sorted.len() - 1) as f64;
+    let low = rank.floor() as usize;
+    let high = rank.ceil() as usize;
+    if low == high {
+        return sorted[low];
+    }
+    let weight = rank - low as f64;
+    sorted[low] * (1.0 - weight) + sorted[high] * weight
 }
 
 /// NDCG@k using the true IP score as relevance (clamped at 0). Ideal DCG
@@ -1050,6 +1144,35 @@ mod tests {
         let pred = vec![vec![1, 99, 2]]; // within k=2, only 1 is a hit
         let got = recall_at_k(&truth, &pred, 2);
         assert!((got - 0.5).abs() < 1e-9, "got {got}");
+    }
+
+    #[test]
+    fn recall_summary_reports_ci_and_query_percentiles() {
+        let truth = vec![vec![1, 2], vec![3, 4], vec![5, 6]];
+        let pred = vec![vec![1, 99], vec![3, 4], vec![9, 8]];
+        let summary = recall_summary_at_k(&truth, &pred, 2);
+
+        assert_eq!(summary.queries, 3);
+        assert_eq!(summary.hits, 3);
+        assert_eq!(summary.trials, 6);
+        assert!((summary.recall - 0.5).abs() < 1e-9);
+        assert!(summary.ci95_low < summary.recall);
+        assert!(summary.ci95_high > summary.recall);
+        assert!((summary.p10 - 0.1).abs() < 1e-9, "{summary:?}");
+        assert!((summary.p50 - 0.5).abs() < 1e-9, "{summary:?}");
+        assert!((summary.p90 - 0.9).abs() < 1e-9, "{summary:?}");
+    }
+
+    #[test]
+    fn recall_summary_counts_missing_prediction_rows_as_zero_recall() {
+        let truth = vec![vec![1, 2], vec![3, 4]];
+        let pred = vec![vec![1, 2]];
+        let summary = recall_summary_at_k(&truth, &pred, 2);
+
+        assert_eq!(summary.hits, 2);
+        assert_eq!(summary.trials, 4);
+        assert!((summary.recall - 0.5).abs() < 1e-9);
+        assert!((summary.p50 - 0.5).abs() < 1e-9, "{summary:?}");
     }
 
     // --- ndcg_at_k ---
