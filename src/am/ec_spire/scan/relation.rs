@@ -415,20 +415,46 @@ fn tqvector_bytes_to_source_vector(bytes: &[u8], label: &str) -> Result<Vec<f32>
 }
 
 unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<Vec<u8>, String> {
-    if datum.is_null() {
-        return Err(format!("ec_spire does not support NULL {label}"));
+    unsafe { DetoastedScanDatum::try_from_datum(datum, label) }.map(|datum| datum.to_vec())
+}
+
+#[derive(Debug)]
+struct DetoastedScanDatum {
+    varlena: *mut pg_sys::varlena,
+    owned: bool,
+}
+
+impl DetoastedScanDatum {
+    unsafe fn try_from_datum(datum: pg_sys::Datum, label: &str) -> Result<Self, String> {
+        if datum.is_null() {
+            return Err(format!("ec_spire does not support NULL {label}"));
+        }
+        let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+        if varlena.is_null() {
+            return Err(format!("ec_spire could not detoast {label}"));
+        }
+        Ok(Self {
+            varlena,
+            owned: !ptr::eq(varlena, original),
+        })
     }
-    let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-    if varlena.is_null() {
-        return Err(format!("ec_spire could not detoast {label}"));
+
+    fn as_bytes(&self) -> &[u8] {
+        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
     }
-    let owned = !ptr::eq(varlena, original);
-    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
-    if owned {
-        unsafe { pg_sys::pfree(varlena.cast()) };
+
+    fn to_vec(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
     }
-    Ok(bytes)
+}
+
+impl Drop for DetoastedScanDatum {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { pg_sys::pfree(self.varlena.cast()) };
+        }
+    }
 }
 
 fn exact_source_inner_product(query: &[f32], source_vector: &[f32]) -> Result<f32, String> {
