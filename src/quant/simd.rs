@@ -24,8 +24,10 @@ fn detect_backend() -> SimdBackend {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")
-        {
+        if has_avx2_fma(
+            std::arch::is_x86_feature_detected!("avx2"),
+            std::arch::is_x86_feature_detected!("fma"),
+        ) {
             return SimdBackend::Avx2Fma;
         }
     }
@@ -38,6 +40,11 @@ fn detect_backend() -> SimdBackend {
     }
 
     SimdBackend::Scalar
+}
+
+#[cfg(any(target_arch = "x86_64", test))]
+fn has_avx2_fma(avx2: bool, fma: bool) -> bool {
+    avx2 && fma
 }
 
 fn forced_backend_from_env() -> Option<SimdBackend> {
@@ -125,6 +132,14 @@ mod tests {
         with_simd_env(Some("scalar"), || {
             assert_eq!(detect_backend(), SimdBackend::Scalar);
         });
+    }
+
+    #[test]
+    fn x86_backend_gate_requires_avx2_and_fma() {
+        assert!(has_avx2_fma(true, true));
+        assert!(!has_avx2_fma(true, false));
+        assert!(!has_avx2_fma(false, true));
+        assert!(!has_avx2_fma(false, false));
     }
 
     #[test]
