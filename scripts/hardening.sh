@@ -22,7 +22,7 @@ lane flags:
   flake-hunt --seeds N [--fuzz-seconds N]
   fuzz-all-short --seconds N
   sqlsmith-pg18 --dsn LIBPQ_DSN
-  miri-many-seeds uses MIRI_MANY_SEEDS, default 128
+  miri-many-seeds uses MIRI_MANY_SEEDS, default 0..128
   any lane --log-file FILE
 EOF
 }
@@ -437,7 +437,7 @@ EOF
     run_miri_prefix
     ;;
   miri-many-seeds)
-    MIRIFLAGS="${MIRIFLAGS:-} -Zmiri-many-seeds=${MIRI_MANY_SEEDS:-128}"
+    MIRIFLAGS="${MIRIFLAGS:-} -Zmiri-many-seeds=${MIRI_MANY_SEEDS:-0..128}"
     export MIRIFLAGS
     run_miri_prefix
     ;;

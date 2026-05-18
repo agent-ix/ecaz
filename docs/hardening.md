@@ -101,9 +101,9 @@ the temporary exception and a reviewer accepts it.
   `-Zmiri-tree-borrows` so Tree Borrows and the default model can be compared
   in packet-local evidence.
 - `make miri-many-seeds`: reruns the `miri_` prefix with
-  `-Zmiri-many-seeds=128` by default. Override the count with
-  `MIRI_MANY_SEEDS=N` when a packet needs a smaller triage run or a deeper
-  campaign.
+  `-Zmiri-many-seeds=0..128` by default. Override the range with
+  `MIRI_MANY_SEEDS=FROM..TO` when a packet needs a smaller triage run or a
+  deeper campaign.
 - `make miri-full`: runs the default, Tree Borrows, and many-seeds Miri lanes.
   `hardening-nightly-local` uses this aggregate.
 - `make careful`: runs a standalone pure-Rust harness under
