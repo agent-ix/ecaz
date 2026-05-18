@@ -26,6 +26,6 @@ export PGDATABASE="$DB" PGHOST="${PGHOST:-/tmp}" PGUSER="${PGUSER:-postgres}"
 
 comparator_bench_latency \
   --prefix "real_${SIZE}_pgvscale" \
-  --op "<=>" \
+  --op "<#>" \
   --outdir "$OUT/$SIZE/pgvscale/diskann" \
   --iterations "$ITERATIONS" --k "$K"

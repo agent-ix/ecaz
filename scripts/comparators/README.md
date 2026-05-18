@@ -21,6 +21,10 @@ The orchestrator `run_all.sh` is a thin convenience wrapper that
 calls each per-comparator script in sequence; it's **not** where
 comparator-specific behavior lives.
 
+For recall + multi-operating-point comparison instead of single-point
+latency, use `sweep.sh` + `compute_recall.py` (see "Recall +
+operating-point sweep" below).
+
 ## Adding a new comparator
 
 1. Add `install_<name>.sh` that handles "build from source if not
@@ -87,3 +91,29 @@ scripts/comparators/run_all.sh \
     --corpus-file /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv \
     --queries-file /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv
 ```
+
+## Recall + operating-point sweep
+
+`sweep.sh` runs a brute-force ground-truth pass and a fixed
+operating-point grid for every comparator at one size. After it
+finishes, `compute_recall.py` derives `latency.log` + `recall.txt`
+per cell and an aggregate `_pareto.tsv`.
+
+```bash
+# Assumes the load scripts above already ran for this size.
+scripts/comparators/sweep.sh \
+    --out /var/lib/pgsql/18/artifacts/sweep \
+    --size 1m
+
+scripts/comparators/compute_recall.py \
+    /var/lib/pgsql/18/artifacts/sweep 1m
+```
+
+Grid (200 queries × k=10, IP opclass):
+- pgvector HNSW: `hnsw.ef_search` ∈ {16, 40, 100, 400}
+- pgvector IVFFlat: `ivfflat.probes` ∈ {1, 8, 32, 100}
+- pgvectorscale DiskANN: `diskann.query_search_list_size` ∈ {40, 100, 400, 1000}
+- vchord RaBitQ-on-IVF: `vchordrq.probes` ∈ {1, 4, 16, 64}
+
+The ground-truth pass is a parallel seqscan top-K with index/bitmap
+scans disabled — exact neighbors per query, computed once per size.
