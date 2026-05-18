@@ -1,0 +1,34 @@
+==== SIZE=1m ====
+[comparator:pgvector] 23:55:08 done. tables: real_1m_pgv_corpus, real_1m_pgv_queries; indexes: real_1m_pgv_hnsw_idx, real_1m_pgv_ivfflat_idx
+[comparator:pgvectorscale] 23:55:08 done. tables: real_1m_pgvscale_corpus, real_1m_pgvscale_queries; index: real_1m_pgvscale_diskann_idx
+[comparator:vchord] 23:55:08 building real_1m_vchord_rabitq_idx (VectorChord vchordrq RaBitQ-on-IVF, maintenance_work_mem=4GB)
+INFO:  maintain: number_of_formerly_allocated_pages = 41
+INFO:  maintain: number_of_formerly_allocated_pages = 0
+INFO:  maintain: number_of_freshly_allocated_pages = 0
+INFO:  maintain: number_of_freed_pages = 0
+INFO:  maintain: number_of_formerly_allocated_pages = 0
+INFO:  maintain: number_of_freshly_allocated_pages = 0
+INFO:  maintain: number_of_freed_pages = 0
+INFO:  maintain: number_of_freshly_allocated_pages = 30913
+INFO:  maintain: number_of_freed_pages = 30002
+SET
+CREATE INDEX
+[comparator:vchord] 23:58:45 done. tables: real_1m_vchord_corpus, real_1m_vchord_queries; index: real_1m_vchord_rabitq_idx
+DROP INDEX
+[comparator:pgvector] 23:58:45   bench prefix=real_1m_pgv op=<#> iters=200 k=10
+[comparator:pgvector] 23:59:35     wrote /var/lib/pgsql/18/artifacts/comparators/1m/pgv/hnsw/latency.log (0 samples)
+DROP INDEX
+[comparator:pgvector] 23:59:35   bench prefix=real_1m_pgv op=<#> iters=200 k=10
+[comparator:pgvector] 00:09:39     wrote /var/lib/pgsql/18/artifacts/comparators/1m/pgv/ivfflat/latency.log (0 samples)
+[comparator:pgvector] 00:09:39 building real_1m_pgv_hnsw_idx (hnsw m=16 ef_construction=64, maintenance_work_mem=4GB)
+SET
+CREATE INDEX
+[comparator:pgvector] 00:31:49 building real_1m_pgv_ivfflat_idx (ivfflat lists=1024, maintenance_work_mem=4GB)
+SET
+CREATE INDEX
+[comparator:pgvector] 00:38:32 done. tables: real_1m_pgv_corpus, real_1m_pgv_queries; indexes: real_1m_pgv_hnsw_idx, real_1m_pgv_ivfflat_idx
+[comparator:pgvectorscale] 00:38:32   bench prefix=real_1m_pgvscale op=<=> iters=200 k=10
+[comparator:pgvectorscale] 00:48:30     wrote /var/lib/pgsql/18/artifacts/comparators/1m/pgvscale/diskann/latency.log (0 samples)
+[comparator:vchord] 00:48:30   bench prefix=real_1m_vchord op=<#> iters=200 k=10
+[comparator:vchord] 00:48:47     wrote /var/lib/pgsql/18/artifacts/comparators/1m/vchord/rabitq/latency.log (0 samples)
+ALL_DONE
