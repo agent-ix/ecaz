@@ -1,0 +1,34 @@
+{
+  "description": "Task 47 small-fixture planner cost baseline",
+  "drift": {
+    "absolute": 0.05,
+    "relative": 0.15
+  },
+  "fields": [
+    "modeled_startup_cost",
+    "modeled_total_cost",
+    "modeled_selectivity",
+    "modeled_correlation",
+    "index_pages",
+    "reltuples"
+  ],
+  "rows": {
+    "hnsw-small-cost": {
+      "index_pages": 23.0,
+      "modeled_correlation": 0.0,
+      "modeled_selectivity": 1.0,
+      "modeled_startup_cost": 527.8,
+      "modeled_total_cost": 527.8,
+      "reltuples": 512.0
+    },
+    "ivf-small-cost": {
+      "index_pages": 19.0,
+      "modeled_correlation": 0.0,
+      "modeled_selectivity": 1.0,
+      "modeled_startup_cost": 5.0128,
+      "modeled_total_cost": 22.4224,
+      "reltuples": 512.0
+    }
+  },
+  "schema_version": 1
+}

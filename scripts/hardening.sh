@@ -115,6 +115,13 @@ EOF
 
 run_coverage_lane() {
   need_cmd cargo-llvm-cov "cargo install cargo-llvm-cov"
+  local coverage_cargo=(cargo)
+  if [ -x "$RUSTUP_CARGO" ]; then
+    coverage_cargo=("$RUSTUP_CARGO" "+stable")
+    if [ -x "$RUSTUP_BIN" ]; then
+      "$RUSTUP_BIN" component add llvm-tools-preview >/dev/null
+    fi
+  fi
   local output_dir="target/quality/coverage"
   local report_dir=""
   local html=false
@@ -147,16 +154,16 @@ run_coverage_lane() {
     esac
   done
   mkdir -p "$output_dir"
-  cargo llvm-cov clean --workspace
-  cargo llvm-cov --no-report -p ecaz-cli
-  cargo llvm-cov --no-report --manifest-path hardening/careful/Cargo.toml --lib
-  cargo llvm-cov report --summary-only > "$output_dir/summary.txt"
-  cargo llvm-cov report --json --output-path "$output_dir/coverage.json"
+  "${coverage_cargo[@]}" llvm-cov clean --workspace
+  "${coverage_cargo[@]}" llvm-cov --no-report -p ecaz-cli
+  "${coverage_cargo[@]}" llvm-cov --no-report --manifest-path hardening/careful/Cargo.toml --lib
+  "${coverage_cargo[@]}" llvm-cov report --summary-only > "$output_dir/summary.txt"
+  "${coverage_cargo[@]}" llvm-cov report --json --output-path "$output_dir/coverage.json"
   if [ "$html" = true ]; then
     if [ -z "$report_dir" ]; then
       report_dir="$output_dir/html"
     fi
-    cargo llvm-cov report --html --output-dir "$report_dir"
+    "${coverage_cargo[@]}" llvm-cov report --html --output-dir "$report_dir"
   fi
   echo "coverage summary: $output_dir/summary.txt"
   echo "coverage json: $output_dir/coverage.json"

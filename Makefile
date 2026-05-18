@@ -416,19 +416,23 @@ RECALL_GATE_CONFIG ?= fixtures/gates/recall-gate-small.json
 RECALL_GATE_FULL_CONFIG ?= fixtures/gates/recall-gate-full.json
 CROSS_AM_GATE_CONFIG ?= fixtures/gates/cross-am-gate-small.json
 COST_GATE_CONFIG ?= fixtures/gates/cost-gate-small.json
+COST_GATE_RESULTS ?= target/gates/cost-small/results.jsonl
+COST_GATE_BASELINE ?= fixtures/cost-queries/baseline.json
 GATE_ARGS ?=
+ECAZ_ARGS ?=
 
 recall-gate:
-	cargo run -p ecaz-cli -- bench suite run --config $(RECALL_GATE_CONFIG) $(GATE_ARGS)
+	cargo run -p ecaz-cli -- $(ECAZ_ARGS) bench suite run --config $(RECALL_GATE_CONFIG) $(GATE_ARGS)
 
 recall-gate-full:
-	cargo run -p ecaz-cli -- bench suite run --config $(RECALL_GATE_FULL_CONFIG) $(GATE_ARGS)
+	cargo run -p ecaz-cli -- $(ECAZ_ARGS) bench suite run --config $(RECALL_GATE_FULL_CONFIG) $(GATE_ARGS)
 
 cross-am-gate:
-	cargo run -p ecaz-cli -- bench suite run --config $(CROSS_AM_GATE_CONFIG) $(GATE_ARGS)
+	cargo run -p ecaz-cli -- $(ECAZ_ARGS) bench suite run --config $(CROSS_AM_GATE_CONFIG) $(GATE_ARGS)
 
 cost-gate:
-	cargo run -p ecaz-cli -- bench suite run --config $(COST_GATE_CONFIG) $(GATE_ARGS)
+	cargo run -p ecaz-cli -- $(ECAZ_ARGS) bench suite run --config $(COST_GATE_CONFIG) $(GATE_ARGS)
+	python3 scripts/check_cost_baseline.py $(COST_GATE_RESULTS) $(COST_GATE_BASELINE)
 
 # --- SQL Benchmarks (requires running PG with extension installed) ---
 

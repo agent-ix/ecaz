@@ -2,6 +2,8 @@
 //!
 //! Measures quantizer-level recall independent of HNSW graph quality.
 //! Uses brute-force fp32 inner product as ground truth.
+//! Task 47 live AM gating now lives in `make recall-gate`; this ignored harness
+//! remains only as a pure-Rust quantizer benchmark.
 //!
 //! Run with: cargo test --features bench --test recall_integration -- --ignored --nocapture
 

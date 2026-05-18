@@ -1255,17 +1255,40 @@ fn duration_seconds(value: &str) -> Option<String> {
 
 fn table_lines(raw: &str) -> Vec<Vec<String>> {
     raw.lines()
-        .filter(|line| line.trim_start().starts_with('│'))
-        .map(|line| {
-            line.trim_matches('│')
+        .filter_map(table_cells)
+        .filter(|cells| !cells.is_empty())
+        .collect()
+}
+
+fn table_cells(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim();
+    if trimmed.starts_with('│') {
+        return Some(
+            trimmed
+                .trim_matches('│')
                 .split('┆')
                 .flat_map(|part| part.split('│'))
                 .map(|cell| cell.trim().to_string())
                 .filter(|cell| !cell.is_empty())
-                .collect::<Vec<_>>()
-        })
-        .filter(|cells| !cells.is_empty())
-        .collect()
+                .collect(),
+        );
+    }
+    if !trimmed.contains('|') {
+        return None;
+    }
+    if trimmed
+        .chars()
+        .all(|ch| ch == '-' || ch == '+' || ch.is_whitespace())
+    {
+        return None;
+    }
+    Some(
+        trimmed
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .filter(|cell| !cell.is_empty())
+            .collect(),
+    )
 }
 
 async fn write_results_jsonl(path: &Path, rows: &[ResultRow]) -> Result<()> {
@@ -2581,6 +2604,23 @@ mod tests {
         assert_eq!(
             rows[0].1.get("modeled_total_cost").map(String::as_str),
             Some("37.25")
+        );
+    }
+
+    #[test]
+    fn parses_explain_planner_cost_rows_from_psql_aligned_output() {
+        let rows = parse_explain_rows(
+            " planner_scan_enabled | modeled_startup_cost | modeled_total_cost\n\
+             ----------------------+----------------------+--------------------\n\
+             t                    | 5.0128               | 22.4224\n\
+             (1 row)\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "planner_cost");
+        assert_eq!(
+            rows[0].1.get("modeled_total_cost").map(String::as_str),
+            Some("22.4224")
         );
     }
 

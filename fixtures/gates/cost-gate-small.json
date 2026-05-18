@@ -3,13 +3,12 @@
   "schema_version": 1,
   "artifact_dir": "target/gates/cost-small",
   "defaults": {
-    "pg": 18,
-    "socket_dir": "/Users/peter/.pgrx"
+    "pg": 18
   },
   "thresholds": [
     {
       "name": "ivf-modeled-total-cost-positive",
-      "step": "ivf-real10k-cost",
+      "step": "ivf-small-cost",
       "metric": "planner_cost",
       "field": "modeled_total_cost",
       "op": "gt",
@@ -17,7 +16,7 @@
     },
     {
       "name": "hnsw-modeled-total-cost-positive",
-      "step": "hnsw-real10k-cost",
+      "step": "hnsw-small-cost",
       "metric": "planner_cost",
       "field": "modeled_total_cost",
       "op": "gt",
@@ -27,9 +26,9 @@
   "steps": [
     {
       "kind": "explain",
-      "name": "ivf-real10k-cost",
+      "name": "ivf-small-cost",
       "tags": ["cost", "small", "pr"],
-      "prefix": "task47_ivf_real10k",
+      "prefix": "task47_gate_ivf",
       "profile": "ec_ivf",
       "nprobe": 48,
       "rerank_width": 750,
@@ -38,10 +37,11 @@
     },
     {
       "kind": "explain",
-      "name": "hnsw-real10k-cost",
+      "name": "hnsw-small-cost",
       "tags": ["cost", "small", "pr"],
-      "prefix": "task47_hnsw_real10k",
+      "prefix": "task47_gate_hnsw",
       "profile": "ec_hnsw",
+      "index_name": "task47_gate_hnsw_m16_idx",
       "nprobe": 128,
       "rerank_width": -1,
       "sql_file": "target/gates/cost-small/hnsw-real10k-cost.sql",

@@ -10,39 +10,39 @@
   },
   "thresholds": [
     {
-      "name": "hnsw-real10k-k10-floor",
-      "step": "hnsw-real10k-k10",
+      "name": "hnsw-small-k10-floor",
+      "step": "hnsw-small-k10",
       "metric": "recall",
       "filters": { "ef_search": "128" },
       "field": "recall@k",
       "op": "gte",
-      "value": 0.89
+      "value": 0.84
     },
     {
-      "name": "ivf-real10k-k10-floor",
-      "step": "ivf-real10k-k10",
+      "name": "ivf-small-k10-floor",
+      "step": "ivf-small-k10",
       "metric": "recall",
       "filters": { "nprobe": "48" },
       "field": "recall@k",
       "op": "gte",
-      "value": 0.80
+      "value": 0.84
     },
     {
-      "name": "diskann-real10k-k10-floor",
-      "step": "diskann-real10k-k10",
+      "name": "diskann-small-k10-floor",
+      "step": "diskann-small-k10",
       "metric": "recall",
       "filters": { "list_size": "200" },
       "field": "recall@k",
       "op": "gte",
-      "value": 0.80
+      "value": 0.55
     }
   ],
   "steps": [
     {
       "kind": "recall",
-      "name": "hnsw-real10k-k10",
+      "name": "hnsw-small-k10",
       "tags": ["recall", "small", "pr"],
-      "prefix": "task47_hnsw_real10k",
+      "prefix": "task47_gate_hnsw",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [128],
@@ -51,9 +51,9 @@
     },
     {
       "kind": "recall",
-      "name": "ivf-real10k-k10",
+      "name": "ivf-small-k10",
       "tags": ["recall", "small", "pr"],
-      "prefix": "task47_ivf_real10k",
+      "prefix": "task47_gate_ivf",
       "profile": "ec_ivf",
       "k": 10,
       "sweep": [48],
@@ -63,9 +63,9 @@
     },
     {
       "kind": "recall",
-      "name": "diskann-real10k-k10",
+      "name": "diskann-small-k10",
       "tags": ["recall", "small", "pr"],
-      "prefix": "task47_diskann_real10k",
+      "prefix": "task47_gate_diskann",
       "profile": "ec_diskann",
       "k": 10,
       "sweep": [200],

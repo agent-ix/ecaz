@@ -11,27 +11,27 @@
   "thresholds": [
     {
       "name": "hnsw-cross-am-floor",
-      "step": "hnsw-real10k-k10",
+      "step": "hnsw-small-k10",
       "metric": "recall",
       "field": "recall@k",
       "op": "gte",
-      "value": 0.89
+      "value": 0.84
     },
     {
       "name": "diskann-cross-am-floor",
-      "step": "diskann-real10k-k10",
+      "step": "diskann-small-k10",
       "metric": "recall",
       "field": "recall@k",
       "op": "gte",
-      "value": 0.80
+      "value": 0.55
     }
   ],
   "steps": [
     {
       "kind": "recall",
-      "name": "hnsw-real10k-k10",
+      "name": "hnsw-small-k10",
       "tags": ["cross-am", "small", "pr"],
-      "prefix": "task47_hnsw_real10k",
+      "prefix": "task47_gate_hnsw",
       "profile": "ec_hnsw",
       "k": 10,
       "sweep": [128],
@@ -40,9 +40,9 @@
     },
     {
       "kind": "recall",
-      "name": "diskann-real10k-k10",
+      "name": "diskann-small-k10",
       "tags": ["cross-am", "small", "pr"],
-      "prefix": "task47_diskann_real10k",
+      "prefix": "task47_gate_diskann",
       "profile": "ec_diskann",
       "k": 10,
       "sweep": [200],

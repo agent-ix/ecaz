@@ -187,6 +187,9 @@ Task 39 adds measurement lanes for the quality of existing tests:
   hardening subset currently safe outside a live PostgreSQL backend
   (`ecaz-cli` and `hardening/careful`), and writes `summary.txt` plus
   `coverage.json` under `target/quality/coverage`.
+- `scripts/check_coverage_delta.sh`: compares `summary.txt` against
+  `fixtures/quality/coverage-baseline.tsv`; per-file line coverage may drop at
+  most 2 percentage points for changed baseline paths.
 - `make coverage-report`: same lane with an HTML report under
   `target/quality/coverage/html`.
 - `make mutants MUTANTS_MODULE=src/quant/prod.rs`: checks for
@@ -208,6 +211,23 @@ Current interpretation:
 The first coverage scope intentionally avoids claiming live pgrx callback
 coverage. PG18 integration coverage is still a gap until instrumentation is
 stable for `cargo pgrx test pg18` and the resulting logs are packeted.
+
+### Coverage Baseline
+
+Baseline source: `reviews/task-39/002-coverage-baseline/artifacts/coverage/summary.txt`.
+The current local coverage lane executes `ecaz-cli` tests and
+`hardening/careful`; it does not execute extension in-module tests, so the
+critical extension modules below start at `0.00%` line coverage. That is a
+recorded gap, not an acceptable target.
+
+| Critical area | Baseline line coverage |
+| --- | ---: |
+| `src/quant/**` | `0.00%` |
+| `src/storage/page.rs` and `src/am/*/page.rs` | `0.00%` |
+| `src/am/ec_spire/storage/**` | `0.00%` |
+| `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
+| `src/am/ec_diskann/{routine,scan,build}.rs` | `0.00%` |
+| `src/am/common/cost.rs` | `0.00%` |
 
 ## PG Fault Injection
 
