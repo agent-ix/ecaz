@@ -4742,31 +4742,31 @@ unsafe fn select_linear_scan_result_from_buffer(
     };
 
     for offset in offset_start..=line_pointer_count {
-        let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset) };
-        if item_id.lp_flags() == 0 {
+        let element = unsafe {
+            super::shared::with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "scanning",
+                |tuple_bytes| {
+                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                        return None;
+                    }
+
+                    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                        .unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to decode scan element tuple: {e}")
+                        });
+                    (!element.deleted && !element.heaptids.is_empty()).then_some(element)
+                },
+            )
+        }
+        .flatten();
+        let Some(element) = element else {
             opaque.explain_counters.record_element_skipped();
             continue;
-        }
-
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            pgrx::error!("ec_hnsw found invalid tuple bounds while scanning block {block_number}");
-        }
-
-        let tuple_bytes =
-            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-            opaque.explain_counters.record_element_skipped();
-            continue;
-        }
-
-        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode scan element tuple: {e}"));
-        if element.deleted || element.heaptids.is_empty() {
-            opaque.explain_counters.record_element_skipped();
-            continue;
-        }
+        };
 
         opaque.next_block_number = block_number;
         debug_assert!(

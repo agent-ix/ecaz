@@ -437,7 +437,7 @@ pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
         / size_of::<pg_sys::ItemIdData>()) as u16
 }
 
-unsafe fn with_page_line_tuple_bytes<R, F>(
+pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: pg_sys::BlockNumber,
