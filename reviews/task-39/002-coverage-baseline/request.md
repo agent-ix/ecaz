@@ -20,6 +20,6 @@ This packet completes the Task 39 baseline slice:
 - `bash -n scripts/hardening.sh scripts/check_coverage_delta.sh`
 - `scripts/check_coverage_delta.sh reviews/task-39/002-coverage-baseline/artifacts/coverage/summary.txt fixtures/quality/coverage-baseline.tsv`
 - `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ci.yml'); puts 'yaml ok'"`
-- `make -n coverage mutants flake-hunt recall-gate cost-gate`
+- `make -n coverage mutants mutants-full flake-hunt recall-gate cost-gate`
 
 Artifacts are listed in `artifacts/manifest.md`.

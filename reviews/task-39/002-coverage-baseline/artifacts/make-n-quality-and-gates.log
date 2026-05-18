@@ -1,6 +1,7 @@
 bash scripts/hardening.sh coverage --output-dir target/quality/coverage
 if [ -z "" ]; then echo "error: set MUTANTS_MODULE=src/path.rs"; exit 2; fi
 bash scripts/hardening.sh mutants --file  --output-dir target/quality/mutants --jobs 0
+bash scripts/hardening.sh mutants-full --output-dir target/quality/mutants --jobs 0
 bash scripts/hardening.sh flake-hunt --seeds 8 --fuzz-seconds 10
 cargo run -p ecaz-cli --  bench suite run --config fixtures/gates/recall-gate-small.json
 cargo run -p ecaz-cli --  bench suite run --config fixtures/gates/cost-gate-small.json

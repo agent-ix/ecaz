@@ -375,7 +375,7 @@ jobs:
         run: cargo install cargo-mutants --locked
 
       - name: Mutation sweep
-        run: make mutants MUTANTS_MODULE=src/quant/prod.rs MUTANTS_JOBS=2
+        run: make mutants-full MUTANTS_JOBS=2
 
       - name: Upload mutation artifacts
         if: always()

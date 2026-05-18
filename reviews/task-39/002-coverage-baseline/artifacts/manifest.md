@@ -12,7 +12,7 @@
 | `coverage/summary.txt` | `make coverage COVERAGE_OUTPUT_DIR=reviews/task-39/002-coverage-baseline/artifacts/coverage` | Coverage completed; total line coverage `0.09%`. Critical extension modules in `fixtures/quality/coverage-baseline.tsv` are recorded at `0.00%` because this lane currently exercises `ecaz-cli` plus `hardening/careful`, not live pgrx callback coverage. |
 | `coverage/coverage.json` | Same coverage run | Machine-readable cargo-llvm-cov output for the baseline packet. |
 | `coverage-delta-check.log` | `scripts/check_coverage_delta.sh reviews/task-39/002-coverage-baseline/artifacts/coverage/summary.txt fixtures/quality/coverage-baseline.tsv` | All listed critical-module paths passed the 2 percentage point delta rule. |
-| `make-n-quality-and-gates.log` | `make -n coverage mutants flake-hunt recall-gate cost-gate` | Make entrypoints expand without syntax errors after wiring Task 39 and Task 47 gates. |
+| `make-n-quality-and-gates.log` | `make -n coverage mutants mutants-full flake-hunt recall-gate cost-gate` | Make entrypoints expand without syntax errors after wiring Task 39 and Task 47 gates. |
 
 ## Notes
 
