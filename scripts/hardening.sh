@@ -154,11 +154,17 @@ run_coverage_lane() {
     esac
   done
   mkdir -p "$output_dir"
+  local root_summary="$output_dir/root-summary.txt"
+  local careful_summary="$output_dir/careful-summary.txt"
+  local careful_json="$output_dir/careful-coverage.json"
   "${coverage_cargo[@]}" llvm-cov clean --workspace
   "${coverage_cargo[@]}" llvm-cov --no-report -p ecaz-cli
   "${coverage_cargo[@]}" llvm-cov --no-report --manifest-path hardening/careful/Cargo.toml --lib
-  "${coverage_cargo[@]}" llvm-cov report --summary-only > "$output_dir/summary.txt"
+  "${coverage_cargo[@]}" llvm-cov report --summary-only > "$root_summary"
+  "${coverage_cargo[@]}" llvm-cov report --manifest-path hardening/careful/Cargo.toml --summary-only > "$careful_summary"
+  python3 scripts/merge_coverage_summaries.py "$root_summary" "$careful_summary" > "$output_dir/summary.txt"
   "${coverage_cargo[@]}" llvm-cov report --json --output-path "$output_dir/coverage.json"
+  "${coverage_cargo[@]}" llvm-cov report --manifest-path hardening/careful/Cargo.toml --json --output-path "$careful_json"
   if [ "$html" = true ]; then
     if [ -z "$report_dir" ]; then
       report_dir="$output_dir/html"

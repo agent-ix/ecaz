@@ -2,7 +2,7 @@
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded miri-tree miri-many-seeds miri-full careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report mutants mutants-full flake-hunt
+.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report coverage-baseline-check mutants mutants-full flake-hunt
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 .PHONY: recall-gate recall-gate-full cross-am-gate cost-gate
 
@@ -369,6 +369,9 @@ coverage:
 
 coverage-report:
 	bash scripts/hardening.sh coverage --output-dir $(COVERAGE_OUTPUT_DIR) --html --report-dir $(COVERAGE_REPORT_DIR)
+
+coverage-baseline-check:
+	bash scripts/check_coverage_baseline_complete.sh fixtures/quality/coverage-baseline.tsv
 
 mutants:
 	@if [ -z "$(MUTANTS_MODULE)" ]; then echo "error: set MUTANTS_MODULE=src/path.rs"; exit 2; fi

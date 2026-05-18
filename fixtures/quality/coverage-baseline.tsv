@@ -1,15 +1,22 @@
 # path	line_coverage_percent	note
-quant/codebook.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/grouped_pq.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/hadamard.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+quant/codebook.rs	98.15	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/grouped_pq.rs	94.72	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/hadamard.rs	92.70	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/mod.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/mse.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/prod.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/qjl.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/rabitq.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/rotation.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-quant/simd.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-storage/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+quant/mse.rs	100.00	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/prod.rs	93.02	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/qjl.rs	100.00	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/rabitq.rs	81.43	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/rotation.rs	98.53	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/simd.rs	48.00	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+storage/page.rs	76.57	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+storage/buffer_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
+storage/lock_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
+storage/relation_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
+storage/scan_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
+storage/slot_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
+storage/snapshot_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
+storage/spi_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
 am/ec_diskann/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_hnsw/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_ivf/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline

@@ -9,6 +9,10 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+[features]
+bench = []
+pg_test = []
+
 [dependencies]
 hashbrown = "0.15"
 rand = "0.8"

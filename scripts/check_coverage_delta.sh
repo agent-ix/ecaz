@@ -3,14 +3,23 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: scripts/check_coverage_delta.sh SUMMARY BASELINE [CHANGED_FILES]
+usage: scripts/check_coverage_delta.sh [--ratchet] SUMMARY BASELINE [CHANGED_FILES]
 
 SUMMARY is cargo-llvm-cov's summary.txt.
 BASELINE is a TSV with: path<TAB>line_coverage_percent<TAB>note.
 When CHANGED_FILES is present, only matching changed baseline paths are checked.
 Coverage may drop at most 2.00 percentage points from baseline.
+With --ratchet, checked paths whose actual coverage improves by more than 2.00
+percentage points are rewritten to the current actual value. This is intended
+for explicit baseline-update commits, not routine PR checks.
 EOF
 }
+
+ratchet=false
+if [ "${1:-}" = "--ratchet" ]; then
+  ratchet=true
+  shift
+fi
 
 summary="${1:-}"
 baseline="${2:-}"
@@ -30,7 +39,9 @@ fi
 
 tmp_summary="$(mktemp)"
 tmp_changed="$(mktemp)"
-trap 'rm -f "$tmp_summary" "$tmp_changed"' EXIT
+tmp_updates="$(mktemp)"
+tmp_baseline="$(mktemp)"
+trap 'rm -f "$tmp_summary" "$tmp_changed" "$tmp_updates" "$tmp_baseline"' EXIT
 
 awk '
   /^[^-[:space:]][^[:space:]]+[[:space:]]+[0-9]/ {
@@ -69,7 +80,29 @@ while IFS=$'\t' read -r path expected _note; do
     status=1
   else
     printf 'coverage ok: %s actual=%.2f baseline=%.2f\n' "$path" "$actual" "$expected"
+    if [ "$ratchet" = true ] && awk -v actual="$actual" -v expected="$expected" 'BEGIN { exit !((actual - expected) > 2.000001) }'; then
+      printf '%s\t%.2f\n' "$path" "$actual" >> "$tmp_updates"
+    fi
   fi
 done < "$baseline"
+
+if [ "$ratchet" = true ] && [ "$status" -eq 0 ] && [ -s "$tmp_updates" ]; then
+  awk -F '\t' '
+    NR == FNR {
+      updates[$1] = $2;
+      next;
+    }
+    /^#/ || NF < 2 {
+      print;
+      next;
+    }
+    $1 in updates {
+      $2 = updates[$1];
+    }
+    { print $1 "\t" $2 "\t" $3 }
+  ' "$tmp_updates" "$baseline" > "$tmp_baseline"
+  mv "$tmp_baseline" "$baseline"
+  echo "coverage baseline ratcheted: $baseline"
+fi
 
 exit "$status"

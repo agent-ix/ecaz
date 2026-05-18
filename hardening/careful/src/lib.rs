@@ -29,6 +29,17 @@ pub mod am {
     }
 }
 
+#[allow(dead_code)]
+#[path = "../../../src/quant/mod.rs"]
+mod quant;
+
+mod am {
+    pub(crate) mod page {
+        pub(crate) const INDEX_FORMAT_V1_SCALAR: u16 = 1;
+        pub(crate) const INDEX_FORMAT_V2_GROUPED: u16 = 2;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::am::ec_diskann::tuple::{VamanaCodebookTuple, VamanaNodeTuple};

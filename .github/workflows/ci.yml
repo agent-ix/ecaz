@@ -336,6 +336,9 @@ jobs:
       - name: Coverage report
         run: make coverage
 
+      - name: Coverage baseline completeness
+        run: make coverage-baseline-check
+
       - name: Changed files
         if: github.event_name == 'pull_request'
         run: |

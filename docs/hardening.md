@@ -189,7 +189,11 @@ Task 39 adds measurement lanes for the quality of existing tests:
   `coverage.json` under `target/quality/coverage`.
 - `scripts/check_coverage_delta.sh`: compares `summary.txt` against
   `fixtures/quality/coverage-baseline.tsv`; per-file line coverage may drop at
-  most 2 percentage points for changed baseline paths.
+  most 2 percentage points for changed baseline paths. Baseline raises are
+  explicit commits: run the script with `--ratchet` only after inspecting a full
+  coverage run, then cite the owning review packet in the TSV note.
+- `make coverage-baseline-check`: fails when a critical Task 39 source file is
+  missing from `fixtures/quality/coverage-baseline.tsv`.
 - `make coverage-report`: same lane with an HTML report under
   `target/quality/coverage/html`.
 - `make mutants MUTANTS_MODULE=src/quant/prod.rs`: checks for
@@ -205,8 +209,8 @@ Current interpretation:
 | Lane | Gate Level | Artifact | Rule |
 | --- | --- | --- | --- |
 | `make coverage` | Report-first / PR candidate after burn-in | summary, JSON, optional HTML | No repository-wide threshold yet; touched production files should not drop by more than 2 percentage points once a baseline packet exists. |
-| `make mutants` | Weekly/manual | cargo-mutants output directory | Each survivor is triaged as equivalent, test gap, or follow-up bug. |
-| `make flake-hunt` | Nightly candidate | seed sweep log | Any nondeterministic failure or new fuzz crash becomes a follow-up with the seed and minimized input attached. |
+| `make mutants` | Weekly/manual | cargo-mutants output directory plus triage note | Each survivor is triaged as killed by a new test, equivalent, or follow-up bug. |
+| `make flake-hunt` | Nightly candidate | seed sweep log | Eight seeds run nightly by default; any nondeterministic failure or new fuzz crash becomes a follow-up with the seed and minimized input attached. |
 
 The first coverage scope intentionally avoids claiming live pgrx callback
 coverage. PG18 integration coverage is still a gap until instrumentation is
@@ -214,20 +218,36 @@ stable for `cargo pgrx test pg18` and the resulting logs are packeted.
 
 ### Coverage Baseline
 
-Baseline source: `reviews/task-39/002-coverage-baseline/artifacts/coverage/summary.txt`.
+Baseline sources:
+
+- `reviews/task-39/002-coverage-baseline/artifacts/coverage/summary.txt` records
+  the original pure-Rust lane baseline.
+- `reviews/task-39/004-quant-careful-coverage/artifacts/coverage/summary.txt`
+  adds the quant modules and `storage/page.rs` through the `hardening/careful`
+  harness.
+
 The current local coverage lane executes `ecaz-cli` tests and
-`hardening/careful`; it does not execute extension in-module tests, so the
-critical extension modules below start at `0.00%` line coverage. That is a
-recorded gap, not an acceptable target.
+`hardening/careful`; it does not execute extension in-module tests, so AM page
+callbacks, SPIRE coordinator paths, DiskANN build/scan paths, planner-cost
+callbacks, and storage guard drops remain recorded gaps.
 
 | Critical area | Baseline line coverage |
 | --- | ---: |
-| `src/quant/**` | `0.00%` |
-| `src/storage/page.rs` and `src/am/*/page.rs` | `0.00%` |
+| `src/quant/{codebook,grouped_pq,hadamard,mse,prod,qjl,rabitq,rotation}.rs` | `81.43%` to `100.00%` |
+| `src/quant/simd.rs` | `48.00%` |
+| `src/quant/mod.rs` | `0.00%` |
+| `src/storage/page.rs` | `76.57%` |
+| `src/am/*/page.rs` | `0.00%` |
 | `src/am/ec_spire/storage/**` | `0.00%` |
 | `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
 | `src/am/ec_diskann/{routine,scan,build}.rs` | `0.00%` |
 | `src/am/common/cost.rs` | `0.00%` |
+| `src/storage/*_guard.rs` | `0.00%` |
+
+Mutation triage packets must include `mutants.txt` or equivalent raw
+`cargo-mutants` output plus a `triage.md` table with one verdict per survivor:
+`kill-with-test`, `equivalent`, or `follow-up-bug`. Follow-up bugs must name the
+target module, mutant description, and why the current packet did not kill it.
 
 ## PG Fault Injection
 
