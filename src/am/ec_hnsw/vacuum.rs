@@ -426,17 +426,16 @@ unsafe fn run_bulkdelete_with_adapter(
         }
 
         let exclusive_buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
         };
-        if !unsafe { pg_sys::BufferIsValid(exclusive_buffer) } {
+        let exclusive_buffer = exclusive_buffer.unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to reopen vacuum block {block_number}");
-        }
+        });
 
         let final_plan = unsafe {
             rewrite_page_pass1(
@@ -500,15 +499,14 @@ unsafe fn repair_metadata_entry_point_after_vacuum(
 
 unsafe fn rewrite_page_pass1(
     index_relation: pg_sys::Relation,
-    buffer: pg_sys::Buffer,
+    buffer: LockedBufferGuard,
     block_number: u32,
     storage: graph::GraphStorageDescriptor,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> PagePass1Plan {
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let plan = unsafe {
         plan_page_pass1(
             page_ptr,
@@ -520,17 +518,15 @@ unsafe fn rewrite_page_pass1(
         )
     };
     if plan.updates.is_empty() {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return plan;
     }
 
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let wal_page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &plan.updates) };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     plan
 }
 
@@ -953,17 +949,16 @@ unsafe fn unlink_deleted_graph_connections(
         }
 
         let exclusive_buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
         };
-        if !unsafe { pg_sys::BufferIsValid(exclusive_buffer) } {
+        let exclusive_buffer = exclusive_buffer.unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to reopen repair block {block_number}");
-        }
+        });
 
         unsafe { rewrite_page_pass2(index_relation, exclusive_buffer, block_number, deleted_tids) };
     }
@@ -1648,26 +1643,23 @@ fn apply_repair_plan(
 
 unsafe fn rewrite_page_pass2(
     index_relation: pg_sys::Relation,
-    buffer: pg_sys::Buffer,
+    buffer: LockedBufferGuard,
     block_number: u32,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) {
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let updates = unsafe { plan_page_pass2(page_ptr, page_size, block_number, deleted_tids) };
     if updates.is_empty() {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return;
     }
 
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let wal_page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     unsafe { apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates) };
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
 unsafe fn plan_page_pass2(
