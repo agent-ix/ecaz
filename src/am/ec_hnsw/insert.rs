@@ -2240,17 +2240,19 @@ unsafe fn find_duplicate_element_tid(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to open duplicate scan block {block_number}")
+        });
+
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
@@ -2280,15 +2282,12 @@ unsafe fn find_duplicate_element_tid(
                 continue;
             }
             if element.code == code && element.gamma.to_bits() == gamma.to_bits() {
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
                     offset_number: offset,
                 });
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     let _ = dimensions;
@@ -2311,17 +2310,19 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to open TurboQuant V3 duplicate scan block {block_number}")
+        });
+
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
@@ -2360,15 +2361,12 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
                 )
             };
             if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
                     offset_number: offset,
                 });
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     None
@@ -2389,17 +2387,19 @@ unsafe fn find_duplicate_grouped_element_tid(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+            LockedBufferGuard::read_main(
                 index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                pg_sys::BUFFER_LOCK_SHARE as i32,
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let buffer = buffer.unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to open grouped duplicate scan block {block_number}")
+        });
+
+        let page_ptr = buffer.page().cast::<u8>();
+        let page_size = buffer.page_size();
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
@@ -2438,15 +2438,12 @@ unsafe fn find_duplicate_grouped_element_tid(
                 graph::load_grouped_rerank_payload(index_relation, element.reranktid, layout)
             };
             if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
-                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
                     offset_number: offset,
                 });
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     None
