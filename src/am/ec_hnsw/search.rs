@@ -630,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn beam_search_deduplicates_self_loops_and_parallel_edges() {
+    fn miri_beam_search_deduplicates_self_loops_and_parallel_edges() {
         let mut edges = HashMap::new();
         edges.insert(10, vec![10, 11, 11, 12]);
         edges.insert(11, vec![12, 13]);
@@ -1022,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn visible_frontier_best_candidate_prefers_live_scheduler_node() {
+    fn miri_visible_frontier_best_candidate_prefers_live_scheduler_node() {
         let mut visible = VisibleFrontier::default();
         visible.extend([
             BeamCandidate::new(1_u64, 0.1),

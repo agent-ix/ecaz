@@ -728,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn robust_prune_excludes_alpha_dominated() {
+    fn miri_robust_prune_excludes_alpha_dominated() {
         // Pivot is node 0. Candidates 1, 2, 3 all near pivot, but
         // candidates 2 and 3 are very close to candidate 1 (so 1
         // α-dominates them with α = 1.2).
@@ -781,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn greedy_search_finds_nearest() {
+    fn miri_greedy_search_finds_nearest() {
         // Linear-chain graph: 0 - 1 - 2 - ... - 19. Distance to node 19
         // is just the index. Search from node 0 should converge to 19.
         let n = 20;
