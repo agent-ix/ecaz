@@ -1,0 +1,6 @@
+bash scripts/hardening.sh coverage --output-dir target/quality/coverage
+bash scripts/check_coverage_baseline_complete.sh fixtures/quality/coverage-baseline.tsv
+if [ -z "src/quant/prod.rs" ]; then echo "error: set MUTANTS_MODULE=src/path.rs"; exit 2; fi
+bash scripts/hardening.sh mutants --file src/quant/prod.rs --output-dir target/quality/mutants --jobs 2
+bash scripts/hardening.sh mutants-full --output-dir target/quality/mutants --jobs 2
+bash scripts/hardening.sh flake-hunt --seeds 8 --fuzz-seconds 10
