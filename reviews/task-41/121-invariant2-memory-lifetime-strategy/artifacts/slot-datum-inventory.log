@@ -1,0 +1,111 @@
+src/storage/slot_guard.rs:4:pub(crate) struct TupleTableSlotGuard {
+src/storage/slot_guard.rs:5:    slot: *mut pg_sys::TupleTableSlot,
+src/storage/slot_guard.rs:8:impl TupleTableSlotGuard {
+src/storage/slot_guard.rs:21:        // returned slot until `ExecDropSingleTupleTableSlot`.
+src/storage/slot_guard.rs:23:            pg_sys::MakeSingleTupleTableSlot(
+src/storage/slot_guard.rs:34:    pub(crate) fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
+src/storage/slot_guard.rs:39:impl Drop for TupleTableSlotGuard {
+src/storage/slot_guard.rs:45:        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+src/am/ec_hnsw/source.rs:442:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_hnsw/source.rs:444:        pg_sys::MakeSingleTupleTableSlot(
+src/am/ec_hnsw/source.rs:459:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_hnsw/source.rs:464:    unsafe { pg_sys::ExecClearTuple(slot) };
+src/am/ec_hnsw/source.rs:477:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_hnsw/source.rs:482:        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+src/am/ec_hnsw/source.rs:485:    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+src/am/ec_hnsw/source.rs:488:    unsafe { *(*slot).tts_values.add(attr_index) }
+src/am/ec_hnsw/source.rs:669:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_hnsw/source.rs:680:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_hnsw/scan_debug.rs:18:    slot_guard::TupleTableSlotGuard,
+src/am/ec_hnsw/scan_debug.rs:963:    let slot_guard = TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
+src/am/ec_hnsw/scan_debug.rs:1008:            pg_sys::ExecClearTuple(slot);
+src/am/ec_hnsw/vacuum.rs:8:use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
+src/am/ec_hnsw/vacuum.rs:29:    slot: TupleTableSlotGuard,
+src/am/ec_hnsw/vacuum.rs:50:        let slot = TupleTableSlotGuard::single_for_heap(heap_relation).unwrap_or_else(|| {
+src/am/ec_hnsw/vacuum.rs:96:            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+src/am/ec_hnsw/insert.rs:6:use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
+src/am/ec_hnsw/insert.rs:24:    slot: TupleTableSlotGuard,
+src/am/ec_hnsw/insert.rs:45:        let slot = TupleTableSlotGuard::single_for_heap(heap_relation).unwrap_or_else(|| {
+src/am/ec_hnsw/insert.rs:69:        unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+src/am/ec_hnsw/insert.rs:107:            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+src/am/ec_diskann/routine.rs:311:                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+src/am/ec_diskann/routine.rs:390:                crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+src/am/ec_diskann/routine.rs:669:                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+src/am/ec_diskann/routine.rs:850:    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+src/am/ec_diskann/routine.rs:1170:    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+src/am/ec_diskann/routine.rs:1225:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_diskann/routine.rs:1900:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_diskann/routine.rs:1930:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_diskann/routine.rs:1939:    unsafe { pg_sys::ExecClearTuple(slot) };
+src/am/ec_diskann/routine.rs:1946:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_diskann/routine.rs:1991:        slot_guard::TupleTableSlotGuard,
+src/am/ec_diskann/routine.rs:2328:        let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr)
+src/am/ec_diskann/scan_state.rs:263:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_diskann/scan_state.rs:272:        pg_sys::ExecClearTuple(slot);
+src/am/ec_diskann/scan_state.rs:286:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_diskann/scan_state.rs:291:        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+src/am/ec_diskann/scan_state.rs:294:    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+src/am/ec_diskann/scan_state.rs:297:    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
+src/am/ec_hnsw/build.rs:16:    slot_guard::TupleTableSlotGuard, snapshot_guard::ActiveSnapshotGuard, wal,
+src/am/ec_hnsw/build.rs:725:    let slot = TupleTableSlotGuard::single_for_heap(heap_relation)
+src/am/ec_hnsw/build.rs:784:unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointer {
+src/am/ec_hnsw/scan.rs:15:    relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+src/am/ec_hnsw/scan.rs:1662:    slot: TupleTableSlotGuard,
+src/am/ec_hnsw/scan.rs:1677:    fn slot(&self) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_hnsw/scan.rs:1778:    let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr).unwrap_or_else(|| {
+src/am/ec_hnsw/scan.rs:2625:    unsafe { pg_sys::ExecClearTuple(heap_rerank_state.slot()) };
+src/am/ec_spire/custom_scan/tuple_payload.rs:5:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:36:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/tuple_payload.rs:39:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:59:        pg_sys::ExecClearTuple(slot);
+src/am/ec_spire/custom_scan/tuple_payload.rs:64:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:65:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:75:                    *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:76:                    *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:79:                    *(*slot).tts_isnull.add(attr_index as usize) = false;
+src/am/ec_spire/custom_scan/tuple_payload.rs:89:                    *(*slot).tts_values.add(attr_index as usize) =
+src/am/ec_spire/custom_scan/tuple_payload.rs:102:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/tuple_payload.rs:104:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:145:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/tuple_payload.rs:148:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/tuple_payload.rs:186:        pg_sys::ExecClearTuple(slot);
+src/am/ec_spire/custom_scan/tuple_payload.rs:191:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:192:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:206:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:207:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:212:                *(*slot).tts_isnull.add(attr_index as usize) = true;
+src/am/ec_spire/custom_scan/tuple_payload.rs:213:                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+src/am/ec_spire/custom_scan/tuple_payload.rs:225:            *(*slot).tts_isnull.add(attr_index as usize) = false;
+src/am/ec_spire/custom_scan/tuple_payload.rs:226:            *(*slot).tts_values.add(attr_index as usize) = custom_scan_binary_value_to_datum(
+src/am/ec_spire/custom_scan/begin_exec.rs:167:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:385:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:403:                return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:415:            pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:436:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:440:            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:444:            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+src/am/ec_spire/custom_scan/begin_exec.rs:457:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:467:        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+src/am/ec_spire/custom_scan/begin_exec.rs:474:) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_spire/custom_scan/begin_exec.rs:484:        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+src/am/ec_spire/custom_scan/begin_exec.rs:491:    _slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/custom_scan/planner.rs:479:            crate::storage::slot_guard::TupleTableSlotGuard::create(placement_relation.as_ptr())
+src/am/ec_ivf/scan.rs:13:    page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+src/am/ec_ivf/scan.rs:103:    slot: TupleTableSlotGuard,
+src/am/ec_ivf/scan.rs:118:    fn slot(&self) -> *mut pg_sys::TupleTableSlot {
+src/am/ec_ivf/scan.rs:768:    let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr).unwrap_or_else(|| {
+src/am/ec_spire/coordinator/maintenance.rs:239:            let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(
+src/am/ec_spire/update/materialization.rs:278:    slot: *mut pgrx::pg_sys::TupleTableSlot,
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:200:    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(
+src/am/ec_spire/update/routing.rs:541:    slot: *mut pgrx::pg_sys::TupleTableSlot,
+src/am/ec_spire/scan/relation.rs:315:) -> Result<crate::storage::slot_guard::TupleTableSlotGuard, String> {
+src/am/ec_spire/scan/relation.rs:316:    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+src/am/ec_spire/scan/relation.rs:323:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/scan/relation.rs:347:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/scan/relation.rs:358:    unsafe { pg_sys::ExecClearTuple(slot) };
+src/am/ec_spire/scan/relation.rs:366:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/scan/relation.rs:370:    unsafe { pg_sys::ExecClearTuple(slot) };
+src/am/ec_spire/scan/relation.rs:380:    slot: *mut pg_sys::TupleTableSlot,
+src/am/ec_spire/scan/relation.rs:385:        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+src/am/ec_spire/scan/relation.rs:389:    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+src/am/ec_spire/scan/relation.rs:392:    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
