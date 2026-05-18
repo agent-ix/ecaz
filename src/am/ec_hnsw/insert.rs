@@ -1443,40 +1443,39 @@ unsafe fn append_heap_tuple(
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
+        if target_block == P_NEW {
+            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
+        } else {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate data buffer for aminsert");
-    }
+    });
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
             };
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1518,7 +1517,6 @@ unsafe fn append_heap_tuple(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: element_offset,
@@ -1674,33 +1672,32 @@ unsafe fn append_turbo_hot_cold_tuple(
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
+        if target_block == P_NEW {
+            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
+        } else {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate TurboQuant V3 data buffer for aminsert");
-    }
+    });
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_turbo_hot_cold_tuple_to_new_page(
                     index_relation,
@@ -1714,7 +1711,7 @@ unsafe fn append_turbo_hot_cold_tuple(
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1770,7 +1767,6 @@ unsafe fn append_turbo_hot_cold_tuple(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -2010,33 +2006,32 @@ unsafe fn append_pq_fastscan_tuple(
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
     let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            target_block,
-            read_mode,
-            ptr::null_mut(),
-        )
+        if target_block == P_NEW {
+            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
+        } else {
+            LockedBufferGuard::read_main(
+                index_relation,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
+        }
     };
-    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+    let buffer = buffer.unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to allocate PqFastScan data buffer for aminsert");
-    }
+    });
 
-    if target_block != P_NEW {
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
-    }
-
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_size = buffer.page_size();
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            std::mem::drop(buffer);
             return unsafe {
                 append_pq_fastscan_tuple_to_new_page(
                     index_relation,
@@ -2050,7 +2045,7 @@ unsafe fn append_pq_fastscan_tuple(
         }
     }
 
-    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let block_number = buffer.block_number();
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2108,7 +2103,6 @@ unsafe fn append_pq_fastscan_tuple(
     }
 
     unsafe { wal_txn.finish() };
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
