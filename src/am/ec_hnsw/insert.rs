@@ -2241,36 +2241,38 @@ unsafe fn find_duplicate_element_tid(
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*shared::page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                continue;
-            }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                pgrx::error!(
-                    "ec_hnsw found invalid tuple bounds while scanning block {block_number}"
-                );
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-                continue;
-            }
-
-            let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                pgrx::error!("ec_hnsw failed to decode candidate duplicate tuple: {e}")
-            });
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
-            if element.code == code && element.gamma.to_bits() == gamma.to_bits() {
-                return Some(page::ItemPointer {
+            let duplicate_tid = unsafe {
+                shared::with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
                     block_number,
-                    offset_number: offset,
-                });
+                    offset,
+                    "scanning duplicate candidates",
+                    |tuple_bytes| {
+                        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                            return None;
+                        }
+
+                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "ec_hnsw failed to decode candidate duplicate tuple: {e}"
+                                )
+                            });
+                        (!element.deleted
+                            && !element.heaptids.is_empty()
+                            && element.code == code
+                            && element.gamma.to_bits() == gamma.to_bits())
+                        .then_some(page::ItemPointer {
+                            block_number,
+                            offset_number: offset,
+                        })
+                    },
+                )
+            }
+            .flatten();
+            if duplicate_tid.is_some() {
+                return duplicate_tid;
             }
         }
     }
@@ -2311,45 +2313,45 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*shared::page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                continue;
-            }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                pgrx::error!(
-                    "ec_hnsw found invalid TurboQuant V3 tuple bounds while scanning block {block_number}"
-                );
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
-                continue;
-            }
-
-            let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_hnsw failed to decode candidate TurboQuant V3 tuple: {e}")
-                });
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
-
-            let rerank = unsafe {
-                graph::load_rerank_payload(
-                    index_relation,
-                    element.reranktid,
-                    layout.rerank_code_len,
-                )
-            };
-            if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
-                return Some(page::ItemPointer {
+            let duplicate_tid = unsafe {
+                shared::with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
                     block_number,
-                    offset_number: offset,
-                });
+                    offset,
+                    "scanning TurboQuant V3 duplicate candidates",
+                    |tuple_bytes| {
+                        if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                            return None;
+                        }
+
+                        let element =
+                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                                .unwrap_or_else(|e| {
+                                    pgrx::error!(
+                                "ec_hnsw failed to decode candidate TurboQuant V3 tuple: {e}"
+                            )
+                                });
+                        if element.deleted || element.heaptids.is_empty() {
+                            return None;
+                        }
+
+                        let rerank = graph::load_rerank_payload(
+                            index_relation,
+                            element.reranktid,
+                            layout.rerank_code_len,
+                        );
+                        (rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits())
+                            .then_some(page::ItemPointer {
+                                block_number,
+                                offset_number: offset,
+                            })
+                    },
+                )
+            }
+            .flatten();
+            if duplicate_tid.is_some() {
+                return duplicate_tid;
             }
         }
     }
@@ -2388,45 +2390,48 @@ unsafe fn find_duplicate_grouped_element_tid(
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*shared::page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                continue;
-            }
-
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                pgrx::error!(
-                    "ec_hnsw found invalid grouped tuple bounds while scanning block {block_number}"
-                );
-            }
-
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
-                continue;
-            }
-
-            let element = page::TqGroupedHotTuple::decode(
-                tuple_bytes,
-                layout.binary_word_count,
-                layout.search_code_len,
-            )
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_hnsw failed to decode candidate grouped duplicate tuple: {e}")
-            });
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
-
-            let rerank = unsafe {
-                graph::load_grouped_rerank_payload(index_relation, element.reranktid, layout)
-            };
-            if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
-                return Some(page::ItemPointer {
+            let duplicate_tid = unsafe {
+                shared::with_page_line_tuple_bytes(
+                    page_ptr,
+                    page_size,
                     block_number,
-                    offset_number: offset,
-                });
+                    offset,
+                    "scanning grouped duplicate candidates",
+                    |tuple_bytes| {
+                        if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                            return None;
+                        }
+
+                        let element = page::TqGroupedHotTuple::decode(
+                            tuple_bytes,
+                            layout.binary_word_count,
+                            layout.search_code_len,
+                        )
+                        .unwrap_or_else(|e| {
+                            pgrx::error!(
+                                "ec_hnsw failed to decode candidate grouped duplicate tuple: {e}"
+                            )
+                        });
+                        if element.deleted || element.heaptids.is_empty() {
+                            return None;
+                        }
+
+                        let rerank = graph::load_grouped_rerank_payload(
+                            index_relation,
+                            element.reranktid,
+                            layout,
+                        );
+                        (rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits())
+                            .then_some(page::ItemPointer {
+                                block_number,
+                                offset_number: offset,
+                            })
+                    },
+                )
+            }
+            .flatten();
+            if duplicate_tid.is_some() {
+                return duplicate_tid;
             }
         }
     }
