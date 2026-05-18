@@ -1,6 +1,6 @@
 # Artifact Manifest
 
-- Packet: `115-hnsw-graph-prefetch-buffer-guard`
+- Packet: `116-hnsw-graph-prefetch-buffer-guard`
 - Head SHA: `d626d009e61c474c92da2c2255ef6b46ce7722b9`
 - Timestamp: `2026-05-18T02:42:50Z`
 - Surface: static validation only; PG18 HNSW graph prefetch buffer ownership
