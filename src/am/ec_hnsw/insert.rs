@@ -1135,65 +1135,65 @@ unsafe fn add_backlinks_on_page(
             end += 1;
         }
 
-        let item_id = unsafe { &*shared::page_item_id(page_ptr, neighbor_tid.offset_number) };
-        if item_id.lp_flags() == 0 {
-            pgrx::error!(
-                "ec_hnsw backlink neighbor tuple slot {}/{} is unused",
-                neighbor_tid.block_number,
-                neighbor_tid.offset_number
-            );
-        }
+        let tuple_changed = unsafe {
+            with_writable_page_tuple_bytes(
+                page_ptr,
+                page_size,
+                neighbor_tid,
+                "backlink neighbor",
+                |tuple_ptr, tuple_bytes| {
+                    let mut neighbor =
+                        page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to decode backlink neighbor tuple: {e}")
+                        });
+                    if neighbor.count as usize > neighbor.tids.len() {
+                        pgrx::error!(
+                            "ec_hnsw backlink neighbor tuple count {} exceeds payload tid count {}",
+                            neighbor.count,
+                            neighbor.tids.len()
+                        );
+                    }
 
-        let tuple_offset = item_id.lp_off() as usize;
-        let tuple_len = item_id.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            pgrx::error!(
-                "ec_hnsw found invalid backlink neighbor tuple bounds on block {}",
-                neighbor_tid.block_number
-            );
-        }
+                    let mut tuple_changed = false;
+                    for mutation in &mutations[start..end] {
+                        match apply_backlink_mutation(
+                            &mut neighbor.tids,
+                            new_element_tid,
+                            m,
+                            mutation,
+                        ) {
+                            BacklinkMutationOutcome::NoChange => {}
+                            BacklinkMutationOutcome::Changed => tuple_changed = true,
+                            BacklinkMutationOutcome::RetryReplan => {
+                                retries.push(LayerForwardSelection {
+                                    layer: mutation.layer,
+                                    element_tid: mutation.target_element_tid,
+                                })
+                            }
+                        }
+                    }
+                    if !tuple_changed {
+                        return false;
+                    }
 
-        let tuple_bytes =
-            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
-            pgrx::error!("ec_hnsw failed to decode backlink neighbor tuple: {e}")
-        });
-        if neighbor.count as usize > neighbor.tids.len() {
-            pgrx::error!(
-                "ec_hnsw backlink neighbor tuple count {} exceeds payload tid count {}",
-                neighbor.count,
-                neighbor.tids.len()
-            );
-        }
-
-        let mut tuple_changed = false;
-        for mutation in &mutations[start..end] {
-            match apply_backlink_mutation(&mut neighbor.tids, new_element_tid, m, mutation) {
-                BacklinkMutationOutcome::NoChange => {}
-                BacklinkMutationOutcome::Changed => tuple_changed = true,
-                BacklinkMutationOutcome::RetryReplan => retries.push(LayerForwardSelection {
-                    layer: mutation.layer,
-                    element_tid: mutation.target_element_tid,
-                }),
-            }
-        }
+                    let encoded = neighbor.encode().unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to encode backlink neighbor tuple: {e}")
+                    });
+                    if encoded.len() != tuple_bytes.len() {
+                        pgrx::error!(
+                            "ec_hnsw backlink neighbor tuple size changed from {} to {}",
+                            tuple_bytes.len(),
+                            encoded.len()
+                        );
+                    }
+                    ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                    true
+                },
+            )
+        };
         if !tuple_changed {
             start = end;
             continue;
-        }
-
-        let encoded = neighbor.encode().unwrap_or_else(|e| {
-            pgrx::error!("ec_hnsw failed to encode backlink neighbor tuple: {e}")
-        });
-        if encoded.len() != tuple_len {
-            pgrx::error!(
-                "ec_hnsw backlink neighbor tuple size changed from {} to {}",
-                tuple_len,
-                encoded.len()
-            );
-        }
-        unsafe {
-            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
         }
         changed = true;
         start = end;
@@ -1205,6 +1205,39 @@ unsafe fn add_backlinks_on_page(
         std::mem::drop(wal_txn);
     }
     retries
+}
+
+unsafe fn with_writable_page_tuple_bytes<R, F>(
+    page_ptr: *mut u8,
+    page_size: usize,
+    tuple_tid: page::ItemPointer,
+    tuple_kind: &str,
+    visit: F,
+) -> R
+where
+    F: FnOnce(*mut u8, &[u8]) -> R,
+{
+    let item_id = unsafe { &*shared::page_item_id(page_ptr, tuple_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!(
+            "ec_hnsw {tuple_kind} tuple slot {}/{} is unused",
+            tuple_tid.block_number,
+            tuple_tid.offset_number
+        );
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
+            tuple_tid.block_number
+        );
+    }
+
+    let tuple_ptr = unsafe { page_ptr.add(tuple_offset) };
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
+    visit(tuple_ptr, tuple_bytes)
 }
 
 unsafe fn plan_backlink_mutation(
@@ -2465,45 +2498,45 @@ unsafe fn coalesce_duplicate_heap_tid(
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     let page_size = buffer.page_size();
-    let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        pgrx::error!("ec_hnsw duplicate element tuple slot is unused");
-    }
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        pgrx::error!(
-            "ec_hnsw found invalid duplicate tuple bounds on block {}",
-            element_tid.block_number
-        );
-    }
-
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
-        .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode duplicate element tuple: {e}"));
-    if element.heaptids.contains(&heap_tid) {
+    let tuple_changed = unsafe {
+        with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            element_tid,
+            "duplicate element",
+            |tuple_ptr, tuple_bytes| {
+                let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to decode duplicate element tuple: {e}")
+                    });
+                if element.heaptids.contains(&heap_tid) {
+                    return false;
+                }
+                if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+                    pgrx::error!(
+                        "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+                        page::HEAPTID_INLINE_CAPACITY
+                    );
+                }
+                element.heaptids.push(heap_tid);
+                let encoded = element.encode().unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to encode coalesced element tuple: {e}")
+                });
+                if encoded.len() != tuple_bytes.len() {
+                    pgrx::error!(
+                        "ec_hnsw duplicate element tuple size changed from {} to {}",
+                        tuple_bytes.len(),
+                        encoded.len()
+                    );
+                }
+                ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                true
+            },
+        )
+    };
+    if !tuple_changed {
         unsafe { wal_txn.finish() };
         return;
-    }
-    if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
-        pgrx::error!(
-            "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
-            page::HEAPTID_INLINE_CAPACITY
-        );
-    }
-    element.heaptids.push(heap_tid);
-    let encoded = element
-        .encode()
-        .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode coalesced element tuple: {e}"));
-    if encoded.len() != tuple_len {
-        pgrx::error!(
-            "ec_hnsw duplicate element tuple size changed from {} to {}",
-            tuple_len,
-            encoded.len()
-        );
-    }
-    unsafe {
-        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
     }
 
     unsafe { wal_txn.finish() };
@@ -2535,47 +2568,48 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     let page_size = buffer.page_size();
-    let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        pgrx::error!("ec_hnsw duplicate TurboQuant V3 tuple slot is unused");
-    }
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        pgrx::error!(
-            "ec_hnsw found invalid duplicate TurboQuant V3 tuple bounds on block {}",
-            element_tid.block_number
-        );
-    }
-
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let mut element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-        .unwrap_or_else(|e| {
-            pgrx::error!("ec_hnsw failed to decode duplicate TurboQuant V3 tuple: {e}")
-        });
-    if element.heaptids.contains(&heap_tid) {
+    let tuple_changed = unsafe {
+        with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            element_tid,
+            "duplicate TurboQuant V3 element",
+            |tuple_ptr, tuple_bytes| {
+                let mut element =
+                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                        .unwrap_or_else(|e| {
+                            pgrx::error!(
+                                "ec_hnsw failed to decode duplicate TurboQuant V3 tuple: {e}"
+                            )
+                        });
+                if element.heaptids.contains(&heap_tid) {
+                    return false;
+                }
+                if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+                    pgrx::error!(
+                        "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+                        page::HEAPTID_INLINE_CAPACITY
+                    );
+                }
+                element.heaptids.push(heap_tid);
+                let encoded = element.encode().unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to encode coalesced TurboQuant V3 tuple: {e}")
+                });
+                if encoded.len() != tuple_bytes.len() {
+                    pgrx::error!(
+                        "ec_hnsw duplicate TurboQuant V3 tuple size changed from {} to {}",
+                        tuple_bytes.len(),
+                        encoded.len()
+                    );
+                }
+                ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                true
+            },
+        )
+    };
+    if !tuple_changed {
         unsafe { wal_txn.finish() };
         return;
-    }
-    if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
-        pgrx::error!(
-            "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
-            page::HEAPTID_INLINE_CAPACITY
-        );
-    }
-    element.heaptids.push(heap_tid);
-    let encoded = element.encode().unwrap_or_else(|e| {
-        pgrx::error!("ec_hnsw failed to encode coalesced TurboQuant V3 tuple: {e}")
-    });
-    if encoded.len() != tuple_len {
-        pgrx::error!(
-            "ec_hnsw duplicate TurboQuant V3 tuple size changed from {} to {}",
-            tuple_len,
-            encoded.len()
-        );
-    }
-    unsafe {
-        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
     }
 
     unsafe { wal_txn.finish() };
@@ -2607,51 +2641,49 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     let page_size = buffer.page_size();
-    let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        pgrx::error!("ec_hnsw duplicate PqFastScan element tuple slot is unused");
-    }
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        pgrx::error!(
-            "ec_hnsw found invalid grouped duplicate tuple bounds on block {}",
-            element_tid.block_number
-        );
-    }
-
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let mut element = page::TqGroupedHotTuple::decode(
-        tuple_bytes,
-        layout.binary_word_count,
-        layout.search_code_len,
-    )
-    .unwrap_or_else(|e| {
-        pgrx::error!("ec_hnsw failed to decode duplicate PqFastScan element tuple: {e}")
-    });
-    if element.heaptids.contains(&heap_tid) {
+    let tuple_changed = unsafe {
+        with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            element_tid,
+            "duplicate PqFastScan element",
+            |tuple_ptr, tuple_bytes| {
+                let mut element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to decode duplicate PqFastScan element tuple: {e}")
+                });
+                if element.heaptids.contains(&heap_tid) {
+                    return false;
+                }
+                if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+                    pgrx::error!(
+                        "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+                        page::HEAPTID_INLINE_CAPACITY
+                    );
+                }
+                element.heaptids.push(heap_tid);
+                let encoded = element.encode().unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to encode coalesced PqFastScan element tuple: {e}")
+                });
+                if encoded.len() != tuple_bytes.len() {
+                    pgrx::error!(
+                        "ec_hnsw duplicate PqFastScan element tuple size changed from {} to {}",
+                        tuple_bytes.len(),
+                        encoded.len()
+                    );
+                }
+                ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len());
+                true
+            },
+        )
+    };
+    if !tuple_changed {
         unsafe { wal_txn.finish() };
         return;
-    }
-    if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
-        pgrx::error!(
-            "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
-            page::HEAPTID_INLINE_CAPACITY
-        );
-    }
-    element.heaptids.push(heap_tid);
-    let encoded = element.encode().unwrap_or_else(|e| {
-        pgrx::error!("ec_hnsw failed to encode coalesced PqFastScan element tuple: {e}")
-    });
-    if encoded.len() != tuple_len {
-        pgrx::error!(
-            "ec_hnsw duplicate PqFastScan element tuple size changed from {} to {}",
-            tuple_len,
-            encoded.len()
-        );
-    }
-    unsafe {
-        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
     }
 
     unsafe { wal_txn.finish() };
