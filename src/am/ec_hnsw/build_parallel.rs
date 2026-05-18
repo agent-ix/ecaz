@@ -1053,23 +1053,27 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
             initialize_node_lock(ptr::addr_of_mut!((*node).lock));
         }
 
-        slice::from_raw_parts_mut(parts.neighbor_slots, layout.total_neighbor_slots as usize)
-            .fill(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
+        with_concurrent_dsm_neighbor_slots_init(parts, layout, |slots| {
+            slots.fill(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
+        });
 
         let code_bytes = checked_mul_size(
             layout.code_len as pg_sys::Size,
             layout.node_count as pg_sys::Size,
             "concurrent DSM graph initialized code bytes",
         );
-        slice::from_raw_parts_mut(parts.codes, code_bytes).copy_from_slice(&plan.code_corpus.bytes);
+        with_concurrent_dsm_codes_init(parts, code_bytes, |codes| {
+            codes.copy_from_slice(&plan.code_corpus.bytes);
+        });
         if let Some(source_corpus) = &plan.source_corpus {
             let source_values = checked_mul_size(
                 layout.source_dim as pg_sys::Size,
                 layout.node_count as pg_sys::Size,
                 "concurrent DSM graph initialized source values",
             ) as usize;
-            slice::from_raw_parts_mut(parts.sources, source_values)
-                .copy_from_slice(&source_corpus.values);
+            with_concurrent_dsm_sources_init(parts, source_values, |sources| {
+                sources.copy_from_slice(&source_corpus.values);
+            });
         }
     }
 
@@ -1743,7 +1747,7 @@ unsafe fn with_concurrent_dsm_code_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
-    f: impl FnOnce(&[u8]) -> R,
+    f: impl for<'a> FnOnce(&'a [u8]) -> R,
 ) -> R {
     if node_idx >= layout.node_count {
         pgrx::error!("concurrent DSM code node index out of bounds");
@@ -1760,7 +1764,7 @@ unsafe fn with_concurrent_dsm_source_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
-    f: impl FnOnce(&[f32]) -> R,
+    f: impl for<'a> FnOnce(&'a [f32]) -> R,
 ) -> R {
     if node_idx >= layout.node_count {
         pgrx::error!("concurrent DSM graph source node index out of bounds");
@@ -1783,7 +1787,7 @@ fn score_concurrent_dsm_source_inner_product(left: &[f32], right: &[f32]) -> f32
 unsafe fn with_concurrent_dsm_node_slots<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     node: *const EcHnswConcurrentDsmNode,
-    f: impl FnOnce(&[u32]) -> R,
+    f: impl for<'a> FnOnce(&'a [u32]) -> R,
 ) -> R {
     let slots = unsafe {
         slice::from_raw_parts(
@@ -1799,7 +1803,7 @@ unsafe fn with_concurrent_dsm_node_slots<R>(
 unsafe fn with_concurrent_dsm_node_slots_mut<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     node: *mut EcHnswConcurrentDsmNode,
-    f: impl FnOnce(&mut [u32]) -> R,
+    f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
 ) -> R {
     let slots = unsafe {
         slice::from_raw_parts_mut(
@@ -1810,6 +1814,35 @@ unsafe fn with_concurrent_dsm_node_slots_mut<R>(
         )
     };
     f(slots)
+}
+
+unsafe fn with_concurrent_dsm_neighbor_slots_init<R>(
+    parts: EcHnswConcurrentDsmGraphParts,
+    layout: EcHnswConcurrentDsmGraphLayout,
+    f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
+) -> R {
+    let slots = unsafe {
+        slice::from_raw_parts_mut(parts.neighbor_slots, layout.total_neighbor_slots as usize)
+    };
+    f(slots)
+}
+
+unsafe fn with_concurrent_dsm_codes_init<R>(
+    parts: EcHnswConcurrentDsmGraphParts,
+    code_bytes: usize,
+    f: impl for<'a> FnOnce(&'a mut [u8]) -> R,
+) -> R {
+    let codes = unsafe { slice::from_raw_parts_mut(parts.codes, code_bytes) };
+    f(codes)
+}
+
+unsafe fn with_concurrent_dsm_sources_init<R>(
+    parts: EcHnswConcurrentDsmGraphParts,
+    source_values: usize,
+    f: impl for<'a> FnOnce(&'a mut [f32]) -> R,
+) -> R {
+    let sources = unsafe { slice::from_raw_parts_mut(parts.sources, source_values) };
+    f(sources)
 }
 
 unsafe fn concurrent_dsm_lwlock_acquire_shared(lock: *mut pg_sys::LWLock) {

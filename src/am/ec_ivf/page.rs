@@ -2179,7 +2179,7 @@ unsafe fn read_page_tuple<T, DecodeFn>(
     decode: DecodeFn,
 ) -> Result<(T, u16), String>
 where
-    DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+    DecodeFn: for<'a> FnOnce(&'a [u8]) -> Result<T, String>,
 {
     let buffer = unsafe {
         LockedBufferGuard::read_main(
@@ -2313,7 +2313,7 @@ unsafe fn with_page_line_tuple_bytes<R, F>(
     visit: F,
 ) -> Result<PageTupleVisit<R>, String>
 where
-    F: FnOnce(&[u8]) -> Result<R, String>,
+    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
 {
     if offset == 0 {
         return Err(format!(
@@ -2345,7 +2345,7 @@ unsafe fn with_required_page_tuple_bytes<R, F>(
     visit: F,
 ) -> Result<R, String>
 where
-    F: FnOnce(&[u8]) -> Result<R, String>,
+    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
 {
     match unsafe {
         with_page_line_tuple_bytes(

@@ -113,7 +113,7 @@ unsafe fn debug_with_page_line_tuple_bytes<R, F>(
     visit: F,
 ) -> Option<R>
 where
-    F: FnOnce(&[u8]) -> R,
+    F: for<'a> FnOnce(&'a [u8]) -> R,
 {
     let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset) };
     if item_id.lp_flags() == 0 {

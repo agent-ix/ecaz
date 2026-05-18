@@ -533,6 +533,13 @@ unsafe fn build_source_identity_from_tuple_values(
 unsafe fn uuid_source_identity_payload(
     datum: pg_sys::Datum,
 ) -> [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES] {
+    unsafe { with_uuid_payload_bytes(datum, |bytes| *bytes) }
+}
+
+unsafe fn with_uuid_payload_bytes<R>(
+    datum: pg_sys::Datum,
+    f: impl for<'a> FnOnce(&'a [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]) -> R,
+) -> R {
     let bytes = unsafe {
         std::slice::from_raw_parts(
             datum.cast_mut_ptr::<u8>(),
@@ -541,5 +548,5 @@ unsafe fn uuid_source_identity_payload(
     };
     let mut payload = [0_u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES];
     payload.copy_from_slice(bytes);
-    payload
+    f(&payload)
 }
