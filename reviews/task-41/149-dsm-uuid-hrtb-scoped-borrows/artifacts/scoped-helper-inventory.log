@@ -1,0 +1,54 @@
+src/am/ec_spire/build/drafts.rs:536:    unsafe { with_uuid_payload_bytes(datum, |bytes| *bytes) }
+src/am/ec_spire/build/drafts.rs:539:unsafe fn with_uuid_payload_bytes<R>(
+src/am/ec_spire/build/drafts.rs:541:    f: impl for<'a> FnOnce(&'a [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]) -> R,
+src/am/ec_ivf/page.rs:1380:            with_page_line_tuple_bytes(
+src/am/ec_ivf/page.rs:1420:            with_page_line_tuple_bytes(
+src/am/ec_ivf/page.rs:1753:        with_required_page_tuple_bytes(
+src/am/ec_ivf/page.rs:1969:                with_page_line_tuple_bytes(
+src/am/ec_ivf/page.rs:2044:            with_page_line_tuple_bytes(
+src/am/ec_ivf/page.rs:2182:    DecodeFn: for<'a> FnOnce(&'a [u8]) -> Result<T, String>,
+src/am/ec_ivf/page.rs:2210:        with_required_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
+src/am/ec_ivf/page.rs:2245:                    with_page_line_tuple_bytes(
+src/am/ec_ivf/page.rs:2307:unsafe fn with_page_line_tuple_bytes<R, F>(
+src/am/ec_ivf/page.rs:2316:    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
+src/am/ec_ivf/page.rs:2340:unsafe fn with_required_page_tuple_bytes<R, F>(
+src/am/ec_ivf/page.rs:2348:    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
+src/am/ec_ivf/page.rs:2351:        with_page_line_tuple_bytes(
+src/am/ec_hnsw/shared.rs:227:            with_page_line_tuple_bytes(
+src/am/ec_hnsw/shared.rs:320:                with_page_line_tuple_bytes(
+src/am/ec_hnsw/shared.rs:440:pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
+src/am/ec_hnsw/shared.rs:449:    F: for<'a> FnOnce(&'a [u8]) -> R,
+src/am/ec_hnsw/shared.rs:865:            with_page_line_tuple_bytes(
+src/am/ec_hnsw/scan_debug.rs:109:unsafe fn debug_with_page_line_tuple_bytes<R, F>(
+src/am/ec_hnsw/scan_debug.rs:116:    F: for<'a> FnOnce(&'a [u8]) -> R,
+src/am/ec_hnsw/scan_debug.rs:1202:                debug_with_page_line_tuple_bytes(
+src/am/ec_hnsw/scan_debug.rs:1268:                debug_with_page_line_tuple_bytes(
+src/am/ec_hnsw/scan_debug.rs:1333:                debug_with_page_line_tuple_bytes(
+src/am/ec_hnsw/build_parallel.rs:1056:        with_concurrent_dsm_neighbor_slots_init(parts, layout, |slots| {
+src/am/ec_hnsw/build_parallel.rs:1065:        with_concurrent_dsm_codes_init(parts, code_bytes, |codes| {
+src/am/ec_hnsw/build_parallel.rs:1074:            with_concurrent_dsm_sources_init(parts, source_values, |sources| {
+src/am/ec_hnsw/build_parallel.rs:1339:        with_concurrent_dsm_node_slots_mut(parts, node, |slots| {
+src/am/ec_hnsw/build_parallel.rs:1516:                with_concurrent_dsm_node_slots(parts, source, |raw_slots| {
+src/am/ec_hnsw/build_parallel.rs:1626:            with_concurrent_dsm_node_slots_mut(parts, target, |slots| {
+src/am/ec_hnsw/build_parallel.rs:1716:            with_concurrent_dsm_source_for_node(parts, layout, query_idx, |query_source| {
+src/am/ec_hnsw/build_parallel.rs:1717:                with_concurrent_dsm_source_for_node(
+src/am/ec_hnsw/build_parallel.rs:1729:            with_concurrent_dsm_code_for_node(parts, layout, query_idx, |query_code| {
+src/am/ec_hnsw/build_parallel.rs:1730:                with_concurrent_dsm_code_for_node(parts, layout, candidate_idx, |candidate_code| {
+src/am/ec_hnsw/build_parallel.rs:1746:unsafe fn with_concurrent_dsm_code_for_node<R>(
+src/am/ec_hnsw/build_parallel.rs:1750:    f: impl for<'a> FnOnce(&'a [u8]) -> R,
+src/am/ec_hnsw/build_parallel.rs:1763:unsafe fn with_concurrent_dsm_source_for_node<R>(
+src/am/ec_hnsw/build_parallel.rs:1767:    f: impl for<'a> FnOnce(&'a [f32]) -> R,
+src/am/ec_hnsw/build_parallel.rs:1787:unsafe fn with_concurrent_dsm_node_slots<R>(
+src/am/ec_hnsw/build_parallel.rs:1790:    f: impl for<'a> FnOnce(&'a [u32]) -> R,
+src/am/ec_hnsw/build_parallel.rs:1803:unsafe fn with_concurrent_dsm_node_slots_mut<R>(
+src/am/ec_hnsw/build_parallel.rs:1806:    f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
+src/am/ec_hnsw/build_parallel.rs:1819:unsafe fn with_concurrent_dsm_neighbor_slots_init<R>(
+src/am/ec_hnsw/build_parallel.rs:1822:    f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
+src/am/ec_hnsw/build_parallel.rs:1825:        slice::from_raw_parts_mut(parts.neighbor_slots, layout.total_neighbor_slots as usize)
+src/am/ec_hnsw/build_parallel.rs:1830:unsafe fn with_concurrent_dsm_codes_init<R>(
+src/am/ec_hnsw/build_parallel.rs:1833:    f: impl for<'a> FnOnce(&'a mut [u8]) -> R,
+src/am/ec_hnsw/build_parallel.rs:1835:    let codes = unsafe { slice::from_raw_parts_mut(parts.codes, code_bytes) };
+src/am/ec_hnsw/build_parallel.rs:1839:unsafe fn with_concurrent_dsm_sources_init<R>(
+src/am/ec_hnsw/build_parallel.rs:1842:    f: impl for<'a> FnOnce(&'a mut [f32]) -> R,
+src/am/ec_hnsw/build_parallel.rs:1844:    let sources = unsafe { slice::from_raw_parts_mut(parts.sources, source_values) };
+src/am/ec_hnsw/build_parallel.rs:3790:            with_concurrent_dsm_node_slots(parts, entry, |entry_slots| {
