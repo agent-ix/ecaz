@@ -842,24 +842,14 @@ pub unsafe extern "C-unwind" fn ecvector_typmod_in(
 ) -> pg_sys::Datum {
     pgrx::pgrx_extern_c_guard(|| unsafe {
         let datum = pgrx::fcinfo::pg_getarg_datum_raw(fcinfo, 0);
-        let original = datum
-            .cast_mut_ptr::<std::ffi::c_void>()
-            .cast::<pg_sys::ArrayType>();
-        let array = pg_sys::pg_detoast_datum_packed(original.cast()).cast::<pg_sys::ArrayType>();
-        let is_copy = !std::ptr::eq(array, original);
+        let array = DetoastedTypmodArray::from_datum(datum);
         let mut count = 0;
-        let raw_typmods = pg_sys::ArrayGetIntegerTypmods(array, &mut count);
+        let raw_typmods = pg_sys::ArrayGetIntegerTypmods(array.as_ptr(), &mut count);
         let dim = if count == 1 {
             *raw_typmods
         } else {
-            if is_copy {
-                pg_sys::pfree(array.cast());
-            }
             pgrx::error!("invalid type modifier");
         };
-        if is_copy {
-            pg_sys::pfree(array.cast());
-        }
         if dim < 1 {
             pgrx::error!("dimensions for type ecvector must be at least 1");
         }
@@ -872,6 +862,38 @@ pub unsafe extern "C-unwind" fn ecvector_typmod_in(
         dim.into_datum()
             .expect("typmod integer should convert to datum")
     })
+}
+
+#[derive(Debug)]
+struct DetoastedTypmodArray {
+    array: *mut pg_sys::ArrayType,
+    owned: bool,
+}
+
+impl DetoastedTypmodArray {
+    unsafe fn from_datum(datum: pg_sys::Datum) -> Self {
+        let original = datum
+            .cast_mut_ptr::<std::ffi::c_void>()
+            .cast::<pg_sys::ArrayType>();
+        let array =
+            unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) }.cast::<pg_sys::ArrayType>();
+        Self {
+            array,
+            owned: !std::ptr::eq(array, original),
+        }
+    }
+
+    fn as_ptr(&self) -> *mut pg_sys::ArrayType {
+        self.array
+    }
+}
+
+impl Drop for DetoastedTypmodArray {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { pg_sys::pfree(self.array.cast()) };
+        }
+    }
 }
 
 #[no_mangle]
