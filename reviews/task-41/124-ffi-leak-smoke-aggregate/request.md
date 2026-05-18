@@ -4,7 +4,7 @@
 
 - Code commit: `8f2e6acdb466fa495de333d36d9ae7df143ab7c7`
 - Branch: `task41-inv1-inv3-followups`
-- Task: `plan/tasks/41-hardening-safety-burndown.md`
+- Task: `plan/tasks/41-ffi-safety-boundary.md`
 
 ## Summary
 
@@ -41,4 +41,3 @@ Live fault-smoke execution was not run in this turn.
 ## Validation
 
 Packet-local validation details are recorded in `artifacts/manifest.md`.
-
