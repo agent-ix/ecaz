@@ -188,28 +188,14 @@ pub(super) unsafe fn materialize_chain_from_index(
                 format!("ec_diskann beginscan could not open data block {block_number}")
             })?;
             let page = buffer.page();
+            let data_page_size = buffer.page_size();
             let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
             for offset in 1..=max_offset {
-                let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };
-                if item_id.is_null() {
-                    return Err(format!(
-                        "ec_diskann data block {block_number} returned a null item id at offset {offset}"
-                    ));
+                if let Some(tuple_bytes) = unsafe {
+                    copy_data_page_tuple_bytes(page, data_page_size, block_number, offset)?
+                } {
+                    chain.insert_raw_tuple(tuple_bytes)?;
                 }
-                let item_id_ref = unsafe { &*item_id };
-                if item_id_ref.lp_flags() == 0 {
-                    continue;
-                }
-                let tuple_len = item_id_ref.lp_len() as usize;
-                let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
-                if tuple_ptr.is_null() {
-                    return Err(format!(
-                        "ec_diskann data block {block_number} returned a null tuple pointer at offset {offset}"
-                    ));
-                }
-                let tuple_bytes =
-                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) }.to_vec();
-                chain.insert_raw_tuple(tuple_bytes)?;
             }
             Ok(())
         };
@@ -217,6 +203,41 @@ pub(super) unsafe fn materialize_chain_from_index(
     }
 
     Ok((metadata, chain))
+}
+
+unsafe fn copy_data_page_tuple_bytes(
+    page: pg_sys::Page,
+    page_size: usize,
+    block_number: pg_sys::BlockNumber,
+    offset: pg_sys::OffsetNumber,
+) -> Result<Option<Vec<u8>>, String> {
+    let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };
+    if item_id.is_null() {
+        return Err(format!(
+            "ec_diskann data block {block_number} returned a null item id at offset {offset}"
+        ));
+    }
+    let item_id_ref = unsafe { &*item_id };
+    if item_id_ref.lp_flags() == 0 {
+        return Ok(None);
+    }
+
+    let tuple_offset = item_id_ref.lp_off() as usize;
+    let tuple_len = item_id_ref.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        return Err(format!(
+            "ec_diskann data block {block_number} tuple bounds exceed page at offset {offset}"
+        ));
+    }
+
+    let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
+    if tuple_ptr.is_null() {
+        return Err(format!(
+            "ec_diskann data block {block_number} returned a null tuple pointer at offset {offset}"
+        ));
+    }
+    let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) }.to_vec();
+    Ok(Some(tuple_bytes))
 }
 
 pub(super) unsafe fn resolve_scan_heap_relation(
