@@ -843,13 +843,7 @@ pub unsafe extern "C-unwind" fn ecvector_typmod_in(
     pgrx::pgrx_extern_c_guard(|| unsafe {
         let datum = pgrx::fcinfo::pg_getarg_datum_raw(fcinfo, 0);
         let array = DetoastedTypmodArray::from_datum(datum);
-        let mut count = 0;
-        let raw_typmods = pg_sys::ArrayGetIntegerTypmods(array.as_ptr(), &mut count);
-        let dim = if count == 1 {
-            *raw_typmods
-        } else {
-            pgrx::error!("invalid type modifier");
-        };
+        let dim = array.single_typmod();
         if dim < 1 {
             pgrx::error!("dimensions for type ecvector must be at least 1");
         }
@@ -864,36 +858,35 @@ pub unsafe extern "C-unwind" fn ecvector_typmod_in(
     })
 }
 
+/// Detoast copies are palloc-owned. Drop runs whenever Rust frames unwind
+/// (including `pgrx::error!`, which raises a Rust panic before re-raising the
+/// PG ERROR), freeing the copy. PostgreSQL memory-context cleanup at (sub)txn
+/// abort is the fallback for paths where control leaves Rust without unwinding
+/// these frames.
 #[derive(Debug)]
-// Detoast copies are palloc-owned. Drop frees copied arrays on normal Rust
-// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
 struct DetoastedTypmodArray {
-    array: *mut pg_sys::ArrayType,
-    owned: bool,
+    array: am::common::detoast::DetoastedVarlena,
 }
 
 impl DetoastedTypmodArray {
     unsafe fn from_datum(datum: pg_sys::Datum) -> Self {
-        let original = datum
-            .cast_mut_ptr::<std::ffi::c_void>()
-            .cast::<pg_sys::ArrayType>();
-        let array =
-            unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) }.cast::<pg_sys::ArrayType>();
-        Self {
-            array,
-            owned: !std::ptr::eq(array, original),
-        }
+        let array = unsafe { am::common::detoast::DetoastedVarlena::packed_from_datum(datum) }
+            .unwrap_or_else(|| pgrx::error!("invalid type modifier"));
+        Self { array }
     }
 
-    fn as_ptr(&self) -> *mut pg_sys::ArrayType {
-        self.array
-    }
-}
-
-impl Drop for DetoastedTypmodArray {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.array.cast()) };
+    fn single_typmod(&self) -> i32 {
+        let mut count = 0;
+        let raw_typmods = unsafe {
+            pg_sys::ArrayGetIntegerTypmods(
+                self.array.as_ptr().cast::<pg_sys::ArrayType>(),
+                &mut count,
+            )
+        };
+        if count == 1 {
+            unsafe { *raw_typmods }
+        } else {
+            pgrx::error!("invalid type modifier");
         }
     }
 }

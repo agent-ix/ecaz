@@ -1,10 +1,11 @@
 use std::{
-    ffi::{c_int, c_void, CStr},
+    ffi::{c_int, CStr},
     marker::PhantomData,
-    ptr,
 };
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgTupleDesc};
+
+use crate::am::common::detoast::DetoastedVarlena;
 
 use super::page;
 
@@ -488,12 +489,8 @@ pub(crate) unsafe fn required_slot_datum(
     unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
-#[derive(Debug)]
-// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
-// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
 struct DetoastedFloat4Datum {
-    varlena: *mut pg_sys::varlena,
-    owned: bool,
+    varlena: DetoastedVarlena,
 }
 
 impl DetoastedFloat4Datum {
@@ -502,32 +499,18 @@ impl DetoastedFloat4Datum {
             pgrx::error!("ec_hnsw does not support NULL {label}");
         }
 
-        let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
-        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
-        if varlena.is_null() {
-            pgrx::error!("ec_hnsw could not detoast {label}");
-        }
+        let varlena = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw could not detoast {label}"));
 
-        Self {
-            varlena,
-            owned: !ptr::eq(varlena, original),
-        }
+        Self { varlena }
     }
 
     fn as_array_ptr(&self) -> *mut pg_sys::ArrayType {
-        self.varlena.cast::<pg_sys::ArrayType>()
+        self.varlena.as_ptr().cast::<pg_sys::ArrayType>()
     }
 
     fn as_bytes(&self) -> &[u8] {
-        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
-    }
-}
-
-impl Drop for DetoastedFloat4Datum {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.varlena.cast()) };
-        }
+        self.varlena.as_bytes()
     }
 }
 

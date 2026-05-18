@@ -1957,7 +1957,7 @@ unsafe fn with_heap_source_vector<T>(
     source_attnum: i32,
     heap_tid: ItemPointer,
     context: &str,
-    f: impl FnOnce(&[f32]) -> Result<T, String>,
+    f: impl for<'a> FnOnce(&'a [f32]) -> Result<T, String>,
 ) -> Result<T, String> {
     unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
     let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };

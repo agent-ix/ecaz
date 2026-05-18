@@ -5,7 +5,7 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
 use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
 use super::{options, page, training, P_NEW};
-use crate::am::common::training as common_training;
+use crate::am::common::{detoast::DetoastedVarlena, training as common_training};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::{
     buffer_guard::LockedBufferGuard,
@@ -694,45 +694,9 @@ fn build_tqvector_tuple(
 }
 
 unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
-    unsafe { DetoastedBuildDatum::from_datum(datum, label) }.to_vec()
-}
-
-#[derive(Debug)]
-// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
-// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
-struct DetoastedBuildDatum {
-    varlena: *mut pg_sys::varlena,
-    owned: bool,
-}
-
-impl DetoastedBuildDatum {
-    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
-        let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
-        let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-        if varlena.is_null() {
-            pgrx::error!("ec_ivf could not detoast {label}");
-        }
-        Self {
-            varlena,
-            owned: !ptr::eq(varlena, original),
-        }
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
-    }
-
-    fn to_vec(&self) -> Vec<u8> {
-        self.as_bytes().to_vec()
-    }
-}
-
-impl Drop for DetoastedBuildDatum {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.varlena.cast()) };
-        }
-    }
+    unsafe { DetoastedVarlena::packed_from_datum(datum) }
+        .unwrap_or_else(|| pgrx::error!("ec_ivf could not detoast {label}"))
+        .to_vec()
 }
 
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {

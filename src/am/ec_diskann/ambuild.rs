@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
-use crate::am::common::training;
+use crate::am::common::{detoast::DetoastedVarlena, training};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
@@ -829,9 +829,10 @@ unsafe fn validate_single_ecvector_attribute(
 
 pub(super) unsafe fn with_ecvector_datum_slice<T>(
     datum: pg_sys::Datum,
-    f: impl FnOnce(&[f32]) -> T,
+    f: impl for<'a> FnOnce(&'a [f32]) -> T,
 ) -> T {
-    let detoasted = unsafe { DetoastedEcvectorDatum::from_datum(datum) };
+    let detoasted = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+        .unwrap_or_else(|| pgrx::error!("ec_diskann could not detoast indexed ecvector"));
     let bytes = detoasted.as_bytes();
     if bytes.len() % std::mem::size_of::<f32>() != 0 {
         pgrx::error!("ec_diskann indexed ecvector payload length must be a multiple of 4 bytes");
@@ -841,40 +842,6 @@ pub(super) unsafe fn with_ecvector_datum_slice<T>(
         pgrx::error!("ec_diskann indexed ecvector payload is not aligned for float4 access");
     }
     f(body)
-}
-
-#[derive(Debug)]
-// Detoast copies are palloc-owned. Drop frees copied varlena on normal Rust
-// paths; PostgreSQL memory-context cleanup covers ERROR abort fallbacks.
-struct DetoastedEcvectorDatum {
-    varlena: *mut pg_sys::varlena,
-    owned: bool,
-}
-
-impl DetoastedEcvectorDatum {
-    unsafe fn from_datum(datum: pg_sys::Datum) -> Self {
-        let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
-        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
-        if varlena.is_null() {
-            pgrx::error!("ec_diskann could not detoast indexed ecvector");
-        }
-        Self {
-            varlena,
-            owned: !ptr::eq(varlena, original),
-        }
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
-    }
-}
-
-impl Drop for DetoastedEcvectorDatum {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.varlena.cast()) };
-        }
-    }
 }
 
 pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
