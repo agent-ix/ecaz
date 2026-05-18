@@ -167,31 +167,11 @@ fn decode_remote_search_typed_tuple_payload_pg_row(
         .try_get::<_, Vec<String>>("payload_type_oids")
         .map_err(|_| {
             "ec_spire remote heap executor typed payload_type_oids decode failed".to_owned()
-        })?
-        .into_iter()
-        .map(|oid| {
-            oid.parse::<u32>()
-                .map(pg_sys::Oid::from)
-                .map_err(|_| "ec_spire remote heap executor typed payload_type_oid is invalid".to_owned())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        })?;
     let payload_typmods = row
         .try_get::<_, Vec<i32>>("payload_typmods")
         .map_err(|_| "ec_spire remote heap executor typed payload_typmods decode failed".to_owned())?;
-    let payload_collations = match row.try_get::<_, Vec<String>>("payload_collations") {
-        Ok(collations) => collations
-            .into_iter()
-            .map(|oid| {
-                oid.parse::<u32>()
-                    .map(pg_sys::Oid::from)
-                    .map_err(|_| {
-                        "ec_spire remote heap executor typed payload_collation is invalid"
-                            .to_owned()
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        Err(_) => vec![pg_sys::InvalidOid; payload_attnums.len()],
-    };
+    let payload_collations = row.try_get::<_, Vec<String>>("payload_collations").ok();
     let payload_nulls = row
         .try_get::<_, Vec<bool>>("payload_nulls")
         .map_err(|_| "ec_spire remote heap executor typed payload_nulls decode failed".to_owned())?;
@@ -200,18 +180,6 @@ fn decode_remote_search_typed_tuple_payload_pg_row(
         .map_err(|_| {
             "ec_spire remote heap executor typed payload_values_hex decode failed".to_owned()
         })?;
-    validate_remote_payload_row_bytes(
-        typed_payload_hex_decoded_bytes(&payload_values_hex)?,
-        "remote typed tuple payload",
-    )?;
-    let payload_values = payload_values_hex
-        .iter()
-        .map(|value| {
-            hex::decode(value).map_err(|_| {
-                "ec_spire remote heap executor typed payload_values_hex is invalid".to_owned()
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let payload_formats = row
         .try_get::<_, Vec<String>>("payload_formats")
         .map_err(|_| {
@@ -225,52 +193,19 @@ fn decode_remote_search_typed_tuple_payload_pg_row(
         .map_err(|_| {
             "ec_spire remote heap executor tuple_transport_status decode failed".to_owned()
         })?;
-    let payload_width = payload_attnums.len();
-    for (label, width) in [
-        ("payload_names", payload_names.len()),
-        ("payload_type_oids", payload_type_oids.len()),
-        ("payload_typmods", payload_typmods.len()),
-        ("payload_collations", payload_collations.len()),
-        ("payload_nulls", payload_nulls.len()),
-        ("payload_values", payload_values.len()),
-        ("payload_formats", payload_formats.len()),
-    ] {
-        if width != payload_width {
-            return Err(format!(
-                "ec_spire remote heap executor typed {label} width {width} does not match attnum width {payload_width}"
-            ));
-        }
-    }
-    if tuple_transport != SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1 {
-        return Err(format!(
-            "ec_spire remote heap executor unsupported tuple transport {tuple_transport}"
-        ));
-    }
-    if tuple_transport_status != SPIRE_REMOTE_STATUS_READY {
-        return Err(format!(
-            "ec_spire remote heap executor tuple transport status {tuple_transport_status} is not ready"
-        ));
-    }
-    if payload_formats
-        .iter()
-        .any(|format| format != SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1)
-    {
-        return Err(
-            "ec_spire remote heap executor typed payload format mismatch".to_owned()
-        );
-    }
 
-    Ok(Some(SpireRemoteTypedTuplePayload {
-        payload_attnums,
-        payload_names,
-        payload_type_oids,
-        payload_typmods,
-        payload_collations,
-        payload_nulls,
-        payload_values,
-        payload_formats,
-        tuple_transport: SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1,
-        tuple_transport_status: SPIRE_REMOTE_STATUS_READY,
-    }))
+    Ok(Some(decode_remote_typed_tuple_payload_fields(
+        RemoteTypedTuplePayloadFields {
+            payload_attnums,
+            payload_names,
+            payload_type_oids,
+            payload_typmods,
+            payload_collations,
+            payload_nulls,
+            payload_values_hex,
+            payload_formats,
+            tuple_transport,
+            tuple_transport_status,
+        },
+    )?))
 }
-
