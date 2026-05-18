@@ -860,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn beam_search_forget_queued_removes_frontier_node_and_allows_reseed() {
+    fn miri_beam_search_forget_queued_removes_frontier_node_and_allows_reseed() {
         let mut search = BeamSearch::new(4);
         search.seed_many([
             BeamCandidate::new(1_u64, 0.9),
@@ -951,7 +951,7 @@ mod tests {
     }
 
     #[test]
-    fn beam_search_peek_best_matching_skips_stale_leaders() {
+    fn miri_beam_search_peek_best_matching_skips_stale_leaders() {
         let mut search = BeamSearch::new(4);
         search.seed_many([
             BeamCandidate::new(1_u64, 0.1),
@@ -976,7 +976,7 @@ mod tests {
     }
 
     #[test]
-    fn beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier() {
+    fn miri_beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier() {
         let mut search = BeamSearch::new(4);
         search.seed_many([
             BeamCandidate::new(1_u64, 0.1),
@@ -1403,7 +1403,7 @@ mod tests {
     }
 
     #[test]
-    fn visible_frontier_select_next_with_refill_skips_until_selected_then_advances() {
+    fn miri_visible_frontier_select_next_with_refill_skips_until_selected_then_advances() {
         let mut visible = VisibleFrontier::default();
         visible.extend([
             BeamCandidate::new(1_u64, 0.1),

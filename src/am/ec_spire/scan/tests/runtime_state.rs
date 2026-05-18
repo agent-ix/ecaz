@@ -1,5 +1,5 @@
     #[test]
-    fn rerank_scored_candidates_by_ip_rescores_prefix_and_truncates() {
+    fn miri_rerank_scored_candidates_by_ip_rescores_prefix_and_truncates() {
         let mut candidates = vec![
             scored_candidate(1, 10, 1, -5.0),
             scored_candidate(2, 10, 2, -4.0),
@@ -45,7 +45,7 @@
     }
 
     #[test]
-    fn rerank_scored_candidates_by_ip_drops_invisible_candidates() {
+    fn miri_rerank_scored_candidates_by_ip_drops_invisible_candidates() {
         let mut candidates = vec![
             scored_candidate(1, 10, 1, -5.0),
             scored_candidate(2, 10, 2, -4.0),
@@ -110,7 +110,7 @@
     }
 
     #[test]
-    fn rerank_scored_candidates_by_ip_rejects_non_finite_scores() {
+    fn miri_rerank_scored_candidates_by_ip_rejects_non_finite_scores() {
         let mut candidates = vec![scored_candidate(1, 10, 1, -5.0)];
 
         assert!(

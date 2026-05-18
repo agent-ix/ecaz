@@ -158,7 +158,7 @@ mod tests {
 
     // VC-001: mark_deleted flips the bit and is idempotent.
     #[test]
-    fn vc_001_mark_deleted_is_idempotent() {
+    fn miri_vc_001_mark_deleted_is_idempotent() {
         let mut t = make_tuple(&[], 4);
         assert!(!t.deleted);
         mark_deleted(&mut t);
@@ -169,7 +169,7 @@ mod tests {
 
     // VC-002: mark_deleted does not clear neighbors or primary heaptid.
     #[test]
-    fn vc_002_mark_deleted_preserves_payload() {
+    fn miri_vc_002_mark_deleted_preserves_payload() {
         let mut t = make_tuple(&[tid(1, 1), tid(2, 2)], 4);
         let original = t.clone();
         mark_deleted(&mut t);
@@ -181,7 +181,7 @@ mod tests {
     // VC-003: strip_dead_primary_heaptid only fires when predicate
     // matches, returns the right boolean.
     #[test]
-    fn vc_003_strip_dead_primary_heaptid_predicate() {
+    fn miri_vc_003_strip_dead_primary_heaptid_predicate() {
         let mut t = make_tuple(&[], 4);
         assert!(!strip_dead_primary_heaptid(&mut t, |_| false));
         assert_eq!(t.primary_heaptid, tid(100, 1));
@@ -193,7 +193,7 @@ mod tests {
     // VC-004: strip skips already-INVALID heaptids without invoking
     // the predicate.
     #[test]
-    fn vc_004_strip_skips_already_invalid() {
+    fn miri_vc_004_strip_skips_already_invalid() {
         use std::cell::Cell;
         let mut t = make_tuple(&[], 4);
         t.primary_heaptid = ItemPointer::INVALID;
@@ -209,7 +209,7 @@ mod tests {
     // VC-005: is_fully_dead — INVALID + no overflow ⇒ true; alive
     // primary or overflow ⇒ false.
     #[test]
-    fn vc_005_is_fully_dead_semantics() {
+    fn miri_vc_005_is_fully_dead_semantics() {
         let mut t = make_tuple(&[], 4);
         assert!(!is_fully_dead(&t));
 
@@ -309,7 +309,7 @@ mod tests {
     // neighbors repaired → marked deleted. Each step is independent;
     // none clears state set by another.
     #[test]
-    fn vc_010_full_deletion_state_machine() {
+    fn miri_vc_010_full_deletion_state_machine() {
         let mut t = make_tuple(&[tid(1, 1), tid(2, 2), tid(3, 3)], 4);
 
         // Pass 1: heap row dies, primary stripped.
