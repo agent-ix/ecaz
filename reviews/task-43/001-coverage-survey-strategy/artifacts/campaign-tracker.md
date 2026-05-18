@@ -35,9 +35,9 @@ evidence or a concrete blocker with the extraction work needed.
 | --- | --- | --- | --- |
 | G1 | Default Miri and Tree Borrows are first-class hardening lanes. | Done | Packets 002 and 005; `miri-full` is in `hardening-nightly-local`; `make-miri-tree.log` passed 35 tests. |
 | G2 | `miri-many-seeds` includes at least one real threaded/atomic `miri_` test. | Done | Packet 007 adds `miri_parallel_worker_slots_are_unique_under_threaded_contention`; targeted `0..128` many-seeds passed. |
-| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | Packets 008 and 009 close DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, SPIRE routing, and remote parser breadth rows. SPIRE delete-delta/vacuum, SPIRE serialization deltas, and mutation probes remain open. |
+| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | Packets 008-010 close DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, SPIRE routing, remote parser, and SPIRE vacuum/delete-delta breadth rows. SPIRE serialization deltas and mutation probes remain open. |
 | G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Done | Packet 009 extracts field-level typed payload validation and covers valid/adversarial fields under Miri. |
-| G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Not done | Cover pure object-store/delete-delta tests or document exact blocker. |
+| G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Done | Packet 010 covers delete-delta visibility, active delta folding, and invalid delete-target rejection under Miri. |
 | G6 | cargo-careful mirrors every path-liftable Miri surface. | Partial | Packet 008 proves the path-lifted DiskANN/HNSW careful harness at 69 tests; SPIRE scan/routing and future extracted helpers still need mirroring or blockers. |
 | G7 | Mutation/sensitivity probes exist for each major subsystem. | Not done | Add temporary diffs and failure logs by subsystem. |
 | G8 | Final audit maps task-file requirements and reviewer findings to evidence. | Not done | Produce final packet only after G2-G7 are complete. |
@@ -54,6 +54,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `007-real-many-seeds-parallel-state` | Real threaded common-parallel shared-state test passes under default Miri, Tree Borrows, and `0..128` many-seeds. | Full campaign breadth; mutation probe for common parallel state. |
 | `008-breadth-closure-existing-tests` | 32 targeted Miri tests across DiskANN graph, DiskANN vacuum, HNSW graph, SPIRE top-k, and SPIRE routing; careful harness passes 69 tests. | Remote typed payload validation; SPIRE delete-delta/vacuum visibility; SPIRE serialization delta helpers; mutation probes; final aggregate campaign. |
 | `009-remote-parser-extraction` | Row-independent remote typed payload validation passes targeted Miri, including valid fields, invalid hex, byte caps, width mismatches, OID/collation parsing, and transport/format constraints. | cargo-careful mirror; mutation probe; final aggregate campaign. |
+| `010-spire-vacuum-delete-delta` | SPIRE vacuum/delete-delta visibility and rejection coverage passes targeted Miri: 1 vacuum visibility test, 6 delta snapshot tests, and 1 replacement fold test. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 
 ## Subsystem Coverage Matrix
 
@@ -150,10 +151,10 @@ Status values:
 
 | Target | Current status | Required action |
 | --- | --- | --- |
-| Delete-delta grouping | Not done | Promote pure test if it avoids pgrx; otherwise record exact object-store dependency. |
-| Visible assignments exclude delete-delta targets | Not done | Promote pure visible-row filtering test or extract helper. |
-| Duplicate/stale delete target rejection | Not done | Promote pure delta validation test or record exact blocker. |
-| cargo-careful mirror | Not done | Mirror only if helper extraction keeps dependency closure pure. |
+| Delete-delta grouping | Done | Packet 010 promotes `miri_delta_epoch_draft_from_snapshot_carries_base_entries` and `miri_replacement_leaf_rows_fold_active_deltas_into_base_leaf_rows`. |
+| Visible assignments exclude delete-delta targets | Done | Packet 010 adds `miri_collect_visible_assignments_excludes_delete_delta_targets`. |
+| Duplicate/stale delete target rejection | Done | Packet 010 promotes unknown, mismatched, stale, duplicate, and already-deleted delete-target rejection tests. |
+| cargo-careful mirror | Blocked | The covered SPIRE vacuum/update paths depend on the SPIRE storage/meta/update modules and pgrx-facing crate context. Mirroring requires a SPIRE-focused careful harness with pgrx-free shims for the local object store, manifest types, and `ItemPointer` boundary. |
 | Mutation probe | Not done | Break delete filtering or duplicate-target rejection and record failure. |
 
 ### Remote Parser / Typed Payload
@@ -210,7 +211,7 @@ claims, then the final campaign packet must run the aggregate matrix.
 | `007-real-many-seeds-parallel-state` | Add threaded/atomic Miri coverage for real common parallel shared state. | Done |
 | `008-breadth-closure-existing-tests` | Promote existing small pure tests named in packet 001 across DiskANN, HNSW, SPIRE top-k, routing, and vacuum. | Done |
 | `009-remote-parser-extraction` | Extract/test Row-independent typed payload parser validation. | Done |
-| `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Not started |
+| `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Done |
 | `011-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Not started |
 | `012-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Not started |
 | `013-final-campaign-audit` | Run aggregate lanes and map every gate/finding to evidence. | Not started |
