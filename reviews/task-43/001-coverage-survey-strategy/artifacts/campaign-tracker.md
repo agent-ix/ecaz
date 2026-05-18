@@ -35,7 +35,7 @@ evidence or a concrete blocker with the extraction work needed.
 | --- | --- | --- | --- |
 | G1 | Default Miri and Tree Borrows are first-class hardening lanes. | Done | Packets 002 and 005; `miri-full` is in `hardening-nightly-local`; `make-miri-tree.log` passed 35 tests. |
 | G2 | `miri-many-seeds` includes at least one real threaded/atomic `miri_` test. | Done | Packet 007 adds `miri_parallel_worker_slots_are_unique_under_threaded_contention`; targeted `0..128` many-seeds passed. |
-| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Partial | Packets 008-010 close DiskANN graph, HNSW graph, DiskANN vacuum, SPIRE top-k, SPIRE routing, remote parser, and SPIRE vacuum/delete-delta breadth rows. SPIRE serialization deltas and mutation probes remain open. |
+| G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Done | Packets 008-011 close the strategy-named pure subsystem breadth rows. Remaining work is tracked under G6 careful mirroring/blockers, G7 mutation probes, and G8 final audit. |
 | G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Done | Packet 009 extracts field-level typed payload validation and covers valid/adversarial fields under Miri. |
 | G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Done | Packet 010 covers delete-delta visibility, active delta folding, and invalid delete-target rejection under Miri. |
 | G6 | cargo-careful mirrors every path-liftable Miri surface. | Partial | Packet 008 proves the path-lifted DiskANN/HNSW careful harness at 69 tests; SPIRE scan/routing and future extracted helpers still need mirroring or blockers. |
@@ -55,6 +55,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `008-breadth-closure-existing-tests` | 32 targeted Miri tests across DiskANN graph, DiskANN vacuum, HNSW graph, SPIRE top-k, and SPIRE routing; careful harness passes 69 tests. | Remote typed payload validation; SPIRE delete-delta/vacuum visibility; SPIRE serialization delta helpers; mutation probes; final aggregate campaign. |
 | `009-remote-parser-extraction` | Row-independent remote typed payload validation passes targeted Miri, including valid fields, invalid hex, byte caps, width mismatches, OID/collation parsing, and transport/format constraints. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 | `010-spire-vacuum-delete-delta` | SPIRE vacuum/delete-delta visibility and rejection coverage passes targeted Miri: 1 vacuum visibility test, 6 delta snapshot tests, and 1 replacement fold test. | cargo-careful mirror; mutation probe; final aggregate campaign. |
+| `011-spire-serialization-layout` | SPIRE assignment row, delta object, and vec-id serialization/layout helpers pass targeted Miri. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 
 ## Subsystem Coverage Matrix
 
@@ -182,7 +183,7 @@ Status values:
 | HNSW page tuples | Done | Existing HNSW page `miri_` tests. |
 | SPIRE leaf V2 | Done | Existing leaf V2 `miri_` tests. |
 | SPIRE top graph | Done | `miri_top_graph_partition_object_round_trips_nodes`. |
-| SPIRE delta / assignment / vec-id helpers | Not done | Promote pure storage tests if bounded; otherwise record blocker. |
+| SPIRE delta / assignment / vec-id helpers | Done | Packet 011 promotes assignment row, delta partition object, and vec-id helper tests under Miri. |
 | Mutation probe | Not done | Corrupt an encode/decode invariant and record failure. |
 
 ## Validation Matrix
@@ -212,9 +213,10 @@ claims, then the final campaign packet must run the aggregate matrix.
 | `008-breadth-closure-existing-tests` | Promote existing small pure tests named in packet 001 across DiskANN, HNSW, SPIRE top-k, routing, and vacuum. | Done |
 | `009-remote-parser-extraction` | Extract/test Row-independent typed payload parser validation. | Done |
 | `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Done |
-| `011-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Not started |
-| `012-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Not started |
-| `013-final-campaign-audit` | Run aggregate lanes and map every gate/finding to evidence. | Not started |
+| `011-spire-serialization-layout` | Close the remaining SPIRE delta / assignment / vec-id serialization/layout breadth row. | Done |
+| `012-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Not started |
+| `013-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Not started |
+| `014-final-campaign-audit` | Run aggregate lanes and map every gate/finding to evidence. | Not started |
 
 ## Reviewer Feedback Disposition
 
