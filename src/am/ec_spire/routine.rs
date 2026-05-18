@@ -71,6 +71,7 @@ fn build_ec_spire_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine
 }
 
+#[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
     true
 }

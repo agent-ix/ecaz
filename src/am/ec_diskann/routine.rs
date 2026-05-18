@@ -1961,6 +1961,7 @@ unsafe fn fetch_heap_source_vector(
     }
 }
 
+#[pg_guard]
 unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
     true
 }
