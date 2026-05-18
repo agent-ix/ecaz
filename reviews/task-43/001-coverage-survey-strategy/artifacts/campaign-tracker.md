@@ -38,7 +38,7 @@ evidence or a concrete blocker with the extraction work needed.
 | G3 | All strategy-named pure subsystem candidates are covered or precisely blocked. | Done | Packets 008-011 close the strategy-named pure subsystem breadth rows. Remaining work is tracked under G6 careful mirroring/blockers, G7 mutation probes, and G8 final audit. |
 | G4 | Remote parser coverage includes Row-independent typed payload validation, not only byte caps. | Done | Packet 009 extracts field-level typed payload validation and covers valid/adversarial fields under Miri. |
 | G5 | SPIRE vacuum/delete-delta visibility has Miri coverage or a precise extraction blocker. | Done | Packet 010 covers delete-delta visibility, active delta folding, and invalid delete-target rejection under Miri. |
-| G6 | cargo-careful mirrors every path-liftable Miri surface. | Partial | Packet 008 proves the path-lifted DiskANN/HNSW careful harness at 69 tests; SPIRE scan/routing and future extracted helpers still need mirroring or blockers. |
+| G6 | cargo-careful mirrors every path-liftable Miri surface. | Done | Packet 012 proves the current path-lifted careful harness under normal Rust and `make careful` at 69 tests. SPIRE mirrors are blocked by pgrx/SPIRE include boundaries and need extraction or a SPIRE-specific careful micro-harness. |
 | G7 | Mutation/sensitivity probes exist for each major subsystem. | Not done | Add temporary diffs and failure logs by subsystem. |
 | G8 | Final audit maps task-file requirements and reviewer findings to evidence. | Not done | Produce final packet only after G2-G7 are complete. |
 
@@ -56,6 +56,7 @@ evidence or a concrete blocker with the extraction work needed.
 | `009-remote-parser-extraction` | Row-independent remote typed payload validation passes targeted Miri, including valid fields, invalid hex, byte caps, width mismatches, OID/collation parsing, and transport/format constraints. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 | `010-spire-vacuum-delete-delta` | SPIRE vacuum/delete-delta visibility and rejection coverage passes targeted Miri: 1 vacuum visibility test, 6 delta snapshot tests, and 1 replacement fold test. | cargo-careful mirror; mutation probe; final aggregate campaign. |
 | `011-spire-serialization-layout` | SPIRE assignment row, delta object, and vec-id serialization/layout helpers pass targeted Miri. | cargo-careful mirror; mutation probe; final aggregate campaign. |
+| `012-careful-mirroring` | The path-lifted cargo-careful harness passes 69 tests under both normal Rust and cargo-careful; non-lifted SPIRE mirrors have explicit blockers and extraction plans. | Mutation probe; final aggregate campaign. |
 
 ## Subsystem Coverage Matrix
 
@@ -132,7 +133,7 @@ Status values:
 | Primary-vs-boundary tie under bounded dedupe | Done | Packet 008 promotes `miri_rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe`. |
 | `rerank_scored_candidates_by_ip` prefix replacement | Done | Packet 008 promotes `miri_rerank_scored_candidates_by_ip_rescores_prefix_and_truncates` and invisible-candidate behavior. |
 | Non-finite rerank rejection | Done | Packet 008 promotes `miri_rerank_scored_candidates_by_ip_rejects_non_finite_scores`. |
-| cargo-careful mirror | Not done | Determine if scan candidate helpers can be path-lifted; otherwise document blocker and extraction plan. |
+| cargo-careful mirror | Blocked | Packet 012 records the blocker: the covered scan/top-k tests live in the SPIRE scan test include tree and depend on SPIRE `meta`, `storage`, `quantizer`, `options`, `SpirePublishedEpochSnapshot`, `SpireObjectReader`, and pgrx-facing `ItemPointer`/OID context. Mirroring requires either extracting the comparator/rerank/bounded-merge helpers behind pgrx-free DTOs or adding a SPIRE careful micro-harness with narrow shims for those boundaries. |
 | Mutation probe | Not done | Invert comparator or skip rerank score replacement and record failure. |
 
 ### SPIRE Routing
@@ -145,7 +146,7 @@ Status values:
 | Top-graph deterministic routing | Done | Packet 008 promotes `miri_route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes`. |
 | Recursive routing to leaf level | Done | Packet 008 promotes `miri_route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level` and conservative upper-level nprobe coverage. |
 | Route rejection paths | Done | Packet 008 promotes root mismatch, internal-parent, missing-child, and wrong-child-level rejection tests. |
-| cargo-careful mirror | Not done | Determine path-lift feasibility or extract pure routing helpers. |
+| cargo-careful mirror | Blocked | Packet 012 records the blocker: routing helpers depend on the SPIRE scan/meta/storage/top-graph object reader contracts and pgrx-facing tuple identity types. Mirroring requires extraction of the route-ranking/adaptive-nprobe core behind pgrx-free graph/object DTOs or a SPIRE careful micro-harness that shims only the object-reader and `ItemPointer` boundary. |
 | Mutation probe | Not done | Corrupt route ordering or budget dedupe and record failure. |
 
 ### SPIRE Vacuum / Delete-Delta Visibility
@@ -155,7 +156,7 @@ Status values:
 | Delete-delta grouping | Done | Packet 010 promotes `miri_delta_epoch_draft_from_snapshot_carries_base_entries` and `miri_replacement_leaf_rows_fold_active_deltas_into_base_leaf_rows`. |
 | Visible assignments exclude delete-delta targets | Done | Packet 010 adds `miri_collect_visible_assignments_excludes_delete_delta_targets`. |
 | Duplicate/stale delete target rejection | Done | Packet 010 promotes unknown, mismatched, stale, duplicate, and already-deleted delete-target rejection tests. |
-| cargo-careful mirror | Blocked | The covered SPIRE vacuum/update paths depend on the SPIRE storage/meta/update modules and pgrx-facing crate context. Mirroring requires a SPIRE-focused careful harness with pgrx-free shims for the local object store, manifest types, and `ItemPointer` boundary. |
+| cargo-careful mirror | Blocked | Packet 012 confirms the blocker: the covered SPIRE vacuum/update paths depend on the SPIRE storage/meta/update modules and pgrx-facing crate context. Mirroring requires a SPIRE-focused careful harness with pgrx-free shims for the local object store, manifest types, and `ItemPointer` boundary. |
 | Mutation probe | Not done | Break delete filtering or duplicate-target rejection and record failure. |
 
 ### Remote Parser / Typed Payload
@@ -169,7 +170,7 @@ Status values:
 | Invalid hex rejection | Done | Packet 009 `miri_remote_typed_payload_fields_reject_adversarial_shapes`. |
 | Payload width mismatch | Done | Packet 009 covers payload vector and collation width mismatches before Row decoding. |
 | OID / collation / format / transport constraints | Done | Packet 009 covers invalid type OID, invalid collation OID, non-ready transport status, unsupported transport, and bad per-column format. |
-| cargo-careful mirror | Blocked | The extracted helper still lives inside the pgrx SPIRE coordinator include module and returns `pg_sys::Oid` values in `SpireRemoteTypedTuplePayload`. Careful mirroring requires either a pgrx-free OID newtype/adapter or a remote-payload micro-harness that shims only this type boundary. |
+| cargo-careful mirror | Blocked | Packet 012 confirms the blocker: the extracted helper still lives inside the pgrx SPIRE coordinator include module and returns `pg_sys::Oid` values in `SpireRemoteTypedTuplePayload`. Careful mirroring requires either a pgrx-free OID newtype/adapter or a remote-payload micro-harness that shims only this type boundary. |
 | Mutation probe | Not done | Accept invalid hex or skip cap check temporarily and record failure. |
 
 ### Serialization / Layout
@@ -184,6 +185,7 @@ Status values:
 | SPIRE leaf V2 | Done | Existing leaf V2 `miri_` tests. |
 | SPIRE top graph | Done | `miri_top_graph_partition_object_round_trips_nodes`. |
 | SPIRE delta / assignment / vec-id helpers | Done | Packet 011 promotes assignment row, delta partition object, and vec-id helper tests under Miri. |
+| SPIRE serialization cargo-careful mirror | Blocked | Packet 012 records the blocker: the SPIRE serialization tests live behind the SPIRE storage/meta/update include graph and share pgrx-facing tuple identity and object-manifest types. Mirroring requires a SPIRE careful micro-harness or extraction of the assignment/delta/vec-id codecs behind pgrx-free DTOs. |
 | Mutation probe | Not done | Corrupt an encode/decode invariant and record failure. |
 
 ## Validation Matrix
@@ -214,7 +216,7 @@ claims, then the final campaign packet must run the aggregate matrix.
 | `009-remote-parser-extraction` | Extract/test Row-independent typed payload parser validation. | Done |
 | `010-spire-vacuum-delete-delta` | Cover SPIRE delete-delta/vacuum visibility or produce precise blocker/extraction plan. | Done |
 | `011-spire-serialization-layout` | Close the remaining SPIRE delta / assignment / vec-id serialization/layout breadth row. | Done |
-| `012-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Not started |
+| `012-careful-mirroring` | Mirror path-liftable new Miri surfaces in `hardening/careful`; document blockers. | Done |
 | `013-mutation-probes` | Run mutation/sensitivity probes for each major subsystem. | Not started |
 | `014-final-campaign-audit` | Run aggregate lanes and map every gate/finding to evidence. | Not started |
 

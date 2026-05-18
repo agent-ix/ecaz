@@ -110,7 +110,7 @@ the temporary exception and a reviewer accepts it.
   `hardening/careful/` so PostgreSQL callback symbols are kept out of the
   `cargo-careful` test binary. The harness path-lifts the storage page,
   DiskANN tuple/vacuum/Vamana graph, and HNSW search modules and currently
-  runs 67 pure tests under cargo-careful.
+  runs 69 pure tests under cargo-careful.
 
 Miri and Kani cover only pure Rust paths. pgrx, SPI, libpq, PostgreSQL memory
 contexts, and C callback entrypoints are outside their model and must stay in
