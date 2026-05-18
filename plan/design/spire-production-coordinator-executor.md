@@ -305,8 +305,8 @@ fixture must treat that matrix as the per-case acceptance contract: for every
 packet review directory using these names:
 
 ```text
-review/{packet}/artifacts/stage_e_fault_{fault_case}_strict.log
-review/{packet}/artifacts/stage_e_fault_{fault_case}_degraded.log
+reviews/task-{id}/{ordinal-topic}/artifacts/stage_e_fault_{fault_case}_strict.log
+reviews/task-{id}/{ordinal-topic}/artifacts/stage_e_fault_{fault_case}_degraded.log
 ```
 
 Each log must include:

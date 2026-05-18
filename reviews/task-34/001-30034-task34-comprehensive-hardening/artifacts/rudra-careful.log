@@ -1,0 +1,11 @@
+^DWARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+2026-05-16 19:37:50.186823 |INFO | [rudra-progress] Running cargo rudra
+2026-05-16 19:37:52.333527 |INFO | [rudra-progress] Running rudra for target lib:ecaz-careful-hardening
+[0m[1m[38;5;9merror[0m[0m[1m: couldn't read src/../../../src/storage/page.rs: No such file or directory (os error 2)[0m
+[0m [0m[0m[1m[38;5;12m--> [0m[0msrc/lib.rs:3:1[0m
+[0m  [0m[0m[1m[38;5;12m|[0m
+[0m[1m[38;5;12m3[0m[0m [0m[0m[1m[38;5;12m| [0m[0mmod page;[0m
+[0m  [0m[0m[1m[38;5;12m| [0m[0m[1m[38;5;9m^^^^^^^^^[0m
+
+[0m[0m[1m[31merror[0m[1m:[0m could not compile `ecaz-careful-hardening` due to previous error
+2026-05-16 19:37:54.949658 |ERROR| [rudra-progress] Finished with non-zero exit code

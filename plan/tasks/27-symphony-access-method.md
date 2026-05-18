@@ -15,7 +15,7 @@ reasoning. In short: Symphony does not use absolute-encoded RaBitQ, so
 the absolute-path recall verdict is not the right blocker. The actual
 Stage-2 prerequisite from the quantizer side was the centered-encode +
 score API, which landed in task 25 slice 15
-(`review/20014-task25-centered-api/`). Symphony's own recall gate lives
+(`reviews/task-25/015-20014-task25-centered-api/`). Symphony's own recall gate lives
 at the end of Phase 2 of this task — an end-to-end test, not a
 quantizer-module test.
 
@@ -189,11 +189,11 @@ See ADR-045 §"Stage 2" and §"Stage 3." Summary:
 
 - **Hard blocker (met):** task 25 shipped the centered-encode + score
   API that Symphony §3.1.1 / eq. (5)–(6) require
-  (`review/20014-task25-centered-api/`). The absolute-encoding 1pp
+  (`reviews/task-25/015-20014-task25-centered-api/`). The absolute-encoding 1pp
   recall gate has been retired for the reasons recorded in task 25
   ("Decision gate" section); it was never the right gate for Symphony.
 - **Hard blocker (met):** task 25 Phase 3 API freeze
-  (`review/20005-task25-task27-handoff-contract/`, superseded by the
+  (`reviews/task-25/006-20005-task25-task27-handoff-contract/`, superseded by the
   amended contract recorded in task 25 slice 16 after reviewer
   feedback on the centered-API packet). Covers rotation seam,
   absolute encoder + scorer, error-bound estimator, centered encode

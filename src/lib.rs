@@ -287,6 +287,10 @@ pub mod bench_api {
         ITEM_POINTER_BLOCK_NUMBER_OFFSET, ITEM_POINTER_BYTES, ITEM_POINTER_OFFSET_NUMBER_OFFSET,
         PAGE_HEADER_BYTES,
     };
+    pub use crate::storage::wal::{
+        validate_custom_wal_record_format_version, ECAZ_CUSTOM_WAL_RECORDS_ENABLED,
+        ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION, ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION_OFFSET,
+    };
 
     // Text I/O
     pub use crate::{format_text, parse_text, HEADER_BYTES, MIN_BINARY_BYTES};

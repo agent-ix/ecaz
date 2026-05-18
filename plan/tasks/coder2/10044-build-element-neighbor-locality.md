@@ -1,6 +1,6 @@
 # Task: Build Element/Neighbor Locality
 
-Review: `review/10044-build-element-neighbor-locality/request.md`
+Review: `reviews/task-05/174-10044-build-element-neighbor-locality/request.md`
 Priority: batch 1
 Status: ready
 

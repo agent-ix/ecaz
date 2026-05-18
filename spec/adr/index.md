@@ -59,6 +59,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPIRE distributed write path scope | `ADR-069-spire-distributed-write-path-scope.md` | ACCEPTED | Coordinator-routed INSERT uses two-phase commit; PK UPDATE/DELETE/PK-read route through the placement directory; embedding-UPDATE, bulk-load automation, and cross-shard non-vector queries are deferred. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
+| On-disk forward-compat encoding convention | `ADR-070-on-disk-forward-compat-encoding-convention.md` | PROPOSED | Realises NFR-016. Selects per-payload posture: reject-unknown (default), flag-byte optional regions, or length-prefixed TLV extension block. Blesses existing HNSW/DiskANN `payload_flags` as Option B. |
 
 ## Superseded Historical Decisions
 

@@ -67,7 +67,7 @@ Evidence:
   schema-drift fixture.
 - `scripts/run_spire_phase13c_drift_pg18.sh` is the packet-local PG18 SQL smoke
   for PK SELECT drift. The successful artifact is
-  `review/765-c1-spire-phase13c-aws-readiness/artifacts/phase13c-drift-success.log`.
+  `reviews/task-05/047-76-scan-debug-module-boundary5-c1-spire-phase13c-aws-readiness/artifacts/phase13c-drift-success.log`.
 - `scripts/run_spire_multicluster_customscan_read_pg18.sh` was rerun after the
   TLS parser default fix and still plans
   `Custom Scan (EcSpireDistributedScan)` with typed tuple payload transport.

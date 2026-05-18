@@ -177,7 +177,7 @@ The CLI is profile-aware for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and
 `ec_spire`, and accepts the standard PostgreSQL connection flags
 (`--database`, `--host`, `--port`, `--user`, `--password`) plus libpq
 environment fallbacks. For review evidence, pass
-`--log-file review/<topic>/artifacts/<run>.log` so command output is stored with
+`--log-file reviews/task-{id}/001-<topic>/artifacts/<run>.log` so command output is stored with
 the packet.
 
 See the [Operator CLI README](../crates/ecaz-cli/README.md) for the full

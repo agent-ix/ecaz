@@ -1,6 +1,6 @@
 # Task: DataPageChain O(1) Page Lookup
 
-Review: `review/10049-datapage-chain-linear-lookup/request.md`
+Review: `reviews/task-05/219-10049-datapage-chain-linear-lookup/request.md`
 Priority: batch 1
 Status: ready
 

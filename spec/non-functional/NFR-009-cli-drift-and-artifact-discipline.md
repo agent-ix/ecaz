@@ -19,7 +19,7 @@ Ecaz SHALL keep the operator CLI aligned with the implemented extension surface 
 
 1. The operator README command tree SHALL match the implemented Clap command tree.
 2. CLI profile metadata SHALL be audited against extension access-method names, opclasses, reloptions, and scan GUCs whenever those surfaces change.
-3. Evidence-producing CLI runs SHOULD use `--log-file review/<topic>/artifacts/<run>.log`.
+3. Evidence-producing CLI runs SHOULD use `--log-file reviews/task-{id}/001-<topic>/artifacts/<run>.log`.
 4. Review packets that cite CLI measurements SHALL store raw logs under the packet `artifacts/` directory and cite the command used.
 5. Long benchmark sequences SHOULD use `ecaz bench suite` configs instead of shell scripts so dry-run manifests, status checks, and packet-local artifact paths remain auditable.
 6. Until shared constants are extracted into a common crate, `profiles.rs` is the accepted drift watch point between the CLI and extension.

@@ -2,7 +2,7 @@
 
 Status: pre-persistence architecture gate for Task 30
 Date: 2026-05-02
-Review source: `review/30219-spire-foundation-progress-status/feedback.md`
+Review source: `reviews/task-30/148-30219-spire-foundation-progress-status/feedback.md`
 
 This note records the response to the first holistic SPIRE foundation review.
 The review accepts the Phase 0 storage direction, but correctly identifies

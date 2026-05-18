@@ -1,8 +1,9 @@
 # Task 29: DiskANN Initial Tuning Lane
 
 Status: **landed on `main`** — Task 29/29a/29b/29c/29d are merged with local
-PG18 release measurements recorded. Task 29e is a follow-up cleanup/evidence
-packet, not a current landing blocker.
+PG18 release measurements recorded. Task 29e is recorded in
+`plan/tasks/29e-diskann-rerank-cleanup-evidence.md` as follow-up
+cleanup/evidence, not a current landing blocker.
 Owner: coder1 / runtime-index track
 
 ## Follow-up tasks
@@ -41,14 +42,15 @@ Owner: coder1 / runtime-index track
   mean latency `7.80` to `9.34 ms` across L=64/128/200/400/800.
 
 The landing-readiness packets are
-`review/11099-task29-diskann-landing-readiness/`,
-`review/11100-task29b-diskann-vacuum-prefilter-consistency/`,
-`review/11104-task29c-prune-active-mask-profile/`,
-`review/11105-task29-release-latency-refresh/`, and
-`review/11109-task29d-final-readiness/`. Round-3 merge feedback in
-`review/11105-.../feedback.md` has been addressed by Task 29d.
+`reviews/task-29/015-11099-task29-diskann-landing-readiness/`,
+`reviews/task-29b/001-11100-task29b-diskann-vacuum-prefilter-consistency/`,
+`reviews/task-05/079-111-remove-dead-scan-candidate-boundary04-task29c-prune-active-mask-profile/`,
+`reviews/task-05/079-111-remove-dead-scan-candidate-boundary05-task29-release-latency-refresh/`, and
+`reviews/task-29d/003-11109-task29d-final-readiness/`. Round-3 merge feedback in
+`reviews/task-05/079-111-remove-dead-scan-candidate-boundary05-.../feedback.md` has been addressed by Task 29d.
 
-Task 29e is recorded in `review/11110-task29e-rerank-borrowed-simd/`.
+Task 29e is recorded in `plan/tasks/29e-diskann-rerank-cleanup-evidence.md`
+and `reviews/task-29e/001-11110-task29e-rerank-borrowed-simd/`.
 The kept code cleanup is neutral for latency, and the rejected experiments are
 not active follow-up work.
 

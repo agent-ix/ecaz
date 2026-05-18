@@ -15,7 +15,7 @@ Deferred.
 
 The Phase 9.7 query difficulty estimator was a stretch item intended to improve
 adaptive routing decisions. Phase 9.7 now has a deterministic adaptive
-`nprobe` policy in packet `review/30687-spire-adaptive-nprobe`: it records
+`nprobe` policy in packet `reviews/task-30/610-30687-spire-adaptive-nprobe`: it records
 per-query `effective_nprobe` and `adaptive_nprobe_decision`, and it shows a
 local real10k treatment point that preserves recall while reducing latency.
 

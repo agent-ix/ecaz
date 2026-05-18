@@ -18,7 +18,7 @@ IVF-style partitioning surface toward an inverted multi-index layout. That is a
 storage-format and routing-space A/B, not a narrow runtime knob.
 
 The available local fixture for Phase 9.7 is real10k. Baseline packet
-`review/30686-spire-phase9-quality-baseline` records the current single-IVF
+`reviews/task-30/609-30686-spire-phase9-quality-baseline` records the current single-IVF
 SPIRE index as 8.2 MiB, about 859.3 bytes per row, with recall@10 saturated by
 `nprobe=16`. At this scale, IMI is unlikely to demonstrate the storage or recall
 tradeoff that motivates the larger structural change.

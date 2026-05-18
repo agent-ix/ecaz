@@ -1,6 +1,35 @@
-//! GenericXLog helpers shared across access methods.
+//! WAL helpers shared across access methods.
+//!
+//! ECAZ currently writes PostgreSQL GenericXLog records only. Those records
+//! carry page images/deltas rather than an extension-owned record body, so the
+//! versioned byte contract lives in the page payloads themselves.
 
 use pgrx::pg_sys;
+
+/// Current format tag for future extension-owned ECAZ WAL payloads.
+pub const ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION: u8 = 1;
+
+/// Byte offset reserved for the format tag in future extension-owned WAL records.
+pub const ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION_OFFSET: usize = 0;
+
+/// ECAZ does not currently emit extension-owned WAL record payloads.
+///
+/// Keep this false until Task 37 adds custom redo/replay payloads. When that
+/// happens, every custom record must carry
+/// [`ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION`] at byte 0 and replay must call
+/// [`validate_custom_wal_record_format_version`] before reading the body.
+pub const ECAZ_CUSTOM_WAL_RECORDS_ENABLED: bool = false;
+
+/// Validate the leading format tag for a future extension-owned WAL record.
+pub fn validate_custom_wal_record_format_version(record: &[u8]) -> Result<(), &'static str> {
+    let Some(version) = record.get(ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION_OFFSET) else {
+        return Err("missing ECAZ custom WAL record format version");
+    };
+    if *version != ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION {
+        return Err("unknown ECAZ custom WAL record format version");
+    }
+    Ok(())
+}
 
 /// RAII wrapper around PostgreSQL's GenericXLog state.
 ///

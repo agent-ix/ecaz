@@ -16,11 +16,12 @@ future storage formats.
 | Class | Meaning | Required evidence |
 | --- | --- | --- |
 | Local development evidence | Useful engineering result from a developer workstation or local PG cluster. | Packet-local artifacts or clearly identified historical/local source. |
-| Review-packet evidence | Measurement used to justify a landed task or docs/spec claim. | `review/<topic>/artifacts/manifest.md` plus raw logs under the packet. |
+| Benchmark-packet evidence | Measurement used to justify a docs/spec claim or to anchor an optimization cycle. | `benchmarks/<topic>/manifest.md` plus raw logs under `benchmarks/<topic>/artifacts/`. |
+| Review-packet evidence | Measurement included as evidence inside a code-review packet. | `reviews/task-{id}/{ordinal}-<topic>/artifacts/manifest.md` plus raw logs under the packet, citing the owning `benchmarks/<topic>/` packet when one exists. |
 | Product benchmark claim | User-facing performance claim for product comparison or scale planning. | Controlled hardware, cache state, PostgreSQL settings, commands, raw logs, and repeatability summary. |
 
-Local and review-packet evidence must not be promoted to product claims without
-a new product benchmark packet.
+Local, benchmark-packet, and review-packet evidence must not be promoted to
+product claims without a new product benchmark packet.
 
 ## Required Run Fields
 
@@ -86,7 +87,11 @@ reported through this standard.
 
 When adding a benchmark packet:
 
-1. Store raw logs under `review/<topic>/artifacts/`.
+1. Store raw logs under `benchmarks/<topic>/artifacts/` and summarize them in
+   `benchmarks/<topic>/manifest.md`. If the benchmark
+   evidence belongs to a code-review packet, store the logs under
+   `reviews/task-{id}/{ordinal}-<topic>/artifacts/` and cite the owning
+   `benchmarks/<topic>/` packet when one exists.
 2. Add or update `artifacts/manifest.md` with the required provenance,
    environment, candidate identity, command, and key result lines.
 3. Update [Benchmark Index](benchmark-index.md) with the packet lane.

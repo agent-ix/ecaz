@@ -87,7 +87,7 @@ SPIRE recall/latency evidence for the single-store `nlists=32`,
 at `nprobe=8`. Phase 4 relation-backed live insert, delete-delta publication,
 delta compaction, and live-assignment counting now route through the active
 local store set instead of falling back to the root/control relation store;
-packet `review/30531-spire-mutation-local-store-routing/` covers that
+packet `reviews/task-30/458-30531-spire-mutation-local-store-routing/` covers that
 checkpoint. Packet `review/30533-spire-local-placement-benchmark/` now records
 the first local placement benchmark: same-device two-store and `/mnt/e`
 two-store lanes preserve recall, keep build time near the one-store baseline,
@@ -185,7 +185,7 @@ Decision record:
 - [x] **Phase 1 surface note.** Decide whether Phase 1 exposes `ec_spire` and
   document the planned opclass names.
 - [x] **Review packet.** Publish the Phase 0 design note before writing the
-  persistence code. Packet target: `review/30162-spire-phase0-partition-object-storage/`.
+  persistence code. Packet target: `reviews/task-30/091-30162-spire-phase0-partition-object-storage/`.
 
 ## Phase 1 — Single-Level SPIRE-IVF Foundation
 
@@ -544,7 +544,7 @@ diagnostics without scoring assignments.
   behavior-validation checklist item.
 - [x] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row. Review packet
-  `review/30361-spire-phase1-landing/request.md` records the Phase 1 landing
+  `reviews/task-30/290-30361-spire-phase1-landing/request.md` records the Phase 1 landing
   boundary, cites the scan-sanity SQL row shape, and includes packet-local
   PG18-feature unit logs for the scan sanity labels, root-control refresh, and
   partial-publish residue behavior.
@@ -1661,7 +1661,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   remote-side apply target does not leave inert applied-catalog rows behind.
   Phase 7 coordinator transport closeout is validated by packet
   `30654-spire-result-composition-closeout`, including the multicluster smoke
-  artifact at `review/30654-spire-result-composition-closeout/artifacts/`.
+  artifact at `reviews/task-30/578-30654-spire-result-composition-closeout/artifacts/`.
 - [x] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
@@ -1759,7 +1759,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   libpq-pipeline transport. Phase 7 distributed manifest closeout is validated
   by packet `30654-spire-result-composition-closeout`, including remote manifest
   apply evidence in
-  `review/30654-spire-result-composition-closeout/artifacts/`.
+  `reviews/task-30/578-30654-spire-result-composition-closeout/artifacts/`.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
@@ -1869,10 +1869,10 @@ The goal is to make the SPIRE graph shape composable across many hierarchy
 levels before remote execution and performance work build on it.
 
 Reviewer scoping packet:
-`review/30653-spire-multicluster-pg18-smoke/feedback/2026-05-09-02-reviewer.md`.
+`reviews/task-30/577-30653-spire-multicluster-pg18-smoke/feedback/2026-05-09-02-reviewer.md`.
 The Phase 8 pull-forward from that note, per-level `nprobe`, landed in packet
 30656. Architecture review packet
-`review/30658-spire-phase9-routing-plan/feedback/2026-05-09-01-reviewer.md`
+`reviews/task-30/581-30658-spire-phase9-routing-plan/feedback/2026-05-09-01-reviewer.md`
 expands Phase 9 around top-graph frontier, global recursive beam, boundary
 replication execution, and global vector identity.
 
@@ -1885,7 +1885,7 @@ replication execution, and global vector identity.
   Landed in Phase 9.1 planning/code checkpoint: ADR-054 defines the active
   root/top routing child frontier, and top-graph diagnostics now distinguish
   frontier node count, root child count, routing levels, and active leaf count.
-  Review packet: `review/30660-spire-top-graph-frontier-contract/request.md`.
+  Review packet: `reviews/task-30/583-30660-spire-top-graph-frontier-contract/request.md`.
 - [x] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
   by reusing the relation-object V2 chain format for top graphs and surfacing
   byte, tuple, and segment diagnostics.
@@ -1903,7 +1903,7 @@ replication execution, and global vector identity.
   remote merge now scopes existing local vec IDs by `node_id`, preventing
   unrelated node-local IDs from deduping across nodes.
 - [x] **Quality experiments.** Phase 9.7 now has canonical local baseline
-  evidence, adaptive `nprobe` treatment in `review/30687-spire-adaptive-nprobe`,
+  evidence, adaptive `nprobe` treatment in `reviews/task-30/610-30687-spire-adaptive-nprobe`,
   and ADR deferrals for IMI, anisotropic centroid scoring, and query difficulty
   estimation. Details live in `plan/tasks/task30-phase9-spire-graph-architecture.md`.
 - [x] **ADR defer multi-probe centroid scoring.** ADR-051 records that
@@ -1932,8 +1932,8 @@ not change the graph semantics established in Phase 9.
   `amgettuple` streaming for a future ownership ADR.
 - [x] **Heap rerank I/O.** Batched/prefetched exact heap rerank landed, with
   rerank-width recall and latency evidence recorded in packets
-  `review/30686-spire-phase9-quality-baseline` and
-  `review/30687-spire-adaptive-nprobe`.
+  `reviews/task-30/609-30686-spire-phase9-quality-baseline` and
+  `reviews/task-30/610-30687-spire-adaptive-nprobe`.
 - [x] **Multi-NVMe read overlap.** Phase 10 keeps `(node_id, local_store_id)`
   grouping, adds per-store and top-graph I/O attribution, reuses decoded delta
   rows, and records the PostgreSQL read-stream/prefetch scheduling contract in

@@ -255,5 +255,5 @@ actually non-trivial.
 ## Review Checkpoint
 
 The matching review packet is
-`review/30549-spire-top-level-graph-design/`. It asks for review of the graph
+`reviews/task-30/475-30549-spire-top-level-graph-design/`. It asks for review of the graph
 choice and the persistence/routing boundary before graph object bytes land.

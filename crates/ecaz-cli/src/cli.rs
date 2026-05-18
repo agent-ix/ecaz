@@ -168,7 +168,7 @@ mod tests {
             "--database",
             "postgres",
             "--log-file",
-            "review/11074-task17-ecaz-log-file/artifacts/load.log",
+            "reviews/task-17/022-11074-task17-ecaz-log-file/artifacts/load.log",
             "corpus",
             "list",
         ])
@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(
             cli.log_file.as_deref(),
             Some(std::path::Path::new(
-                "review/11074-task17-ecaz-log-file/artifacts/load.log"
+                "reviews/task-17/022-11074-task17-ecaz-log-file/artifacts/load.log"
             ))
         );
     }
@@ -209,7 +209,7 @@ mod tests {
             "spire-multicluster",
             "transport-overlap-pg18",
             "--artifact-dir",
-            "review/30776-spire-cli-multicluster-transport/artifacts",
+            "reviews/task-30/696-30776-spire-cli-multicluster-transport/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -231,7 +231,7 @@ mod tests {
             "spire-multicluster",
             "smoke-pg18",
             "--artifact-dir",
-            "review/30968-spire-multicluster-cli-smoke-insert/artifacts",
+            "reviews/task-30/874-30968-spire-multicluster-cli-smoke-insert/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -246,6 +246,27 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_pg_upgrade_smoke_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "pg-upgrade-smoke",
+            "--artifact-dir",
+            "reviews/task-42/016-9057-task42-pg-upgrade-smoke/artifacts",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::PgUpgradeSmoke(_args),
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_spire_multicluster_insert_read_after_customscan_command() {
         let cli = Cli::try_parse_from([
             "ecaz",
@@ -253,7 +274,7 @@ mod tests {
             "spire-multicluster",
             "insert-read-after-customscan-pg18",
             "--artifact-dir",
-            "review/30968-spire-multicluster-cli-smoke-insert/artifacts",
+            "reviews/task-30/874-30968-spire-multicluster-cli-smoke-insert/artifacts",
             "--insert-mode",
             "trigger",
             "--run-id",
@@ -321,7 +342,7 @@ mod tests {
             "spire-multicluster",
             "customscan-read-pg18",
             "--artifact-dir",
-            "review/30962-spire-customscan-read-cli/artifacts",
+            "reviews/task-30/869-30962-spire-customscan-read-cli/artifacts",
             "--remote-port",
             "39228",
             "--coord-port",
@@ -349,7 +370,7 @@ mod tests {
             "--case",
             "simulated_network_partition",
             "--artifact-dir",
-            "review/30778-spire-stage-e-network-partition/artifacts",
+            "reviews/task-30/698-30778-spire-stage-e-network-partition/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -373,7 +394,7 @@ mod tests {
             "--case",
             "version_skew",
             "--artifact-dir",
-            "review/30779-spire-stage-e-version-skew/artifacts",
+            "reviews/task-30/699-30779-spire-stage-e-version-skew/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -397,7 +418,7 @@ mod tests {
             "--case",
             "epoch_mismatch",
             "--artifact-dir",
-            "review/30780-spire-stage-e-epoch-mismatch/artifacts",
+            "reviews/task-30/700-30780-spire-stage-e-epoch-mismatch/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -421,7 +442,7 @@ mod tests {
             "--case",
             "missing_or_reindexed_remote_index",
             "--artifact-dir",
-            "review/30781-spire-stage-e-missing-remote-index/artifacts",
+            "reviews/task-30/701-30781-spire-stage-e-missing-remote-index/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -445,7 +466,7 @@ mod tests {
             "--case",
             "fingerprint_mismatch",
             "--artifact-dir",
-            "review/30782-spire-stage-e-fingerprint-mismatch/artifacts",
+            "reviews/task-30/702-30782-spire-stage-e-fingerprint-mismatch/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -469,7 +490,7 @@ mod tests {
             "--case",
             "remote_statement_timeout",
             "--artifact-dir",
-            "review/30783-spire-stage-e-remote-statement-timeout/artifacts",
+            "reviews/task-30/703-30783-spire-stage-e-remote-statement-timeout/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -493,7 +514,7 @@ mod tests {
             "--case",
             "remote_backend_termination",
             "--artifact-dir",
-            "review/30784-spire-stage-e-remote-backend-termination/artifacts",
+            "reviews/task-30/704-30784-spire-stage-e-remote-backend-termination/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -517,7 +538,7 @@ mod tests {
             "--case",
             "local_cancel",
             "--artifact-dir",
-            "review/30785-spire-stage-e-local-cancel/artifacts",
+            "reviews/task-30/705-30785-spire-stage-e-local-cancel/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -541,7 +562,7 @@ mod tests {
             "--case",
             "local_statement_timeout",
             "--artifact-dir",
-            "review/30786-spire-stage-e-local-statement-timeout/artifacts",
+            "reviews/task-30/706-30786-spire-stage-e-local-statement-timeout/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -565,7 +586,7 @@ mod tests {
             "--case",
             "connection_reset_mid_batch",
             "--artifact-dir",
-            "review/30787-spire-stage-e-connection-reset-mid-batch/artifacts",
+            "reviews/task-30/707-30787-spire-stage-e-connection-reset-mid-batch/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -589,7 +610,7 @@ mod tests {
             "--case",
             "remote_oom",
             "--artifact-dir",
-            "review/30788-spire-stage-e-remote-oom/artifacts",
+            "reviews/task-30/708-30788-spire-stage-e-remote-oom/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -613,7 +634,7 @@ mod tests {
             "--case",
             "drop_remote_index_before_fanout",
             "--artifact-dir",
-            "review/30789-spire-stage-e-lifecycle-drop-before-fanout/artifacts",
+            "reviews/task-30/709-30789-spire-stage-e-lifecycle-drop-before-fanout/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -637,7 +658,7 @@ mod tests {
             "--case",
             "drop_remote_index_in_flight",
             "--artifact-dir",
-            "review/30790-spire-stage-e-lifecycle-drop-in-flight/artifacts",
+            "reviews/task-30/710-30790-spire-stage-e-lifecycle-drop-in-flight/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -661,7 +682,7 @@ mod tests {
             "--case",
             "reindex_remote_index_before_fanout",
             "--artifact-dir",
-            "review/30791-spire-stage-e-lifecycle-reindex-before-fanout/artifacts",
+            "reviews/task-30/711-30791-spire-stage-e-lifecycle-reindex-before-fanout/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -685,7 +706,7 @@ mod tests {
             "--case",
             "reindex_remote_index_in_flight",
             "--artifact-dir",
-            "review/30792-spire-stage-e-lifecycle-reindex-in-flight/artifacts",
+            "reviews/task-30/712-30792-spire-stage-e-lifecycle-reindex-in-flight/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -709,7 +730,7 @@ mod tests {
             "--case",
             "create_index_concurrently_missing_descriptor",
             "--artifact-dir",
-            "review/30793-spire-stage-e-lifecycle-create-missing-descriptor/artifacts",
+            "reviews/task-30/713-30793-spire-stage-e-lifecycle-create-missing-descriptor/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",
@@ -733,7 +754,7 @@ mod tests {
             "--case",
             "create_index_concurrently_new_descriptor",
             "--artifact-dir",
-            "review/30795-spire-stage-e-lifecycle-create-new-descriptor/artifacts",
+            "reviews/task-30/715-30795-spire-stage-e-lifecycle-create-new-descriptor/artifacts",
             "--run-id",
             "parse-test",
             "--skip-install",

@@ -1,0 +1,12 @@
+WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+2026-05-16 20:15:25.561335 |INFO | [rudra-progress] Running cargo rudra
+2026-05-16 20:15:27.339942 |ERROR| [rudra-progress] Could not obtain Cargo metadata
+Error during execution of `cargo metadata`:     Updating crates.io index
+error: failed to select a version for the requirement `hashbrown = "^0.15"`
+candidate versions found which didn't match: 0.13.2, 0.13.1, 0.12.3, ...
+location searched: crates.io index
+required by package `ecaz v0.1.1 (/tmp/rudra)`
+
+
+[1mWhat's next:[0m
+    Debug this container error with Gordon → docker ai "help me fix this container error"

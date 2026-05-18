@@ -43,7 +43,7 @@ permit loading the ecaz extension's custom AM / CustomScan.
   targets, and known v1 limitations.
 - [x] AWS packet manifest is prepared before allocating or running external
   infrastructure. Evidence: parent packet
-  `review/768-c1-spire-phase13-aws-verification/`.
+  `reviews/task-05/047-76-scan-debug-module-boundary8-c1-spire-phase13-aws-verification/`.
 - [ ] Phase 13a (design) is reviewer-accepted; every box in 13a.1..10
   is decided or recorded as a deferral.
 - [ ] Phase 13b.1 deliverables are committed: `infra/spire-aws/`

@@ -415,14 +415,14 @@ Phase 8 PG18 validation checkpoint: pure Rust unit coverage passes under
 `--features pg18` with `pg_test` cases filtered out, the full `cargo pgrx test
 pg18` extension suite passes, and PG18 clippy is clean with `-D warnings`.
 Packet-local raw logs are stored under
-`review/30033-task28-ivf-pg18-validation/artifacts/`. Recall, latency,
+`reviews/task-28/033-30033-task28-ivf-pg18-validation/artifacts/`. Recall, latency,
 storage, and WAL measurement gates remain open.
 
 Post-merge status: Task 28's local competitive substrate follow-on closed the
-local landing gates in `review/30151-task28-ivf-local-landing-status/` and
-`review/30153-task28-ivf-h-i-cleanups/`. Larger 990k/exact/HNSW comparison
+local landing gates in `reviews/task-28/140-30151-task28-ivf-local-landing-status/` and
+`reviews/task-28/142-30153-task28-ivf-h-i-cleanups/`. Larger 990k/exact/HNSW comparison
 fills are intentionally deferred out of the local desktop gate; see
-`review/30150-task28-ivf-local-990k-deferral/`.
+`reviews/task-28/139-30150-task28-ivf-local-990k-deferral/`.
 
 ## Owns
 

@@ -2,21 +2,21 @@
 
 Status: landed on `main` as part of Task 29
 Owner: coder1 / runtime-index track
-Backstory: `review/11105-task29-release-latency-refresh/feedback.md`
+Backstory: `reviews/task-05/079-111-remove-dead-scan-candidate-boundary05-task29-release-latency-refresh/feedback.md`
 
 ## Outcome
 
 Task 29d is complete. Packets:
 
-- `review/11106-task29d-build-heap-frontier-ab/`: release-mode build
+- `reviews/task-29d/001-11106-task29d-build-heap-frontier-ab/`: release-mode build
   heap-frontier A/B replicated the regression; leave reverted.
-- `review/11107-task29d-l64-scan-profile/`: L=64 scan profile found
+- `reviews/task-05/079-111-remove-dead-scan-candidate-boundary07-task29d-l64-scan-profile/`: L=64 scan profile found
   exact heap rerank dominates, but lowering default `rerank_budget`
   below the recall floor is not safe.
-- `review/11108-task29d-build-distance-simd/`: landed runtime-gated
+- `reviews/task-29d/002-11108-task29d-build-distance-simd/`: landed runtime-gated
   AVX2+FMA source distance for ambuild; real-10k build dropped from
   70.678 s to 14.493 s.
-- `review/11109-task29d-final-readiness/`: final release-mode local
+- `reviews/task-29d/003-11109-task29d-final-readiness/`: final release-mode local
   sweep across ec_diskann, pgvectorscale, and ec_hnsw.
 
 Landing outcome: Task 29 / 29a / 29b / 29c / 29d merged to `main`.
@@ -64,7 +64,7 @@ deltas are clean.
 ## 29d-1 — Build heap-frontier release-mode A/B (½ day)
 
 Status: complete — do not reland. Packet:
-`review/11106-task29d-build-heap-frontier-ab/`.
+`reviews/task-29d/001-11106-task29d-build-heap-frontier-ab/`.
 
 Release-mode A/B result on the same isolated real-10k DROP+CREATE surface:
 heap-frontier total build time was `75.492s` versus the active-mask baseline
@@ -122,7 +122,7 @@ is unresolved.
 ## 29d-2 — L=64 scan latency parity with pgvectorscale (1–2 days)
 
 Status: complete — no production change. Packet:
-`review/11107-task29d-l64-scan-profile/`.
+`reviews/task-05/079-111-remove-dead-scan-candidate-boundary07-task29d-l64-scan-profile/`.
 
 The valid current-head L=64 baseline after rebuilding the index with the
 non-experimental extension was `7.82 ms` mean, p50/p95/p99
@@ -219,7 +219,7 @@ land what's measured. The merge discussion can frame this as
 ## 29d-3 — Build performance attack (1–3 weeks)
 
 Status: complete - SIMD build distance landed in commit `0cd4baf9`.
-Packet: `review/11108-task29d-build-distance-simd/`.
+Packet: `reviews/task-29d/002-11108-task29d-build-distance-simd/`.
 
 The first build attack was the source-vector distance helper used by
 ambuild's Vamana graph construction. The scalar release helper measured
@@ -354,7 +354,7 @@ landing decision keys off whichever stop fires first.
 
 ## Final 29d landing readiness packet
 
-Status: complete. Packet: `review/11109-task29d-final-readiness/`.
+Status: complete. Packet: `reviews/task-29d/003-11109-task29d-final-readiness/`.
 
 After 29d-1, 29d-2, and 29d-3 all land:
 
@@ -393,4 +393,4 @@ After 29d-1, 29d-2, and 29d-3 all land:
   + 19 pgrx callbacks).
 - `cargo clippy --features pg18 -D warnings` stays clean.
 - Round-4 sign-off review feedback file in
-  `review/<final-packet>/feedback.md`.
+  `reviews/task-{id}/NNN-final-packet/feedback.md`.

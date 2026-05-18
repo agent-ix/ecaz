@@ -146,7 +146,7 @@ IVF 10K/25K matched-width lane (`nlists=64`, `nprobe=48`,
 | 25K | `pq_fastscan`, `pq_group_size=8` | 92.56% | 116.8 ms | 5.3 MB |
 | 25K | `rabitq` | 99.15% | 775.7 ms | 23.5 MB |
 
-Source: `review/30145-task28-ivf-a10-current-closure/`
+Source: `reviews/task-28/137-30145-task28-ivf-a10-current-closure/`
 
 For high-dimensional 100K IVF surfaces, the measured recommendation is explicit
 `storage_format = 'pq_fastscan', pq_group_size = 8`; smaller 10K/25K workloads
@@ -167,9 +167,9 @@ current local engineering anchors for each access method.
 | `ec_ivf` | 100K Apple M5, quality | `pq_fastscan` g8, `nlists=128`, `nprobe=96`, `rerank_width=1000` | 99.20% @100 | p50 12.1 ms / p99 13.7 ms | same surface |
 | `ec_diskann` | 10K local PG18 | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 99.65-99.75% @10 | mean 7.80-9.34 ms | 4.9 MB |
 
-Sources: `review/11109-task29d-final-readiness/`,
-`review/30145-task28-ivf-a10-current-closure/`,
-`review/30203-task31-current-m5-candidate-decision/`
+Sources: `reviews/task-29d/003-11109-task29d-final-readiness/`,
+`reviews/task-28/137-30145-task28-ivf-a10-current-closure/`,
+`reviews/task-31/038-30203-task31-current-m5-candidate-decision/`
 
 ## Choosing An Index
 

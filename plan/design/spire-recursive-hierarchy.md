@@ -245,5 +245,5 @@ The following work stays outside this Phase 3 design checkpoint:
 ## Review Checkpoint
 
 The matching review packet is
-`review/30469-spire-recursive-hierarchy-design/`. It asks for review of this
+`reviews/task-30/398-30469-spire-recursive-hierarchy-design/`. It asks for review of this
 design boundary before recursive metadata or build code lands.

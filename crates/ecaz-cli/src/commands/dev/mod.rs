@@ -10,6 +10,7 @@ use crate::psql::ConnectionOptions;
 
 mod fault;
 mod install;
+mod pg_upgrade;
 mod scratch;
 mod spire_multicluster;
 mod sql;
@@ -40,6 +41,8 @@ pub enum DevCommand {
     },
     /// Run SQL against local pgrx PostgreSQL or a global connection target.
     Sql(sql::SqlArgs),
+    /// Run PG18-to-PG18 pg_upgrade with ECAZ data and post-upgrade checks.
+    PgUpgradeSmoke(pg_upgrade::PgUpgradeSmokeArgs),
     /// Validation/test entry points.
     Test {
         #[command(subcommand)]
@@ -55,6 +58,7 @@ impl DevCommand {
             DevCommand::Fault { command } => command.run(conn).await,
             DevCommand::SpireMulticluster { command } => command.run(&conn.database).await,
             DevCommand::Sql(args) => sql::run(conn, args).await,
+            DevCommand::PgUpgradeSmoke(args) => pg_upgrade::run(args).await,
             DevCommand::Test { command } => command.run(&conn.database).await,
         }
     }

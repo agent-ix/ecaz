@@ -1,7 +1,7 @@
 {
   "name": "task31-m5-ivf-100k",
   "schema_version": 1,
-  "artifact_dir": "review/30178-task31-suite-runner-dry-run/artifacts",
+  "artifact_dir": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts",
   "defaults": {
     "profile": "ec_ivf",
     "bits": 4,
@@ -56,7 +56,7 @@
         "rerank=heap_f32",
         "rerank_width=500"
       ],
-      "log_file": "review/30178-task31-suite-runner-dry-run/artifacts/load_real100k_pqg8_n128_w500.log"
+      "log_file": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/load_real100k_pqg8_n128_w500.log"
     },
     {
       "kind": "recall",
@@ -66,8 +66,8 @@
       "k": 10,
       "sweep": [40, 48, 56, 64, 80, 96],
       "rerank_width": 500,
-      "truth_cache_file": "review/30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k10.json",
-      "log_output": "review/30178-task31-suite-runner-dry-run/artifacts/recall10_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log"
+      "truth_cache_file": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k10.json",
+      "log_output": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/recall10_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log"
     },
     {
       "kind": "latency",
@@ -77,7 +77,7 @@
       "k": 10,
       "sweep": [40, 48, 56, 64, 80, 96],
       "rerank_width": 500,
-      "log_output": "review/30178-task31-suite-runner-dry-run/artifacts/latency_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log"
+      "log_output": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/latency_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log"
     },
     {
       "kind": "recall",
@@ -87,8 +87,8 @@
       "k": 100,
       "sweep": [80, 96],
       "rerank_width": 500,
-      "truth_cache_file": "review/30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k100.json",
-      "log_output": "review/30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w500_p80_96.log"
+      "truth_cache_file": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k100.json",
+      "log_output": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w500_p80_96.log"
     },
     {
       "kind": "recall",
@@ -98,8 +98,8 @@
       "k": 100,
       "sweep": [80, 96],
       "rerank_width": 1000,
-      "truth_cache_file": "review/30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k100.json",
-      "log_output": "review/30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log"
+      "truth_cache_file": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k100.json",
+      "log_output": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log"
     },
     {
       "kind": "latency",
@@ -109,14 +109,14 @@
       "k": 10,
       "sweep": [80, 96],
       "rerank_width": 1000,
-      "log_output": "review/30178-task31-suite-runner-dry-run/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log"
+      "log_output": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log"
     },
     {
       "kind": "storage",
       "name": "storage-real100k-n128",
       "tags": ["storage", "100k", "n128"],
       "prefix": "task31_m5_real100k_pqg8_n128",
-      "log_file": "review/30178-task31-suite-runner-dry-run/artifacts/storage_real100k_pqg8_n128.log"
+      "log_file": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/storage_real100k_pqg8_n128.log"
     },
     {
       "kind": "explain",
@@ -126,8 +126,8 @@
       "index_name": "task31_m5_real100k_pqg8_n128_idx",
       "nprobe": 96,
       "rerank_width": 1000,
-      "sql_file": "review/30178-task31-suite-runner-dry-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql",
-      "log_output": "review/30178-task31-suite-runner-dry-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.log"
+      "sql_file": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql",
+      "log_output": "reviews/task-31/013-30178-task31-suite-runner-dry-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.log"
     }
   ]
 }

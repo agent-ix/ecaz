@@ -73,9 +73,9 @@ that Phase 9 establishes.
 - [x] Batch exact heap rerank TIDs before fetching source vectors.
 - [x] Add heap prefetch where PostgreSQL APIs permit it.
 - [x] Measure rerank width against recall and latency floors. Baseline packet
-  `review/30686-spire-phase9-quality-baseline` records the local real10k
+  `reviews/task-30/609-30686-spire-phase9-quality-baseline` records the local real10k
   `nprobe=8,16,24,32` by `rerank_width=0,25,50` recall/latency matrix; adaptive
-  packet `review/30687-spire-adaptive-nprobe` adds a same-build rw25/rw50
+  packet `reviews/task-30/610-30687-spire-adaptive-nprobe` adds a same-build rw25/rw50
   treatment/control comparison for the Phase 9.7 policy.
 - [x] Ensure missing/dead heap rows do not perturb candidate ordering beyond
   the existing visibility contract.
@@ -141,7 +141,7 @@ that Phase 9 establishes.
 ## Phase 10.7: Performance Harness
 
 - [x] Extend `ecaz` benchmark commands for Phase 9/10 routing budgets and
-  remote fanout. Packet `review/30687-spire-adaptive-nprobe` adds SPIRE-only
+  remote fanout. Packet `reviews/task-30/610-30687-spire-adaptive-nprobe` adds SPIRE-only
   `--adaptive-nprobe` and `--adaptive-nprobe-score-gap-micros` to
   `ecaz bench recall` and `ecaz bench latency`. The Phase 10.7 closeout adds
   `ecaz bench spire-pipeline`, which sweeps `ec_spire.nprobe`, applies
@@ -156,12 +156,12 @@ that Phase 9 establishes.
   `ec_spire_remote_pipeline_steps` operator shape. Added
   `ec_spire_index_scan_pipeline_snapshot`.
 - [x] Record local development numbers separately from AWS/RDS-class numbers.
-  Packets `review/30686-spire-phase9-quality-baseline` and
-  `review/30687-spire-adaptive-nprobe` explicitly label results as local
+  Packets `reviews/task-30/609-30686-spire-phase9-quality-baseline` and
+  `reviews/task-30/610-30687-spire-adaptive-nprobe` explicitly label results as local
   development evidence only.
 - [x] Include one-index-per-table fixtures for cross-AM comparisons unless a
   packet explicitly measures shared-table planner behavior. Packet
-  `review/30686-spire-phase9-quality-baseline` records the canonical local
+  `reviews/task-30/609-30686-spire-phase9-quality-baseline` records the canonical local
   real10k baseline as isolated one-index-per-table evidence.
 - [x] Capture recall, latency p50/p95/p99, object bytes, route counts,
   candidate counts, heap rerank rows, and remote fanout counts. Recall and
@@ -169,7 +169,7 @@ that Phase 9 establishes.
   `ecaz bench latency`, object bytes in `ecaz bench storage`, local pipeline
   route/candidate/heap/remote-fanout counts in
   `ec_spire_index_scan_pipeline_snapshot` / packet
-  `review/30685-spire-local-scan-pipeline-snapshot`, and repeatable
+  `reviews/task-30/608-30685-spire-local-scan-pipeline-snapshot`, and repeatable
   route-budget plus remote-fanout collection is now exposed through
   `ecaz bench spire-pipeline`.
 

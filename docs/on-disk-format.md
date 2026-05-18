@@ -90,6 +90,12 @@ can_write)` table. `make upgrade-smoke` validates that the matrix has unique
 rows, that writable formats are readable, that each row points at a committed
 fixture, and that the current writable set is explicit.
 
+Today there is only one writable format per AM, so this lane is a registry
+consistency check. When a second writable format ships, the matrix must grow a
+live upgrade rehearsal for the old writable version per NFR-016-EV-3: build the
+old corpus, upgrade the extension, scan it with the new reader, and record the
+recall floor beside the historical fixture directory.
+
 ## Cross-Arch Decode
 
 `make endian-qemu` runs the on-disk fixture suite for the big-endian
@@ -97,7 +103,42 @@ fixture, and that the current writable set is explicit.
 `endian-qemu` job installs the target, qemu user emulator, and cross linker,
 then runs this make target on `main`, manual dispatch, and the nightly schedule.
 
-## Remaining Task 42 Gaps
+The qemu lane is decode-only. It links the extension test binary but does not
+execute PostgreSQL callbacks under s390x; the unresolved pgrx FFI symbols are
+therefore allowed only for this target.
+
+## PG Upgrade Smoke
+
+`make pg-upgrade-smoke` runs the PG18 same-binary `pg_upgrade` lane through
+`ecaz dev pg-upgrade-smoke`. The fixture creates an old cluster with ECAZ
+installed, inserts a small `ecvector` corpus, builds an `ec_hnsw` index, checks
+the pre-upgrade nearest-neighbor result, runs `pg_upgrade`, starts the upgraded
+cluster, verifies the same top-2 IDs, index presence, and heap count, then runs
+`pg_amcheck` against the upgraded database.
+
+This is intentionally a narrow HNSW-only smoke today. The four-row corpus makes
+the top-2 equality check a trivial recall@2 proxy, not a substantive recall
+floor. Richer recall measurement and `ec_ivf` / `ec_diskann` / `ec_spire`
+coverage should be added when those AMs have corpus sizing that makes the
+upgrade lane load-bearing.
+
+## WAL Format Policy
+
+Current ECAZ page changes use PostgreSQL GenericXLog. Those WAL records carry
+PostgreSQL-managed page images/deltas, not extension-owned ECAZ record bodies,
+so there is no current custom WAL payload that can carry its own version byte.
+The durable version contract for replayed bytes is therefore the page payload
+format tag that the on-disk fixture suite and layout assertions cover.
+
+If Task 37 adds extension-owned WAL redo/replay payloads, byte 0 is reserved as
+the custom WAL record format tag. `src/storage/wal.rs` owns
+`ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION`, the byte-0 offset constant, and the
+validator that rejects missing or unknown custom WAL record versions before
+replay reads the body. ADR-070 keeps custom WAL records on the conservative
+reject-unknown posture unless a later WAL-specific ADR justifies a different
+encoding.
+
+## Future Conditional Extensions
 
 - Extend fixture bytes under `fixtures/on-disk/` to any raw generic page
   encoding that becomes a durable external byte contract.
@@ -108,5 +149,5 @@ then runs this make target on `main`, manual dispatch, and the nightly schedule.
   partition-object and metadata codecs.
 - Extend `fixtures/upgrade/` from the current matrix into historical corpus
   directories when a new incompatible format version ships.
-- Add WAL record version tags with Task 37.
-- Add pg_upgrade smoke coverage with ECAZ data present.
+- Extend `pg_upgrade` smoke from the current HNSW-only top-2 equality probe to
+  richer recall-floor coverage and the other AMs when corpus sizing supports it.

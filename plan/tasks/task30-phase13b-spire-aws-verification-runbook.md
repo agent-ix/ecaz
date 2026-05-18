@@ -62,7 +62,7 @@ Phase 13a is re-accepted.
 - Every Makefile target reads the topology from
   `$(ARTIFACT_DIR)/aws-topology.json` (produced by `make provision`) and
   writes transcripts under
-  `review/<NN>-phase13-spire-aws-<slice>/artifacts/` per **13a.7**.
+  `reviews/task-{id}/NNN-phase13-spire-aws-<slice>/artifacts/` per **13a.7**.
 - All times are UTC. The packet manifest carries the ISO-8601 timestamp
   of each run.
 
@@ -136,7 +136,7 @@ Phase 13b.1 is reviewer-acceptable when:
   *or* the deferral is recorded in this run's parent packet
   `request.md`.
 - [ ] Phase 13d read-profile surface is landed and reviewer-accepted.
-- [ ] Parent packet `review/<NN>-phase13-spire-aws-verification/` exists
+- [ ] Parent packet `reviews/task-{id}/NNN-phase13-spire-aws-verification/` exists
   with `request.md` and `artifacts/manifest.md` on a feature branch.
 - [ ] `make -C infra/spire-aws preflight` passes from the branch that will
   provision AWS.
@@ -385,7 +385,7 @@ Verification per **13a.4**:
 For every Make target above:
 
 - [ ] The transcript lives in
-  `review/<NN>-phase13-spire-aws-<slice>/artifacts/`.
+  `reviews/task-{id}/NNN-phase13-spire-aws-<slice>/artifacts/`.
 - [ ] `manifest.md` carries every field from **13a.7**: head SHA,
   packet/topic, ISO-8601 timestamp, dataset identity, AWS region, AMI,
   PG version, extension version, AZ, sanitized instance IDs, sanitized
@@ -440,7 +440,7 @@ bench-representative → fault-2pc → fault-schema-drift → teardown`.
 **Re-run one matrix row on an already-provisioned topology:**
 
 ```
-ARTIFACT_DIR=review/<NN>-phase13-spire-aws-13a3a-rerun/artifacts \
+ARTIFACT_DIR=reviews/task-{id}/NNN-phase13-spire-aws-13a3a-rerun/artifacts \
   scripts/spire-aws/bench.sh representative \
   $(infra/spire-aws/.../aws-topology.json) \
   $ARTIFACT_DIR

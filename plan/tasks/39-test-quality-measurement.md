@@ -50,7 +50,7 @@ revealed how much of the *real* coverage is asserted vs. merely executed.
 
 1. **Coverage lane.**
    - `cargo install cargo-llvm-cov` checked by `scripts/hardening.sh`.
-   - Aggregate report under `review/<packet>/artifacts/coverage/` with HTML +
+   - Aggregate report under `reviews/task-{id}/001-<packet>/artifacts/coverage/` with HTML +
      summary CSV (per-file, per-region).
    - Two thresholds in the report: "production modules" (≥ 80% target after
      burn-in) and "test/bench/helpers" (no threshold).
@@ -63,7 +63,7 @@ revealed how much of the *real* coverage is asserted vs. merely executed.
      bounded blast radius (full repo is hours).
    - Initial target list: SIMD scoring, page codecs, SPIRE coordinator,
      planner cost model.
-   - Surviving mutants land in `review/<packet>/artifacts/mutants.json` and
+   - Surviving mutants land in `reviews/task-{id}/001-<packet>/artifacts/mutants.json` and
      `mutants.txt`; the packet must triage each one as either:
      - "add a test that kills it,"
      - "intentional (equivalent mutant)," or

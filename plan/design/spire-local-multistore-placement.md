@@ -361,6 +361,6 @@ The following work stays outside this design checkpoint:
 ## Review Checkpoint
 
 The matching review packet is
-`review/30509-spire-phase4-local-placement-design/`. It asks for review of the
+`reviews/task-30/438-30509-spire-phase4-local-placement-design/`. It asks for review of the
 local multi-store storage contract before metadata or relation-helper code
 lands.
