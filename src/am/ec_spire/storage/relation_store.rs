@@ -1183,7 +1183,10 @@ unsafe fn prefetch_relation_blocks_with_read_stream(
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
+        let _buffer = unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_spire relation store prefetch returned invalid buffer")
+            });
     }
 
     unsafe { pg_sys::read_stream_end(stream) };
