@@ -216,6 +216,24 @@ The first coverage scope intentionally avoids claiming live pgrx callback
 coverage. PG18 integration coverage is still a gap until instrumentation is
 stable for `cargo pgrx test pg18` and the resulting logs are packeted.
 
+### Coverage Ratchet
+
+Coverage ratchets are manual and packet-backed. Do not update
+`fixtures/quality/coverage-baseline.tsv` just because a local run improved.
+The required sequence is:
+
+1. Run the relevant coverage lane and inspect `summary.txt` for the touched
+   files.
+2. Run `scripts/check_coverage_delta.sh --ratchet` against the same summary
+   only after confirming the increase is from intentional tests, not an
+   accidental scope change.
+3. Update the TSV note with the owning Task 39 packet path.
+4. Include the raw coverage run, delta check, and ratchet log in that packet.
+
+The delta gate allows a 2 percentage point drop from the recorded baseline.
+That tolerance is for normal measurement noise and small line-count churn, not
+for silently accepting untested code paths.
+
 ### Coverage Baseline
 
 Baseline sources:
@@ -246,10 +264,59 @@ callbacks, and storage guard drops remain recorded gaps.
 | `src/am/common/cost.rs` | `0.00%` |
 | `src/storage/*_guard.rs` | `0.00%` |
 
-Mutation triage packets must include `mutants.txt` or equivalent raw
-`cargo-mutants` output plus a `triage.md` table with one verdict per survivor:
-`kill-with-test`, `equivalent`, or `follow-up-bug`. Follow-up bugs must name the
-target module, mutant description, and why the current packet did not kill it.
+### Mutation Triage
+
+Mutation packets must include `mutants.txt` or equivalent raw `cargo-mutants`
+output plus a `triage.md` table with one row per mutant. Use the Task 39 packet
+005 shape as the precedent:
+
+| Column | Meaning |
+| --- | --- |
+| Mutant | File, line, and transformation. |
+| Outcome | `caught`, `unviable`, `missed`, or `timed-out` from the raw run. |
+| Verdict | `kill-with-test`, `equivalent`, or `follow-up-bug`. |
+| Evidence | Killer test name, equivalence rationale, or follow-up issue/packet target. |
+
+`missed` mutants are not silently acceptable. Either add a test in the packet
+that kills the mutant, prove it is equivalent, or file a follow-up bug that
+names the target module, mutant description, and why the current packet did not
+kill it.
+
+### Cross-Arch Mutation Pattern
+
+SIMD and architecture-dispatched code should expose backend decision points as
+small pure functions that can be unit-tested on every host. The intrinsic body
+still needs host-specific validation through `make simd-diff`, but the policy
+gate that decides whether a backend is eligible should be ordinary Rust logic
+with direct tests.
+
+The `src/quant/simd.rs` Task 39 packet 005 pattern is canonical:
+
+- keep runtime CPU feature detection behind a narrow helper,
+- make environment/backend override parsing testable without executing the
+  intrinsic body,
+- extract compound feature gates such as "x86 and AVX2 and FMA" into named
+  predicates,
+- add tests that kill boolean-gate mutations on ARM and x86 hosts.
+
+When adding new SIMD paths, add this decision-point test shape with the path
+rather than relying on a later ARM/x86 mutation sweep to discover the gap.
+
+### Flake-Hunt Seeds
+
+`make flake-hunt` defaults to 8 seeds and short fuzz runs. Nightly runs should
+record the seed count, fuzz seconds, and every expanded seed command in the
+packet log. A nondeterministic failure packet must include:
+
+- the failing seed,
+- the lane and target name,
+- the exact rerun command,
+- any minimized fuzz input or proptest regression file,
+- whether the failure reproduced on a second run with the same seed.
+
+Changing the nightly seed count or fuzz-second budget requires a review packet.
+Lowering either value is a demotion unless the packet shows equivalent coverage
+through another lane.
 
 ## PG Fault Injection
 
