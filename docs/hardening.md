@@ -108,7 +108,9 @@ the temporary exception and a reviewer accepts it.
   `hardening-nightly-local` uses this aggregate.
 - `make careful`: runs a standalone pure-Rust harness under
   `hardening/careful/` so PostgreSQL callback symbols are kept out of the
-  `cargo-careful` test binary.
+  `cargo-careful` test binary. The harness path-lifts the storage page,
+  DiskANN tuple/vacuum/Vamana graph, and HNSW search modules and currently
+  runs 67 pure tests under cargo-careful.
 
 Miri and Kani cover only pure Rust paths. pgrx, SPI, libpq, PostgreSQL memory
 contexts, and C callback entrypoints are outside their model and must stay in
@@ -124,6 +126,13 @@ Seeded Miri coverage now includes:
 
 - storage `ItemPointer` and data-page chain behavior,
 - DiskANN metadata encode/decode,
+- DiskANN Vamana graph search/pruning helpers,
+- DiskANN tuple/codebook serialization and vacuum tuple repair helpers,
+- HNSW beam-search and visible-frontier traversal helpers,
+- SPIRE routing and adaptive nprobe decisions,
+- SPIRE top-k candidate dedupe/cursor helpers,
+- SPIRE remote coordinator state summaries and remote payload cap validation,
+- SPIRE top-graph object serialization,
 - SPIRE leaf V2 object metadata and segment invariants through existing
   in-module tests with `miri_` prefixes.
 

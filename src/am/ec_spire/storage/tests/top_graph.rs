@@ -31,7 +31,7 @@
     }
 
     #[test]
-    fn top_graph_partition_object_round_trips_nodes() {
+    fn miri_top_graph_partition_object_round_trips_nodes() {
         let object = valid_top_graph_object();
 
         let decoded = SpireTopGraphPartitionObject::decode(&object.encode().unwrap()).unwrap();

@@ -1,5 +1,5 @@
     #[test]
-    fn route_root_object_to_leaf_pids_keeps_bounded_best_routes() {
+    fn miri_route_root_object_to_leaf_pids_keeps_bounded_best_routes() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,
             1,
@@ -47,7 +47,7 @@
     }
 
     #[test]
-    fn adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large() {
+    fn miri_adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,
             1,

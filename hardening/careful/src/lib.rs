@@ -1,10 +1,47 @@
-#[allow(dead_code)]
 #[path = "../../../src/storage/page.rs"]
-mod page;
+pub mod careful_storage_page;
+
+#[path = "../../../src/am/ec_diskann/tuple.rs"]
+pub mod careful_diskann_tuple;
+
+#[path = "../../../src/am/ec_diskann/vacuum.rs"]
+pub mod careful_diskann_vacuum;
+
+#[path = "../../../src/am/ec_diskann/vamana.rs"]
+pub mod careful_diskann_vamana;
+
+#[path = "../../../src/am/ec_hnsw/search.rs"]
+pub mod careful_hnsw_search;
+
+pub mod storage {
+    pub use crate::careful_storage_page as page;
+}
+
+pub mod am {
+    pub mod ec_diskann {
+        pub use crate::careful_diskann_tuple as tuple;
+        pub use crate::careful_diskann_vacuum as vacuum;
+        pub use crate::careful_diskann_vamana as vamana;
+    }
+
+    pub mod ec_hnsw {
+        pub use crate::careful_hnsw_search as search;
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use super::page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER};
+    use super::am::ec_diskann::tuple::{VamanaCodebookTuple, VamanaNodeTuple};
+    use super::am::ec_diskann::vacuum::repair_neighbors;
+    use super::storage::page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER};
+    use std::collections::HashSet;
+
+    fn tid(b: u32, o: u16) -> ItemPointer {
+        ItemPointer {
+            block_number: b,
+            offset_number: o,
+        }
+    }
 
     #[test]
     fn item_pointer_decode_rejects_short_payloads() {
@@ -29,5 +66,35 @@ mod tests {
                 .unwrap(),
             &[3; 32]
         );
+    }
+
+    #[test]
+    fn diskann_tuple_codebook_roundtrip() {
+        let tuple = VamanaCodebookTuple {
+            group_index: 3,
+            nexttid: tid(42, 7),
+            centroids: (0..64).map(|i| i as f32 * 0.25).collect(),
+        };
+        let encoded = tuple.encode();
+        assert_eq!(encoded.len(), VamanaCodebookTuple::encoded_len(64));
+        let decoded = VamanaCodebookTuple::decode(&encoded, 64).unwrap();
+        assert_eq!(tuple, decoded);
+    }
+
+    #[test]
+    fn diskann_vacuum_repair_neighbors_compacts_and_pads() {
+        let mut tuple = VamanaNodeTuple::placeholder(4, 0, 0);
+        tuple.primary_heaptid = tid(100, 1);
+        tuple.neighbor_count = 4;
+        tuple.neighbors[0] = tid(1, 1);
+        tuple.neighbors[1] = tid(2, 2);
+        tuple.neighbors[2] = tid(3, 3);
+        tuple.neighbors[3] = tid(4, 4);
+
+        let dead = HashSet::from([tid(2, 2), tid(4, 4)]);
+        assert_eq!(repair_neighbors(&mut tuple, &dead), 2);
+        assert_eq!(tuple.neighbor_count, 2);
+        assert_eq!(&tuple.neighbors[..2], &[tid(1, 1), tid(3, 3)]);
+        assert_eq!(&tuple.neighbors[2..], &[ItemPointer::INVALID; 2]);
     }
 }

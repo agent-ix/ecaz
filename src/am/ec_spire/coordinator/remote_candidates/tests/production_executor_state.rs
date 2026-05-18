@@ -373,7 +373,7 @@ mod production_executor_state_tests {
     }
 
     #[test]
-    fn production_executor_state_moves_ready_transport_to_candidate_receive() {
+    fn miri_production_executor_state_moves_ready_transport_to_candidate_receive() {
         let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 2)];
         let transport_rows = vec![ready_transport_row(2, 4), ready_transport_row(3, 5)];
         let row = remote_search_production_executor_state_summary_from_transport_probe_rows(
@@ -519,7 +519,7 @@ mod production_executor_state_tests {
     }
 
     #[test]
-    fn remote_payload_caps_reject_oversized_rows_and_batches() {
+    fn miri_remote_payload_caps_reject_oversized_rows_and_batches() {
         let row_error =
             validate_remote_payload_row_bytes_with_limit(17, 16, "remote typed tuple payload")
                 .expect_err("row over cap should fail");
@@ -1350,7 +1350,7 @@ mod production_executor_state_tests {
     }
 
     #[test]
-    fn prepared_transaction_intent_transitions_cannot_bypass_prepare_ack() {
+    fn miri_prepared_transaction_intent_transitions_cannot_bypass_prepare_ack() {
         assert!(coordinator_prepared_xact_intent_transition_is_valid(
             SPIRE_PREPARED_XACT_INTENT_PREPARE_REQUESTED,
             SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,

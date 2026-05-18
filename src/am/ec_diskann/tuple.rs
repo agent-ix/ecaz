@@ -397,7 +397,7 @@ mod tests {
     // LA-011: filled node with primary_heaptid, rerank_tid, neighbors,
     // binary sidecar, code round-trips.
     #[test]
-    fn la_011_filled_node_roundtrip() {
+    fn miri_la_011_filled_node_roundtrip() {
         let mut tuple = VamanaNodeTuple::placeholder(8, 2, 8);
         tuple.primary_heaptid = make_tid(10, 1);
         tuple.rerank_tid = make_tid(42, 3);
@@ -562,7 +562,7 @@ mod tests {
 
     // LA-030: codebook-tuple round-trip at a non-trivial centroid count.
     #[test]
-    fn la_030_codebook_tuple_roundtrip() {
+    fn miri_la_030_codebook_tuple_roundtrip() {
         let tuple = VamanaCodebookTuple {
             group_index: 3,
             nexttid: make_tid(42, 7),
