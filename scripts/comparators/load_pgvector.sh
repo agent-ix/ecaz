@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # Load a prepared corpus TSV into pgvector tables + build HNSW and
-# IVFFlat indexes (the two ANN indexes pgvector ships). Independent
-# of other comparator load scripts.
+# IVFFlat indexes (the two ANN indexes pgvector ships).
+#
+# Per-index isolation: HNSW and IVFFlat each live on their OWN
+# replicated corpus table so bench passes don't need a drop+rebuild
+# swap dance (the planner can't pick the wrong index if only one
+# exists on the bench target table). Cost: one extra ~6 GB/M-row
+# vector(1536) table per size. See ADR-050 for the analogous ec_*
+# pattern.
 set -euo pipefail
 
 COMPARATOR_NAME="pgvector"
@@ -35,13 +41,31 @@ done
 export PGDATABASE="$DB" PGHOST="${PGHOST:-/tmp}" PGUSER="${PGUSER:-postgres}"
 
 comparator_require_pgvector
-prefix="real_${SIZE}_pgv"
+base="real_${SIZE}_pgv"
 
-if ! comparator_table_loaded "${prefix}_corpus"; then
-  comparator_load_vector_table "${prefix}_corpus" "$CORPUS" "$DIM"
+# Per-variant corpus tables. queries table stays shared.
+hnsw_tbl="${base}_hnsw_corpus"
+ivf_tbl="${base}_ivfflat_corpus"
+queries_tbl="${base}_queries"
+
+# Source-load shared queries first.
+if ! comparator_table_loaded "$queries_tbl"; then
+  comparator_load_vector_table "$queries_tbl" "$QUERIES" "$DIM"
 fi
-if ! comparator_table_loaded "${prefix}_queries"; then
-  comparator_load_vector_table "${prefix}_queries" "$QUERIES" "$DIM"
+
+# Source-load HNSW corpus from TSV.
+if ! comparator_table_loaded "$hnsw_tbl"; then
+  comparator_load_vector_table "$hnsw_tbl" "$CORPUS" "$DIM"
+fi
+
+# IVFFlat corpus: clone from HNSW corpus via CTAS rather than re-reading
+# the (potentially 6+ GB) TSV. Saves disk I/O and avoids needing the
+# source file present for the second pass.
+if ! comparator_table_loaded "$ivf_tbl"; then
+  comparator_log "  CTAS $ivf_tbl FROM $hnsw_tbl"
+  psql -c "DROP TABLE IF EXISTS $ivf_tbl CASCADE;"
+  psql -c "CREATE TABLE $ivf_tbl AS TABLE $hnsw_tbl;"
+  psql -c "ALTER TABLE $ivf_tbl ADD PRIMARY KEY (id);"
 fi
 
 # pgvector's HNSW build needs maintenance_work_mem big enough to hold
@@ -53,17 +77,17 @@ fi
 MAINT_WORK_MEM="${MAINT_WORK_MEM:-4GB}"
 
 # HNSW
-hnsw_idx="${prefix}_hnsw_idx"
+hnsw_idx="${base}_hnsw_idx"
 if ! psql -tAc "select 1 from pg_indexes where indexname='$hnsw_idx';" | grep -q 1; then
-  comparator_log "building $hnsw_idx (hnsw m=$HNSW_M ef_construction=$HNSW_EFC, maintenance_work_mem=$MAINT_WORK_MEM)"
-  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $hnsw_idx ON ${prefix}_corpus USING hnsw (embedding vector_ip_ops) WITH (m = $HNSW_M, ef_construction = $HNSW_EFC);"
+  comparator_log "building $hnsw_idx on $hnsw_tbl (hnsw m=$HNSW_M ef_construction=$HNSW_EFC, maintenance_work_mem=$MAINT_WORK_MEM)"
+  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $hnsw_idx ON $hnsw_tbl USING hnsw (embedding vector_ip_ops) WITH (m = $HNSW_M, ef_construction = $HNSW_EFC);"
 fi
 
 # IVFFlat
-ivf_idx="${prefix}_ivfflat_idx"
+ivf_idx="${base}_ivfflat_idx"
 if ! psql -tAc "select 1 from pg_indexes where indexname='$ivf_idx';" | grep -q 1; then
-  comparator_log "building $ivf_idx (ivfflat lists=$IVFFLAT_LISTS, maintenance_work_mem=$MAINT_WORK_MEM)"
-  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $ivf_idx ON ${prefix}_corpus USING ivfflat (embedding vector_ip_ops) WITH (lists = $IVFFLAT_LISTS);"
+  comparator_log "building $ivf_idx on $ivf_tbl (ivfflat lists=$IVFFLAT_LISTS, maintenance_work_mem=$MAINT_WORK_MEM)"
+  psql -c "SET maintenance_work_mem = '$MAINT_WORK_MEM'; CREATE INDEX $ivf_idx ON $ivf_tbl USING ivfflat (embedding vector_ip_ops) WITH (lists = $IVFFLAT_LISTS);"
 fi
 
-comparator_log "done. tables: ${prefix}_corpus, ${prefix}_queries; indexes: $hnsw_idx, $ivf_idx"
+comparator_log "done. tables: $hnsw_tbl, $ivf_tbl, $queries_tbl; indexes: $hnsw_idx, $ivf_idx"

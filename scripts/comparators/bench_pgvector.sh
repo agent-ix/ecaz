@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Latency bench for pgvector (HNSW and IVFFlat indexes).
 # Writes per-(index) latency.log under <out>/<size>/pgv/<idx>/.
+#
+# Per-index isolation via replicated corpus tables (see
+# load_pgvector.sh). No drop+rebuild swap dance — each variant has its
+# own table with only its own index, so the planner has nothing to
+# pick wrong.
 set -euo pipefail
 
 COMPARATOR_NAME="pgvector"
@@ -17,34 +22,23 @@ while [[ $# -gt 0 ]]; do
     --db) DB="$2"; shift 2 ;;
     --iterations) ITERATIONS="$2"; shift 2 ;;
     --k) K="$2"; shift 2 ;;
-    -h|--help) sed -n '2,$ s/^# \?//p' "$0" | head -8; exit 0 ;;
+    -h|--help) sed -n '2,$ s/^# \?//p' "$0" | head -10; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
 [[ -z "$OUT" || -z "$SIZE" ]] && { echo "Usage: $0 --out <dir> --size <S>"; exit 1; }
 export PGDATABASE="$DB" PGHOST="${PGHOST:-/tmp}" PGUSER="${PGUSER:-postgres}"
-prefix="real_${SIZE}_pgv"
+base="real_${SIZE}_pgv"
+queries_tbl="${base}_queries"
 
-# pgvector ships hnsw + ivfflat. Run each in its own pass; drop the
-# other so planner can't pick it.
 for kind in hnsw ivfflat; do
-  this="${prefix}_${kind}_idx"
-  other_kind=$([[ "$kind" == "hnsw" ]] && echo ivfflat || echo hnsw)
-  other="${prefix}_${other_kind}_idx"
-  psql -tAc "select 1 from pg_indexes where indexname='$other';" | grep -q 1 && \
-    psql -c "DROP INDEX $other;"
-
+  corpus_tbl="${base}_${kind}_corpus"
   comparator_bench_latency \
-    --prefix "$prefix" \
+    --corpus-table "$corpus_tbl" \
+    --queries-table "$queries_tbl" \
     --op "<#>" \
     --outdir "$OUT/$SIZE/pgv/$kind" \
     --iterations "$ITERATIONS" \
     --k "$K"
 done
-
-# Rebuild dropped indexes so the EBS snapshot is left in a usable state.
-"$SCRIPT_DIR/load_pgvector.sh" --size "$SIZE" \
-  --corpus-file /dev/null --queries-file /dev/null --dim 1 2>/dev/null || true
-# (The load script is idempotent and won't reload tables; it just
-#  re-creates missing indexes via its CREATE INDEX guards.)
