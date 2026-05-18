@@ -12,8 +12,8 @@ use crate::quant::prod::{
     PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
 };
 use crate::storage::{
-    relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
-    snapshot_guard::RegisteredSnapshotGuard,
+    buffer_guard::LockedBufferGuard, relation_guard::HeapRelationGuard,
+    slot_guard::TupleTableSlotGuard, snapshot_guard::RegisteredSnapshotGuard,
 };
 
 use super::explain::TqExplainCounters;
@@ -4687,10 +4687,14 @@ unsafe fn select_next_linear_scan_result(
             } else {
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
+            let buffer =
+                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                    .unwrap_or_else(|| {
+                        pgrx::error!("ec_hnsw read stream returned an invalid buffer")
+                    });
             let selected = unsafe {
                 select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
             };
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             if selected.is_some() {
                 return selected;
             }
@@ -4705,18 +4709,17 @@ unsafe fn select_next_linear_scan_result(
             .reset(opaque.next_block_number, max_block);
         while let Some(block_number) = opaque.linear_prefetch_state.next_block() {
             let buffer = unsafe {
-                pg_sys::ReadBufferExtended(
+                LockedBufferGuard::read_main(
                     index_relation,
-                    pg_sys::ForkNumber::MAIN_FORKNUM,
                     block_number,
                     pg_sys::ReadBufferMode::RBM_NORMAL,
-                    ptr::null_mut(),
+                    pg_sys::BUFFER_LOCK_SHARE as i32,
                 )
-            };
+            }
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open linear scan buffer"));
             let selected = unsafe {
                 select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
             };
-            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             if selected.is_some() {
                 return selected;
             }
@@ -4730,15 +4733,14 @@ unsafe fn select_next_linear_scan_result(
 unsafe fn select_linear_scan_result_from_buffer(
     opaque: &mut TqScanOpaque,
     code_len: usize,
-    buffer: pg_sys::Buffer,
+    buffer: LockedBufferGuard,
     block_number: u32,
 ) -> Option<SelectedScanResult> {
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     opaque.explain_counters.record_linear_page_read();
     super::stats::record_linear_page();
     opaque.stats_delta.record_linear_page();
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_ptr = buffer.page().cast::<u8>();
+    let page_size = buffer.page_size();
     let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
     let offset_start = if block_number == opaque.next_block_number {
         opaque.next_offset_number.max(1)
@@ -4787,20 +4789,22 @@ unsafe fn select_linear_scan_result_from_buffer(
             opaque.explain_counters.record_element_skipped();
             continue;
         }
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
+        let gamma = element.gamma;
+        let code = element.code;
+        let heap_tids = CachedHeapTids::from_iter(element.heaptids.iter().copied());
+        drop(buffer);
         opaque.explain_counters.record_element_scored();
-        let score = score_scan_element_result(opaque, element.gamma, &element.code);
+        let score = score_scan_element_result(opaque, gamma, &code);
         return Some(SelectedScanResult {
             element_tid,
             score,
             approx_score: None,
             approx_rank_base: None,
             comparison_score: None,
-            heap_tids: CachedHeapTids::from_iter(element.heaptids.iter().copied()),
+            heap_tids,
         });
     }
 
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
     opaque.next_block_number = block_number + 1;
     opaque.next_offset_number = 1;
     None
