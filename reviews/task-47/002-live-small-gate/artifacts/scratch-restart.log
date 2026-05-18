@@ -1,0 +1,39 @@
+kill: 89604: Operation not permitted
+[scratch] repo=/Users/peter/dev/tqvector
+[scratch] pgrx_home=/Users/peter/.pgrx
+[scratch] pg=18
+[scratch] window=64
+[scratch] grouped_score_mode=binary
+[scratch] rerank_mode=heap_f32
+[scratch] rerank_source_column=build_source_column
+[scratch] exact_scope=disabled
+[32m[1m    Starting[0m[39m Postgres v18 on port [36m[1m28818[0m[39m
+Error:
+   0: problem running pg_ctl: "/opt/homebrew/Cellar/postgresql@18/18.3/bin/pg_ctl" "start" "-o" "-i -p 28818 -c unix_socket_directories=/Users/peter/.pgrx" "-D" "/Users/peter/.pgrx/data-18" "-l" "/Users/peter/.pgrx/18.log"
+
+      pg_ctl: another server might be running; trying to start server anyway
+      /bin/sh: /Users/peter/.pgrx/18.log: Operation not permitted
+      pg_ctl: could not start server
+      Examine the log output.
+
+
+Location:
+   /Users/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/start.rs:201
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   0: cargo_pgrx::command::start::start_postgres with pg_version=18.3
+      at /Users/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/start.rs:103
+   1: cargo_pgrx::command::start::execute
+      at /Users/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/start.rs:46
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+   0: [91mCommand { std: cd "/Users/peter/dev/tqvector" && PGRX_HOME="/Users/peter/.pgrx" TQVECTOR_PQ_FASTSCAN_RERANK_MODE="heap_f32" TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW="64" TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE="binary" "cargo" "pgrx" "start" "pg18", kill_on_drop: false } failed with status exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/support.rs[0m:[35m180[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

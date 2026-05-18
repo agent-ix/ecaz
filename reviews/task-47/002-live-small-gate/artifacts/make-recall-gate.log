@@ -1,0 +1,12 @@
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
+[suite:task47-recall-gate-small] hnsw-small-k10 -> --database postgres --host /Users/peter/.pgrx --port 28818 bench recall --prefix task47_gate_hnsw --profile ec_hnsw --k 10 --sweep 128 --queries-limit 50 --bits 4 --seed 42 --force-index --truth-cache-file target/gates/recall-small/real10k-truth-k10.json --log-output target/gates/recall-small/hnsw-real10k-k10.log
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
+[suite:task47-recall-gate-small] ivf-small-k10 -> --database postgres --host /Users/peter/.pgrx --port 28818 bench recall --prefix task47_gate_ivf --profile ec_ivf --k 10 --sweep 48 --rerank-width 750 --queries-limit 50 --bits 4 --seed 42 --force-index --truth-cache-file target/gates/recall-small/real10k-truth-k10.json --log-output target/gates/recall-small/ivf-real10k-k10.log
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
+[suite:task47-recall-gate-small] diskann-small-k10 -> --database postgres --host /Users/peter/.pgrx --port 28818 bench recall --prefix task47_gate_diskann --profile ec_diskann --k 10 --sweep 200 --queries-limit 50 --bits 4 --seed 42 --force-index --truth-cache-file target/gates/recall-small/real10k-truth-k10.json --log-output target/gates/recall-small/diskann-real10k-k10.log
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/results.jsonl
+[suite:task47-recall-gate-small] wrote target/gates/recall-small/suite-manifest.json
