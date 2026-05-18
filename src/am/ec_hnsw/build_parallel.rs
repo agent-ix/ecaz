@@ -437,6 +437,35 @@ impl EcHnswConcurrentDsmLockOps {
             release: concurrent_dsm_lwlock_release,
         }
     }
+
+    unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> EcHnswConcurrentDsmLockGuard {
+        unsafe { (self.acquire_shared)(lock) };
+        EcHnswConcurrentDsmLockGuard {
+            lock,
+            release: self.release,
+        }
+    }
+
+    unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> EcHnswConcurrentDsmLockGuard {
+        unsafe { (self.acquire_exclusive)(lock) };
+        EcHnswConcurrentDsmLockGuard {
+            lock,
+            release: self.release,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct EcHnswConcurrentDsmLockGuard {
+    lock: *mut pg_sys::LWLock,
+    release: unsafe fn(*mut pg_sys::LWLock),
+}
+
+impl Drop for EcHnswConcurrentDsmLockGuard {
+    fn drop(&mut self) {
+        unsafe { (self.release)(self.lock) };
+    }
 }
 
 #[allow(dead_code)]
@@ -1292,29 +1321,21 @@ unsafe fn begin_concurrent_dsm_graph_node_insert(
 ) -> Option<u8> {
     let node = unsafe { parts.nodes.add(node_idx as usize) };
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
-    unsafe { (locks.acquire_exclusive)(lock) };
+    let _lock_guard = unsafe { locks.exclusive(lock) };
     let state = unsafe { (*node).insert_state.value };
     let level = unsafe { (*node).level };
     match state {
-        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY => {
-            unsafe { (locks.release)(lock) };
-            None
-        }
+        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY => None,
         EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED => {
             unsafe {
                 (*node).insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING;
-                (locks.release)(lock);
             }
             Some(level)
         }
         EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING => {
-            unsafe { (locks.release)(lock) };
             pgrx::error!("concurrent DSM graph insert saw a duplicate in-progress node");
         }
-        _ => {
-            unsafe { (locks.release)(lock) };
-            pgrx::error!("concurrent DSM graph insert saw an unknown node state");
-        }
+        _ => pgrx::error!("concurrent DSM graph insert saw an unknown node state"),
     }
 }
 
@@ -1326,17 +1347,15 @@ unsafe fn complete_concurrent_dsm_graph_node_insert(
 ) {
     let node = unsafe { parts.nodes.add(node_idx as usize) };
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
-    unsafe { (locks.acquire_exclusive)(lock) };
+    let _lock_guard = unsafe { locks.exclusive(lock) };
     let slot_count = unsafe { (*node).neighbor_slot_count as usize };
     if selected_slots.len() != slot_count {
-        unsafe { (locks.release)(lock) };
         pgrx::error!("concurrent DSM graph insert selected slot count mismatch");
     }
     let slots = unsafe { concurrent_dsm_node_slots_mut(parts, node) };
     slots.copy_from_slice(selected_slots);
     unsafe {
         (*node).insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY;
-        (locks.release)(lock);
     }
 }
 
@@ -1501,23 +1520,24 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
 
     let source = unsafe { parts.nodes.add(source_idx as usize) };
     let source_lock = unsafe { ptr::addr_of_mut!((*source).lock) };
-    unsafe { (locks.acquire_shared)(source_lock) };
-    let source_state = unsafe { (*source).insert_state.value };
-    if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
-        let source_level = unsafe { (*source).level };
-        if let Some((start, end)) = graph::layer_slot_bounds(source_level, config.m, layer) {
-            let raw_slots = unsafe { concurrent_dsm_node_slots(parts, source) };
-            for neighbor_idx in raw_slots[start.min(raw_slots.len())..end.min(raw_slots.len())]
-                .iter()
-                .copied()
-            {
-                if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
-                    neighbor_idxs.push(neighbor_idx);
+    {
+        let _source_lock_guard = unsafe { locks.shared(source_lock) };
+        let source_state = unsafe { (*source).insert_state.value };
+        if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
+            let source_level = unsafe { (*source).level };
+            if let Some((start, end)) = graph::layer_slot_bounds(source_level, config.m, layer) {
+                let raw_slots = unsafe { concurrent_dsm_node_slots(parts, source) };
+                for neighbor_idx in raw_slots[start.min(raw_slots.len())..end.min(raw_slots.len())]
+                    .iter()
+                    .copied()
+                {
+                    if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
+                        neighbor_idxs.push(neighbor_idx);
+                    }
                 }
             }
         }
     }
-    unsafe { (locks.release)(source_lock) };
 
     for neighbor_idx in neighbor_idxs.iter().copied() {
         if neighbor_idx >= layout.node_count {
@@ -1597,10 +1617,9 @@ unsafe fn add_concurrent_dsm_backlinks(
         }
         let target = unsafe { parts.nodes.add(selection.node_idx as usize) };
         let target_lock = unsafe { ptr::addr_of_mut!((*target).lock) };
-        unsafe { (locks.acquire_exclusive)(target_lock) };
+        let _target_lock_guard = unsafe { locks.exclusive(target_lock) };
         let target_state = unsafe { (*target).insert_state.value };
         if target_state != EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
-            unsafe { (locks.release)(target_lock) };
             continue;
         }
 
@@ -1609,12 +1628,10 @@ unsafe fn add_concurrent_dsm_backlinks(
             unsafe { (*target).neighbor_slot_count as usize },
             selection.layer,
         ) else {
-            unsafe { (locks.release)(target_lock) };
             continue;
         };
         let layer_slice = unsafe { &mut concurrent_dsm_node_slots_mut(parts, target)[start..end] };
         if layer_slice.contains(&new_node_idx) {
-            unsafe { (locks.release)(target_lock) };
             continue;
         }
         if let Some(slot) = layer_slice
@@ -1622,7 +1639,6 @@ unsafe fn add_concurrent_dsm_backlinks(
             .find(|slot| **slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
         {
             *slot = new_node_idx;
-            unsafe { (locks.release)(target_lock) };
             continue;
         }
 
@@ -1664,7 +1680,6 @@ unsafe fn add_concurrent_dsm_backlinks(
         if replacement.contains(&new_node_idx) {
             layer_slice.copy_from_slice(&replacement);
         }
-        unsafe { (locks.release)(target_lock) };
     }
 }
 
