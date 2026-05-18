@@ -436,22 +436,6 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
     }
 }
 
-pub(crate) unsafe fn allocate_heap_slot(
-    heap_relation: pg_sys::Relation,
-    failure_label: &str,
-) -> *mut pg_sys::TupleTableSlot {
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
-        )
-    };
-    if slot.is_null() {
-        pgrx::error!("{failure_label}");
-    }
-    slot
-}
-
 pub(crate) unsafe fn fetch_heap_row_version(
     heap_relation: pg_sys::Relation,
     heap_tid: page::ItemPointer,

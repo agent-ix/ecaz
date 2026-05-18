@@ -50,6 +50,13 @@ RAW_API_RULES = [
         re.compile(r"pg_sys::SPI_freetuptable\b"),
         frozenset({"src/storage/spi_guard.rs"}),
     ),
+    RawApiRule(
+        "tuple slot allocation/release APIs",
+        re.compile(
+            r"pg_sys::(?:MakeSingleTupleTableSlot|table_slot_create|ExecDropSingleTupleTableSlot)\b"
+        ),
+        frozenset({"src/storage/slot_guard.rs"}),
+    ),
 ]
 
 READ_STREAM_NEXT_RE = re.compile(r"pg_sys::read_stream_next_buffer\b")
@@ -152,6 +159,18 @@ def self_test() -> int:
             "}\n",
         ),
         (
+            "src/am/raw_slot.rs",
+            "fn leaked_slot(relation: pg_sys::Relation) {\n"
+            "    unsafe { pg_sys::MakeSingleTupleTableSlot((*relation).rd_att, pg_sys::table_slot_callbacks(relation)) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/slot_guard.rs",
+            "fn wrapper_only(relation: pg_sys::Relation) {\n"
+            "    unsafe { pg_sys::ExecDropSingleTupleTableSlot(pg_sys::table_slot_create(relation, std::ptr::null_mut())) };\n"
+            "}\n",
+        ),
+        (
             "src/am/read_stream_leak.rs",
             "fn leaked_stream(stream: *mut pg_sys::ReadStream) {\n"
             "    let _buffer = unsafe { pg_sys::read_stream_next_buffer(stream) };\n"
@@ -170,6 +189,7 @@ def self_test() -> int:
         "src/am/leaky_buffer.rs:2: raw buffer pin/lock APIs",
         "src/am/raw_lwlock.rs:2: raw LWLock APIs",
         "src/am/raw_spi.rs:2: raw SPI tuptable release API",
+        "src/am/raw_slot.rs:2: raw tuple slot allocation/release APIs",
         "src/am/read_stream_leak.rs:2: read_stream_next_buffer result must be adopted",
     ]
     missing = [
@@ -183,6 +203,7 @@ def self_test() -> int:
         if violation.startswith("src/storage/buffer_guard.rs:")
         or violation.startswith("src/storage/lock_guard.rs:")
         or violation.startswith("src/storage/spi_guard.rs:")
+        or violation.startswith("src/storage/slot_guard.rs:")
         or violation.startswith("src/am/read_stream_adopted.rs:")
     ]
     if missing or unexpected_allowed or len(violations) != len(expected_fragments):
