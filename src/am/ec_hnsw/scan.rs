@@ -5328,6 +5328,15 @@ impl TqScanOpaque {
 
         unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
     }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(super) fn query_values_or_empty(&self) -> &[f32] {
+        if self.query_values.is_null() || self.query_dimensions == 0 {
+            return &[];
+        }
+
+        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+    }
 }
 
 impl Default for TqScanOpaque {

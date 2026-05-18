@@ -164,14 +164,7 @@ fn debug_runtime_ordered_provenance_slots(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
-    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
-        return Vec::new();
-    }
-
-    let query = unsafe {
-        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
-    };
-    query.to_vec()
+    opaque.query_values_or_empty().to_vec()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
