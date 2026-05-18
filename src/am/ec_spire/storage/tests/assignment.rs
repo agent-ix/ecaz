@@ -42,7 +42,7 @@
     }
 
     #[test]
-    fn assignment_row_round_trips() {
+    fn miri_assignment_row_round_trips() {
         let row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
             vec_id: SpireVecId::local(123),
@@ -61,7 +61,7 @@
     }
 
     #[test]
-    fn assignment_row_prefix_decoder_returns_tail() {
+    fn miri_assignment_row_prefix_decoder_returns_tail() {
         let row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             vec_id: SpireVecId::local(123),
@@ -84,7 +84,7 @@
     }
 
     #[test]
-    fn assignment_row_ref_prefix_decoder_borrows_payload() {
+    fn miri_assignment_row_ref_prefix_decoder_borrows_payload() {
         let row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             vec_id: SpireVecId::local(123),
@@ -112,7 +112,7 @@
     }
 
     #[test]
-    fn assignment_visibility_helpers_match_primary_and_delta_semantics() {
+    fn miri_assignment_visibility_helpers_match_primary_and_delta_semantics() {
         let mut row = leaf_v2_assignment(1, 8);
         assert!(is_visible_primary_assignment(&row));
         let encoded = row.encode().unwrap();
@@ -142,7 +142,7 @@
     }
 
     #[test]
-    fn assignment_row_rejects_unknown_flags_and_invalid_locator() {
+    fn miri_assignment_row_rejects_unknown_flags_and_invalid_locator() {
         let mut row = SpireLeafAssignmentRow {
             flags: 0x8000,
             vec_id: SpireVecId::local(1),
@@ -162,7 +162,7 @@
     }
 
     #[test]
-    fn assignment_row_rejects_unknown_payload_format() {
+    fn miri_assignment_row_rejects_unknown_payload_format() {
         let row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             vec_id: SpireVecId::local(1),
@@ -186,7 +186,7 @@
     }
 
     #[test]
-    fn assignment_row_rejects_length_mismatch() {
+    fn miri_assignment_row_rejects_length_mismatch() {
         let row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             vec_id: SpireVecId::local(1),
