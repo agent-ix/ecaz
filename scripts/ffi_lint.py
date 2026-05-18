@@ -71,6 +71,11 @@ RAW_API_RULES = [
         frozenset({"src/storage/scan_guard.rs"}),
     ),
     RawApiRule(
+        "WAL generic xlog APIs",
+        re.compile(r"pg_sys::GenericXLog(?:Start|Finish|Abort)\b"),
+        frozenset({"src/storage/wal.rs"}),
+    ),
+    RawApiRule(
         "SPI tuptable release API",
         re.compile(r"pg_sys::SPI_freetuptable\b"),
         frozenset({"src/storage/spi_guard.rs"}),
@@ -223,6 +228,19 @@ def self_test() -> int:
             "}\n",
         ),
         (
+            "src/am/raw_wal.rs",
+            "fn leaked_wal(relation: pg_sys::Relation) {\n"
+            "    unsafe { pg_sys::GenericXLogStart(relation) };\n"
+            "}\n",
+        ),
+        (
+            "src/storage/wal.rs",
+            "fn wrapper_only(state: *mut pg_sys::GenericXLogState) {\n"
+            "    unsafe { pg_sys::GenericXLogFinish(state) };\n"
+            "    unsafe { pg_sys::GenericXLogAbort(state) };\n"
+            "}\n",
+        ),
+        (
             "src/am/raw_spi.rs",
             "fn leaked_tuptable(table: *mut pg_sys::SPITupleTable) {\n"
             "    unsafe { pg_sys::SPI_freetuptable(table) };\n"
@@ -269,6 +287,7 @@ def self_test() -> int:
         "src/am/raw_snapshot.rs:2: raw active snapshot stack APIs",
         "src/am/raw_index_scan.rs:2: raw index scan lifecycle APIs",
         "src/am/raw_heap_scan.rs:2: raw heap scan lifecycle APIs",
+        "src/am/raw_wal.rs:2: raw WAL generic xlog APIs",
         "src/am/raw_spi.rs:2: raw SPI tuptable release API",
         "src/am/raw_slot.rs:2: raw tuple slot allocation/release APIs",
         "src/am/read_stream_leak.rs:2: read_stream_next_buffer result must be adopted",
@@ -286,6 +305,7 @@ def self_test() -> int:
         or violation.startswith("src/storage/relation_guard.rs:")
         or violation.startswith("src/storage/snapshot_guard.rs:")
         or violation.startswith("src/storage/scan_guard.rs:")
+        or violation.startswith("src/storage/wal.rs:")
         or violation.startswith("src/storage/spi_guard.rs:")
         or violation.startswith("src/storage/slot_guard.rs:")
         or violation.startswith("src/am/read_stream_adopted.rs:")
