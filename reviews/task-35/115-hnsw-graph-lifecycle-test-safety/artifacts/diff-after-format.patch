@@ -1,0 +1,261 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 225baac4..e72eb8ed 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -46,33 +46,6 @@ src/tests/ec_hnsw_build.rs:2145
+ src/tests/ec_hnsw_build.rs:2156
+ src/tests/ec_hnsw_build.rs:2170
+ src/tests/ec_hnsw_build.rs:2430
+-src/tests/ec_hnsw_graph_lifecycle.rs:1074
+-src/tests/ec_hnsw_graph_lifecycle.rs:1077
+-src/tests/ec_hnsw_graph_lifecycle.rs:1080
+-src/tests/ec_hnsw_graph_lifecycle.rs:1083
+-src/tests/ec_hnsw_graph_lifecycle.rs:1135
+-src/tests/ec_hnsw_graph_lifecycle.rs:116
+-src/tests/ec_hnsw_graph_lifecycle.rs:123
+-src/tests/ec_hnsw_graph_lifecycle.rs:1236
+-src/tests/ec_hnsw_graph_lifecycle.rs:128
+-src/tests/ec_hnsw_graph_lifecycle.rs:1373
+-src/tests/ec_hnsw_graph_lifecycle.rs:1452
+-src/tests/ec_hnsw_graph_lifecycle.rs:1454
+-src/tests/ec_hnsw_graph_lifecycle.rs:1501
+-src/tests/ec_hnsw_graph_lifecycle.rs:1530
+-src/tests/ec_hnsw_graph_lifecycle.rs:242
+-src/tests/ec_hnsw_graph_lifecycle.rs:456
+-src/tests/ec_hnsw_graph_lifecycle.rs:696
+-src/tests/ec_hnsw_graph_lifecycle.rs:734
+-src/tests/ec_hnsw_graph_lifecycle.rs:738
+-src/tests/ec_hnsw_graph_lifecycle.rs:765
+-src/tests/ec_hnsw_graph_lifecycle.rs:768
+-src/tests/ec_hnsw_graph_lifecycle.rs:803
+-src/tests/ec_hnsw_graph_lifecycle.rs:804
+-src/tests/ec_hnsw_graph_lifecycle.rs:847
+-src/tests/ec_hnsw_graph_lifecycle.rs:898
+-src/tests/ec_hnsw_graph_lifecycle.rs:921
+-src/tests/ec_hnsw_graph_lifecycle.rs:984
+ src/tests/ec_hnsw_recall_debug_exports.rs:1048
+ src/tests/ec_hnsw_recall_debug_exports.rs:1125
+ src/tests/ec_hnsw_recall_debug_exports.rs:1233
+diff --git a/src/tests/ec_hnsw_graph_lifecycle.rs b/src/tests/ec_hnsw_graph_lifecycle.rs
+index a51f199c..a6f3e3ed 100644
+--- a/src/tests/ec_hnsw_graph_lifecycle.rs
++++ b/src/tests/ec_hnsw_graph_lifecycle.rs
+@@ -1,3 +1,11 @@
++    macro_rules! hnsw_graph_debug {
++        ($call:expr) => {{
++            // SAFETY: These pg_test fixtures create the referenced HNSW index and
++            // pass test-owned metadata, query vectors, or heap tids to test-only debug helpers.
++            unsafe { $call }
++        }};
++    }
++
+     #[pg_test]
+     fn test_ech_empty_index_insert_initializes_shape_metadata() {
+         Spi::run("CREATE TABLE ec_hnsw_empty_insert (id bigint primary key, embedding ecvector)")
+@@ -113,19 +121,17 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (_block_count, _m, _ef_construction, mut metadata) =
+-            unsafe { am::debug_index_metadata(index_oid) };
++            hnsw_graph_debug!(am::debug_index_metadata(index_oid));
+         assert_eq!(metadata.dimensions, 4);
+         assert_eq!(metadata.bits, 4);
+         assert_eq!(metadata.seed, 42);
+         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+ 
+         metadata.entry_point = am::page::ItemPointer::INVALID;
+-        unsafe {
+-            am::debug_update_index_metadata(index_oid, metadata);
+-        }
++        hnsw_graph_debug!(am::debug_update_index_metadata(index_oid, metadata));
+ 
+         let (_block_count, _m, _ef_construction, metadata) =
+-            unsafe { am::debug_index_metadata(index_oid) };
++            hnsw_graph_debug!(am::debug_index_metadata(index_oid));
+         assert_eq!(metadata.entry_point, am::page::ItemPointer::INVALID);
+ 
+         Spi::run(
+@@ -239,7 +245,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+ 
+-        let mut previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
++        let mut previous_metadata = hnsw_graph_debug!(am::debug_index_metadata(index_oid)).3;
+         for id in 2_i64..=128_i64 {
+             Spi::run(&format!(
+                 "INSERT INTO ec_hnsw_insert_level_promotion VALUES (
+@@ -453,7 +459,7 @@
+ 
+         let mut chosen_insert = None;
+         for id in 1_i64..=192_i64 {
+-            let previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
++            let previous_metadata = hnsw_graph_debug!(am::debug_index_metadata(index_oid)).3;
+             Spi::run(&format!(
+                 "INSERT INTO ec_hnsw_insert_upper_layer_links VALUES (
+                     {id},
+@@ -693,7 +699,7 @@
+         );
+ 
+         let (_head, frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
+-            unsafe { am::debug_rescan_candidate_frontier(index_oid, query) };
++            hnsw_graph_debug!(am::debug_rescan_candidate_frontier(index_oid, query));
+         let frontier_tids = frontier_slots
+             .iter()
+             .filter_map(|(valid, tid, _)| valid.then_some(*tid))
+@@ -731,11 +737,11 @@
+             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_noop_idx'::regclass::oid")
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+-        let (block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
++        let (block_count, metadata, data_pages) = hnsw_graph_debug!(am::debug_index_pages(index_oid));
+         let element_tuple_count =
+             decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4)).len();
+ 
+-        let stats = unsafe { am::debug_vacuum_stats(index_oid) };
++        let stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
+         assert_eq!(stats.num_pages, block_count);
+         assert!(
+             !stats.estimated_count,
+@@ -762,10 +768,10 @@
+             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_empty_idx'::regclass::oid")
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+-        let (block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
++        let (block_count, _metadata, data_pages) = hnsw_graph_debug!(am::debug_index_pages(index_oid));
+         assert_eq!(data_pages.len(), 0, "empty index should have no data pages");
+ 
+-        let stats = unsafe { am::debug_vacuum_stats(index_oid) };
++        let stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
+         assert_eq!(stats.num_pages, block_count);
+         assert!(
+             !stats.estimated_count,
+@@ -800,8 +806,8 @@
+             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_repeat_idx'::regclass::oid")
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+-        let first_stats = unsafe { am::debug_vacuum_stats(index_oid) };
+-        let second_stats = unsafe { am::debug_vacuum_stats(index_oid) };
++        let first_stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
++        let second_stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
+ 
+         assert_eq!(second_stats.num_pages, first_stats.num_pages);
+         assert_eq!(second_stats.estimated_count, first_stats.estimated_count);
+@@ -844,7 +850,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        let stats = hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+         let (_metadata, elements, _neighbors) =
+             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+         let (_element_tid, duplicate_element) =
+@@ -895,7 +901,7 @@
+             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_pass1_scan_idx'::regclass::oid")
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+-        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        let stats = hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+         let (_metadata, elements, _neighbors) =
+             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+         let deleted_element = elements
+@@ -918,7 +924,7 @@
+         );
+ 
+         let returned =
+-            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]) };
++            hnsw_graph_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]));
+         assert!(
+             !returned.contains(&(
+                 deleted_heap_tid.block_number,
+@@ -981,7 +987,7 @@
+         ))
+         .expect("delete should succeed");
+ 
+-        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+ 
+         let (metadata_after, elements_after, _neighbors_after) =
+             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+@@ -1071,16 +1077,16 @@
+         ))
+         .expect("delete should succeed");
+ 
+-        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+ 
+         let (_block_count, _m, _ef_construction, mut stale_metadata) =
+-            unsafe { am::debug_index_metadata(index_oid) };
++            hnsw_graph_debug!(am::debug_index_metadata(index_oid));
+         stale_metadata.entry_point = deleted_element_before.0;
+         stale_metadata.max_level = deleted_level;
+-        unsafe { am::debug_update_index_metadata(index_oid, stale_metadata) };
++        hnsw_graph_debug!(am::debug_update_index_metadata(index_oid, stale_metadata));
+ 
+         let returned =
+-            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, fixture_query(deleted_row_id)) };
++            hnsw_graph_debug!(am::debug_gettuple_scan_heap_tids(index_oid, fixture_query(deleted_row_id)));
+         assert!(
+             !returned.is_empty(),
+             "scan should fall back to another live seed when metadata.entry_point is stale and deleted",
+@@ -1132,7 +1138,7 @@
+         Spi::run("DELETE FROM ec_hnsw_vacuum_pass2_unlink WHERE id = 2")
+             .expect("delete should succeed");
+ 
+-        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+ 
+         let (_metadata_after, elements_after, neighbors_after) =
+             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+@@ -1233,7 +1239,7 @@
+             "DELETE FROM ec_hnsw_vacuum_pass2_replace WHERE id = {deleted_row_id}"
+         ))
+         .expect("delete should succeed");
+-        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+ 
+         let (metadata_after, elements_after, neighbors_after) =
+             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+@@ -1370,7 +1376,7 @@
+             "DELETE FROM ec_hnsw_vacuum_pass2_upper_replace WHERE id = {deleted_row_id}"
+         ))
+         .expect("delete should succeed");
+-        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+ 
+         let (metadata_after, elements_after, neighbors_after) =
+             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+@@ -1449,9 +1455,9 @@
+             .expect("delete should succeed");
+ 
+         let first_stats =
+-            unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++            hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+         let second_stats =
+-            unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++            hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+         let (_metadata, elements, neighbors) =
+             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+ 
+@@ -1498,7 +1504,7 @@
+ 
+         Spi::run("DELETE FROM ec_hnsw_vacuum_reinsert WHERE id = 1")
+             .expect("delete should succeed");
+-        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
++        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+ 
+         Spi::run(
+             "INSERT INTO ec_hnsw_vacuum_reinsert VALUES
+@@ -1527,7 +1533,7 @@
+         );
+ 
+         let returned =
+-            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]) };
++            hnsw_graph_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]));
+         assert!(
+             returned.contains(&(
+                 replacement_heap_tid.block_number,
+@@ -1536,4 +1542,3 @@
+             "the replacement row should stay reachable after reinserting the same encoded vector",
+         );
+     }
+-
