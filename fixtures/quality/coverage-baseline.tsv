@@ -25,15 +25,15 @@ am/ec_spire/storage/assignment.rs	87.14	Task 39 baseline raised by reviews/task-
 am/ec_spire/storage/header.rs	82.00	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
 am/ec_spire/storage/helpers.rs	83.50	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
 am/ec_spire/storage/leaf_v1.rs	97.70	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
-am/ec_spire/storage/leaf_v2.rs	71.76	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
+am/ec_spire/storage/leaf_v2.rs	95.29	Task 39 baseline raised by reviews/task-39/036-coverage-pushes
 am/ec_spire/storage/leaf_v2_parts.rs	81.03	Task 39 baseline raised by reviews/task-39/032-spire-storage-coverage-raise
 am/ec_spire/storage/local_store.rs	80.07	Task 39 baseline raised by reviews/task-39/032-spire-storage-coverage-raise
-am/ec_spire/storage/local_store_set.rs	63.74	Task 39 baseline raised by reviews/task-39/032-spire-storage-coverage-raise
+am/ec_spire/storage/local_store_set.rs	88.89	Task 39 baseline raised by reviews/task-39/036-coverage-pushes
 am/ec_spire/storage/relation_plan.rs	82.98	Task 39 baseline raised by reviews/task-39/022-spire-relation-plan-coverage
 am/ec_spire/storage/relation_store.rs	27.20	Task 39 baseline raised by reviews/task-39/035-backing-page-emulator
 am/ec_spire/storage/routing_delta.rs	88.46	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
 am/ec_spire/storage/top_graph.rs	90.32	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
-am/ec_spire/storage/vec_id.rs	69.64	Task 39 baseline raised by reviews/task-39/032-spire-storage-coverage-raise
+am/ec_spire/storage/vec_id.rs	94.64	Task 39 baseline raised by reviews/task-39/036-coverage-pushes
 am/ec_spire/coordinator/diagnostics.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_diskann/build.rs	96.69	Task 39 baseline raised by reviews/task-39/019-diskann-core-coverage
 am/ec_diskann/routine.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
