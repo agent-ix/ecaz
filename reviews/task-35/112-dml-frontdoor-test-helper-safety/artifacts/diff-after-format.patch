@@ -1,0 +1,295 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index de2e9e0a..9e2940f9 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -27,35 +27,6 @@ src/tests/diagnostics.rs:1712
+ src/tests/diagnostics.rs:1745
+ src/tests/diagnostics.rs:317
+ src/tests/diagnostics.rs:947
+-src/tests/dml_frontdoor.rs:1030
+-src/tests/dml_frontdoor.rs:1032
+-src/tests/dml_frontdoor.rs:1043
+-src/tests/dml_frontdoor.rs:1050
+-src/tests/dml_frontdoor.rs:1075
+-src/tests/dml_frontdoor.rs:1083
+-src/tests/dml_frontdoor.rs:1100
+-src/tests/dml_frontdoor.rs:1109
+-src/tests/dml_frontdoor.rs:1114
+-src/tests/dml_frontdoor.rs:1116
+-src/tests/dml_frontdoor.rs:1132
+-src/tests/dml_frontdoor.rs:1141
+-src/tests/dml_frontdoor.rs:1145
+-src/tests/dml_frontdoor.rs:1149
+-src/tests/dml_frontdoor.rs:1168
+-src/tests/dml_frontdoor.rs:1177
+-src/tests/dml_frontdoor.rs:1187
+-src/tests/dml_frontdoor.rs:1249
+-src/tests/dml_frontdoor.rs:1295
+-src/tests/dml_frontdoor.rs:1302
+-src/tests/dml_frontdoor.rs:1438
+-src/tests/dml_frontdoor.rs:246
+-src/tests/dml_frontdoor.rs:248
+-src/tests/dml_frontdoor.rs:254
+-src/tests/dml_frontdoor.rs:262
+-src/tests/dml_frontdoor.rs:289
+-src/tests/dml_frontdoor.rs:291
+-src/tests/dml_frontdoor.rs:300
+-src/tests/dml_frontdoor.rs:306
+ src/tests/ec_hnsw_build.rs:1081
+ src/tests/ec_hnsw_build.rs:1315
+ src/tests/ec_hnsw_build.rs:1382
+diff --git a/src/tests/dml_frontdoor.rs b/src/tests/dml_frontdoor.rs
+index b00b891d..01452b8b 100644
+--- a/src/tests/dml_frontdoor.rs
++++ b/src/tests/dml_frontdoor.rs
+@@ -1,3 +1,12 @@
++    macro_rules! dml_frontdoor_checked {
++        ($call:expr) => {{
++            // SAFETY: These pg_test cases build analyzed PostgreSQL query trees
++            // and then pass those planner-owned nodes to test-only DML
++            // frontdoor helpers before the surrounding test context exits.
++            unsafe { $call }
++        }};
++    }
++
+     #[pg_test]
+     fn test_ec_spire_dml_frontdoor_hook_status_installed_pass_through() {
+         let status_from = "FROM ec_spire_dml_frontdoor_hook_status()";
+@@ -243,23 +252,21 @@
+             "DELETE FROM ec_spire_dml_target_oid_sql WHERE id = 1",
+             "SELECT id, title FROM ec_spire_dml_target_oid_sql WHERE id = 1",
+         ] {
+-            let query = unsafe { analyzed_query(sql) };
++            let query = dml_frontdoor_checked!(analyzed_query(sql));
+             assert_eq!(
+-                unsafe { am::spire_dml_frontdoor_target_relation_oid(query) },
++                dml_frontdoor_checked!(am::spire_dml_frontdoor_target_relation_oid(query)),
+                 Some(relation_oid),
+                 "{sql}"
+             );
+         }
+ 
+-        let join_query = unsafe {
+-            analyzed_query(
++        let join_query = dml_frontdoor_checked!(analyzed_query(
+                 "SELECT l.id \
+                    FROM ec_spire_dml_target_oid_sql AS l \
+                    JOIN ec_spire_dml_target_oid_sql AS r ON l.id = r.id",
+-            )
+-        };
++            ));
+         assert_eq!(
+-            unsafe { am::spire_dml_frontdoor_target_relation_oid(join_query) },
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_target_relation_oid(join_query)),
+             None
+         );
+     }
+@@ -286,9 +293,9 @@
+         };
+ 
+         let coerced_const_query =
+-            unsafe { analyzed_query("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5") };
++            dml_frontdoor_checked!(analyzed_query("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5"));
+         let coerced_const_shape =
+-            unsafe { am::spire_classify_dml_frontdoor_query(coerced_const_query, context) }
++            dml_frontdoor_checked!(am::spire_classify_dml_frontdoor_query(coerced_const_query, context))
+                 .expect("coerced const query should classify");
+         assert!(
+             coerced_const_shape.supported,
+@@ -297,13 +304,11 @@
+         );
+         assert_eq!(coerced_const_shape.kind, "pk_select_by_pk");
+ 
+-        let cte_query = unsafe {
+-            analyzed_query(
++        let cte_query = dml_frontdoor_checked!(analyzed_query(
+                 "WITH marker AS (SELECT 1) \
+                  SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5",
+-            )
+-        };
+-        let cte_shape = unsafe { am::spire_classify_dml_frontdoor_query(cte_query, context) }
++            ));
++        let cte_shape = dml_frontdoor_checked!(am::spire_classify_dml_frontdoor_query(cte_query, context))
+             .expect("CTE-prefixed query should classify");
+         assert!(!cte_shape.supported);
+         assert_eq!(cte_shape.kind, "unsupported_subquery_shape");
+@@ -1027,9 +1032,9 @@
+         .expect("DML PK argument ec_spire index creation should succeed");
+ 
+         let select_query =
+-            unsafe { analyzed_query("SELECT id FROM ec_spire_dml_pk_argument_sql WHERE id = 5") };
++            dml_frontdoor_checked!(analyzed_query("SELECT id FROM ec_spire_dml_pk_argument_sql WHERE id = 5"));
+         let select_decision =
+-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query))
+                 .expect("PK SELECT replacement decision should exist");
+         let select_pk_argument =
+             am::spire_dml_frontdoor_pk_argument_from_replacement_decision(&select_decision)
+@@ -1040,16 +1045,12 @@
+             am::SpireDmlFrontdoorPkValuePlan::ConstBigint(5)
+         );
+ 
+-        let embedding_update_query = unsafe {
+-            analyzed_query(
++        let embedding_update_query = dml_frontdoor_checked!(analyzed_query(
+                 "UPDATE ec_spire_dml_pk_argument_sql \
+                     SET embedding = '[1,2,3]'::ecvector \
+                   WHERE id = 5",
+-            )
+-        };
+-        let embedding_update_decision = unsafe {
+-            am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query)
+-        }
++            ));
++        let embedding_update_decision = dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query))
+         .expect("embedding UPDATE replacement decision should exist");
+         let error = am::spire_dml_frontdoor_pk_argument_from_replacement_decision(
+             &embedding_update_decision,
+@@ -1072,15 +1073,13 @@
+         )
+         .expect("DML primitive plan ec_spire index creation should succeed");
+ 
+-        let update_query = unsafe {
+-            analyzed_query(
++        let update_query = dml_frontdoor_checked!(analyzed_query(
+                 "UPDATE ec_spire_dml_primitive_plan_sql \
+                     SET title = 'updated' \
+                   WHERE id = 5",
+-            )
+-        };
++            ));
+         let update_decision =
+-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(update_query) }
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(update_query))
+                 .expect("UPDATE primitive plan decision should exist");
+         let update_plan =
+             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&update_decision)
+@@ -1097,7 +1096,7 @@
+         assert_eq!(update_plan.updated_columns, vec!["title".to_owned()]);
+         assert!(update_plan.projected_columns.is_empty());
+         let update_plan_expr =
+-            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(update_query) }
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(update_query))
+                 .expect("UPDATE primitive plan expression handoff should classify")
+                 .expect("UPDATE primitive plan expression handoff should be buildable");
+         assert_eq!(
+@@ -1106,14 +1105,16 @@
+         );
+         assert!(!update_plan_expr.pk_value_expr.is_null());
+         assert_eq!(
++            // SAFETY: The primitive-plan helper returned a non-null
++            // PostgreSQL expression node for this analyzed UPDATE query.
+             unsafe { (*update_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+             pg_sys::NodeTag::T_Const
+         );
+ 
+         let delete_query =
+-            unsafe { analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5") };
++            dml_frontdoor_checked!(analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5"));
+         let delete_decision =
+-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(delete_query) }
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(delete_query))
+                 .expect("DELETE primitive plan decision should exist");
+         let delete_plan =
+             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&delete_decision)
+@@ -1129,7 +1130,7 @@
+         assert!(delete_plan.updated_columns.is_empty());
+         assert!(delete_plan.projected_columns.is_empty());
+         let delete_plan_expr =
+-            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(delete_query) }
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(delete_query))
+                 .expect("DELETE primitive plan expression handoff should classify")
+                 .expect("DELETE primitive plan expression handoff should be buildable");
+         assert_eq!(
+@@ -1138,15 +1139,15 @@
+         );
+         assert!(!delete_plan_expr.pk_value_expr.is_null());
+         assert_eq!(
++            // SAFETY: The primitive-plan helper returned a non-null
++            // PostgreSQL expression node for this analyzed DELETE query.
+             unsafe { (*delete_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+             pg_sys::NodeTag::T_Const
+         );
+ 
+-        let select_query = unsafe {
+-            analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5")
+-        };
++        let select_query = dml_frontdoor_checked!(analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5"));
+         let select_decision =
+-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query))
+                 .expect("PK SELECT primitive plan decision should exist");
+         let select_plan =
+             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&select_decision)
+@@ -1165,7 +1166,7 @@
+             vec!["id".to_owned(), "title".to_owned()]
+         );
+         let select_plan_expr =
+-            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(select_query) }
++            dml_frontdoor_checked!(am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(select_query))
+                 .expect("PK SELECT primitive plan expression handoff should classify")
+                 .expect("PK SELECT primitive plan expression handoff should be buildable");
+         assert_eq!(
+@@ -1174,6 +1175,8 @@
+         );
+         assert!(!select_plan_expr.pk_value_expr.is_null());
+         assert_eq!(
++            // SAFETY: The primitive-plan helper returned a non-null
++            // PostgreSQL expression node for this analyzed SELECT query.
+             unsafe { (*select_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+             pg_sys::NodeTag::T_Const
+         );
+@@ -1184,12 +1187,10 @@
+             ),
+             "0000000000000005"
+         );
+-        let select_invocation = unsafe {
+-            am::spire_dml_frontdoor_primitive_invocation_from_plan(
++        let select_invocation = dml_frontdoor_checked!(am::spire_dml_frontdoor_primitive_invocation_from_plan(
+                 &select_plan,
+                 std::ptr::null_mut(),
+-            )
+-        }
++            ))
+         .expect("const PK primitive invocation should be buildable");
+         assert_eq!(
+             select_invocation.mode,
+@@ -1246,6 +1247,9 @@
+                 "{value}"
+             );
+         }
++        // SAFETY: The parameter list is allocated by PostgreSQL for one
++        // parameter, and this block initializes that single slot before using
++        // it with DML frontdoor test helpers.
+         unsafe {
+             let params = pg_sys::makeParamList(1);
+             assert!(
+@@ -1292,16 +1296,12 @@
+             assert!(null_error.contains("must not be NULL"), "{null_error}");
+         }
+ 
+-        let embedding_update_query = unsafe {
+-            analyzed_query(
++        let embedding_update_query = dml_frontdoor_checked!(analyzed_query(
+                 "UPDATE ec_spire_dml_primitive_plan_sql \
+                     SET embedding = '[1,2,3]'::ecvector \
+                   WHERE id = 5",
+-            )
+-        };
+-        let embedding_update_decision = unsafe {
+-            am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query)
+-        }
++            ));
++        let embedding_update_decision = dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query))
+         .expect("embedding UPDATE primitive plan decision should exist");
+         let unsupported_error = am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(
+             &embedding_update_decision,
+@@ -1435,7 +1435,7 @@
+ 
+     #[pg_test]
+     fn test_ec_spire_custom_scan_dml_plan_private_copyobject_sql() {
+-        let roundtrip = unsafe { am::spire_custom_scan_dml_plan_private_copy_roundtrip_for_test() };
++        let roundtrip = dml_frontdoor_checked!(am::spire_custom_scan_dml_plan_private_copy_roundtrip_for_test());
+         assert_eq!(
+             roundtrip, "3|12345|title,status||id",
+             "DML CustomScan plan-private metadata should survive copyObject"
