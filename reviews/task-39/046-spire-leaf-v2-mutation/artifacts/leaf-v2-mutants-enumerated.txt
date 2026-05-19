@@ -1,0 +1,14 @@
+leaf_v2.rs:18:9: replace SpireLeafPartitionObjectV2::validate -> Result<(), String> with Ok(())
+leaf_v2.rs:20:36: replace != with == in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:31:35: replace != with == in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:37:33: replace != with == in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:46:40: replace == with != in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:46:36: replace + with - in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:46:36: replace + with * in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:47:49: replace != with == in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:52:52: replace == with != in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:56:46: replace != with == in SpireLeafPartitionObjectV2::validate
+leaf_v2.rs:68:9: replace SpireLeafPartitionObjectV2::column_segments -> Result<impl Iterator<Item = Result<SpireLeafObjectColumns<'_>, String>>+'_, String> with Ok(::std::iter::empty())
+leaf_v2.rs:68:9: replace SpireLeafPartitionObjectV2::column_segments -> Result<impl Iterator<Item = Result<SpireLeafObjectColumns<'_>, String>>+'_, String> with Ok(::std::iter::once(Ok(Default::default())))
+leaf_v2.rs:76:9: replace SpireLeafPartitionObjectV2::assignment_rows -> Result<Vec<SpireLeafAssignmentRow>, String> with Ok(vec![])
+leaf_v2.rs:76:9: replace SpireLeafPartitionObjectV2::assignment_rows -> Result<Vec<SpireLeafAssignmentRow>, String> with Ok(vec![Default::default()])
