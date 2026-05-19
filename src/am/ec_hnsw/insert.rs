@@ -27,6 +27,8 @@ struct InsertHeapSourceScorer {
 
 impl InsertHeapSourceScorer {
     unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
+        // SAFETY: `heap_relation` is the live heap relation passed to aminsert;
+        // the source-column lookup only reads relation/catalog metadata.
         let source_attribute = unsafe {
             source::resolve_source_attribute(
                 heap_relation,
@@ -35,6 +37,7 @@ impl InsertHeapSourceScorer {
                 source::SourceTypePolicy::BuildSource,
             )
         };
+        // SAFETY: The source attribute was resolved for this heap relation.
         unsafe { Self::new_with_attribute(heap_relation, source_attribute) }
     }
 
@@ -55,6 +58,8 @@ impl InsertHeapSourceScorer {
     }
 
     unsafe fn load_source_vector(&mut self, heap_tid: page::ItemPointer, label: &str) -> Vec<f32> {
+        // SAFETY: `self.heap_relation`, snapshot, and tuple slot belong to this
+        // scorer, and `heap_tid` is the heap TID for the tuple being inserted.
         let vector = unsafe {
             source::with_source_from_heap_row(
                 self.heap_relation,
@@ -66,6 +71,8 @@ impl InsertHeapSourceScorer {
                 |source| source.as_slice().to_vec(),
             )
         };
+        // SAFETY: The slot was allocated for this scorer and may be cleared
+        // after the heap row source value has been copied out.
         unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         vector
     }
@@ -79,6 +86,8 @@ impl InsertHeapSourceScorer {
         let mut count = 0usize;
 
         for heap_tid in heap_tids.iter().copied() {
+            // SAFETY: `heap_tid` comes from a graph element's heap TID list and
+            // the scorer owns the heap relation, snapshot, and reusable slot.
             unsafe {
                 source::with_source_from_heap_row(
                     self.heap_relation,
@@ -104,6 +113,8 @@ impl InsertHeapSourceScorer {
                     },
                 )
             };
+            // SAFETY: The slot was allocated for this scorer and can be cleared
+            // before loading the next representative row.
             unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         }
 
@@ -119,6 +130,8 @@ impl InsertHeapSourceScorer {
             return None;
         }
 
+        // SAFETY: Live graph elements carry heap TIDs for source lookup; the
+        // scorer owns the relation/snapshot/slot used for those lookups.
         let element_source = unsafe {
             self.averaged_source_vector(&element.heaptids, "live insert source graph element")
         }?;
@@ -133,6 +146,8 @@ impl InsertHeapSourceScorer {
         target_element: &graph::GraphElement,
         candidate_element: &graph::GraphElement,
     ) -> f32 {
+        // SAFETY: Backlink candidates are live graph elements whose heap TID
+        // representatives are loaded through this scorer's heap relation/slot.
         let target_source = unsafe {
             self.averaged_source_vector(
                 &target_element.heaptids,
@@ -142,6 +157,8 @@ impl InsertHeapSourceScorer {
         .unwrap_or_else(|| {
             pgrx::error!("ec_hnsw live insert backlink target is missing source data")
         });
+        // SAFETY: The candidate element is loaded from the same graph and its
+        // heap representatives are read through this scorer.
         let candidate_source = unsafe {
             self.averaged_source_vector(
                 &candidate_element.heaptids,
@@ -159,6 +176,8 @@ impl InsertHeapSourceScorer {
         target_element: &graph::GraphElement,
         new_tuple: &build::BuildTuple,
     ) -> f32 {
+        // SAFETY: The target graph element was loaded from the index and its
+        // heap representatives are read through this scorer.
         let target_source = unsafe {
             self.averaged_source_vector(
                 &target_element.heaptids,
@@ -184,6 +203,8 @@ impl InsertSearchMetric {
     ) -> Option<f32> {
         match self {
             Self::Code => score_insert_graph_element(metadata, &tuple.code, element),
+            // SAFETY: Source-scored inserts require the tuple source vector;
+            // the scorer loads comparable source representatives.
             Self::Source(scorer) => unsafe {
                 scorer.score_element_against_query(
                     tuple.source_vector.as_deref().unwrap_or_else(|| {
@@ -205,6 +226,8 @@ impl InsertSearchMetric {
             Self::Code => {
                 score_backlink_candidate(metadata, &target_element.code, &candidate_element.code)
             }
+            // SAFETY: Source backlink scoring loads source representatives for
+            // graph elements already read from the index.
             Self::Source(scorer) => unsafe {
                 scorer.score_existing_backlink_candidate(target_element, candidate_element)
             },
@@ -259,6 +282,8 @@ impl InsertFormatAdapter {
         code_len: usize,
     ) -> Option<page::ItemPointer> {
         match self {
+            // SAFETY: The adapter matches the current metadata/storage format,
+            // and `tuple.code` is the encoded insert payload.
             Self::TurboQuant { .. } => unsafe {
                 find_duplicate_element_tid(
                     index_relation,
@@ -270,6 +295,8 @@ impl InsertFormatAdapter {
                     &tuple.code,
                 )
             },
+            // SAFETY: `layout` was resolved from the current index storage
+            // descriptor and matches the tuple's rerank code format.
             Self::TurboQuantHotCold(layout) => unsafe {
                 find_duplicate_turbo_hot_element_tid(
                     index_relation,
@@ -278,6 +305,8 @@ impl InsertFormatAdapter {
                     layout,
                 )
             },
+            // SAFETY: `layout` was resolved from the current grouped index
+            // metadata and matches the tuple's grouped code format.
             Self::PqFastScan(layout) => unsafe {
                 find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
             },
@@ -293,6 +322,8 @@ impl InsertFormatAdapter {
         insert_level: u8,
         m: u16,
     ) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
+        // SAFETY: The adapter supplies the storage descriptor matching current
+        // metadata; discovery reads graph elements and scores them through metric.
         unsafe {
             discover_insert_forward_neighbor_slots(
                 index_relation,
@@ -315,12 +346,18 @@ impl InsertFormatAdapter {
         neighbor_tids: &[page::ItemPointer],
     ) -> page::ItemPointer {
         match self {
+            // SAFETY: The adapter matches the append format and `neighbor_tids`
+            // is sized for the chosen insert level.
             Self::TurboQuant { .. } => unsafe {
                 append_heap_tuple(index_relation, tuple, level, neighbor_tids)
             },
+            // SAFETY: `layout` was resolved from metadata and describes the
+            // hot/cold append encoding for this tuple.
             Self::TurboQuantHotCold(layout) => unsafe {
                 append_turbo_hot_cold_tuple(index_relation, tuple, level, neighbor_tids, layout)
             },
+            // SAFETY: `layout` was resolved from grouped metadata and describes
+            // the append encoding for this tuple.
             Self::PqFastScan(layout) => unsafe {
                 append_pq_fastscan_tuple(
                     index_relation,
@@ -341,12 +378,18 @@ impl InsertFormatAdapter {
         heap_tid: page::ItemPointer,
     ) {
         match self {
+            // SAFETY: `element_tid` came from a duplicate scan for this format;
+            // appending the heap TID preserves that element layout.
             Self::TurboQuant { code_len } => unsafe {
                 coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid)
             },
+            // SAFETY: `element_tid` came from a hot/cold duplicate scan using
+            // the same layout.
             Self::TurboQuantHotCold(layout) => unsafe {
                 coalesce_duplicate_turbo_hot_heap_tid(index_relation, element_tid, layout, heap_tid)
             },
+            // SAFETY: `element_tid` came from a grouped duplicate scan using
+            // the same layout.
             Self::PqFastScan(layout) => unsafe {
                 coalesce_duplicate_grouped_heap_tid(index_relation, element_tid, layout, heap_tid)
             },
@@ -364,6 +407,8 @@ impl InsertFormatAdapter {
         new_element_tid: page::ItemPointer,
         m: u16,
     ) {
+        // SAFETY: `new_element_tid` is the element appended by this insert, and
+        // selections were discovered using the same storage descriptor.
         unsafe {
             add_backlinks_to_forward_neighbors(
                 index_relation,
@@ -389,6 +434,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_aminsert(
     _index_unchanged: bool,
     index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
+    // SAFETY: PostgreSQL calls aminsert with relation pointers, value/null
+    // arrays, heap TID, and IndexInfo valid for the callback duration.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             crate::fault::maybe_fail_palloc("ec_hnsw aminsert entry");
@@ -408,6 +455,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_aminsert(
                 if values.is_null() || isnull.is_null() {
                     pgrx::error!("ec_hnsw aminsert received null tuple value arrays");
                 }
+                // SAFETY: Null was checked above; aminsert receives one indexed
+                // value slot for this AM.
                 if *isnull {
                     pgrx::error!("ec_hnsw does not support NULL indexed values");
                 }
@@ -421,6 +470,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_aminsert(
                     InsertHeapSourceScorer::new_with_attribute(heap_relation, source_attribute);
                 let source_vector = source_scorer
                     .load_source_vector(heap_tid, "ec_hnsw live insert build_source_column");
+                // SAFETY: `values` was checked non-null above and points at the
+                // indexed Datum for this insert callback.
                 tuple = build::build_heap_tuple_with_source(
                     *values,
                     heap_tid,
@@ -461,6 +512,8 @@ fn resolve_insert_format_adapter(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> Result<InsertFormatAdapter, String> {
+    // SAFETY: `index_relation` is live for the insert, and `metadata` is the
+    // metadata page snapshot used to interpret graph storage.
     match unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }? {
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(InsertFormatAdapter::TurboQuant { code_len })
@@ -523,6 +576,8 @@ unsafe fn run_insert_with_adapter(
     // duplicate scan is degenerate on an effectively empty index.
     if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
         if matches!(format, InsertFormatAdapter::PqFastScan(_)) {
+            // SAFETY: The metadata lock serializes first grouped-format
+            // initialization; the closure writes metadata/data pages atomically.
             let bootstrapped = unsafe {
                 shared::with_locked_metadata_page(index_relation, |metadata| {
                     if metadata.dimensions != 0 || metadata.bits != 0 {
@@ -539,8 +594,12 @@ unsafe fn run_insert_with_adapter(
                 return false;
             }
 
+            // SAFETY: The first-insert race was lost; reread metadata before
+            // re-entering the normal insert path.
             let refreshed_metadata = unsafe { shared::read_metadata_page(index_relation) };
             return unsafe {
+                // SAFETY: Same insert inputs are reused with a fresh metadata
+                // snapshot after grouped bootstrap contention.
                 run_insert_with_adapter(
                     format,
                     index_relation,
@@ -668,6 +727,8 @@ unsafe fn run_insert_with_adapter(
     shared::with_locked_metadata_page(index_relation, |metadata| {
         metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
         let entry_point_needs_repair = metadata.entry_point == page::ItemPointer::INVALID || {
+            // SAFETY: Metadata currently names an entry point; loading it under
+            // the metadata lock lets us detect stale/deleted entry pointers.
             let entry = unsafe {
                 graph::load_exact_graph_element(index_relation, metadata.entry_point, storage)
             };
@@ -846,6 +907,8 @@ unsafe fn discover_insert_forward_neighbor_slots(
 ) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
     let mut slots = empty_insert_neighbor_slots(insert_level, m);
     let mut selections = Vec::new();
+    // SAFETY: The metadata snapshot and storage descriptor identify the current
+    // entry point, and metric owns any source-scoring heap state.
     let Some(entry_candidate) =
         (unsafe { load_insert_entry_candidate(index_relation, metadata, storage, tuple, metric) })
     else {
@@ -853,6 +916,8 @@ unsafe fn discover_insert_forward_neighbor_slots(
     };
 
     let m_usize = usize::from(m);
+    // SAFETY: `entry_candidate` came from the graph metadata entry point, and
+    // this only writes local forward slots/selections.
     unsafe {
         populate_upper_layer_forward_slots(
             index_relation,
@@ -867,6 +932,8 @@ unsafe fn discover_insert_forward_neighbor_slots(
             &mut selections,
         );
     }
+    // SAFETY: `entry_candidate` is live and the storage descriptor matches the
+    // metadata snapshot for graph reads during greedy descent.
     let descended_seed = unsafe {
         graph::greedy_descend_from_entry_with_storage(
             index_relation,
@@ -876,6 +943,8 @@ unsafe fn discover_insert_forward_neighbor_slots(
             |neighbor| metric.score_new_tuple_against_element(metadata, tuple, neighbor),
         )
     };
+    // SAFETY: `descended_seed` was produced by the same graph storage path, and
+    // the scorer closure validates deleted/empty elements.
     let layer0_candidates = unsafe {
         graph::search_layer0_result_candidates_with_storage(
             index_relation,
@@ -904,8 +973,12 @@ unsafe fn load_insert_entry_candidate(
         return None;
     }
 
+    // SAFETY: Metadata names a non-invalid entry TID and `storage` matches this
+    // metadata snapshot.
     let entry =
         unsafe { graph::load_exact_graph_element(index_relation, metadata.entry_point, storage) };
+    // SAFETY: `entry` was loaded from the graph and metric owns any required
+    // source-scoring state.
     let entry_score = unsafe { metric.score_new_tuple_against_element(metadata, tuple, &entry) }?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
@@ -949,6 +1022,8 @@ unsafe fn populate_upper_layer_forward_slots(
 
     let mut seeds = vec![entry_candidate];
     for current_layer in (1..=metadata.max_level).rev() {
+        // SAFETY: Seeds came from prior graph search on the same storage
+        // descriptor; the closure filters deleted/empty elements through metric.
         seeds = unsafe {
             graph::search_layer_result_candidates_with_storage(
                 index_relation,
@@ -1022,12 +1097,16 @@ unsafe fn add_backlinks_to_forward_neighbors(
             break;
         }
 
+        // SAFETY: Pending selections came from forward-neighbor discovery for
+        // this insert and the planner carries the matching metadata/storage.
         let mutations =
             unsafe { plan_backlink_mutations(index_relation, &planner, metric, &pending) };
         if mutations.is_empty() {
             break;
         }
 
+        // SAFETY: Planned mutations group neighbor TIDs by index page and only
+        // target graph tuples loaded through the planner storage descriptor.
         pending =
             unsafe { apply_backlink_mutations(index_relation, &mutations, new_element_tid, m) };
     }
@@ -1042,21 +1121,26 @@ unsafe fn plan_backlink_mutations(
     let mut mutations = selections
         .iter()
         .copied()
-        .filter_map(|selection| unsafe {
-            let element = graph::load_exact_graph_element(
-                index_relation,
-                selection.element_tid,
-                planner.storage,
-            );
-            let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
-            plan_backlink_mutation(
-                index_relation,
-                planner,
-                metric,
-                &element,
-                &neighbors,
-                selection.layer,
-            )
+        .filter_map(|selection| {
+            // SAFETY: Each selection names a graph element discovered from the
+            // same index/storage descriptor; its neighbor tuple is part of that
+            // element payload.
+            unsafe {
+                let element = graph::load_exact_graph_element(
+                    index_relation,
+                    selection.element_tid,
+                    planner.storage,
+                );
+                let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
+                plan_backlink_mutation(
+                    index_relation,
+                    planner,
+                    metric,
+                    &element,
+                    &neighbors,
+                    selection.layer,
+                )
+            }
         })
         .filter(|mutation| mutation.neighbor_tid != page::ItemPointer::INVALID)
         .collect::<Vec<_>>();
@@ -1086,8 +1170,12 @@ unsafe fn apply_backlink_mutations(
             end += 1;
         }
 
-        retries.extend(unsafe {
-            add_backlinks_on_page(index_relation, &mutations[start..end], new_element_tid, m)
+        retries.extend({
+            // SAFETY: This run slice contains only mutations for one neighbor
+            // block, so `add_backlinks_on_page` can lock and rewrite that page.
+            unsafe {
+                add_backlinks_on_page(index_relation, &mutations[start..end], new_element_tid, m)
+            }
         });
         start = end;
     }
@@ -1107,6 +1195,8 @@ unsafe fn add_backlinks_on_page(
     }
 
     let block_number = mutations[0].neighbor_tid.block_number;
+    // SAFETY: `block_number` is taken from planned neighbor TIDs and the page is
+    // locked exclusively before tuple bytes are rewritten.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1119,7 +1209,11 @@ unsafe fn add_backlinks_on_page(
         pgrx::error!("ec_hnsw failed to open backlink neighbor block {block_number}");
     });
 
+    // SAFETY: The relation is live for aminsert and the locked buffer belongs
+    // to that relation.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The buffer remains pinned/locked while registered in the generic
+    // WAL transaction; the full-image registration covers in-place tuple edits.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
@@ -1135,6 +1229,8 @@ unsafe fn add_backlinks_on_page(
             end += 1;
         }
 
+        // SAFETY: `neighbor_tid` points at a tuple on the registered page and
+        // the closure preserves the encoded tuple length.
         let tuple_changed = unsafe {
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
@@ -1200,6 +1296,8 @@ unsafe fn add_backlinks_on_page(
     }
 
     if changed {
+        // SAFETY: The generic WAL transaction owns the registered page image
+        // and must be finished after at least one tuple mutation.
         unsafe { wal_txn.finish() };
     } else {
         std::mem::drop(wal_txn);
@@ -1231,6 +1329,8 @@ unsafe fn plan_backlink_mutation(
         });
     }
 
+    // SAFETY: A full layer slice needs rescoring existing graph elements using
+    // the planner's storage descriptor and insert metric.
     let replacement_slice = unsafe {
         select_backlink_rewrite_slice(index_relation, planner, metric, target_element, layer_slice)
     };
@@ -1256,6 +1356,8 @@ unsafe fn select_backlink_rewrite_slice(
 ) -> Vec<page::ItemPointer> {
     let new_candidate = ScoredBacklinkNode {
         node: planner.new_element_tid,
+        // SAFETY: The new tuple and target element belong to this insert, and
+        // metric owns any source-scoring heap state.
         score: unsafe {
             metric.score_new_backlink_candidate(planner.metadata, target_element, planner.new_tuple)
         },
@@ -1265,16 +1367,20 @@ unsafe fn select_backlink_rewrite_slice(
         .iter()
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
-        .map(|tid| unsafe {
-            let element = graph::load_exact_graph_element(index_relation, tid, planner.storage);
-            ScoredBacklinkNode {
-                node: tid,
-                score: metric.score_existing_backlink_candidate(
-                    planner.metadata,
-                    target_element,
-                    &element,
-                ),
-                is_new: false,
+        .map(|tid| {
+            // SAFETY: Existing backlink candidates are TIDs from the neighbor
+            // slice and are loaded through the same graph storage descriptor.
+            unsafe {
+                let element = graph::load_exact_graph_element(index_relation, tid, planner.storage);
+                ScoredBacklinkNode {
+                    node: tid,
+                    score: metric.score_existing_backlink_candidate(
+                        planner.metadata,
+                        target_element,
+                        &element,
+                    ),
+                    is_new: false,
+                }
             }
         })
         .chain(std::iter::once(new_candidate))
@@ -1432,6 +1538,8 @@ unsafe fn append_heap_tuple(
         );
     }
 
+    // SAFETY: The index relation is open for the aminsert callback; this only
+    // reads the current main-fork block count.
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -1445,6 +1553,8 @@ unsafe fn append_heap_tuple(
     } else {
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
+    // SAFETY: We either allocate a new zeroed page or lock the current tail
+    // block exclusively before appending index tuples.
     let buffer = unsafe {
         if target_block == P_NEW {
             LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
@@ -1462,16 +1572,25 @@ unsafe fn append_heap_tuple(
     });
 
     let page_size = buffer.page_size();
+    // SAFETY: The relation is live for aminsert and the buffer is held locked
+    // while its page is registered with generic WAL.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer remains valid for the duration of this WAL
+    // transaction and is rewritten through the returned page pointer.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
+        // SAFETY: A freshly allocated zeroed page must be initialized before
+        // `PageAddItemExtended` receives tuple payloads.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
+        // SAFETY: `page_ptr` points to the locked existing tail page.
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
             std::mem::drop(buffer);
+            // SAFETY: The current tail page cannot fit this insert, so retry
+            // on a newly allocated page using the already encoded neighbor.
             return unsafe {
                 append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
             };
@@ -1479,6 +1598,8 @@ unsafe fn append_heap_tuple(
     }
 
     let block_number = buffer.block_number();
+    // SAFETY: `page_ptr` is a registered writable page and the payload slice is
+    // stable for the duration of the PostgreSQL page insertion call.
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1506,6 +1627,8 @@ unsafe fn append_heap_tuple(
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode element tuple: {e}"));
+    // SAFETY: The element payload is inserted into the same registered page and
+    // references the neighbor tuple offset just written above.
     let element_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1519,6 +1642,7 @@ unsafe fn append_heap_tuple(
         pgrx::error!("ec_hnsw failed to write element tuple during aminsert");
     }
 
+    // SAFETY: Both tuple insertions are complete on the registered page.
     unsafe { wal_txn.finish() };
     page::ItemPointer {
         block_number,
@@ -1532,6 +1656,7 @@ unsafe fn append_heap_tuple_to_new_page(
     level: u8,
     neighbor_payload: &[u8],
 ) -> page::ItemPointer {
+    // SAFETY: This fallback always appends a fresh zeroed data page.
     let buffer = unsafe {
         LockedBufferGuard::read_main_locked(
             index_relation,
@@ -1544,12 +1669,18 @@ unsafe fn append_heap_tuple_to_new_page(
     });
 
     let page_size = buffer.page_size();
+    // SAFETY: The relation is live and the newly allocated buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered before page initialization and
+    // tuple insertion.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    // SAFETY: The freshly allocated zeroed page must be initialized before use.
     unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
     let block_number = buffer.block_number();
+    // SAFETY: The neighbor payload points to encoded bytes and is copied into
+    // the registered page by PostgreSQL.
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1577,6 +1708,8 @@ unsafe fn append_heap_tuple_to_new_page(
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode fallback element tuple: {e}"));
+    // SAFETY: The element payload references the neighbor offset just written
+    // and is copied into the same registered page.
     let element_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1590,6 +1723,7 @@ unsafe fn append_heap_tuple_to_new_page(
         pgrx::error!("ec_hnsw failed to write fallback element tuple during aminsert");
     }
 
+    // SAFETY: Page initialization and tuple insertions are complete.
     unsafe { wal_txn.finish() };
     page::ItemPointer {
         block_number,
@@ -1661,6 +1795,8 @@ unsafe fn append_turbo_hot_cold_tuple(
         );
     }
 
+    // SAFETY: The index relation is open for the aminsert callback; this reads
+    // only the current main-fork block count.
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -1674,6 +1810,8 @@ unsafe fn append_turbo_hot_cold_tuple(
     } else {
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
+    // SAFETY: We either allocate a new zeroed page or lock the current tail
+    // block exclusively before writing the three-part hot/cold payload.
     let buffer = unsafe {
         if target_block == P_NEW {
             LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
@@ -1691,16 +1829,24 @@ unsafe fn append_turbo_hot_cold_tuple(
     });
 
     let page_size = buffer.page_size();
+    // SAFETY: The relation is live for aminsert and the locked buffer belongs
+    // to the relation being modified.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered for generic WAL before any page
+    // bytes are initialized or appended.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
+        // SAFETY: A newly allocated zeroed page must be initialized first.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
+        // SAFETY: `page_ptr` names the locked existing tail page.
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
             std::mem::drop(buffer);
+            // SAFETY: The tail page cannot fit all hot/cold payload pieces, so
+            // append them to a freshly allocated page.
             return unsafe {
                 append_turbo_hot_cold_tuple_to_new_page(
                     index_relation,
@@ -1715,6 +1861,7 @@ unsafe fn append_turbo_hot_cold_tuple(
     }
 
     let block_number = buffer.block_number();
+    // SAFETY: The neighbor payload is copied into the registered writable page.
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1727,6 +1874,8 @@ unsafe fn append_turbo_hot_cold_tuple(
     if neighbor_offset == pg_sys::InvalidOffsetNumber {
         pgrx::error!("ec_hnsw failed to write TurboQuant V3 neighbor tuple during aminsert");
     }
+    // SAFETY: The rerank payload is copied into the same registered page before
+    // the hot tuple stores its back-reference.
     let rerank_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1756,6 +1905,8 @@ unsafe fn append_turbo_hot_cold_tuple(
     .hot
     .encode()
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode TurboQuant V3 hot tuple: {e}"));
+    // SAFETY: The hot payload references offsets already written on this page
+    // and is copied into the registered writable page.
     let hot_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1769,6 +1920,7 @@ unsafe fn append_turbo_hot_cold_tuple(
         pgrx::error!("ec_hnsw failed to write TurboQuant V3 hot tuple during aminsert");
     }
 
+    // SAFETY: All hot/cold payload pieces have been inserted on the page.
     unsafe { wal_txn.finish() };
     page::ItemPointer {
         block_number,
@@ -1784,6 +1936,7 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
     rerank_payload: &[u8],
     layout: graph::TurboQuantHotColdLayout,
 ) -> page::ItemPointer {
+    // SAFETY: This fallback always appends a fresh zeroed data page.
     let buffer = unsafe {
         LockedBufferGuard::read_main_locked(
             index_relation,
@@ -1796,12 +1949,17 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
     });
 
     let page_size = buffer.page_size();
+    // SAFETY: The relation is live and the newly allocated buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered before page initialization and
+    // tuple insertion.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    // SAFETY: A freshly allocated zeroed page must be initialized before use.
     unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
     let block_number = buffer.block_number();
+    // SAFETY: The neighbor payload is copied into the registered page.
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1816,6 +1974,8 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
             "ec_hnsw failed to write fallback TurboQuant V3 neighbor tuple during aminsert"
         );
     }
+    // SAFETY: The rerank payload is copied into the same registered page and is
+    // referenced by the hot tuple written below.
     let rerank_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1859,6 +2019,8 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
             page::TqTurboHotTuple::encoded_len(layout.binary_word_count)
         );
     }
+    // SAFETY: The hot payload references offsets already written on this page
+    // and is copied into the registered writable page.
     let hot_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1872,6 +2034,7 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
         pgrx::error!("ec_hnsw failed to write fallback TurboQuant V3 hot tuple during aminsert");
     }
 
+    // SAFETY: Page initialization and all tuple insertions are complete.
     unsafe { wal_txn.finish() };
     page::ItemPointer {
         block_number,
@@ -1895,6 +2058,8 @@ unsafe fn derive_pq_fastscan_search_code_for_insert(
         .source_vector
         .as_deref()
         .unwrap_or_else(|| pgrx::error!("ec_hnsw PqFastScan live insert requires raw source data"));
+    // SAFETY: Grouped metadata was checked above and names the persisted
+    // codebook pages for this live index relation.
     let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
     let search_code =
         graph::derive_grouped_search_code_from_source(metadata, &model, source_vector)
@@ -1915,6 +2080,8 @@ unsafe fn bootstrap_empty_pq_fastscan_flush_output(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
 ) -> build::BuildFlushOutput {
+    // SAFETY: The index relation is live for aminsert and relation options are
+    // read-only metadata.
     let options = unsafe { options::relation_options(index_relation) };
     let state = build::BuildState {
         options,
@@ -1940,6 +2107,8 @@ unsafe fn append_pq_fastscan_tuple(
     neighbor_tids: &[page::ItemPointer],
     layout: graph::PqFastScanLayout,
 ) -> page::ItemPointer {
+    // SAFETY: The grouped layout belongs to the current metadata snapshot and
+    // the tuple carries the source vector needed to derive a search code.
     let search_code = unsafe {
         derive_pq_fastscan_search_code_for_insert(index_relation, metadata, tuple, layout)
     };
@@ -1995,6 +2164,8 @@ unsafe fn append_pq_fastscan_tuple(
         );
     }
 
+    // SAFETY: The index relation is open for the aminsert callback; this reads
+    // only the current main-fork block count.
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -2008,6 +2179,8 @@ unsafe fn append_pq_fastscan_tuple(
     } else {
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
+    // SAFETY: We either allocate a new zeroed page or lock the current tail
+    // block exclusively before writing the grouped payload.
     let buffer = unsafe {
         if target_block == P_NEW {
             LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
@@ -2025,16 +2198,24 @@ unsafe fn append_pq_fastscan_tuple(
     });
 
     let page_size = buffer.page_size();
+    // SAFETY: The relation is live for aminsert and the locked buffer belongs
+    // to the relation being modified.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered for generic WAL before any page
+    // bytes are initialized or appended.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
+        // SAFETY: A newly allocated zeroed page must be initialized first.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
+        // SAFETY: `page_ptr` names the locked existing tail page.
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
             std::mem::drop(buffer);
+            // SAFETY: The tail page cannot fit all grouped payload pieces, so
+            // append them to a freshly allocated page.
             return unsafe {
                 append_pq_fastscan_tuple_to_new_page(
                     index_relation,
@@ -2049,6 +2230,7 @@ unsafe fn append_pq_fastscan_tuple(
     }
 
     let block_number = buffer.block_number();
+    // SAFETY: The neighbor payload is copied into the registered writable page.
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2061,6 +2243,8 @@ unsafe fn append_pq_fastscan_tuple(
     if neighbor_offset == pg_sys::InvalidOffsetNumber {
         pgrx::error!("ec_hnsw failed to write PqFastScan neighbor tuple during aminsert");
     }
+    // SAFETY: The rerank payload is copied into the same registered page before
+    // the grouped hot tuple stores its back-reference.
     let rerank_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2092,6 +2276,8 @@ unsafe fn append_pq_fastscan_tuple(
         .hot
         .encode()
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode PqFastScan hot tuple: {e}"));
+    // SAFETY: The grouped hot payload references offsets already written on
+    // this page and is copied into the registered writable page.
     let hot_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2105,6 +2291,7 @@ unsafe fn append_pq_fastscan_tuple(
         pgrx::error!("ec_hnsw failed to write PqFastScan hot tuple during aminsert");
     }
 
+    // SAFETY: All grouped payload pieces have been inserted on the page.
     unsafe { wal_txn.finish() };
     page::ItemPointer {
         block_number,
@@ -2120,6 +2307,7 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     rerank_payload: &[u8],
     search_code: Vec<u8>,
 ) -> page::ItemPointer {
+    // SAFETY: This fallback always appends a fresh zeroed data page.
     let buffer = unsafe {
         LockedBufferGuard::read_main_locked(
             index_relation,
@@ -2132,12 +2320,17 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     });
 
     let page_size = buffer.page_size();
+    // SAFETY: The relation is live and the newly allocated buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered before page initialization and
+    // tuple insertion.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    // SAFETY: A freshly allocated zeroed page must be initialized before use.
     unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
     let block_number = buffer.block_number();
+    // SAFETY: The neighbor payload is copied into the registered page.
     let neighbor_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2150,6 +2343,8 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     if neighbor_offset == pg_sys::InvalidOffsetNumber {
         pgrx::error!("ec_hnsw failed to write fallback PqFastScan neighbor tuple during aminsert");
     }
+    // SAFETY: The rerank payload is copied into the same registered page and is
+    // referenced by the grouped hot tuple written below.
     let rerank_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2187,6 +2382,8 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     .unwrap_or_else(|e| {
         pgrx::error!("ec_hnsw failed to encode fallback PqFastScan hot tuple: {e}")
     });
+    // SAFETY: The grouped hot payload references offsets already written on
+    // this page and is copied into the registered writable page.
     let hot_offset = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -2200,6 +2397,7 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
         pgrx::error!("ec_hnsw failed to write fallback PqFastScan hot tuple during aminsert");
     }
 
+    // SAFETY: Page initialization and all tuple insertions are complete.
     unsafe { wal_txn.finish() };
     page::ItemPointer {
         block_number,
@@ -2216,6 +2414,8 @@ unsafe fn find_duplicate_element_tid(
     code_len: usize,
     code: &[u8],
 ) -> Option<page::ItemPointer> {
+    // SAFETY: Duplicate scanning only reads the live index main-fork block
+    // count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -2224,6 +2424,8 @@ unsafe fn find_duplicate_element_tid(
     }
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: Each candidate page is pinned under a shared lock while its
+        // line pointers are inspected.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -2241,6 +2443,8 @@ unsafe fn find_duplicate_element_tid(
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
+            // SAFETY: The buffer page remains pinned/locked and the helper
+            // validates the line pointer before exposing tuple bytes.
             let duplicate_tid = unsafe {
                 shared::with_page_line_tuple_bytes(
                     page_ptr,
@@ -2289,6 +2493,8 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
     code: &[u8],
     layout: graph::TurboQuantHotColdLayout,
 ) -> Option<page::ItemPointer> {
+    // SAFETY: Duplicate scanning only reads the live index main-fork block
+    // count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -2297,6 +2503,8 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
     }
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: Each candidate page is pinned under a shared lock while its
+        // hot tuples are inspected.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -2314,6 +2522,8 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
+            // SAFETY: The page is locked and the helper validates the candidate
+            // line pointer before exposing tuple bytes.
             let duplicate_tid = unsafe {
                 shared::with_page_line_tuple_bytes(
                     page_ptr,
@@ -2367,6 +2577,8 @@ unsafe fn find_duplicate_grouped_element_tid(
     code: &[u8],
     layout: graph::PqFastScanLayout,
 ) -> Option<page::ItemPointer> {
+    // SAFETY: Duplicate scanning only reads the live index main-fork block
+    // count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -2375,6 +2587,8 @@ unsafe fn find_duplicate_grouped_element_tid(
     }
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: Each candidate page is pinned under a shared lock while its
+        // grouped hot tuples are inspected.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -2392,6 +2606,8 @@ unsafe fn find_duplicate_grouped_element_tid(
         let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
+            // SAFETY: The page is locked and the helper validates the candidate
+            // line pointer before exposing tuple bytes.
             let duplicate_tid = unsafe {
                 shared::with_page_line_tuple_bytes(
                     page_ptr,
@@ -2448,6 +2664,8 @@ unsafe fn coalesce_duplicate_heap_tid(
     code_len: usize,
     heap_tid: page::ItemPointer,
 ) {
+    // SAFETY: The duplicate element TID was found by scanning this index; the
+    // target page is locked exclusively before appending the heap TID.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -2463,11 +2681,16 @@ unsafe fn coalesce_duplicate_heap_tid(
         )
     });
 
+    // SAFETY: The relation is live and the duplicate page buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered for generic WAL before in-place
+    // tuple byte mutation.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     let page_size = buffer.page_size();
+    // SAFETY: `element_tid` points at the duplicate tuple on the registered
+    // page and the closure preserves the encoded tuple length.
     let tuple_changed = unsafe {
         shared::with_writable_page_tuple_bytes(
             page_ptr,
@@ -2505,10 +2728,14 @@ unsafe fn coalesce_duplicate_heap_tid(
         )
     };
     if !tuple_changed {
+        // SAFETY: Finishing a registered transaction without byte changes is
+        // harmless and releases the generic WAL transaction.
         unsafe { wal_txn.finish() };
         return;
     }
 
+    // SAFETY: The duplicate tuple bytes were updated in-place on the registered
+    // page.
     unsafe { wal_txn.finish() };
 }
 
@@ -2518,6 +2745,8 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
     layout: graph::TurboQuantHotColdLayout,
     heap_tid: page::ItemPointer,
 ) {
+    // SAFETY: The duplicate hot tuple TID was found by scanning this index; the
+    // target page is locked exclusively before appending the heap TID.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -2533,11 +2762,16 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
         )
     });
 
+    // SAFETY: The relation is live and the duplicate page buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered for generic WAL before in-place
+    // tuple byte mutation.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     let page_size = buffer.page_size();
+    // SAFETY: `element_tid` points at the duplicate hot tuple on the registered
+    // page and the closure preserves the encoded tuple length.
     let tuple_changed = unsafe {
         shared::with_writable_page_tuple_bytes(
             page_ptr,
@@ -2578,10 +2812,14 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
         )
     };
     if !tuple_changed {
+        // SAFETY: Finishing a registered transaction without byte changes is
+        // harmless and releases the generic WAL transaction.
         unsafe { wal_txn.finish() };
         return;
     }
 
+    // SAFETY: The duplicate hot tuple bytes were updated in-place on the
+    // registered page.
     unsafe { wal_txn.finish() };
 }
 
@@ -2591,6 +2829,8 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     layout: graph::PqFastScanLayout,
     heap_tid: page::ItemPointer,
 ) {
+    // SAFETY: The duplicate grouped tuple TID was found by scanning this index;
+    // the target page is locked exclusively before appending the heap TID.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -2606,11 +2846,16 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
         )
     });
 
+    // SAFETY: The relation is live and the duplicate page buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered for generic WAL before in-place
+    // tuple byte mutation.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     let page_size = buffer.page_size();
+    // SAFETY: `element_tid` points at the duplicate grouped tuple on the
+    // registered page and the closure preserves the encoded tuple length.
     let tuple_changed = unsafe {
         shared::with_writable_page_tuple_bytes(
             page_ptr,
@@ -2652,10 +2897,14 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
         )
     };
     if !tuple_changed {
+        // SAFETY: Finishing a registered transaction without byte changes is
+        // harmless and releases the generic WAL transaction.
         unsafe { wal_txn.finish() };
         return;
     }
 
+    // SAFETY: The duplicate grouped tuple bytes were updated in-place on the
+    // registered page.
     unsafe { wal_txn.finish() };
 }
 
