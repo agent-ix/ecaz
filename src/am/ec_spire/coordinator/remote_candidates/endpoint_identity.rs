@@ -433,16 +433,21 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteSearchEndpointIdentityRow {
     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
+        // SAFETY: index_relation is the live PostgreSQL index relation supplied
+        // by the endpoint identity SQL wrapper for this summary read.
         let relation_options = unsafe { options::relation_options(index_relation) };
+        // SAFETY: rd_id is stable while the relation is open for this diagnostic
+        // read and is used only as an OID input to identity helpers.
+        let index_oid = unsafe { (*index_relation).rd_id };
         let assignment_payload_format = relation_options.assignment_payload_format();
         let assignment_payload_format_name =
             remote_search_assignment_payload_format_name(assignment_payload_format);
         let quantizer_profile =
             remote_search_endpoint_quantizer_profile(assignment_payload_format);
-        let opclass_identity =
-            remote_search_endpoint_opclass_identity(unsafe { (*index_relation).rd_id })?;
-        let generation_identity =
-            remote_search_endpoint_generation_identity(unsafe { (*index_relation).rd_id })?;
+        let opclass_identity = remote_search_endpoint_opclass_identity(index_oid)?;
+        let generation_identity = remote_search_endpoint_generation_identity(index_oid)?;
+        // SAFETY: reads the root control page from the same live relation used
+        // to resolve the relation options and index identity above.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let scoring_profile = "inner_product_score_v1";
         let storage_format = relation_options.storage_format.reloption_name();
@@ -493,4 +498,3 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
-
