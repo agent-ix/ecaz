@@ -32,6 +32,8 @@ struct VacuumHeapSourceScorer {
 
 impl VacuumHeapSourceScorer {
     unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
+        // SAFETY: `heap_relation` is the heap relation passed to vacuum; source
+        // attribute resolution only reads relation/catalog metadata.
         let source_attribute = unsafe {
             source::resolve_source_attribute(
                 heap_relation,
@@ -40,6 +42,7 @@ impl VacuumHeapSourceScorer {
                 source::SourceTypePolicy::BuildSource,
             )
         };
+        // SAFETY: The source attribute was resolved against this heap relation.
         unsafe { Self::new_with_attribute(heap_relation, source_attribute) }
     }
 
@@ -68,6 +71,8 @@ impl VacuumHeapSourceScorer {
         let mut count = 0usize;
 
         for heap_tid in heap_tids.iter().copied() {
+            // SAFETY: `heap_tid` comes from a graph element's heap TID list, and
+            // the scorer owns the heap relation, snapshot, and reusable slot.
             unsafe {
                 source::with_source_from_heap_row(
                     self.heap_relation,
@@ -93,6 +98,8 @@ impl VacuumHeapSourceScorer {
                     },
                 )
             };
+            // SAFETY: The slot belongs to this scorer and can be cleared after
+            // the source value has been copied or accumulated.
             unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
         }
 
@@ -112,12 +119,16 @@ impl VacuumHeapSourceScorer {
             return None;
         }
 
+        // SAFETY: Source graph elements have live heap representatives and the
+        // scorer owns the relation/snapshot/slot used for source lookup.
         let source_vector = unsafe {
             self.averaged_source_vector(
                 &source_element.heaptids,
                 "vacuum repair source-backed element",
             )
         }?;
+        // SAFETY: Candidate graph elements have live heap representatives and
+        // are loaded through the same scorer-owned heap state.
         let candidate_vector = unsafe {
             self.averaged_source_vector(
                 &candidate_element.heaptids,
@@ -140,9 +151,13 @@ impl VacuumSearchMetric {
             pgrx::error!("ec_hnsw vacuum requires a heap relation for source-backed indexes");
         }
 
+        // SAFETY: The index relation is live for the vacuum callback and
+        // relation options are read-only metadata.
         let index_options = unsafe { options::relation_options(index_relation) };
         match index_options.build_source_column.as_deref() {
             Some(source_column) => {
+                // SAFETY: The heap relation is live and the configured source
+                // column is resolved through catalog metadata.
                 let source_attribute = unsafe {
                     source::resolve_source_attribute(
                         heap_relation,
@@ -151,11 +166,14 @@ impl VacuumSearchMetric {
                         source::SourceTypePolicy::BuildSource,
                     )
                 };
+                // SAFETY: The source attribute belongs to the heap relation.
                 Self::Source(unsafe {
                     VacuumHeapSourceScorer::new_with_attribute(heap_relation, source_attribute)
                 })
             }
             None => {
+                // SAFETY: The heap and index relations are live; this resolves
+                // the indexed vector attribute from PostgreSQL metadata.
                 let indexed_attribute = unsafe {
                     source::resolve_indexed_vector_attribute(
                         heap_relation,
@@ -164,6 +182,8 @@ impl VacuumSearchMetric {
                     )
                 };
                 match indexed_attribute.kind {
+                    // SAFETY: The indexed ecvector attribute can be read through
+                    // the heap relation during source-backed repair scoring.
                     source::IndexedVectorKind::Ecvector => Self::Source(unsafe {
                         VacuumHeapSourceScorer::new_with_attribute(
                             heap_relation,
@@ -189,6 +209,8 @@ impl VacuumSearchMetric {
             Self::Code => {
                 score_vacuum_code_element(metadata, &source_element.code, candidate_element)
             }
+            // SAFETY: Source-backed repair scoring loads heap representatives
+            // for graph elements that were already read from the index.
             Self::Source(scorer) => unsafe {
                 scorer.score_graph_element_pair(source_element, candidate_element)
             },
@@ -213,6 +235,8 @@ impl VacuumFormatAdapter {
         stats: *mut pg_sys::IndexBulkDeleteResult,
     ) -> *mut pg_sys::IndexBulkDeleteResult {
         let _ = self;
+        // SAFETY: PostgreSQL supplied the live index relation and optional
+        // stats pointer for this vacuum cleanup callback.
         unsafe { shared::ec_hnsw_noop_vacuum_stats(index_relation, stats) }
     }
 
@@ -222,6 +246,8 @@ impl VacuumFormatAdapter {
         heap_relation: pg_sys::Relation,
         deleted_tids: &[page::ItemPointer],
     ) {
+        // SAFETY: The adapter storage descriptor matches the index metadata
+        // resolved for this vacuum pass.
         unsafe {
             repair_graph_connections_with_storage(
                 index_relation,
@@ -237,6 +263,8 @@ impl VacuumFormatAdapter {
         index_relation: pg_sys::Relation,
         deleted_tids: &[page::ItemPointer],
     ) {
+        // SAFETY: The adapter storage descriptor matches the index metadata
+        // resolved for this vacuum pass.
         unsafe {
             finalize_fully_dead_elements_with_storage(
                 index_relation,
@@ -320,6 +348,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
+    // SAFETY: PostgreSQL invokes ambulkdelete with callback-duration relation,
+    // stats, callback, and callback state pointers.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = shared::read_metadata_page((*info).index);
@@ -344,6 +374,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
+    // SAFETY: PostgreSQL invokes amvacuumcleanup with callback-duration relation
+    // and stats pointers.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = shared::read_metadata_page((*info).index);
@@ -358,6 +390,8 @@ fn resolve_vacuum_format_adapter(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> Result<VacuumFormatAdapter, String> {
+    // SAFETY: `index_relation` is live for vacuum and `metadata` is the page
+    // snapshot used to interpret graph storage.
     match unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }? {
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(VacuumFormatAdapter::TurboQuant { code_len })
@@ -382,10 +416,14 @@ unsafe fn run_bulkdelete_with_adapter(
     let storage = format.graph_storage();
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_hnsw vacuum stats");
+        // SAFETY: PostgreSQL memory context allocation creates a zeroed
+        // IndexBulkDeleteResult owned by the current vacuum callback.
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats
     };
+    // SAFETY: The index relation is live for the vacuum callback; this reads
+    // only the current main-fork block count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -396,6 +434,8 @@ unsafe fn run_bulkdelete_with_adapter(
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let share_plan = {
+            // SAFETY: Each page is pinned under a shared lock for pass-1
+            // planning before any rewrite is attempted.
             let share_buffer = unsafe {
                 LockedBufferGuard::read_main(
                     index_relation,
@@ -410,6 +450,8 @@ unsafe fn run_bulkdelete_with_adapter(
 
             let share_page_ptr = share_buffer.page().cast::<u8>();
             let share_page_size = share_buffer.page_size();
+            // SAFETY: The shared buffer remains pinned/locked while pass-1
+            // planning reads tuple bytes on this page.
             unsafe {
                 plan_page_pass1(
                     share_page_ptr,
@@ -429,6 +471,8 @@ unsafe fn run_bulkdelete_with_adapter(
             continue;
         }
 
+        // SAFETY: A page with planned tuple rewrites is reopened under an
+        // exclusive lock before applying pass-1 updates.
         let exclusive_buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -441,6 +485,8 @@ unsafe fn run_bulkdelete_with_adapter(
             pgrx::error!("ec_hnsw failed to reopen vacuum block {block_number}");
         });
 
+        // SAFETY: `exclusive_buffer` is locked for this block and the callback
+        // state is the same state PostgreSQL supplied to ambulkdelete.
         let final_plan = unsafe {
             rewrite_page_pass1(
                 index_relation,
@@ -456,10 +502,16 @@ unsafe fn run_bulkdelete_with_adapter(
         finalize_tids.extend(final_plan.finalize_tids);
     }
 
+    // SAFETY: `finalize_tids` was produced by pass-1 graph element scans using
+    // the same storage descriptor.
     unsafe { format.repair_graph_connections(index_relation, heap_relation, &finalize_tids) };
+    // SAFETY: `finalize_tids` names fully dead elements from this index.
     unsafe { format.finalize_fully_dead_elements(index_relation, &finalize_tids) };
+    // SAFETY: Metadata repair uses the same storage descriptor and finalize set.
     unsafe { repair_metadata_entry_point_after_vacuum(index_relation, storage, &finalize_tids) };
 
+    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above for this
+    // callback and remains valid until returned.
     unsafe {
         (*stats).num_pages = block_count;
         (*stats).estimated_count = false;
@@ -479,9 +531,13 @@ unsafe fn repair_metadata_entry_point_after_vacuum(
     }
 
     let finalized: HashSet<_> = finalize_tids.iter().copied().collect();
+    // SAFETY: The storage descriptor matches this index and the helper only
+    // reads graph elements to find a replacement entry point.
     let replacement =
         unsafe { shared::highest_level_live_entry_candidate(index_relation, storage) };
 
+    // SAFETY: Metadata is locked exclusively while entry point fields are
+    // updated after vacuum finalization.
     unsafe {
         shared::with_locked_metadata_page(index_relation, |metadata| {
             if metadata.entry_point != page::ItemPointer::INVALID
@@ -511,6 +567,8 @@ unsafe fn rewrite_page_pass1(
 ) -> PagePass1Plan {
     let page_ptr = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
+    // SAFETY: The buffer is locked for this block and remains pinned while
+    // pass-1 planning reads tuple bytes.
     let plan = unsafe {
         plan_page_pass1(
             page_ptr,
@@ -525,11 +583,17 @@ unsafe fn rewrite_page_pass1(
         return plan;
     }
 
+    // SAFETY: The relation is live and the exclusive buffer belongs to it.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered with generic WAL before in-place
+    // tuple rewrites are applied.
     let wal_page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
+    // SAFETY: Updates were planned from this same page/block and preserve tuple
+    // lengths when rewritten.
     unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &plan.updates) };
+    // SAFETY: Planned tuple rewrites have been applied to the registered page.
     unsafe { wal_txn.finish() };
     plan
 }
@@ -550,6 +614,8 @@ unsafe fn plan_page_pass1(
             block_number,
             offset_number: offset,
         };
+        // SAFETY: The caller holds the page pinned/locked for reading and the
+        // helper validates each line pointer before exposing tuple bytes.
         unsafe {
             shared::with_page_line_tuple_bytes(
                 page_ptr,
@@ -676,6 +742,8 @@ unsafe fn apply_page_pass1_updates(
             | ElementVacuumUpdate::TurboQuantHot { tid, .. }
             | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
         };
+        // SAFETY: Each update was planned from this page and its re-encoded
+        // tuple must match the existing tuple byte length.
         unsafe {
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
@@ -730,12 +798,22 @@ unsafe fn repair_graph_connections_with_storage(
         return;
     }
 
+    // SAFETY: The index relation is live for vacuum and metadata can be read to
+    // plan graph repair.
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
+    // SAFETY: The heap relation is live for vacuum and source scoring, when
+    // needed, resolves only catalog metadata and heap rows.
     let mut metric = unsafe { VacuumSearchMetric::for_relation(index_relation, heap_relation) };
     let deleted_tids = deleted_tids.iter().copied().collect::<HashSet<_>>();
+    // SAFETY: Deleted TIDs came from pass-1 scans and storage matches this
+    // vacuum format.
     let repair_requests =
         unsafe { collect_repair_requests(index_relation, storage, metadata.m, &deleted_tids) };
+    // SAFETY: Repair requests are collected before stale references are unlinked
+    // from neighbor tuples in the same index.
     unsafe { unlink_deleted_graph_connections(index_relation, &deleted_tids) };
+    // SAFETY: Repair planning only reads graph pages through the same storage
+    // descriptor and metric state.
     let repair_plans = unsafe {
         plan_repair_replacements(
             index_relation,
@@ -746,6 +824,8 @@ unsafe fn repair_graph_connections_with_storage(
             &repair_requests,
         )
     };
+    // SAFETY: Repair plans target neighbor tuples from this index and are
+    // applied under page-exclusive locks.
     unsafe { apply_repair_plans(index_relation, metadata.m, &deleted_tids, &repair_plans) };
 }
 
@@ -755,12 +835,16 @@ unsafe fn collect_repair_requests(
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) -> Vec<LayerRepairRequest> {
+    // SAFETY: The index relation is live for vacuum; this reads the current
+    // main-fork block count for the repair scan.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let mut requests = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: Each page is pinned under a shared lock while repair-request
+        // collection reads element tuples.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -775,6 +859,8 @@ unsafe fn collect_repair_requests(
 
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
+        // SAFETY: The shared buffer remains pinned/locked while tuple bytes and
+        // same-index neighbor payloads are inspected.
         unsafe {
             collect_repair_requests_on_page(
                 index_relation,
@@ -811,6 +897,8 @@ unsafe fn collect_repair_requests_on_page(
     let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
     for offset in 1..=line_pointer_count {
+        // SAFETY: The caller holds the page pinned/locked and the helper
+        // validates each line pointer before exposing tuple bytes.
         let element_fields = unsafe {
             shared::with_page_line_tuple_bytes(
                 page_ptr,
@@ -887,6 +975,8 @@ unsafe fn collect_repair_requests_on_page(
             continue;
         }
 
+        // SAFETY: `neighbortid` came from a live graph element decoded from the
+        // same index storage format.
         let neighbors = unsafe { graph::load_graph_neighbors(index_relation, neighbortid) };
         let source_tid = page::ItemPointer {
             block_number,
@@ -926,12 +1016,16 @@ unsafe fn unlink_deleted_graph_connections(
     index_relation: pg_sys::Relation,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) {
+    // SAFETY: The index relation is live for vacuum; this reads the current
+    // main-fork block count for repair pass 2.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let share_updates = {
+            // SAFETY: Each page is pinned under a shared lock while pass-2
+            // planning scans neighbor tuples.
             let share_buffer = unsafe {
                 LockedBufferGuard::read_main(
                     index_relation,
@@ -946,6 +1040,8 @@ unsafe fn unlink_deleted_graph_connections(
 
             let share_page_ptr = share_buffer.page().cast::<u8>();
             let share_page_size = share_buffer.page_size();
+            // SAFETY: The shared buffer remains pinned/locked while tuple bytes
+            // are scanned for deleted neighbor references.
             unsafe { plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids) }
         };
 
@@ -953,6 +1049,8 @@ unsafe fn unlink_deleted_graph_connections(
             continue;
         }
 
+        // SAFETY: A page with pass-2 updates is reopened under an exclusive lock
+        // before rewriting neighbor tuples.
         let exclusive_buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -965,6 +1063,8 @@ unsafe fn unlink_deleted_graph_connections(
             pgrx::error!("ec_hnsw failed to reopen repair block {block_number}");
         });
 
+        // SAFETY: The exclusive buffer belongs to this block and the deleted set
+        // came from the same vacuum pass.
         unsafe { rewrite_page_pass2(index_relation, exclusive_buffer, block_number, deleted_tids) };
     }
 }
@@ -979,15 +1079,19 @@ unsafe fn plan_repair_replacements(
 ) -> Vec<LayerRepairPlan> {
     let mut plans = requests
         .iter()
-        .filter_map(|request| unsafe {
-            plan_repair_replacement(
-                index_relation,
-                metadata,
-                metric,
-                storage,
-                deleted_tids,
-                request,
-            )
+        .filter_map(|request| {
+            // SAFETY: Requests were collected from this index/storage scan, and
+            // planning only reads graph elements and neighbor tuples.
+            unsafe {
+                plan_repair_replacement(
+                    index_relation,
+                    metadata,
+                    metric,
+                    storage,
+                    deleted_tids,
+                    request,
+                )
+            }
         })
         .collect::<Vec<_>>();
     plans.sort_unstable_by(|left, right| {
@@ -1005,6 +1109,8 @@ unsafe fn plan_repair_replacement(
     deleted_tids: &HashSet<page::ItemPointer>,
     request: &LayerRepairRequest,
 ) -> Option<LayerRepairPlan> {
+    // SAFETY: `request.source_tid` was collected from this graph storage
+    // descriptor during repair-request scanning.
     let source =
         unsafe { graph::load_exact_graph_element(index_relation, request.source_tid, storage) };
     if source.deleted
@@ -1015,6 +1121,7 @@ unsafe fn plan_repair_replacement(
         return None;
     }
 
+    // SAFETY: `source.neighbortid` came from the loaded graph element.
     let neighbors = unsafe { graph::load_graph_neighbors(index_relation, source.neighbortid) };
     let (start, end) =
         graph::layer_slot_bounds(source.level, usize::from(metadata.m), request.layer)?;
@@ -1047,6 +1154,8 @@ unsafe fn plan_repair_replacement(
         existing_set: &existing_set,
         target_len: free_slots,
     };
+    // SAFETY: Planner inputs all come from the same graph storage descriptor and
+    // metric owns any source-scoring heap state.
     let replacements =
         unsafe { search_repair_candidates_for_layer(index_relation, metric, &planner) };
     let mut replacements = replacements;
@@ -1059,6 +1168,8 @@ unsafe fn plan_repair_replacement(
         layer: request.layer,
     };
     if replacements.len() < free_slots {
+        // SAFETY: Linear top-up scans the same index/storage descriptor and
+        // appends only local candidate TIDs to `replacements`.
         unsafe {
             top_up_repair_replacements_from_linear_scan(
                 index_relation,
@@ -1088,6 +1199,8 @@ unsafe fn search_repair_candidates_for_layer(
 ) -> Vec<page::ItemPointer> {
     let mut seeds = Vec::new();
 
+    // SAFETY: The planner metadata/storage/source were produced from this
+    // vacuum repair pass and metric owns any source-scoring heap state.
     if let Some(entry_candidate) = unsafe {
         load_vacuum_entry_candidate(
             index_relation,
@@ -1098,6 +1211,8 @@ unsafe fn search_repair_candidates_for_layer(
         )
     } {
         if planner.layer == 0 {
+            // SAFETY: The entry candidate came from metadata and greedy descent
+            // reads graph elements through the same storage descriptor.
             seeds.push(unsafe {
                 graph::greedy_descend_from_entry_with_storage(
                     index_relation,
@@ -1112,6 +1227,8 @@ unsafe fn search_repair_candidates_for_layer(
         } else {
             let mut upper_seeds = vec![entry_candidate];
             for current_layer in (planner.layer..=planner.metadata.max_level).rev() {
+                // SAFETY: Seeds came from prior repair search on the same
+                // storage descriptor and the scoring closure filters invalid elements.
                 upper_seeds = unsafe {
                     graph::search_layer_result_candidates_with_storage(
                         index_relation,
@@ -1134,11 +1251,15 @@ unsafe fn search_repair_candidates_for_layer(
         }
     }
 
-    seeds.extend(planner.existing_layer.iter().filter_map(|tid| unsafe {
-        let element = graph::load_exact_graph_element(index_relation, *tid, planner.storage);
-        metric
-            .score_graph_element(planner.metadata, planner.source, &element)
-            .map(|score| search::BeamCandidate::new(*tid, score))
+    seeds.extend(planner.existing_layer.iter().filter_map(|tid| {
+        // SAFETY: Existing-layer TIDs came from the source neighbor slice and
+        // are loaded through the same graph storage descriptor.
+        unsafe {
+            let element = graph::load_exact_graph_element(index_relation, *tid, planner.storage);
+            metric
+                .score_graph_element(planner.metadata, planner.source, &element)
+                .map(|score| search::BeamCandidate::new(*tid, score))
+        }
     }));
     dedup_beam_candidates_by_tid(&mut seeds);
     if seeds.is_empty() {
@@ -1146,6 +1267,8 @@ unsafe fn search_repair_candidates_for_layer(
     }
 
     let candidates = if planner.layer == 0 {
+        // SAFETY: Layer-0 repair search uses seeds gathered from this graph and
+        // excludes deleted/source TIDs before accepting candidates.
         unsafe {
             graph::search_layer0_result_candidates_with_storage(
                 index_relation,
@@ -1161,6 +1284,8 @@ unsafe fn search_repair_candidates_for_layer(
             )
         }
     } else {
+        // SAFETY: Upper-layer repair search uses seeds gathered from this graph
+        // and excludes deleted/source TIDs before accepting candidates.
         unsafe {
             graph::search_layer_result_candidates_with_storage(
                 index_relation,
@@ -1202,8 +1327,12 @@ unsafe fn load_vacuum_entry_candidate(
         return None;
     }
 
+    // SAFETY: Metadata names a non-invalid entry point and storage matches this
+    // vacuum repair snapshot.
     let entry =
         unsafe { graph::load_exact_graph_element(index_relation, metadata.entry_point, storage) };
+    // SAFETY: The entry element was loaded from the graph and metric owns any
+    // required source-scoring heap state.
     let entry_score = unsafe { metric.score_graph_element(metadata, source_element, &entry) }?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
@@ -1249,12 +1378,16 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
         return;
     }
 
+    // SAFETY: The index relation is live for vacuum; this reads the current
+    // main-fork block count for the linear repair scan.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let mut scored = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: Each page is pinned under a shared lock while linear repair
+        // candidate collection reads element tuples.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -1269,6 +1402,8 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
 
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
+        // SAFETY: The shared buffer remains pinned/locked while candidate tuple
+        // bytes are decoded and scored.
         unsafe {
             collect_linear_repair_candidates_on_page(
                 index_relation,
@@ -1323,6 +1458,8 @@ unsafe fn collect_linear_repair_candidates_on_page(
             continue;
         }
 
+        // SAFETY: The page is pinned/locked by the caller and the helper
+        // validates the line pointer before exposing tuple bytes.
         let candidate = unsafe {
             shared::with_page_line_tuple_bytes(
                 page_ptr,
@@ -1419,6 +1556,8 @@ unsafe fn collect_linear_repair_candidates_on_page(
             continue;
         }
 
+        // SAFETY: Candidate and source graph elements were loaded from the same
+        // storage descriptor and metric owns any source-scoring heap state.
         if let Some(score) =
             unsafe { metric.score_graph_element(planner.metadata, planner.source, &candidate) }
         {
@@ -1440,9 +1579,13 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
     }
 
     if rerank_tid.block_number != block_number {
+        // SAFETY: Cross-page grouped rerank payloads are loaded through the
+        // graph helper using the persisted layout.
         return unsafe { graph::load_grouped_rerank_payload(index_relation, rerank_tid, layout) };
     }
 
+    // SAFETY: Same-page rerank TID refers to the pinned page supplied by the
+    // caller; the helper validates the line pointer before exposing bytes.
     unsafe {
         shared::with_page_line_tuple_bytes(
             page_ptr,
@@ -1491,6 +1634,8 @@ unsafe fn apply_repair_plans(
             end += 1;
         }
 
+        // SAFETY: This slice contains only repair plans for one neighbor block,
+        // which will be locked exclusively before rewrite.
         unsafe {
             apply_repair_plans_on_page(
                 index_relation,
@@ -1511,6 +1656,8 @@ unsafe fn apply_repair_plans_on_page(
     deleted_tids: &HashSet<page::ItemPointer>,
     plans: &[LayerRepairPlan],
 ) {
+    // SAFETY: `block_number` comes from repair plan neighbor TIDs and the page is
+    // locked exclusively before neighbor tuple rewrites.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1523,7 +1670,10 @@ unsafe fn apply_repair_plans_on_page(
         pgrx::error!("ec_hnsw failed to open layer0-repair block {block_number}");
     });
 
+    // SAFETY: The relation is live and the neighbor page buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered with generic WAL before in-place
+    // neighbor tuple rewrites are applied.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
@@ -1538,6 +1688,8 @@ unsafe fn apply_repair_plans_on_page(
             end += 1;
         }
 
+        // SAFETY: `neighbor_tid` points at a tuple on the registered page and
+        // the closure preserves the encoded tuple length.
         let tuple_changed = unsafe {
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
@@ -1598,6 +1750,8 @@ unsafe fn apply_repair_plans_on_page(
     }
 
     if changed {
+        // SAFETY: At least one neighbor tuple was rewritten on the registered
+        // page and the generic WAL transaction must be finished.
         unsafe { wal_txn.finish() };
     } else {
         std::mem::drop(wal_txn);
@@ -1648,16 +1802,25 @@ unsafe fn rewrite_page_pass2(
 ) {
     let page_ptr = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
+    // SAFETY: The caller holds the page locked and pinned while pass-2 planning
+    // reads neighbor tuple bytes.
     let updates = unsafe { plan_page_pass2(page_ptr, page_size, block_number, deleted_tids) };
     if updates.is_empty() {
         return;
     }
 
+    // SAFETY: The relation is live and the exclusive buffer belongs to it.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered with generic WAL before pass-2
+    // tuple rewrites are applied.
     let wal_page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
+    // SAFETY: Updates were planned from this same page/block and preserve tuple
+    // lengths when rewritten.
     unsafe { apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates) };
+    // SAFETY: Planned neighbor tuple rewrites have been applied to the
+    // registered page.
     unsafe { wal_txn.finish() };
 }
 
@@ -1671,6 +1834,8 @@ unsafe fn plan_page_pass2(
     let mut updates = Vec::new();
 
     for offset in 1..=line_pointer_count {
+        // SAFETY: The caller holds the page pinned/locked for reading and the
+        // helper validates the line pointer before exposing tuple bytes.
         let update = unsafe {
             shared::with_page_line_tuple_bytes(
                 page_ptr,
@@ -1739,6 +1904,8 @@ unsafe fn apply_page_pass2_updates(
     updates: &[NeighborVacuumUpdate],
 ) {
     for update in updates {
+        // SAFETY: Each update was planned from this page and its re-encoded
+        // tuple must match the existing tuple byte length.
         unsafe {
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
@@ -1786,6 +1953,8 @@ unsafe fn finalize_fully_dead_elements_with_storage(
             end += 1;
         }
 
+        // SAFETY: This slice contains only fully-dead element TIDs for one
+        // block, which will be locked exclusively before finalization.
         unsafe {
             finalize_fully_dead_elements_on_page_with_storage(
                 index_relation,
@@ -1804,6 +1973,8 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     storage: graph::GraphStorageDescriptor,
     tids: &[page::ItemPointer],
 ) {
+    // SAFETY: `block_number` comes from fully-dead element TIDs collected during
+    // this vacuum pass and is locked exclusively before updates.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1821,6 +1992,8 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     let mut updates = Vec::new();
 
     for tid in tids {
+        // SAFETY: `tid` targets this locked page and the helper validates the
+        // line pointer before exposing tuple bytes.
         let update = unsafe {
             shared::with_page_line_tuple_bytes(
                 page_ptr,
@@ -1901,11 +2074,17 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
         return;
     }
 
+    // SAFETY: The relation is live and the finalization page buffer is locked.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The locked buffer is registered with generic WAL before element
+    // finalization rewrites are applied.
     let wal_page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
+    // SAFETY: Updates were planned from this same page/block and preserve tuple
+    // lengths when rewritten.
     unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates) };
+    // SAFETY: Fully-dead element finalization updates have been applied.
     unsafe { wal_txn.finish() };
 }
 
@@ -1925,6 +2104,8 @@ unsafe fn heap_tid_is_dead(
 ) -> bool {
     let mut tid = pg_sys::ItemPointerData::default();
     item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
+    // SAFETY: The callback and callback state were supplied by PostgreSQL for
+    // this ambulkdelete invocation, and `tid` lives for the callback call.
     unsafe { callback((&mut tid) as pg_sys::ItemPointer, callback_state) }
 }
 
@@ -1939,6 +2120,8 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
 ) -> bool {
+    // SAFETY: Debug vacuum passes a `DebugVacuumCallbackState` pointer as the
+    // callback state for the duration of this guarded callback.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = &*(state.cast::<DebugVacuumCallbackState>());
@@ -1958,6 +2141,8 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     )
     .unwrap_or_else(|| pgrx::error!("ec_hnsw debug vacuum could not open index relation"));
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The opened index relation is valid and IndexGetRelation only
+    // resolves its heap OID.
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
     let heap_relation_guard = if heap_oid == pg_sys::InvalidOid {
         None
@@ -1979,6 +2164,8 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
         dead_tids: dead_tids.iter().copied().collect(),
     };
 
+    // SAFETY: Debug vacuum constructs callback-duration IndexVacuumInfo and
+    // callback state and invokes the AM bulkdelete entry point directly.
     let stats = unsafe {
         ec_hnsw_ambulkdelete(
             info_ptr,
@@ -1987,7 +2174,11 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
         )
     };
+    // SAFETY: The same debug IndexVacuumInfo and stats pointer are valid for the
+    // follow-up cleanup call.
     let stats = unsafe { ec_hnsw_amvacuumcleanup(info_ptr, stats) };
+    // SAFETY: The AM returned a valid stats pointer owned by the current
+    // PostgreSQL memory context; copy the result before dropping guards.
     let result = unsafe { *stats };
     drop(heap_relation_guard);
     drop(index_relation_guard);
