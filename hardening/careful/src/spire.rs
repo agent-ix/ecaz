@@ -199,6 +199,100 @@ pub mod storage {
         }
 
         #[test]
+        fn local_object_store_set_round_trips_non_leaf_object_kinds() {
+            // Pin the insert/read delegations through SpireObjectReader for
+            // every non-leaf object kind. The leaf-V2 path is already pinned
+            // by local_object_store_set_routes_by_pid_and_reads_back_objects;
+            // this test pins routing / delta / top-graph / read_object_header
+            // so a mis-routed store_for_placement is observable for each.
+            let config = SpireLocalStoreConfig::from_stores(
+                1,
+                vec![
+                    SpireLocalStoreDescriptor::available(0, 10_000, 0).unwrap(),
+                    SpireLocalStoreDescriptor::available(1, 10_001, 0).unwrap(),
+                ],
+            )
+            .unwrap();
+            let mut store_set = SpireLocalObjectStoreSet::from_config(config, 1024).unwrap();
+
+            // Routing.
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing_placement = store_set.insert_routing_object(7, &routing).unwrap();
+            assert_eq!(
+                store_set
+                    .read_routing_object(&routing_placement)
+                    .unwrap()
+                    .header
+                    .pid,
+                11
+            );
+            assert_eq!(
+                store_set
+                    .read_object_header(&routing_placement)
+                    .unwrap()
+                    .kind,
+                SpirePartitionObjectKind::Root,
+            );
+
+            // Delta.
+            let delta = SpireDeltaPartitionObject::new(
+                19,
+                4,
+                17,
+                vec![SpireLeafAssignmentRow {
+                    flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                    vec_id: SpireVecId::local(1),
+                    heap_tid: ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    },
+                    payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2, 3, 4],
+                }],
+            )
+            .unwrap();
+            let delta_placement = store_set.insert_delta_object(7, &delta).unwrap();
+            assert_eq!(
+                store_set
+                    .read_delta_object(&delta_placement)
+                    .unwrap()
+                    .header
+                    .pid,
+                19
+            );
+
+            // Top-graph.
+            let top_graph = SpireTopGraphPartitionObject::new(
+                90,
+                3,
+                11,
+                2,
+                2,
+                2,
+                4,
+                1.2,
+                0,
+                vec![SpireTopGraphNodeRecord {
+                    child_pid: 21,
+                    centroid_ordinal: 0,
+                    neighbors: vec![],
+                }],
+            )
+            .unwrap();
+            let top_graph_placement = store_set.insert_top_graph_object(7, &top_graph).unwrap();
+            assert_eq!(
+                store_set
+                    .read_top_graph_object(&top_graph_placement)
+                    .unwrap()
+                    .header
+                    .pid,
+                90
+            );
+        }
+
+        #[test]
         fn local_object_store_set_rejects_unconfigured_placements() {
             let config = SpireLocalStoreConfig::from_stores(
                 1,
