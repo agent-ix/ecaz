@@ -7714,9 +7714,11 @@ fn ec_spire_index_selected_pid_placement_snapshot(
             index_oid,
             "ec_spire_index_selected_pid_placement_snapshot",
         );
-        unsafe {
-            am::spire_index_selected_pid_placement_snapshot(index_relation.as_ptr(), selected_pids)
-        }
+        with_live_index_relation!(
+            index_relation,
+            am::spire_index_selected_pid_placement_snapshot,
+            selected_pids
+        )
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -7925,9 +7927,11 @@ fn ec_spire_index_scan_pipeline_snapshot(
     let (routing_rows, placement_rows) = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_pipeline_snapshot");
-        let routing_rows = unsafe {
-            am::spire_index_scan_routing_snapshot(index_relation.as_ptr(), query.clone())
-        };
+        let routing_rows = with_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_routing_snapshot,
+            query.clone()
+        );
         let placement_rows = with_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
@@ -8343,13 +8347,12 @@ fn ec_spire_plan_coordinator_insert_dispatch(
     let row = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert_dispatch");
-        unsafe {
-            am::spire_coordinator_insert_dispatch_plan_row(
-                index_relation.as_ptr(),
-                node_id,
-                served_epoch,
-            )
-        }
+        with_live_index_relation!(
+            index_relation,
+            am::spire_coordinator_insert_dispatch_plan_row,
+            node_id,
+            served_epoch,
+        )
     };
 
     TableIterator::once((
@@ -8419,15 +8422,14 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
             with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
         let row_payload_json = row_payload.0.to_string();
-        let prepare_row = unsafe {
-            am::spire_coordinator_insert_prepare_remote_tuple_payload(
-                index_relation.as_ptr(),
-                classification.0,
-                classification.2,
-                &row_payload_json,
-                &requested_columns,
-            )
-        }
+        let prepare_row = with_live_index_relation!(
+            index_relation,
+            am::spire_coordinator_insert_prepare_remote_tuple_payload,
+            classification.0,
+            classification.2,
+            &row_payload_json,
+            &requested_columns,
+        )
         .unwrap_or_else(|e| pgrx::error!("{e}"));
         (classification, prepare_row)
     };
@@ -8648,13 +8650,12 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload_batch(
             index_oid,
             "ec_spire_prepare_coordinator_insert_tuple_payload_batch",
         );
-        unsafe {
-            am::spire_coordinator_insert_prepare_remote_tuple_payload_batch(
-                index_relation.as_ptr(),
-                batch_rows,
-                &requested_columns,
-            )
-        }
+        with_live_index_relation!(
+            index_relation,
+            am::spire_coordinator_insert_prepare_remote_tuple_payload_batch,
+            batch_rows,
+            &requested_columns,
+        )
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     if prepare_rows.len() != row_count {
@@ -8925,17 +8926,16 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
     if node_id < 0 {
         pgrx::error!("ec_spire coordinator update placement node_id must not be negative");
     }
-    let update_row = unsafe {
-        am::spire_coordinator_update_remote_tuple_payload(
-            index_relation.as_ptr(),
-            u32::try_from(node_id).expect("positive node_id should fit u32"),
-            u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
-            &pk_column,
-            &pk_value,
-            &row_payload_json,
-            &updated_columns,
-        )
-    }
+    let update_row = with_live_index_relation!(
+        index_relation,
+        am::spire_coordinator_update_remote_tuple_payload,
+        u32::try_from(node_id).expect("positive node_id should fit u32"),
+        u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
+        &pk_column,
+        &pk_value,
+        &row_payload_json,
+        &updated_columns,
+    )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     TableIterator::once((
         index_oid,
@@ -9086,15 +9086,14 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             "done",
         ));
     }
-    let delete_row = unsafe {
-        am::spire_coordinator_delete_prepare_remote_tuple_payload(
-            index_relation.as_ptr(),
-            u32::try_from(node_id).expect("positive node_id should fit u32"),
-            u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
-            &pk_column,
-            &pk_value,
-        )
-    }
+    let delete_row = with_live_index_relation!(
+        index_relation,
+        am::spire_coordinator_delete_prepare_remote_tuple_payload,
+        u32::try_from(node_id).expect("positive node_id should fit u32"),
+        u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
+        &pk_column,
+        &pk_value,
+    )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     if delete_row.remote_deleted_count > 1 {
         pgrx::error!(
@@ -9248,16 +9247,15 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
     if node_id < 0 {
         pgrx::error!("ec_spire coordinator select placement node_id must not be negative");
     }
-    let select_row = unsafe {
-        am::spire_coordinator_select_remote_tuple_payload(
-            index_relation.as_ptr(),
-            u32::try_from(node_id).expect("positive node_id should fit u32"),
-            u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
-            &pk_column,
-            &pk_value,
-            &requested_columns,
-        )
-    }
+    let select_row = with_live_index_relation!(
+        index_relation,
+        am::spire_coordinator_select_remote_tuple_payload,
+        u32::try_from(node_id).expect("positive node_id should fit u32"),
+        u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
+        &pk_column,
+        &pk_value,
+        &requested_columns,
+    )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     if select_row.remote_selected_count > 1 {
         pgrx::error!(
@@ -9521,14 +9519,13 @@ fn ec_spire_remote_search_fanout_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_fanout_plan");
-    let rows = unsafe {
-        am::spire_remote_search_fanout_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            selected_pids,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_fanout_plan_rows,
+        requested_epoch,
+        selected_pids,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -9577,14 +9574,13 @@ fn ec_spire_remote_search_target_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_plan");
-    let rows = unsafe {
-        am::spire_remote_search_target_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            selected_pids,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_target_plan_rows,
+        requested_epoch,
+        selected_pids,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -9645,14 +9641,13 @@ fn ec_spire_remote_search_target_readiness(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_readiness");
-    let rows = unsafe {
-        am::spire_remote_search_target_readiness_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            selected_pids,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_target_readiness_rows,
+        requested_epoch,
+        selected_pids,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -9718,16 +9713,15 @@ fn ec_spire_remote_search_request_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_plan");
-    let rows = unsafe {
-        am::spire_remote_search_request_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_request_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -9800,16 +9794,15 @@ fn ec_spire_remote_search_request_readiness(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_readiness");
-    let rows = unsafe {
-        am::spire_remote_search_request_readiness_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_request_readiness_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -9885,16 +9878,15 @@ fn ec_spire_remote_search_request_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_summary");
-    let row = unsafe {
-        am::spire_remote_search_request_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_request_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -9971,16 +9963,15 @@ fn ec_spire_remote_search_readiness_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_readiness_summary");
-    let row = unsafe {
-        am::spire_remote_search_readiness_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_readiness_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -10059,16 +10050,15 @@ fn ec_spire_remote_search_execution_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_execution_plan");
-    let rows = unsafe {
-        am::spire_remote_search_execution_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_execution_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -10148,16 +10138,15 @@ fn ec_spire_remote_search_execution_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_execution_summary");
-    let row = unsafe {
-        am::spire_remote_search_execution_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_execution_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -10234,16 +10223,15 @@ fn ec_spire_remote_search_libpq_request_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_request_plan");
-    let rows = unsafe {
-        am::spire_remote_search_libpq_request_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_request_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -10320,16 +10308,15 @@ fn ec_spire_remote_search_libpq_request_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_request_summary");
-    let row = unsafe {
-        am::spire_remote_search_libpq_request_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_request_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -10398,16 +10385,15 @@ fn ec_spire_remote_search_libpq_connection_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_connection_plan");
-    let rows = unsafe {
-        am::spire_remote_search_libpq_connection_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_connection_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -10482,16 +10468,15 @@ fn ec_spire_remote_search_libpq_connection_summary(
         index_oid,
         "ec_spire_remote_search_libpq_connection_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_libpq_connection_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_connection_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -10566,16 +10551,15 @@ fn ec_spire_remote_search_libpq_dispatch_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_dispatch_plan");
-    let rows = unsafe {
-        am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_dispatch_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -10650,16 +10634,15 @@ fn ec_spire_remote_search_libpq_bind_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_bind_plan");
-    let rows = unsafe {
-        am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_dispatch_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     let bind_rows = rows.into_iter().flat_map(|row| {
@@ -10796,16 +10779,15 @@ fn ec_spire_remote_search_libpq_bind_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_bind_summary");
-    let rows = unsafe {
-        am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_dispatch_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     let parameter_count_per_request = 6_u64;
@@ -10913,16 +10895,15 @@ fn ec_spire_remote_search_libpq_secret_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_plan");
-    let rows = unsafe {
-        am::spire_remote_search_libpq_secret_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_secret_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -10993,16 +10974,15 @@ fn ec_spire_remote_search_libpq_secret_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_summary");
-    let row = unsafe {
-        am::spire_remote_search_libpq_secret_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_secret_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -11072,16 +11052,15 @@ fn ec_spire_remote_search_libpq_connection_open_plan(
         index_oid,
         "ec_spire_remote_search_libpq_connection_open_plan",
     );
-    let rows = unsafe {
-        am::spire_remote_search_libpq_connection_open_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_connection_open_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -11157,16 +11136,15 @@ fn ec_spire_remote_search_libpq_connection_open_summary(
         index_oid,
         "ec_spire_remote_search_libpq_connection_open_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_libpq_connection_open_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_connection_open_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -11236,16 +11214,15 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
         index_oid,
         "ec_spire_remote_search_libpq_executor_connection_check",
     );
-    let rows = unsafe {
-        am::spire_remote_search_libpq_connection_open_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_connection_open_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -11375,16 +11352,15 @@ fn ec_spire_remote_search_libpq_executor_candidates(
         index_oid,
         "ec_spire_remote_search_libpq_executor_candidates",
     );
-    let rows = unsafe {
-        am::spire_remote_search_libpq_executor_candidate_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_candidate_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -11454,16 +11430,15 @@ fn ec_spire_remote_search_libpq_executor_receive_attempts(
         index_oid,
         "ec_spire_remote_search_libpq_executor_receive_attempts",
     );
-    let rows = unsafe {
-        am::spire_remote_search_libpq_executor_receive_attempt_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_receive_attempt_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -11541,16 +11516,15 @@ fn ec_spire_remote_search_libpq_executor_heap_candidates(
         index_oid,
         "ec_spire_remote_search_libpq_executor_heap_candidates",
     );
-    let rows = unsafe {
-        am::spire_remote_search_libpq_executor_heap_candidate_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_heap_candidate_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -11621,16 +11595,15 @@ fn ec_spire_remote_search_libpq_executor_heap_candidate_summary(
         index_oid,
         "ec_spire_remote_search_libpq_executor_heap_candidate_summary",
     );
-    let rows = unsafe {
-        am::spire_remote_search_libpq_executor_heap_candidate_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_heap_candidate_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     let returned_candidate_count =
@@ -11715,16 +11688,15 @@ fn ec_spire_remote_search_libpq_identity_cache_summary(
         index_oid,
         "ec_spire_remote_search_libpq_identity_cache_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_libpq_identity_cache_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_identity_cache_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -11797,26 +11769,24 @@ fn ec_spire_remote_search_libpq_executor_work_plan(
         index_oid,
         "ec_spire_remote_search_libpq_executor_work_plan",
     );
-    let dispatch_rows = unsafe {
-        am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            &consistency_mode,
-        )
-    };
-    let readiness_row = unsafe {
-        am::spire_remote_search_libpq_executor_readiness_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let dispatch_rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_dispatch_plan_rows,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        &consistency_mode,
+    );
+    let readiness_row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_readiness_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(dispatch_rows.into_iter().map(move |row| {
@@ -11907,26 +11877,24 @@ fn ec_spire_remote_search_libpq_executor_work_summary(
         index_oid,
         "ec_spire_remote_search_libpq_executor_work_summary",
     );
-    let rows = unsafe {
-        am::spire_remote_search_libpq_dispatch_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            &consistency_mode,
-        )
-    };
-    let readiness = unsafe {
-        am::spire_remote_search_libpq_executor_readiness_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_dispatch_plan_rows,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        &consistency_mode,
+    );
+    let readiness = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_readiness_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     let mut ready_work_count = 0_u64;
@@ -12025,16 +11993,15 @@ fn ec_spire_remote_search_libpq_dispatch_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_dispatch_summary");
-    let row = unsafe {
-        am::spire_remote_search_libpq_dispatch_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_dispatch_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12112,16 +12079,15 @@ fn ec_spire_remote_search_libpq_executor_budget_summary(
         index_oid,
         "ec_spire_remote_search_libpq_executor_budget_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_libpq_executor_budget_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_budget_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12183,14 +12149,13 @@ fn ec_spire_remote_search_production_policy_summary(
         index_oid,
         "ec_spire_remote_search_production_policy_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_production_consistency_policy_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            "function_argument",
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_consistency_policy_summary_row,
+        requested_epoch,
+        "function_argument",
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12239,12 +12204,11 @@ fn ec_spire_remote_search_production_policy_session_summary(
         index_oid,
         "ec_spire_remote_search_production_policy_session_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_production_session_consistency_policy_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_session_consistency_policy_summary_row,
+        requested_epoch,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12440,16 +12404,15 @@ fn ec_spire_remote_search_production_executor_state_summary(
         index_oid,
         "ec_spire_remote_search_production_executor_state_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_production_executor_state_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_executor_state_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12545,16 +12508,15 @@ fn ec_spire_remote_search_degraded_skip_report(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_degraded_skip_report");
-    let rows = unsafe {
-        am::spire_remote_search_production_degraded_skip_report_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_degraded_skip_report_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -12619,15 +12581,14 @@ fn ec_spire_remote_search_production_executor_session_summary(
         index_oid,
         "ec_spire_remote_search_production_executor_session_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_production_executor_session_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_executor_session_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12686,13 +12647,12 @@ fn ec_spire_remote_search_production_scan_handoff_summary(
         index_oid,
         "ec_spire_remote_search_production_scan_handoff_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_production_scan_handoff_summary_row(
-            index_relation.as_ptr(),
-            query,
-            top_k,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_scan_handoff_summary_row,
+        query,
+        top_k,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12766,13 +12726,12 @@ fn ec_spire_remote_search_production_scan_heap_resolution_summary(
         index_oid,
         "ec_spire_remote_search_production_scan_heap_resolution_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_production_scan_heap_resolution_summary_row(
-            index_relation.as_ptr(),
-            query,
-            top_k,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_scan_heap_resolution_summary_row,
+        query,
+        top_k,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -12820,9 +12779,12 @@ fn ec_spire_remote_search_production_read_profile(
         index_oid,
         "ec_spire_remote_search_production_read_profile",
     );
-    let row = unsafe {
-        am::spire_remote_search_production_read_profile_row(index_relation.as_ptr(), query, top_k)
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_read_profile_row,
+        query,
+        top_k
+    );
     drop(index_relation);
 
     macro_rules! metric {
@@ -13014,9 +12976,12 @@ fn ec_spire_remote_search_operator_diagnostics(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_operator_diagnostics");
-    let row = unsafe {
-        am::spire_remote_search_operator_diagnostics_row(index_relation.as_ptr(), query, top_k)
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_operator_diagnostics_row,
+        query,
+        top_k
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -13117,16 +13082,15 @@ fn ec_spire_remote_search_libpq_executor_readiness(
         index_oid,
         "ec_spire_remote_search_libpq_executor_readiness",
     );
-    let row = unsafe {
-        am::spire_remote_search_libpq_executor_readiness_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_libpq_executor_readiness_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -13470,26 +13434,24 @@ fn spire_remote_pipeline_step_rows(
 
     let (dispatch, connection_open_rows) = {
         let index_relation = open_valid_ec_spire_index_guard(index_oid, function_name);
-        let dispatch = unsafe {
-            am::spire_remote_search_libpq_dispatch_summary_row(
-                index_relation.as_ptr(),
-                requested_epoch_u64,
-                query.clone(),
-                selected_pids.clone(),
-                top_k,
-                &consistency_mode,
-            )
-        };
-        let connection_open_rows = unsafe {
-            am::spire_remote_search_libpq_connection_open_plan_rows(
-                index_relation.as_ptr(),
-                requested_epoch_u64,
-                query.clone(),
-                selected_pids.clone(),
-                top_k,
-                &consistency_mode,
-            )
-        };
+        let dispatch = with_live_index_relation!(
+            index_relation,
+            am::spire_remote_search_libpq_dispatch_summary_row,
+            requested_epoch_u64,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            &consistency_mode,
+        );
+        let connection_open_rows = with_live_index_relation!(
+            index_relation,
+            am::spire_remote_search_libpq_connection_open_plan_rows,
+            requested_epoch_u64,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            &consistency_mode,
+        );
         (dispatch, connection_open_rows)
     };
 
@@ -13605,16 +13567,15 @@ fn spire_remote_pipeline_step_rows(
         && connection_ready_count > 0
     {
         let index_relation = open_valid_ec_spire_index_guard(index_oid, function_name);
-        Some(unsafe {
-            am::spire_remote_search_libpq_identity_cache_summary_row(
-                index_relation.as_ptr(),
-                requested_epoch_u64,
-                query.clone(),
-                selected_pids.clone(),
-                top_k,
-                &consistency_mode,
-            )
-        })
+        Some(with_live_index_relation!(
+            index_relation,
+            am::spire_remote_search_libpq_identity_cache_summary_row,
+            requested_epoch_u64,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            &consistency_mode,
+        ))
     } else {
         None
     };
@@ -13702,16 +13663,15 @@ fn spire_remote_pipeline_step_rows(
 
     let coordinator_result = if probe_remote_executor {
         let index_relation = open_valid_ec_spire_index_guard(index_oid, function_name);
-        Some(unsafe {
-            am::spire_remote_search_coordinator_result_summary_row(
-                index_relation.as_ptr(),
-                requested_epoch_u64,
-                query,
-                selected_pids,
-                top_k,
-                &consistency_mode,
-            )
-        })
+        Some(with_live_index_relation!(
+            index_relation,
+            am::spire_remote_search_coordinator_result_summary_row,
+            requested_epoch_u64,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        ))
     } else {
         None
     };
@@ -14028,16 +13988,15 @@ fn ec_spire_remote_search_receive_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_receive_plan");
-    let rows = unsafe {
-        am::spire_remote_search_receive_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_receive_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -14107,16 +14066,15 @@ fn ec_spire_remote_search_receive_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_receive_summary");
-    let rows = unsafe {
-        am::spire_remote_search_receive_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_receive_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     let mut ready_receive_count = 0_u64;
@@ -14228,16 +14186,15 @@ fn ec_spire_remote_search_merge_input_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_merge_input_summary");
-    let row = unsafe {
-        am::spire_remote_search_merge_input_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_merge_input_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -14394,16 +14351,15 @@ fn ec_spire_remote_search_local_heap_resolution_plan(
         index_oid,
         "ec_spire_remote_search_local_heap_resolution_plan",
     );
-    let rows = unsafe {
-        am::spire_remote_search_local_heap_resolution_plan_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_local_heap_resolution_plan_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -14473,16 +14429,15 @@ fn ec_spire_remote_search_heap_resolution_summary(
         index_oid,
         "ec_spire_remote_search_heap_resolution_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_heap_resolution_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_heap_resolution_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -14553,16 +14508,15 @@ fn ec_spire_remote_search_local_heap_candidates(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_local_heap_candidates");
-    let rows = unsafe {
-        am::spire_remote_search_local_heap_candidate_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_local_heap_candidate_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -15481,16 +15435,15 @@ fn ec_spire_remote_search_tuple_payload(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = unsafe {
-        am::spire_remote_search_local_heap_candidate_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_local_heap_candidate_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     ec_spire_validate_tuple_payload_columns(heap_relation_oid, &requested_columns)
@@ -15610,16 +15563,15 @@ fn ec_spire_remote_search_tuple_payload_typed(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload_typed");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = unsafe {
-        am::spire_remote_search_local_heap_candidate_rows(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_local_heap_candidate_rows,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     let columns = ec_spire_tuple_payload_column_metadata(
@@ -15770,16 +15722,15 @@ fn ec_spire_remote_search_local_heap_candidate_summary(
         index_oid,
         "ec_spire_remote_search_local_heap_candidate_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_local_heap_candidate_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_local_heap_candidate_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -15856,16 +15807,15 @@ fn ec_spire_remote_search_coordinator_result_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_result_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_coordinator_result_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_coordinator_result_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -15939,16 +15889,15 @@ fn ec_spire_remote_search_finalization_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_finalization_summary");
-    let row = unsafe {
-        am::spire_remote_search_finalization_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_finalization_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -16025,16 +15974,15 @@ fn ec_spire_remote_search_coordinator_gate_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_gate_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_coordinator_gate_summary_row(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_coordinator_gate_summary_row,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -16107,16 +16055,15 @@ fn ec_spire_remote_search_coordinator_local(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_coordinator_local");
-    let rows = unsafe {
-        am::spire_remote_search_coordinator_local_candidates(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_coordinator_local_candidates,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16183,16 +16130,15 @@ fn ec_spire_remote_search_coordinator_local_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_local_summary",
     );
-    let row = unsafe {
-        am::spire_remote_search_coordinator_local_summary(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_coordinator_local_summary,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -16262,16 +16208,15 @@ fn ec_spire_remote_search(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search");
-    let rows = unsafe {
-        am::spire_remote_search_candidates(
-            index_relation.as_ptr(),
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
-    };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_candidates,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        &consistency_mode,
+    );
     let endpoint_identity = with_live_index_relation!(
         index_relation,
         am::spire_remote_search_endpoint_identity_row
