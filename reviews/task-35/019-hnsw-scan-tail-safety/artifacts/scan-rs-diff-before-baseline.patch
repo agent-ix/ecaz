@@ -1,0 +1,173 @@
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index bae10579..9e67c305 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -5712,6 +5712,8 @@ impl TqScanOpaque {
+             pgrx::error!("ec_hnsw scan state is missing raw query values");
+         }
+
++        // SAFETY: non-null `query_values` points to `query_dimensions` f32
++        // values copied into scan-owned PostgreSQL memory by `store_scan_query`.
+         unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+     }
+
+@@ -5721,6 +5723,8 @@ impl TqScanOpaque {
+             return &[];
+         }
+
++        // SAFETY: non-null `query_values` points to `query_dimensions` f32
++        // values copied into scan-owned PostgreSQL memory by `store_scan_query`.
+         unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+     }
+ }
+@@ -5935,15 +5939,23 @@ mod tests {
+             .as_mut_ptr()
+             .cast::<pg_sys::ParallelIndexScanDescData>();
+         #[cfg(feature = "pg17")]
++        // SAFETY: test storage is repr(C, align(8)) and large enough for the
++        // parallel scan descriptor plus AM-private payload at offset 64.
+         unsafe {
+             (*parallel_scan).ps_offset = 64;
+         }
+         #[cfg(feature = "pg18")]
++        // SAFETY: test storage is repr(C, align(8)) and large enough for the
++        // parallel scan descriptor plus AM-private payload at offset 64.
+         unsafe {
+             (*parallel_scan).ps_offset_am = 64;
+         }
+
++        // SAFETY: offset 64 is within the aligned test storage and is the
++        // AM-private target initialized below.
+         let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
++        // SAFETY: `target` points into the aligned test storage and has enough
++        // room for the initialized HNSW parallel scan target.
+         unsafe {
+             crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                 target, 2,
+@@ -5951,6 +5963,7 @@ mod tests {
+         }
+         .expect("parallel scan target should initialize");
+         assert_eq!(
++            // SAFETY: `parallel_scan` points into the initialized test storage.
+             unsafe { crate::am::ec_hnsw::parallel::reset_parallel_scan_state(parallel_scan) }
+                 .expect("parallel scan reset should succeed")
+                 .expect("parallel scan reset should see initialized state"),
+@@ -5997,15 +6010,23 @@ mod tests {
+             .as_mut_ptr()
+             .cast::<pg_sys::ParallelIndexScanDescData>();
+         #[cfg(feature = "pg17")]
++        // SAFETY: test storage is repr(C, align(8)) and large enough for the
++        // parallel scan descriptor plus AM-private payload at offset 64.
+         unsafe {
+             (*parallel_scan).ps_offset = 64;
+         }
+         #[cfg(feature = "pg18")]
++        // SAFETY: test storage is repr(C, align(8)) and large enough for the
++        // parallel scan descriptor plus AM-private payload at offset 64.
+         unsafe {
+             (*parallel_scan).ps_offset_am = 64;
+         }
+
++        // SAFETY: offset 64 is within the aligned test storage and is the
++        // AM-private target initialized below.
+         let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
++        // SAFETY: `target` points into the aligned test storage and has enough
++        // room for the initialized HNSW parallel scan target.
+         unsafe {
+             crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                 target, 2,
+@@ -6021,10 +6042,13 @@ mod tests {
+
+         bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+         let attachment =
++            // SAFETY: `parallel_scan` points into the initialized test storage.
+             unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+                 .expect("parallel scan attachment should validate")
+                 .expect("parallel scan attachment should expose AM-private state");
+         assert_eq!(
++            // SAFETY: the attachment exposes the initialized coordinator pointer
++            // owned by the test parallel scan target.
+             unsafe { &*attachment.coordinator }
+                 .claimed_worker_slots
+                 .load(std::sync::atomic::Ordering::Acquire),
+@@ -6035,10 +6059,13 @@ mod tests {
+         clear_parallel_scan_state(&mut opaque);
+
+         let attachment =
++            // SAFETY: `parallel_scan` points into the initialized test storage.
+             unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+                 .expect("parallel scan attachment should keep validating")
+                 .expect("parallel scan attachment should keep exposing AM-private state");
+         assert_eq!(
++            // SAFETY: the attachment exposes the initialized coordinator pointer
++            // owned by the test parallel scan target.
+             unsafe { &*attachment.coordinator }
+                 .claimed_worker_slots
+                 .load(std::sync::atomic::Ordering::Acquire),
+@@ -6064,15 +6091,23 @@ mod tests {
+             .as_mut_ptr()
+             .cast::<pg_sys::ParallelIndexScanDescData>();
+         #[cfg(feature = "pg17")]
++        // SAFETY: test storage is repr(C, align(8)) and large enough for the
++        // parallel scan descriptor plus AM-private payload at offset 64.
+         unsafe {
+             (*parallel_scan).ps_offset = 64;
+         }
+         #[cfg(feature = "pg18")]
++        // SAFETY: test storage is repr(C, align(8)) and large enough for the
++        // parallel scan descriptor plus AM-private payload at offset 64.
+         unsafe {
+             (*parallel_scan).ps_offset_am = 64;
+         }
+
++        // SAFETY: offset 64 is within the aligned test storage and is the
++        // AM-private target initialized below.
+         let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
++        // SAFETY: `target` points into the aligned test storage and has enough
++        // room for the initialized HNSW parallel scan target.
+         unsafe {
+             crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                 target, 2,
+@@ -6104,6 +6139,8 @@ mod tests {
+
+         publish_parallel_scan_worker_slot_snapshot(&opaque);
+
++        // SAFETY: `opaque` is attached to the initialized parallel scan target
++        // and has a valid claimed worker-slot index.
+         let snapshot = unsafe {
+             crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                 opaque.parallel_scan_state,
+@@ -6259,14 +6296,20 @@ mod tests {
+         reset_scan_position(&mut opaque);
+
+         assert!(
++            // SAFETY: reset keeps the graph element cache allocated but clears
++            // its scan-local contents.
+             unsafe { &*opaque.graph_element_cache }.is_empty(),
+             "amrescan/reset should drop cached graph elements before reseeding the ordered scan"
+         );
+         assert!(
++            // SAFETY: reset keeps the graph neighbor cache allocated but clears
++            // its scan-local contents.
+             unsafe { &*opaque.graph_neighbor_cache }.is_empty(),
+             "amrescan/reset should drop cached graph neighbors before reseeding the ordered scan"
+         );
+         assert!(
++            // SAFETY: reset keeps the score cache allocated but clears its
++            // scan-local contents.
+             unsafe { &*opaque.score_cache }.is_empty(),
+             "amrescan/reset should drop cached element scores before reseeding the ordered scan"
+         );
+@@ -7393,9 +7436,12 @@ mod tests {
+         let opaque_ptr = &mut opaque as *mut TqScanOpaque;
+
+         let score =
++            // SAFETY: `opaque_ptr` points to the live test scan opaque with
++            // prepared query and quantizer fields initialized above.
+             unsafe { score_scan_element_result(&mut *opaque_ptr, encoded.gamma, &code_bytes) };
+
+         assert!(score.is_finite());
++        // SAFETY: `opaque_ptr` still points to the live test scan opaque.
+         assert_eq!(unsafe { (*opaque_ptr).stats_delta.total_distance_calcs }, 1);
+
+         free_scan_prepared_query(&mut opaque);
