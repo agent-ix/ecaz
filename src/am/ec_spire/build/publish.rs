@@ -448,12 +448,20 @@ pub(super) unsafe fn write_manifest_bundle_to_relation(
     index_relation: pg_sys::Relation,
     manifests: &SpireEncodedManifestBundle,
 ) -> Result<SpirePublishedManifestLocators, String> {
+    // SAFETY: index_relation is the open SPIRE index relation and the encoded
+    // epoch manifest has been produced by publish validation.
     let epoch_manifest_tid =
         unsafe { page::append_object_tuple(index_relation, &manifests.epoch_manifest)? };
+    // SAFETY: index_relation is the open SPIRE index relation and the encoded
+    // object manifest has been produced by publish validation.
     let object_manifest_tid =
         unsafe { page::append_object_tuple(index_relation, &manifests.object_manifest)? };
+    // SAFETY: index_relation is the open SPIRE index relation and the encoded
+    // placement directory has been produced by publish validation.
     let placement_directory_tid =
         unsafe { page::append_object_tuple(index_relation, &manifests.placement_directory)? };
+    // SAFETY: index_relation is the open SPIRE index relation and the encoded
+    // local-store config has been produced by publish validation.
     let local_store_config_tid =
         unsafe { page::append_object_tuple(index_relation, &manifests.local_store_config)? };
     Ok(SpirePublishedManifestLocators {
@@ -488,6 +496,8 @@ pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
     // Replacement publishes append this retired copy before the new manifest
     // bundle while holding the publish/extension lock, so its TID orders after
     // the original published manifest for snapshot dedupe.
+    // SAFETY: index_relation is the open SPIRE index relation and encoded is a
+    // validated retired copy of the previous published epoch manifest.
     unsafe { page::append_object_tuple(index_relation, &encoded) }
 }
 
@@ -497,9 +507,15 @@ pub(super) unsafe fn publish_replacement_epoch_to_relation(
     input: SpirePublishCoordinatorInput<'_>,
 ) -> Result<(), String> {
     let manifests = encode_manifest_bundle_for_publish(input.clone())?;
+    // SAFETY: index_relation is the open SPIRE index relation; the retired
+    // manifest is appended before the replacement manifest bundle.
     unsafe { write_retired_epoch_manifest_to_relation(index_relation, previous_epoch_manifest)? };
+    // SAFETY: manifests were produced by publish validation for this replacement
+    // input and are appended to the same open index relation.
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
+    // SAFETY: root_control points at the manifest locators just appended to this
+    // open index relation and publishes the replacement epoch atomically.
     unsafe { page::initialize_root_control_page(index_relation, root_control) };
     Ok(())
 }
@@ -511,6 +527,8 @@ pub(super) unsafe fn write_placement_entries_to_relation(
     let mut evidence = Vec::with_capacity(placement_directory.entries.len());
     for entry in &placement_directory.entries {
         let encoded = entry.encode()?;
+        // SAFETY: index_relation is the open SPIRE index relation and encoded is
+        // the validated placement entry being appended for this publish.
         let placement_tid = unsafe { page::append_object_tuple(index_relation, &encoded)? };
         evidence.push(SpirePublishPlacementWriteEvidence {
             pid: entry.pid,

@@ -1263,15 +1263,6 @@ src/am/ec_hnsw/vacuum.rs:956
 src/am/ec_hnsw/vacuum.rs:96
 src/am/ec_hnsw/vacuum.rs:968
 src/am/ec_hnsw/vacuum.rs:982
-src/am/ec_spire/build/publish.rs:452
-src/am/ec_spire/build/publish.rs:454
-src/am/ec_spire/build/publish.rs:456
-src/am/ec_spire/build/publish.rs:458
-src/am/ec_spire/build/publish.rs:491
-src/am/ec_spire/build/publish.rs:500
-src/am/ec_spire/build/publish.rs:501
-src/am/ec_spire/build/publish.rs:503
-src/am/ec_spire/build/publish.rs:514
 src/am/ec_spire/build/recursive.rs:1061
 src/am/ec_spire/build/recursive.rs:1069
 src/am/ec_spire/build/recursive.rs:1071
