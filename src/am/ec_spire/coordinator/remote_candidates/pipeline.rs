@@ -19,6 +19,8 @@ impl SpireCoordinatorPipeline {
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;
         let query_for_summary_fallback = query.clone();
+        // SAFETY: forwards the live index relation and checked request fields
+        // into the readiness planner that owns relation page/catalog reads.
         let readiness_rows = unsafe {
             remote_search_request_readiness_rows(
                 index_relation,
@@ -41,8 +43,11 @@ impl SpireCoordinatorPipeline {
             consistency_mode,
         )?;
         let request_rows = remote_search_libpq_request_plan_rows_from_execution(&execution_rows);
+        // SAFETY: rd_id is stable while the relation is open for this pipeline
+        // read and is only used as the local index OID for connection planning.
+        let index_oid = unsafe { (*index_relation).rd_id };
         let connection_rows = remote_search_libpq_connection_plan_rows_from_requests(
-            unsafe { (*index_relation).rd_id },
+            index_oid,
             &request_rows,
         )?;
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);
@@ -83,6 +88,8 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorGateSummaryRow {
+    // SAFETY: executes the coordinator pipeline with the live index relation
+    // supplied by the SQL diagnostic caller and checked request fields.
     let pipeline = unsafe {
         SpireCoordinatorPipeline::execute_once(
             index_relation,
@@ -186,6 +193,8 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchHeapResolutionSummaryRow {
+    // SAFETY: forwards the live index relation and request fields into the
+    // coordinator gate summary before deriving heap-resolution status.
     let gate = unsafe {
         remote_search_coordinator_gate_summary_row(
             index_relation,
@@ -200,6 +209,9 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
     let decoded_local_locator_count = if gate.remote_plan_count == 0
         && gate.status != SPIRE_REMOTE_STATUS_EMPTY_TOP_K
     {
+        // SAFETY: forwards the live index relation and cloned request fields to
+        // the local heap-resolution planner only when the gate selected a local
+        // heap-only path.
         let rows = unsafe {
             remote_search_local_heap_resolution_plan_rows(
                 index_relation,
