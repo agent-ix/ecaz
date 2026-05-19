@@ -1,0 +1,119 @@
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:25:49: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:27:60: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:51:32: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:51:58: replace * with +
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:51:58: replace * with /
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:52:76: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:52:76: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:53:74: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:53:74: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:54:73: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:54:73: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:61:36: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:61:62: replace * with +
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:61:62: replace * with /
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:62:90: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:62:90: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:64:39: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:64:39: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:66:37: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:66:37: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:73:34: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:73:60: replace * with +
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:73:60: replace * with /
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:74:86: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:74:86: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:76:37: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:76:37: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:78:35: replace + with -
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:78:35: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:82:65: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:88:40: replace + with *
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:102:47: replace << with >>
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:103:52: replace << with >>
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:104:52: replace << with >>
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:217:27: replace |= with &= in MetadataPage::current_v1_scalar
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:235:59: replace || with && in MetadataPage::current_v1_scalar
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:265:51: replace == with != in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:270:59: replace || with && in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:277:59: replace || with && in MetadataPage::current_v3_turbo_hot_cold
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:386:22: replace < with == in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:386:22: replace < with <= in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:386:42: replace + with * in MetadataPage::encode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:401:23: replace < with == in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:401:23: replace < with <= in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:401:43: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:409:44: replace + with * in MetadataPage::decode_page
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:422:27: replace < with == in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:422:27: replace < with > in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:422:27: replace < with <= in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:429:27: replace >= with < in MetadataPage::decode_contents
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:552:26: replace > with == in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:552:26: replace > with >= in TqElementTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:621:32: replace > with == in TqElementTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:621:32: replace > with >= in TqElementTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:674:9: replace TqElementTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:674:9: replace TqElementTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:9: replace TqElementTuple::encoded_len_with_binary -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:9: replace TqElementTuple::encoded_len_with_binary -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:685:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:685:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:683:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:682:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:682:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:681:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:681:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:680:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:679:13: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:679:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:11: replace + with - in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:11: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:680:39: replace * with + in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:680:39: replace * with / in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:685:33: replace * with / in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:713:26: replace > with == in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:713:26: replace > with >= in TqGroupedHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:766:9: replace TqGroupedHotTupleRef<'a>::binary_word_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:766:9: replace TqGroupedHotTupleRef<'a>::binary_word_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:766:38: replace / with % in TqGroupedHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:766:38: replace / with * in TqGroupedHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:776:32: replace > with == in TqGroupedHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:776:32: replace > with >= in TqGroupedHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:858:26: replace > with == in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:858:26: replace > with >= in TqTurboHotTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:908:9: replace TqTurboHotTupleRef<'a>::binary_word_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:908:9: replace TqTurboHotTupleRef<'a>::binary_word_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:908:38: replace / with % in TqTurboHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:908:38: replace / with * in TqTurboHotTupleRef<'a>::binary_word_count
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:918:32: replace > with == in TqTurboHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:918:32: replace > with >= in TqTurboHotTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1077:28: replace > with < in TqNeighborTuple::encode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1095:24: replace < with == in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1095:24: replace < with <= in TqNeighborTuple::decode
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1117:5: replace neighbor_slots -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1117:5: replace neighbor_slots -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1117:22: replace + with * in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1117:8: replace * with + in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1117:8: replace * with / in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1117:40: replace * with + in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1117:40: replace * with / in neighbor_slots
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1121:5: replace neighbor_tuple_encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1121:5: replace neighbor_tuple_encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1121:11: replace + with * in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1121:7: replace + with * in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1121:38: replace * with + in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1121:38: replace * with / in neighbor_tuple_encoded_len
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1129:24: replace > with >= in max_level_that_fits
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1140:5: replace element_tuple_fits_on_page -> bool with true
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1225:9: replace DataPage::update_element -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1233:9: replace DataPage::update_neighbor -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1241:9: replace DataPage::update_grouped_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1249:9: replace DataPage::update_turbo_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1253:9: replace DataPage::update_rerank -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1261:9: replace DataPage::update_grouped_codebook -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1351:9: replace DataPageChain::update_element -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1361:9: replace DataPageChain::update_neighbor -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1371:9: replace DataPageChain::update_grouped_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1381:9: replace DataPageChain::update_turbo_hot -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1387:9: replace DataPageChain::update_rerank -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1397:9: replace DataPageChain::update_grouped_codebook -> Result<(), String> with Ok(())

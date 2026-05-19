@@ -1,0 +1,6 @@
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:674:9: replace TqElementTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:674:9: replace TqElementTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:9: replace TqElementTuple::encoded_len_with_binary -> usize with 0
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:678:9: replace TqElementTuple::encoded_len_with_binary -> usize with 1
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:685:13: replace + with * in TqElementTuple::encoded_len_with_binary
+hardening/careful/src/../../../src/am/ec_hnsw/page.rs:1140:5: replace element_tuple_fits_on_page -> bool with true
