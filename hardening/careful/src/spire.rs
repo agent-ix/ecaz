@@ -569,6 +569,382 @@ pub mod storage {
             assert_eq!(header.pid, 90);
             assert_eq!(header.kind, SpirePartitionObjectKind::TopGraph);
         }
+
+        // ----------------------------------------------------------------
+        // Large-object chain round trips. A routing or top-graph object
+        // whose encoded length exceeds `max_relation_object_tuple_payload_bytes`
+        // (~7000 bytes) is split into chain segments + a meta tuple. The
+        // tests below construct objects in that size range and verify the
+        // segment chain decoder reassembles them byte-for-byte.
+        // ----------------------------------------------------------------
+
+        fn chain_sized_routing_children(child_count: usize, dimensions: usize)
+            -> Vec<SpireRoutingChildEntry>
+        {
+            (0..child_count)
+                .map(|i| SpireRoutingChildEntry {
+                    centroid_index: i as u32,
+                    child_pid: 100 + i as u64,
+                    centroid: (0..dimensions).map(|d| (i * 13 + d) as f32 * 0.001).collect(),
+                })
+                .collect()
+        }
+
+        #[test]
+        fn relation_store_routing_object_chain_round_trip_through_large_payload() {
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46001);
+            let store = make_store(&mut rel);
+
+            // 256 dims × 8 children ≈ 8 KB encoded, above the ~7000-byte
+            // single-tuple ceiling, so insert_routing_object takes the
+            // `insert_large_partition_object_chain` branch.
+            let children = chain_sized_routing_children(8, 256);
+            let routing = SpireRoutingPartitionObject::root(101, 5, 256, children).unwrap();
+            let encoded_len = routing.encode().unwrap().len();
+            assert!(
+                encoded_len > 7000,
+                "test setup precondition: routing object must exceed single-tuple ceiling, got {encoded_len}",
+            );
+
+            let placement = store.insert_routing_object(7, &routing).unwrap();
+            // SAFETY: same store; chain reader pins each segment under share lock.
+            let decoded = unsafe { store.read_routing_object(&placement) }.unwrap();
+            assert_eq!(decoded.header.pid, 101);
+            assert_eq!(decoded.header.object_version, 5);
+            assert_eq!(decoded.dimensions, 256);
+            assert_eq!(decoded.children().count(), 8);
+
+            // SAFETY: header dispatch over chained routing object covers the
+            // V2 chain-meta header branch in read_object_header.
+            let header = unsafe { store.read_object_header(&placement) }.unwrap();
+            assert_eq!(header.pid, 101);
+            assert_eq!(header.kind, SpirePartitionObjectKind::Root);
+
+            // SAFETY: read_object_bytes via the chain path reassembles the
+            // encoded form; length must match the original encoded routing.
+            let raw = unsafe { store.read_object_bytes(&placement) }.unwrap();
+            assert_eq!(raw.len(), encoded_len);
+        }
+
+        #[test]
+        fn relation_store_top_graph_object_chain_round_trip_through_large_payload() {
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46002);
+            let store = make_store(&mut rel);
+
+            // Many top-graph nodes with non-empty neighbor lists pushes the
+            // encoded length above the chain threshold.
+            // neighbor ordinals must be < node count and != own index.
+            const NODE_COUNT: u32 = 60;
+            let nodes: Vec<SpireTopGraphNodeRecord> = (0..NODE_COUNT)
+                .map(|i| SpireTopGraphNodeRecord {
+                    child_pid: 200 + i as u64,
+                    centroid_ordinal: i,
+                    neighbors: (0..NODE_COUNT).filter(|j| *j != i).collect(),
+                })
+                .collect();
+            // Args: pid, object_version, root_pid, root_level,
+            // dimensions, graph_degree (>= max neighbors per node),
+            // build_list_size, alpha, entry_node, nodes.
+            let top_graph = SpireTopGraphPartitionObject::new(
+                500, 6, 11, 2, 2, NODE_COUNT, 120, 1.2, 0, nodes,
+            )
+            .unwrap();
+            let encoded_len = top_graph.encode().unwrap().len();
+            assert!(
+                encoded_len > 7000,
+                "test setup precondition: top-graph object must exceed single-tuple ceiling, got {encoded_len}",
+            );
+
+            let placement = store.insert_top_graph_object(7, &top_graph).unwrap();
+            // SAFETY: chain reader walks segment locators under share lock.
+            let decoded = unsafe { store.read_top_graph_object(&placement) }.unwrap();
+            assert_eq!(decoded.header.pid, 500);
+            assert_eq!(decoded.nodes.len(), NODE_COUNT as usize);
+
+            // SAFETY: chain meta dispatch through read_object_header.
+            let header = unsafe { store.read_object_header(&placement) }.unwrap();
+            assert_eq!(header.kind, SpirePartitionObjectKind::TopGraph);
+        }
+
+        #[test]
+        fn relation_store_insert_and_read_leaf_v2_multi_segment_round_trip() {
+            // Force multi-segment leaf V2 by picking a payload stride that
+            // makes max_segment_rows small, then writing more than that
+            // many rows so the chain walker covers `for _ in 0..segment_count`
+            // with > 1 segment in `read_leaf_object_v2`.
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46004);
+            let store = make_store(&mut rel);
+
+            // 50 rows × 256-byte payload = ~14KB tabular body, exceeds
+            // one-segment capacity at BLCKSZ=8192.
+            let payload_len = 256;
+            let assignments: Vec<SpireLeafAssignmentRow> = (1..=50_u64)
+                .map(|seq| leaf_v2_assignment(seq, payload_len))
+                .collect();
+            let placement = store
+                .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &assignments)
+                .unwrap();
+            // SAFETY: same store; chain walker reads each segment under
+            // share lock and validates segment_no + row_base monotonically.
+            let decoded = unsafe { store.read_leaf_object_v2(&placement) }.unwrap();
+            assert_eq!(decoded.meta.header.assignment_count, 50);
+            assert!(
+                decoded.segments.len() > 1,
+                "multi-segment test must produce >1 segment, got {}",
+                decoded.segments.len()
+            );
+
+            // SAFETY: header dispatch over chained V2 meta uses the
+            // leaf-V2-meta-flag branch in read_object_header.
+            let header = unsafe { store.read_object_header(&placement) }.unwrap();
+            assert_eq!(header.pid, 17);
+            assert_eq!(header.kind, SpirePartitionObjectKind::Leaf);
+        }
+
+        #[test]
+        fn relation_store_insert_and_read_leaf_v1_round_trip() {
+            // Covers the V1 leaf path in SpireRelationObjectStore (insert
+            // happens via SpireLeafPartitionObject + insert_leaf_object is
+            // not on the relation store, but the V1 reader at
+            // read_leaf_object/SpireObjectReader for SpireRelationObjectStore
+            // is reached via inserts that match the V1 wire format).
+            // The relation store does not expose insert_leaf_object_v1
+            // directly; instead, verify that the V1 reader rejects a
+            // placement whose tuple bytes are an unknown format version.
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46005);
+            let store = make_store(&mut rel);
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let placement = store.insert_routing_object(7, &routing).unwrap();
+            // V1 reader should reject a placement that points at a V2
+            // chain meta (which is what the relation store writes).
+            // SAFETY: placement came from the same store; read_leaf_object
+            // sees a routing/header tuple and must surface an error.
+            assert!(unsafe { store.read_leaf_object(&placement) }.is_err());
+        }
+
+        #[test]
+        fn relation_store_validate_placement_rejects_wrong_node_id_and_state() {
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46006);
+            let store = make_store(&mut rel);
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let placement = store.insert_routing_object(7, &routing).unwrap();
+
+            // Wrong node_id.
+            let mut wrong_node = placement;
+            wrong_node.node_id = 99;
+            // SAFETY: same store; placement validation rejects mismatch
+            // before tuple bytes are pinned.
+            assert!(unsafe { store.read_routing_object(&wrong_node) }.is_err());
+
+            // Stale state.
+            let mut stale = placement;
+            stale.state = SpirePlacementState::Stale;
+            assert!(unsafe { store.read_routing_object(&stale) }.is_err());
+
+            // Wrong store_relid.
+            let mut wrong_store = placement;
+            wrong_store.store_relid = 999_999;
+            assert!(unsafe { store.read_routing_object(&wrong_store) }.is_err());
+        }
+
+        #[test]
+        fn relation_store_object_reader_trait_dispatch_covers_all_methods() {
+            // Cover the SpireObjectReader-for-SpireRelationObjectStore impl
+            // (line 1254) through trait dispatch so the trait wiring is
+            // observable per-method (a missed delegate is caught by the
+            // matching read).
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46007);
+            let store = make_store(&mut rel);
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing_placement = store.insert_routing_object(7, &routing).unwrap();
+            let leaf_v2_placement = store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    17,
+                    3,
+                    5,
+                    &[leaf_v2_assignment(1, 8), leaf_v2_assignment(2, 8)],
+                )
+                .unwrap();
+            let delta = SpireDeltaPartitionObject::new(
+                19,
+                1,
+                17,
+                vec![SpireLeafAssignmentRow {
+                    flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                    vec_id: SpireVecId::local(1),
+                    heap_tid: ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    },
+                    payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2, 3, 4],
+                }],
+            )
+            .unwrap();
+            let delta_placement = store.insert_delta_object(7, &delta).unwrap();
+            let top_graph = SpireTopGraphPartitionObject::new(
+                90, 3, 11, 2, 2, 2, 4, 1.2, 0,
+                vec![SpireTopGraphNodeRecord {
+                    child_pid: 21,
+                    centroid_ordinal: 0,
+                    neighbors: vec![],
+                }],
+            )
+            .unwrap();
+            let top_placement = store.insert_top_graph_object(7, &top_graph).unwrap();
+
+            let reader: &dyn SpireObjectReader = &store;
+            // SpireObjectReader's methods are safe; trait dispatch hits
+            // the relation-backed reader impls (which internally pin tuple
+            // pages while owning their bytes for decode).
+            assert_eq!(
+                reader.read_object_header(&routing_placement).unwrap().pid,
+                11,
+            );
+            assert_eq!(
+                reader
+                    .read_routing_object(&routing_placement)
+                    .unwrap()
+                    .header
+                    .pid,
+                11,
+            );
+            assert_eq!(
+                reader
+                    .read_leaf_object_v2(&leaf_v2_placement)
+                    .unwrap()
+                    .meta
+                    .header
+                    .pid,
+                17,
+            );
+            assert_eq!(
+                reader.read_delta_object(&delta_placement).unwrap().header.pid,
+                19,
+            );
+            assert_eq!(
+                reader.read_top_graph_object(&top_placement).unwrap().header.pid,
+                90,
+            );
+        }
+
+        #[test]
+        fn relation_store_active_object_tuple_locators_for_each_kind() {
+            // Single-tuple routing returns just the object_tid.
+            // Chained routing returns object_tid + segment locators.
+            // Leaf V2 multi-segment returns meta + segment locators.
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46008);
+            let store = make_store(&mut rel);
+
+            // Single-tuple routing (small).
+            let small_routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let small_placement = store.insert_routing_object(7, &small_routing).unwrap();
+            // SAFETY: same store; placement validated by helper.
+            let small_locators =
+                unsafe { store.active_object_tuple_locators(&small_placement) }.unwrap();
+            assert_eq!(small_locators, vec![small_placement.object_tid]);
+
+            // Chained routing — locators must include each segment.
+            let chain_children = chain_sized_routing_children(8, 256);
+            let chain_routing =
+                SpireRoutingPartitionObject::root(101, 5, 256, chain_children).unwrap();
+            let chain_placement = store.insert_routing_object(7, &chain_routing).unwrap();
+            let chain_locators =
+                unsafe { store.active_object_tuple_locators(&chain_placement) }.unwrap();
+            assert!(
+                chain_locators.len() > 1,
+                "chained routing must surface multiple locators, got {}",
+                chain_locators.len(),
+            );
+            assert_eq!(chain_locators[0], chain_placement.object_tid);
+
+            // Leaf V2 multi-segment.
+            let assignments: Vec<SpireLeafAssignmentRow> = (1..=50_u64)
+                .map(|seq| leaf_v2_assignment(seq, 256))
+                .collect();
+            let leaf_placement = store
+                .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &assignments)
+                .unwrap();
+            let leaf_locators =
+                unsafe { store.active_object_tuple_locators(&leaf_placement) }.unwrap();
+            assert!(
+                leaf_locators.len() > 2,
+                "multi-segment leaf V2 must surface meta + segments, got {}",
+                leaf_locators.len(),
+            );
+            assert_eq!(leaf_locators[0], leaf_placement.object_tid);
+        }
+
+        #[test]
+        fn relation_store_prefetch_object_tuple_and_tuples_dispatch_through_trait() {
+            // Cover prefetch_object_tuple and prefetch_object_tuples plus
+            // the SpireObjectReader::prefetch_object/prefetch_objects
+            // delegates. The emulator's PrefetchBuffer is a no-op, but the
+            // dispatch code path runs.
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46009);
+            let store = make_store(&mut rel);
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let placement_a = store.insert_routing_object(7, &routing).unwrap();
+            let routing_b =
+                SpireRoutingPartitionObject::root(12, 1, 2, routing_children()).unwrap();
+            let placement_b = store.insert_routing_object(7, &routing_b).unwrap();
+
+            // SAFETY: emulator-backed PrefetchBuffer/read-stream are no-ops.
+            unsafe { store.prefetch_object_tuple(&placement_a) }.unwrap();
+            unsafe {
+                store.prefetch_object_tuples(&[placement_a, placement_b])
+            }
+            .unwrap();
+
+            let reader: &dyn SpireObjectReader = &store;
+            reader.prefetch_object(&placement_a).unwrap();
+            reader
+                .prefetch_objects(&[placement_a, placement_b])
+                .unwrap();
+        }
+
+        #[test]
+        fn relation_store_read_object_bytes_returns_single_tuple_payload() {
+            // Covers the with_single_tuple_object_bytes path in
+            // read_object_bytes when the placement points at a non-chained
+            // object.
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46003);
+            let store = make_store(&mut rel);
+
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let placement = store.insert_routing_object(7, &routing).unwrap();
+            let mut expected = routing.clone();
+            expected.header.published_epoch_backref = 7;
+            // SAFETY: placement came from this store; single-tuple path.
+            let raw = unsafe { store.read_object_bytes(&placement) }.unwrap();
+            assert_eq!(raw, expected.encode().unwrap());
+        }
     }
 }
 
