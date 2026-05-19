@@ -645,10 +645,6 @@ src/am/ec_hnsw/insert.rs:879
 src/am/ec_hnsw/insert.rs:908
 src/am/ec_hnsw/insert.rs:909
 src/am/ec_hnsw/insert.rs:952
-src/am/ec_hnsw/mod.rs:53
-src/am/ec_hnsw/mod.rs:59
-src/am/ec_hnsw/mod.rs:65
-src/am/ec_hnsw/mod.rs:71
 src/am/ec_hnsw/options.rs:160
 src/am/ec_hnsw/options.rs:243
 src/am/ec_hnsw/options.rs:249

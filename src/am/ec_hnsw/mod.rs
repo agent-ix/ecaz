@@ -50,24 +50,32 @@ pub(crate) use self::scan::{
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> shared::IndexCostSnapshot {
+    // SAFETY: forwards the live HNSW index relation supplied by the SQL
+    // diagnostic wrapper to the shared snapshot implementation.
     unsafe { shared::index_cost_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn index_admin_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> shared::IndexAdminSnapshot {
+    // SAFETY: forwards the live HNSW index relation supplied by the SQL
+    // diagnostic wrapper to the shared admin snapshot implementation.
     unsafe { shared::index_admin_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn planner_integration_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> shared::PlannerIntegrationSnapshot {
+    // SAFETY: forwards the live HNSW index relation supplied by the SQL
+    // diagnostic wrapper to the shared planner integration snapshot reader.
     unsafe { shared::planner_integration_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn explain_counters_from_index_scan_state(
     index_state: *mut pgrx::pg_sys::IndexScanState,
 ) -> explain::TqExplainCounters {
+    // SAFETY: forwards PostgreSQL's live IndexScanState pointer from EXPLAIN
+    // callback plumbing to the scan module counter extractor.
     unsafe { scan::explain_counters_from_index_scan_state(index_state) }
 }
 
