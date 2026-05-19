@@ -22,9 +22,8 @@ pub const TQ_GROUPED_HOT_TAG: u8 = 0x03;
 pub const TQ_RERANK_TAG: u8 = 0x04;
 pub const TQ_GROUPED_CODEBOOK_TAG: u8 = 0x05;
 pub const TQ_TURBO_HOT_TAG: u8 = 0x06;
-pub const HNSW_LEGACY_METADATA_BYTES: usize = 2 + 2 + ITEM_POINTER_BYTES + 2 + 1 + 1 + 8 + 8;
-pub const HNSW_METADATA_BYTES: usize =
-    HNSW_LEGACY_METADATA_BYTES + 2 + 1 + 1 + 1 + 1 + 1 + 2 + 2 + ITEM_POINTER_BYTES;
+pub const HNSW_LEGACY_METADATA_BYTES: usize = 30;
+pub const HNSW_METADATA_BYTES: usize = 47;
 pub const HNSW_METADATA_M_OFFSET: usize = 0;
 pub const HNSW_METADATA_EF_CONSTRUCTION_OFFSET: usize = 2;
 pub const HNSW_METADATA_ENTRY_POINT_OFFSET: usize = 4;
@@ -99,7 +98,7 @@ const METADATA_SPECIAL_BYTES: usize = align_up(METADATA_BYTES, ALIGNMENT_BYTES);
 pub const INDEX_FORMAT_V1_SCALAR: u16 = 1;
 pub const INDEX_FORMAT_V2_GROUPED: u16 = 2;
 pub const INDEX_FORMAT_V3_TURBO_HOT_COLD: u16 = 3;
-pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 << 0;
+pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 0b0000_0001;
 pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;
 pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;
 
@@ -1411,19 +1410,100 @@ mod tests {
         }
     }
 
-    #[test]
-    fn metadata_roundtrip() {
-        let metadata = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
+    fn current_metadata(dimensions: u16, bits: u8) -> CurrentFormatMetadata {
+        CurrentFormatMetadata {
             m: 8,
             ef_construction: 64,
             entry_point: tid(12, 3),
-            dimensions: 1536,
-            bits: 4,
+            dimensions,
+            bits,
             max_level: 5,
             seed: 42,
             inserted_since_rebuild: 7,
             persisted_binary_sidecar: true,
-        });
+        }
+    }
+
+    fn full_heaptids() -> Vec<ItemPointer> {
+        (0..HEAPTID_INLINE_CAPACITY)
+            .map(|index| tid(100 + index as u32, 1 + index as u16))
+            .collect()
+    }
+
+    fn invalid_tid() -> ItemPointer {
+        tid(FIRST_DATA_BLOCK_NUMBER + 100, 1)
+    }
+
+    #[test]
+    fn layout_constants_pin_metadata_tuple_and_flag_bytes() {
+        assert_eq!(HNSW_LEGACY_METADATA_BYTES, 30);
+        assert_eq!(HNSW_METADATA_BYTES, 47);
+        assert_eq!(LEGACY_METADATA_SPECIAL_BYTES, 32);
+        assert_eq!(METADATA_SPECIAL_BYTES, 48);
+        assert_eq!(HNSW_METADATA_M_OFFSET, 0);
+        assert_eq!(HNSW_METADATA_EF_CONSTRUCTION_OFFSET, 2);
+        assert_eq!(HNSW_METADATA_ENTRY_POINT_OFFSET, 4);
+        assert_eq!(HNSW_METADATA_DIMENSIONS_OFFSET, 10);
+        assert_eq!(HNSW_METADATA_BITS_OFFSET, 12);
+        assert_eq!(HNSW_METADATA_MAX_LEVEL_OFFSET, 13);
+        assert_eq!(HNSW_METADATA_SEED_OFFSET, 14);
+        assert_eq!(HNSW_METADATA_INSERTED_SINCE_REBUILD_OFFSET, 22);
+        assert_eq!(HNSW_METADATA_FORMAT_VERSION_OFFSET, 30);
+        assert_eq!(HNSW_METADATA_TRANSFORM_KIND_OFFSET, 32);
+        assert_eq!(HNSW_METADATA_SEARCH_CODEC_KIND_OFFSET, 33);
+        assert_eq!(HNSW_METADATA_PAYLOAD_FLAGS_OFFSET, 34);
+        assert_eq!(HNSW_METADATA_SEARCH_BITS_OFFSET, 35);
+        assert_eq!(HNSW_METADATA_RERANK_CODEC_KIND_OFFSET, 36);
+        assert_eq!(HNSW_METADATA_SEARCH_SUBVECTOR_COUNT_OFFSET, 37);
+        assert_eq!(HNSW_METADATA_SEARCH_SUBVECTOR_DIM_OFFSET, 39);
+        assert_eq!(HNSW_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET, 41);
+
+        assert_eq!(TQ_ELEMENT_TAG_OFFSET, 0);
+        assert_eq!(TQ_ELEMENT_LEVEL_OFFSET, 1);
+        assert_eq!(TQ_ELEMENT_DELETED_OFFSET, 2);
+        assert_eq!(TQ_ELEMENT_HEAPTIDS_OFFSET, 3);
+        assert_eq!(TQ_ELEMENT_HEAPTID_COUNT_OFFSET, 63);
+        assert_eq!(TQ_ELEMENT_GAMMA_OFFSET, 64);
+        assert_eq!(TQ_ELEMENT_NEIGHBORTID_OFFSET, 68);
+        assert_eq!(TQ_ELEMENT_CODE_OFFSET, 74);
+
+        assert_eq!(TQ_GROUPED_HOT_TAG_OFFSET, 0);
+        assert_eq!(TQ_GROUPED_HOT_LEVEL_OFFSET, 1);
+        assert_eq!(TQ_GROUPED_HOT_DELETED_OFFSET, 2);
+        assert_eq!(TQ_GROUPED_HOT_HEAPTIDS_OFFSET, 3);
+        assert_eq!(TQ_GROUPED_HOT_HEAPTID_COUNT_OFFSET, 63);
+        assert_eq!(TQ_GROUPED_HOT_NEIGHBORTID_OFFSET, 64);
+        assert_eq!(TQ_GROUPED_HOT_RERANKTID_OFFSET, 70);
+        assert_eq!(TQ_GROUPED_HOT_BINARY_WORDS_OFFSET, 76);
+
+        assert_eq!(TQ_TURBO_HOT_TAG_OFFSET, 0);
+        assert_eq!(TQ_TURBO_HOT_LEVEL_OFFSET, 1);
+        assert_eq!(TQ_TURBO_HOT_DELETED_OFFSET, 2);
+        assert_eq!(TQ_TURBO_HOT_HEAPTIDS_OFFSET, 3);
+        assert_eq!(TQ_TURBO_HOT_HEAPTID_COUNT_OFFSET, 63);
+        assert_eq!(TQ_TURBO_HOT_NEIGHBORTID_OFFSET, 64);
+        assert_eq!(TQ_TURBO_HOT_RERANKTID_OFFSET, 70);
+        assert_eq!(TQ_TURBO_HOT_BINARY_WORDS_OFFSET, 76);
+
+        assert_eq!(TQ_RERANK_TAG_OFFSET, 0);
+        assert_eq!(TQ_RERANK_GAMMA_OFFSET, 1);
+        assert_eq!(TQ_RERANK_CODE_OFFSET, 5);
+        assert_eq!(TQ_GROUPED_CODEBOOK_TAG_OFFSET, 0);
+        assert_eq!(TQ_GROUPED_CODEBOOK_GROUP_INDEX_OFFSET, 1);
+        assert_eq!(TQ_GROUPED_CODEBOOK_NEXTTID_OFFSET, 3);
+        assert_eq!(TQ_GROUPED_CODEBOOK_CENTROIDS_OFFSET, 9);
+        assert_eq!(TQ_NEIGHBOR_TAG_OFFSET, 0);
+        assert_eq!(TQ_NEIGHBOR_COUNT_OFFSET, 1);
+        assert_eq!(TQ_NEIGHBOR_TIDS_OFFSET, 3);
+
+        assert_eq!(PAYLOAD_FLAG_BINARY_SIDECAR, 0b0000_0001);
+        assert_eq!(PAYLOAD_FLAG_GROUPED_SEARCH_CODE, 0b0000_0010);
+        assert_eq!(PAYLOAD_FLAG_COLD_RERANK_PAYLOAD, 0b0000_0100);
+    }
+
+    #[test]
+    fn metadata_roundtrip() {
+        let metadata = MetadataPage::current_v1_scalar(current_metadata(1536, 4));
         let encoded = metadata.encode();
         let decoded = MetadataPage::decode(&encoded).unwrap();
         assert_eq!(decoded, metadata);
@@ -1431,21 +1511,125 @@ mod tests {
 
     #[test]
     fn metadata_page_roundtrip() {
-        let metadata = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
-            m: 8,
-            ef_construction: 64,
-            entry_point: tid(12, 3),
-            dimensions: 1536,
-            bits: 4,
-            max_level: 5,
-            seed: 42,
-            inserted_since_rebuild: 7,
-            persisted_binary_sidecar: true,
-        });
+        let metadata = MetadataPage::current_v1_scalar(current_metadata(1536, 4));
 
         let page = metadata.encode_page(DEFAULT_PAGE_SIZE).unwrap();
         let decoded = MetadataPage::decode_page(&page).unwrap();
         assert_eq!(decoded, metadata);
+    }
+
+    #[test]
+    fn metadata_current_builders_gate_codecs_on_dimensions_and_bits() {
+        let v1 = MetadataPage::current_v1_scalar(current_metadata(16, 4));
+        assert_eq!(v1.transform_kind, TransformKind::Srht);
+        assert_eq!(v1.search_codec_kind, SearchCodecKind::ScalarQuantized);
+        assert_eq!(v1.rerank_codec_kind, RerankCodecKind::None);
+        assert_eq!(v1.payload_flags, PAYLOAD_FLAG_BINARY_SIDECAR);
+        assert_eq!(v1.search_bits, 4);
+
+        let v1_zero_dimensions = MetadataPage::current_v1_scalar(current_metadata(0, 4));
+        assert_eq!(v1_zero_dimensions.transform_kind, TransformKind::Unknown);
+        assert_eq!(
+            v1_zero_dimensions.search_codec_kind,
+            SearchCodecKind::Unknown
+        );
+
+        let v1_zero_bits = MetadataPage::current_v1_scalar(current_metadata(16, 0));
+        assert_eq!(v1_zero_bits.transform_kind, TransformKind::Srht);
+        assert_eq!(v1_zero_bits.search_codec_kind, SearchCodecKind::Unknown);
+
+        let v3 = MetadataPage::current_v3_turbo_hot_cold(current_metadata(16, 4));
+        assert_eq!(v3.transform_kind, TransformKind::Srht);
+        assert_eq!(v3.search_codec_kind, SearchCodecKind::ScalarQuantized);
+        assert_eq!(v3.rerank_codec_kind, RerankCodecKind::ScalarQuantized);
+        assert_eq!(
+            v3.payload_flags,
+            PAYLOAD_FLAG_BINARY_SIDECAR | PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
+        );
+
+        let v3_zero_dimensions = MetadataPage::current_v3_turbo_hot_cold(current_metadata(0, 4));
+        assert_eq!(v3_zero_dimensions.transform_kind, TransformKind::Unknown);
+        assert_eq!(
+            v3_zero_dimensions.search_codec_kind,
+            SearchCodecKind::Unknown
+        );
+        assert_eq!(v3_zero_dimensions.rerank_codec_kind, RerankCodecKind::None);
+
+        let v3_zero_bits = MetadataPage::current_v3_turbo_hot_cold(current_metadata(16, 0));
+        assert_eq!(v3_zero_bits.transform_kind, TransformKind::Srht);
+        assert_eq!(v3_zero_bits.search_codec_kind, SearchCodecKind::Unknown);
+        assert_eq!(v3_zero_bits.rerank_codec_kind, RerankCodecKind::None);
+    }
+
+    #[test]
+    fn metadata_page_boundaries_and_current_to_legacy_fallbacks() {
+        let metadata = MetadataPage::current_v3_turbo_hot_cold(current_metadata(1536, 4));
+        assert!(metadata
+            .encode_page(PAGE_HEADER_BYTES + HNSW_METADATA_BYTES - 1)
+            .is_err());
+        let exact_min_current_page = metadata
+            .encode_page(PAGE_HEADER_BYTES + HNSW_METADATA_BYTES)
+            .unwrap();
+        assert_eq!(
+            MetadataPage::decode_page(&exact_min_current_page)
+                .unwrap()
+                .format_version,
+            INDEX_FORMAT_V3_TURBO_HOT_COLD
+        );
+        assert!(MetadataPage::decode_page(&vec![
+            0_u8;
+            PAGE_HEADER_BYTES + HNSW_LEGACY_METADATA_BYTES - 1
+        ])
+        .is_err());
+        assert!(
+            MetadataPage::decode_contents(&vec![0_u8; HNSW_LEGACY_METADATA_BYTES - 1]).is_err()
+        );
+
+        let legacy_metadata = MetadataPage::current_v1_scalar(current_metadata(512, 6));
+        let legacy = legacy_metadata.encode()[..LEGACY_METADATA_BYTES].to_vec();
+        let mut exact_min_legacy_page = vec![0_u8; PAGE_HEADER_BYTES + HNSW_LEGACY_METADATA_BYTES];
+        let exact_min_legacy_offset = exact_min_legacy_page.len() - LEGACY_METADATA_SPECIAL_BYTES;
+        exact_min_legacy_page
+            [exact_min_legacy_offset..exact_min_legacy_offset + LEGACY_METADATA_BYTES]
+            .copy_from_slice(&legacy);
+        assert_eq!(
+            MetadataPage::decode_page(&exact_min_legacy_page)
+                .unwrap()
+                .format_version,
+            INDEX_FORMAT_V1_SCALAR
+        );
+        assert_eq!(
+            MetadataPage::decode_contents(&legacy)
+                .unwrap()
+                .format_version,
+            INDEX_FORMAT_V1_SCALAR
+        );
+
+        let mut page = metadata.encode_page(DEFAULT_PAGE_SIZE).unwrap();
+        let current_offset = DEFAULT_PAGE_SIZE - METADATA_SPECIAL_BYTES;
+        let legacy_offset = DEFAULT_PAGE_SIZE - LEGACY_METADATA_SPECIAL_BYTES;
+        page[legacy_offset..legacy_offset + legacy.len()].copy_from_slice(&legacy);
+        page[current_offset + HNSW_METADATA_FORMAT_VERSION_OFFSET..][..2]
+            .copy_from_slice(&99_u16.to_le_bytes());
+
+        let decoded_page = MetadataPage::decode_page(&page).unwrap();
+        assert_eq!(decoded_page.format_version, INDEX_FORMAT_V1_SCALAR);
+        assert_eq!(decoded_page.dimensions, 512);
+        assert_eq!(decoded_page.bits, 6);
+
+        let mut contents = metadata.encode();
+        contents[..LEGACY_METADATA_BYTES].copy_from_slice(&legacy);
+        contents[HNSW_METADATA_FORMAT_VERSION_OFFSET..][..2].copy_from_slice(&99_u16.to_le_bytes());
+        let decoded_contents = MetadataPage::decode_contents(&contents).unwrap();
+        assert_eq!(decoded_contents.format_version, INDEX_FORMAT_V1_SCALAR);
+        assert_eq!(decoded_contents.dimensions, 512);
+        assert_eq!(decoded_contents.bits, 6);
+
+        let decoded_current_contents = MetadataPage::decode_contents(&metadata.encode()).unwrap();
+        assert_eq!(
+            decoded_current_contents.format_version,
+            INDEX_FORMAT_V3_TURBO_HOT_COLD
+        );
     }
 
     #[test]
@@ -1603,6 +1787,42 @@ mod tests {
     }
 
     #[test]
+    fn element_tuple_lengths_and_heap_tid_bounds_are_checked() {
+        assert_eq!(TqElementTuple::encoded_len(5), TQ_ELEMENT_CODE_OFFSET + 5);
+        assert_eq!(
+            TqElementTuple::encoded_len_with_binary(5, 2),
+            TQ_ELEMENT_CODE_OFFSET + 5 + 2 * size_of::<u64>()
+        );
+
+        let exact = TqElementTuple {
+            level: 2,
+            deleted: false,
+            heaptids: full_heaptids(),
+            gamma: 0.75,
+            neighbortid: tid(20, 4),
+            code: vec![0xAB; 5],
+            binary_words: vec![0x1111_2222_3333_4444, 0xAAAA_BBBB_CCCC_DDDD],
+        };
+        let encoded = exact.encode().unwrap();
+        assert_eq!(encoded.len(), TqElementTuple::encoded_len_with_binary(5, 2));
+        let decoded = TqElementTupleRef::decode(&encoded, 5).unwrap();
+        assert_eq!(decoded.heaptid_count(), HEAPTID_INLINE_CAPACITY);
+        assert_eq!(decoded.binary_word_count(), 2);
+
+        let mut too_many = exact.clone();
+        too_many.heaptids.push(tid(999, 1));
+        assert!(too_many.encode().is_err());
+
+        let mut corrupt_count = encoded.clone();
+        corrupt_count[TQ_ELEMENT_HEAPTID_COUNT_OFFSET] = (HEAPTID_INLINE_CAPACITY + 1) as u8;
+        assert!(TqElementTupleRef::decode(&corrupt_count, 5).is_err());
+
+        let mut misaligned_sidecar = encoded;
+        misaligned_sidecar.push(0xEE);
+        assert!(TqElementTupleRef::decode(&misaligned_sidecar, 5).is_err());
+    }
+
+    #[test]
     fn element_tuple_page_roundtrip() {
         let tuple = TqElementTuple {
             level: 3,
@@ -1663,6 +1883,37 @@ mod tests {
     }
 
     #[test]
+    fn grouped_hot_tuple_lengths_and_heap_tid_bounds_are_checked() {
+        assert_eq!(
+            TqGroupedHotTuple::encoded_len(2, 3),
+            TQ_GROUPED_HOT_BINARY_WORDS_OFFSET + 2 * size_of::<u64>() + 3
+        );
+
+        let exact = TqGroupedHotTuple {
+            level: 1,
+            deleted: true,
+            heaptids: full_heaptids(),
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0F0E_0D0C_0B0A_0908],
+            search_code: vec![0x9A, 0xBC, 0xDE],
+        };
+        let encoded = exact.encode().unwrap();
+        assert_eq!(encoded.len(), TqGroupedHotTuple::encoded_len(2, 3));
+        let decoded = TqGroupedHotTupleRef::decode(&encoded, 2, 3).unwrap();
+        assert_eq!(decoded.heaptid_count(), HEAPTID_INLINE_CAPACITY);
+        assert_eq!(decoded.binary_word_count(), 2);
+
+        let mut too_many = exact.clone();
+        too_many.heaptids.push(tid(999, 1));
+        assert!(too_many.encode().is_err());
+
+        let mut corrupt_count = encoded;
+        corrupt_count[TQ_GROUPED_HOT_HEAPTID_COUNT_OFFSET] = (HEAPTID_INLINE_CAPACITY + 1) as u8;
+        assert!(TqGroupedHotTupleRef::decode(&corrupt_count, 2, 3).is_err());
+    }
+
+    #[test]
     fn turbo_hot_tuple_roundtrip() {
         let tuple = TqTurboHotTuple {
             level: 2,
@@ -1699,6 +1950,36 @@ mod tests {
         assert_eq!(decoded.neighbortid, tuple.neighbortid);
         assert_eq!(decoded.reranktid, tuple.reranktid);
         assert_eq!(decoded.collect_binary_words(), tuple.binary_words);
+    }
+
+    #[test]
+    fn turbo_hot_tuple_lengths_and_heap_tid_bounds_are_checked() {
+        assert_eq!(
+            TqTurboHotTuple::encoded_len(2),
+            TQ_TURBO_HOT_BINARY_WORDS_OFFSET + 2 * size_of::<u64>()
+        );
+
+        let exact = TqTurboHotTuple {
+            level: 1,
+            deleted: true,
+            heaptids: full_heaptids(),
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0F0E_0D0C_0B0A_0908],
+        };
+        let encoded = exact.encode().unwrap();
+        assert_eq!(encoded.len(), TqTurboHotTuple::encoded_len(2));
+        let decoded = TqTurboHotTupleRef::decode(&encoded, 2).unwrap();
+        assert_eq!(decoded.heaptid_count(), HEAPTID_INLINE_CAPACITY);
+        assert_eq!(decoded.binary_word_count(), 2);
+
+        let mut too_many = exact.clone();
+        too_many.heaptids.push(tid(999, 1));
+        assert!(too_many.encode().is_err());
+
+        let mut corrupt_count = encoded;
+        corrupt_count[TQ_TURBO_HOT_HEAPTID_COUNT_OFFSET] = (HEAPTID_INLINE_CAPACITY + 1) as u8;
+        assert!(TqTurboHotTupleRef::decode(&corrupt_count, 2).is_err());
     }
 
     #[test]
@@ -1814,6 +2095,60 @@ mod tests {
     }
 
     #[test]
+    fn neighbor_tuple_lengths_counts_and_fit_boundaries_are_checked() {
+        assert_eq!(neighbor_slots(0, 16), 32);
+        assert_eq!(neighbor_slots(2, 16), 64);
+        assert_eq!(
+            neighbor_tuple_encoded_len(2, 16),
+            TQ_NEIGHBOR_TIDS_OFFSET + 64 * ITEM_POINTER_BYTES
+        );
+
+        let exact = TqNeighborTuple {
+            count: 2,
+            tids: vec![tid(1, 1), tid(2, 2)],
+        };
+        let encoded = exact.encode().unwrap();
+        assert_eq!(
+            encoded.len(),
+            TQ_NEIGHBOR_TIDS_OFFSET + 2 * ITEM_POINTER_BYTES
+        );
+        assert_eq!(TqNeighborTuple::decode(&encoded).unwrap(), exact);
+        assert_eq!(
+            TqNeighborTuple::decode(&[TQ_NEIGHBOR_TAG, 0, 0]).unwrap(),
+            TqNeighborTuple {
+                count: 0,
+                tids: Vec::new()
+            }
+        );
+
+        let too_many = TqNeighborTuple {
+            count: 1,
+            tids: vec![tid(1, 1), tid(2, 2)],
+        };
+        assert!(too_many.encode().is_err());
+        assert!(TqNeighborTuple::decode(&[TQ_NEIGHBOR_TAG, 2]).is_err());
+        assert!(TqNeighborTuple::decode(&[TQ_NEIGHBOR_TAG, 1, 0, 0xAA]).is_err());
+
+        let m = 16;
+        let cap = max_level_that_fits(m, DEFAULT_PAGE_SIZE);
+        assert!(neighbor_tuple_fits_on_page(cap, m, DEFAULT_PAGE_SIZE));
+        assert_eq!(default_max_level_cap(m), cap);
+        if cap < u8::MAX {
+            assert!(!neighbor_tuple_fits_on_page(
+                cap.saturating_add(1),
+                m,
+                DEFAULT_PAGE_SIZE
+            ));
+        }
+        let exact_level_two_page_size =
+            PAGE_HEADER_BYTES + aligned_tuple_bytes(neighbor_tuple_encoded_len(2, m));
+        assert_eq!(max_level_that_fits(m, exact_level_two_page_size), 2);
+
+        assert!(element_tuple_fits_on_page(8086, DEFAULT_PAGE_SIZE));
+        assert!(!element_tuple_fits_on_page(8087, DEFAULT_PAGE_SIZE));
+    }
+
+    #[test]
     fn level_cap_produces_fitting_neighbor_tuple() {
         let m = 16;
         let cap = default_max_level_cap(m);
@@ -1830,6 +2165,229 @@ mod tests {
     #[test]
     fn compressed_element_tuple_fits_on_default_page() {
         assert!(element_tuple_fits_on_page(772, DEFAULT_PAGE_SIZE));
+    }
+
+    #[test]
+    fn data_page_typed_updates_mutate_tuple_payloads_and_report_missing_tids() {
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
+
+        let element = TqElementTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            gamma: 0.25,
+            neighbortid: tid(2, 1),
+            code: vec![0x11; 8],
+            binary_words: vec![0xAAAA_BBBB_CCCC_DDDD],
+        };
+        let element_tid = page.insert_element(&element).unwrap();
+        let mut updated_element = element.clone();
+        updated_element.level = 1;
+        updated_element.gamma = -0.5;
+        updated_element.code = vec![0x22; 8];
+        page.update_element(element_tid, &updated_element).unwrap();
+        assert_eq!(page.read_element(element_tid, 8).unwrap(), updated_element);
+        assert!(page.update_element(invalid_tid(), &element).is_err());
+
+        let neighbor = TqNeighborTuple {
+            count: 2,
+            tids: vec![tid(3, 1), tid(4, 2)],
+        };
+        let neighbor_tid = page.insert_neighbor(&neighbor).unwrap();
+        let updated_neighbor = TqNeighborTuple {
+            count: 2,
+            tids: vec![tid(5, 1), tid(6, 2)],
+        };
+        page.update_neighbor(neighbor_tid, &updated_neighbor)
+            .unwrap();
+        assert_eq!(page.read_neighbor(neighbor_tid).unwrap(), updated_neighbor);
+        assert!(page.update_neighbor(invalid_tid(), &neighbor).is_err());
+
+        let grouped_hot = TqGroupedHotTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(7, 1)],
+            neighbortid: tid(8, 1),
+            reranktid: tid(9, 1),
+            binary_words: vec![0x1111_2222_3333_4444],
+            search_code: vec![0x33, 0x44],
+        };
+        let grouped_tid = page.insert_grouped_hot(&grouped_hot).unwrap();
+        let mut updated_grouped = grouped_hot.clone();
+        updated_grouped.deleted = true;
+        updated_grouped.binary_words = vec![0x5555_6666_7777_8888];
+        updated_grouped.search_code = vec![0x55, 0x66];
+        page.update_grouped_hot(grouped_tid, &updated_grouped)
+            .unwrap();
+        assert_eq!(
+            page.read_grouped_hot(grouped_tid, 1, 2).unwrap(),
+            updated_grouped
+        );
+        assert!(page
+            .update_grouped_hot(invalid_tid(), &grouped_hot)
+            .is_err());
+
+        let turbo_hot = TqTurboHotTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(10, 1)],
+            neighbortid: tid(11, 1),
+            reranktid: tid(12, 1),
+            binary_words: vec![0x9999_AAAA_BBBB_CCCC],
+        };
+        let turbo_tid = page.insert_turbo_hot(&turbo_hot).unwrap();
+        let mut updated_turbo = turbo_hot.clone();
+        updated_turbo.level = 2;
+        updated_turbo.binary_words = vec![0xDDDD_EEEE_FFFF_0001];
+        page.update_turbo_hot(turbo_tid, &updated_turbo).unwrap();
+        assert_eq!(page.read_turbo_hot(turbo_tid, 1).unwrap(), updated_turbo);
+        assert!(page.update_turbo_hot(invalid_tid(), &turbo_hot).is_err());
+
+        let rerank = TqRerankTuple {
+            gamma: 0.125,
+            code: vec![0x77; 6],
+        };
+        let rerank_tid = page.insert_rerank(&rerank).unwrap();
+        let updated_rerank = TqRerankTuple {
+            gamma: -0.25,
+            code: vec![0x88; 6],
+        };
+        page.update_rerank(rerank_tid, &updated_rerank).unwrap();
+        assert_eq!(page.read_rerank(rerank_tid, 6).unwrap(), updated_rerank);
+        assert!(page.update_rerank(invalid_tid(), &rerank).is_err());
+
+        let codebook = TqGroupedCodebookTuple {
+            group_index: 1,
+            nexttid: tid(13, 1),
+            centroids: vec![0.25, 0.5],
+        };
+        let codebook_tid = page.insert_grouped_codebook(&codebook).unwrap();
+        let updated_codebook = TqGroupedCodebookTuple {
+            group_index: 2,
+            nexttid: tid(14, 1),
+            centroids: vec![0.75, 1.0],
+        };
+        page.update_grouped_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        assert_eq!(
+            page.read_grouped_codebook(codebook_tid, 2).unwrap(),
+            updated_codebook
+        );
+        assert!(page
+            .update_grouped_codebook(invalid_tid(), &codebook)
+            .is_err());
+    }
+
+    #[test]
+    fn data_page_chain_typed_updates_mutate_tuple_payloads_and_report_missing_blocks() {
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+
+        let element = TqElementTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            gamma: 0.25,
+            neighbortid: tid(2, 1),
+            code: vec![0x11; 8],
+            binary_words: Vec::new(),
+        };
+        let element_tid = chain.insert_element(&element).unwrap();
+        let mut updated_element = element.clone();
+        updated_element.level = 1;
+        updated_element.code = vec![0x22; 8];
+        chain.update_element(element_tid, &updated_element).unwrap();
+        assert_eq!(chain.read_element(element_tid, 8).unwrap(), updated_element);
+        assert!(chain.update_element(invalid_tid(), &element).is_err());
+
+        let neighbor = TqNeighborTuple {
+            count: 2,
+            tids: vec![tid(3, 1), tid(4, 2)],
+        };
+        let neighbor_tid = chain.insert_neighbor(&neighbor).unwrap();
+        let updated_neighbor = TqNeighborTuple {
+            count: 2,
+            tids: vec![tid(5, 1), tid(6, 2)],
+        };
+        chain
+            .update_neighbor(neighbor_tid, &updated_neighbor)
+            .unwrap();
+        assert_eq!(chain.read_neighbor(neighbor_tid).unwrap(), updated_neighbor);
+        assert!(chain.update_neighbor(invalid_tid(), &neighbor).is_err());
+
+        let grouped_hot = TqGroupedHotTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(7, 1)],
+            neighbortid: tid(8, 1),
+            reranktid: tid(9, 1),
+            binary_words: vec![0x1111_2222_3333_4444],
+            search_code: vec![0x33, 0x44],
+        };
+        let grouped_tid = chain.insert_grouped_hot(&grouped_hot).unwrap();
+        let mut updated_grouped = grouped_hot.clone();
+        updated_grouped.deleted = true;
+        updated_grouped.search_code = vec![0x55, 0x66];
+        chain
+            .update_grouped_hot(grouped_tid, &updated_grouped)
+            .unwrap();
+        assert_eq!(
+            chain.read_grouped_hot(grouped_tid, 1, 2).unwrap(),
+            updated_grouped
+        );
+        assert!(chain
+            .update_grouped_hot(invalid_tid(), &grouped_hot)
+            .is_err());
+
+        let turbo_hot = TqTurboHotTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(10, 1)],
+            neighbortid: tid(11, 1),
+            reranktid: tid(12, 1),
+            binary_words: vec![0x9999_AAAA_BBBB_CCCC],
+        };
+        let turbo_tid = chain.insert_turbo_hot(&turbo_hot).unwrap();
+        let mut updated_turbo = turbo_hot.clone();
+        updated_turbo.level = 2;
+        updated_turbo.binary_words = vec![0xDDDD_EEEE_FFFF_0001];
+        chain.update_turbo_hot(turbo_tid, &updated_turbo).unwrap();
+        assert_eq!(chain.read_turbo_hot(turbo_tid, 1).unwrap(), updated_turbo);
+        assert!(chain.update_turbo_hot(invalid_tid(), &turbo_hot).is_err());
+
+        let rerank = TqRerankTuple {
+            gamma: 0.125,
+            code: vec![0x77; 6],
+        };
+        let rerank_tid = chain.insert_rerank(&rerank).unwrap();
+        let updated_rerank = TqRerankTuple {
+            gamma: -0.25,
+            code: vec![0x88; 6],
+        };
+        chain.update_rerank(rerank_tid, &updated_rerank).unwrap();
+        assert_eq!(chain.read_rerank(rerank_tid, 6).unwrap(), updated_rerank);
+        assert!(chain.update_rerank(invalid_tid(), &rerank).is_err());
+
+        let codebook = TqGroupedCodebookTuple {
+            group_index: 1,
+            nexttid: tid(13, 1),
+            centroids: vec![0.25, 0.5],
+        };
+        let codebook_tid = chain.insert_grouped_codebook(&codebook).unwrap();
+        let updated_codebook = TqGroupedCodebookTuple {
+            group_index: 2,
+            nexttid: tid(14, 1),
+            centroids: vec![0.75, 1.0],
+        };
+        chain
+            .update_grouped_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+        assert_eq!(
+            chain.read_grouped_codebook(codebook_tid, 2).unwrap(),
+            updated_codebook
+        );
+        assert!(chain
+            .update_grouped_codebook(invalid_tid(), &codebook)
+            .is_err());
     }
 
     #[test]
