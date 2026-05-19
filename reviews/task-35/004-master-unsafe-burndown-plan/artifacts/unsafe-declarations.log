@@ -1,0 +1,1029 @@
+src/storage/wal.rs:50:    pub unsafe fn start(relation: pg_sys::Relation) -> Self {
+src/storage/wal.rs:66:    pub unsafe fn register_buffer(&mut self, buffer: pg_sys::Buffer, flags: i32) -> pg_sys::Page {
+src/storage/wal.rs:80:    pub unsafe fn finish(mut self) -> pg_sys::XLogRecPtr {
+src/storage/spi_guard.rs:12:    pub(crate) unsafe fn from_owned(tuptable: *mut pg_sys::SPITupleTable) -> Option<Self> {
+src/storage/lock_guard.rs:11:    pub(crate) unsafe fn acquire_shared(lock: *mut pg_sys::LWLock) -> Self {
+src/storage/lock_guard.rs:17:    pub(crate) unsafe fn acquire_exclusive(lock: *mut pg_sys::LWLock) -> Self {
+src/storage/lock_guard.rs:23:    pub(crate) unsafe fn from_acquired(lock: *mut pg_sys::LWLock) -> Self {
+src/storage/lock_guard.rs:33:    pub(crate) unsafe fn from_acquired_with_release(
+src/storage/lock_guard.rs:54:unsafe fn lwlock_release(lock: *mut pg_sys::LWLock) {
+src/storage/buffer_guard.rs:27:    pub(crate) unsafe fn read_main(
+src/storage/buffer_guard.rs:48:    pub(crate) unsafe fn from_pinned(buffer: pg_sys::Buffer) -> Option<Self> {
+src/storage/buffer_guard.rs:123:    pub(crate) unsafe fn read_main(
+src/storage/buffer_guard.rs:151:    pub(crate) unsafe fn read_main_locked(
+src/storage/buffer_guard.rs:174:    pub(crate) unsafe fn lock_pinned(buffer: pg_sys::Buffer, lockmode: i32) -> Option<Self> {
+src/standalone_pg_backend_stubs.rs:4:unsafe extern "C" {
+src/standalone_pg_backend_stubs.rs:9:static STUBS_ANCHOR: unsafe extern "C" fn() = ecaz_test_pg_backend_stubs_anchor;
+src/standalone_pg_backend_stubs.rs:11:#[unsafe(no_mangle)]
+src/standalone_pg_backend_stubs.rs:12:pub unsafe extern "C-unwind" fn ecaz_test_pg_backend_panic(message: *const c_char) -> ! {
+src/am/mod.rs:324:pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+src/am/mod.rs:408:pub(crate) unsafe fn index_cost_snapshot(
+src/am/mod.rs:414:pub(crate) unsafe fn index_admin_snapshot(
+src/am/mod.rs:420:pub(crate) unsafe fn planner_integration_snapshot(
+src/am/mod.rs:426:pub(crate) unsafe fn ivf_index_drift_snapshot(
+src/am/mod.rs:432:pub(crate) unsafe fn ivf_index_admin_snapshot(
+src/am/mod.rs:438:pub(crate) unsafe fn ivf_index_cost_snapshot(
+src/am/mod.rs:444:pub(crate) unsafe fn ivf_index_page_ownership(
+src/am/mod.rs:450:pub(crate) unsafe fn diskann_graph_summary(
+src/am/mod.rs:456:pub(crate) unsafe fn diskann_index_cost_snapshot(
+src/pg18_pgstat_shim.rs:5:unsafe extern "C" {
+src/pg18_pgstat_shim.rs:15:static PG18_PGSTAT_SHIM_ANCHOR: unsafe extern "C" fn() = ecaz_pg18_pgstat_anchor;
+src/lib.rs:41:pub unsafe extern "C-unwind" fn _PG_init() {
+src/lib.rs:472:unsafe fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
+src/lib.rs:593:unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, String> {
+src/lib.rs:736:unsafe fn recv_raw_f32_message(msg: pg_sys::StringInfo, label: &str) -> Result<Vec<u8>, String> {
+src/lib.rs:840:pub unsafe extern "C-unwind" fn ecvector_typmod_in(
+src/lib.rs:872:    unsafe fn from_datum(datum: pg_sys::Datum) -> Self {
+src/lib.rs:1628:unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
+src/tests/mod.rs:35:        unsafe fn set_pending() -> Option<Self> {
+src/tests/mod.rs:36:            unsafe extern "C" {
+src/tests/mod.rs:70:        unsafe fn clear_pending_for_test() {
+src/tests/mod.rs:71:            unsafe extern "C" {
+src/tests/mod.rs:110:    type PgTestEnableTimeoutAfter = unsafe extern "C" fn(std::ffi::c_int, std::ffi::c_int);
+src/tests/mod.rs:111:    type PgTestDisableTimeout = unsafe extern "C" fn(std::ffi::c_int, bool);
+src/tests/mod.rs:112:    type PgTestGetTimeoutIndicator = unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;
+src/tests/mod.rs:126:        unsafe fn trigger_after_ms(delay_ms: std::ffi::c_int) -> Option<Self> {
+src/tests/mod.rs:127:            unsafe extern "C" {
+src/tests/mod.rs:2472:    unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
+src/am/ec_diskann/routine.rs:34:type BulkDeleteCallback = unsafe extern "C-unwind" fn(pg_sys::ItemPointer, *mut c_void) -> bool;
+src/am/ec_diskann/routine.rs:142:unsafe fn maybe_apply_vacuum_rewrite_test_injection(
+src/am/ec_diskann/routine.rs:158:unsafe fn maybe_apply_vacuum_rewrite_test_injection(
+src/am/ec_diskann/routine.rs:220:unsafe extern "C-unwind" fn ec_diskann_aminsert(
+src/am/ec_diskann/routine.rs:490:unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
+src/am/ec_diskann/routine.rs:514:unsafe extern "C-unwind" fn ec_diskann_amvacuumcleanup(
+src/am/ec_diskann/routine.rs:526:unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
+src/am/ec_diskann/routine.rs:555:unsafe extern "C-unwind" fn ec_diskann_amrescan(
+src/am/ec_diskann/routine.rs:718:unsafe extern "C-unwind" fn ec_diskann_amgettuple(
+src/am/ec_diskann/routine.rs:752:unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {
+src/am/ec_diskann/routine.rs:769:unsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
+src/am/ec_diskann/routine.rs:789:unsafe fn install_backlinks_with_replan(
+src/am/ec_diskann/routine.rs:835:unsafe fn plan_backlink_mutations(
+src/am/ec_diskann/routine.rs:932:unsafe fn ec_diskann_noop_vacuum_stats(
+src/am/ec_diskann/routine.rs:955:unsafe fn run_diskann_bulkdelete(
+src/am/ec_diskann/routine.rs:1002:unsafe fn run_diskann_bulkdelete_pass(
+src/am/ec_diskann/routine.rs:1141:unsafe fn resolve_vacuum_heap_relation(
+src/am/ec_diskann/routine.rs:1158:unsafe fn fill_vacuum_neighbor_slots(
+src/am/ec_diskann/routine.rs:1342:unsafe fn plan_vacuum_fill_candidates_for_target(
+src/am/ec_diskann/routine.rs:1640:unsafe fn apply_tuple_rewrites(
+src/am/ec_diskann/routine.rs:1722:unsafe fn write_raw_tuple_bytes(
+src/am/ec_diskann/routine.rs:1769:unsafe fn callback_marks_heap_tid_dead(
+src/am/ec_diskann/routine.rs:1785:unsafe fn vacuum_page_tuple_location(
+src/am/ec_diskann/routine.rs:1826:unsafe fn with_vacuum_page_tuple_bytes<R, F>(
+src/am/ec_diskann/routine.rs:1840:unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
+src/am/ec_diskann/routine.rs:1887:unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
+src/am/ec_diskann/routine.rs:1917:unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
+src/am/ec_diskann/routine.rs:1929:unsafe fn exact_heap_rerank_distance(
+src/am/ec_diskann/routine.rs:1959:unsafe fn with_heap_source_vector<T>(
+src/am/ec_diskann/routine.rs:1975:unsafe fn fetch_heap_source_vector(
+src/am/ec_diskann/routine.rs:1997:unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+src/am/ec_diskann/routine.rs:2003:pub unsafe extern "C-unwind" fn ec_diskann_handler(
+src/am/ec_diskann/routine.rs:2525:    unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
+src/am/ec_diskann/routine.rs:2541:    unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+src/am/ec_diskann/routine.rs:2556:    unsafe fn debug_vacuum_remove_heap_tids(
+src/am/ec_diskann/cost.rs:46:pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
+src/am/ec_diskann/cost.rs:88:unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+src/am/ec_diskann/cost.rs:128:pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+src/am/ec_diskann/ambuild.rs:104:    unsafe fn new(index_relation: pg_sys::Relation) -> Self {
+src/am/ec_diskann/ambuild.rs:157:pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
+src/am/ec_diskann/ambuild.rs:224:pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuildempty(index_relation: pg_sys::Relation) {
+src/am/ec_diskann/ambuild.rs:233:unsafe extern "C-unwind" fn ec_diskann_build_callback(
+src/am/ec_diskann/ambuild.rs:276:unsafe fn flush_build_state(
+src/am/ec_diskann/ambuild.rs:438:unsafe fn relation_name(relation: pg_sys::Relation) -> String {
+src/am/ec_diskann/ambuild.rs:584:unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
+src/am/ec_diskann/ambuild.rs:628:unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
+src/am/ec_diskann/ambuild.rs:676:unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
+src/am/ec_diskann/ambuild.rs:703:unsafe fn overwrite_metadata_page(index_relation: pg_sys::Relation, metadata: &VamanaMetadataPage) {
+src/am/ec_diskann/ambuild.rs:733:pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
+src/am/ec_diskann/ambuild.rs:775:pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
+src/am/ec_diskann/ambuild.rs:786:unsafe fn validate_single_ecvector_attribute(
+src/am/ec_diskann/ambuild.rs:830:pub(super) unsafe fn with_ecvector_datum_slice<T>(
+src/am/ec_diskann/ambuild.rs:847:pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
+src/am/ec_diskann/diagnostics.rs:57:pub(crate) unsafe fn graph_summary(
+src/am/ec_diskann/scan_state.rs:141:pub(super) unsafe fn materialize_chain_from_index(
+src/am/ec_diskann/scan_state.rs:208:unsafe fn copy_data_page_tuple_bytes(
+src/am/ec_diskann/scan_state.rs:243:pub(super) unsafe fn resolve_scan_heap_relation(
+src/am/ec_diskann/scan_state.rs:261:pub(super) unsafe fn resolve_scan_snapshot(
+src/am/ec_diskann/scan_state.rs:280:pub(super) unsafe fn fetch_heap_row_version(
+src/am/ec_diskann/scan_state.rs:306:pub(super) unsafe fn required_slot_datum(
+src/am/ec_diskann/scan_state.rs:321:pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPointer, String> {
+src/quant/hadamard.rs:106:unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
+src/quant/hadamard.rs:138:unsafe fn fwht_in_place_avx2_two_level(
+src/quant/hadamard.rs:179:unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
+src/quant/hadamard.rs:247:unsafe fn fwht_in_place_avx2_stages(values: &mut [f32], mut width: usize) {
+src/quant/hadamard.rs:256:unsafe fn fwht_in_place_avx2_stage_width(values: &mut [f32], width: usize) {
+src/quant/hadamard.rs:310:unsafe fn fwht8_avx2_block(block: std::arch::x86_64::__m256) -> std::arch::x86_64::__m256 {
+src/quant/hadamard.rs:339:unsafe fn fwht16_avx2_block(
+src/quant/hadamard.rs:352:unsafe fn fwht32_avx2_block(
+src/quant/hadamard.rs:377:unsafe fn fwht64_avx2_block(
+src/quant/hadamard.rs:414:unsafe fn fwht_in_place_neon(values: &mut [f32]) {
+src/am/ec_diskann/options.rs:162:pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
+src/am/ec_diskann/options.rs:253:unsafe fn read_string_reloption(
+src/am/ec_diskann/options.rs:278:pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {
+src/quant/prod.rs:818:    unsafe fn score_ip_mse_codes_avx2(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
+src/quant/prod.rs:1006:    unsafe fn score_ip_from_split_parts_avx2(
+src/quant/prod.rs:1184:    unsafe fn score_ip_from_split_parts_neon(
+src/quant/prod.rs:1312:    unsafe fn score_ip_mse_codes_neon(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
+src/quant/prod.rs:1649:unsafe fn decode_eight_3bit_lanes_avx2(
+src/am/ec_ivf/routine.rs:72:unsafe extern "C-unwind" fn ec_ivf_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+src/am/ec_ivf/routine.rs:78:pub unsafe extern "C-unwind" fn ec_ivf_handler(_fcinfo: pg_sys::FunctionCallInfo) -> pg_sys::Datum {
+src/am/ec_diskann/insert.rs:657:unsafe fn apply_duplicate_bind_patches(
+src/am/ec_diskann/insert.rs:833:pub(super) unsafe fn bind_duplicate_heap_tid(
+src/am/ec_diskann/insert.rs:1142:pub(super) unsafe fn read_metadata_page(
+src/am/ec_diskann/insert.rs:1160:pub(super) unsafe fn with_locked_metadata_page<T>(
+src/am/ec_diskann/insert.rs:1193:pub(super) unsafe fn bootstrap_empty_insert_output(
+src/am/ec_diskann/insert.rs:1269:pub(super) unsafe fn append_live_node(
+src/am/ec_diskann/insert.rs:1332:unsafe fn append_raw_tuple_payload(
+src/am/ec_diskann/insert.rs:1396:pub(super) unsafe fn add_backlinks_if_free(
+src/am/ec_diskann/insert.rs:1500:pub(super) unsafe fn apply_backlink_mutations(
+src/am/ec_diskann/insert.rs:1612:pub(super) unsafe fn increment_inserted_since_rebuild(
+src/am/ec_diskann/insert.rs:1638:unsafe fn page_tuple_location(
+src/am/ec_diskann/insert.rs:1685:unsafe fn with_page_tuple_bytes_mut<R, F>(
+src/am/ec_ivf/admin.rs:82:pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
+src/am/ec_ivf/admin.rs:136:pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+src/am/ec_ivf/admin.rs:176:pub(crate) unsafe fn index_page_ownership(
+src/am/ec_ivf/admin.rs:221:unsafe fn directory_drift_summary(
+src/am/ec_ivf/quantizer.rs:391:pub(super) unsafe fn load_pq_fastscan_model(
+src/am/ec_ivf/build.rs:95:unsafe extern "C-unwind" fn ec_ivf_build_callback(
+src/am/ec_ivf/build.rs:120:pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
+src/am/ec_ivf/build.rs:532:pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
+src/am/ec_ivf/build.rs:544:unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
+src/am/ec_ivf/build.rs:593:pub(super) unsafe fn build_index_tuple(
+src/am/ec_ivf/build.rs:696:unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
+src/am/ec_ivf/build.rs:702:pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
+src/am/ec_ivf/build.rs:713:pub(super) unsafe fn resolve_indexed_vector_kind(
+src/am/ec_ivf/build.rs:748:unsafe fn resolve_indexed_vector_kind_from_type(
+src/am/ec_ivf/build.rs:768:pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuildempty(index_relation: pg_sys::Relation) {
+src/am/ec_ivf/scan.rs:304:pub(super) unsafe extern "C-unwind" fn ec_ivf_ambeginscan(
+src/am/ec_ivf/scan.rs:324:pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
+src/am/ec_ivf/scan.rs:449:pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
+src/am/ec_ivf/scan.rs:489:pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanDesc) {
+src/am/ec_ivf/scan.rs:567:unsafe fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
+src/am/ec_ivf/scan.rs:581:unsafe fn free_scan_query(opaque: &mut EcIvfScanOpaque) {
+src/am/ec_ivf/scan.rs:646:unsafe fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCentroidScore]) {
+src/am/ec_ivf/scan.rs:664:unsafe fn free_centroid_scores(opaque: &mut EcIvfScanOpaque) {
+src/am/ec_ivf/scan.rs:672:unsafe fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u32]) {
+src/am/ec_ivf/scan.rs:690:unsafe fn free_selected_lists(opaque: &mut EcIvfScanOpaque) {
+src/am/ec_ivf/scan.rs:698:unsafe fn store_posting_candidates(
+src/am/ec_ivf/scan.rs:720:unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
+src/am/ec_ivf/scan.rs:729:unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
+src/am/ec_ivf/scan.rs:767:unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
+src/am/ec_ivf/scan.rs:774:unsafe fn configure_heap_rerank_state(
+src/am/ec_ivf/scan.rs:812:unsafe fn load_centroid_scores(
+src/am/ec_ivf/scan.rs:928:unsafe fn materialize_probe_candidates(
+src/am/ec_ivf/scan.rs:1088:unsafe fn rerank_probe_candidates(
+src/am/ec_ivf/scan.rs:1122:unsafe fn rerank_probe_candidates_heap_f32(
+src/am/ec_ivf/scan.rs:1181:unsafe fn prefetch_heap_rerank_blocks(
+src/am/ec_ivf/scan.rs:1218:unsafe fn prefetch_heap_rerank_blocks(
+src/am/ec_ivf/scan.rs:1233:unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
+src/am/ec_ivf/scan.rs:1247:unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
+src/am/ec_ivf/scan.rs:1328:unsafe fn build_selected_probe_plan(
+src/am/ec_ivf/scan.rs:1396:pub(crate) unsafe fn explain_counters_from_index_scan_state(
+src/am/ec_ivf/scan.rs:1416:unsafe fn load_directory_entries(
+src/am/ec_ivf/scan.rs:1463:unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+src/am/ec_ivf/scan.rs:1490:unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
+src/am/ec_ivf/scan.rs:1495:pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys::Oid) -> bool {
+src/am/ec_ivf/scan.rs:1532:pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
+src/am/ec_ivf/scan.rs:1578:pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
+src/am/ec_ivf/scan.rs:1614:pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
+src/am/ec_ivf/scan.rs:1652:pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u32, u64) {
+src/am/ec_ivf/scan.rs:1668:pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
+src/am/ec_ivf/scan.rs:1685:pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
+src/am/ec_ivf/scan.rs:1695:pub(crate) unsafe fn debug_ec_ivf_build_metadata(
+src/am/ec_ivf/scan.rs:1714:pub(crate) unsafe fn debug_ec_ivf_directory_summary(
+src/am/ec_ivf/scan.rs:1767:pub(crate) unsafe fn debug_ec_ivf_directory_entry(
+src/am/ec_ivf/cost.rs:60:pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
+src/am/ec_ivf/cost.rs:123:pub(crate) unsafe extern "C-unwind" fn ec_ivf_amgettreeheight(_rel: pg_sys::Relation) -> i32 {
+src/am/ec_ivf/cost.rs:128:pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatestrategy(
+src/am/ec_ivf/cost.rs:156:pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
+src/am/ec_ivf/cost.rs:181:pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+src/am/ec_ivf/cost.rs:236:unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+src/am/ec_ivf/vacuum.rs:9:    unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
+src/am/ec_ivf/vacuum.rs:30:pub(super) unsafe extern "C-unwind" fn ec_ivf_ambulkdelete(
+src/am/ec_ivf/vacuum.rs:50:pub(super) unsafe extern "C-unwind" fn ec_ivf_amvacuumcleanup(
+src/am/ec_ivf/vacuum.rs:65:unsafe fn noop_vacuum_stats(
+src/am/ec_ivf/vacuum.rs:73:unsafe fn run_bulkdelete(
+src/am/ec_ivf/vacuum.rs:185:unsafe fn bulkdelete_list_postings(
+src/am/ec_ivf/vacuum.rs:256:unsafe fn finish_vacuum_stats(
+src/am/ec_ivf/vacuum.rs:280:unsafe fn heap_tid_is_dead(
+src/am/ec_ivf/vacuum.rs:297:unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
+src/am/ec_ivf/vacuum.rs:312:pub(crate) unsafe fn debug_ec_ivf_vacuum_stats(
+src/am/ec_ivf/vacuum.rs:332:pub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids(
+src/am/ec_ivf/options.rs:261:pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
+src/am/ec_ivf/options.rs:372:unsafe fn read_string_reloption(
+src/am/ec_ivf/options.rs:396:pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
+src/am/ec_ivf/insert.rs:20:pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
+src/am/ec_ivf/insert.rs:67:unsafe fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
+src/am/ec_ivf/insert.rs:76:unsafe fn insert_with_empty_bootstrap_lock(
+src/am/ec_ivf/insert.rs:90:unsafe fn reencode_tuple_for_storage(
+src/am/ec_ivf/insert.rs:112:unsafe fn insert_into_trained_index(
+src/am/ec_ivf/insert.rs:163:unsafe fn ensure_heap_tid_absent(
+src/am/ec_ivf/insert.rs:215:unsafe fn bootstrap_empty_index(
+src/am/ec_ivf/insert.rs:296:unsafe fn load_centroid_model(
+src/am/ec_ivf/insert.rs:330:unsafe fn load_directory_entry(
+src/am/ec_ivf/insert.rs:437:pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
+src/am/ec_spire/insert.rs:25:pub(super) unsafe extern "C-unwind" fn ec_spire_aminsert(
+src/am/ec_spire/insert.rs:52:unsafe fn publish_insert_delta_epoch(
+src/am/ec_spire/insert.rs:214:unsafe fn publish_empty_insert_bootstrap_epoch(
+src/am/common/cost.rs:96:pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
+src/am/common/cost.rs:163:pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amgettreeheight(rel: pg_sys::Relation) -> i32 {
+src/am/common/cost.rs:173:pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amtranslatestrategy(
+src/am/common/cost.rs:193:pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amtranslatecmptype(
+src/am/common/cost.rs:271:pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
+src/am/common/cost.rs:301:unsafe fn planner_tree_height_from_index_info(
+src/am/common/cost.rs:326:unsafe fn compute_amcostestimate(
+src/am/ec_ivf/page.rs:828:pub(super) unsafe fn read_ivf_centroid_and_next(
+src/am/ec_ivf/page.rs:841:pub(super) unsafe fn read_ivf_list_directory_and_next(
+src/am/ec_ivf/page.rs:862:pub(super) unsafe fn read_ivf_pq_codebook(
+src/am/ec_ivf/page.rs:875:pub(super) unsafe fn read_ivf_postings_for_list_blocks(
+src/am/ec_ivf/page.rs:899:pub(super) unsafe fn visit_ivf_postings_for_list_blocks<F>(
+src/am/ec_ivf/page.rs:955:pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
+src/am/ec_ivf/page.rs:979:pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
+src/am/ec_ivf/page.rs:1021:pub(super) unsafe fn visit_ivf_postings_for_block_sequence<F>(
+src/am/ec_ivf/page.rs:1063:pub(super) unsafe fn visit_ivf_posting_refs_for_block_sequence<F>(
+src/am/ec_ivf/page.rs:1106:unsafe fn visit_ivf_posting_blocks_with_read_stream<F>(
+src/am/ec_ivf/page.rs:1160:unsafe fn visit_ivf_posting_block_sequence_with_read_stream<F>(
+src/am/ec_ivf/page.rs:1212:unsafe fn visit_ivf_posting_ref_block_sequence_with_read_stream<F>(
+src/am/ec_ivf/page.rs:1264:unsafe fn visit_ivf_postings_for_list_block<F>(
+src/am/ec_ivf/page.rs:1291:unsafe fn visit_all_ivf_postings_for_block<F>(
+src/am/ec_ivf/page.rs:1316:unsafe fn visit_all_ivf_posting_refs_for_block<F>(
+src/am/ec_ivf/page.rs:1341:unsafe fn visit_ivf_postings_from_buffer<F>(
+src/am/ec_ivf/page.rs:1366:unsafe fn visit_all_ivf_postings_from_buffer<F>(
+src/am/ec_ivf/page.rs:1406:unsafe fn visit_all_ivf_posting_refs_from_buffer<F>(
+src/am/ec_ivf/page.rs:1446:pub(super) unsafe fn append_ivf_posting_to_list_range(
+src/am/ec_ivf/page.rs:1557:unsafe fn try_append_ivf_posting_to_block(
+src/am/ec_ivf/page.rs:1607:unsafe fn append_ivf_posting_to_new_block(
+src/am/ec_ivf/page.rs:1650:pub(super) unsafe fn rewrite_ivf_list_directory(
+src/am/ec_ivf/page.rs:1715:pub(super) unsafe fn update_ivf_list_directory<F>(
+src/am/ec_ivf/page.rs:1792:pub(super) unsafe fn rewrite_ivf_posting(
+src/am/ec_ivf/page.rs:1877:pub(super) unsafe fn debug_ivf_posting_block_summaries(
+src/am/ec_ivf/page.rs:1899:unsafe fn rewrite_ivf_postings_for_list_block<F>(
+src/am/ec_ivf/page.rs:1934:unsafe fn debug_ivf_posting_block_summary(
+src/am/ec_ivf/page.rs:2020:unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
+src/am/ec_ivf/page.rs:2175:unsafe fn read_page_tuple<T, DecodeFn>(
+src/am/ec_ivf/page.rs:2215:unsafe fn find_next_tuple_with_tag(
+src/am/ec_ivf/page.rs:2299:unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+src/am/ec_ivf/page.rs:2307:unsafe fn with_page_line_tuple_bytes<R, F>(
+src/am/ec_ivf/page.rs:2340:unsafe fn with_required_page_tuple_bytes<R, F>(
+src/am/ec_ivf/page.rs:2391:pub(super) unsafe fn initialize_metadata_page(
+src/am/ec_ivf/page.rs:2437:pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
+src/am/ec_ivf/page.rs:2454:pub(super) unsafe fn update_metadata_page<F>(
+src/am/ec_hnsw/routine.rs:78:unsafe extern "C-unwind" fn ec_hnsw_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+src/am/ec_hnsw/routine.rs:84:pub unsafe extern "C-unwind" fn ec_hnsw_handler(
+src/am/ec_spire/custom_scan/plan_private.rs:1:unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
+src/am/ec_spire/custom_scan/plan_private.rs:18:unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
+src/am/ec_spire/custom_scan/plan_private.rs:35:unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
+src/am/ec_spire/custom_scan/plan_private.rs:39:unsafe fn custom_scan_mode_from_path(
+src/am/ec_spire/custom_scan/plan_private.rs:50:unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) -> pg_sys::Oid {
+src/am/ec_spire/custom_scan/plan_private.rs:59:unsafe fn custom_scan_mode_from_plan(
+src/am/ec_spire/custom_scan/plan_private.rs:100:unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
+src/am/ec_spire/custom_scan/plan_private.rs:113:unsafe fn custom_scan_dml_plan_private(
+src/am/ec_spire/custom_scan/plan_private.rs:132:pub(crate) unsafe fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> String {
+src/am/ec_spire/custom_scan/plan_private.rs:161:unsafe fn custom_scan_plan_private_u32(
+src/am/ec_spire/custom_scan/plan_private.rs:201:unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_sys::List {
+src/am/ec_spire/custom_scan/plan_private.rs:211:unsafe fn custom_scan_lappend_counted_column_list(
+src/am/ec_spire/custom_scan/plan_private.rs:224:unsafe fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
+src/am/ec_spire/custom_scan/plan_private.rs:242:unsafe fn custom_scan_dml_column_list_from_plan(
+src/am/ec_spire/custom_scan/plan_private.rs:255:unsafe fn custom_scan_dml_column_list_from_plan_private(
+src/am/ec_spire/custom_scan/plan_private.rs:274:unsafe fn custom_scan_dml_counted_column_list_from_plan_private(
+src/am/ec_spire/custom_scan/plan_private.rs:324:unsafe fn custom_scan_dml_projected_column_count_offset(custom_private: *mut pg_sys::List) -> i32 {
+src/am/ec_spire/custom_scan/plan_private.rs:339:unsafe fn custom_scan_dml_pk_column_offset(custom_private: *mut pg_sys::List) -> i32 {
+src/am/ec_spire/custom_scan/plan_private.rs:355:unsafe fn custom_scan_dml_pk_column_from_plan(custom_scan: *mut pg_sys::CustomScan) -> String {
+src/am/ec_spire/custom_scan/plan_private.rs:364:unsafe fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sys::List) -> String {
+src/am/common/detoast.rs:17:    pub(crate) unsafe fn packed_from_datum(datum: pg_sys::Datum) -> Option<Self> {
+src/am/common/detoast.rs:23:    pub(crate) unsafe fn plain_from_datum(datum: pg_sys::Datum) -> Option<Self> {
+src/am/ec_spire/routine.rs:75:unsafe extern "C-unwind" fn ec_spire_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+src/am/ec_spire/routine.rs:81:pub unsafe extern "C-unwind" fn ec_spire_handler(
+src/am/ec_hnsw/mod.rs:50:pub(crate) unsafe fn index_cost_snapshot(
+src/am/ec_hnsw/mod.rs:56:pub(crate) unsafe fn index_admin_snapshot(
+src/am/ec_hnsw/mod.rs:62:pub(crate) unsafe fn planner_integration_snapshot(
+src/am/ec_hnsw/mod.rs:68:pub(crate) unsafe fn explain_counters_from_index_scan_state(
+src/am/ec_spire/custom_scan/begin_exec.rs:2:unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
+src/am/ec_spire/custom_scan/begin_exec.rs:47:unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
+src/am/ec_spire/custom_scan/begin_exec.rs:136:unsafe fn custom_scan_tuple_payload_state_from_plan(
+src/am/ec_spire/custom_scan/begin_exec.rs:151:unsafe fn custom_scan_init_tuple_payload_state(
+src/am/ec_spire/custom_scan/begin_exec.rs:165:unsafe extern "C-unwind" fn ec_spire_exec_custom_scan(
+src/am/ec_spire/custom_scan/begin_exec.rs:178:unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomScanState) {
+src/am/ec_spire/custom_scan/begin_exec.rs:339:unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
+src/am/ec_spire/custom_scan/begin_exec.rs:383:unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
+src/am/ec_spire/custom_scan/begin_exec.rs:433:unsafe fn custom_scan_dml_pk_select_access(
+src/am/ec_spire/custom_scan/begin_exec.rs:454:unsafe fn custom_scan_dml_update_access(
+src/am/ec_spire/custom_scan/begin_exec.rs:471:unsafe fn custom_scan_dml_delete_access(
+src/am/ec_spire/custom_scan/begin_exec.rs:489:unsafe extern "C-unwind" fn ec_spire_custom_scan_recheck(
+src/am/ec_spire/options/mod.rs:633:pub(super) unsafe fn resolve_local_store_tablespace_plan(
+src/am/ec_spire/options/mod.rs:649:unsafe fn resolve_tablespace_name(name: &str) -> Result<u32, String> {
+src/am/ec_spire/options/mod.rs:1363:pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
+src/am/ec_spire/options/mod.rs:1573:unsafe fn read_string_reloption(
+src/am/ec_spire/options/mod.rs:1597:pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
+src/am/common/explain.rs:341:unsafe fn explain_option_enabled(es: *mut pg_sys::ExplainState) -> bool {
+src/am/common/explain.rs:351:unsafe fn explain_node_kind(planstate: *mut pg_sys::PlanState) -> ExplainNodeKind {
+src/am/common/explain.rs:359:unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -> Option<String> {
+src/am/common/explain.rs:379:unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[ExplainProperty]) {
+src/am/common/explain.rs:410:unsafe extern "C-unwind" fn ecaz_explain_option_handler(
+src/am/common/explain.rs:429:unsafe extern "C-unwind" fn ecaz_explain_per_node_hook(
+src/am/common/explain.rs:489:pub(crate) unsafe fn register_pg18_explain_hooks() {
+src/am/common/parallel.rs:76:    pub(crate) unsafe fn worker_slot(
+src/am/common/parallel.rs:146:unsafe fn coordinator_ptr(state: *mut EcParallelScanState) -> *mut EcParallelCoordinatorState {
+src/am/common/parallel.rs:150:unsafe fn worker_slots_ptr(state: *mut EcParallelScanState) -> *mut EcParallelWorkerSlot {
+src/am/common/parallel.rs:159:unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
+src/am/common/parallel.rs:222:unsafe fn initialize_parallel_scan_state(state: *mut EcParallelScanState, worker_slot_count: u32) {
+src/am/common/parallel.rs:240:unsafe fn validate_parallel_scan_state(
+src/am/common/parallel.rs:278:unsafe fn parallel_scan_state_ptr(
+src/am/common/parallel.rs:294:unsafe fn parallel_scan_state_ptr(
+src/am/common/parallel.rs:309:pub(crate) unsafe fn parallel_scan_attachment(
+src/am/common/parallel.rs:318:pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
+src/am/common/parallel.rs:331:pub(crate) unsafe fn initialize_parallel_scan_target(
+src/am/common/parallel.rs:342:pub(crate) unsafe fn claim_parallel_scan_worker_slot(
+src/am/common/parallel.rs:359:pub(crate) unsafe fn release_parallel_scan_worker_slot(
+src/am/common/parallel.rs:377:pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
+src/am/common/parallel.rs:393:pub(crate) unsafe fn read_parallel_scan_worker_slot_snapshot(
+src/am/common/parallel.rs:404:pub(crate) unsafe fn reset_parallel_scan_state(
+src/am/common/parallel.rs:425:pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
+src/am/common/parallel.rs:433:pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
+src/am/common/parallel.rs:441:pub(crate) unsafe extern "C-unwind" fn ec_aminitparallelscan(target: *mut c_void) {
+src/am/common/parallel.rs:450:pub(crate) unsafe extern "C-unwind" fn ec_amparallelrescan(scan: pg_sys::IndexScanDesc) {
+src/am/common/parallel.rs:473:    unsafe impl Send for SharedParallelScanState {}
+src/am/common/parallel.rs:474:    unsafe impl Sync for SharedParallelScanState {}
+src/am/common/parallel.rs:477:        unsafe fn attachment(self) -> ParallelScanAttachment {
+src/am/common/parallel.rs:505:    unsafe fn test_parallel_scan_desc(
+src/am/common/parallel.rs:523:    unsafe fn test_parallel_scan_desc_and_target(
+src/am/common/parallel.rs:540:    unsafe fn test_parallel_scan_target(storage: &mut TestParallelScanStorage) -> *mut c_void {
+src/am/ec_spire/custom_scan/dml.rs:124:unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
+src/am/ec_spire/custom_scan/dml.rs:135:unsafe fn custom_scan_query_from_plan(
+src/am/ec_spire/custom_scan/dml.rs:184:unsafe fn custom_scan_query_values_from_datum(datum: pg_sys::Datum) -> Option<Vec<f32>> {
+src/am/ec_spire/custom_scan/dml.rs:193:unsafe fn custom_scan_tuple_payload_columns(
+src/am/ec_spire/custom_scan/dml.rs:259:unsafe fn custom_scan_validate_tuple_payload_attr(attr: pg_sys::Form_pg_attribute, name: &str) {
+src/am/ec_spire/custom_scan/dml.rs:272:unsafe fn custom_scan_payload_attr_io(
+src/am/ec_spire/custom_scan/dml.rs:315:unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> String {
+src/am/ec_spire/custom_scan/dml.rs:329:unsafe fn custom_scan_dml_pk_value_from_plan(
+src/am/ec_spire/custom_scan/dml.rs:343:unsafe fn custom_scan_dml_update_value_exprs_from_plan(
+src/am/ec_spire/custom_scan/dml.rs:372:unsafe fn custom_scan_bigint_expr_value(
+src/am/ec_spire/custom_scan/dml.rs:411:unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::Oid) -> i64 {
+src/am/ec_spire/custom_scan/dml.rs:425:unsafe fn custom_scan_execute_dml_delete(state: *mut SpireCustomScanExecState) -> u64 {
+src/am/ec_spire/custom_scan/dml.rs:475:unsafe fn custom_scan_execute_dml_update(
+src/am/ec_spire/custom_scan/dml.rs:545:unsafe fn custom_scan_dml_update_row_payload_json(
+src/am/ec_spire/custom_scan/dml.rs:563:unsafe fn custom_scan_dml_update_expr_json_value(
+src/am/ec_spire/custom_scan/dml.rs:609:unsafe fn custom_scan_dml_update_datum_json_value(
+src/am/ec_spire/custom_scan/dml.rs:636:unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanExecState) {
+src/am/ec_spire/custom_scan/dml.rs:718:unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
+src/am/ec_hnsw/options.rs:156:pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
+src/am/ec_hnsw/options.rs:234:unsafe fn read_string_reloption(
+src/am/ec_hnsw/options.rs:258:pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
+src/am/common/stream.rs:181:pub(crate) unsafe extern "C-unwind" fn graph_prefetch_cb(
+src/am/common/stream.rs:208:pub(crate) unsafe extern "C-unwind" fn linear_prefetch_cb(
+src/am/common/stream.rs:235:pub(crate) unsafe extern "C-unwind" fn block_sequence_prefetch_cb(
+src/am/ec_spire/custom_scan/cost_helpers.rs:7:unsafe fn estimate_custom_scan_cost(
+src/am/ec_spire/custom_scan/cost_helpers.rs:71:unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
+src/am/ec_spire/custom_scan/cost_helpers.rs:79:unsafe fn custom_scan_orderby_query_expr(
+src/am/ec_spire/custom_scan/cost_helpers.rs:110:unsafe fn custom_scan_query_expr_from_sort_expr(
+src/am/ec_spire/custom_scan/cost_helpers.rs:141:unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
+src/am/ec_spire/custom_scan/planner.rs:1:pub(crate) unsafe fn custom_scan_index_eligibility_row(
+src/am/ec_spire/custom_scan/planner.rs:9:unsafe fn custom_scan_index_eligibility_result(
+src/am/ec_spire/custom_scan/planner.rs:86:unsafe fn load_custom_scan_placement_directory(
+src/am/ec_spire/custom_scan/planner.rs:115:unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
+src/am/ec_spire/custom_scan/planner.rs:137:unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
+src/am/ec_spire/custom_scan/planner.rs:204:unsafe fn plan_dml_custom_path(
+src/am/ec_spire/custom_scan/planner.rs:265:unsafe fn custom_scan_dml_custom_exprs_from_plan_expr(
+src/am/ec_spire/custom_scan/planner.rs:281:pub(crate) unsafe fn custom_scan_dml_replacement_plan(
+src/am/ec_spire/custom_scan/planner.rs:334:unsafe fn custom_scan_candidate_index_oid(
+src/am/ec_spire/custom_scan/planner.rs:385:unsafe fn dml_pk_select_candidate_index_oid(
+src/am/ec_spire/custom_scan/planner.rs:434:unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
+src/am/ec_spire/custom_scan/planner.rs:492:unsafe fn add_custom_scan_path(
+src/am/ec_spire/custom_scan/planner.rs:544:unsafe fn add_dml_pk_select_custom_scan_path(
+src/am/ec_spire/update/materialization.rs:275:pub(super) unsafe fn fetch_split_replacement_source_vectors(
+src/am/ec_spire/coordinator/maintenance.rs:211:unsafe fn build_relation_selected_scheduled_maintenance_input(
+src/am/ec_spire/coordinator/maintenance.rs:339:pub(crate) unsafe fn index_maintenance_plan_snapshot(
+src/am/ec_spire/coordinator/maintenance.rs:369:pub(crate) unsafe fn index_locked_maintenance_plan_snapshot(
+src/am/ec_spire/coordinator/maintenance.rs:376:pub(crate) unsafe fn index_locked_maintenance_run_plan(
+src/am/ec_spire/coordinator/maintenance.rs:407:pub(crate) unsafe fn index_maintenance_run(
+src/am/ec_spire/custom_scan/explain.rs:9:unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
+src/am/ec_spire/custom_scan/tuple_payload.rs:1:unsafe fn custom_scan_store_remote_tuple_payload(
+src/am/ec_spire/custom_scan/tuple_payload.rs:35:unsafe fn custom_scan_store_tuple_payload_json(
+src/am/ec_spire/custom_scan/tuple_payload.rs:101:pub(crate) unsafe fn custom_scan_store_tuple_payload_json_for_test(
+src/am/ec_spire/custom_scan/tuple_payload.rs:114:unsafe fn custom_scan_json_value_to_datum(
+src/am/ec_spire/custom_scan/tuple_payload.rs:144:unsafe fn custom_scan_store_tuple_payload_typed(
+src/am/ec_spire/custom_scan/tuple_payload.rs:238:unsafe fn custom_scan_validate_typed_payload_attr(
+src/am/ec_spire/custom_scan/tuple_payload.rs:261:unsafe fn custom_scan_binary_value_to_datum(
+src/am/ec_spire/coordinator/diagnostics.rs:175:unsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
+src/am/ec_spire/coordinator/diagnostics.rs:312:pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
+src/am/ec_spire/coordinator/diagnostics.rs:418:pub(crate) unsafe fn index_boundary_replica_placement_diagnostics(
+src/am/ec_hnsw/scan_debug.rs:91:unsafe fn debug_graph_storage(
+src/am/ec_hnsw/scan_debug.rs:109:unsafe fn debug_with_page_line_tuple_bytes<R, F>(
+src/am/ec_hnsw/scan_debug.rs:132:unsafe fn debug_load_neighbor_tids_for_layer(
+src/am/ec_hnsw/scan_debug.rs:489:unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+src/am/ec_hnsw/scan_debug.rs:514:unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
+src/am/ec_hnsw/scan_debug.rs:519:pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
+src/am/ec_hnsw/scan_debug.rs:532:pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
+src/am/ec_hnsw/scan_debug.rs:548:pub(crate) unsafe fn debug_rescan_query_dimensions(
+src/am/ec_hnsw/scan_debug.rs:590:pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
+src/am/ec_hnsw/scan_debug.rs:641:pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
+src/am/ec_hnsw/scan_debug.rs:653:pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {
+src/am/ec_hnsw/scan_debug.rs:667:pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
+src/am/ec_hnsw/scan_debug.rs:712:pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
+src/am/ec_hnsw/scan_debug.rs:732:pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
+src/am/ec_hnsw/scan_debug.rs:741:pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+src/am/ec_hnsw/scan_debug.rs:754:pub(crate) unsafe fn debug_gettuple_after_rescan_result(
+src/am/ec_hnsw/scan_debug.rs:775:pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:800:pub(crate) unsafe fn debug_profile_ordered_scan(
+src/am/ec_hnsw/scan_debug.rs:808:pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
+src/am/ec_hnsw/scan_debug.rs:956:pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
+src/am/ec_hnsw/scan_debug.rs:1045:pub(crate) unsafe fn debug_grouped_rerank_profile(
+src/am/ec_hnsw/scan_debug.rs:1106:pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
+src/am/ec_hnsw/scan_debug.rs:1171:unsafe fn debug_collect_element_tids_at_level(
+src/am/ec_hnsw/scan_debug.rs:1237:unsafe fn debug_collect_element_tids_at_or_above_level(
+src/am/ec_hnsw/scan_debug.rs:1303:unsafe fn debug_collect_element_tid_by_heap_tid(
+src/am/ec_hnsw/scan_debug.rs:1371:pub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:1380:pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
+src/am/ec_hnsw/scan_debug.rs:1414:pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:1467:pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
+src/am/ec_hnsw/scan_debug.rs:1514:pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:1574:pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:1666:pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:1788:pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:1896:pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
+src/am/ec_hnsw/scan_debug.rs:1989:pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
+src/am/ec_hnsw/scan_debug.rs:2015:pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
+src/am/ec_hnsw/scan_debug.rs:2044:unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
+src/am/ec_hnsw/scan_debug.rs:2185:pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
+src/am/ec_hnsw/scan_debug.rs:2269:pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
+src/am/ec_hnsw/scan_debug.rs:2324:pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
+src/am/ec_hnsw/scan_debug.rs:2390:pub(crate) unsafe fn debug_grouped_scan_windowed_rows(
+src/am/ec_hnsw/scan_debug.rs:2401:pub(crate) unsafe fn debug_grouped_scan_windowed_summary(
+src/am/ec_hnsw/scan_debug.rs:2474:pub(crate) unsafe fn debug_gettuple_exhaustion_state(
+src/am/ec_hnsw/scan_debug.rs:2507:pub(crate) unsafe fn debug_gettuple_current_result_state(
+src/am/ec_hnsw/scan_debug.rs:2560:pub(crate) unsafe fn debug_gettuple_orderby_score(
+src/am/ec_hnsw/scan_debug.rs:2632:pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
+src/am/ec_hnsw/scan_debug.rs:2669:pub(crate) unsafe fn debug_rescan_entry_candidate_state(
+src/am/ec_hnsw/scan_debug.rs:2715:pub(crate) unsafe fn debug_rescan_successor_candidate_state(
+src/am/ec_hnsw/scan_debug.rs:2763:pub(crate) unsafe fn debug_rescan_candidate_frontier(
+src/am/ec_hnsw/scan_debug.rs:2797:pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
+src/am/ec_hnsw/scan_debug.rs:2839:pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
+src/am/ec_hnsw/scan_debug.rs:2893:pub(crate) unsafe fn debug_bootstrap_phase_transition(
+src/am/ec_hnsw/scan_debug.rs:2947:pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
+src/am/ec_hnsw/scan_debug.rs:2995:pub(crate) unsafe fn debug_consume_candidate_frontier_head(
+src/am/ec_hnsw/scan_debug.rs:3040:pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
+src/am/ec_hnsw/scan_debug.rs:3101:pub(crate) unsafe fn debug_visited_seed_lifecycle(
+src/am/ec_hnsw/scan_debug.rs:3137:pub(crate) unsafe fn debug_entry_candidate_lifecycle(
+src/am/ec_hnsw/scan_debug.rs:3212:pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
+src/am/ec_hnsw/scan_debug.rs:3291:pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
+src/am/ec_hnsw/scan_debug.rs:3335:pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
+src/am/ec_hnsw/scan_debug.rs:3392:pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+src/am/ec_hnsw/scan_debug.rs:3407:pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
+src/am/ec_hnsw/scan_debug.rs:3449:pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
+src/am/ec_hnsw/scan_debug.rs:3492:pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
+src/am/ec_hnsw/insert.rs:29:    unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
+src/am/ec_hnsw/insert.rs:41:    unsafe fn new_with_attribute(
+src/am/ec_hnsw/insert.rs:57:    unsafe fn load_source_vector(&mut self, heap_tid: page::ItemPointer, label: &str) -> Vec<f32> {
+src/am/ec_hnsw/insert.rs:73:    unsafe fn averaged_source_vector(
+src/am/ec_hnsw/insert.rs:113:    unsafe fn score_element_against_query(
+src/am/ec_hnsw/insert.rs:131:    unsafe fn score_existing_backlink_candidate(
+src/am/ec_hnsw/insert.rs:179:    unsafe fn score_new_tuple_against_element(
+src/am/ec_hnsw/insert.rs:198:    unsafe fn score_existing_backlink_candidate(
+src/am/ec_hnsw/insert.rs:214:    unsafe fn score_new_backlink_candidate(
+src/am/ec_hnsw/insert.rs:253:    unsafe fn find_duplicate(
+src/am/ec_hnsw/insert.rs:287:    unsafe fn discover_forward_neighbors(
+src/am/ec_hnsw/insert.rs:309:    unsafe fn append_node(
+src/am/ec_hnsw/insert.rs:337:    unsafe fn coalesce_duplicate(
+src/am/ec_hnsw/insert.rs:357:    unsafe fn add_backlinks(
+src/am/ec_hnsw/insert.rs:382:pub(super) unsafe extern "C-unwind" fn ec_hnsw_aminsert(
+src/am/ec_hnsw/insert.rs:509:unsafe fn run_insert_with_adapter(
+src/am/ec_hnsw/insert.rs:838:unsafe fn discover_insert_forward_neighbor_slots(
+src/am/ec_hnsw/insert.rs:896:unsafe fn load_insert_entry_candidate(
+src/am/ec_hnsw/insert.rs:934:unsafe fn populate_upper_layer_forward_slots(
+src/am/ec_hnsw/insert.rs:996:unsafe fn add_backlinks_to_forward_neighbors(
+src/am/ec_hnsw/insert.rs:1036:unsafe fn plan_backlink_mutations(
+src/am/ec_hnsw/insert.rs:1074:unsafe fn apply_backlink_mutations(
+src/am/ec_hnsw/insert.rs:1099:unsafe fn add_backlinks_on_page(
+src/am/ec_hnsw/insert.rs:1210:unsafe fn plan_backlink_mutation(
+src/am/ec_hnsw/insert.rs:1250:unsafe fn select_backlink_rewrite_slice(
+src/am/ec_hnsw/insert.rs:1410:unsafe fn append_heap_tuple(
+src/am/ec_hnsw/insert.rs:1529:unsafe fn append_heap_tuple_to_new_page(
+src/am/ec_hnsw/insert.rs:1600:unsafe fn append_turbo_hot_cold_tuple(
+src/am/ec_hnsw/insert.rs:1779:unsafe fn append_turbo_hot_cold_tuple_to_new_page(
+src/am/ec_hnsw/insert.rs:1882:unsafe fn derive_pq_fastscan_search_code_for_insert(
+src/am/ec_hnsw/insert.rs:1914:unsafe fn bootstrap_empty_pq_fastscan_flush_output(
+src/am/ec_hnsw/insert.rs:1935:unsafe fn append_pq_fastscan_tuple(
+src/am/ec_hnsw/insert.rs:2115:unsafe fn append_pq_fastscan_tuple_to_new_page(
+src/am/ec_hnsw/insert.rs:2210:unsafe fn find_duplicate_element_tid(
+src/am/ec_hnsw/insert.rs:2286:unsafe fn find_duplicate_turbo_hot_element_tid(
+src/am/ec_hnsw/insert.rs:2364:unsafe fn find_duplicate_grouped_element_tid(
+src/am/ec_hnsw/insert.rs:2445:unsafe fn coalesce_duplicate_heap_tid(
+src/am/ec_hnsw/insert.rs:2515:unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
+src/am/ec_hnsw/insert.rs:2588:unsafe fn coalesce_duplicate_grouped_heap_tid(
+src/am/ec_spire/coordinator/lifecycle.rs:14:pub(super) unsafe fn lock_publish_relation(
+src/am/ec_spire/coordinator/lifecycle.rs:27:unsafe fn open_spire_heap_relation_for_index(
+src/am/ec_spire/coordinator/lifecycle.rs:39:unsafe fn active_spire_maintenance_snapshot() -> Result<pg_sys::Snapshot, String> {
+src/am/ec_spire/update/routing.rs:538:pub(super) unsafe fn build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1:pub(crate) unsafe fn index_insert_debt_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:173:unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:279:unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:316:pub(crate) unsafe fn remote_search_candidates(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:337:unsafe fn remote_search_candidates_result(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:414:pub(crate) unsafe fn remote_search_coordinator_local_candidates(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:435:unsafe fn remote_search_coordinator_local_candidates_result(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:533:unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:658:pub(crate) unsafe fn remote_search_coordinator_local_summary(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:679:pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:723:pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:757:unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:791:pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:822:unsafe fn remote_search_local_heap_candidate_summary_from_gate(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:977:pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1096:unsafe fn remote_search_coordinator_local_summary_result(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1235:pub(crate) unsafe fn index_top_graph_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1422:pub(crate) unsafe fn index_hierarchy_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1591:pub(crate) unsafe fn index_object_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1657:pub(crate) unsafe fn index_delta_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1732:pub(crate) unsafe fn index_scan_placement_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1817:pub(crate) unsafe fn index_selected_pid_placement_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1866:pub(crate) unsafe fn index_scan_routing_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1964:pub(crate) unsafe fn index_root_routing_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1987:pub(crate) unsafe fn index_routing_centroid_snapshot(
+src/am/ec_spire/coordinator/hierarchy_snapshots.rs:2010:pub(crate) unsafe fn classify_centroid(
+src/am/ec_spire/coordinator/debug.rs:9:pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
+src/am/ec_spire/coordinator/debug.rs:52:pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
+src/am/ec_spire/coordinator/debug.rs:110:pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
+src/am/ec_spire/coordinator/debug.rs:161:pub(crate) unsafe fn debug_spire_age_retired_epoch_manifests(
+src/am/ec_spire/coordinator/debug.rs:199:pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
+src/am/ec_spire/coordinator/debug.rs:405:pub(crate) unsafe fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
+src/am/ec_spire/coordinator/debug.rs:417:pub(crate) unsafe fn debug_spire_rewrite_placement_state(
+src/am/ec_spire/coordinator/debug.rs:486:pub(crate) unsafe fn debug_spire_rewrite_placement_node(
+src/am/ec_spire/coordinator/debug.rs:495:pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
+src/am/ec_spire/coordinator/debug.rs:548:pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
+src/am/ec_spire/coordinator/debug.rs:614:pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
+src/am/ec_spire/dml_frontdoor/mod.rs:200:    Option<unsafe extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
+src/am/ec_spire/dml_frontdoor/mod.rs:202:unsafe extern "C" {
+src/am/ec_spire/dml_frontdoor/mod.rs:210:pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+src/am/ec_spire/dml_frontdoor/mod.rs:221:unsafe fn dml_frontdoor_register_relcache_callback() {
+src/am/ec_spire/dml_frontdoor/mod.rs:233:unsafe extern "C-unwind" fn dml_frontdoor_relation_context_relcache_callback(
+src/am/ec_spire/dml_frontdoor/mod.rs:376:pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
+src/am/ec_spire/dml_frontdoor/mod.rs:425:unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
+src/am/ec_spire/dml_frontdoor/mod.rs:443:unsafe fn dml_frontdoor_plan_tree_replacement_expr(
+src/am/ec_spire/dml_frontdoor/mod.rs:462:unsafe fn dml_frontdoor_maybe_replace_plan_tree(
+src/am/ec_spire/dml_frontdoor/mod.rs:492:unsafe fn dml_frontdoor_observe_planner_query(
+src/am/ec_spire/dml_frontdoor/mod.rs:555:pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
+src/am/ec_spire/dml_frontdoor/mod.rs:592:pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
+src/am/ec_spire/dml_frontdoor/mod.rs:627:pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
+src/am/ec_spire/dml_frontdoor/mod.rs:688:pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+src/am/ec_spire/dml_frontdoor/mod.rs:704:pub(crate) unsafe fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
+src/am/ec_spire/dml_frontdoor/mod.rs:720:pub(crate) unsafe fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
+src/am/ec_spire/dml_frontdoor/mod.rs:872:pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
+src/am/ec_spire/dml_frontdoor/mod.rs:887:pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
+src/am/ec_spire/dml_frontdoor/mod.rs:906:unsafe fn dml_frontdoor_bound_param_bigint_value(
+src/am/ec_spire/dml_frontdoor/mod.rs:949:unsafe fn dml_frontdoor_param_datum_to_bigint(
+src/am/ec_spire/dml_frontdoor/mod.rs:998:unsafe fn dml_frontdoor_classify_query_with_catalog_context(
+src/am/ec_spire/dml_frontdoor/mod.rs:1019:unsafe fn dml_frontdoor_classify_query_with_relation(
+src/am/ec_spire/dml_frontdoor/mod.rs:1044:unsafe fn dml_frontdoor_query_detail_with_relation(
+src/am/ec_spire/dml_frontdoor/mod.rs:1128:unsafe fn dml_frontdoor_query_detail_from_baserel(
+src/am/ec_spire/dml_frontdoor/mod.rs:1281:unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
+src/am/ec_spire/dml_frontdoor/mod.rs:1334:unsafe fn dml_frontdoor_catalog_index_and_pk(
+src/am/ec_spire/dml_frontdoor/mod.rs:1389:unsafe fn dml_frontdoor_primary_key_column_from_index(
+src/am/ec_spire/dml_frontdoor/mod.rs:1414:unsafe fn dml_frontdoor_relation_column_names_from_rel(
+src/am/ec_spire/dml_frontdoor/mod.rs:1438:unsafe fn dml_frontdoor_index_key_column_names_from_rel(
+src/am/ec_spire/dml_frontdoor/mod.rs:1471:unsafe fn dml_frontdoor_relation_attr_name_and_form(
+src/am/ec_spire/dml_frontdoor/mod.rs:1488:unsafe fn dml_frontdoor_attr_name(
+src/am/ec_spire/dml_frontdoor/mod.rs:1497:unsafe fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
+src/am/ec_spire/dml_frontdoor/mod.rs:1770:pub(crate) unsafe fn classify_dml_frontdoor_query(
+src/am/ec_spire/dml_frontdoor/mod.rs:1827:pub(crate) unsafe fn dml_frontdoor_target_relation_oid(
+src/am/ec_spire/dml_frontdoor/mod.rs:1853:unsafe fn dml_frontdoor_query_has_join_shape(
+src/am/ec_spire/dml_frontdoor/mod.rs:1868:unsafe fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
+src/am/ec_spire/dml_frontdoor/mod.rs:1900:unsafe fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+src/am/ec_spire/dml_frontdoor/mod.rs:1917:unsafe fn dml_frontdoor_relation_oid_from_rtable(
+src/am/ec_spire/dml_frontdoor/mod.rs:1933:unsafe fn dml_frontdoor_pk_predicate(
+src/am/ec_spire/dml_frontdoor/mod.rs:1946:unsafe fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
+src/am/ec_spire/dml_frontdoor/mod.rs:1968:unsafe fn dml_frontdoor_pk_predicate_from_clause(
+src/am/ec_spire/dml_frontdoor/mod.rs:2045:unsafe fn dml_frontdoor_predicate_var_column(
+src/am/ec_spire/dml_frontdoor/mod.rs:2079:unsafe fn dml_frontdoor_single_predicate_var_column(
+src/am/ec_spire/dml_frontdoor/mod.rs:2095:unsafe fn dml_frontdoor_expr_references_column(
+src/am/ec_spire/dml_frontdoor/mod.rs:2178:unsafe fn dml_frontdoor_expr_list_references_column(
+src/am/ec_spire/dml_frontdoor/mod.rs:2210:unsafe fn dml_frontdoor_var_column(
+src/am/ec_spire/dml_frontdoor/mod.rs:2228:unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+src/am/ec_spire/dml_frontdoor/mod.rs:2232:unsafe fn dml_frontdoor_predicate_value(
+src/am/ec_spire/dml_frontdoor/mod.rs:2238:unsafe fn dml_frontdoor_predicate_value_inner(
+src/am/ec_spire/dml_frontdoor/mod.rs:2300:unsafe fn dml_frontdoor_single_coerced_arg_value(
+src/am/ec_spire/dml_frontdoor/mod.rs:2310:unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+src/am/ec_spire/dml_frontdoor/mod.rs:2320:unsafe fn dml_frontdoor_coercible_integer_value(
+src/am/ec_spire/dml_frontdoor/mod.rs:2366:unsafe fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
+src/am/ec_spire/dml_frontdoor/mod.rs:2403:unsafe fn dml_frontdoor_target_columns(
+src/am/ec_spire/dml_frontdoor/mod.rs:2415:unsafe fn dml_frontdoor_target_column_exprs(
+src/am/ec_hnsw/build_parallel.rs:479:    unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+src/am/ec_hnsw/build_parallel.rs:483:    unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+src/am/ec_hnsw/build_parallel.rs:784:    unsafe fn from_header(header: *const EcHnswConcurrentDsmGraphHeader) -> Self {
+src/am/ec_hnsw/build_parallel.rs:950:pub(super) unsafe fn concurrent_dsm_graph_layout_from_image(
+src/am/ec_hnsw/build_parallel.rs:961:pub(super) unsafe fn concurrent_dsm_insert_config_from_image(
+src/am/ec_hnsw/build_parallel.rs:995:pub(super) unsafe fn attach_concurrent_dsm_graph_image(
+src/am/ec_hnsw/build_parallel.rs:1010:pub(super) unsafe fn concurrent_dsm_graph_parts(
+src/am/ec_hnsw/build_parallel.rs:1035:pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
+src/am/ec_hnsw/build_parallel.rs:1131:pub(super) unsafe fn concurrent_dsm_graph_to_build_nodes(
+src/am/ec_hnsw/build_parallel.rs:1174:pub(super) unsafe fn current_format_flush_output_from_concurrent_dsm_graph(
+src/am/ec_hnsw/build_parallel.rs:1186:pub(super) unsafe fn insert_concurrent_dsm_graph_node(
+src/am/ec_hnsw/build_parallel.rs:1279:pub(super) unsafe fn insert_concurrent_dsm_graph_partition(
+src/am/ec_hnsw/build_parallel.rs:1307:pub(super) unsafe fn insert_concurrent_dsm_graph_participant(
+src/am/ec_hnsw/build_parallel.rs:1338:unsafe fn begin_concurrent_dsm_graph_node_insert(
+src/am/ec_hnsw/build_parallel.rs:1358:unsafe fn complete_concurrent_dsm_graph_node_insert(
+src/am/ec_hnsw/build_parallel.rs:1385:unsafe fn populate_concurrent_dsm_upper_layer_forward_slots(
+src/am/ec_hnsw/build_parallel.rs:1435:unsafe fn search_concurrent_dsm_layer_result_candidates(
+src/am/ec_hnsw/build_parallel.rs:1525:unsafe fn load_concurrent_dsm_successor_candidates_into(
+src/am/ec_hnsw/build_parallel.rs:1615:unsafe fn add_concurrent_dsm_backlinks(
+src/am/ec_hnsw/build_parallel.rs:1716:unsafe fn score_concurrent_dsm_code(
+src/am/ec_hnsw/build_parallel.rs:1734:unsafe fn score_concurrent_dsm_code_with_cache(
+src/am/ec_hnsw/build_parallel.rs:1780:unsafe fn with_concurrent_dsm_code_for_node<R>(
+src/am/ec_hnsw/build_parallel.rs:1797:unsafe fn with_concurrent_dsm_source_for_node<R>(
+src/am/ec_hnsw/build_parallel.rs:1821:unsafe fn with_concurrent_dsm_node_slots<R>(
+src/am/ec_hnsw/build_parallel.rs:1837:unsafe fn with_concurrent_dsm_node_slots_mut<R>(
+src/am/ec_hnsw/build_parallel.rs:1853:unsafe fn with_concurrent_dsm_neighbor_slots_init<R>(
+src/am/ec_hnsw/build_parallel.rs:1864:unsafe fn with_concurrent_dsm_codes_init<R>(
+src/am/ec_hnsw/build_parallel.rs:1873:unsafe fn with_concurrent_dsm_sources_init<R>(
+src/am/ec_hnsw/build_parallel.rs:1969:pub(super) unsafe fn try_parallel_build(
+src/am/ec_hnsw/build_parallel.rs:2022:pub(super) unsafe fn try_parallel_concurrent_dsm_graph_build(
+src/am/ec_hnsw/build_parallel.rs:2069:    unsafe fn begin(
+src/am/ec_hnsw/build_parallel.rs:2224:    unsafe fn insert_leader_partitions(&mut self) -> EcHnswConcurrentDsmGraphAttachment {
+src/am/ec_hnsw/build_parallel.rs:2252:    unsafe fn wait_for_workers(&mut self) {
+src/am/ec_hnsw/build_parallel.rs:2270:    unsafe fn finish(mut self) {
+src/am/ec_hnsw/build_parallel.rs:2288:    unsafe fn begin(
+src/am/ec_hnsw/build_parallel.rs:2461:    unsafe fn drain_worker_messages(&mut self, tuples: &mut Vec<build::BuildTuple>) {
+src/am/ec_hnsw/build_parallel.rs:2518:    unsafe fn finish(mut self) {
+src/am/ec_hnsw/build_parallel.rs:2546:unsafe extern "C-unwind" fn ec_hnsw_parallel_build_callback(
+src/am/ec_hnsw/build_parallel.rs:2568:pub unsafe extern "C-unwind" fn ec_hnsw_parallel_build_main(
+src/am/ec_hnsw/build_parallel.rs:2581:pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
+src/am/ec_hnsw/build_parallel.rs:2592:unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
+src/am/ec_hnsw/build_parallel.rs:2686:unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+src/am/ec_hnsw/build_parallel.rs:2759:unsafe fn send_worker_message(queue_handle: *mut pg_sys::shm_mq_handle, message: &[u8]) {
+src/am/ec_hnsw/build_parallel.rs:2935:unsafe fn parallel_build_shared_workspace_size(
+src/am/ec_hnsw/build_parallel.rs:2946:unsafe fn parallel_table_scan_from_shared(
+src/am/ec_hnsw/build_parallel.rs:2959:unsafe fn estimate_chunk(estimator: *mut pg_sys::shm_toc_estimator, size: pg_sys::Size) {
+src/am/ec_hnsw/build_parallel.rs:2969:unsafe fn estimate_keys(estimator: *mut pg_sys::shm_toc_estimator, keys: pg_sys::Size) {
+src/am/ec_hnsw/build_parallel.rs:3982:    unsafe fn test_lock_guard(lock: *mut pg_sys::LWLock) -> LwLockGuard {
+src/am/ec_hnsw/build_parallel.rs:3986:    unsafe fn test_lock_noop_release(_lock: *mut pg_sys::LWLock) {}
+src/tests/hnsw_misc.rs:39:    unsafe fn recv_via_string_info(bytes: &[u8]) -> Vec<u8> {
+src/am/ec_spire/coordinator/snapshots.rs:1:pub(crate) unsafe fn active_snapshot_diagnostics(
+src/am/ec_spire/coordinator/snapshots.rs:84:pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
+src/am/ec_spire/coordinator/snapshots.rs:88:pub(crate) unsafe fn index_allocator_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:109:pub(crate) unsafe fn index_options_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:233:pub(crate) unsafe fn index_writer_identity_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:274:pub(crate) unsafe fn index_level_parameter_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:385:pub(crate) unsafe fn index_scan_sanity_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:442:pub(crate) unsafe fn index_health_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:449:pub(crate) unsafe fn index_relation_storage_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:563:pub(crate) unsafe fn index_epoch_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:750:pub(crate) unsafe fn index_epoch_cleanup_run(
+src/am/ec_spire/coordinator/snapshots.rs:826:pub(crate) unsafe fn index_placement_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:880:pub(crate) unsafe fn remote_node_snapshot(
+src/am/ec_spire/coordinator/snapshots.rs:1417:pub(crate) unsafe fn remote_node_descriptor_readiness(
+src/am/ec_spire/coordinator/snapshots.rs:1465:pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
+src/am/ec_spire/coordinator/snapshots.rs:1541:pub(crate) unsafe fn remote_node_capability_plan(
+src/am/ec_spire/coordinator/snapshots.rs:1550:pub(crate) unsafe fn remote_node_capability_summary(
+src/am/ec_spire/coordinator/snapshots.rs:1631:pub(crate) unsafe fn remote_epoch_publish_plan(
+src/am/ec_spire/coordinator/snapshots.rs:1641:pub(crate) unsafe fn remote_epoch_publish_readiness(
+src/am/ec_spire/coordinator/snapshots.rs:1748:pub(crate) unsafe fn remote_epoch_publish_gate_summary(
+src/am/ec_spire/coordinator/snapshots.rs:1804:pub(crate) unsafe fn remote_epoch_manifest_plan(
+src/am/ec_spire/coordinator/snapshots.rs:1813:pub(crate) unsafe fn remote_epoch_manifest_summary(
+src/am/ec_spire/coordinator/snapshots.rs:2173:pub(crate) unsafe fn index_leaf_snapshot(
+src/am/ec_hnsw/vacuum.rs:10:    unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
+src/am/ec_hnsw/vacuum.rs:34:    unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
+src/am/ec_hnsw/vacuum.rs:46:    unsafe fn new_with_attribute(
+src/am/ec_hnsw/vacuum.rs:62:    unsafe fn averaged_source_vector(
+src/am/ec_hnsw/vacuum.rs:102:    unsafe fn score_graph_element_pair(
+src/am/ec_hnsw/vacuum.rs:135:    unsafe fn for_relation(
+src/am/ec_hnsw/vacuum.rs:182:    unsafe fn score_graph_element(
+src/am/ec_hnsw/vacuum.rs:210:    unsafe fn vacuum_cleanup(
+src/am/ec_hnsw/vacuum.rs:219:    unsafe fn repair_graph_connections(
+src/am/ec_hnsw/vacuum.rs:235:    unsafe fn finalize_fully_dead_elements(
+src/am/ec_hnsw/vacuum.rs:317:pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambulkdelete(
+src/am/ec_hnsw/vacuum.rs:343:pub(super) unsafe extern "C-unwind" fn ec_hnsw_amvacuumcleanup(
+src/am/ec_hnsw/vacuum.rs:374:unsafe fn run_bulkdelete_with_adapter(
+src/am/ec_hnsw/vacuum.rs:472:unsafe fn repair_metadata_entry_point_after_vacuum(
+src/am/ec_hnsw/vacuum.rs:504:unsafe fn rewrite_page_pass1(
+src/am/ec_hnsw/vacuum.rs:537:unsafe fn plan_page_pass1(
+src/am/ec_hnsw/vacuum.rs:667:unsafe fn apply_page_pass1_updates(
+src/am/ec_hnsw/vacuum.rs:723:unsafe fn repair_graph_connections_with_storage(
+src/am/ec_hnsw/vacuum.rs:752:unsafe fn collect_repair_requests(
+src/am/ec_hnsw/vacuum.rs:801:unsafe fn collect_repair_requests_on_page(
+src/am/ec_hnsw/vacuum.rs:925:unsafe fn unlink_deleted_graph_connections(
+src/am/ec_hnsw/vacuum.rs:972:unsafe fn plan_repair_replacements(
+src/am/ec_hnsw/vacuum.rs:1000:unsafe fn plan_repair_replacement(
+src/am/ec_hnsw/vacuum.rs:1084:unsafe fn search_repair_candidates_for_layer(
+src/am/ec_hnsw/vacuum.rs:1194:unsafe fn load_vacuum_entry_candidate(
+src/am/ec_hnsw/vacuum.rs:1241:unsafe fn top_up_repair_replacements_from_linear_scan(
+src/am/ec_hnsw/vacuum.rs:1301:unsafe fn collect_linear_repair_candidates_on_page(
+src/am/ec_hnsw/vacuum.rs:1430:unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
+src/am/ec_hnsw/vacuum.rs:1476:unsafe fn apply_repair_plans(
+src/am/ec_hnsw/vacuum.rs:1507:unsafe fn apply_repair_plans_on_page(
+src/am/ec_hnsw/vacuum.rs:1643:unsafe fn rewrite_page_pass2(
+src/am/ec_hnsw/vacuum.rs:1664:unsafe fn plan_page_pass2(
+src/am/ec_hnsw/vacuum.rs:1735:unsafe fn apply_page_pass2_updates(
+src/am/ec_hnsw/vacuum.rs:1768:unsafe fn finalize_fully_dead_elements_with_storage(
+src/am/ec_hnsw/vacuum.rs:1801:unsafe fn finalize_fully_dead_elements_on_page_with_storage(
+src/am/ec_hnsw/vacuum.rs:1921:unsafe fn heap_tid_is_dead(
+src/am/ec_hnsw/vacuum.rs:1938:unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
+src/am/ec_hnsw/vacuum.rs:1951:pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
+src/am/ec_spire/coordinator/remote_candidates/pipeline.rs:11:    unsafe fn execute_once(
+src/am/ec_spire/coordinator/remote_candidates/pipeline.rs:78:pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/pipeline.rs:181:pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs:1:pub(crate) unsafe fn remote_search_production_consistency_policy_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs:69:pub(crate) unsafe fn remote_search_production_session_consistency_policy_summary_row(
+src/am/ec_hnsw/build.rs:100:pub(super) unsafe extern "C-unwind" fn ec_hnsw_build_callback(
+src/am/ec_hnsw/build.rs:182:pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
+src/am/ec_hnsw/build.rs:307:pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuildempty(index_relation: pg_sys::Relation) {
+src/am/ec_hnsw/build.rs:532:pub(super) unsafe fn build_heap_tuple(
+src/am/ec_hnsw/build.rs:600:unsafe fn build_heap_tuple_from_indexed_datum(
+src/am/ec_hnsw/build.rs:649:pub(super) unsafe fn build_heap_tuple_with_source(
+src/am/ec_hnsw/build.rs:668:pub(super) unsafe fn ec_hnsw_build_scan_with_source(
+src/am/ec_hnsw/build.rs:753:unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointer {
+src/am/ec_hnsw/build.rs:1560:pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
+src/am/ec_hnsw/build.rs:1565:unsafe fn flush_build_state_with_timing(
+src/am/ec_hnsw/build.rs:1782:unsafe fn flush_build_output(index_relation: pg_sys::Relation, output: &BuildFlushOutput) {
+src/am/ec_hnsw/build.rs:2349:pub(super) unsafe fn write_data_pages(
+src/am/ec_spire/coordinator/remote_candidates/operator.rs:1:pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/operator.rs:79:pub(crate) unsafe fn remote_search_libpq_secret_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/operator.rs:183:pub(crate) unsafe fn remote_search_libpq_connection_open_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/operator.rs:247:pub(crate) unsafe fn remote_search_libpq_connection_open_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/operator.rs:336:pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:1:pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:30:pub(crate) unsafe fn remote_search_production_degraded_skip_report_rows(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:58:pub(crate) unsafe fn remote_search_production_executor_session_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:89:pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:469:unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:741:pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:757:pub(crate) unsafe fn remote_search_production_scan_tuple_payload_result_stream(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:774:pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_stream(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:796:pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:807:pub(crate) unsafe fn remote_search_production_read_profile_row(
+src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:824:pub(crate) unsafe fn remote_search_operator_diagnostics_row(
+src/am/ec_hnsw/source.rs:143:unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
+src/am/ec_hnsw/source.rs:187:unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
+src/am/ec_hnsw/source.rs:229:pub(crate) unsafe fn resolve_source_attnum(
+src/am/ec_hnsw/source.rs:247:pub(crate) unsafe fn resolve_source_attribute(
+src/am/ec_hnsw/source.rs:260:pub(crate) unsafe fn resolve_source_attribute_by_attnum(
+src/am/ec_hnsw/source.rs:302:pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
+src/am/ec_hnsw/source.rs:327:pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
+src/am/ec_hnsw/source.rs:344:pub(crate) unsafe fn resolve_indexed_ecvector_attribute(
+src/am/ec_hnsw/source.rs:360:pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
+src/am/ec_hnsw/source.rs:382:pub(crate) unsafe fn resolve_indexed_vector_attribute(
+src/am/ec_hnsw/source.rs:398:unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+src/am/ec_hnsw/source.rs:416:unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatumKind> {
+src/am/ec_hnsw/source.rs:440:pub(crate) unsafe fn fetch_heap_row_version(
+src/am/ec_hnsw/source.rs:461:pub(crate) unsafe fn required_slot_datum(
+src/am/ec_hnsw/source.rs:481:    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+src/am/ec_hnsw/source.rs:509:    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+src/am/ec_hnsw/source.rs:565:    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+src/am/ec_hnsw/source.rs:602:    unsafe fn from_datum(datum: pg_sys::Datum, kind: SourceDatumKind, label: &str) -> Self {
+src/am/ec_hnsw/source.rs:622:pub(crate) unsafe fn with_flat_float4_source_from_datum<R>(
+src/am/ec_hnsw/source.rs:634:pub(crate) unsafe fn with_source_from_heap_row<R>(
+src/am/ec_hnsw/source.rs:648:pub(crate) unsafe fn with_indexed_ecvector_from_slot<R>(
+src/am/ec_hnsw/source.rs:685:unsafe fn flat_array_dims_ptr(array_ptr: *const pg_sys::ArrayType) -> *const c_int {
+src/am/ec_hnsw/source.rs:700:unsafe fn flat_array_data_offset(array_ptr: *const pg_sys::ArrayType, ndim: usize) -> usize {
+src/am/ec_spire/scan/types.rs:565:    unsafe fn root_control_for_rescan(
+src/am/ec_spire/storage/relation_plan.rs:132:unsafe fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
+src/am/ec_spire/storage/relation_plan.rs:151:pub(super) unsafe fn create_local_store_relations_for_build(
+src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs:199:pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
+src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs:409:pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
+src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs:668:pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
+src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs:769:pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
+src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs:792:pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs:881:pub(crate) unsafe fn remote_search_receive_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/executor_receive.rs:920:pub(crate) unsafe fn remote_search_merge_input_summary_row(
+src/am/ec_spire/scan/relation.rs:62:pub(super) unsafe fn load_relation_epoch_manifests(
+src/am/ec_spire/scan/relation.rs:128:pub(super) unsafe fn load_relation_local_store_config(
+src/am/ec_spire/scan/relation.rs:140:unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireScanQuery, String> {
+src/am/ec_spire/scan/relation.rs:156:unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
+src/am/ec_spire/scan/relation.rs:211:unsafe fn prefetch_heap_rerank_candidate_blocks(
+src/am/ec_spire/scan/relation.rs:223:unsafe fn prefetch_heap_rerank_blocks(
+src/am/ec_spire/scan/relation.rs:254:unsafe fn prefetch_heap_rerank_blocks(
+src/am/ec_spire/scan/relation.rs:320:unsafe fn exact_heap_source_inner_product(
+src/am/ec_spire/scan/relation.rs:344:pub(super) unsafe fn load_indexed_source_vector_from_heap_row(
+src/am/ec_spire/scan/relation.rs:362:unsafe fn fetch_heap_row_version(
+src/am/ec_spire/scan/relation.rs:379:unsafe fn required_slot_datum(
+src/am/ec_spire/scan/relation.rs:395:unsafe fn indexed_vector_datum_to_source_vector(
+src/am/ec_spire/scan/relation.rs:417:unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<Vec<u8>, String> {
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:131:pub(crate) unsafe fn remote_search_fanout_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:223:pub(crate) unsafe fn remote_search_target_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:314:pub(crate) unsafe fn remote_search_target_readiness_rows(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:389:pub(crate) unsafe fn remote_search_request_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:435:pub(crate) unsafe fn remote_search_request_readiness_rows(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:484:pub(crate) unsafe fn remote_search_request_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:552:pub(crate) unsafe fn remote_search_readiness_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:626:pub(crate) unsafe fn remote_search_execution_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/fanout.rs:694:pub(crate) unsafe fn remote_search_execution_summary_row(
+src/am/ec_hnsw/shared.rs:19:pub(super) unsafe fn initialize_metadata_page(
+src/am/ec_hnsw/shared.rs:58:unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {
+src/am/ec_hnsw/shared.rs:65:pub(super) unsafe fn update_metadata_page(
+src/am/ec_hnsw/shared.rs:87:pub(super) unsafe fn with_locked_metadata_page<T>(
+src/am/ec_hnsw/shared.rs:116:pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
+src/am/ec_hnsw/shared.rs:138:pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+src/am/ec_hnsw/shared.rs:215:unsafe fn count_live_elements_on_buffer(
+src/am/ec_hnsw/shared.rs:289:pub(super) unsafe fn highest_level_live_entry_candidate(
+src/am/ec_hnsw/shared.rs:426:pub(super) unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+src/am/ec_hnsw/shared.rs:442:pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
+src/am/ec_hnsw/shared.rs:470:pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(
+src/am/ec_hnsw/shared.rs:503:pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPointer {
+src/am/ec_hnsw/shared.rs:522:pub(crate) unsafe fn debug_index_pages(
+src/am/ec_hnsw/shared.rs:542:pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+src/am/ec_hnsw/shared.rs:656:pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+src/am/ec_hnsw/shared.rs:696:pub(crate) unsafe fn index_explain_snapshot(
+src/am/ec_hnsw/shared.rs:719:pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+src/am/ec_hnsw/shared.rs:809:pub(crate) unsafe fn planner_integration_snapshot(
+src/am/ec_hnsw/shared.rs:870:pub(crate) unsafe fn debug_planner_tuning_snapshot(
+src/am/ec_hnsw/shared.rs:879:unsafe fn read_data_page(
+src/am/ec_hnsw/shared.rs:924:pub(crate) unsafe fn debug_index_metadata(
+src/am/ec_hnsw/shared.rs:941:pub(crate) unsafe fn debug_update_index_metadata(
+src/am/ec_hnsw/shared.rs:950:pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+src/am/ec_hnsw/graph.rs:34:    pub(crate) unsafe fn from_index_relation(
+src/am/ec_hnsw/graph.rs:336:pub(crate) unsafe fn load_graph_element(
+src/am/ec_hnsw/graph.rs:358:pub(crate) unsafe fn load_exact_graph_element(
+src/am/ec_hnsw/graph.rs:405:pub(crate) unsafe fn load_grouped_graph_element(
+src/am/ec_hnsw/graph.rs:432:pub(crate) unsafe fn with_graph_element_tuple<R, F>(
+src/am/ec_hnsw/graph.rs:449:pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
+src/am/ec_hnsw/graph.rs:470:pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
+src/am/ec_hnsw/graph.rs:492:pub(crate) unsafe fn with_graph_storage_tuple<R, F>(
+src/am/ec_hnsw/graph.rs:521:pub(crate) unsafe fn with_graph_storage_tuple_from_buffer<R, F>(
+src/am/ec_hnsw/graph.rs:562:pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
+src/am/ec_hnsw/graph.rs:583:pub(crate) unsafe fn load_rerank_payload(
+src/am/ec_hnsw/graph.rs:602:pub(crate) unsafe fn load_grouped_rerank_payload(
+src/am/ec_hnsw/graph.rs:611:pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
+src/am/ec_hnsw/graph.rs:637:pub(crate) unsafe fn load_grouped_codebook_model(
+src/am/ec_hnsw/graph.rs:722:pub(crate) unsafe fn load_graph_neighbors(
+src/am/ec_hnsw/graph.rs:758:pub(crate) unsafe fn load_graph_adjacency(
+src/am/ec_hnsw/graph.rs:768:pub(crate) unsafe fn load_exact_graph_adjacency(
+src/am/ec_hnsw/graph.rs:779:pub(crate) unsafe fn load_grouped_graph_adjacency(
+src/am/ec_hnsw/graph.rs:789:pub(crate) unsafe fn load_layer0_neighbor_tids(
+src/am/ec_hnsw/graph.rs:800:pub(crate) unsafe fn load_neighbor_tids_for_layer(
+src/am/ec_hnsw/graph.rs:812:pub(crate) unsafe fn load_layer0_successor_candidates<KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:837:pub(crate) unsafe fn load_layer0_successor_candidates_with_storage<KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:862:pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
+src/am/ec_hnsw/graph.rs:891:pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
+src/am/ec_hnsw/graph.rs:921:pub(crate) unsafe fn run_layer0_beam_search<SeedIter, KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:947:pub(crate) unsafe fn search_layer0_result_candidates<SeedIter, KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:973:pub(crate) unsafe fn search_layer0_result_candidates_with_storage<SeedIter, KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:999:pub(crate) unsafe fn search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1027:pub(crate) unsafe fn search_layer_result_candidates_with_storage<SeedIter, KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1055:pub(crate) unsafe fn search_upper_layer_seed_candidates<ScoreFn>(
+src/am/ec_hnsw/graph.rs:1099:pub(crate) unsafe fn load_layer0_refill_successors<KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1128:pub(crate) unsafe fn load_layer0_refill_successors_with_storage<KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1157:pub(crate) unsafe fn expand_layer0_visible_seeds<SeedIter, KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1183:pub(crate) unsafe fn expand_layer0_visible_seeds_with_storage<SeedIter, KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1493:unsafe fn load_successor_candidates_for_layer<KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1540:unsafe fn load_successor_candidates_for_layer_with_storage<KeepFn, ScoreFn>(
+src/am/ec_hnsw/graph.rs:1600:unsafe fn read_page_tuple<T, DecodeFn>(
+src/am/ec_hnsw/graph.rs:1638:unsafe fn read_page_tuple_from_buffer<T, DecodeFn>(
+src/am/ec_hnsw/graph.rs:1661:unsafe fn with_page_tuple_bytes<T, DecodeFn>(
+src/am/ec_spire/coordinator/remote_candidates/result_contracts.rs:167:pub(crate) unsafe fn remote_search_finalization_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:27:pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:73:pub(crate) unsafe fn remote_search_libpq_request_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:312:pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:432:pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:528:pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:611:pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
+src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:533:pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
+src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:623:pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
+src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:640:pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
+src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:665:pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch(
+src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:690:pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
+src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:747:pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
+src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:845:pub(crate) unsafe fn coordinator_select_remote_tuple_payload(
+src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:22:pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:118:pub(crate) unsafe fn remote_search_libpq_executor_budget_summary_row(
+src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:1985:unsafe extern "C" {
+src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2008:    unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;
+src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs:432:pub(crate) unsafe fn remote_search_endpoint_identity_row(
+src/am/ec_hnsw/scan.rs:833:pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambeginscan(
+src/am/ec_hnsw/scan.rs:853:pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
+src/am/ec_hnsw/scan.rs:1329:unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) -> bool {
+src/am/ec_hnsw/scan.rs:1439:pub(crate) unsafe fn resolve_pq_fastscan_rerank_mode_decision(
+src/am/ec_hnsw/scan.rs:1686:unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanHeapRelation {
+src/am/ec_hnsw/scan.rs:1701:unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanSnapshot {
+src/am/ec_hnsw/scan.rs:1718:unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
+src/am/ec_hnsw/scan.rs:1726:unsafe fn configure_grouped_heap_rerank_state(
+src/am/ec_hnsw/scan.rs:1794:pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
+src/am/ec_hnsw/scan.rs:1834:pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScanDesc) {
+src/am/ec_hnsw/scan.rs:1870:pub(crate) unsafe fn explain_counters_from_index_scan_state(
+src/am/ec_hnsw/scan.rs:1890:unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
+src/am/ec_hnsw/scan.rs:1907:unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
+src/am/ec_hnsw/scan.rs:2070:unsafe fn load_grouped_scan_query(
+src/am/ec_hnsw/scan.rs:2079:unsafe fn store_grouped_scan_query(
+src/am/ec_hnsw/scan.rs:2207:unsafe fn live_loaded_state_from_exact_payload(
+src/am/ec_hnsw/scan.rs:2246:unsafe fn score_and_cache_scan_element(
+src/am/ec_hnsw/scan.rs:2312:unsafe fn cached_graph_element(
+src/am/ec_hnsw/scan.rs:2357:unsafe fn cached_graph_element_from_buffer(
+src/am/ec_hnsw/scan.rs:2391:unsafe fn score_cached_graph_element_from_storage(
+src/am/ec_hnsw/scan.rs:2410:unsafe fn exact_score_cached_graph_element(
+src/am/ec_hnsw/scan.rs:2510:unsafe fn load_grouped_score_rerank_payload<'a>(
+src/am/ec_hnsw/scan.rs:2540:unsafe fn score_grouped_rerank_payload_from_scan_state(
+src/am/ec_hnsw/scan.rs:2556:unsafe fn score_grouped_heap_source_from_scan_state(
+src/am/ec_hnsw/scan.rs:2625:unsafe fn score_grouped_candidate_heap_rerank(
+src/am/ec_hnsw/scan.rs:2651:unsafe fn exact_score_grouped_candidate_context(
+src/am/ec_hnsw/scan.rs:2676:unsafe fn score_grouped_candidate_context_exact(
+src/am/ec_hnsw/scan.rs:2704:unsafe fn score_grouped_search_code_from_scan_state(
+src/am/ec_hnsw/scan.rs:2715:unsafe fn grouped_candidate_rerank_comparison_score(
+src/am/ec_hnsw/scan.rs:2793:unsafe fn score_grouped_candidate_context_approx(
+src/am/ec_hnsw/scan.rs:2812:unsafe fn score_grouped_candidate_context_binary(
+src/am/ec_hnsw/scan.rs:2829:unsafe fn score_budgeted_grouped_traversal_candidates(
+src/am/ec_hnsw/scan.rs:2870:unsafe fn score_grouped_candidate_context(
+src/am/ec_hnsw/scan.rs:2889:unsafe fn score_cached_graph_element_dispatch(
+src/am/ec_hnsw/scan.rs:2907:unsafe fn cached_graph_element_and_score(
+src/am/ec_hnsw/scan.rs:2930:unsafe fn cached_graph_neighbors(
+src/am/ec_hnsw/scan.rs:2956:unsafe fn cached_graph_adjacency(
+src/am/ec_hnsw/scan.rs:2967:unsafe fn prefetch_graph_buffers(
+src/am/ec_hnsw/scan.rs:3027:unsafe fn cached_graph_element_with_prefetch(
+src/am/ec_hnsw/scan.rs:3047:unsafe fn cached_scan_successor_candidates_for_layer<KeepFn>(
+src/am/ec_hnsw/scan.rs:3290:unsafe fn cached_upper_layer_seed_candidate(
+src/am/ec_hnsw/scan.rs:3382:    unsafe fn prefetch_next(
+src/am/ec_hnsw/scan.rs:3393:    unsafe fn ensure_prefetched_output(
+src/am/ec_hnsw/scan.rs:3476:unsafe fn produce_next_scan_heap_tid(
+src/am/ec_hnsw/scan.rs:3586:unsafe fn prefetch_next_graph_result_from_frontier(
+src/am/ec_hnsw/scan.rs:3650:unsafe fn prefetch_next_grouped_windowed_graph_result(
+src/am/ec_hnsw/scan.rs:3704:unsafe fn buffer_grouped_graph_result_candidate(
+src/am/ec_hnsw/scan.rs:3748:unsafe fn materialize_graph_result_candidate(
+src/am/ec_hnsw/scan.rs:4116:unsafe fn initialize_scan_entry_candidate(
+src/am/ec_hnsw/scan.rs:4320:unsafe fn refine_grouped_frontier_head_exact(
+src/am/ec_hnsw/scan.rs:4379:unsafe fn refill_candidate_frontier_from_source_into(
+src/am/ec_hnsw/scan.rs:4413:unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
+src/am/ec_hnsw/scan.rs:4453:unsafe fn refill_bootstrap_frontier_after_success(
+src/am/ec_hnsw/scan.rs:4490:pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
+src/am/ec_hnsw/scan.rs:4566:pub(super) unsafe fn prefetch_next_graph_traversal_result(
+src/am/ec_hnsw/scan.rs:4578:unsafe fn produce_next_graph_traversal_heap_tid(
+src/am/ec_hnsw/scan.rs:4616:unsafe fn produce_next_linear_fallback_heap_tid(
+src/am/ec_hnsw/scan.rs:4655:unsafe fn select_next_linear_scan_result(
+src/am/ec_hnsw/scan.rs:4729:unsafe fn select_linear_scan_result_from_buffer(
+src/am/ec_hnsw/scan.rs:4840:unsafe fn score_scan_element_result(
+src/am/ec_spire/page.rs:24:pub(super) unsafe fn initialize_root_control_page(
+src/am/ec_spire/page.rs:31:pub(super) unsafe fn initialize_aux_store_metadata_page(store_relation: pg_sys::Relation) {
+src/am/ec_spire/page.rs:35:unsafe fn initialize_spire_metadata_block_zero(
+src/am/ec_spire/page.rs:83:pub(super) unsafe fn read_root_control_page(
+src/am/ec_spire/page.rs:110:pub(super) unsafe fn append_object_tuple(
+src/am/ec_spire/page.rs:152:pub(super) unsafe fn read_object_tuple(
+src/am/ec_spire/page.rs:159:pub(super) unsafe fn with_pinned_object_tuple<F, R>(
+src/am/ec_spire/page.rs:187:pub(super) unsafe fn scan_object_tuples<F>(
+src/am/ec_spire/page.rs:243:pub(super) unsafe fn rewrite_object_tuple_same_len(
+src/am/ec_spire/page.rs:285:pub(super) unsafe fn delete_object_tuples_no_compact(
+src/am/ec_spire/page.rs:370:unsafe fn try_append_object_tuple_to_block(
+src/am/ec_spire/page.rs:426:unsafe fn append_object_tuple_to_new_block(
+src/am/ec_spire/page.rs:482:unsafe fn with_object_tuple_from_locked_page<F, R>(
+src/am/ec_spire/page.rs:508:unsafe fn visit_object_tuple_from_locked_page<F, R>(
+src/am/ec_spire/scan/callbacks.rs:1:pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
+src/am/ec_spire/scan/callbacks.rs:25:pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
+src/am/ec_spire/scan/callbacks.rs:80:pub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple(
+src/am/ec_spire/scan/callbacks.rs:118:pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(scan: pg_sys::IndexScanDesc) {
+src/am/ec_spire/cost/mod.rs:61:pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
+src/am/ec_spire/cost/mod.rs:91:pub(crate) unsafe fn index_cost_snapshot(
+src/am/ec_spire/cost/mod.rs:153:pub(crate) unsafe fn index_cost_tuning_snapshot(
+src/am/ec_spire/cost/mod.rs:193:unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+src/am/ec_spire/cost/mod.rs:220:pub(super) unsafe extern "C-unwind" fn ec_spire_amgettreeheight(rel: pg_sys::Relation) -> i32 {
+src/am/ec_spire/cost/mod.rs:498:pub(super) unsafe extern "C-unwind" fn ec_spire_amtranslatestrategy(
+src/am/ec_spire/cost/mod.rs:520:pub(super) unsafe extern "C-unwind" fn ec_spire_amtranslatecmptype(
+src/am/ec_spire/storage/relation_store.rs:12:    pub(super) unsafe fn for_index_relation(
+src/am/ec_spire/storage/relation_store.rs:269:    pub(super) unsafe fn read_routing_object(
+src/am/ec_spire/storage/relation_store.rs:312:    pub(super) unsafe fn read_leaf_object_v2(
+src/am/ec_spire/storage/relation_store.rs:371:    pub(super) unsafe fn read_object_header(
+src/am/ec_spire/storage/relation_store.rs:457:    pub(super) unsafe fn active_object_tuple_locators(
+src/am/ec_spire/storage/relation_store.rs:538:    pub(super) unsafe fn prefetch_object_tuple(
+src/am/ec_spire/storage/relation_store.rs:553:    pub(super) unsafe fn prefetch_object_tuples(
+src/am/ec_spire/storage/relation_store.rs:565:    unsafe fn prefetch_object_blocks(
+src/am/ec_spire/storage/relation_store.rs:590:    pub(super) unsafe fn read_leaf_object(
+src/am/ec_spire/storage/relation_store.rs:622:    pub(super) unsafe fn read_delta_object(
+src/am/ec_spire/storage/relation_store.rs:654:    pub(super) unsafe fn read_top_graph_object(
+src/am/ec_spire/storage/relation_store.rs:697:    pub(super) unsafe fn read_object_bytes(
+src/am/ec_spire/storage/relation_store.rs:713:    unsafe fn with_single_tuple_object_bytes<F, R>(
+src/am/ec_spire/storage/relation_store.rs:817:    unsafe fn read_large_partition_object_bytes(
+src/am/ec_spire/storage/relation_store.rs:1159:unsafe fn prefetch_relation_blocks_with_read_stream(
+src/am/ec_spire/storage/relation_store.rs:1290:    pub(super) unsafe fn for_index_relation_and_config(
+src/am/ec_spire/storage/relation_store.rs:1350:    pub(super) unsafe fn for_index_relation_and_placements(
+src/am/ec_spire/storage/relation_store.rs:1461:    pub(super) unsafe fn active_object_tuple_locators(
+src/am/ec_spire/storage/relation_store.rs:1471:    pub(super) unsafe fn prefetch_object(
+src/am/ec_spire/storage/relation_store.rs:1481:    pub(super) unsafe fn prefetch_objects(
+src/am/ec_spire/vacuum/mod.rs:26:    unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
+src/am/ec_spire/vacuum/mod.rs:40:pub(super) unsafe extern "C-unwind" fn ec_spire_ambulkdelete(
+src/am/ec_spire/vacuum/mod.rs:70:pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
+src/am/ec_spire/vacuum/mod.rs:87:unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, String> {
+src/am/ec_spire/vacuum/mod.rs:97:unsafe fn run_bulkdelete(
+src/am/ec_spire/vacuum/mod.rs:250:unsafe fn publish_compacted_delta_epoch_if_needed(
+src/am/ec_spire/vacuum/mod.rs:558:unsafe fn finish_vacuum_stats(
+src/am/ec_spire/vacuum/mod.rs:582:unsafe fn heap_tid_is_dead(
+src/am/ec_spire/vacuum/mod.rs:599:unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
+src/am/ec_spire/vacuum/mod.rs:614:pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
+src/am/ec_spire/vacuum/mod.rs:644:pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
+src/am/ec_spire/build/publish.rs:447:pub(super) unsafe fn write_manifest_bundle_to_relation(
+src/am/ec_spire/build/publish.rs:482:pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
+src/am/ec_spire/build/publish.rs:494:pub(super) unsafe fn publish_replacement_epoch_to_relation(
+src/am/ec_spire/build/publish.rs:507:pub(super) unsafe fn write_placement_entries_to_relation(
+src/am/ec_spire/build/tuples.rs:55:unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
+src/am/ec_spire/build/tuples.rs:61:pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
+src/am/ec_spire/build/tuples.rs:72:pub(super) unsafe fn resolve_indexed_tuple_layout(
+src/am/ec_spire/build/tuples.rs:156:unsafe fn resolve_indexed_vector_kind_from_type(
+src/am/ec_spire/build/tuples.rs:176:unsafe fn resolve_source_identity_datum_kind(
+src/am/ec_spire/build/tuples.rs:186:pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
+src/am/ec_spire/build/tuples.rs:267:pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg_sys::Relation) {
+src/am/ec_spire/build/tuples.rs:275:unsafe extern "C-unwind" fn ec_spire_build_callback(
+src/am/ec_spire/build/drafts.rs:212:unsafe fn publish_relation_partitioned_single_level_build(
+src/am/ec_spire/build/drafts.rs:358:unsafe fn publish_relation_recursive_routing_build(
+src/am/ec_spire/build/drafts.rs:441:pub(super) unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
+src/am/ec_spire/build/drafts.rs:452:pub(super) unsafe fn build_spire_index_tuple(
+src/am/ec_spire/build/drafts.rs:498:unsafe fn build_source_identity_from_tuple_values(
+src/am/ec_spire/build/drafts.rs:533:unsafe fn uuid_source_identity_payload(
+src/am/ec_spire/build/drafts.rs:539:unsafe fn with_uuid_payload_bytes<R>(
+src/am/ec_spire/build/recursive.rs:544:pub(super) unsafe fn build_relation_recursive_routing_epoch_draft(
+src/am/ec_spire/build/recursive.rs:558:pub(super) unsafe fn build_relation_recursive_top_graph_epoch_draft(
+src/am/ec_spire/build/recursive.rs:572:pub(super) unsafe fn build_relation_recursive_routing_epoch_from_leaf_inputs(
+src/am/ec_spire/build/recursive.rs:1054:pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
+src/am/ec_spire/update/publish/relation.rs:1:pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
+src/am/ec_spire/update/publish/relation.rs:83:pub(super) unsafe fn publish_relation_selected_scheduled_replacement_epoch(
+src/am/ec_spire/update/publish/relation.rs:111:pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
