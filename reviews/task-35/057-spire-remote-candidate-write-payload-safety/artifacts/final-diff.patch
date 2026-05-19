@@ -1,0 +1,108 @@
+Script started on 2026-05-19 01:05:41-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex fc220ab2..3e36aed6 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1454,15 +1454,6 @@[m [msrc/am/ec_spire/coordinator/remote_candidates/scan_output.rs:830[m
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:831[m
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:857[m
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:97[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:541[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:629[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:648[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:660[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:673[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:687[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:700[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:755[m
+[31m-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:854[m
+ src/am/ec_spire/coordinator/snapshots.rs:10[m
+ src/am/ec_spire/coordinator/snapshots.rs:113[m
+ src/am/ec_spire/coordinator/snapshots.rs:115[m
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/write_payload.rs b/src/am/ec_spire/coordinator/remote_candidates/write_payload.rs[m
+[1mindex eb372a69..d2e35114 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/write_payload.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/write_payload.rs[m
+[36m@@ -537,6 +537,8 @@[m [mpub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch([m
+     let mut dispatches = Vec::with_capacity(requests.len());[m
+     let mut prepare_requests = Vec::with_capacity(requests.len());[m
+     for (node_id, served_epoch, remote_sql) in requests {[m
+[32m+[m[32m        // SAFETY: index_relation is the open SPIRE index relation; the dispatch[m
+[32m+[m[32m        // planner validates node/epoch readiness for the requested remote write.[m
+         let dispatch =[m
+             unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };[m
+         if dispatch.status != SPIRE_REMOTE_STATUS_READY {[m
+[36m@@ -626,6 +628,8 @@[m [mpub(crate) unsafe fn coordinator_insert_prepare_remote_sql([m
+     served_epoch: u64,[m
+     remote_sql: &str,[m
+ ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {[m
+[32m+[m[32m    // SAFETY: arguments are forwarded unchanged to the batch prepare helper,[m
+[32m+[m[32m    // which validates dispatch readiness and records prepared-xact intent.[m
+     unsafe {[m
+         coordinator_insert_prepare_remote_sql_batch([m
+             index_relation,[m
+[36m@@ -644,6 +648,8 @@[m [mpub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload([m
+     row_payload_json: &str,[m
+     requested_columns: &[String],[m
+ ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation; the dispatch[m
+[32m+[m[32m    // planner validates node/epoch readiness for this insert payload.[m
+     let dispatch =[m
+         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };[m
+     if dispatch.status != SPIRE_REMOTE_STATUS_READY {[m
+[36m@@ -657,6 +663,8 @@[m [mpub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload([m
+         row_payload_json,[m
+         requested_columns,[m
+     )?;[m
+[32m+[m[32m    // SAFETY: remote_sql was built from validated payload inputs and dispatch[m
+[32m+[m[32m    // metadata; the helper revalidates dispatch before remote prepare.[m
+     unsafe {[m
+         coordinator_insert_prepare_remote_sql(index_relation, node_id, served_epoch, &remote_sql)[m
+     }[m
+[36m@@ -669,6 +677,8 @@[m [mpub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch([m
+ ) -> Result<Vec<SpireCoordinatorInsertRemotePrepareRow>, String> {[m
+     let mut requests = Vec::with_capacity(rows.len());[m
+     for (node_id, served_epoch, row_payload_json) in rows {[m
+[32m+[m[32m        // SAFETY: index_relation is the open SPIRE index relation; the dispatch[m
+[32m+[m[32m        // planner validates node/epoch readiness for this insert payload.[m
+         let dispatch =[m
+             unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };[m
+         if dispatch.status != SPIRE_REMOTE_STATUS_READY {[m
+[36m@@ -684,6 +694,8 @@[m [mpub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch([m
+         )?;[m
+         requests.push((node_id, served_epoch, remote_sql));[m
+     }[m
+[32m+[m[32m    // SAFETY: each request was built from validated dispatch metadata above;[m
+[32m+[m[32m    // the batch helper performs the final dispatch check and prepare handling.[m
+     unsafe { coordinator_insert_prepare_remote_sql_batch(index_relation, requests) }[m
+ }[m
+ [m
+[36m@@ -696,6 +708,8 @@[m [mpub(crate) unsafe fn coordinator_update_remote_tuple_payload([m
+     row_payload_json: &str,[m
+     updated_columns: &[String],[m
+ ) -> Result<SpireCoordinatorUpdateRemoteRow, String> {[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation; the dispatch[m
+[32m+[m[32m    // planner validates node/epoch readiness for this update payload.[m
+     let dispatch =[m
+         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };[m
+     if dispatch.status != SPIRE_REMOTE_STATUS_READY {[m
+[36m@@ -751,6 +765,8 @@[m [mpub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload([m
+     pk_column: &str,[m
+     pk_value: &[u8],[m
+ ) -> Result<SpireCoordinatorDeleteRemotePrepareRow, String> {[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation; the dispatch[m
+[32m+[m[32m    // planner validates node/epoch readiness for this delete payload.[m
+     let dispatch =[m
+         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };[m
+     if dispatch.status != SPIRE_REMOTE_STATUS_READY {[m
+[36m@@ -850,6 +866,8 @@[m [mpub(crate) unsafe fn coordinator_select_remote_tuple_payload([m
+     pk_value: &[u8],[m
+     requested_columns: &[String],[m
+ ) -> Result<SpireCoordinatorSelectRemoteRow, String> {[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation; the dispatch[m
+[32m+[m[32m    // planner validates node/epoch readiness for this select payload.[m
+     let dispatch =[m
+         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };[m
+     if dispatch.status != SPIRE_REMOTE_STATUS_READY {[m
+
+Script done on 2026-05-19 01:05:41-07:00 [COMMAND_EXIT_CODE="0"]
