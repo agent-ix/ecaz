@@ -253,55 +253,10 @@ for silently accepting untested code paths.
 
 ### Coverage Baseline
 
-Baseline sources:
-
-- `reviews/task-39/002-coverage-baseline/artifacts/coverage/summary.txt` records
-  the original pure-Rust lane baseline.
-- `reviews/task-39/004-quant-careful-coverage/artifacts/coverage/summary.txt`
-  adds the quant modules and `storage/page.rs` through the `hardening/careful`
-  harness.
-- `reviews/task-39/005-simd-mutation-triage/artifacts/coverage/summary.txt`
-  raises `src/quant/simd.rs` after adding explicit backend override tests.
-- `reviews/task-39/010-storage-page-coverage/artifacts/coverage-summary.txt`
-  raises `src/storage/page.rs` after adding page primitive error-path and
-  size-accounting tests.
-- `reviews/task-39/011-diskann-page-coverage/artifacts/coverage-summary.txt`
-  raises `src/am/ec_diskann/page.rs` by importing the Vamana metadata codec
-  tests into the `hardening/careful` coverage harness.
-- `reviews/task-39/012-hnsw-page-coverage/artifacts/coverage-summary.txt`
-  raises `src/am/ec_hnsw/page.rs` by importing the HNSW metadata, tuple, and
-  page-chain codec tests into the `hardening/careful` coverage harness.
-- `reviews/task-39/018-ivf-page-coverage/artifacts/coverage/summary.txt`
-  raises `src/am/ec_ivf/page.rs` by importing the IVF metadata, centroid,
-  directory, posting, PQ-codebook, and page-chain codec tests into the
-  `hardening/careful` coverage harness.
-- `reviews/task-39/015-planner-cost-mutation/artifacts/coverage-summary.txt`
-  raises `src/am/common/cost.rs` by importing the pure planner-cost model and
-  callback translation tests into the `hardening/careful` coverage harness.
-
-The current local coverage lane executes `ecaz-cli` tests and
-`hardening/careful`; it does not execute extension in-module tests, so AM page
-callbacks, SPIRE coordinator paths, DiskANN routine callback glue, live
-relation-store I/O, live planner-cost callbacks, and storage guard drops remain
-recorded gaps.
-
-| Critical area | Baseline line coverage |
-| --- | ---: |
-| `src/quant/{codebook,grouped_pq,hadamard,mse,prod,qjl,rabitq,rotation}.rs` | `81.43%` to `100.00%` |
-| `src/quant/simd.rs` | `94.59%` |
-| `src/quant/mod.rs` | `100.00%` |
-| `src/storage/page.rs` | `97.90%` |
-| `src/am/ec_diskann/page.rs` | `97.35%` |
-| `src/am/ec_hnsw/page.rs` | `84.76%` |
-| `src/am/ec_ivf/page.rs` | `95.86%` |
-| `src/am/ec_spire/page.rs` | `0.00%` |
-| `src/am/ec_spire/storage/{assignment,header,helpers,leaf_v1,leaf_v2,leaf_v2_parts,local_store,local_store_set,relation_plan,routing_delta,top_graph,vec_id}.rs` | `41.52%` to `97.70%` |
-| `src/am/ec_spire/storage/relation_store.rs` | `0.00%` |
-| `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
-| `src/am/ec_diskann/{build,scan}.rs` | `96.69%` to `96.95%` |
-| `src/am/ec_diskann/routine.rs` | `0.00%` |
-| `src/am/common/cost.rs` | `98.98%` |
-| `src/storage/*_guard.rs` | `0.00%` |
+The versioned baseline lives in `fixtures/quality/coverage-baseline.tsv`.
+Per-packet review requests and manifests cite the raw coverage summaries used
+to raise individual rows; this policy doc intentionally does not duplicate that
+ratchet history or carry a live baseline snapshot.
 
 ### Mutation Triage
 
