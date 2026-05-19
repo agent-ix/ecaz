@@ -51,8 +51,8 @@ mod tests {
     use super::am::ec_diskann::tuple::{VamanaCodebookTuple, VamanaNodeTuple};
     use super::am::ec_diskann::vacuum::repair_neighbors;
     use super::storage::page::{
-        raw_tuple_storage_bytes, DataPage, DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER,
-        PAGE_HEADER_BYTES,
+        align_up, aligned_tuple_bytes, raw_tuple_storage_bytes, DataPage, DataPageChain,
+        ItemPointer, FIRST_DATA_BLOCK_NUMBER, PAGE_HEADER_BYTES,
     };
     use std::collections::HashSet;
 
@@ -71,6 +71,14 @@ mod tests {
     #[test]
     fn item_pointer_decode_rejects_long_payloads() {
         assert!(ItemPointer::decode(&[0; 7]).is_err());
+    }
+
+    #[test]
+    fn page_alignment_helpers_preserve_exact_and_round_up_cases() {
+        assert_eq!(align_up(16, 8), 16);
+        assert_eq!(align_up(17, 8), 24);
+        assert_eq!(aligned_tuple_bytes(8), 16);
+        assert_eq!(aligned_tuple_bytes(9), 24);
     }
 
     #[test]
