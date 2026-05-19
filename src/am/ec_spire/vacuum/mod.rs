@@ -43,6 +43,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
+    // SAFETY: PostgreSQL invokes ambulkdelete with live vacuum pointers for
+    // this callback; pgrx_extern_c_guard converts Rust panics/errors at the
+    // FFI boundary.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if info.is_null() {
@@ -71,6 +74,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
+    // SAFETY: PostgreSQL invokes amvacuumcleanup with live vacuum pointers for
+    // this callback; pgrx_extern_c_guard guards the FFI boundary.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if info.is_null() {
@@ -85,11 +90,17 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
 }
 
 unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, String> {
+    // SAFETY: index_relation is the live vacuum relation; the publish lock
+    // guard serializes root/control reads and any replacement epoch publish.
     let _guard = unsafe { lock_publish_relation(index_relation) };
+    // SAFETY: index_relation remains open under the publish lock while the page
+    // helper pins and validates root/control before decoding.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
         return Ok(0);
     }
+    // SAFETY: publish lock is still held and root_control was read from this
+    // relation before compaction considers a replacement epoch.
     unsafe { publish_compacted_delta_epoch_if_needed(index_relation, root_control)? };
     collect_live_assignment_count(index_relation)
 }
@@ -99,7 +110,11 @@ unsafe fn run_bulkdelete(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<VacuumDeleteResult, String> {
+    // SAFETY: index_relation is the live vacuum relation; the publish lock
+    // guard serializes delete-delta publication with other SPIRE publishers.
     let _guard = unsafe { lock_publish_relation(index_relation) };
+    // SAFETY: index_relation remains open under the publish lock while the page
+    // helper pins and validates root/control before decoding.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
         return Ok(VacuumDeleteResult {
@@ -109,12 +124,16 @@ unsafe fn run_bulkdelete(
     }
 
     let (active_epoch_manifest, object_manifest, placement_directory) =
+        // SAFETY: root_control came from this open relation and identifies the
+        // active epoch manifests loaded for the vacuum snapshot.
         unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
     let active_snapshot = super::meta::SpirePublishedEpochSnapshot::new(
         &active_epoch_manifest,
         &object_manifest,
         &placement_directory,
     )?;
+    // SAFETY: placement_directory was loaded from the active epoch for this
+    // relation; store guards open relation-backed objects for read access.
     let store = unsafe {
         SpireRelationObjectStoreSet::for_index_relation_and_placements(
             index_relation,
@@ -125,6 +144,8 @@ unsafe fn run_bulkdelete(
     let visible = collect_visible_assignments(&active_snapshot, &store)?;
     let mut deletes_by_base_pid: HashMap<u64, Vec<SpireDeleteDeltaInput>> = HashMap::new();
     for assignment in &visible {
+        // SAFETY: callback is PostgreSQL's live bulk-delete callback and
+        // callback_state is the state pointer passed to ambulkdelete.
         if unsafe { heap_tid_is_dead(assignment.assignment.heap_tid, callback, callback_state) } {
             deletes_by_base_pid
                 .entry(assignment.base_pid)
@@ -171,17 +192,23 @@ unsafe fn run_bulkdelete(
 }
 
 fn collect_live_assignment_count(index_relation: pg_sys::Relation) -> Result<u64, String> {
+    // SAFETY: caller passes an open SPIRE index relation; page helper pins and
+    // validates root/control before decoding.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
         return Ok(0);
     }
     let (epoch_manifest, object_manifest, placement_directory) =
+        // SAFETY: root_control belongs to this relation and names the active
+        // manifests used to build the published snapshot.
         unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
     let snapshot = super::meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
         &object_manifest,
         &placement_directory,
     )?;
+    // SAFETY: placement_directory was validated with the active manifest set;
+    // store guards keep relation-backed objects open for read access.
     let store = unsafe {
         SpireRelationObjectStoreSet::for_index_relation_and_placements(
             index_relation,
@@ -252,8 +279,12 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
     root_control: super::meta::SpireRootControlState,
 ) -> Result<bool, String> {
     let (active_epoch_manifest, object_manifest, placement_directory) =
+        // SAFETY: root_control was read from this open relation under the
+        // publish lock and identifies the active manifest set.
         unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
     let local_store_config =
+        // SAFETY: root_control belongs to this relation and names the local
+        // store config for the active epoch being compacted.
         unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
     let active_snapshot = super::meta::SpirePublishedEpochSnapshot::new(
         &active_epoch_manifest,
@@ -261,6 +292,8 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
         &placement_directory,
     )?;
     let snapshot = super::meta::SpireValidatedEpochSnapshot::from_snapshot(active_snapshot)?;
+    // SAFETY: local_store_config came from this relation/root epoch and the
+    // publish lock is held while opening write-capable relation stores.
     let mut store = unsafe {
         SpireRelationObjectStoreSet::for_index_relation_and_config(
             index_relation,
@@ -298,6 +331,7 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
         .active_epoch
         .checked_add(1)
         .ok_or_else(|| "ec_spire vacuum compaction epoch overflow".to_owned())?;
+    // SAFETY: timestamp helper reads PostgreSQL time state for publish metadata.
     let (published_at_micros, retain_until_micros) =
         unsafe { build::current_epoch_publish_times()? };
     let pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
@@ -368,6 +402,8 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
 
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;
     let placement_evidence =
+        // SAFETY: index_relation is locked for publish and placement_directory
+        // was rebuilt for the replacement epoch before writing placement rows.
         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
     let object_manifest = object_manifest_from_placement_writes(
         new_epoch,
@@ -392,6 +428,8 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
+    // SAFETY: publish lock is held; input manifests/directories were validated
+    // for new_epoch and active_epoch_manifest is the epoch being replaced.
     unsafe {
         build::publish_replacement_epoch_to_relation(index_relation, active_epoch_manifest, input)?;
     }
@@ -485,12 +523,17 @@ fn publish_delete_delta_epoch(
         .active_epoch
         .checked_add(1)
         .ok_or_else(|| "ec_spire vacuum epoch overflow".to_owned())?;
+    // SAFETY: timestamp helper reads PostgreSQL time state for publish metadata.
     let (published_at_micros, retain_until_micros) =
         unsafe { build::current_epoch_publish_times()? };
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
     let local_store_config =
+        // SAFETY: root_control belongs to this relation and names the local
+        // store config for the replacement delete-delta epoch.
         unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
+    // SAFETY: local_store_config came from this relation/root epoch and the
+    // publish path holds the lock while opening write-capable relation stores.
     let mut store = unsafe {
         SpireRelationObjectStoreSet::for_index_relation_and_config(
             index_relation,
@@ -525,6 +568,8 @@ fn publish_delete_delta_epoch(
 
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;
     let placement_evidence =
+        // SAFETY: index_relation is locked for publish and placement_directory
+        // contains carried-forward plus newly written delete-delta placements.
         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
     let object_manifest = object_manifest_from_placement_writes(
         new_epoch,
@@ -549,6 +594,8 @@ fn publish_delete_delta_epoch(
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
+    // SAFETY: publish lock is held; input manifests/directories were validated
+    // for new_epoch and active_epoch_manifest is the epoch being replaced.
     unsafe {
         build::publish_replacement_epoch_to_relation(index_relation, active_epoch_manifest, input)?;
     }
@@ -563,13 +610,19 @@ unsafe fn finish_vacuum_stats(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_spire vacuum stats");
+        // SAFETY: alloc0 creates a PostgreSQL-owned IndexBulkDeleteResult when
+        // PostgreSQL did not provide an existing stats struct.
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats
     };
+    // SAFETY: index_relation is open for vacuum stats; PostgreSQL returns the
+    // current main-fork block count for the relation.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
+    // SAFETY: stats is either PostgreSQL-provided or allocated above and is
+    // uniquely mutated before being returned to PostgreSQL.
     unsafe {
         (*stats).num_pages = block_count;
         (*stats).estimated_count = false;
@@ -586,6 +639,8 @@ unsafe fn heap_tid_is_dead(
 ) -> bool {
     let mut tid = pg_sys::ItemPointerData::default();
     item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
+    // SAFETY: tid is a stack ItemPointerData valid for the callback duration;
+    // callback_state is the opaque state pointer supplied by PostgreSQL.
     unsafe { callback((&mut tid) as pg_sys::ItemPointer, callback_state) }
 }
 
@@ -600,6 +655,8 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
 ) -> bool {
+    // SAFETY: debug wrapper is called by the SPIRE test vacuum path with a
+    // DebugVacuumCallbackState pointer and a live ItemPointer for this call.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = &*(state.cast::<DebugVacuumCallbackState>());
@@ -627,6 +684,8 @@ pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
         dead_tids: dead_tids.iter().copied().collect(),
     };
 
+    // SAFETY: info references the open debug index relation and callback_state
+    // lives until ambulkdelete returns.
     let stats = unsafe {
         ec_spire_ambulkdelete(
             info_ptr,
@@ -635,7 +694,9 @@ pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
         )
     };
+    // SAFETY: info_ptr and stats are still live from the debug bulk-delete call.
     let stats = unsafe { ec_spire_amvacuumcleanup(info_ptr, stats) };
+    // SAFETY: vacuum callbacks returned a valid stats pointer for this debug path.
     let result = unsafe { *stats };
     result
 }
@@ -657,6 +718,8 @@ pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
         dead_tids: dead_tids.iter().copied().collect(),
     };
 
+    // SAFETY: info references the open debug index relation and callback_state
+    // lives until ambulkdelete returns.
     let stats = unsafe {
         ec_spire_ambulkdelete(
             info_ptr,
@@ -665,6 +728,7 @@ pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
         )
     };
+    // SAFETY: vacuum callback returned a valid stats pointer for this debug path.
     let result = unsafe { *stats };
     result
 }
