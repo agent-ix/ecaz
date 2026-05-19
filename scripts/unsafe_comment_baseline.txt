@@ -639,14 +639,6 @@ src/am/ec_hnsw/insert.rs:879
 src/am/ec_hnsw/insert.rs:908
 src/am/ec_hnsw/insert.rs:909
 src/am/ec_hnsw/insert.rs:952
-src/am/ec_hnsw/options.rs:160
-src/am/ec_hnsw/options.rs:243
-src/am/ec_hnsw/options.rs:249
-src/am/ec_hnsw/options.rs:259
-src/am/ec_hnsw/options.rs:264
-src/am/ec_hnsw/options.rs:265
-src/am/ec_hnsw/options.rs:272
-src/am/ec_hnsw/options.rs:279
 src/am/ec_hnsw/scan_debug.rs:1004
 src/am/ec_hnsw/scan_debug.rs:1018
 src/am/ec_hnsw/scan_debug.rs:1023

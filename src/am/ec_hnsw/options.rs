@@ -157,6 +157,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
     reloptions: pg_sys::Datum,
     validate: bool,
 ) -> *mut pg_sys::bytea {
+    // SAFETY: PostgreSQL invokes amoptions with a reloptions Datum and expects
+    // a bytea allocated by build_local_reloptions; pgrx guards the FFI boundary.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut relopts = pg_sys::local_relopts::default();
@@ -240,12 +242,16 @@ unsafe fn read_string_reloption(
         return None;
     }
 
+    // SAFETY: rd_options is PostgreSQL's varlena reloptions blob and offset is
+    // a string reloption offset written by build_local_reloptions.
     let value_ptr = unsafe {
         rd_options
             .cast::<u8>()
             .add(offset as usize)
             .cast::<std::ffi::c_char>()
     };
+    // SAFETY: string reloptions are stored as NUL-terminated strings inside the
+    // reloptions blob at the validated offset.
     let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
         .to_str()
         .unwrap_or_else(|e| pgrx::error!("invalid ec_hnsw {name} reloption: {e}"));
@@ -256,12 +262,18 @@ unsafe fn read_string_reloption(
 }
 
 pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
+    // SAFETY: index_relation is an open HNSW index relation; rd_options is the
+    // PostgreSQL-owned reloptions varlena pointer for this relation.
     let rd_options = unsafe { (*index_relation).rd_options };
     if rd_options.is_null() {
         return TqHnswOptions::DEFAULT;
     }
 
+    // SAFETY: rd_options was produced by ec_hnsw_amoptions using the
+    // TqHnswReloptions layout.
     let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };
+    // SAFETY: build_source_column_offset is a string reloption offset in the
+    // same rd_options blob.
     let build_source_column = unsafe {
         read_string_reloption(
             rd_options,
@@ -269,6 +281,8 @@ pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
             "build_source_column",
         )
     };
+    // SAFETY: rerank_source_column_offset is a string reloption offset in the
+    // same rd_options blob.
     let rerank_source_column = unsafe {
         read_string_reloption(
             rd_options,
@@ -276,6 +290,8 @@ pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
             "rerank_source_column",
         )
     };
+    // SAFETY: storage_format_offset is a string reloption offset in the same
+    // rd_options blob.
     let storage_format = match unsafe {
         read_string_reloption(
             rd_options,
