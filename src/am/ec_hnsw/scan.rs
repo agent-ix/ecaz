@@ -3187,21 +3187,29 @@ unsafe fn prefetch_graph_buffers(
 
     reset_graph_prefetch_blocks(opaque, blocks);
     let stream = ensure_graph_read_stream(index_relation, opaque);
+    // SAFETY: `stream` is owned by the scan opaque and has just been seeded
+    // with block numbers for this scan's live index relation.
     unsafe { pg_sys::read_stream_reset(stream) };
 
     let mut prefetched_buffers = HashMap::new();
     loop {
         let mut per_buffer_data = ptr::null_mut();
+        // SAFETY: the read stream remains owned by `opaque`, and
+        // `per_buffer_data` is an out-parameter consumed before the next call.
         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
+        // SAFETY: read streams return already-pinned buffers; the guard takes
+        // responsibility for releasing the pin when the prefetch map is dropped.
         let buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }.unwrap_or_else(|| {
             pgrx::error!("ec_hnsw graph prefetch read stream returned an invalid buffer")
         });
         let block_number = if per_buffer_data.is_null() {
             continue;
         } else {
+            // SAFETY: `reset_graph_prefetch_blocks` stored block-number
+            // pointers as per-buffer data for this stream immediately above.
             unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
         };
         prefetched_buffers.insert(block_number, buffer);
@@ -3237,11 +3245,15 @@ unsafe fn cached_graph_element_with_prefetch(
     if let Some(prefetched_buffers) = prefetched_buffers {
         if let Some(buffer) = prefetched_buffers.get(&element_tid.block_number) {
             let buffer = buffer.lock(pg_sys::BUFFER_LOCK_SHARE as i32);
+            // SAFETY: the prefetched buffer is pinned and share-locked for the
+            // target block while the graph element is decoded.
             let loaded = unsafe { cached_graph_element_from_buffer(opaque, &buffer, element_tid) };
             return loaded;
         }
     }
 
+    // SAFETY: fallback loading uses the live scan relation, opaque pointer,
+    // and graph TID passed by the traversal caller.
     unsafe { cached_graph_element(index_relation, opaque, element_tid) }
 }
 
@@ -3255,12 +3267,16 @@ unsafe fn cached_scan_successor_candidates_for_layer<KeepFn>(
 where
     KeepFn: FnMut(page::ItemPointer) -> bool,
 {
+    // SAFETY: `source_tid` is a graph element discovered during this scan, and
+    // the relation/opaque pair stay live for the traversal step.
     let (element, neighbors) =
         unsafe { cached_graph_adjacency(index_relation, opaque, source_tid) };
-    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
-    let exact_budget =
-        grouped_exact_traversal_candidate_budget_for_layer(unsafe { &*opaque }, layer);
-    let scan_m = usize::from(unsafe { &*opaque }.scan_m);
+    // SAFETY: callers pass the current scan opaque pointer; immutable reads
+    // here only copy traversal configuration for this layer.
+    let opaque_ref = unsafe { &*opaque };
+    let scan_graph_storage = opaque_ref.scan_graph_storage;
+    let exact_budget = grouped_exact_traversal_candidate_budget_for_layer(opaque_ref, layer);
+    let scan_m = usize::from(opaque_ref.scan_m);
     let capacity = graph::layer_slot_bounds(element.level, scan_m, layer)
         .map(|(start, end)| {
             end.min(neighbors.tids.len())
@@ -3272,15 +3288,21 @@ where
         graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, scan_m, layer);
     #[cfg(feature = "pg18")]
     let prefetched_buffers =
+        // SAFETY: the live scan opaque owns the PG18 read stream used to
+        // prefetch the neighbor blocks for this layer.
         Some(unsafe { prefetch_graph_buffers(index_relation, &mut *opaque, &neighbor_tids) });
     #[cfg(not(feature = "pg18"))]
     let prefetched_buffers: Option<PrefetchedGraphBuffers> = None;
 
+    // SAFETY: non-null `binary_sign_query` is Box-owned by the scan opaque
+    // until `free_scan_prepared_query` runs.
     let binary_query = unsafe { (*opaque).binary_sign_query.as_ref() };
     if binary_query.is_none() {
         let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(capacity));
         for neighbor_tid in neighbor_tids.iter().copied() {
             if keep_neighbor_tid(neighbor_tid) {
+                // SAFETY: `neighbor_tid` came from the cached adjacency list
+                // for this layer and the relation/opaque pair are live.
                 let (neighbor, loaded_state) = unsafe {
                     cached_graph_element_with_prefetch(
                         index_relation,
@@ -3294,6 +3316,8 @@ where
                 }
                 match candidate_score_dispatch(scan_graph_storage, &neighbor, loaded_state) {
                     CandidateScoreDispatch::Exact(loaded_state) => {
+                        // SAFETY: the candidate graph element was loaded for
+                        // this scan and carries the exact payload state to score.
                         let score = unsafe {
                             exact_score_cached_graph_element(
                                 index_relation,
@@ -3310,6 +3334,8 @@ where
                     }
                     CandidateScoreDispatch::Grouped(grouped) => {
                         if let Some(grouped_candidates) = grouped_candidates.as_mut() {
+                            // SAFETY: `grouped` was derived from this loaded
+                            // candidate and the scan opaque owns the query state.
                             let approx_score =
                                 unsafe { score_grouped_candidate_context_approx(opaque, grouped) };
                             let ordinal = grouped_candidates.len();
@@ -3319,6 +3345,8 @@ where
                                 approx_score,
                             });
                         } else {
+                            // SAFETY: `grouped` belongs to this candidate and
+                            // exact scoring uses the live relation/opaque pair.
                             let score = unsafe {
                                 score_grouped_candidate_context(
                                     index_relation,
@@ -3339,6 +3367,8 @@ where
         }
 
         if let Some(grouped_candidates) = grouped_candidates {
+            // SAFETY: candidates were collected from this layer's live
+            // traversal and are scored before any prefetched buffers are released.
             candidates.extend(unsafe {
                 score_budgeted_grouped_traversal_candidates(
                     index_relation,
@@ -3355,11 +3385,17 @@ where
     }
 
     let binary_query = binary_query.expect("binary query should remain available during scan");
-    let quantizer = unsafe { &*(*opaque).cached_quantizer };
+    // SAFETY: the scan opaque is live for the traversal step; the cached
+    // quantizer is Box-owned by it until scan cleanup.
+    let opaque_ref = unsafe { &*opaque };
+    let quantizer = cached_quantizer_ref(opaque_ref)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
     let mut approx_candidates = Vec::with_capacity(capacity);
 
     for neighbor_tid in neighbor_tids.iter().copied() {
         if keep_neighbor_tid(neighbor_tid) {
+            // SAFETY: `neighbor_tid` came from the cached adjacency list for
+            // this layer and the relation/opaque pair are live.
             let (neighbor, loaded_state) = unsafe {
                 cached_graph_element_with_prefetch(
                     index_relation,
@@ -3372,7 +3408,10 @@ where
                 continue;
             }
 
+            // SAFETY: the scan opaque remains live while checking the score
+            // cache for this loaded neighbor.
             if let Some(score) = cached_scan_element_score(unsafe { &*opaque }, neighbor.tid) {
+                // SAFETY: same live scan opaque; this mutates only cache stats.
                 record_score_cache_hit(unsafe { &mut *opaque });
                 candidates.push(search::BeamCandidate::with_source(
                     neighbor.tid,
@@ -3393,6 +3432,7 @@ where
                 .expect("timing should fit in u64");
             #[cfg(not(any(test, feature = "pg_test")))]
             let binary_elapsed_us = 0;
+            // SAFETY: same live scan opaque; this mutates only timing stats.
             record_binary_prefilter_score_elapsed(unsafe { &mut *opaque }, binary_elapsed_us);
             approx_candidates.push(BinaryPrefilterCandidate {
                 ordinal: approx_candidates.len(),
@@ -3409,6 +3449,7 @@ where
         approx_candidates.truncate(survivor_budget);
         approx_candidates.sort_by_key(|candidate| candidate.ordinal);
     }
+    // SAFETY: same live scan opaque; this records the current survivor count.
     record_binary_prefilter_survivors(unsafe { &mut *opaque }, approx_candidates.len());
 
     let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(approx_candidates.len()));
@@ -3419,9 +3460,13 @@ where
             candidate.loaded_state,
         ) {
             CandidateScoreDispatch::Exact(loaded_state) => {
+                // SAFETY: same live scan opaque; this reads only the binary
+                // live-rerank mode flag.
                 let score = if turboquant_binary_live_rerank_enabled(unsafe { &*opaque }) {
                     candidate.approx_score
                 } else {
+                    // SAFETY: the candidate was loaded from this scan's graph
+                    // traversal and carries the exact payload state to score.
                     unsafe {
                         exact_score_cached_graph_element(
                             index_relation,
@@ -3440,9 +3485,13 @@ where
             CandidateScoreDispatch::Grouped(grouped) => {
                 if let Some(grouped_candidates) = grouped_candidates.as_mut() {
                     let approx_score =
+                        // SAFETY: same live scan opaque; this reads only the
+                        // grouped binary traversal mode flag.
                         if grouped_binary_traversal_score_enabled(unsafe { &*opaque }) {
                             candidate.approx_score
                         } else {
+                            // SAFETY: `grouped` belongs to this candidate and
+                            // approximate scoring reads the scan query state.
                             unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
                         };
                     grouped_candidates.push(GroupedTraversalCandidate {
@@ -3451,13 +3500,19 @@ where
                         approx_score,
                     });
                 } else {
+                    // SAFETY: same live scan opaque; this reads only grouped
+                    // traversal configuration for this layer.
                     let score = if grouped_binary_traversal_score_enabled(unsafe { &*opaque })
                         && !grouped_exact_traversal_full_candidate_scoring_for_layer(
+                            // SAFETY: same live scan opaque; this reads only
+                            // grouped exact traversal configuration.
                             unsafe { &*opaque },
                             layer,
                         ) {
                         candidate.approx_score
                     } else {
+                        // SAFETY: `grouped` belongs to this candidate and
+                        // exact scoring uses the live relation/opaque pair.
                         unsafe {
                             score_grouped_candidate_context(index_relation, opaque, grouped, layer)
                         }
@@ -3473,6 +3528,8 @@ where
     }
 
     if let Some(grouped_candidates) = grouped_candidates {
+        // SAFETY: candidates were collected from this layer's live traversal
+        // and are scored before any prefetched buffers are released.
         candidates.extend(unsafe {
             score_budgeted_grouped_traversal_candidates(
                 index_relation,
@@ -3501,6 +3558,8 @@ unsafe fn cached_upper_layer_seed_candidate(
     graph::greedy_descend_with_successors(
         entry_candidate,
         entry_level,
+        // SAFETY: each successor expansion uses the same live relation and
+        // scan opaque while greedy descent owns only value-copy TIDs/scores.
         |source_tid, layer| unsafe {
             cached_scan_successor_candidates_for_layer(
                 index_relation,
