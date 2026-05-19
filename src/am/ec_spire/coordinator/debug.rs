@@ -12,6 +12,8 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u32, u16, u64, u32, u64, u64, u32, u64), String> {
+        // SAFETY: opens the SPIRE relation object store for the debug relation
+        // while the IndexRelationGuard keeps the relation open.
         let store = unsafe {
             storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
         };
@@ -27,7 +29,11 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
         )?;
 
         let placement = store.insert_routing_object(1, &object)?;
+        // SAFETY: reads root/control state through the guarded debug index
+        // relation after inserting the routing object.
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
+        // SAFETY: placement was just inserted through this object store and is
+        // read back before the relation guard is dropped.
         let decoded = unsafe { store.read_routing_object(&placement)? };
         let child = decoded
             .children()
@@ -55,6 +61,8 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u32, u16, u32, u32, u64, u32), String> {
+        // SAFETY: opens the SPIRE relation object store for the debug relation
+        // while the IndexRelationGuard keeps the relation open.
         let store = unsafe {
             storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
         };
@@ -85,6 +93,8 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
 
         let placement =
             store.insert_leaf_object_v2_from_rows(1, 20, 1, 10, &assignments)?;
+        // SAFETY: placement was just inserted through this object store and is
+        // read back before the relation guard is dropped.
         let leaf = unsafe { store.read_leaf_object_v2(&placement)? };
         let rows = leaf.assignment_rows()?;
         let first_row = rows
@@ -128,18 +138,28 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
             object_manifest: &object_manifest,
             placement_directory: &placement_directory,
             local_store_config: meta::SpireLocalStoreConfig::embedded_single_store(
+                // SAFETY: rd_id is stable while the guarded index relation is
+                // open and is copied into the debug local-store config.
                 unsafe { (*index_relation.as_ptr()).rd_id }.into(),
+                // SAFETY: rd_rel belongs to the guarded index relation; this
+                // copies the reltablespace OID for debug local-store config.
                 unsafe { (*(*index_relation.as_ptr()).rd_rel).reltablespace }.into(),
             )?,
             next_pid: assign::SPIRE_FIRST_PID,
             next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ,
         };
         let manifests = build::encode_manifest_bundle_for_publish(input.clone())?;
+        // SAFETY: writes encoded debug manifests into the guarded index
+        // relation and returns their tuple locators.
         let locators = unsafe {
             build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
         };
         let root_control = build::root_control_state_for_publish(input, locators)?;
+        // SAFETY: initializes root/control state in the guarded debug relation
+        // with locators returned by the manifest write above.
         unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
+        // SAFETY: reads back root/control state through the same guarded debug
+        // relation to verify the round trip.
         let persisted = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
 
         Ok((
@@ -166,6 +186,8 @@ pub(crate) unsafe fn debug_spire_age_retired_epoch_manifests(
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
         let mut rewrites = Vec::new();
+        // SAFETY: scans object tuples in the guarded debug index relation and
+        // records same-length retired epoch manifest rewrites.
         unsafe {
             page::scan_object_tuples(index_relation.as_ptr(), |tid, tuple| {
                 if tuple.len() != meta::SpireEpochManifest::encoded_len() {
@@ -185,6 +207,8 @@ pub(crate) unsafe fn debug_spire_age_retired_epoch_manifests(
             })?
         };
         for (tid, payload) in &rewrites {
+            // SAFETY: tid was collected from the guarded relation scan above
+            // and payload is an encoded epoch manifest of the same length.
             unsafe {
                 page::rewrite_object_tuple_same_len(index_relation.as_ptr(), *tid, payload)?
             };
@@ -289,6 +313,8 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
             )?,
         ];
         let placement_directory = meta::SpirePlacementDirectory::from_entries(1, placements)?;
+        // SAFETY: writes placement entries into the guarded root relation for
+        // the debug two-store publish round trip.
         let placement_evidence = unsafe {
             build::write_placement_entries_to_relation(root_relation.as_ptr(), &placement_directory)?
         };
@@ -317,10 +343,14 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
             next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ + 2,
         };
         let manifests = build::encode_manifest_bundle_for_publish(input.clone())?;
+        // SAFETY: writes encoded debug manifests into the guarded root relation
+        // and returns their tuple locators.
         let locators = unsafe {
             build::write_manifest_bundle_to_relation(root_relation.as_ptr(), &manifests)?
         };
         let root_control = build::root_control_state_for_publish(input, locators)?;
+        // SAFETY: initializes root/control state in the guarded root relation
+        // using locators returned by the manifest write above.
         unsafe { page::initialize_root_control_page(root_relation.as_ptr(), root_control) };
 
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
@@ -328,6 +358,8 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens relation-backed object stores for the debug placement
+        // directory while the root relation guard remains live.
         let relation_store_set = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 root_relation.as_ptr(),
@@ -405,6 +437,8 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
 pub(crate) unsafe fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
+    // SAFETY: reads root/control state through the guarded debug index relation
+    // and returns copied scalar fields.
     let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
     (
         root_control.active_epoch,
@@ -422,13 +456,23 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
+        // SAFETY: reads root/control state through the guarded debug index
+        // relation before rewriting placement state.
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
+        // SAFETY: loads the local-store config referenced by root/control from
+        // the same guarded debug index relation.
         let local_store_config =
             unsafe { scan::load_relation_local_store_config(index_relation.as_ptr(), root_control)? };
+        // SAFETY: root_control came from this guarded debug relation and names
+        // the active epoch manifest tuple.
         let epoch_bytes =
             unsafe { page::read_object_tuple(index_relation.as_ptr(), root_control.epoch_manifest_tid)? };
+        // SAFETY: root_control came from this guarded debug relation and names
+        // the active object manifest tuple.
         let object_bytes =
             unsafe { page::read_object_tuple(index_relation.as_ptr(), root_control.object_manifest_tid)? };
+        // SAFETY: root_control came from this guarded debug relation and names
+        // the active placement directory tuple.
         let placement_bytes = unsafe {
             page::read_object_tuple(index_relation.as_ptr(), root_control.placement_directory_tid)?
         };
@@ -464,6 +508,8 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
             placement_directory: placement_directory.encode()?,
             local_store_config: local_store_config.encode()?,
         };
+        // SAFETY: writes rewritten manifest bundle into the guarded debug index
+        // relation and returns the replacement tuple locators.
         let locators = unsafe {
             build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
         };
@@ -476,6 +522,8 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
             locators.placement_directory_tid,
             locators.local_store_config_tid,
         )?;
+        // SAFETY: updates root/control in the guarded debug index relation to
+        // point at the replacement manifest bundle.
         unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
         Ok(root_control.active_epoch)
     })();
@@ -488,6 +536,8 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_node(
     pid: u64,
     node_id: u32,
 ) -> u64 {
+    // SAFETY: forwards the debug relation OID and single rewrite request to the
+    // shared guarded placement-node rewrite helper.
     unsafe { debug_spire_rewrite_placement_nodes(index_oid, &[(pid, node_id)]) }
 }
 
@@ -499,9 +549,15 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
+        // SAFETY: reads root/control state through the guarded debug index
+        // relation before rewriting placement nodes.
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
+        // SAFETY: loads the local-store config referenced by root/control from
+        // the same guarded debug index relation.
         let local_store_config =
             unsafe { scan::load_relation_local_store_config(index_relation.as_ptr(), root_control)? };
+        // SAFETY: root_control came from the guarded debug relation and names
+        // the active manifests being rewritten.
         let (epoch_manifest, object_manifest, mut placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(
                 index_relation.as_ptr(),
@@ -526,6 +582,8 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
             placement_directory: placement_directory.encode()?,
             local_store_config: local_store_config.encode()?,
         };
+        // SAFETY: writes rewritten manifests into the guarded debug index
+        // relation and returns replacement tuple locators.
         let locators = unsafe {
             build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
         };
@@ -538,6 +596,8 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
             locators.placement_directory_tid,
             locators.local_store_config_tid,
         )?;
+        // SAFETY: updates root/control in the guarded debug index relation to
+        // point at the replacement manifest bundle.
         unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
         Ok(root_control.active_epoch)
     })();
@@ -552,9 +612,15 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<u64, String> {
+        // SAFETY: reads root/control state through the guarded debug index
+        // relation before rewriting consistency mode.
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
+        // SAFETY: loads the local-store config referenced by root/control from
+        // the same guarded debug index relation.
         let local_store_config =
             unsafe { scan::load_relation_local_store_config(index_relation.as_ptr(), root_control)? };
+        // SAFETY: root_control came from the guarded debug relation and names
+        // the active manifests being rewritten.
         let (mut epoch_manifest, object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(
                 index_relation.as_ptr(),
@@ -577,6 +643,8 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
             placement_directory: placement_directory.encode()?,
             local_store_config: local_store_config.encode()?,
         };
+        // SAFETY: writes rewritten manifests into the guarded debug index
+        // relation and returns replacement tuple locators.
         let locators = unsafe {
             build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?
         };
@@ -589,6 +657,8 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
             locators.placement_directory_tid,
             locators.local_store_config_tid,
         )?;
+        // SAFETY: updates root/control in the guarded debug index relation to
+        // point at the replacement manifest bundle.
         unsafe { page::initialize_root_control_page(index_relation.as_ptr(), root_control) };
         Ok(root_control.active_epoch)
     })();
@@ -617,7 +687,11 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<SpireDebugSnapshotDiagnostics, String> {
+        // SAFETY: reads root/control state through the guarded debug index
+        // relation before collecting active snapshot diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
+        // SAFETY: root_control came from the same guarded debug relation and
+        // names the active manifests used by diagnostics.
         let (epoch_manifest, object_manifest, placement_directory) =
             unsafe { scan::load_relation_epoch_manifests(index_relation.as_ptr(), root_control)? };
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
@@ -625,6 +699,8 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens the SPIRE relation object store for the guarded debug
+        // index relation before collecting snapshot diagnostics.
         let object_store = unsafe {
             storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
         };
