@@ -29,7 +29,7 @@
 //! path, iterate the returned [`ScanResult`]s. The shell here is what
 //! that callback will call.
 
-use super::{
+use crate::am::ec_diskann::{
     maybe_check_for_interrupts,
     reader::{PersistedGraphReader, VisitedState},
     tuple::VamanaNodeTuple,

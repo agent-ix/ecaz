@@ -35,7 +35,7 @@ am/ec_spire/storage/routing_delta.rs	0.00	Task 39 baseline from reviews/task-39/
 am/ec_spire/storage/top_graph.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_spire/storage/vec_id.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_spire/coordinator/diagnostics.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-am/ec_diskann/build.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+am/ec_diskann/build.rs	96.69	Task 39 baseline raised by reviews/task-39/019-diskann-core-coverage
 am/ec_diskann/routine.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-am/ec_diskann/scan.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+am/ec_diskann/scan.rs	96.95	Task 39 baseline raised by reviews/task-39/019-diskann-core-coverage
 am/common/cost.rs	98.98	Task 39 baseline raised by reviews/task-39/015-planner-cost-mutation

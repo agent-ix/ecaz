@@ -25,6 +25,22 @@ pub mod careful_ivf_page;
 #[path = "../../../src/am/common/cost.rs"]
 pub mod careful_common_cost;
 
+#[allow(dead_code)]
+#[path = "../../../src/am/common/training.rs"]
+pub mod careful_common_training;
+
+#[path = "../../../src/am/ec_diskann/persist.rs"]
+pub mod careful_diskann_persist;
+
+#[path = "../../../src/am/ec_diskann/reader.rs"]
+pub mod careful_diskann_reader;
+
+#[path = "../../../src/am/ec_diskann/build.rs"]
+pub mod careful_diskann_build;
+
+#[path = "../../../src/am/ec_diskann/scan.rs"]
+pub mod careful_diskann_scan;
+
 pub mod storage {
     pub use crate::careful_storage_page as page;
 }
@@ -37,10 +53,17 @@ pub mod am {
 
     pub mod common {
         pub use crate::careful_common_cost as cost;
+        pub use crate::careful_common_training as training;
     }
 
     pub mod ec_diskann {
+        pub(crate) fn maybe_check_for_interrupts() {}
+
+        pub use crate::careful_diskann_build as build;
         pub use crate::careful_diskann_page as page;
+        pub use crate::careful_diskann_persist as persist;
+        pub use crate::careful_diskann_reader as reader;
+        pub use crate::careful_diskann_scan as scan;
         pub use crate::careful_diskann_tuple as tuple;
         pub use crate::careful_diskann_vacuum as vacuum;
         pub use crate::careful_diskann_vamana as vamana;
