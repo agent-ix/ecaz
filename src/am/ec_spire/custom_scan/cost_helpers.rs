@@ -10,6 +10,8 @@ unsafe fn estimate_custom_scan_cost(
     target_width: f64,
     eligibility: &SpireCustomScanIndexEligibilityRow,
 ) -> SpireCustomScanCostEstimate {
+    // SAFETY: planner cost constants and cpu_tuple_cost are backend-local GUC
+    // reads during planner path construction.
     let constants = unsafe { current_planner_cost_constants() };
     let cpu_tuple_cost = unsafe { pg_sys::cpu_tuple_cost };
     estimate_custom_scan_cost_with_constants(
@@ -26,6 +28,8 @@ fn custom_scan_target_width(target: *mut pg_sys::PathTarget) -> f64 {
     if target.is_null() {
         0.0
     } else {
+        // SAFETY: caller supplied a live PathTarget pointer from PostgreSQL's
+        // planner; null was checked above.
         f64::from(unsafe { (*target).width }.max(0))
     }
 }
@@ -69,6 +73,8 @@ fn estimate_custom_scan_cost_with_constants(
 }
 
 unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
+    // SAFETY: caller supplies PostgreSQL's planner root; as_ref returns None if
+    // a defensive null pointer is encountered.
     let root_ref = unsafe { root.as_ref()? };
     if root_ref.limit_tuples < 0.0 || !root_ref.limit_tuples.is_finite() {
         return None;
@@ -83,25 +89,36 @@ unsafe fn custom_scan_orderby_query_expr(
     if root.is_null() || rel.is_null() {
         return None;
     }
+    // SAFETY: null checks above ensure the planner root and rel pointers can be
+    // borrowed while inspecting this path candidate.
     let root_ref = unsafe { root.as_ref()? };
     let rel_ref = unsafe { rel.as_ref()? };
+    // SAFETY: PlannerInfo owns parse during planning; as_ref handles null parse
+    // defensively before sortClause/targetList are inspected.
     let query = unsafe { root_ref.parse.as_ref()? };
     if query.sortClause.is_null() || query.targetList.is_null() {
         return None;
     }
+    // SAFETY: sortClause is non-null and owned by the live Query node.
     let sort_clauses = unsafe { PgList::<pg_sys::SortGroupClause>::from_pg(query.sortClause) };
     if sort_clauses.len() != 1 {
         return None;
     }
+    // SAFETY: single-item sortClause list is live while planning this path.
     let sort_clause = unsafe { sort_clauses.get_ptr(0)?.as_ref()? };
+    // SAFETY: targetList is non-null and owned by the live Query node.
     let target_list = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(query.targetList) };
     for target_entry in target_list.iter_ptr() {
+        // SAFETY: PostgreSQL target lists can be traversed as TargetEntry
+        // pointers for the duration of this planner callback.
         let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {
             continue;
         };
         if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {
             continue;
         }
+        // SAFETY: target_entry belongs to the live target list and rel_ref came
+        // from the same planner relation candidate.
         return unsafe { custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid) };
     }
     None
@@ -115,21 +132,29 @@ unsafe fn custom_scan_query_expr_from_sort_expr(
         return None;
     }
     let node = expr.cast::<pg_sys::Node>();
+    // SAFETY: expr is non-null and every planner Expr begins with a NodeTag.
     if unsafe { (*node).type_ } != pg_sys::NodeTag::T_OpExpr {
         return None;
     }
+    // SAFETY: the NodeTag check above proves this Expr is an OpExpr.
     let op_expr = unsafe { &*expr.cast::<pg_sys::OpExpr>() };
+    // SAFETY: OpExpr args is the PostgreSQL-owned argument list for this live
+    // planner expression.
     let args = unsafe { PgList::<pg_sys::Expr>::from_pg(op_expr.args) };
     if args.len() != 2 {
         return None;
     }
     let left = args.get_ptr(0)?;
     let right = args.get_ptr(1)?;
+    // SAFETY: left/right are the two live OpExpr operands and relid identifies
+    // the relation candidate being matched.
     if unsafe {
         custom_scan_expr_is_relation_var(left, relid) && custom_scan_expr_is_query_value(right)
     } {
         return Some(right);
     }
+    // SAFETY: same live OpExpr operands as above, checked in reverse order for
+    // commutative vector-distance expressions.
     if unsafe {
         custom_scan_expr_is_relation_var(right, relid) && custom_scan_expr_is_query_value(left)
     } {
@@ -143,10 +168,11 @@ unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sy
         return false;
     }
     let node = expr.cast::<pg_sys::Node>();
+    // SAFETY: expr is non-null and every planner Expr begins with a NodeTag.
     if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Var {
         return false;
     }
+    // SAFETY: the NodeTag check above proves this Expr is a Var.
     let var = unsafe { &*expr.cast::<pg_sys::Var>() };
     u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0
 }
-
