@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/ec_diskann/page.rs
++++ replace << with >>
+@@ -19,17 +19,17 @@
+ /// used by `tqhnsw`.
+ pub const INDEX_FORMAT_V3_DISKANN: u16 = 3;
+ 
+ /// Vamana metadata page uses SRHT + grouped-PQ search codes, same as
+ /// the `tqhnsw` V2 layout. These flags are kept compatible so that
+ /// shared hot/cold page walkers can treat payload-flag bits
+ /// identically across AMs.
+ pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 0b0000_0001;
+-pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;
++pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 >> /* ~ changed by cargo-mutants ~ */ 1;
+ pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;
+ 
+ pub const VAMANA_TRANSFORM_KIND_SRHT: u8 = 1;
+ pub const VAMANA_SEARCH_CODEC_GROUPED_PQ: u8 = 2;
+ 
+ /// Size of the encoded metadata page payload. Locked at 48 bytes for
+ /// the v0 layout; any field additions must bump the format tag.
+ pub const VAMANA_METADATA_BYTES: usize = 48;

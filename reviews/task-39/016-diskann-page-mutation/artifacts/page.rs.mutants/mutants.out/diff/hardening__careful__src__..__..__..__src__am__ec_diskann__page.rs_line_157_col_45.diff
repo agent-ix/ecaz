@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/ec_diskann/page.rs
++++ replace != with == in VamanaMetadataPage::decode
+@@ -149,17 +149,17 @@
+             alpha: f32::from_le_bytes(input[12..16].try_into().expect("alpha bytes")),
+             dimensions: u16::from_le_bytes(input[16..18].try_into().expect("dimensions bytes")),
+             seed: u64::from_le_bytes(input[18..26].try_into().expect("seed bytes")),
+             inserted_since_rebuild: u64::from_le_bytes(
+                 input[26..34]
+                     .try_into()
+                     .expect("inserted-since-rebuild bytes"),
+             ),
+-            needs_medoid_refresh: input[34] != 0,
++            needs_medoid_refresh: input[34] == /* ~ changed by cargo-mutants ~ */ 0,
+             transform_kind: input[35],
+             search_codec_kind: input[36],
+             payload_flags: input[37],
+             search_subvector_count: u16::from_le_bytes(
+                 input[38..40]
+                     .try_into()
+                     .expect("search_subvector_count bytes"),
+             ),

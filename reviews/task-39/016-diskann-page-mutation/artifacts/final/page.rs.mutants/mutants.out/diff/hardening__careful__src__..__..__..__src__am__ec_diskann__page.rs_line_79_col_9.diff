@@ -1,0 +1,42 @@
+--- hardening/careful/src/../../../src/am/ec_diskann/page.rs
++++ replace VamanaMetadataPage::empty -> Self with Default::default()
+@@ -71,38 +71,17 @@
+ impl VamanaMetadataPage {
+     pub fn empty(
+         graph_degree_r: u16,
+         build_list_size_l: u16,
+         alpha: f32,
+         dimensions: u16,
+         seed: u64,
+     ) -> Self {
+-        Self {
+-            format_version: INDEX_FORMAT_V3_DISKANN,
+-            entry_point: ItemPointer::INVALID,
+-            graph_degree_r,
+-            build_list_size_l,
+-            alpha,
+-            dimensions,
+-            seed,
+-            inserted_since_rebuild: 0,
+-            needs_medoid_refresh: false,
+-            transform_kind: VAMANA_TRANSFORM_KIND_SRHT,
+-            search_codec_kind: VAMANA_SEARCH_CODEC_GROUPED_PQ,
+-            // V0 reranks from the heap `ecvector` row (ADR-044
+-            // default); there is no index-side cold payload chain.
+-            // `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` stays clear per
+-            // ADR-046 frozen rule 1 / ADR-047 frozen rule 4
+-            // (packet 11018).
+-            payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+-            search_subvector_count: 0,
+-            search_subvector_dim: 0,
+-            grouped_codebook_head: ItemPointer::INVALID,
+-        }
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn encode(&self) -> Vec<u8> {
+         let mut out = Vec::with_capacity(VAMANA_METADATA_BYTES);
+         out.extend_from_slice(&self.format_version.to_le_bytes());
+         self.entry_point.encode_into(&mut out);
+         out.extend_from_slice(&self.graph_degree_r.to_le_bytes());
+         out.extend_from_slice(&self.build_list_size_l.to_le_bytes());

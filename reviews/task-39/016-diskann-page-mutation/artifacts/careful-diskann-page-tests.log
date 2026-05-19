@@ -1,0 +1,16 @@
+   Compiling ecaz-careful-hardening v0.1.0 (/Users/peter/dev/tqvector/hardening/careful)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.74s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7)
+
+running 8 tests
+test careful_diskann_page::tests::la_002_format_version_tag_is_three ... ok
+test careful_diskann_page::tests::la_005b_empty_clears_cold_rerank_flag ... ok
+test careful_diskann_page::tests::la_005_alpha_f32_bit_exact ... ok
+test careful_diskann_page::tests::la_003_encoded_length_matches_constant ... ok
+test careful_diskann_page::tests::la_001_fresh_metadata_roundtrip ... ok
+test careful_diskann_page::tests::la_006_needs_medoid_refresh_flag_roundtrips ... ok
+test careful_diskann_page::tests::miri_vamana_metadata_roundtrip_with_codebook_head ... ok
+test careful_diskann_page::tests::la_004_foreign_format_tag_rejected ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 211 filtered out; finished in 0.00s
+

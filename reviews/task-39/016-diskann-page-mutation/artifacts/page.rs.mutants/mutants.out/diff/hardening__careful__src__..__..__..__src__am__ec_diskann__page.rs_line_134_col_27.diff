@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/ec_diskann/page.rs
++++ replace != with == in VamanaMetadataPage::decode
+@@ -126,17 +126,17 @@
+             return Err(format!(
+                 "vamana metadata length mismatch: got {}, expected {VAMANA_METADATA_BYTES}",
+                 input.len()
+             ));
+         }
+ 
+         let format_version =
+             u16::from_le_bytes(input[0..2].try_into().expect("format version bytes"));
+-        if format_version != INDEX_FORMAT_V3_DISKANN {
++        if format_version == /* ~ changed by cargo-mutants ~ */ INDEX_FORMAT_V3_DISKANN {
+             return Err(format!(
+                 "invalid vamana metadata format version: got {format_version}, expected {INDEX_FORMAT_V3_DISKANN}"
+             ));
+         }
+ 
+         Ok(Self {
+             format_version,
+             entry_point: ItemPointer::decode(&input[2..8])?,
