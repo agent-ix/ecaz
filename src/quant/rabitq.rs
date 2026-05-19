@@ -74,6 +74,14 @@ pub const RABITQ_SUPPORTED_BITS: [u8; 4] = [1, 2, 4, 8];
 /// ~95% of the mass and keeps quantization levels well-utilized.
 const RABITQ_QUANT_CLIP: f32 = 2.0;
 
+/// Total scalar-quantization range: must equal `2.0 * RABITQ_QUANT_CLIP`.
+/// Inlined as a literal so the `* → +` binop mutation on the prior
+/// `2.0 * c` form (an equivalent mutant when `c == 2.0`) is removed
+/// from `quantize_level`. The `quantize_level` round-trip tests pin
+/// specific outputs, so a drift in `RABITQ_QUANT_CLIP` would fail
+/// them rather than silently re-skewing the bins here.
+const RABITQ_QUANT_RANGE: f32 = 4.0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct SeededSrhtCacheKey {
     dimensions: usize,
@@ -580,9 +588,11 @@ impl RaBitQQuantizer {
             let level = if r_i >= 0.0 { 1_u32 } else { 0_u32 };
             write_level(&mut out, i, 1, level);
             sum_abs += r_i.abs();
-            // sign as ±1 for the center-dot accumulator.
-            let sign = if level == 1 { 1.0_f32 } else { -1.0_f32 };
-            sum_center_sign += center.rotated[i] * sign;
+            if level == 1 {
+                sum_center_sign += center.rotated[i];
+            } else {
+                sum_center_sign -= center.rotated[i];
+            }
         }
 
         let inv_denom = if residual_mag > 0.0 {
@@ -724,8 +734,11 @@ impl CenteredScorer {
         for i in 0..self.dimensions {
             let byte = code[i / 8];
             let bit = (byte >> (i % 8)) & 1;
-            let sign = if bit == 1 { 1.0_f32 } else { -1.0_f32 };
-            sum_q_sign += self.query_rotated[i] * sign;
+            if bit == 1 {
+                sum_q_sign += self.query_rotated[i];
+            } else {
+                sum_q_sign -= self.query_rotated[i];
+            }
         }
         let sqrt_d = (self.dimensions as f32).sqrt();
         let query_dot_code = sum_q_sign / sqrt_d;
@@ -990,10 +1003,10 @@ fn quantize_level(o_hat_i: f32, bits: usize, sqrt_d: f32) -> (u32, f32) {
         let levels = 1_u32 << bits;
         let c = RABITQ_QUANT_CLIP;
         let scaled = o_hat_i * sqrt_d;
-        let t = ((scaled + c) / (2.0 * c)).clamp(0.0, 1.0);
+        let t = ((scaled + c) / RABITQ_QUANT_RANGE).clamp(0.0, 1.0);
         let level = ((t * levels as f32) as u32).min(levels - 1);
         // Bin center, mapped back to unit-vector scale.
-        let center_scaled = (level as f32 + 0.5) / levels as f32 * 2.0 * c - c;
+        let center_scaled = (level as f32 + 0.5) / levels as f32 * RABITQ_QUANT_RANGE - c;
         let dequant = center_scaled / sqrt_d;
         (level, dequant)
     }
@@ -1011,7 +1024,7 @@ fn dequant_level(level: u32, bits: usize, sqrt_d: f32) -> f32 {
     } else {
         let levels = 1_u32 << bits;
         let c = RABITQ_QUANT_CLIP;
-        let center_scaled = (level as f32 + 0.5) / levels as f32 * 2.0 * c - c;
+        let center_scaled = (level as f32 + 0.5) / levels as f32 * RABITQ_QUANT_RANGE - c;
         center_scaled / sqrt_d
     }
 }
@@ -1261,11 +1274,7 @@ mod tests {
         let packed_bytes = q.packed_bytes();
         let norm = read_tail_f32(&code, packed_bytes, 0);
         let o_dot = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN);
-        let x_dec_norm = read_tail_f32(
-            &code,
-            packed_bytes,
-            RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,
-        );
+        let x_dec_norm = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN);
 
         let expected_norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
         let sqrt_d = (v.len() as f32).sqrt();
@@ -1286,6 +1295,20 @@ mod tests {
     }
 
     #[test]
+    fn encode_code_pins_zero_vector_tail_and_levels() {
+        let q = identity_quantizer(5, 2);
+        let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &[0.0_f32; 5]);
+        let packed_bytes = q.packed_bytes();
+
+        assert_eq!(&code[..packed_bytes], &[0xaa, 0x02]);
+        assert_eq!(read_tail_f32(&code, packed_bytes, 0), 0.0);
+        assert_eq!(read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN), 0.0);
+        assert!(
+            read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,).is_finite()
+        );
+    }
+
+    #[test]
     fn estimate_ip_guards_and_bound_are_pinned() {
         let q = identity_quantizer(5, 2);
         let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
@@ -1298,11 +1321,7 @@ mod tests {
         let estimate = q.estimate_ip(&prepared, &code);
         let candidate_norm = read_tail_f32(&code, packed_bytes, 0);
         let o_dot = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN);
-        let x_norm = read_tail_f32(
-            &code,
-            packed_bytes,
-            RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,
-        );
+        let x_norm = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN);
         let sqrt_d = (q.dimensions() as f32).sqrt();
         let mut sum_q_dequant = 0.0_f32;
         for (i, &query_i) in query.iter().enumerate() {
@@ -1342,14 +1361,40 @@ mod tests {
     }
 
     #[test]
+    fn estimate_ip_o_dot_floor_covers_below_equal_and_above() {
+        let q = identity_quantizer(5, 2);
+        let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
+        let candidate = [-0.25_f32, 0.0, 0.25, 0.5, -0.5];
+        let mut code =
+            <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &candidate).into_vec();
+        let prepared = q.prepare_estimator(&query);
+        let packed_bytes = q.packed_bytes();
+
+        write_tail_f32(&mut code, packed_bytes, RABITQ_NORM_LEN, 0.5e-6);
+        let below = q.estimate_ip(&prepared, &code);
+        assert_eq!(below.estimate, 0.0);
+        assert!(below.bound.is_infinite());
+
+        // Floor uses strict `<`: at o_dot == floor the guard must NOT fire, so
+        // the bound is finite. Mutating `<` to `<=` would return INFINITY here.
+        write_tail_f32(&mut code, packed_bytes, RABITQ_NORM_LEN, 1.0e-6);
+        let at = q.estimate_ip(&prepared, &code);
+        assert!(at.estimate.is_finite());
+        assert!(at.bound.is_finite());
+
+        write_tail_f32(&mut code, packed_bytes, RABITQ_NORM_LEN, 2.0e-6);
+        let above = q.estimate_ip(&prepared, &code);
+        assert!(above.estimate.is_finite());
+        assert!(above.bound.is_finite());
+    }
+
+    #[test]
     fn bit_level_packers_round_trip_all_supported_widths() {
         for bits in [1_usize, 2, 4, 8] {
             let dim = 17;
             let levels = 1_u32 << bits;
             let mut packed = vec![0_u8; (dim * bits).div_ceil(8)];
-            let expected: Vec<u32> = (0..dim)
-                .map(|i| ((i * 3 + bits) as u32) % levels)
-                .collect();
+            let expected: Vec<u32> = (0..dim).map(|i| ((i * 3 + bits) as u32) % levels).collect();
 
             for (i, &level) in expected.iter().enumerate() {
                 write_level(&mut packed, i, bits, level);
@@ -1394,13 +1439,19 @@ mod tests {
     }
 
     #[test]
+    fn qbit_quantize_pins_non_roundtrip_scale_term() {
+        let sqrt_d = 4.0_f32;
+        let (level, dequant) = quantize_level(-0.125, 2, sqrt_d);
+
+        assert_eq!(level, 1);
+        assert!((dequant - (-0.5 / sqrt_d)).abs() < 1e-6);
+    }
+
+    #[test]
     fn sign_sidecar_helpers_pack_exact_words() {
         let codebook: Vec<f32> = (0..16).map(|i| i as f32 - 8.0).collect();
         let lookup = binary_sign_lookup_4bit(&codebook);
-        assert_eq!(
-            lookup,
-            [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]
-        );
+        assert_eq!(lookup, [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]);
 
         let dim = 70_usize;
         let mut packed = vec![0_u8; dim.div_ceil(2)];
@@ -1684,6 +1735,87 @@ mod tests {
     }
 
     #[test]
+    fn centered_encode_pins_asymmetric_center_tail_and_zero_residual() {
+        let q = identity_quantizer(4, 1);
+        let center = [2.0_f32, -0.5, 1.25, -3.0];
+        let residual = [1.0_f32, -2.0, 0.5, -0.25];
+        let v: Vec<f32> = center
+            .iter()
+            .zip(residual)
+            .map(|(center_i, residual_i)| center_i + residual_i)
+            .collect();
+        let ctx = q.prepare_center(&center);
+        let code = q.encode_code_centered(&v, &ctx);
+        let packed_bytes = q.packed_bytes();
+
+        assert_eq!(code[0] & 0x0f, 0b0101);
+        assert!((read_tail_f32(&code, packed_bytes, 0) - 2.304886).abs() < 1e-5);
+        assert!((read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN) - 0.8134892).abs() < 1e-6);
+        assert!(
+            (read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,) - 3.375)
+                .abs()
+                < 1e-6
+        );
+
+        let zero_code = q.encode_code_centered(&center, &ctx);
+        assert_eq!(read_tail_f32(&zero_code, packed_bytes, 0), 0.0);
+        assert_eq!(
+            read_tail_f32(&zero_code, packed_bytes, RABITQ_NORM_LEN),
+            0.0
+        );
+        assert!(read_tail_f32(
+            &zero_code,
+            packed_bytes,
+            RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,
+        )
+        .is_finite());
+    }
+
+    #[test]
+    fn centered_scorer_floor_boundaries_cover_below_equal_and_above() {
+        let q = identity_quantizer(4, 1);
+        let center = [0.0_f32; 4];
+        let v = [1.0_f32, -1.0, 1.0, -1.0];
+        let ctx = q.prepare_center(&center);
+        let mut code = q.encode_code_centered(&v, &ctx).into_vec();
+        let packed_bytes = q.packed_bytes();
+
+        write_tail_f32(&mut code, packed_bytes, RABITQ_NORM_LEN, 0.5e-6);
+        let scorer = q.prepare_scorer_centered(&[1.0_f32, 0.0, 0.0, 0.0]);
+        let below_o_dot = scorer.score_at(&code, &ctx);
+        assert_eq!(below_o_dot.estimate, 0.0);
+        assert!(below_o_dot.bound.is_infinite());
+
+        // o_dot == floor: strict `<` keeps the guard off, so bound is finite.
+        // Mutating `<` to `<=` returns INFINITY for the bound.
+        write_tail_f32(&mut code, packed_bytes, RABITQ_NORM_LEN, 1.0e-6);
+        let at_o_dot = scorer.score_at(&code, &ctx);
+        assert!(at_o_dot.estimate.is_finite());
+        assert!(at_o_dot.bound.is_finite());
+
+        write_tail_f32(&mut code, packed_bytes, RABITQ_NORM_LEN, 2.0e-6);
+        let above_o_dot = scorer.score_at(&code, &ctx);
+        assert!(above_o_dot.estimate.is_finite());
+        assert!(above_o_dot.bound.is_finite());
+
+        let below_query = q.prepare_scorer_centered(&[0.5e-6_f32, 0.0, 0.0, 0.0]);
+        let below_qr = below_query.score_at(&code, &ctx);
+        assert_eq!(below_qr.estimate, 0.0);
+        assert!(below_qr.bound.is_infinite());
+
+        // query_residual_mag == floor: same boundary semantics as above.
+        let equal_query = q.prepare_scorer_centered(&[1.0e-6_f32, 0.0, 0.0, 0.0]);
+        let at_qr = equal_query.score_at(&code, &ctx);
+        assert!(at_qr.estimate.is_finite());
+        assert!(at_qr.bound.is_finite());
+
+        let above_query = q.prepare_scorer_centered(&[2.0e-6_f32, 0.0, 0.0, 0.0]);
+        let above_qr = above_query.score_at(&code, &ctx);
+        assert!(above_qr.estimate.is_finite());
+        assert!(above_qr.bound.is_finite());
+    }
+
+    #[test]
     fn centered_scorer_matches_manual_unit_residual_ip() {
         let dim = 8;
         let q = identity_quantizer(dim, 1);
@@ -1745,11 +1877,7 @@ mod tests {
         let est = scorer.score_at(&code, &ctx);
         let packed_bytes = q.packed_bytes();
         let o_dot = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN);
-        let center_dot = read_tail_f32(
-            &code,
-            packed_bytes,
-            RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN,
-        );
+        let center_dot = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN);
         let sqrt_d = (dim as f32).sqrt();
         let mut sum_q_sign = 0.0_f32;
         for (i, query_i) in query.iter().enumerate() {
@@ -1764,8 +1892,8 @@ mod tests {
         let query_residual_mag = q_residual.iter().map(|x| x * x).sum::<f32>().sqrt();
         let expected_estimate = ((query_dot_code - center_dot) / query_residual_mag) / o_dot;
         let o_dot_sq = o_dot * o_dot;
-        let expected_bound =
-            RABITQ_BOUND_CONFIDENCE * (((1.0 - o_dot_sq).max(0.0)) / (dim as f32 * o_dot_sq)).sqrt();
+        let expected_bound = RABITQ_BOUND_CONFIDENCE
+            * (((1.0 - o_dot_sq).max(0.0)) / (dim as f32 * o_dot_sq)).sqrt();
 
         assert!((est.estimate - expected_estimate).abs() < 1e-6);
         assert!((est.bound - expected_bound).abs() < 1e-6);
