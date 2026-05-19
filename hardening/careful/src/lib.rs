@@ -19,6 +19,9 @@ pub mod careful_hnsw_search;
 #[path = "../../../src/am/ec_hnsw/page.rs"]
 pub mod careful_hnsw_page;
 
+#[path = "../../../src/am/ec_ivf/page.rs"]
+pub mod careful_ivf_page;
+
 #[path = "../../../src/am/common/cost.rs"]
 pub mod careful_common_cost;
 
@@ -46,6 +49,10 @@ pub mod am {
     pub mod ec_hnsw {
         pub use crate::careful_hnsw_page as page;
         pub use crate::careful_hnsw_search as search;
+    }
+
+    pub mod ec_ivf {
+        pub use crate::careful_ivf_page as page;
     }
 }
 

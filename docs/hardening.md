@@ -271,6 +271,10 @@ Baseline sources:
 - `reviews/task-39/012-hnsw-page-coverage/artifacts/coverage-summary.txt`
   raises `src/am/ec_hnsw/page.rs` by importing the HNSW metadata, tuple, and
   page-chain codec tests into the `hardening/careful` coverage harness.
+- `reviews/task-39/018-ivf-page-coverage/artifacts/coverage/summary.txt`
+  raises `src/am/ec_ivf/page.rs` by importing the IVF metadata, centroid,
+  directory, posting, PQ-codebook, and page-chain codec tests into the
+  `hardening/careful` coverage harness.
 - `reviews/task-39/015-planner-cost-mutation/artifacts/coverage-summary.txt`
   raises `src/am/common/cost.rs` by importing the pure planner-cost model and
   callback translation tests into the `hardening/careful` coverage harness.
@@ -288,7 +292,8 @@ planner-cost callbacks, and storage guard drops remain recorded gaps.
 | `src/storage/page.rs` | `97.90%` |
 | `src/am/ec_diskann/page.rs` | `97.35%` |
 | `src/am/ec_hnsw/page.rs` | `84.76%` |
-| `src/am/{ec_ivf,ec_spire}/page.rs` | `0.00%` |
+| `src/am/ec_ivf/page.rs` | `95.86%` |
+| `src/am/ec_spire/page.rs` | `0.00%` |
 | `src/am/ec_spire/storage/**` | `0.00%` |
 | `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
 | `src/am/ec_diskann/{routine,scan,build}.rs` | `0.00%` |
