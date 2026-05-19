@@ -434,6 +434,16 @@ fn open_valid_ec_index_guard(
     index_relation
 }
 
+macro_rules! with_live_index_relation {
+    ($guard:expr, $func:path $(, $arg:expr)* $(,)?) => {{
+        let index_relation = $guard.as_ptr();
+        // SAFETY: callers pass an `IndexRelationGuard` opened and validated
+        // for the AM-specific SQL wrapper. The guard keeps the PostgreSQL
+        // relation open for the full duration of the AM helper call.
+        unsafe { $func(index_relation $(, $arg)*) }
+    }};
+}
+
 fn open_valid_ec_hnsw_index_guard(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
@@ -469,7 +479,9 @@ fn validate_ec_spire_index(index_oid: pg_sys::Oid, caller_name: &'static str) {
     let _index_relation = open_valid_ec_spire_index_guard(index_oid, caller_name);
 }
 
-unsafe fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
+fn relation_oid_exists(relation_oid: pg_sys::Oid) -> bool {
+    // SAFETY: `get_rel_relkind` only reads system catalog metadata for the
+    // supplied OID. `InvalidOid` is filtered before calling into PostgreSQL.
     relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
 }
 
@@ -955,7 +967,7 @@ fn ec_hnsw_index_admin_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_index_admin_snapshot");
-    let snapshot = unsafe { am::index_admin_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::index_admin_snapshot);
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -977,7 +989,7 @@ fn ec_diskann_index_graph_summary(
 ) -> TableIterator<'static, (name!(metric, String), name!(value, String))> {
     let index_relation =
         open_valid_ec_diskann_index_guard(index_oid, "ec_diskann_index_graph_summary");
-    let summary = match unsafe { am::diskann_graph_summary(index_relation.as_ptr()) } {
+    let summary = match with_live_index_relation!(index_relation, am::diskann_graph_summary) {
         Ok(summary) => summary,
         Err(e) => {
             pgrx::error!("ec_diskann_index_graph_summary failed: {e}");
@@ -1152,7 +1164,7 @@ fn ec_diskann_index_cost_snapshot(
 > {
     let index_relation =
         open_valid_ec_diskann_index_guard(index_oid, "ec_diskann_index_cost_snapshot");
-    let snapshot = unsafe { am::diskann_index_cost_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::diskann_index_cost_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -1675,7 +1687,8 @@ fn ec_spire_custom_scan_index_eligibility(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_custom_scan_index_eligibility");
-    let row = unsafe { am::spire_custom_scan_index_eligibility_row(index_relation.as_ptr()) };
+    let row =
+        with_live_index_relation!(index_relation, am::spire_custom_scan_index_eligibility_row);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -1720,7 +1733,7 @@ fn ec_ivf_index_drift_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_drift_snapshot");
-    let snapshot = unsafe { am::ivf_index_drift_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::ivf_index_drift_snapshot);
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -1779,7 +1792,7 @@ fn ec_ivf_index_admin_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_admin_snapshot");
-    let snapshot = unsafe { am::ivf_index_admin_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::ivf_index_admin_snapshot);
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -1849,7 +1862,8 @@ fn ec_spire_index_active_snapshot_diagnostics(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_active_snapshot_diagnostics");
-    let diagnostics = unsafe { am::spire_active_snapshot_diagnostics(index_relation.as_ptr()) };
+    let diagnostics =
+        with_live_index_relation!(index_relation, am::spire_active_snapshot_diagnostics);
 
     TableIterator::once((
         i64::try_from(diagnostics.active_epoch).expect("active epoch should fit in i64"),
@@ -1911,15 +1925,18 @@ fn ec_spire_index_allocator_snapshot(
     if warn_within < 0 {
         pgrx::error!("ec_spire allocator warning threshold must be non-negative");
     }
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let warn_within =
         u64::try_from(warn_within).expect("non-negative warning threshold should fit in u64");
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_allocator_snapshot");
-    let snapshot =
-        unsafe { am::spire_index_allocator_snapshot(index_relation.as_ptr(), warn_within) };
+    let snapshot = with_live_index_relation!(
+        index_relation,
+        am::spire_index_allocator_snapshot,
+        warn_within
+    );
 
     TableIterator::once((
         i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
@@ -1964,12 +1981,12 @@ fn ec_spire_index_placement_snapshot(
         name!(delta_object_bytes, i64),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_placement_snapshot");
-    let rows = unsafe { am::spire_index_placement_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_index_placement_snapshot);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2035,7 +2052,7 @@ fn ec_spire_remote_node_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_snapshot");
-    let rows = unsafe { am::spire_remote_node_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_snapshot);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2442,7 +2459,8 @@ fn ec_spire_remote_node_descriptor_readiness(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_descriptor_readiness");
-    let rows = unsafe { am::spire_remote_node_descriptor_readiness(index_relation.as_ptr()) };
+    let rows =
+        with_live_index_relation!(index_relation, am::spire_remote_node_descriptor_readiness);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2482,8 +2500,10 @@ fn ec_spire_remote_node_descriptor_readiness_summary(
         index_oid,
         "ec_spire_remote_node_descriptor_readiness_summary",
     );
-    let row =
-        unsafe { am::spire_remote_node_descriptor_readiness_summary(index_relation.as_ptr()) };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_node_descriptor_readiness_summary
+    );
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2527,7 +2547,7 @@ fn ec_spire_remote_node_capability_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_plan");
-    let rows = unsafe { am::spire_remote_node_capability_plan(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_capability_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2576,7 +2596,7 @@ fn ec_spire_remote_node_capability_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_summary");
-    let row = unsafe { am::spire_remote_node_capability_summary(index_relation.as_ptr()) };
+    let row = with_live_index_relation!(index_relation, am::spire_remote_node_capability_summary);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2620,7 +2640,7 @@ fn ec_spire_remote_epoch_publish_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_plan");
-    let rows = unsafe { am::spire_remote_epoch_publish_plan(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_remote_epoch_publish_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2671,7 +2691,7 @@ fn ec_spire_remote_epoch_publish_readiness(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_readiness");
-    let row = unsafe { am::spire_remote_epoch_publish_readiness(index_relation.as_ptr()) };
+    let row = with_live_index_relation!(index_relation, am::spire_remote_epoch_publish_readiness);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2718,7 +2738,8 @@ fn ec_spire_remote_epoch_publish_gate_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_gate_summary");
-    let row = unsafe { am::spire_remote_epoch_publish_gate_summary(index_relation.as_ptr()) };
+    let row =
+        with_live_index_relation!(index_relation, am::spire_remote_epoch_publish_gate_summary);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2763,7 +2784,7 @@ fn ec_spire_remote_epoch_manifest_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_manifest_plan");
-    let rows = unsafe { am::spire_remote_epoch_manifest_plan(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2807,7 +2828,7 @@ fn ec_spire_remote_epoch_manifest_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_manifest_summary");
-    let row = unsafe { am::spire_remote_epoch_manifest_summary(index_relation.as_ptr()) };
+    let row = with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2831,8 +2852,10 @@ fn ec_spire_remote_epoch_manifest_summary(
 fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_persist_remote_epoch_manifest");
-    let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation.as_ptr()) };
-    let manifest_rows = unsafe { am::spire_remote_epoch_manifest_plan(index_relation.as_ptr()) };
+    let summary =
+        with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
+    let manifest_rows =
+        with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan);
 
     if summary.manifest_decision != "emit_distributed_epoch_manifest" {
         pgrx::error!(
@@ -2860,9 +2883,11 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
         .expect("remote placement count should fit in i64");
 
     let result = Spi::connect_mut(|client| {
-        let current_active_epoch =
-            i64::try_from(unsafe { am::spire_active_epoch(index_relation.as_ptr()) })
-                .map_err(|_| "ec_spire remote epoch manifest active epoch exceeds i64")?;
+        let current_active_epoch = i64::try_from(with_live_index_relation!(
+            index_relation,
+            am::spire_active_epoch
+        ))
+        .map_err(|_| "ec_spire remote epoch manifest active epoch exceeds i64")?;
         if current_active_epoch != active_epoch {
             return Err(format!(
                 "ec_spire_persist_remote_epoch_manifest active epoch changed from {active_epoch} to {current_active_epoch}; retry persistence"
@@ -3180,9 +3205,10 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
             index_oid,
             "ec_spire_remote_epoch_manifest_catalog_summary",
         );
-        let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation.as_ptr()) };
+        let summary =
+            with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
         let current_entries =
-            unsafe { am::spire_remote_epoch_manifest_plan(index_relation.as_ptr()) }
+            with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan)
                 .into_iter()
                 .filter(|row| row.manifest_action == "include_remote_node")
                 .collect::<Vec<_>>();
@@ -3591,7 +3617,7 @@ fn ec_spire_remote_epoch_manifest_publication_plan(
             index_oid,
             "ec_spire_remote_epoch_manifest_publication_plan",
         );
-        unsafe { am::spire_remote_epoch_manifest_plan(index_relation.as_ptr()) }
+        with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan)
     };
 
     let Some(active_epoch) = current_rows.first().map(|row| row.active_epoch) else {
@@ -7594,7 +7620,11 @@ fn ec_spire_index_scan_placement_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_placement_snapshot");
-        unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) }
+        with_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_placement_snapshot,
+            query
+        )
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -7728,7 +7758,11 @@ fn ec_spire_index_scan_local_store_execution_snapshot(
             index_oid,
             "ec_spire_index_scan_local_store_execution_snapshot",
         );
-        unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) }
+        with_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_placement_snapshot,
+            query
+        )
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -7774,7 +7808,11 @@ fn ec_spire_index_scan_local_store_read_overlap_harness(
             index_oid,
             "ec_spire_index_scan_local_store_read_overlap_harness",
         );
-        unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) }
+        with_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_placement_snapshot,
+            query
+        )
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -7831,7 +7869,7 @@ fn ec_spire_index_scan_routing_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_routing_snapshot");
-        unsafe { am::spire_index_scan_routing_snapshot(index_relation.as_ptr(), query) }
+        with_live_index_relation!(index_relation, am::spire_index_scan_routing_snapshot, query)
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -7881,7 +7919,7 @@ fn ec_spire_index_scan_pipeline_snapshot(
         name!(recommendation, &'static str),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let (routing_rows, placement_rows) = {
@@ -7890,8 +7928,11 @@ fn ec_spire_index_scan_pipeline_snapshot(
         let routing_rows = unsafe {
             am::spire_index_scan_routing_snapshot(index_relation.as_ptr(), query.clone())
         };
-        let placement_rows =
-            unsafe { am::spire_index_scan_placement_snapshot(index_relation.as_ptr(), query) };
+        let placement_rows = with_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_placement_snapshot,
+            query
+        );
         (routing_rows, placement_rows)
     };
 
@@ -8102,7 +8143,7 @@ fn ec_spire_index_root_routing_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_root_routing_snapshot");
-        unsafe { am::spire_index_root_routing_snapshot(index_relation.as_ptr()) }
+        with_live_index_relation!(index_relation, am::spire_index_root_routing_snapshot)
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -8163,7 +8204,7 @@ fn ec_spire_index_routing_centroid_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_routing_centroid_snapshot");
-        unsafe { am::spire_index_routing_centroid_snapshot(index_relation.as_ptr()) }
+        with_live_index_relation!(index_relation, am::spire_index_routing_centroid_snapshot)
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -8210,7 +8251,7 @@ fn ec_spire_classify_centroid(
     let classification = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_classify_centroid");
-        unsafe { am::spire_classify_centroid(index_relation.as_ptr(), &embedding) }
+        with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
     };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
@@ -8248,7 +8289,7 @@ fn ec_spire_plan_coordinator_insert(
     let classification = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert");
-        unsafe { am::spire_classify_centroid(index_relation.as_ptr(), &embedding) }
+        with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
     };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
@@ -8375,7 +8416,7 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
             "ec_spire_prepare_coordinator_insert_tuple_payload",
         );
         let classification =
-            unsafe { am::spire_classify_centroid(index_relation.as_ptr(), &embedding) }
+            with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
         let row_payload_json = row_payload.0.to_string();
         let prepare_row = unsafe {
@@ -9325,12 +9366,12 @@ fn ec_spire_index_hierarchy_snapshot(
         name!(recommendation, String),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_hierarchy_snapshot");
-    let snapshot = unsafe { am::spire_index_hierarchy_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_hierarchy_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -9399,12 +9440,12 @@ fn ec_spire_index_top_graph_snapshot(
         name!(recommendation, String),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_top_graph_snapshot");
-    let snapshot = unsafe { am::spire_index_top_graph_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_top_graph_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -13235,7 +13276,10 @@ fn ec_spire_remote_search_endpoint_identity(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_endpoint_identity");
-    let row = unsafe { am::spire_remote_search_endpoint_identity_row(index_relation.as_ptr()) };
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_endpoint_identity_row
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -16228,8 +16272,10 @@ fn ec_spire_remote_search(
             &consistency_mode,
         )
     };
-    let endpoint_identity =
-        unsafe { am::spire_remote_search_endpoint_identity_row(index_relation.as_ptr()) };
+    let endpoint_identity = with_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_endpoint_identity_row
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(move |row| {
@@ -16280,12 +16326,12 @@ fn ec_spire_index_object_snapshot(
         name!(object_readable, bool),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_object_snapshot");
-    let rows = unsafe { am::spire_index_object_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_index_object_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16351,7 +16397,7 @@ fn ec_spire_index_options_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_options_snapshot");
-    let snapshot = unsafe { am::spire_index_options_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_options_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16412,7 +16458,8 @@ fn ec_spire_index_writer_identity_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_writer_identity_snapshot");
-    let snapshot = unsafe { am::spire_index_writer_identity_snapshot(index_relation.as_ptr()) };
+    let snapshot =
+        with_live_index_relation!(index_relation, am::spire_index_writer_identity_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16449,8 +16496,10 @@ fn ec_spire_index_boundary_replica_identity_snapshot(
         index_oid,
         "ec_spire_index_boundary_replica_identity_snapshot",
     );
-    let rows =
-        unsafe { am::spire_index_boundary_replica_identity_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_index_boundary_replica_identity_snapshot
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16500,15 +16549,17 @@ fn ec_spire_index_boundary_replica_placement_diagnostics(
         name!(recommendation, String),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation = open_valid_ec_spire_index_guard(
         index_oid,
         "ec_spire_index_boundary_replica_placement_diagnostics",
     );
-    let rows =
-        unsafe { am::spire_index_boundary_replica_placement_diagnostics(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(
+        index_relation,
+        am::spire_index_boundary_replica_placement_diagnostics
+    );
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16563,7 +16614,7 @@ fn ec_spire_index_level_parameter_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_level_parameter_snapshot");
-    let rows = unsafe { am::spire_index_level_parameter_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_index_level_parameter_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16610,7 +16661,7 @@ fn ec_spire_index_scan_sanity_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_sanity_snapshot");
-    let snapshot = unsafe { am::spire_index_scan_sanity_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_scan_sanity_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16651,12 +16702,12 @@ fn ec_spire_index_health_snapshot(
         name!(skipped_placement_count, i64),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_health_snapshot");
-    let snapshot = unsafe { am::spire_index_health_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_health_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16704,7 +16755,8 @@ fn ec_spire_index_relation_storage_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_relation_storage_snapshot");
-    let snapshot = unsafe { am::spire_index_relation_storage_snapshot(index_relation.as_ptr()) };
+    let snapshot =
+        with_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16750,7 +16802,7 @@ fn ec_spire_index_epoch_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_snapshot");
-    let rows = unsafe { am::spire_index_epoch_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16796,9 +16848,9 @@ fn ec_spire_index_epoch_cleanup_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_summary");
-    let epoch_rows = unsafe { am::spire_index_epoch_snapshot(index_relation.as_ptr()) };
+    let epoch_rows = with_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
     let storage_snapshot =
-        unsafe { am::spire_index_relation_storage_snapshot(index_relation.as_ptr()) };
+        with_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
     drop(index_relation);
 
     let active_root_manifest_count = epoch_rows
@@ -16890,7 +16942,7 @@ fn ec_spire_index_epoch_cleanup_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_run");
-    let result = unsafe { am::spire_index_epoch_cleanup_run(index_relation.as_ptr()) };
+    let result = with_live_index_relation!(index_relation, am::spire_index_epoch_cleanup_run);
     drop(index_relation);
 
     TableIterator::once((
@@ -16939,11 +16991,11 @@ fn ec_spire_index_leaf_snapshot(
         name!(delta_object_bytes, i64),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_leaf_snapshot");
-    let rows = unsafe { am::spire_index_leaf_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_index_leaf_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -17009,7 +17061,8 @@ fn ec_spire_index_maintenance_plan_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_plan_snapshot");
-    let snapshot = unsafe { am::spire_index_maintenance_plan_snapshot(index_relation.as_ptr()) };
+    let snapshot =
+        with_live_index_relation!(index_relation, am::spire_index_maintenance_plan_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17054,8 +17107,10 @@ fn ec_spire_index_locked_maintenance_plan_snapshot(
         index_oid,
         "ec_spire_index_locked_maintenance_plan_snapshot",
     );
-    let snapshot =
-        unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(
+        index_relation,
+        am::spire_index_locked_maintenance_plan_snapshot
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -17100,7 +17155,8 @@ fn ec_spire_index_locked_maintenance_run_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_locked_maintenance_run_plan");
-    let result = unsafe { am::spire_index_locked_maintenance_run_plan(index_relation.as_ptr()) };
+    let result =
+        with_live_index_relation!(index_relation, am::spire_index_locked_maintenance_run_plan);
     drop(index_relation);
 
     TableIterator::once((
@@ -17147,8 +17203,10 @@ fn ec_spire_index_maintenance_scheduler_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_plan");
-    let snapshot =
-        unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(
+        index_relation,
+        am::spire_index_locked_maintenance_plan_snapshot
+    );
     drop(index_relation);
 
     let (scheduler_status, recommendation) = if snapshot.planner_status == "planned" {
@@ -17203,7 +17261,7 @@ fn ec_spire_index_maintenance_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_run");
-    let result = unsafe { am::spire_index_maintenance_run(index_relation.as_ptr()) };
+    let result = with_live_index_relation!(index_relation, am::spire_index_maintenance_run);
     drop(index_relation);
 
     TableIterator::once((
@@ -17255,7 +17313,7 @@ fn ec_spire_index_maintenance_scheduler_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_run");
-    let result = unsafe { am::spire_index_maintenance_run(index_relation.as_ptr()) };
+    let result = with_live_index_relation!(index_relation, am::spire_index_maintenance_run);
     drop(index_relation);
 
     let scheduler_status = if result.published { "ran" } else { "idle" };
@@ -17306,12 +17364,12 @@ fn ec_spire_index_delta_snapshot(
         name!(object_bytes, i64),
     ),
 > {
-    if unsafe { !relation_oid_exists(index_oid) } {
+    if !relation_oid_exists(index_oid) {
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_delta_snapshot");
-    let rows = unsafe { am::spire_index_delta_snapshot(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::spire_index_delta_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -17356,7 +17414,7 @@ fn ec_spire_index_insert_debt_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_insert_debt_snapshot");
-    let snapshot = unsafe { am::spire_index_insert_debt_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_insert_debt_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17397,7 +17455,7 @@ fn ec_ivf_index_page_ownership(
     ),
 > {
     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_page_ownership");
-    let rows = unsafe { am::ivf_index_page_ownership(index_relation.as_ptr()) };
+    let rows = with_live_index_relation!(index_relation, am::ivf_index_page_ownership);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -17461,7 +17519,7 @@ fn ec_spire_index_cost_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_snapshot");
-    let snapshot = unsafe { am::spire_index_cost_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_cost_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17525,7 +17583,7 @@ fn ec_spire_index_cost_tuning_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_tuning_snapshot");
-    let snapshot = unsafe { am::spire_index_cost_tuning_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::spire_index_cost_tuning_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17584,7 +17642,7 @@ fn ec_ivf_index_cost_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_cost_snapshot");
-    let snapshot = unsafe { am::ivf_index_cost_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::ivf_index_cost_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17660,7 +17718,7 @@ fn ec_hnsw_index_cost_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_index_cost_snapshot");
-    let snapshot = unsafe { am::index_cost_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::index_cost_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17716,7 +17774,7 @@ fn ec_hnsw_planner_integration_snapshot(
 > {
     let index_relation =
         open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_planner_integration_snapshot");
-    let snapshot = unsafe { am::planner_integration_snapshot(index_relation.as_ptr()) };
+    let snapshot = with_live_index_relation!(index_relation, am::planner_integration_snapshot);
     drop(index_relation);
 
     TableIterator::once((
