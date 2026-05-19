@@ -1,0 +1,41 @@
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:88:40: replace + with *
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:97:36: replace << with >>
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:547:20: delete ! in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:551:26: replace > with == in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:551:26: replace > with >= in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:604:32: replace > with >= in IvfPostingTuple::encode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:736:5: replace centroid_tuple_fits -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:740:5: replace list_directory_tuple_fits -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2217:5: replace block_in_range -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2217:5: replace block_in_range -> bool with false
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2217:57: replace && with || in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2217:27: replace && with || in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2217:18: replace != with == in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2217:41: replace <= with > in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2217:73: replace <= with > in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2229:5: replace posting_free_hint -> Option<pg_sys::BlockNumber> with None
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2229:5: replace posting_free_hint -> Option<pg_sys::BlockNumber> with Some(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2239:5: replace remember_posting_free_hint with ()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2248:5: replace forget_posting_free_hint with ()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2373:5: replace next_physical_tuple_tid -> Result<ItemPointer, String> with Ok(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2373:26: replace < with == in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2373:26: replace < with > in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2373:26: replace < with <= in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2376:46: replace + with - in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2376:46: replace + with * in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2460:5: replace page_line_pointer_count -> u16 with 0
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2460:5: replace page_line_pointer_count -> u16 with 1
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2462:9: replace / with % in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2462:9: replace / with * in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2461:51: replace - with + in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2461:51: replace - with / in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2467:18: replace match guard value == StorageFormat::Auto as u8 with false in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2468:18: replace match guard value == StorageFormat::TurboQuant as u8 with false in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2469:18: replace match guard value == StorageFormat::PqFastScan as u8 with false in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2470:18: replace match guard value == StorageFormat::RaBitQ as u8 with true in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2477:18: replace match guard value == RerankMode::Auto as u8 with false in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2478:18: replace match guard value == RerankMode::Off as u8 with false in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2479:18: replace match guard value == RerankMode::HeapF32 as u8 with true in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2480:18: replace match guard value == RerankMode::SourceColumn as u8 with true in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2480:18: replace match guard value == RerankMode::SourceColumn as u8 with false in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2480:24: replace == with != in decode_rerank
