@@ -1,0 +1,47 @@
+Script started on 2026-05-19 01:36:08-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/scan/callbacks.rs b/src/am/ec_spire/scan/callbacks.rs[m
+[1mindex 066c0cda..89b757aa 100644[m
+[1m--- a/src/am/ec_spire/scan/callbacks.rs[m
+[1m+++ b/src/am/ec_spire/scan/callbacks.rs[m
+[36m@@ -3,6 +3,9 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan([m
+     nkeys: std::ffi::c_int,[m
+     norderbys: std::ffi::c_int,[m
+ ) -> pg_sys::IndexScanDesc {[m
+[32m+[m[32m    // SAFETY: PostgreSQL calls ambeginscan with a live index relation and scan[m
+[32m+[m[32m    // key counts; the guarded body checks scan descriptor allocation before[m
+[32m+[m[32m    // installing AM-owned opaque state.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);[m
+[36m@@ -29,6 +32,9 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_spire_amrescan([m
+     orderbys: pg_sys::ScanKey,[m
+     norderbys: std::ffi::c_int,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL calls amrescan with an IndexScanDesc allocated by[m
+[32m+[m[32m    // ambeginscan; the guarded body rejects invalid scan/orderby state before[m
+[32m+[m[32m    // dereferencing the descriptor or opaque state.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if scan.is_null() {[m
+[36m@@ -81,6 +87,9 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple([m
+     scan: pg_sys::IndexScanDesc,[m
+     direction: pg_sys::ScanDirection::Type,[m
+ ) -> bool {[m
+[32m+[m[32m    // SAFETY: PostgreSQL calls amgettuple during scan execution with an[m
+[32m+[m[32m    // IndexScanDesc; the guarded body checks descriptor, direction, opaque[m
+[32m+[m[32m    // state, and rescan initialization before writing scan result fields.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if scan.is_null() {[m
+[36m@@ -116,6 +125,9 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple([m
+ }[m
+ [m
+ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(scan: pg_sys::IndexScanDesc) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL owns the IndexScanDesc lifetime and may pass null[m
+[32m+[m[32m    // during cleanup; non-null opaque state was allocated by ambeginscan and is[m
+[32m+[m[32m    // dropped before freeing and clearing the descriptor pointer.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if scan.is_null() {[m
+
+Script done on 2026-05-19 01:36:08-07:00 [COMMAND_EXIT_CODE="0"]
