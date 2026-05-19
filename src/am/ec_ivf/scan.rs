@@ -1463,6 +1463,8 @@ unsafe fn build_selected_probe_plan(
         return Err("ec_ivf metadata has lists but no directory head".to_owned());
     }
 
+    // SAFETY: caller passes the live IVF index relation; metadata was read
+    // from that relation and its directory head is validated above.
     let directories = unsafe { load_directory_entries(index_relation, metadata)? };
     let mut ordered_selected_lists = Vec::with_capacity(selected_lists.len());
     let mut selected_list_mask = vec![false; metadata.nlists as usize];
@@ -1517,16 +1519,22 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
         return IvfExplainCounters::default();
     }
 
+    // SAFETY: caller passes PostgreSQL's live IndexScanState from EXPLAIN;
+    // null scan descriptors are handled below.
     let scan_desc = unsafe { (*index_state).iss_ScanDesc };
     if scan_desc.is_null() {
         return IvfExplainCounters::default();
     }
 
+    // SAFETY: `scan_desc` is live and owned by PostgreSQL; null AM-private
+    // state is handled below.
     let opaque = unsafe { (*scan_desc).opaque };
     if opaque.is_null() {
         return IvfExplainCounters::default();
     }
 
+    // SAFETY: `opaque` is the IVF scan private state installed by this AM and
+    // lives at least as long as the scan descriptor.
     unsafe { (*opaque.cast::<EcIvfScanOpaque>()).explain_counters }
 }
 
@@ -1545,6 +1553,8 @@ unsafe fn load_directory_entries(
     let mut directories = Vec::with_capacity(metadata.nlists as usize);
     for expected_list_id in 0..metadata.nlists {
         let (directory, following_tid) =
+            // SAFETY: `index_relation` is the live IVF index relation and
+            // `next_tid` follows the metadata directory chain.
             unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
         if directory.list_id != expected_list_id {
             return Err(format!(
@@ -1581,6 +1591,8 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "ec_ivf debug begin heap backed scan");
     let index_relation_ptr = index_relation.as_ptr();
+    // SAFETY: `index_relation_ptr` is held open by `index_relation`; reading
+    // rd_id and resolving its heap relation does not take ownership.
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation_ptr).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_ivf debug scan could not resolve heap relation for index {index_oid}");
@@ -1610,14 +1622,20 @@ unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys::Oid) -> bool {
+    // SAFETY: test helper opens guarded heap/index relations and returns a
+    // scan descriptor whose guards are retained in `state`.
     let state = unsafe { debug_begin_heap_backed_scan(index_oid) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(vec![1.0_f32])
             .expect("debug query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `state.scan` is live and `orderby` remains on the stack for the
+    // duration of the rescan call.
     unsafe { pg_sys::index_rescan(state.scan.as_ptr(), ptr::null_mut(), 0, &mut orderby, 1) };
     let tid = unsafe {
+        // SAFETY: `state.scan` remains live until `debug_end_heap_backed_scan`
+        // below and PostgreSQL returns either a heap TID pointer or null.
         pg_sys::index_getnext_tid(
             state.scan.as_ptr(),
             pg_sys::ScanDirection::ForwardScanDirection,
@@ -1625,6 +1643,8 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys
     };
     let found = !tid.is_null();
 
+    // SAFETY: this consumes the debug scan state and drops guards in reverse
+    // order after all scan calls have completed.
     unsafe { debug_end_heap_backed_scan(state) };
     found
 }
@@ -1654,14 +1674,19 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
         index_oid,
         "ec_ivf debug rescan query prep",
     );
+    // SAFETY: the guarded index relation stays live until the debug scan is
+    // ended below; AM begin initializes the scan-private state.
     let scan = unsafe { ec_ivf_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan` is live and `orderby` remains valid for the rescan call.
     unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
+    // SAFETY: AM rescan initialized `scan.opaque` with EcIvfScanOpaque and
+    // the scan remains live until ended below.
     let opaque = unsafe { &*(*scan).opaque.cast::<EcIvfScanOpaque>() };
     let result = EcIvfRescanDebugSnapshot {
         rescan_called: opaque.rescan_called,
@@ -1674,11 +1699,15 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
         prepared_lut_len: if opaque.prepared_query.is_null() {
             0
         } else {
+            // SAFETY: null was checked above and prepared query storage is
+            // scan-owned for the lifetime of `opaque`.
             unsafe { (*opaque.prepared_query).lut_len() }
         },
         prepared_sq_len: if opaque.prepared_query.is_null() {
             0
         } else {
+            // SAFETY: null was checked above and prepared query storage is
+            // scan-owned for the lifetime of `opaque`.
             unsafe { (*opaque.prepared_query).sq_len() }
         },
         centroid_score_count: opaque.centroid_score_count,
@@ -1686,7 +1715,11 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
         selected_lists: debug_selected_lists(opaque),
     };
 
+    // SAFETY: `scan` was created by `ec_ivf_ambeginscan` in this helper and
+    // has not been ended yet.
     unsafe { ec_ivf_amendscan(scan) };
+    // SAFETY: PostgreSQL owns the IndexScanDesc allocated by ambeginscan; AM
+    // private state has already been released by `ec_ivf_amendscan`.
     unsafe { pg_sys::IndexScanEnd(scan) };
     result
 }
@@ -1697,6 +1730,8 @@ pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_s
         index_oid,
         "ec_ivf debug pq fastscan cache",
     );
+    // SAFETY: the guarded index relation stays live until the debug scan is
+    // ended below; AM begin initializes the scan-private state.
     let scan = unsafe { ec_ivf_ambeginscan(index_relation.as_ptr(), 0, 1) };
 
     let mut first_orderby = pg_sys::ScanKeyData {
@@ -1704,24 +1739,35 @@ pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_s
             .expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan` is live and `first_orderby` remains valid for the rescan
+    // call.
     unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1) };
-    let first_ptr =
-        unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() }.and_then(|opaque| {
-            (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
-        });
+    // SAFETY: `scan.opaque` is either null or the IVF scan-private state
+    // installed by the AM; `as_ref` converts null to None.
+    let first_opaque = unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() };
+    let first_ptr = first_opaque.and_then(|opaque| {
+        (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
+    });
 
     let mut second_orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(vec![0.0_f32, 1.0_f32])
             .expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: same live scan descriptor; `second_orderby` remains valid for
+    // the rescan call.
     unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1) };
-    let second_ptr =
-        unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() }.and_then(|opaque| {
-            (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
-        });
+    // SAFETY: `scan.opaque` is either null or the IVF scan-private state
+    // installed by the AM; `as_ref` converts null to None.
+    let second_opaque = unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() };
+    let second_ptr = second_opaque.and_then(|opaque| {
+        (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
+    });
 
+    // SAFETY: `scan` was created by this helper and has not been ended yet.
     unsafe { ec_ivf_amendscan(scan) };
+    // SAFETY: PostgreSQL owns the IndexScanDesc allocated by ambeginscan; AM
+    // private state has already been released by `ec_ivf_amendscan`.
     unsafe { pg_sys::IndexScanEnd(scan) };
 
     first_ptr.is_some() && first_ptr == second_ptr
@@ -1732,35 +1778,60 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<(u32, u16, f32)>, bool) {
+    // SAFETY: test helper opens guarded heap/index relations and returns a
+    // scan descriptor whose guards are retained in `state`.
     let state = unsafe { debug_begin_heap_backed_scan(index_oid) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     let scan = state.scan.as_ptr();
+    // SAFETY: `scan` is live through `state` and `orderby` remains valid for
+    // the rescan call.
     unsafe { pg_sys::index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut outputs = Vec::new();
+    // SAFETY: `scan` remains live for the loop and the AM owns its
+    // scan-private iteration state.
     while unsafe { ec_ivf_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        // SAFETY: after a successful gettuple, PostgreSQL's scan descriptor
+        // carries the current heap TID.
         let (block_number, offset_number) =
             pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
-        let score = if unsafe { (*scan).xs_orderbyvals.is_null() }
-            || unsafe { (*scan).xs_orderbynulls.is_null() }
-            || unsafe { *(*scan).xs_orderbynulls }
-        {
+        // SAFETY: `scan` is live; these executor-owned order-by arrays may be
+        // null, and those cases are checked before dereferencing.
+        let orderby_vals_missing = unsafe { (*scan).xs_orderbyvals.is_null() };
+        // SAFETY: same live scan descriptor and nullable order-by null flags.
+        let orderby_nulls_missing = unsafe { (*scan).xs_orderbynulls.is_null() };
+        let orderby_is_null = if orderby_nulls_missing {
+            true
+        } else {
+            // SAFETY: null was checked above before reading the first
+            // order-by null flag.
+            unsafe { *(*scan).xs_orderbynulls }
+        };
+        let score = if orderby_vals_missing || orderby_is_null {
             pgrx::error!("ec_ivf debug gettuple output is missing order-by score");
         } else {
+            // SAFETY: non-null order-by values were verified above and the AM
+            // stores the score as the first f32 datum.
             f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, false)
                 .expect("score datum should decode as f32")
         };
         outputs.push((block_number, offset_number, score));
     }
+    // SAFETY: `scan` remains live after iteration and the nulls array may be
+    // absent depending on executor setup.
     let orderby_cleared = if unsafe { (*scan).xs_orderbynulls.is_null() } {
         false
     } else {
+        // SAFETY: null was checked in the branch above before reading the
+        // first order-by null flag.
         unsafe { *(*scan).xs_orderbynulls }
     };
 
+    // SAFETY: this consumes the debug scan state and drops guards in reverse
+    // order after all scan calls have completed.
     unsafe { debug_end_heap_backed_scan(state) };
     (outputs, orderby_cleared)
 }
@@ -1771,6 +1842,7 @@ pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32,
         index_oid,
         "ec_ivf debug metadata",
     );
+    // SAFETY: the guarded index relation is live for this metadata read.
     let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     (
         metadata.format_version,
@@ -1787,6 +1859,7 @@ pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) ->
         index_oid,
         "ec_ivf debug quantizer cache",
     );
+    // SAFETY: the guarded index relation is live for this metadata read.
     let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     if metadata.dimensions == 0 {
         return None;
@@ -1804,6 +1877,7 @@ pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'stati
         index_oid,
         "ec_ivf debug rerank mode",
     );
+    // SAFETY: the guarded index relation is live for this metadata read.
     let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     metadata.rerank.reloption_name()
 }
@@ -1816,6 +1890,7 @@ pub(crate) unsafe fn debug_ec_ivf_build_metadata(
         index_oid,
         "ec_ivf debug build metadata",
     );
+    // SAFETY: the guarded index relation is live for this metadata read.
     let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
     (
         metadata.dimensions,
@@ -1836,6 +1911,8 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
         "ec_ivf debug directory summary",
     );
     let index_relation_ptr = index_relation.as_ptr();
+    // SAFETY: `index_relation_ptr` is held open by `index_relation` for this
+    // metadata read.
     let metadata = unsafe { super::page::read_metadata_page(index_relation_ptr) };
 
     if metadata.directory_head == crate::storage::page::ItemPointer::INVALID {
@@ -1851,6 +1928,8 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
     let mut dead_sum = 0_u64;
     let mut inserted_sum = 0_u64;
     for expected_list_id in 0..metadata.nlists {
+        // SAFETY: `index_relation_ptr` is live for the loop and `next_tid`
+        // follows the directory chain read from metadata.
         let (directory, following_tid) = unsafe {
             super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid)
                 .unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -1889,7 +1968,10 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
         index_oid,
         "ec_ivf debug directory entry",
     );
+    // SAFETY: the guarded index relation is live for this metadata read.
     let metadata = unsafe { super::page::read_metadata_page(index_relation.as_ptr()) };
+    // SAFETY: metadata was read from the same live index relation and
+    // `load_directory_entries` validates the directory chain ordering.
     let directories = unsafe { load_directory_entries(index_relation.as_ptr(), &metadata) }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let directory = directories
