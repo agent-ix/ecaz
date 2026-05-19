@@ -1,0 +1,535 @@
+Script started on 2026-05-19 05:11:33-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex f60560de..dda9fa57 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -128,84 +128,6 @@[m [msrc/am/ec_hnsw/shared.rs:946[m
+ src/am/ec_hnsw/shared.rs:956[m
+ src/am/ec_hnsw/shared.rs:959[m
+ src/am/ec_hnsw/shared.rs:960[m
+[31m-src/am/ec_hnsw/source.rs:112[m
+[31m-src/am/ec_hnsw/source.rs:120[m
+[31m-src/am/ec_hnsw/source.rs:150[m
+[31m-src/am/ec_hnsw/source.rs:151[m
+[31m-src/am/ec_hnsw/source.rs:152[m
+[31m-src/am/ec_hnsw/source.rs:153[m
+[31m-src/am/ec_hnsw/source.rs:154[m
+[31m-src/am/ec_hnsw/source.rs:155[m
+[31m-src/am/ec_hnsw/source.rs:156[m
+[31m-src/am/ec_hnsw/source.rs:157[m
+[31m-src/am/ec_hnsw/source.rs:165[m
+[31m-src/am/ec_hnsw/source.rs:166[m
+[31m-src/am/ec_hnsw/source.rs:177[m
+[31m-src/am/ec_hnsw/source.rs:195[m
+[31m-src/am/ec_hnsw/source.rs:196[m
+[31m-src/am/ec_hnsw/source.rs:197[m
+[31m-src/am/ec_hnsw/source.rs:198[m
+[31m-src/am/ec_hnsw/source.rs:199[m
+[31m-src/am/ec_hnsw/source.rs:200[m
+[31m-src/am/ec_hnsw/source.rs:201[m
+[31m-src/am/ec_hnsw/source.rs:202[m
+[31m-src/am/ec_hnsw/source.rs:211[m
+[31m-src/am/ec_hnsw/source.rs:212[m
+[31m-src/am/ec_hnsw/source.rs:221[m
+[31m-src/am/ec_hnsw/source.rs:236[m
+[31m-src/am/ec_hnsw/source.rs:254[m
+[31m-src/am/ec_hnsw/source.rs:255[m
+[31m-src/am/ec_hnsw/source.rs:266[m
+[31m-src/am/ec_hnsw/source.rs:274[m
+[31m-src/am/ec_hnsw/source.rs:309[m
+[31m-src/am/ec_hnsw/source.rs:332[m
+[31m-src/am/ec_hnsw/source.rs:349[m
+[31m-src/am/ec_hnsw/source.rs:353[m
+[31m-src/am/ec_hnsw/source.rs:356[m
+[31m-src/am/ec_hnsw/source.rs:365[m
+[31m-src/am/ec_hnsw/source.rs:366[m
+[31m-src/am/ec_hnsw/source.rs:374[m
+[31m-src/am/ec_hnsw/source.rs:387[m
+[31m-src/am/ec_hnsw/source.rs:391[m
+[31m-src/am/ec_hnsw/source.rs:394[m
+[31m-src/am/ec_hnsw/source.rs:399[m
+[31m-src/am/ec_hnsw/source.rs:400[m
+[31m-src/am/ec_hnsw/source.rs:404[m
+[31m-src/am/ec_hnsw/source.rs:407[m
+[31m-src/am/ec_hnsw/source.rs:421[m
+[31m-src/am/ec_hnsw/source.rs:422[m
+[31m-src/am/ec_hnsw/source.rs:426[m
+[31m-src/am/ec_hnsw/source.rs:429[m
+[31m-src/am/ec_hnsw/source.rs:449[m
+[31m-src/am/ec_hnsw/source.rs:451[m
+[31m-src/am/ec_hnsw/source.rs:466[m
+[31m-src/am/ec_hnsw/source.rs:467[m
+[31m-src/am/ec_hnsw/source.rs:470[m
+[31m-src/am/ec_hnsw/source.rs:473[m
+[31m-src/am/ec_hnsw/source.rs:486[m
+[31m-src/am/ec_hnsw/source.rs:514[m
+[31m-src/am/ec_hnsw/source.rs:517[m
+[31m-src/am/ec_hnsw/source.rs:524[m
+[31m-src/am/ec_hnsw/source.rs:527[m
+[31m-src/am/ec_hnsw/source.rs:531[m
+[31m-src/am/ec_hnsw/source.rs:532[m
+[31m-src/am/ec_hnsw/source.rs:534[m
+[31m-src/am/ec_hnsw/source.rs:553[m
+[31m-src/am/ec_hnsw/source.rs:570[m
+[31m-src/am/ec_hnsw/source.rs:576[m
+[31m-src/am/ec_hnsw/source.rs:592[m
+[31m-src/am/ec_hnsw/source.rs:605[m
+[31m-src/am/ec_hnsw/source.rs:608[m
+[31m-src/am/ec_hnsw/source.rs:630[m
+[31m-src/am/ec_hnsw/source.rs:643[m
+[31m-src/am/ec_hnsw/source.rs:644[m
+[31m-src/am/ec_hnsw/source.rs:645[m
+[31m-src/am/ec_hnsw/source.rs:654[m
+[31m-src/am/ec_hnsw/source.rs:655[m
+[31m-src/am/ec_hnsw/source.rs:686[m
+[31m-src/am/ec_hnsw/source.rs:701[m
+[31m-src/am/ec_hnsw/source.rs:85[m
+[31m-src/am/ec_hnsw/source.rs:92[m
+ src/tests/build.rs:251[m
+ src/tests/build.rs:252[m
+ src/tests/build.rs:510[m
+[1mdiff --git a/src/am/ec_hnsw/source.rs b/src/am/ec_hnsw/source.rs[m
+[1mindex 16f052f2..f7ab1499 100644[m
+[1m--- a/src/am/ec_hnsw/source.rs[m
+[1m+++ b/src/am/ec_hnsw/source.rs[m
+[36m@@ -82,6 +82,8 @@[m [mpub(crate) fn inner_product(left: &[f32], right: &[f32]) -> f32 {[m
+     {[m
+         if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")[m
+         {[m
+[32m+[m[32m            // SAFETY: Runtime feature detection guarantees AVX2/FMA support and[m
+[32m+[m[32m            // the function slices both operands to the same minimum length.[m
+             return unsafe { inner_product_avx2_fma(left, right) };[m
+         }[m
+     }[m
+[36m@@ -89,6 +91,8 @@[m [mpub(crate) fn inner_product(left: &[f32], right: &[f32]) -> f32 {[m
+     #[cfg(target_arch = "aarch64")][m
+     {[m
+         if std::arch::is_aarch64_feature_detected!("neon") {[m
+[32m+[m[32m            // SAFETY: Runtime feature detection guarantees NEON support and the[m
+[32m+[m[32m            // function slices both operands to the same minimum length.[m
+             return unsafe { inner_product_neon(left, right) };[m
+         }[m
+     }[m
+[36m@@ -109,6 +113,8 @@[m [mpub(crate) fn inner_product_avx2_fma_for_test(left: &[f32], right: &[f32]) -> Op[m
+     if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: The test helper returns `None` unless AVX2/FMA are available and[m
+[32m+[m[32m    // forwards caller-owned same-length test slices.[m
+     Some(unsafe { inner_product_avx2_fma(left, right) })[m
+ }[m
+ [m
+[36m@@ -117,6 +123,8 @@[m [mpub(crate) fn inner_product_neon_for_test(left: &[f32], right: &[f32]) -> Option[m
+     if !std::arch::is_aarch64_feature_detected!("neon") {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: The test helper returns `None` unless NEON is available and[m
+[32m+[m[32m    // forwards caller-owned same-length test slices.[m
+     Some(unsafe { inner_product_neon(left, right) })[m
+ }[m
+ [m
+[36m@@ -147,12 +155,17 @@[m [munsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {[m
+     let mut acc3: __m256 = _mm256_setzero_ps();[m
+     let mut offset = 0_usize;[m
+     while offset + 32 <= left.len() {[m
+[32m+[m[32m        // SAFETY: The loop guard leaves at least 32 f32 lanes available from[m
+[32m+[m[32m        // `offset`; unaligned AVX loads accept any valid f32 address.[m
+         let l0 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset)) };[m
+         let r0 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset)) };[m
+[32m+[m[32m        // SAFETY: The 32-lane loop guard covers the +8 lane window.[m
+         let l1 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 8)) };[m
+         let r1 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 8)) };[m
+[32m+[m[32m        // SAFETY: The 32-lane loop guard covers the +16 lane window.[m
+         let l2 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 16)) };[m
+         let r2 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 16)) };[m
+[32m+[m[32m        // SAFETY: The 32-lane loop guard covers the +24 lane window.[m
+         let l3 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 24)) };[m
+         let r3 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 24)) };[m
+         acc0 = _mm256_fmadd_ps(l0, r0, acc0);[m
+[36m@@ -162,6 +175,8 @@[m [munsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {[m
+         offset += 32;[m
+     }[m
+     while offset + 8 <= left.len() {[m
+[32m+[m[32m        // SAFETY: The tail loop guard leaves at least 8 f32 lanes available[m
+[32m+[m[32m        // from `offset`; unaligned AVX loads accept any valid f32 address.[m
+         let l = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset)) };[m
+         let r = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset)) };[m
+         acc0 = _mm256_fmadd_ps(l, r, acc0);[m
+[36m@@ -174,6 +189,7 @@[m [munsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {[m
+     let acc23 = _mm256_add_ps(acc2, acc3);[m
+     let acc = _mm256_add_ps(acc01, acc23);[m
+     let mut lanes = [0.0_f32; 8];[m
+[32m+[m[32m    // SAFETY: `lanes` has exactly eight f32 slots, matching one AVX register.[m
+     unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), acc) };[m
+     let mut sum = lanes.iter().sum::<f32>();[m
+     for idx in offset..left.len() {[m
+[36m@@ -192,12 +208,17 @@[m [munsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {[m
+     let mut offset = 0_usize;[m
+ [m
+     while offset + 16 <= left.len() {[m
+[32m+[m[32m        // SAFETY: The loop guard leaves at least 16 f32 lanes available from[m
+[32m+[m[32m        // `offset`, and NEON support is guaranteed by the caller.[m
+         let l0 = unsafe { vld1q_f32(left.as_ptr().add(offset)) };[m
+         let r0 = unsafe { vld1q_f32(right.as_ptr().add(offset)) };[m
+[32m+[m[32m        // SAFETY: The 16-lane loop guard covers the +4 lane window.[m
+         let l1 = unsafe { vld1q_f32(left.as_ptr().add(offset + 4)) };[m
+         let r1 = unsafe { vld1q_f32(right.as_ptr().add(offset + 4)) };[m
+[32m+[m[32m        // SAFETY: The 16-lane loop guard covers the +8 lane window.[m
+         let l2 = unsafe { vld1q_f32(left.as_ptr().add(offset + 8)) };[m
+         let r2 = unsafe { vld1q_f32(right.as_ptr().add(offset + 8)) };[m
+[32m+[m[32m        // SAFETY: The 16-lane loop guard covers the +12 lane window.[m
+         let l3 = unsafe { vld1q_f32(left.as_ptr().add(offset + 12)) };[m
+         let r3 = unsafe { vld1q_f32(right.as_ptr().add(offset + 12)) };[m
+         acc0 = vfmaq_f32(acc0, l0, r0);[m
+[36m@@ -208,6 +229,8 @@[m [munsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {[m
+     }[m
+ [m
+     while offset + 4 <= left.len() {[m
+[32m+[m[32m        // SAFETY: The tail loop guard leaves at least 4 f32 lanes available[m
+[32m+[m[32m        // from `offset`, and NEON support is guaranteed by the caller.[m
+         let l = unsafe { vld1q_f32(left.as_ptr().add(offset)) };[m
+         let r = unsafe { vld1q_f32(right.as_ptr().add(offset)) };[m
+         acc0 = vfmaq_f32(acc0, l, r);[m
+[36m@@ -218,6 +241,7 @@[m [munsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {[m
+     let acc23 = vaddq_f32(acc2, acc3);[m
+     let acc = vaddq_f32(acc01, acc23);[m
+     let mut lanes = [0.0_f32; 4];[m
+[32m+[m[32m    // SAFETY: `lanes` has exactly four f32 slots, matching one NEON register.[m
+     unsafe { vst1q_f32(lanes.as_mut_ptr(), acc) };[m
+     let mut sum = lanes.iter().sum::<f32>();[m
+     for idx in offset..left.len() {[m
+[36m@@ -233,6 +257,8 @@[m [mpub(crate) unsafe fn resolve_source_attnum([m
+ ) -> i32 {[m
+     let source_column = std::ffi::CString::new(source_column)[m
+         .unwrap_or_else(|_| pgrx::error!("ec_hnsw {source_label} contains an invalid NUL byte"));[m
+[32m+[m[32m    // SAFETY: The heap relation is live for the caller's PostgreSQL callback,[m
+[32m+[m[32m    // and `source_column` is a NUL-terminated CString for `get_attnum`.[m
+     let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };[m
+     let attnum = i32::from(attnum);[m
+     if attnum <= 0 {[m
+[36m@@ -250,8 +276,12 @@[m [mpub(crate) unsafe fn resolve_source_attribute([m
+     source_label: &str,[m
+     type_policy: SourceTypePolicy,[m
+ ) -> SourceAttribute {[m
+[32m+[m[32m    // SAFETY: The caller supplies a live heap relation and column label; this[m
+[32m+[m[32m    // helper validates the resolved attnum before it is reused below.[m
+     let source_attnum =[m
+         unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };[m
+[32m+[m[32m    // SAFETY: `source_attnum` was resolved from this heap relation and type[m
+[32m+[m[32m    // policy validation happens inside the delegated helper.[m
+     unsafe {[m
+         resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy)[m
+     }[m
+[36m@@ -263,6 +293,8 @@[m [mpub(crate) unsafe fn resolve_source_attribute_by_attnum([m
+     source_label: &str,[m
+     type_policy: SourceTypePolicy,[m
+ ) -> SourceAttribute {[m
+[32m+[m[32m    // SAFETY: The heap relation is live for the caller's PostgreSQL callback;[m
+[32m+[m[32m    // `from_pg_copy` copies the tuple descriptor metadata before inspection.[m
+     let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };[m
+     let att = tuple_desc[m
+         .get(source_attnum as usize - 1)[m
+[36m@@ -271,6 +303,7 @@[m [mpub(crate) unsafe fn resolve_source_attribute_by_attnum([m
+         pgrx::error!("ec_hnsw {source_label} references a dropped column");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `att.atttypid` comes from the copied tuple descriptor metadata.[m
+     let kind = unsafe { resolve_source_datum_kind(att.atttypid) }.unwrap_or_default();[m
+     let valid = match type_policy {[m
+         SourceTypePolicy::BuildSource => {[m
+[36m@@ -306,6 +339,8 @@[m [mpub(crate) unsafe fn resolve_single_base_heap_index_attnum([m
+     if index_info.is_null() {[m
+         pgrx::error!("ec_hnsw {label} received a null IndexInfo");[m
+     }[m
+[32m+[m[32m    // SAFETY: Null was checked above and PostgreSQL owns `IndexInfo` for the[m
+[32m+[m[32m    // duration of the calling AM callback.[m
+     let index_info = unsafe { &*index_info };[m
+     if index_info.ii_NumIndexKeyAttrs != 1 {[m
+         pgrx::error!("ec_hnsw {label} currently supports single-key indexes only");[m
+[36m@@ -329,6 +364,8 @@[m [mpub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info([m
+     index_info: *mut pg_sys::IndexInfo,[m
+     label: &str,[m
+ ) -> SourceAttribute {[m
+[32m+[m[32m    // SAFETY: The heap relation is live and `index_info` is callback-duration[m
+[32m+[m[32m    // metadata owned by PostgreSQL.[m
+     let indexed = unsafe {[m
+         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)[m
+     };[m
+[36m@@ -346,13 +383,17 @@[m [mpub(crate) unsafe fn resolve_indexed_ecvector_attribute([m
+     index_relation: pg_sys::Relation,[m
+     label: &str,[m
+ ) -> SourceAttribute {[m
+[32m+[m[32m    // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd[m
+[32m+[m[32m    // metadata for this relation.[m
+     let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };[m
+     if index_info.is_null() {[m
+         pgrx::error!("ec_hnsw {label} could not build index metadata");[m
+     }[m
+[32m+[m[32m    // SAFETY: `index_info` was checked non-null and belongs to this index.[m
+     let attribute = unsafe {[m
+         resolve_indexed_ecvector_attribute_from_index_info(heap_relation, index_info, label)[m
+     };[m
+[32m+[m[32m    // SAFETY: `index_info` was allocated by PostgreSQL BuildIndexInfo above.[m
+     unsafe { pg_sys::pfree(index_info.cast()) };[m
+     attribute[m
+ }[m
+[36m@@ -362,7 +403,11 @@[m [mpub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info([m
+     index_info: *mut pg_sys::IndexInfo,[m
+     label: &str,[m
+ ) -> IndexedVectorAttribute {[m
+[32m+[m[32m    // SAFETY: `index_info` is callback-duration PostgreSQL metadata and the[m
+[32m+[m[32m    // helper validates single-key base-column shape.[m
+     let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };[m
+[32m+[m[32m    // SAFETY: The heap relation is live; `from_pg_copy` copies tuple descriptor[m
+[32m+[m[32m    // metadata before the indexed attribute is inspected.[m
+     let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };[m
+     let att = tuple_desc[m
+         .get(indexed_attnum as usize - 1)[m
+[36m@@ -371,6 +416,7 @@[m [mpub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info([m
+         pgrx::error!("ec_hnsw {label} references a dropped column");[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `att.atttypid` comes from the copied tuple descriptor metadata.[m
+     let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }[m
+         .unwrap_or_else(|| pgrx::error!("ec_hnsw {label} must be ecvector or tqvector"));[m
+     IndexedVectorAttribute {[m
+[36m@@ -384,26 +430,34 @@[m [mpub(crate) unsafe fn resolve_indexed_vector_attribute([m
+     index_relation: pg_sys::Relation,[m
+     label: &str,[m
+ ) -> IndexedVectorAttribute {[m
+[32m+[m[32m    // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd[m
+[32m+[m[32m    // metadata for this relation.[m
+     let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };[m
+     if index_info.is_null() {[m
+         pgrx::error!("ec_hnsw {label} could not build index metadata");[m
+     }[m
+[32m+[m[32m    // SAFETY: `index_info` was checked non-null and belongs to this index.[m
+     let attribute = unsafe {[m
+         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)[m
+     };[m
+[32m+[m[32m    // SAFETY: `index_info` was allocated by PostgreSQL BuildIndexInfo above.[m
+     unsafe { pg_sys::pfree(index_info.cast()) };[m
+     attribute[m
+ }[m
+ [m
+ unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {[m
+[32m+[m[32m    // SAFETY: PostgreSQL accepts any type OID here and returns the base type.[m
+     let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };[m
+[32m+[m[32m    // SAFETY: `base_type_oid` is the normalized type OID returned by PostgreSQL.[m
+     let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };[m
+     if formatted.is_null() {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: `format_type_be` returned a non-null NUL-terminated C string.[m
+     let name = unsafe { CStr::from_ptr(formatted) }[m
+         .to_string_lossy()[m
+         .into_owned();[m
+[32m+[m[32m    // SAFETY: The formatted type name was palloc'd by PostgreSQL.[m
+     unsafe { pg_sys::pfree(formatted.cast()) };[m
+     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');[m
+     match type_name {[m
+[36m@@ -418,14 +472,21 @@[m [munsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum[m
+         pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),[m
+         pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),[m
+         _ => {[m
+[32m+[m[32m            // SAFETY: PostgreSQL accepts any type OID here and returns the base[m
+[32m+[m[32m            // type, including domain unwrapping.[m
+             let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };[m
+[32m+[m[32m            // SAFETY: `base_type_oid` is the normalized type OID returned by[m
+[32m+[m[32m            // PostgreSQL.[m
+             let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };[m
+             if formatted.is_null() {[m
+                 return None;[m
+             }[m
+[32m+[m[32m            // SAFETY: `format_type_be` returned a non-null NUL-terminated C[m
+[32m+[m[32m            // string.[m
+             let name = unsafe { CStr::from_ptr(formatted) }[m
+                 .to_string_lossy()[m
+                 .into_owned();[m
+[32m+[m[32m            // SAFETY: The formatted type name was palloc'd by PostgreSQL.[m
+             unsafe { pg_sys::pfree(formatted.cast()) };[m
+             let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');[m
+             if type_name == "ecvector" {[m
+[36m@@ -446,7 +507,11 @@[m [mpub(crate) unsafe fn fetch_heap_row_version([m
+ ) {[m
+     let mut tid = pg_sys::ItemPointerData::default();[m
+     item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);[m
+[32m+[m[32m    // SAFETY: `slot` is caller-owned and valid for reuse within the current[m
+[32m+[m[32m    // scan/build/vacuum callback.[m
+     unsafe { pg_sys::ExecClearTuple(slot) };[m
+[32m+[m[32m    // SAFETY: The heap relation, snapshot, and slot are caller-owned for this[m
+[32m+[m[32m    // callback; `tid` is a stack ItemPointer initialized from the index tuple.[m
+     let fetched =[m
+         unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };[m
+     if !fetched {[m
+[36m@@ -463,13 +528,19 @@[m [mpub(crate) unsafe fn required_slot_datum([m
+     attnum: i32,[m
+     label: &str,[m
+ ) -> pg_sys::Datum {[m
+[32m+[m[32m    // SAFETY: `slot` is caller-owned and valid, and `attnum` was resolved from[m
+[32m+[m[32m    // the tuple descriptor before this helper was called.[m
+     if unsafe { (*slot).tts_nvalid } < attnum as i16 {[m
+[32m+[m[32m        // SAFETY: `attnum` is a positive descriptor-backed attribute number.[m
+         unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };[m
+     }[m
+     let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");[m
+[32m+[m[32m    // SAFETY: `slot_getsomeattrs_int` above ensures the requested attribute is[m
+[32m+[m[32m    // materialized; `attr_index` maps the validated 1-based attnum to 0-based.[m
+     if unsafe { *(*slot).tts_isnull.add(attr_index) } {[m
+         pgrx::error!("ec_hnsw does not support NULL {label}");[m
+     }[m
+[32m+[m[32m    // SAFETY: The attribute was materialized and checked non-null above.[m
+     unsafe { *(*slot).tts_values.add(attr_index) }[m
+ }[m
+ [m
+[36m@@ -483,6 +554,8 @@[m [mimpl DetoastedFloat4Datum {[m
+             pgrx::error!("ec_hnsw does not support NULL {label}");[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: The datum is non-null and expected to be a varlena float[m
+[32m+[m[32m        // payload selected by earlier type validation.[m
+         let varlena = unsafe { DetoastedVarlena::plain_from_datum(datum) }[m
+             .unwrap_or_else(|| pgrx::error!("ec_hnsw could not detoast {label}"));[m
+ [m
+[36m@@ -511,9 +584,12 @@[m [mimpl<'datum> FlatFloat4ArrayRef<'datum> {[m
+             pgrx::error!("ec_hnsw does not support NULL {label}");[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: The caller has already type-checked this datum as a supported[m
+[32m+[m[32m        // source value and this helper owns the detoasted backing storage.[m
+         let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };[m
+         let array_ptr = detoasted.as_array_ptr();[m
+ [m
+[32m+[m[32m        // SAFETY: `array_ptr` points at the detoasted ArrayType backing storage.[m
+         let ndim = match usize::try_from(unsafe { (*array_ptr).ndim }) {[m
+             Ok(value) => value,[m
+             Err(_) => pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]"),[m
+[36m@@ -521,16 +597,23 @@[m [mimpl<'datum> FlatFloat4ArrayRef<'datum> {[m
+         if ndim != 1 {[m
+             pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]");[m
+         }[m
+[32m+[m[32m        // SAFETY: `array_ptr` is the detoasted ArrayType and `elemtype` is part[m
+[32m+[m[32m        // of the fixed array header.[m
+         if unsafe { (*array_ptr).elemtype } != pg_sys::FLOAT4OID {[m
+             pgrx::error!("ec_hnsw {label} must be a real[]");[m
+         }[m
+[32m+[m[32m        // SAFETY: `array_ptr` is a valid detoasted ArrayType.[m
+         if unsafe { pg_sys::array_contains_nulls(array_ptr) } {[m
+             pgrx::error!("ec_hnsw {label} arrays must not contain NULL elements");[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: The array is a detoasted one-dimensional flat ArrayType.[m
+         let dims_ptr = unsafe { flat_array_dims_ptr(array_ptr) };[m
+[32m+[m[32m        // SAFETY: `ndim` and `dims_ptr` come from the same ArrayType header.[m
+         let len = usize::try_from(unsafe { pg_sys::ArrayGetNItems((*array_ptr).ndim, dims_ptr) })[m
+             .expect("flat float4 array length should fit in usize");[m
+[32m+[m[32m        // SAFETY: Data offset is computed from the same flat ArrayType header;[m
+[32m+[m[32m        // alignment is checked before exposing the f32 slice.[m
+         let data_ptr = unsafe {[m
+             array_ptr[m
+                 .cast::<u8>()[m
+[36m@@ -550,6 +633,8 @@[m [mimpl<'datum> FlatFloat4ArrayRef<'datum> {[m
+     }[m
+ [m
+     pub(crate) fn as_slice(&self) -> &[f32] {[m
+[32m+[m[32m        // SAFETY: `data_ptr` and `len` were validated during construction and[m
+[32m+[m[32m        // the detoasted backing storage is owned by `self`.[m
+         unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }[m
+     }[m
+ }[m
+[36m@@ -567,12 +652,16 @@[m [mimpl<'datum> FlatFloat4VarlenaRef<'datum> {[m
+             pgrx::error!("ec_hnsw does not support NULL {label}");[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: The caller has already type-checked this datum as a supported[m
+[32m+[m[32m        // byte-backed source value and this helper owns the detoasted backing.[m
+         let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };[m
+         let (data_ptr, len) = {[m
+             let bytes = detoasted.as_bytes();[m
+             if bytes.len() % std::mem::size_of::<f32>() != 0 {[m
+                 pgrx::error!("ec_hnsw {label} bytea payload length must be a multiple of 4 bytes");[m
+             }[m
+[32m+[m[32m            // SAFETY: `align_to` is used only to validate exact f32 alignment;[m
+[32m+[m[32m            // any non-empty prefix/suffix is rejected before the body is stored.[m
+             let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };[m
+             if !prefix.is_empty() || !suffix.is_empty() {[m
+                 pgrx::error!("ec_hnsw {label} bytea payload is not aligned for float4 access");[m
+[36m@@ -589,6 +678,8 @@[m [mimpl<'datum> FlatFloat4VarlenaRef<'datum> {[m
+     }[m
+ [m
+     pub(crate) fn as_slice(&self) -> &[f32] {[m
+[32m+[m[32m        // SAFETY: `data_ptr` and `len` were validated during construction and[m
+[32m+[m[32m        // the detoasted backing storage is owned by `self`.[m
+         unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }[m
+     }[m
+ }[m
+[36m@@ -602,9 +693,13 @@[m [mimpl<'datum> FlatFloat4SourceRef<'datum> {[m
+     unsafe fn from_datum(datum: pg_sys::Datum, kind: SourceDatumKind, label: &str) -> Self {[m
+         match kind {[m
+             SourceDatumKind::RealArray => {[m
+[32m+[m[32m                // SAFETY: `kind` records that the datum was type-checked as a[m
+[32m+[m[32m                // supported real[] source before dispatch.[m
+                 Self::Array(unsafe { FlatFloat4ArrayRef::from_datum(datum, label) })[m
+             }[m
+             SourceDatumKind::Bytea | SourceDatumKind::Ecvector => {[m
+[32m+[m[32m                // SAFETY: `kind` records that the datum was type-checked as a[m
+[32m+[m[32m                // supported byte-backed source before dispatch.[m
+                 Self::Varlena(unsafe { FlatFloat4VarlenaRef::from_datum(datum, label) })[m
+             }[m
+             _ => pgrx::error!("ec_hnsw {label} must be real[], bytea, or ecvector"),[m
+[36m@@ -627,6 +722,8 @@[m [mpub(crate) unsafe fn with_flat_float4_source_from_datum<R>([m
+ ) -> R {[m
+     // The higher-ranked closure keeps Datum-backed slices local to this call:[m
+     // callers may copy or score from them, but cannot return the borrowed view.[m
+[32m+[m[32m    // SAFETY: `kind` is resolved from PostgreSQL type metadata before this call[m
+[32m+[m[32m    // and the closure lifetime prevents the borrowed datum view escaping.[m
+     let source = unsafe { FlatFloat4SourceRef::from_datum(datum, kind, label) };[m
+     f(source)[m
+ }[m
+[36m@@ -640,8 +737,14 @@[m [mpub(crate) unsafe fn with_source_from_heap_row<R>([m
+     label: &str,[m
+     f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,[m
+ ) -> R {[m
+[32m+[m[32m    // SAFETY: The heap relation/snapshot/slot are caller-owned for this[m
+[32m+[m[32m    // callback and `heap_tid` came from the index tuple being examined.[m
+     unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, label) };[m
+[32m+[m[32m    // SAFETY: The slot now holds the requested row version and the source[m
+[32m+[m[32m    // attnum was resolved from heap metadata.[m
+     let source_datum = unsafe { required_slot_datum(slot, source_attribute.attnum, label) };[m
+[32m+[m[32m    // SAFETY: The source kind was resolved from heap metadata and the closure[m
+[32m+[m[32m    // keeps the datum-backed source view scoped to this call.[m
+     unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }[m
+ }[m
+ [m
+[36m@@ -651,7 +754,11 @@[m [mpub(crate) unsafe fn with_indexed_ecvector_from_slot<R>([m
+     label: &str,[m
+     f: impl for<'datum> FnOnce(FlatFloat4VarlenaRef<'datum>) -> R,[m
+ ) -> R {[m
+[32m+[m[32m    // SAFETY: The slot contains a row with the indexed ecvector attribute and[m
+[32m+[m[32m    // `attnum` was resolved from index/heap metadata.[m
+     let source_datum = unsafe { required_slot_datum(slot, attnum, label) };[m
+[32m+[m[32m    // SAFETY: The indexed attribute is required to be ecvector, which is stored[m
+[32m+[m[32m    // as a byte-backed varlena float payload.[m
+     let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };[m
+     f(source)[m
+ }[m
+[36m@@ -683,6 +790,8 @@[m [mpub(crate) fn negative_inner_product_index_internal(query: &[f32], source: &[f32[m
+ }[m
+ [m
+ unsafe fn flat_array_dims_ptr(array_ptr: *const pg_sys::ArrayType) -> *const c_int {[m
+[32m+[m[32m    // SAFETY: The caller supplies a detoasted flat ArrayType pointer; array dims[m
+[32m+[m[32m    // immediately follow the fixed ArrayType header in PostgreSQL layout.[m
+     unsafe {[m
+         array_ptr[m
+             .cast::<u8>()[m
+[36m@@ -698,6 +807,8 @@[m [mfn maxaligned_size(len: usize) -> usize {[m
+ }[m
+ [m
+ unsafe fn flat_array_data_offset(array_ptr: *const pg_sys::ArrayType, ndim: usize) -> usize {[m
+[32m+[m[32m    // SAFETY: The caller supplies a detoasted ArrayType pointer and `dataoffset`[m
+[32m+[m[32m    // is a fixed header field.[m
+     let dataoffset = unsafe { (*array_ptr).dataoffset };[m
+     if dataoffset != 0 {[m
+         usize::try_from(dataoffset).expect("flat float4 array dataoffset should fit in usize")[m
+
+Script done on 2026-05-19 05:11:33-07:00 [COMMAND_EXIT_CODE="0"]
