@@ -35,6 +35,28 @@
     }
 
     #[test]
+    fn miri_global_vec_id_max_payload_is_accepted() {
+        // Boundary: discriminator + payload must fit in SPIRE_VEC_ID_MAX_BYTES.
+        // Sister test miri_vec_id_rejects_invalid_shapes pins the just-too-big
+        // case; this pins the just-fits case so a `> → >=` mutation on the
+        // length guard is observable.
+        let max_payload = SPIRE_VEC_ID_MAX_BYTES - 1;
+        let vec_id = SpireVecId::global(&vec![7_u8; max_payload]).unwrap();
+        assert_eq!(vec_id.as_bytes().len(), SPIRE_VEC_ID_MAX_BYTES);
+        assert_eq!(vec_id.discriminator(), SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR);
+    }
+
+    #[test]
+    fn miri_vec_id_local_sequence_is_none_for_global() {
+        let global = SpireVecId::global(&[9, 8, 7]).unwrap();
+        assert!(global.local_sequence().is_none());
+
+        // Round-trip through from_bytes preserves the None path.
+        let reparsed = SpireVecId::from_bytes(global.as_bytes()).unwrap();
+        assert!(reparsed.local_sequence().is_none());
+    }
+
+    #[test]
     fn partition_object_header_decodes_prefix_and_payload_tail() {
         let header = SpirePartitionObjectHeader {
             kind: SpirePartitionObjectKind::Leaf,
