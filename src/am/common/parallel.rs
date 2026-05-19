@@ -5,6 +5,17 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use pgrx::pg_sys;
 
+use super::parallel_slot::{
+    load_worker_slot_snapshot, publish_worker_slot_runtime_snapshot, release_worker_slot,
+    try_claim_worker_slot, EcParallelWorkerSlotFields,
+};
+pub(crate) use super::parallel_slot::{
+    EcParallelWorkerSlotRuntimeSnapshot, EcParallelWorkerSlotSnapshot,
+    EC_PARALLEL_WORKER_PHASE_EXHAUSTED, EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL,
+    EC_PARALLEL_WORKER_PHASE_IDLE, EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK,
+    EC_PARALLEL_WORKER_SLOT_CLAIMED, EC_PARALLEL_WORKER_SLOT_FREE,
+};
+
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
 const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 2;
 
@@ -48,50 +59,6 @@ pub(crate) struct EcParallelWorkerSlot {
     active_result_pending_count: AtomicU32,
     active_result_has_current: AtomicU32,
     reserved0: u32,
-}
-
-const EC_PARALLEL_WORKER_SLOT_FREE: u32 = 0;
-const EC_PARALLEL_WORKER_SLOT_CLAIMED: u32 = 1;
-pub(crate) const EC_PARALLEL_WORKER_PHASE_IDLE: u32 = 0;
-pub(crate) const EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL: u32 = 1;
-pub(crate) const EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK: u32 = 2;
-pub(crate) const EC_PARALLEL_WORKER_PHASE_EXHAUSTED: u32 = 3;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
-    pub(crate) execution_phase: u32,
-    pub(crate) scan_dimensions: u32,
-    pub(crate) bootstrap_frontier_limit: u32,
-    pub(crate) visible_frontier_len: u32,
-    pub(crate) scheduler_frontier_len: u32,
-    pub(crate) visited_count: u32,
-    pub(crate) emitted_count: u32,
-    pub(crate) active_result_pending_count: u32,
-    pub(crate) active_result_has_current: bool,
-}
-
-impl EcParallelWorkerSlotRuntimeSnapshot {
-    const fn idle() -> Self {
-        Self {
-            execution_phase: EC_PARALLEL_WORKER_PHASE_IDLE,
-            scan_dimensions: 0,
-            bootstrap_frontier_limit: 0,
-            visible_frontier_len: 0,
-            scheduler_frontier_len: 0,
-            visited_count: 0,
-            emitted_count: 0,
-            active_result_pending_count: 0,
-            active_result_has_current: false,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct EcParallelWorkerSlotSnapshot {
-    pub(crate) flags: u32,
-    pub(crate) slot_index: u32,
-    pub(crate) observed_rescan_epoch: u32,
-    pub(crate) runtime: EcParallelWorkerSlotRuntimeSnapshot,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -235,46 +202,20 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
     }
 }
 
-fn reset_worker_slot_runtime(slot: &EcParallelWorkerSlot) {
-    let runtime = EcParallelWorkerSlotRuntimeSnapshot::idle();
-    slot.execution_phase
-        .store(runtime.execution_phase, Ordering::Release);
-    slot.scan_dimensions
-        .store(runtime.scan_dimensions, Ordering::Release);
-    slot.bootstrap_frontier_limit
-        .store(runtime.bootstrap_frontier_limit, Ordering::Release);
-    slot.visible_frontier_len
-        .store(runtime.visible_frontier_len, Ordering::Release);
-    slot.scheduler_frontier_len
-        .store(runtime.scheduler_frontier_len, Ordering::Release);
-    slot.visited_count
-        .store(runtime.visited_count, Ordering::Release);
-    slot.emitted_count
-        .store(runtime.emitted_count, Ordering::Release);
-    slot.active_result_pending_count
-        .store(runtime.active_result_pending_count, Ordering::Release);
-    slot.active_result_has_current.store(
-        u32::from(runtime.active_result_has_current),
-        Ordering::Release,
-    );
-}
-
-fn load_worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlotSnapshot {
-    EcParallelWorkerSlotSnapshot {
-        flags: slot.flags.load(Ordering::Acquire),
+fn worker_slot_fields(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlotFields<'_, AtomicU32> {
+    EcParallelWorkerSlotFields {
+        flags: &slot.flags,
         slot_index: slot.slot_index,
-        observed_rescan_epoch: slot.observed_rescan_epoch.load(Ordering::Acquire),
-        runtime: EcParallelWorkerSlotRuntimeSnapshot {
-            execution_phase: slot.execution_phase.load(Ordering::Acquire),
-            scan_dimensions: slot.scan_dimensions.load(Ordering::Acquire),
-            bootstrap_frontier_limit: slot.bootstrap_frontier_limit.load(Ordering::Acquire),
-            visible_frontier_len: slot.visible_frontier_len.load(Ordering::Acquire),
-            scheduler_frontier_len: slot.scheduler_frontier_len.load(Ordering::Acquire),
-            visited_count: slot.visited_count.load(Ordering::Acquire),
-            emitted_count: slot.emitted_count.load(Ordering::Acquire),
-            active_result_pending_count: slot.active_result_pending_count.load(Ordering::Acquire),
-            active_result_has_current: slot.active_result_has_current.load(Ordering::Acquire) != 0,
-        },
+        observed_rescan_epoch: &slot.observed_rescan_epoch,
+        execution_phase: &slot.execution_phase,
+        scan_dimensions: &slot.scan_dimensions,
+        bootstrap_frontier_limit: &slot.bootstrap_frontier_limit,
+        visible_frontier_len: &slot.visible_frontier_len,
+        scheduler_frontier_len: &slot.scheduler_frontier_len,
+        visited_count: &slot.visited_count,
+        emitted_count: &slot.emitted_count,
+        active_result_pending_count: &slot.active_result_pending_count,
+        active_result_has_current: &slot.active_result_has_current,
     }
 }
 
@@ -404,22 +345,7 @@ pub(crate) unsafe fn claim_parallel_scan_worker_slot(
     for slot_index in 0..attachment.worker_slot_count {
         let slot = unsafe { attachment.worker_slot(slot_index) }?;
         let slot_ref = unsafe { &*slot };
-        let observed_rescan_epoch = slot_ref.observed_rescan_epoch.load(Ordering::Acquire);
-        if observed_rescan_epoch != attachment.rescan_epoch {
-            continue;
-        }
-
-        if slot_ref
-            .flags
-            .compare_exchange(
-                EC_PARALLEL_WORKER_SLOT_FREE,
-                EC_PARALLEL_WORKER_SLOT_CLAIMED,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_ok()
-        {
-            reset_worker_slot_runtime(slot_ref);
+        if try_claim_worker_slot(worker_slot_fields(slot_ref), attachment.rescan_epoch) {
             unsafe { &*attachment.coordinator }
                 .claimed_worker_slots
                 .fetch_add(1, Ordering::AcqRel);
@@ -438,25 +364,7 @@ pub(crate) unsafe fn release_parallel_scan_worker_slot(
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     let slot = unsafe { attachment.worker_slot(slot_index) }?;
     let slot_ref = unsafe { &*slot };
-    if slot_ref.observed_rescan_epoch.load(Ordering::Acquire) != rescan_epoch {
-        return Ok(false);
-    }
-
-    if slot_ref.flags.load(Ordering::Acquire) != EC_PARALLEL_WORKER_SLOT_CLAIMED {
-        return Ok(false);
-    }
-
-    reset_worker_slot_runtime(slot_ref);
-    if slot_ref
-        .flags
-        .compare_exchange(
-            EC_PARALLEL_WORKER_SLOT_CLAIMED,
-            EC_PARALLEL_WORKER_SLOT_FREE,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_ok()
-    {
+    if release_worker_slot(worker_slot_fields(slot_ref), rescan_epoch) {
         unsafe { &*attachment.coordinator }
             .claimed_worker_slots
             .fetch_sub(1, Ordering::AcqRel);
@@ -475,42 +383,11 @@ pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     let slot = unsafe { attachment.worker_slot(slot_index) }?;
     let slot_ref = unsafe { &*slot };
-    if slot_ref.observed_rescan_epoch.load(Ordering::Acquire) != rescan_epoch {
-        return Ok(false);
-    }
-    if slot_ref.flags.load(Ordering::Acquire) != EC_PARALLEL_WORKER_SLOT_CLAIMED {
-        return Ok(false);
-    }
-
-    slot_ref
-        .execution_phase
-        .store(snapshot.execution_phase, Ordering::Release);
-    slot_ref
-        .scan_dimensions
-        .store(snapshot.scan_dimensions, Ordering::Release);
-    slot_ref
-        .bootstrap_frontier_limit
-        .store(snapshot.bootstrap_frontier_limit, Ordering::Release);
-    slot_ref
-        .visible_frontier_len
-        .store(snapshot.visible_frontier_len, Ordering::Release);
-    slot_ref
-        .scheduler_frontier_len
-        .store(snapshot.scheduler_frontier_len, Ordering::Release);
-    slot_ref
-        .visited_count
-        .store(snapshot.visited_count, Ordering::Release);
-    slot_ref
-        .emitted_count
-        .store(snapshot.emitted_count, Ordering::Release);
-    slot_ref
-        .active_result_pending_count
-        .store(snapshot.active_result_pending_count, Ordering::Release);
-    slot_ref.active_result_has_current.store(
-        u32::from(snapshot.active_result_has_current),
-        Ordering::Release,
-    );
-    Ok(true)
+    Ok(publish_worker_slot_runtime_snapshot(
+        worker_slot_fields(slot_ref),
+        rescan_epoch,
+        snapshot,
+    ))
 }
 
 pub(crate) unsafe fn read_parallel_scan_worker_slot_snapshot(
@@ -519,7 +396,9 @@ pub(crate) unsafe fn read_parallel_scan_worker_slot_snapshot(
 ) -> Result<EcParallelWorkerSlotSnapshot, &'static str> {
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     let slot = unsafe { attachment.worker_slot(slot_index) }?;
-    Ok(load_worker_slot_snapshot(unsafe { &*slot }))
+    Ok(load_worker_slot_snapshot(worker_slot_fields(unsafe {
+        &*slot
+    })))
 }
 
 pub(crate) unsafe fn reset_parallel_scan_state(

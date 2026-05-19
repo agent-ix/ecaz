@@ -382,51 +382,36 @@ pub(crate) fn merge_remote_search_candidates<I>(
 where
     I: IntoIterator<Item = SpireRemoteSearchCandidateRow>,
 {
-    let mut input_count = 0_u64;
-    let mut duplicate_vec_id_count = 0_u64;
-    let mut best_by_vec_id: HashMap<Vec<u8>, SpireRemoteSearchCandidateRow> = HashMap::new();
-
-    for candidate in candidates {
-        input_count = input_count
-            .checked_add(1)
-            .ok_or_else(|| "ec_spire remote candidate merge input count overflow".to_owned())?;
+    let candidates = candidates.into_iter().collect::<Vec<_>>();
+    let mut model_inputs = Vec::with_capacity(candidates.len());
+    for (input_index, candidate) in candidates.iter().enumerate() {
         if !candidate.score.is_finite() {
             return Err("ec_spire remote candidate merge received non-finite score".to_owned());
         }
-        let dedupe_key = remote_search_candidate_dedupe_key(&candidate)?;
-
-        match best_by_vec_id.entry(dedupe_key) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                duplicate_vec_id_count =
-                    duplicate_vec_id_count.checked_add(1).ok_or_else(|| {
-                        "ec_spire remote candidate merge duplicate count overflow".to_owned()
-                    })?;
-                if remote_search_candidate_cmp(&candidate, entry.get()).is_lt() {
-                    *entry.get_mut() = candidate;
-                }
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(candidate);
-            }
-        }
+        model_inputs.push(SpireCandidateMergeModelInput {
+            input_index,
+            dedupe_key: remote_search_candidate_dedupe_key(candidate)?,
+            served_epoch: candidate.served_epoch,
+            node_id: candidate.node_id,
+            pid: candidate.pid,
+            object_version: candidate.object_version,
+            row_index: candidate.row_index,
+            assignment_role_rank: remote_candidate_assignment_role_rank(candidate),
+            row_locator: candidate.row_locator.clone(),
+            score: candidate.score,
+        });
     }
-
-    let mut candidates = best_by_vec_id.into_values().collect::<Vec<_>>();
-    if let Some(limit) = limit {
-        if candidates.len() > limit {
-            candidates.select_nth_unstable_by(limit, remote_search_candidate_cmp);
-            candidates.truncate(limit);
-        }
-    }
-    candidates.sort_by(remote_search_candidate_cmp);
-    if let Some(limit) = limit {
-        candidates.truncate(limit);
-    }
+    let merged = merge_candidate_model_inputs(model_inputs, limit)?;
+    let selected = merged
+        .selected_input_indices
+        .into_iter()
+        .map(|input_index| candidates[input_index].clone())
+        .collect();
 
     Ok(SpireRemoteSearchMergeResult {
-        candidates,
-        input_count,
-        duplicate_vec_id_count,
+        candidates: selected,
+        input_count: merged.input_count,
+        duplicate_vec_id_count: merged.duplicate_vec_id_count,
     })
 }
 

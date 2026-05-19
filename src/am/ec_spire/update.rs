@@ -38,6 +38,7 @@ use crate::am::ec_hnsw::source;
 use crate::storage::page::ItemPointer;
 
 include!("update/types.rs");
+include!("update/epoch_publish_model.rs");
 include!("update/scheduler.rs");
 include!("update/materialization.rs");
 include!("update/routing.rs");

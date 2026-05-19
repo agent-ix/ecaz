@@ -4,13 +4,26 @@ set -euo pipefail
 status=0
 retired_pattern='rudra|flux|loom|shuttle'
 
-for retired in hardening/rudra hardening/flux hardening/loom hardening/shuttle; do
+for retired in hardening/rudra hardening/flux; do
   if [ -f "$retired/Cargo.toml" ] || [ -f "$retired/src/lib.rs" ]; then
     echo "synthetic hardening lane still present: $retired" >&2
     status=1
   fi
   if [ -n "$(git ls-files "$retired/")" ]; then
     echo "retired synthetic lane has tracked files: $retired" >&2
+    status=1
+  fi
+done
+
+for model_lane in hardening/loom hardening/shuttle; do
+  if [ -f "$model_lane/Cargo.toml" ] || [ -f "$model_lane/src/lib.rs" ]; then
+    if [ ! -f "$model_lane/src/lib.rs" ] ||
+      ! grep -Eq '#\[path = "\.\./\.\./\.\./src/' "$model_lane/src/lib.rs"; then
+      echo "model-checking lane does not import real src/ code: $model_lane" >&2
+      status=1
+    fi
+  elif [ -n "$(git ls-files "$model_lane/")" ]; then
+    echo "model-checking lane has tracked files but no real harness: $model_lane" >&2
     status=1
   fi
 done

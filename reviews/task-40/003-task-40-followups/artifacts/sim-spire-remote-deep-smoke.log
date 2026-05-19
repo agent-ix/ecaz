@@ -1,0 +1,16 @@
+Script started on 2026-05-18 19:33:30-07:00 [<not executed on terminal>]
+SIM_SPIRE_SEEDS=2 bash scripts/hardening.sh sim-spire-remote
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (hardening/sim-spire/target/debug/deps/ecaz_sim_spire_hardening-5101f2b05099022b)
+
+running 5 tests
+test tests::transport_consistency_parser_keeps_governance_names_stable ... ok
+test tests::scripted_adapter_uses_extracted_transport_state ... ok
+test tests::turmoil_strict_rejects_stale_served_epoch_response ... ok
+test tests::turmoil_candidate_receive_merges_async_remote_responses ... ok
+test tests::turmoil_partition_degraded_skips_unreachable_remote ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+Script done on 2026-05-18 19:33:30-07:00 [COMMAND_EXIT_CODE="0"]

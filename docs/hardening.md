@@ -427,12 +427,33 @@ with either an interrupt check or a follow-up task.
 
 ## Concurrency And Formal Pilots
 
+- `make loom-real`: runs the standalone Loom harness in `hardening/loom/`.
+  The harness path-lifts real ECAZ code instead of reimplementing a synthetic
+  example. Current coverage targets the parallel scan worker-slot state machine
+  from `src/am/common/parallel_slot.rs`: exclusive claim, live claim count,
+  publish/release interleavings, and stale-epoch rejection. New Loom targets
+  should first lift the production protocol into a pgrx-free helper and then
+  model that helper from `hardening/loom/`.
+- `make shuttle-real`: runs the standalone Shuttle harness in
+  `hardening/shuttle/`. Current coverage targets SPIRE remote candidate merge
+  order invariance and epoch-publish visibility using path-lifted helpers under
+  `src/am/ec_spire/`.
+- `make sim-spire-remote`: runs the standalone Turmoil-based SPIRE remote
+  simulation in `hardening/sim-spire/`. Current coverage drives path-lifted
+  remote transport request/response state through deterministic UDP delivery,
+  network partition handling, degraded skip behavior, stale served-epoch
+  rejection, and candidate merge selection. Set `SIM_SPIRE_SEEDS=N` to sweep
+  multiple Turmoil seeds per network scenario while keeping the default local
+  lane at one seed.
+- `make sim-spire-remote-deep`: pre-release / post-refactor budget knob for the
+  same simulation lane. It currently runs with
+  `SIM_SPIRE_REMOTE_DEEP_SEEDS=1000` by default and is intentionally not part
+  of the standard local hardening rollup.
 - `make kani`: bounded proof for `ItemPointer` decode length behavior.
 
 Kani is intentionally separate from normal `cargo test` so the repo does not
-acquire heavyweight model-checking dependencies on the default path. Flux,
-Loom, and Shuttle lanes are deferred until Tasks 44 and 40 can point them at
-real ECAZ invariants.
+acquire heavyweight model-checking dependencies on the default path. Flux
+remains deferred until Task 44 can point it at real ECAZ invariants.
 
 ## Sanitizers
 

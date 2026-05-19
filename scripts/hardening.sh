@@ -23,6 +23,10 @@ lane flags:
   fuzz-all-short --seconds N
   sqlsmith-pg18 --dsn LIBPQ_DSN
   miri-many-seeds uses MIRI_MANY_SEEDS, default 0..128
+  loom-real runs the real ECAZ Loom path-lifted harness
+  shuttle-real runs the real ECAZ Shuttle path-lifted harness
+  sim-spire-remote runs the real ECAZ deterministic SPIRE remote simulation
+    set SIM_SPIRE_SEEDS=N to sweep N Turmoil seeds per network scenario
   any lane --log-file FILE
 EOF
 }
@@ -516,6 +520,15 @@ EOF
     cargo afl config --build
     cargo afl build --manifest-path fuzz/Cargo.toml --bin fuzz_diskann_metadata_decode
     cargo afl build --manifest-path fuzz/Cargo.toml --bin fuzz_item_pointer_decode
+    ;;
+  loom-real)
+    cargo test --manifest-path hardening/loom/Cargo.toml --lib
+    ;;
+  shuttle-real)
+    cargo test --manifest-path hardening/shuttle/Cargo.toml --lib
+    ;;
+  sim-spire-remote)
+    cargo test --manifest-path hardening/sim-spire/Cargo.toml --lib
     ;;
   kani)
     need_cmd cargo-kani "cargo install --locked kani-verifier"

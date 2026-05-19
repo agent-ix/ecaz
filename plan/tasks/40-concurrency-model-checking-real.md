@@ -1,6 +1,6 @@
 # Task 40: Concurrency Model Checking Over Real ECAZ State
 
-Status: **proposed** — replaces the placeholder Loom and Shuttle harnesses
+Status: **closed pending deep-coverage knob bump** — replaces the placeholder Loom and Shuttle harnesses
 landed in Task 34 with models that exercise the actual ECAZ concurrent code,
 and extends concurrency coverage to the SPIRE distributed coordinator using
 `madsim` / `turmoil` style deterministic simulation.

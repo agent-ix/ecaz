@@ -1,0 +1,41 @@
+Script started on 2026-05-18 19:31:09-07:00 [<not executed on terminal>]
+   Compiling ecaz-shuttle-hardening v0.1.0 (/home/peter/dev/ecaz/hardening/shuttle)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+     Running unittests src/lib.rs (hardening/shuttle/target/debug/deps/ecaz_shuttle_hardening-f678c51d13d996ee)
+
+running 2 tests
+test tests::candidate_merge_is_order_invariant_under_concurrent_receive ... FAILED
+test tests::epoch_publish_visibility_never_exposes_partial_replacement ... ok
+
+failures:
+
+---- tests::candidate_merge_is_order_invariant_under_concurrent_receive stdout ----
+test panicked in task 'main-thread'
+failing schedule:
+"
+91020d8282cf9caeb9dfa6cd0100248a0400
+"
+pass that string to `shuttle::replay` to replay the failure
+
+thread 'tests::candidate_merge_is_order_invariant_under_concurrent_receive' (889430) panicked at src/lib.rs:68:17:
+assertion `left == right` failed
+  left: [0]
+ right: [1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+failing seed:
+"
+14793618661336924418
+"
+To replay the failure, either:
+    1) pass the seed to `shuttle::check_random_with_seed, or
+    2) set the environment variable SHUTTLE_RANDOM_SEED to the seed and run `shuttle::check_random`.
+
+
+failures:
+    tests::candidate_merge_is_order_invariant_under_concurrent_receive
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--lib`
+
+Script done on 2026-05-18 19:31:09-07:00 [COMMAND_EXIT_CODE="101"]
