@@ -63,6 +63,8 @@
         .expect("planner exclusion leaf pid query should succeed")
         .expect("planner exclusion leaf pids should exist");
 
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+
         unsafe {
             for pid in leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, pid as u64, node_id);

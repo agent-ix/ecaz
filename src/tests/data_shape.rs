@@ -166,6 +166,8 @@
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
 
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+
         unsafe {
             for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
@@ -348,6 +350,8 @@
         .expect("coordinator large text leaf pids should exist");
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
+
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
         unsafe {
             for pid in &coord_leaf_pids {

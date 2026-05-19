@@ -41,6 +41,8 @@
         .expect("active epoch query should succeed")
         .expect("active epoch should exist");
 
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+
         unsafe {
             am::debug_spire_rewrite_placement_node(index_oid, expected_centroid_id as u64, 7)
         };
@@ -462,6 +464,7 @@
             index_oid,
             "test_ec_spire_insert_remote_prepare_local_cancel",
         );
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
         let result = unsafe {
             am::spire_coordinator_insert_prepare_remote_sql(
                 index_relation.as_ptr(),
@@ -471,6 +474,7 @@
             )
         };
         drop(index_relation);
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
         unsafe { ScopedPgQueryCancelFlags::clear_pending_for_test() };
 
         let error = result.expect_err("local cancel should abort remote insert prepare");
@@ -682,6 +686,7 @@
         )
         .expect("active epoch query should succeed")
         .expect("active epoch should exist");
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
         unsafe {
             am::debug_spire_rewrite_placement_node(index_oid, expected_centroid_id as u64, 13)
         };
@@ -847,6 +852,7 @@
         )
         .expect("selected pid query should succeed")
         .expect("selected pid should exist");
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 14) };
         let remote_identity_hex = Spi::get_one::<String>(
             "SELECT profile_fingerprint \
@@ -1600,6 +1606,7 @@
 
         let index_oid = index_oid("ec_spire_insert_multi_epoch_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         // This assertion documents the current no-batching contract: PostgreSQL
         // invokes `aminsert` once per row, so each row publishes its own delta
@@ -1693,6 +1700,7 @@
 
         let index_oid = index_oid("ec_spire_insert_empty_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 0);
         assert_eq!(next_pid, 1);
@@ -1704,6 +1712,7 @@
         )
         .expect("first insert should bootstrap the empty ec_spire index");
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 1);
         assert_eq!(next_pid, 3);
@@ -1715,6 +1724,7 @@
         )
         .expect("second insert should publish a delta epoch");
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 2);
         assert_eq!(next_pid, 4);
@@ -1757,6 +1767,7 @@
 
         let index_oid = index_oid("ec_spire_insert_after_build_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 2);
         assert_eq!(next_pid, 5);
@@ -1801,6 +1812,7 @@
 
         let index_oid = index_oid("ec_spire_insert_multi_delta_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 4);
         assert_eq!(next_pid, 6);
@@ -1944,6 +1956,7 @@
             .expect("heap count should exist");
         let index_oid = index_oid(INDEX_NAME);
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(heap_count, 3);
         assert_eq!(active_epoch, 3);
@@ -2001,6 +2014,7 @@
 
         let index_oid = index_oid("ec_spire_source_identity_uuid_idx");
         let (active_epoch, _next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 1);
         assert_eq!(next_local_vec_seq, 1);
@@ -2011,6 +2025,7 @@
         )
         .expect("post-build source_identity insert should succeed");
         let (active_epoch, _next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 2);
         assert_eq!(next_local_vec_seq, 1);
@@ -2095,6 +2110,7 @@
         )
         .expect("leaf object query should succeed")
         .expect("leaf object should exist");
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
         unsafe {
             am::debug_spire_rewrite_placement_node(index_oid, remote_leaf_pid as u64, 2);
         }
@@ -2189,6 +2205,7 @@
 
         let index_oid = index_oid("ec_spire_source_identity_bytea_idx");
         let (active_epoch, _next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
         assert_eq!(active_epoch, 1);
         assert_eq!(next_local_vec_seq, 1);

@@ -65,6 +65,8 @@
         .expect("coordinator idle-timeout leaf pid query should succeed")
         .expect("coordinator idle-timeout leaf pids should exist");
 
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+
         unsafe {
             for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
@@ -238,6 +240,8 @@
         )
         .expect("coordinator remote-restart leaf pid query should succeed")
         .expect("coordinator remote-restart leaf pids should exist");
+
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
         unsafe {
             for pid in &coord_leaf_pids {
@@ -465,6 +469,8 @@
         )
         .expect("coordinator-drop leaf pid query should succeed")
         .expect("coordinator-drop leaf pids should exist");
+
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
         unsafe {
             for pid in &coord_leaf_pids {

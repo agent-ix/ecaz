@@ -248,7 +248,9 @@
 
         let index_oid = index_oid("ec_spire_populated_build_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             unsafe { am::debug_spire_root_control(index_oid) };
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
         let diagnostics = unsafe { am::debug_spire_active_snapshot_diagnostics(index_oid) };
 
         assert_eq!(active_epoch, 1);
@@ -507,6 +509,7 @@
         assert_eq!(aux_store_relids.len(), 2);
 
         for relid in aux_store_relids {
+            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
             let autovacuum_enabled = unsafe {
                 let relation = crate::storage::relation_guard::RelationGuard::try_open(
                     pg_sys::Oid::from(relid),
@@ -738,6 +741,8 @@
              USING ec_spire (embedding ecvector_spire_ip_ops)",
         )
         .expect("auxiliary ec_spire index creation should succeed");
+
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
         let (root_store_id, left_store_id, right_store_id, candidate_count, first_vec, second_vec) = unsafe {
             am::debug_spire_relation_two_store_scan_roundtrip(

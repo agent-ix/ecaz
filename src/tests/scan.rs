@@ -919,6 +919,8 @@
         .expect("active epoch query should succeed")
         .expect("active epoch should exist");
 
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+
         unsafe {
             am::debug_spire_rewrite_placement_node(index_oid, expected_centroid_id as u64, 7)
         };
@@ -998,6 +1000,8 @@
         )
         .expect("active epoch query should succeed")
         .expect("active epoch should exist");
+
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, expected_leaf_pid as u64, 9) };
 

@@ -72,6 +72,8 @@
             .expect("CIC-refresh old remote leaf pids should decode");
         assert_eq!(old_remote_leaf_pids, coord_leaf_pids);
 
+        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+
         unsafe {
             for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 91);
