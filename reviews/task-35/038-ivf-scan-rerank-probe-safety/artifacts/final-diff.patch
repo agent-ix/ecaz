@@ -1,0 +1,327 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index e7220069..099e7e4a 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,75 +1307,49 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/scan.rs:1006
+-src/am/ec_ivf/scan.rs:1014
+-src/am/ec_ivf/scan.rs:1027
+-src/am/ec_ivf/scan.rs:1091
+-src/am/ec_ivf/scan.rs:1096
+-src/am/ec_ivf/scan.rs:1164
+-src/am/ec_ivf/scan.rs:1193
+-src/am/ec_ivf/scan.rs:1206
+-src/am/ec_ivf/scan.rs:1212
+-src/am/ec_ivf/scan.rs:1221
+-src/am/ec_ivf/scan.rs:1253
+-src/am/ec_ivf/scan.rs:1267
+-src/am/ec_ivf/scan.rs:1277
+-src/am/ec_ivf/scan.rs:1286
+-src/am/ec_ivf/scan.rs:1297
+-src/am/ec_ivf/scan.rs:1298
+-src/am/ec_ivf/scan.rs:1301
+-src/am/ec_ivf/scan.rs:1311
+-src/am/ec_ivf/scan.rs:1312
+-src/am/ec_ivf/scan.rs:1315
+-src/am/ec_ivf/scan.rs:1412
+ src/am/ec_ivf/scan.rs:1466
+-src/am/ec_ivf/scan.rs:1471
+-src/am/ec_ivf/scan.rs:1476
+-src/am/ec_ivf/scan.rs:1494
++src/am/ec_ivf/scan.rs:1520
++src/am/ec_ivf/scan.rs:1525
+ src/am/ec_ivf/scan.rs:1530
+-src/am/ec_ivf/scan.rs:1559
+-src/am/ec_ivf/scan.rs:1565
+-src/am/ec_ivf/scan.rs:1566
+-src/am/ec_ivf/scan.rs:1574
+-src/am/ec_ivf/scan.rs:1603
+-src/am/ec_ivf/scan.rs:1609
+-src/am/ec_ivf/scan.rs:1611
+-src/am/ec_ivf/scan.rs:1623
++src/am/ec_ivf/scan.rs:1548
++src/am/ec_ivf/scan.rs:1584
++src/am/ec_ivf/scan.rs:1613
++src/am/ec_ivf/scan.rs:1619
++src/am/ec_ivf/scan.rs:1620
+ src/am/ec_ivf/scan.rs:1628
+-src/am/ec_ivf/scan.rs:1635
+-src/am/ec_ivf/scan.rs:1636
+-src/am/ec_ivf/scan.rs:1646
+-src/am/ec_ivf/scan.rs:1653
+-src/am/ec_ivf/scan.rs:1655
+-src/am/ec_ivf/scan.rs:1664
+-src/am/ec_ivf/scan.rs:1666
+-src/am/ec_ivf/scan.rs:1670
+-src/am/ec_ivf/scan.rs:1671
+-src/am/ec_ivf/scan.rs:1681
+-src/am/ec_ivf/scan.rs:1687
++src/am/ec_ivf/scan.rs:1657
++src/am/ec_ivf/scan.rs:1663
++src/am/ec_ivf/scan.rs:1665
++src/am/ec_ivf/scan.rs:1677
++src/am/ec_ivf/scan.rs:1682
++src/am/ec_ivf/scan.rs:1689
+ src/am/ec_ivf/scan.rs:1690
+-src/am/ec_ivf/scan.rs:1692
+-src/am/ec_ivf/scan.rs:1693
+-src/am/ec_ivf/scan.rs:1694
+-src/am/ec_ivf/scan.rs:1695
+-src/am/ec_ivf/scan.rs:1699
+-src/am/ec_ivf/scan.rs:1704
++src/am/ec_ivf/scan.rs:1700
+ src/am/ec_ivf/scan.rs:1707
+-src/am/ec_ivf/scan.rs:1710
++src/am/ec_ivf/scan.rs:1709
++src/am/ec_ivf/scan.rs:1718
+ src/am/ec_ivf/scan.rs:1720
+-src/am/ec_ivf/scan.rs:1736
++src/am/ec_ivf/scan.rs:1724
++src/am/ec_ivf/scan.rs:1725
++src/am/ec_ivf/scan.rs:1735
++src/am/ec_ivf/scan.rs:1741
++src/am/ec_ivf/scan.rs:1744
++src/am/ec_ivf/scan.rs:1746
++src/am/ec_ivf/scan.rs:1747
++src/am/ec_ivf/scan.rs:1748
++src/am/ec_ivf/scan.rs:1749
+ src/am/ec_ivf/scan.rs:1753
+-src/am/ec_ivf/scan.rs:1765
+-src/am/ec_ivf/scan.rs:1785
+-src/am/ec_ivf/scan.rs:1800
+-src/am/ec_ivf/scan.rs:1838
++src/am/ec_ivf/scan.rs:1758
++src/am/ec_ivf/scan.rs:1761
++src/am/ec_ivf/scan.rs:1764
++src/am/ec_ivf/scan.rs:1774
++src/am/ec_ivf/scan.rs:1790
++src/am/ec_ivf/scan.rs:1807
++src/am/ec_ivf/scan.rs:1819
+ src/am/ec_ivf/scan.rs:1839
+-src/am/ec_ivf/scan.rs:832
+-src/am/ec_ivf/scan.rs:842
+-src/am/ec_ivf/scan.rs:848
+-src/am/ec_ivf/scan.rs:850
+-src/am/ec_ivf/scan.rs:851
+-src/am/ec_ivf/scan.rs:891
++src/am/ec_ivf/scan.rs:1854
++src/am/ec_ivf/scan.rs:1892
++src/am/ec_ivf/scan.rs:1893
+ src/am/ec_ivf/vacuum.rs:101
+ src/am/ec_ivf/vacuum.rs:111
+ src/am/ec_ivf/vacuum.rs:144
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index 8d89da09..fc2d00b3 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -829,6 +829,8 @@ fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
+ 
+ unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
+     if !opaque.heap_rerank_state.is_null() {
++        // SAFETY: `heap_rerank_state` was created with `Box::into_raw` by this
++        // scan opaque and has not been freed while the pointer is non-null.
+         drop(unsafe { Box::from_raw(opaque.heap_rerank_state) });
+         opaque.heap_rerank_state = ptr::null_mut();
+     }
+@@ -839,15 +841,23 @@ unsafe fn configure_heap_rerank_state(
+     opaque: &mut EcIvfScanOpaque,
+     index_options: &super::options::EcIvfOptions,
+ ) {
++    // SAFETY: heap rerank state is scan-opaque owned and cleared by helper
++    // before a fresh state is configured.
+     unsafe { free_heap_rerank_state(opaque) };
+ 
+     if index_options.rerank.v1_effective() != super::options::RerankMode::HeapF32 {
+         return;
+     }
+ 
++    // SAFETY: `scan` is the live PostgreSQL scan descriptor from the AM
++    // callback path; resolver returns a borrowed or owned heap relation guard.
+     let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
+     let heap_relation_ptr = heap_relation.as_ptr();
++    // SAFETY: `scan` is live; resolver returns a borrowed scan snapshot or an
++    // owned registered snapshot guard.
+     let snapshot = unsafe { resolve_scan_snapshot(scan) };
++    // SAFETY: heap and index relations are live; resolver validates the indexed
++    // ecvector source attribute for heap_f32 rerank.
+     let source_attribute = unsafe {
+         source::resolve_indexed_ecvector_attribute(
+             heap_relation_ptr,
+@@ -888,6 +898,8 @@ unsafe fn load_centroid_scores(
+     let mut next_tid = metadata.centroid_head;
+     let mut scores = Vec::with_capacity(metadata.nlists as usize);
+     for expected_list_id in 0..metadata.nlists {
++        // SAFETY: `index_relation` is live and `next_tid` follows the centroid
++        // chain from IVF metadata; page helper validates tuple layout.
+         let (centroid, following_tid) = unsafe {
+             super::page::read_ivf_centroid_and_next(index_relation, next_tid, dimensions)?
+         };
+@@ -1003,6 +1015,8 @@ unsafe fn materialize_probe_candidates(
+         return Err("ec_ivf posting-list scan requires a prepared query".to_owned());
+     }
+ 
++    // SAFETY: `prepared_query` is initialized by `store_scan_prepared_query`
++    // for this scan opaque and remains owned for the scan lifetime.
+     let prepared_query = unsafe { &*opaque.prepared_query };
+     let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+         metadata.storage_format,
+@@ -1010,6 +1024,8 @@ unsafe fn materialize_probe_candidates(
+         metadata_pq_group_size(metadata),
+     )?;
+     let payload_len = quantizer.payload_len();
++    // SAFETY: `index_relation` and metadata describe the live IVF index; the
++    // selected list ids come from validated centroid scores.
+     let probe_plan =
+         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
+     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
+@@ -1024,6 +1040,9 @@ unsafe fn materialize_probe_candidates(
+         .explain_counters
+         .record_posting_pages_read(posting_pages);
+     record_posting_pages_read(opaque, posting_pages);
++    // SAFETY: `probe_plan.block_sequence` contains posting blocks from
++    // validated IVF directory metadata, and the visitor only borrows tuple refs
++    // for the duration of each callback.
+     unsafe {
+         super::page::visit_ivf_posting_refs_for_block_sequence(
+             index_relation,
+@@ -1065,6 +1084,8 @@ unsafe fn materialize_probe_candidates(
+                 for heap_tid in posting.heaptids() {
+                     opaque.explain_counters.record_candidate_scored();
+                     let candidate = EcIvfScoredCandidate { heap_tid, score };
++                    // SAFETY: `best_by_heap_tid` points to the scan-owned
++                    // dedup map returned by `candidate_dedup_map` above.
+                     let best_by_heap_tid = &mut *best_by_heap_tid;
+                     match best_by_heap_tid.entry(heap_tid) {
+                         Entry::Occupied(mut entry) => {
+@@ -1088,11 +1109,15 @@ unsafe fn materialize_probe_candidates(
+         )?
+     };
+ 
++    // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated
++    // during the posting visitor above.
+     let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
+     let mut candidates = collect_ranked_probe_candidates(
+         best_by_heap_tid.values().copied(),
+         pre_rerank_candidate_limit(index_options),
+     );
++    // SAFETY: candidates were materialized for this live scan and opaque; the
++    // rerank helper validates whether heap_f32 state is present before use.
+     unsafe { rerank_probe_candidates(scan, index_options, opaque, &mut candidates) };
+     Ok(candidates)
+ }
+@@ -1161,6 +1186,8 @@ unsafe fn rerank_probe_candidates(
+                 super::options::resolve_scan_rerank_width(index_options.rerank_width)
+                     .effective_rerank_width;
+             let rerank_len = resolve_rerank_len(rerank_width, candidates.len());
++            // SAFETY: `rerank_len` is bounded by `candidates.len()`, and the
++            // heap_f32 helper validates scan-local rerank state before fetching.
+             unsafe { rerank_probe_candidates_heap_f32(opaque, &mut candidates[..rerank_len]) };
+             candidates[..rerank_len].sort_by(candidate_cmp);
+             if rerank_width > 0 {
+@@ -1190,6 +1217,8 @@ unsafe fn rerank_probe_candidates_heap_f32(
+         return;
+     }
+     candidates.sort_by(candidate_heap_tid_cmp);
++    // SAFETY: heap rerank state is created with `Box::into_raw` during scan
++    // configuration and remains owned by `opaque` while the pointer is non-null.
+     let state = unsafe { opaque.heap_rerank_state.as_ref() }
+         .filter(|state| state.source_attnum > 0)
+         .unwrap_or_else(|| {
+@@ -1203,12 +1232,16 @@ unsafe fn rerank_probe_candidates_heap_f32(
+     }
+     let source_attnum = i32::from(state.source_attnum);
+ 
++    // SAFETY: heap relation is live and candidates contain heap TIDs to
++    // prefetch before heap row fetches.
+     unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
+ 
+     let rerank_rows = {
+         let query_values = opaque.query_values();
+         let mut rerank_rows = 0usize;
+         for candidate in candidates {
++            // SAFETY: heap relation, snapshot, and slot come from live rerank
++            // state; candidate heap TID came from IVF posting data.
+             unsafe {
+                 source::fetch_heap_row_version(
+                     heap_relation,
+@@ -1218,6 +1251,8 @@ unsafe fn rerank_probe_candidates_heap_f32(
+                     "ec_ivf heap_f32 rerank source vector",
+                 )
+             };
++            // SAFETY: `slot` contains the fetched heap row version and
++            // `source_attnum` was resolved from the indexed ecvector column.
+             unsafe {
+                 source::with_indexed_ecvector_from_slot(
+                     slot,
+@@ -1250,6 +1285,8 @@ unsafe fn prefetch_heap_rerank_blocks(
+         .map(|candidate| candidate.heap_tid.block_number)
+         .collect::<Vec<_>>();
+     let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
++    // SAFETY: `heap_relation` is live, `state` outlives the stream loop, and
++    // per-buffer data stores block-number-sized callback payloads.
+     let stream = unsafe {
+         pg_sys::read_stream_begin_relation(
+             pg_sys::READ_STREAM_DEFAULT as i32,
+@@ -1264,6 +1301,8 @@ unsafe fn prefetch_heap_rerank_blocks(
+ 
+     loop {
+         let mut per_buffer_data = ptr::null_mut();
++        // SAFETY: `stream` was created above and remains open until
++        // `read_stream_end` after exhaustion.
+         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+             break;
+@@ -1274,6 +1313,7 @@ unsafe fn prefetch_heap_rerank_blocks(
+             .unwrap_or_else(|| pgrx::error!("ec_ivf read stream returned an invalid buffer"));
+     }
+ 
++    // SAFETY: closes the read stream created above.
+     unsafe { pg_sys::read_stream_end(stream) };
+ }
+ 
+@@ -1283,6 +1323,8 @@ unsafe fn prefetch_heap_rerank_blocks(
+     candidates: &[EcIvfScoredCandidate],
+ ) {
+     for candidate in candidates {
++        // SAFETY: `heap_relation` is live and candidate heap TIDs provide
++        // main-fork block numbers for best-effort prefetch.
+         unsafe {
+             pg_sys::PrefetchBuffer(
+                 heap_relation,
+@@ -1294,10 +1336,16 @@ unsafe fn prefetch_heap_rerank_blocks(
+ }
+ 
+ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
++    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `heapRelation` may
++    // already be supplied by the executor.
+     if !unsafe { (*scan).heapRelation }.is_null() {
++        // SAFETY: same live scan descriptor; returning the borrowed relation
++        // keeps ownership with PostgreSQL.
+         return ResolvedIvfScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
+     }
+ 
++    // SAFETY: `scan.indexRelation` is live; PostgreSQL resolves the heap
++    // relation OID for the index relation id.
+     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+     if heap_oid == pg_sys::InvalidOid {
+         pgrx::error!("ec_ivf heap_f32 rerank could not resolve heap relation");
+@@ -1308,10 +1356,16 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvf
+ }
+ 
+ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
++    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `xs_snapshot` may
++    // already be supplied by the executor.
+     if !unsafe { (*scan).xs_snapshot }.is_null() {
++        // SAFETY: same live scan descriptor; returning the borrowed snapshot
++        // keeps ownership with PostgreSQL.
+         return ResolvedIvfScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
+     }
+ 
++    // SAFETY: reads PostgreSQL's active snapshot pointer for the current
++    // backend; null is handled below.
+     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+     if !active_snapshot.is_null() {
+         return ResolvedIvfScanSnapshot::borrowed(active_snapshot);
