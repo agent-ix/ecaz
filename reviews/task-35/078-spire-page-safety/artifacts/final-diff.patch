@@ -1,0 +1,468 @@
+Script started on 2026-05-19 02:49:29-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex b0c11152..b4fccc73 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1304,64 +1304,6 @@[m [msrc/am/ec_spire/dml_frontdoor/tests.rs:296[m
+ src/am/ec_spire/dml_frontdoor/tests.rs:306[m
+ src/am/ec_spire/dml_frontdoor/tests.rs:347[m
+ src/am/ec_spire/dml_frontdoor/tests.rs:359[m
+[31m-src/am/ec_spire/page.rs:101[m
+[31m-src/am/ec_spire/page.rs:102[m
+[31m-src/am/ec_spire/page.rs:118[m
+[31m-src/am/ec_spire/page.rs:130[m
+[31m-src/am/ec_spire/page.rs:136[m
+[31m-src/am/ec_spire/page.rs:142[m
+[31m-src/am/ec_spire/page.rs:149[m
+[31m-src/am/ec_spire/page.rs:156[m
+[31m-src/am/ec_spire/page.rs:183[m
+[31m-src/am/ec_spire/page.rs:198[m
+[31m-src/am/ec_spire/page.rs:211[m
+[31m-src/am/ec_spire/page.rs:214[m
+[31m-src/am/ec_spire/page.rs:255[m
+[31m-src/am/ec_spire/page.rs:257[m
+[31m-src/am/ec_spire/page.rs:259[m
+[31m-src/am/ec_spire/page.rs:274[m
+[31m-src/am/ec_spire/page.rs:28[m
+[31m-src/am/ec_spire/page.rs:315[m
+[31m-src/am/ec_spire/page.rs:316[m
+[31m-src/am/ec_spire/page.rs:32[m
+[31m-src/am/ec_spire/page.rs:320[m
+[31m-src/am/ec_spire/page.rs:330[m
+[31m-src/am/ec_spire/page.rs:337[m
+[31m-src/am/ec_spire/page.rs:349[m
+[31m-src/am/ec_spire/page.rs:362[m
+[31m-src/am/ec_spire/page.rs:364[m
+[31m-src/am/ec_spire/page.rs:365[m
+[31m-src/am/ec_spire/page.rs:382[m
+[31m-src/am/ec_spire/page.rs:384[m
+[31m-src/am/ec_spire/page.rs:39[m
+[31m-src/am/ec_spire/page.rs:394[m
+[31m-src/am/ec_spire/page.rs:396[m
+[31m-src/am/ec_spire/page.rs:401[m
+[31m-src/am/ec_spire/page.rs:417[m
+[31m-src/am/ec_spire/page.rs:418[m
+[31m-src/am/ec_spire/page.rs:419[m
+[31m-src/am/ec_spire/page.rs:430[m
+[31m-src/am/ec_spire/page.rs:446[m
+[31m-src/am/ec_spire/page.rs:448[m
+[31m-src/am/ec_spire/page.rs:449[m
+[31m-src/am/ec_spire/page.rs:450[m
+[31m-src/am/ec_spire/page.rs:458[m
+[31m-src/am/ec_spire/page.rs:473[m
+[31m-src/am/ec_spire/page.rs:474[m
+[31m-src/am/ec_spire/page.rs:475[m
+[31m-src/am/ec_spire/page.rs:491[m
+[31m-src/am/ec_spire/page.rs:499[m
+[31m-src/am/ec_spire/page.rs:517[m
+[31m-src/am/ec_spire/page.rs:524[m
+[31m-src/am/ec_spire/page.rs:538[m
+[31m-src/am/ec_spire/page.rs:545[m
+[31m-src/am/ec_spire/page.rs:63[m
+[31m-src/am/ec_spire/page.rs:65[m
+[31m-src/am/ec_spire/page.rs:70[m
+[31m-src/am/ec_spire/page.rs:71[m
+[31m-src/am/ec_spire/page.rs:72[m
+[31m-src/am/ec_spire/page.rs:80[m
+[31m-src/am/ec_spire/page.rs:94[m
+ src/am/ec_spire/scan/relation.rs:12[m
+ src/am/ec_spire/scan/relation.rs:136[m
+ src/am/ec_spire/scan/relation.rs:145[m
+[1mdiff --git a/src/am/ec_spire/page.rs b/src/am/ec_spire/page.rs[m
+[1mindex 88249458..6c506058 100644[m
+[1m--- a/src/am/ec_spire/page.rs[m
+[1m+++ b/src/am/ec_spire/page.rs[m
+[36m@@ -25,10 +25,14 @@[m [mpub(super) unsafe fn initialize_root_control_page([m
+     index_relation: pg_sys::Relation,[m
+     root_control: SpireRootControlState,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: caller passes an open SPIRE index relation; the shared metadata[m
+[32m+[m[32m    // initializer owns the buffer lock/WAL protocol for block zero.[m
+     unsafe { initialize_spire_metadata_block_zero(index_relation, root_control) };[m
+ }[m
+ [m
+ pub(super) unsafe fn initialize_aux_store_metadata_page(store_relation: pg_sys::Relation) {[m
+[32m+[m[32m    // SAFETY: caller passes an open auxiliary store relation; block-zero[m
+[32m+[m[32m    // initialization uses the same locked-buffer metadata path.[m
+     unsafe { initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty()) };[m
+ }[m
+ [m
+[36m@@ -36,6 +40,8 @@[m [munsafe fn initialize_spire_metadata_block_zero([m
+     index_relation: pg_sys::Relation,[m
+     root_control: SpireRootControlState,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: index_relation is an open PostgreSQL relation; block count is[m
+[32m+[m[32m    // read before choosing either P_NEW or metadata block zero.[m
+     let existing_blocks = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -60,15 +66,25 @@[m [munsafe fn initialize_spire_metadata_block_zero([m
+     }[m
+     .unwrap_or_else(|| pgrx::error!("ec_spire failed to allocate root/control buffer"));[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: GenericXLogTxn is started for the same relation whose buffer will[m
+[32m+[m[32m    // be registered for full-image metadata initialization.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: buffer is locked exclusively by LockedBufferGuard, and the page[m
+[32m+[m[32m    // pointer remains valid while the guard and WAL transaction are live.[m
+     let page =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+     let root_control_bytes = root_control[m
+         .encode()[m
+         .unwrap_or_else(|e| pgrx::error!("{e}"));[m
+     let special_size = align_up(root_control_bytes.len(), ALIGNMENT_BYTES);[m
+[32m+[m[32m    // SAFETY: page is the registered locked buffer page, page_size came from[m
+[32m+[m[32m    // the buffer, and special_size is aligned for the encoded root/control.[m
+     unsafe { pg_sys::PageInit(page, page_size, special_size) };[m
+[32m+[m[32m    // SAFETY: PageInit allocated the special area of at least special_size; the[m
+[32m+[m[32m    // encoded root/control bytes fit inside that area.[m
+     let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();[m
+[32m+[m[32m    // SAFETY: page_contents points to the initialized special area and[m
+[32m+[m[32m    // root_control_bytes is a non-overlapping Rust slice.[m
+     unsafe {[m
+         ptr::copy_nonoverlapping([m
+             root_control_bytes.as_ptr(),[m
+[36m@@ -77,6 +93,7 @@[m [munsafe fn initialize_spire_metadata_block_zero([m
+         );[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: all registered page mutations are complete before finishing WAL.[m
+     unsafe { wal_txn.finish() };[m
+ }[m
+ [m
+[36m@@ -91,6 +108,8 @@[m [mpub(super) unsafe fn read_root_control_page([m
+     )[m
+     .unwrap_or_else(|| pgrx::error!("ec_spire failed to open root/control buffer"));[m
+     let page = buffer.page();[m
+[32m+[m[32m    // SAFETY: buffer is share-locked and pinned; page points at a valid[m
+[32m+[m[32m    // PostgreSQL page while LockedBufferGuard is live.[m
+     let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };[m
+     if special_size < SpireRootControlState::encoded_len() {[m
+         pgrx::error!([m
+[36m@@ -98,7 +117,10 @@[m [mpub(super) unsafe fn read_root_control_page([m
+             SpireRootControlState::encoded_len()[m
+         );[m
+     }[m
+[32m+[m[32m    // SAFETY: special_size was checked to hold the encoded root/control state.[m
+     let root_control_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();[m
+[32m+[m[32m    // SAFETY: root_control_ptr points into the page special area and the slice[m
+[32m+[m[32m    // length is bounded by the encoded root/control length checked above.[m
+     let root_control_bytes = unsafe {[m
+         std::slice::from_raw_parts(root_control_ptr, SpireRootControlState::encoded_len())[m
+     };[m
+[36m@@ -115,6 +137,8 @@[m [mpub(super) unsafe fn append_object_tuple([m
+         return Err("ec_spire object tuple payload must not be empty".to_owned());[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: index_relation is open; this only reads the current main-fork[m
+[32m+[m[32m    // block count before selecting append targets.[m
+     let existing_blocks = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -126,6 +150,8 @@[m [mpub(super) unsafe fn append_object_tuple([m
+ [m
+     if existing_blocks > FIRST_DATA_BLOCK_NUMBER {[m
+         let last_data_block = existing_blocks - 1;[m
+[32m+[m[32m        // SAFETY: last_data_block is an existing data block and helper owns the[m
+[32m+[m[32m        // exclusive buffer/WAL append protocol.[m
+         if let Some(tid) =[m
+             unsafe { try_append_object_tuple_to_block(index_relation, last_data_block, payload)? }[m
+         {[m
+[36m@@ -133,11 +159,15 @@[m [mpub(super) unsafe fn append_object_tuple([m
+         }[m
+ [m
+         let required_space = raw_tuple_storage_bytes(payload.len());[m
+[32m+[m[32m        // SAFETY: index_relation is open and required_space matches the raw[m
+[32m+[m[32m        // tuple size that will be passed to PageAddItemExtended.[m
+         let fsm_block = unsafe { pg_sys::GetPageWithFreeSpace(index_relation, required_space) };[m
+         if fsm_block >= FIRST_DATA_BLOCK_NUMBER[m
+             && fsm_block < existing_blocks[m
+             && fsm_block != last_data_block[m
+         {[m
+[32m+[m[32m            // SAFETY: fsm_block is an existing non-metadata data block selected[m
+[32m+[m[32m            // from the FSM; helper rechecks free space under exclusive lock.[m
+             if let Some(tid) =[m
+                 unsafe { try_append_object_tuple_to_block(index_relation, fsm_block, payload)? }[m
+             {[m
+[36m@@ -146,6 +176,8 @@[m [mpub(super) unsafe fn append_object_tuple([m
+         }[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: helper allocates a new locked page and performs WAL-protected[m
+[32m+[m[32m    // append after rechecking tuple capacity.[m
+     unsafe { append_object_tuple_to_new_block(index_relation, payload) }[m
+ }[m
+ [m
+[36m@@ -153,6 +185,8 @@[m [mpub(super) unsafe fn read_object_tuple([m
+     index_relation: pg_sys::Relation,[m
+     tid: crate::storage::page::ItemPointer,[m
+ ) -> Result<Vec<u8>, String> {[m
+[32m+[m[32m    // SAFETY: with_pinned_object_tuple validates the TID and keeps the page[m
+[32m+[m[32m    // share-locked while copying tuple bytes into an owned Vec.[m
+     unsafe { with_pinned_object_tuple(index_relation, tid, |tuple| Ok(tuple.to_vec())) }[m
+ }[m
+ [m
+[36m@@ -180,6 +214,8 @@[m [mwhere[m
+     .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;[m
+     let page = buffer.page();[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: buffer is share-locked/pinned and the TID was rejected for[m
+[32m+[m[32m    // metadata blocks; helper validates offset and item bounds.[m
+     let result = unsafe { with_object_tuple_from_locked_page(page, page_size, tid, f) };[m
+     result[m
+ }[m
+[36m@@ -195,6 +231,8 @@[m [mwhere[m
+     // BUFFER_LOCK_SHARE. Keep visitors limited to CPU-only tuple inspection[m
+     // and copying bytes into caller-owned state; do not read or pin other pages[m
+     // in this relation from inside the callback.[m
+[32m+[m[32m    // SAFETY: index_relation is open; block count bounds the scan over existing[m
+[32m+[m[32m    // main-fork data blocks.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -208,9 +246,13 @@[m [mwhere[m
+         .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;[m
+         let page = buffer.page();[m
+         let page_size = buffer.page_size();[m
+[32m+[m[32m        // SAFETY: buffer is share-locked/pinned while reading the page's max[m
+[32m+[m[32m        // offset number.[m
+         let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };[m
+         let mut result = Ok(());[m
+         for offset_number in 1..=max_offset {[m
+[32m+[m[32m            // SAFETY: offset_number is within PageGetMaxOffsetNumber bounds and[m
+[32m+[m[32m            // helper validates item id and tuple bounds before visiting.[m
+             result = unsafe {[m
+                 visit_object_tuple_from_locked_page([m
+                     page,[m
+[36m@@ -252,10 +294,16 @@[m [mpub(super) unsafe fn rewrite_object_tuple_same_len([m
+         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,[m
+     )[m
+     .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;[m
+[32m+[m[32m    // SAFETY: WAL transaction is for the same relation as the exclusively[m
+[32m+[m[32m    // locked buffer that will be modified.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: buffer is locked exclusively, and the registered page remains[m
+[32m+[m[32m    // valid while the guard and WAL transaction are live.[m
+     let page =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: helper validates the TID and tuple bounds on the locked page[m
+[32m+[m[32m    // before exposing the tuple slice to the closure.[m
+     let result = unsafe {[m
+         with_object_tuple_from_locked_page(page, page_size, tid, |tuple| {[m
+             if tuple.len() != payload.len() {[m
+[36m@@ -266,11 +314,14 @@[m [mpub(super) unsafe fn rewrite_object_tuple_same_len([m
+                 ));[m
+             }[m
+ [m
+[32m+[m[32m            // SAFETY: tuple and payload have equal length, and the source slice[m
+[32m+[m[32m            // does not overlap the page tuple destination.[m
+             ptr::copy_nonoverlapping(payload.as_ptr(), tuple.as_ptr() as *mut u8, payload.len());[m
+             Ok(())[m
+         })[m
+     };[m
+     match result {[m
+[32m+[m[32m        // SAFETY: mutation is complete and the registered page can be finished.[m
+         Ok(()) => unsafe {[m
+             wal_txn.finish();[m
+             Ok(())[m
+[36m@@ -312,11 +363,16 @@[m [mpub(super) unsafe fn delete_object_tuples_no_compact([m
+             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,[m
+         )[m
+         .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;[m
+[32m+[m[32m        // SAFETY: WAL transaction is for the same relation as the exclusively[m
+[32m+[m[32m        // locked page that will be modified.[m
+         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m        // SAFETY: buffer is exclusively locked and remains pinned while the WAL[m
+[32m+[m[32m        // transaction registers and mutates the page.[m
+         let page = unsafe {[m
+             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)[m
+         };[m
+         let page_size = buffer.page_size();[m
+[32m+[m[32m        // SAFETY: page is locked and pinned while reading the max item offset.[m
+         let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };[m
+         let mut changed = false;[m
+         for offset in offsets.into_iter().rev() {[m
+[36m@@ -327,6 +383,7 @@[m [mpub(super) unsafe fn delete_object_tuples_no_compact([m
+                     offset, block_number[m
+                 ));[m
+             }[m
+[32m+[m[32m            // SAFETY: offset was checked in range for this locked page.[m
+             let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };[m
+             if item_id.is_null() {[m
+                 std::mem::drop(wal_txn);[m
+[36m@@ -334,6 +391,8 @@[m [mpub(super) unsafe fn delete_object_tuples_no_compact([m
+                     "ec_spire object tuple delete ({block_number},{offset}) returned a null item id"[m
+                 ));[m
+             }[m
+[32m+[m[32m            // SAFETY: item_id was checked non-null and is valid while the page[m
+[32m+[m[32m            // remains locked/pinned.[m
+             let item_id_ref = unsafe { &*item_id };[m
+             if item_id_ref.lp_flags() == 0 {[m
+                 continue;[m
+[36m@@ -346,6 +405,8 @@[m [mpub(super) unsafe fn delete_object_tuples_no_compact([m
+                     "ec_spire object tuple delete ({block_number},{offset}) has invalid bounds"[m
+                 ));[m
+             }[m
+[32m+[m[32m            // SAFETY: offset is valid for this locked page; deletion is WAL[m
+[32m+[m[32m            // protected by the active generic WAL transaction.[m
+             unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, offset) };[m
+             removed_tuple_count = removed_tuple_count[m
+                 .checked_add(1)[m
+[36m@@ -359,9 +420,13 @@[m [mpub(super) unsafe fn delete_object_tuples_no_compact([m
+             changed = true;[m
+         }[m
+         if changed {[m
+[32m+[m[32m            // SAFETY: all page deletions for this registered page are complete.[m
+             unsafe { wal_txn.finish() };[m
+         }[m
+[32m+[m[32m        // SAFETY: page remains valid while the buffer guard is live; free-space[m
+[32m+[m[32m        // state is recorded after any deletion changes.[m
+         let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };[m
+[32m+[m[32m        // SAFETY: block_number identifies the same relation page just measured.[m
+         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };[m
+     }[m
+     Ok((removed_tuple_count, removed_tuple_bytes))[m
+[36m@@ -379,7 +444,10 @@[m [munsafe fn try_append_object_tuple_to_block([m
+         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,[m
+     )[m
+     .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;[m
+[32m+[m[32m    // SAFETY: WAL transaction is for the relation page held under exclusive[m
+[32m+[m[32m    // buffer lock.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: buffer is exclusively locked and pinned while registered.[m
+     let page =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+     let page_size = buffer.page_size();[m
+[36m@@ -391,13 +459,17 @@[m [munsafe fn try_append_object_tuple_to_block([m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: page is locked/pinned while reading free space.[m
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };[m
+     if free_space < raw_tuple_storage_bytes(payload.len()) {[m
+[32m+[m[32m        // SAFETY: block_number identifies the same locked page just measured.[m
+         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };[m
+         std::mem::drop(wal_txn);[m
+         return Ok(None);[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: free space was checked against payload storage requirements and[m
+[32m+[m[32m    // payload bytes are copied by PostgreSQL into the locked page.[m
+     let offset = unsafe {[m
+         pg_sys::PageAddItemExtended([m
+             page,[m
+[36m@@ -414,8 +486,11 @@[m [munsafe fn try_append_object_tuple_to_block([m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: append mutation is complete for the registered page.[m
+     unsafe { wal_txn.finish() };[m
+[32m+[m[32m    // SAFETY: page remains pinned while reading and recording free space.[m
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };[m
+[32m+[m[32m    // SAFETY: block_number identifies the same relation page just appended to.[m
+     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };[m
+     Ok(Some(crate::storage::page::ItemPointer {[m
+         block_number,[m
+[36m@@ -427,6 +502,8 @@[m [munsafe fn append_object_tuple_to_new_block([m
+     index_relation: pg_sys::Relation,[m
+     payload: &[u8],[m
+ ) -> Result<crate::storage::page::ItemPointer, String> {[m
+[32m+[m[32m    // SAFETY: index_relation is open; block count validates that metadata block[m
+[32m+[m[32m    // zero has already been initialized.[m
+     let existing_blocks = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -443,10 +520,16 @@[m [munsafe fn append_object_tuple_to_new_block([m
+     )[m
+     .ok_or_else(|| "ec_spire failed to allocate object block".to_owned())?;[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: WAL transaction is for the same relation as the new locked page.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: new buffer is locked and pinned while registered for WAL.[m
+     let page =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+[32m+[m[32m    // SAFETY: page is the new locked buffer page and page_size comes from the[m
+[32m+[m[32m    // buffer guard.[m
+     unsafe { pg_sys::PageInit(page, page_size, 0) };[m
+[32m+[m[32m    // SAFETY: page was initialized and remains locked/pinned for free-space[m
+[32m+[m[32m    // capacity check.[m
+     if unsafe { pg_sys::PageGetFreeSpace(page) as usize } < raw_tuple_storage_bytes(payload.len()) {[m
+         std::mem::drop(wal_txn);[m
+         return Err(format!([m
+[36m@@ -455,6 +538,8 @@[m [munsafe fn append_object_tuple_to_new_block([m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: initialized page has enough free space and PostgreSQL copies the[m
+[32m+[m[32m    // payload bytes into page storage.[m
+     let offset = unsafe {[m
+         pg_sys::PageAddItemExtended([m
+             page,[m
+[36m@@ -470,8 +555,11 @@[m [munsafe fn append_object_tuple_to_new_block([m
+     }[m
+     let block_number = buffer.block_number();[m
+ [m
+[32m+[m[32m    // SAFETY: append mutation is complete for the registered new page.[m
+     unsafe { wal_txn.finish() };[m
+[32m+[m[32m    // SAFETY: page remains pinned while reading and recording free space.[m
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };[m
+[32m+[m[32m    // SAFETY: block_number is the block assigned to the same buffer.[m
+     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };[m
+     Ok(crate::storage::page::ItemPointer {[m
+         block_number,[m
+[36m@@ -488,6 +576,8 @@[m [munsafe fn with_object_tuple_from_locked_page<F, R>([m
+ where[m
+     F: FnOnce(&[u8]) -> Result<R, String>,[m
+ {[m
+[32m+[m[32m    // SAFETY: caller holds the page lock/pin; max offset is read before[m
+[32m+[m[32m    // validating the requested TID offset.[m
+     let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };[m
+     if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {[m
+         return Err(format!([m
+[36m@@ -496,6 +586,8 @@[m [mwhere[m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: helper validates item id, tuple bounds, and visitor lifetime[m
+[32m+[m[32m    // against the locked page.[m
+     match unsafe { visit_object_tuple_from_locked_page(page, page_size, tid, f)? } {[m
+         SpireObjectTupleVisit::Unused => Err(format!([m
+             "ec_spire object tuple ({},{}) points at an unused slot",[m
+[36m@@ -514,6 +606,8 @@[m [munsafe fn visit_object_tuple_from_locked_page<F, R>([m
+ where[m
+     F: FnOnce(&[u8]) -> Result<R, String>,[m
+ {[m
+[32m+[m[32m    // SAFETY: caller holds the page lock/pin and TID offset has been range[m
+[32m+[m[32m    // checked by callers scanning or reading the page.[m
+     let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };[m
+     if item_id.is_null() {[m
+         return Err(format!([m
+[36m@@ -521,6 +615,7 @@[m [mwhere[m
+             tid.block_number, tid.offset_number[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: item_id was checked non-null and points into the locked page.[m
+     let item_id_ref = unsafe { &*item_id };[m
+     if item_id_ref.lp_flags() == 0 {[m
+         return Ok(SpireObjectTupleVisit::Unused);[m
+[36m@@ -535,6 +630,8 @@[m [mwhere[m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: item_id bounds were validated against page_size before fetching[m
+[32m+[m[32m    // the tuple pointer.[m
+     let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();[m
+     if tuple_ptr.is_null() {[m
+         return Err(format!([m
+[36m@@ -542,6 +639,8 @@[m [mwhere[m
+             tid.block_number, tid.offset_number[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: tuple_ptr is non-null and tuple_len bounds were checked within[m
+[32m+[m[32m    // the locked page; slice does not outlive the visitor call.[m
+     let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };[m
+     visit(tuple).map(SpireObjectTupleVisit::Present)[m
+ }[m
+
+Script done on 2026-05-19 02:49:29-07:00 [COMMAND_EXIT_CODE="0"]
