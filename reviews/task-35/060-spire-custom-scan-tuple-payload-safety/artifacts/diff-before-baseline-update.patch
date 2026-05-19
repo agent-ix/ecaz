@@ -1,0 +1,70 @@
+Script started on 2026-05-19 01:16:47-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/custom_scan/tuple_payload.rs b/src/am/ec_spire/custom_scan/tuple_payload.rs[m
+[1mindex e927f9f4..2adb962a 100644[m
+[1m--- a/src/am/ec_spire/custom_scan/tuple_payload.rs[m
+[1m+++ b/src/am/ec_spire/custom_scan/tuple_payload.rs[m
+[36m@@ -3,6 +3,9 @@[m [munsafe fn custom_scan_store_remote_tuple_payload([m
+     scan_state: *mut pg_sys::ScanState,[m
+     output: &super::SpireRemoteProductionScanOutputRow,[m
+ ) -> *mut pg_sys::TupleTableSlot {[m
+[32m+[m[32m    // SAFETY: state and scan_state are PostgreSQL-owned custom scan execution[m
+[32m+[m[32m    // pointers for the active callback; this only stores one output row payload[m
+[32m+[m[32m    // into ss_ScanTupleSlot using the state's prepared attribute I/O cache.[m
+     unsafe {[m
+         if output.tuple_payload_missing {[m
+             pgrx::error!([m
+[36m@@ -37,6 +40,9 @@[m [munsafe fn custom_scan_store_tuple_payload_json([m
+     payload_json: &str,[m
+     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],[m
+ ) -> *mut pg_sys::TupleTableSlot {[m
+[32m+[m[32m    // SAFETY: slot is a PostgreSQL TupleTableSlot for the scan output and[m
+[32m+[m[32m    // attr_inputs is sized for its tuple descriptor; null/dropped attributes are[m
+[32m+[m[32m    // handled before writing values/isnull arrays.[m
+     unsafe {[m
+         if slot.is_null() {[m
+             pgrx::error!("EcSpireDistributedScan tuple payload slot is null");[m
+[36m@@ -102,6 +108,8 @@[m [mpub(crate) unsafe fn custom_scan_store_tuple_payload_json_for_test([m
+     slot: *mut pg_sys::TupleTableSlot,[m
+     payload_json: &str,[m
+ ) -> *mut pg_sys::TupleTableSlot {[m
+[32m+[m[32m    // SAFETY: pg_test callers pass a PostgreSQL TupleTableSlot; this builds a[m
+[32m+[m[32m    // matching attribute I/O cache before delegating to the JSON slot writer.[m
+     unsafe {[m
+         if slot.is_null() {[m
+             pgrx::error!("EcSpireDistributedScan tuple payload slot is null");[m
+[36m@@ -116,6 +124,8 @@[m [munsafe fn custom_scan_json_value_to_datum([m
+     attr_name: &str,[m
+     attr_input: &mut SpireCustomScanPayloadAttrIo,[m
+ ) -> pg_sys::Datum {[m
+[32m+[m[32m    // SAFETY: attr_input contains PostgreSQL input function metadata for the[m
+[32m+[m[32m    // target attribute, and the CString input lives through InputFunctionCall.[m
+     unsafe {[m
+         let input_text = match value {[m
+             serde_json::Value::String(value) => value.clone(),[m
+[36m@@ -146,6 +156,9 @@[m [munsafe fn custom_scan_store_tuple_payload_typed([m
+     payload: &super::SpireRemoteTypedTuplePayload,[m
+     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],[m
+ ) -> *mut pg_sys::TupleTableSlot {[m
+[32m+[m[32m    // SAFETY: slot is a PostgreSQL TupleTableSlot for the scan output and[m
+[32m+[m[32m    // attr_inputs is sized for its tuple descriptor; typed payload metadata is[m
+[32m+[m[32m    // validated before writing Datum/isnull arrays.[m
+     unsafe {[m
+         if slot.is_null() {[m
+             pgrx::error!("EcSpireDistributedScan tuple payload slot is null");[m
+[36m@@ -263,6 +276,9 @@[m [munsafe fn custom_scan_binary_value_to_datum([m
+     attr_name: &str,[m
+     attr_input: &mut SpireCustomScanPayloadAttrIo,[m
+ ) -> pg_sys::Datum {[m
+[32m+[m[32m    // SAFETY: attr_input contains PostgreSQL binary receive metadata for the[m
+[32m+[m[32m    // target attribute, and StringInfoData points at bytes kept alive for the[m
+[32m+[m[32m    // duration of ReceiveFunctionCall.[m
+     unsafe {[m
+         let len = core::ffi::c_int::try_from(value.len()).unwrap_or_else(|_| {[m
+             pgrx::error!([m
+[36m@@ -290,4 +306,3 @@[m [munsafe fn custom_scan_binary_value_to_datum([m
+         datum[m
+     }[m
+ }[m
+[31m-[m
+
+Script done on 2026-05-19 01:16:47-07:00 [COMMAND_EXIT_CODE="0"]
