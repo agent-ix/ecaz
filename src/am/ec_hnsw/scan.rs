@@ -2464,16 +2464,23 @@ unsafe fn cached_graph_element_from_buffer(
     buffer: &PinnedBufferLockGuard<'_>,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live for
+    // the duration of buffered graph tuple loading.
     let opaque_ref = unsafe { &mut *opaque };
     if !opaque_ref.graph_element_cache.is_null() {
-        if let Some(element) = unsafe { &*opaque_ref.graph_element_cache }.get(&element_tid) {
+        if let Some(element) = graph_element_cache_mut(opaque_ref)
+            .get(&element_tid)
+            .cloned()
+        {
             record_graph_element_cache_hit(opaque_ref);
-            return (Arc::clone(element), LoadedElementState::None);
+            return (element, LoadedElementState::None);
         }
     }
 
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    // SAFETY: `buffer` is pinned and share-locked by the caller; the tuple view
+    // is consumed inside the closure before the lock guard is dropped.
     let (element, loaded_state) = unsafe {
         graph::with_graph_storage_tuple_from_buffer(
             buffer,
@@ -2498,7 +2505,11 @@ unsafe fn score_cached_graph_element_from_storage(
     opaque: *mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> f32 {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while loading and scoring the graph element.
     let opaque_ref = unsafe { &mut *opaque };
+    // SAFETY: `index_relation` is live for this scan and `element_tid` came
+    // from HNSW graph traversal or fallback scan state.
     let element = unsafe {
         graph::load_exact_graph_element(index_relation, element_tid, opaque_ref.scan_graph_storage)
     };
@@ -2521,6 +2532,8 @@ unsafe fn exact_score_cached_graph_element(
     match loaded_state {
         LoadedElementState::ExactScore(score) => score,
         LoadedElementState::ExactPayload(loaded) => {
+            // SAFETY: callers pass the current scan opaque pointer; it remains
+            // live while exact payload scoring checks and updates score cache.
             let opaque_ref = unsafe { &mut *opaque };
             if let Some(score) = cached_scan_element_score(opaque_ref, element_tid) {
                 record_score_cache_hit(opaque_ref);
@@ -2538,11 +2551,15 @@ unsafe fn exact_score_cached_graph_element(
             pgrx::error!("{PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE}")
         }
         LoadedElementState::None => {
+            // SAFETY: callers pass the current scan opaque pointer; it remains
+            // live while exact scoring checks and updates score cache.
             let opaque_ref = unsafe { &mut *opaque };
             if let Some(score) = cached_scan_element_score(opaque_ref, element_tid) {
                 record_score_cache_hit(opaque_ref);
                 score
             } else {
+                // SAFETY: `index_relation`, `opaque`, and `element_tid` are
+                // the same live scan inputs being scored by this helper.
                 unsafe {
                     score_cached_graph_element_from_storage(index_relation, opaque, element_tid)
                 }
@@ -2617,6 +2634,8 @@ unsafe fn load_grouped_score_rerank_payload<'a>(
     grouped: GroupedScoreContext<'a>,
 ) -> Option<GroupedScoreRerankPayload<'a>> {
     let payload = grouped_score_payload_view(grouped)?;
+    // SAFETY: `index_relation` is live for this scan and `payload.reranktid`
+    // was read from the validated grouped score input shape.
     let rerank = unsafe {
         graph::load_grouped_rerank_payload(
             index_relation,
@@ -2646,6 +2665,8 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
     opaque: *mut TqScanOpaque,
     payload: &GroupedScoreRerankPayload<'_>,
 ) -> f32 {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while scoring the grouped rerank payload.
     let opaque = unsafe { &*opaque };
     if opaque.prepared_query.is_null() {
         pgrx::error!("ec_hnsw scan state is missing prepared query");
@@ -2653,8 +2674,11 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
     if opaque.cached_quantizer.is_null() {
         pgrx::error!("ec_hnsw scan state is missing cached quantizer");
     }
+    // SAFETY: non-null `prepared_query` is Box-owned by this scan opaque until
+    // `free_scan_prepared_query` runs.
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let quantizer = unsafe { &*opaque.cached_quantizer };
+    let quantizer = cached_quantizer_ref(opaque)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
     score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
 }
 
@@ -2662,6 +2686,8 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     opaque: &mut TqScanOpaque,
     heap_tid: page::ItemPointer,
 ) -> f32 {
+    // SAFETY: non-null `grouped_heap_rerank_state` is Box-owned by this scan
+    // opaque and installed by `configure_grouped_heap_rerank_state`.
     let Some(heap_rerank_state) = (unsafe { opaque.grouped_heap_rerank_state.as_ref() }) else {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank is missing heap fetch state");
     };
@@ -2676,6 +2702,9 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     let source_attribute = heap_rerank_state.source_attribute;
     #[cfg(any(test, feature = "pg_test"))]
     let fetch_started = Instant::now();
+    // SAFETY: heap relation, snapshot, and slot are all held by
+    // `heap_rerank_state`, and `heap_tid` is a candidate heap TID from the
+    // current grouped graph element.
     unsafe {
         source::fetch_heap_row_version(
             heap_rerank_state.heap_relation(),
@@ -2693,6 +2722,8 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     record_grouped_rerank_heap_fetch(opaque, fetch_elapsed_us);
     #[cfg(any(test, feature = "pg_test"))]
     let decode_started = Instant::now();
+    // SAFETY: `required_slot_datum` reads from the slot filled above, and the
+    // source attribute was resolved for the same heap relation.
     let score = unsafe {
         source::with_flat_float4_source_from_datum(
             source::required_slot_datum(
@@ -2723,6 +2754,8 @@ unsafe fn score_grouped_heap_source_from_scan_state(
             },
         )
     };
+    // SAFETY: the tuple slot belongs to `heap_rerank_state` and was filled by
+    // the heap fetch immediately above.
     unsafe { pg_sys::ExecClearTuple(heap_rerank_state.slot()) };
     score
 }
@@ -2731,11 +2764,15 @@ unsafe fn score_grouped_candidate_heap_rerank(
     opaque: *mut TqScanOpaque,
     element: &CachedGraphElement,
 ) -> Option<f32> {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while scoring heap rerank candidates.
     let opaque = unsafe { &mut *opaque };
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
     let mut best_score: Option<f32> = None;
     for heap_tid in element.heaptids.as_slice().iter().copied() {
+        // SAFETY: `opaque` holds the grouped heap rerank state used to fetch
+        // and score each candidate heap TID.
         let score = unsafe { score_grouped_heap_source_from_scan_state(opaque, heap_tid) };
         best_score = Some(match best_score {
             Some(current) => current.min(score),
@@ -2758,16 +2795,21 @@ unsafe fn exact_score_grouped_candidate_context(
     opaque: *mut TqScanOpaque,
     grouped: GroupedScoreContext<'_>,
 ) -> f32 {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while exact grouped scoring checks and updates score cache.
     let opaque_ref = unsafe { &mut *opaque };
     if let Some(score) = cached_scan_element_score(opaque_ref, grouped.element_tid) {
         record_score_cache_hit(opaque_ref);
         return score;
     }
 
+    // SAFETY: `grouped` was derived from a cached graph element for this scan,
+    // and `index_relation` is the live relation containing its cold payload.
     let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
         .unwrap_or_else(|| {
             pgrx::error!("ec_hnsw PqFastScan exact scoring requires metadata-aligned cold payload")
         });
+    // SAFETY: `payload` was loaded and shape-checked for this grouped element.
     unsafe {
         score_and_cache_scan_element(
             opaque_ref,
@@ -2785,12 +2827,15 @@ unsafe fn score_grouped_candidate_context_exact(
 ) -> f32 {
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    // SAFETY: delegates to the exact grouped scorer with the same live scan
+    // relation, opaque pointer, and grouped context.
     let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
+    // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
     record_grouped_traversal_exact_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
     score
 }
@@ -2810,6 +2855,8 @@ unsafe fn score_grouped_search_code_from_scan_state(
     opaque: *mut TqScanOpaque,
     search_code: &[u8],
 ) -> f32 {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while approximate grouped scoring reads prepared query state.
     let opaque = unsafe { &*opaque };
     let prepared_query = grouped_scan_query(opaque).unwrap_or_else(|| {
         pgrx::error!("ec_hnsw PqFastScan scan is missing PqFastScan query state")
@@ -2822,10 +2869,14 @@ unsafe fn grouped_candidate_rerank_comparison_score(
     opaque: *mut TqScanOpaque,
     element: &CachedGraphElement,
 ) -> Option<f32> {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while choosing heap, TurboQuant, or grouped rerank scoring.
     if grouped_heap_rerank_enabled(unsafe { &*opaque }) {
+        // SAFETY: the same live scan opaque owns the grouped heap rerank state.
         return unsafe { score_grouped_candidate_heap_rerank(opaque, element) };
     }
 
+    // SAFETY: `opaque` is the live scan opaque pointer used for this candidate.
     let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
     if matches!(
         scan_graph_storage,
@@ -2834,6 +2885,8 @@ unsafe fn grouped_candidate_rerank_comparison_score(
     ) {
         #[cfg(any(test, feature = "pg_test"))]
         let started = Instant::now();
+        // SAFETY: TurboQuant rerank reloads/scans the same live graph element
+        // from this index relation and scan opaque state.
         let score = unsafe {
             exact_score_cached_graph_element(
                 index_relation,
@@ -2847,6 +2900,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
             u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
         #[cfg(not(any(test, feature = "pg_test")))]
         let elapsed_us = 0;
+        // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
         record_grouped_rerank_quantized_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
         return Some(score);
     }
@@ -2854,12 +2908,15 @@ unsafe fn grouped_candidate_rerank_comparison_score(
     let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    // SAFETY: grouped context was derived from this cached element and is
+    // scored against the same live scan relation and opaque state.
     let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
+    // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
     record_grouped_rerank_quantized_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
     Some(score)
 }
@@ -2904,12 +2961,15 @@ unsafe fn score_grouped_candidate_context_approx(
     });
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    // SAFETY: `opaque` holds the prepared grouped query used to score this
+    // metadata-aligned search-code slice.
     let score = unsafe { score_grouped_search_code_from_scan_state(opaque, search_code) };
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
+    // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
     record_grouped_traversal_approx_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
     score
 }
@@ -2923,11 +2983,14 @@ unsafe fn score_grouped_candidate_context_binary(
         grouped.call.shape.binary_word_count,
         "grouped binary traversal scoring requires metadata-aligned binary sidecars",
     );
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while binary grouped scoring reads prepared query state.
     let opaque = unsafe { &*opaque };
     let binary_query = binary_sign_query(opaque).unwrap_or_else(|| {
         pgrx::error!("ec_hnsw PqFastScan binary traversal scoring requires a prepared binary query")
     });
-    let quantizer = unsafe { &*opaque.cached_quantizer };
+    let quantizer = cached_quantizer_ref(opaque)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
     -quantizer.score_binary_sign_words_no_qjl_4bit(binary_query, grouped.call.input.binary_words)
 }
 
@@ -2938,6 +3001,8 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
     budget: usize,
     candidates: Vec<GroupedTraversalCandidate>,
 ) -> Vec<search::BeamCandidate<page::ItemPointer>> {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // throughout budgeted grouped traversal scoring.
     let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
     let mut final_scores = candidates
         .iter()
@@ -2945,6 +3010,7 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
         .collect::<Vec<_>>();
 
     let exact_indices = grouped_exact_traversal_candidate_indices(&candidates, budget);
+    // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
     record_grouped_traversal_budget(
         unsafe { &mut *opaque },
         candidates.len(),
@@ -2959,6 +3025,8 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
         .unwrap_or_else(|| {
             panic!("budgeted grouped exact traversal requires metadata-aligned grouped payloads")
         });
+        // SAFETY: each grouped context was derived from a cached graph element
+        // for this scan and is scored against the live index relation.
         final_scores[exact_idx] =
             unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
     }
@@ -2978,16 +3046,24 @@ unsafe fn score_grouped_candidate_context(
     grouped: GroupedScoreContext<'_>,
     traversal_layer: u8,
 ) -> f32 {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while dispatching grouped traversal scoring.
     let opaque_ref = unsafe { &*opaque };
     if grouped_exact_traversal_full_candidate_scoring_for_layer(opaque_ref, traversal_layer) {
+        // SAFETY: exact grouped scoring uses the same live scan relation,
+        // opaque pointer, and grouped context.
         return unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
     }
 
     let _ = index_relation;
     if grouped_binary_traversal_score_enabled(opaque_ref) {
+        // SAFETY: binary grouped scoring reads prepared state from this live
+        // scan opaque pointer.
         return unsafe { score_grouped_candidate_context_binary(opaque, grouped) };
     }
 
+    // SAFETY: approximate grouped scoring reads prepared state from this live
+    // scan opaque pointer.
     unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
 }
 
@@ -2998,11 +3074,17 @@ unsafe fn score_cached_graph_element_dispatch(
     loaded_state: LoadedElementState,
     traversal_layer: u8,
 ) -> f32 {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while selecting exact or grouped scoring for this cached element.
     let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
     match candidate_score_dispatch(scan_graph_storage, element, loaded_state) {
+        // SAFETY: exact scoring uses the live index relation and scan opaque
+        // pointer for the cached element.
         CandidateScoreDispatch::Exact(loaded_state) => unsafe {
             exact_score_cached_graph_element(index_relation, opaque, element.tid, loaded_state)
         },
+        // SAFETY: grouped scoring uses the live index relation and scan opaque
+        // pointer for the cached grouped context.
         CandidateScoreDispatch::Grouped(grouped) => unsafe {
             score_grouped_candidate_context(index_relation, opaque, grouped, traversal_layer)
         },
@@ -3015,11 +3097,15 @@ unsafe fn cached_graph_element_and_score(
     element_tid: page::ItemPointer,
     traversal_layer: u8,
 ) -> (Arc<CachedGraphElement>, Option<f32>) {
+    // SAFETY: `index_relation`, `opaque`, and `element_tid` describe the live
+    // scan element requested by the traversal path.
     let (element, loaded_state) =
         unsafe { cached_graph_element(index_relation, opaque, element_tid) };
     if element.deleted || element.heaptids.is_empty() {
         return (element, None);
     }
+    // SAFETY: the element was just loaded for this scan and remains cached
+    // while score dispatch consumes its copied payload fields.
     let score = unsafe {
         score_cached_graph_element_dispatch(
             index_relation,
@@ -3037,16 +3123,23 @@ unsafe fn cached_graph_neighbors(
     opaque: *mut TqScanOpaque,
     neighbor_tid: page::ItemPointer,
 ) -> Arc<graph::GraphNeighbors> {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live
+    // while loading or returning cached graph neighbors.
     let opaque_ref = unsafe { &mut *opaque };
     if !opaque_ref.graph_neighbor_cache.is_null() {
-        if let Some(neighbors) = unsafe { &*opaque_ref.graph_neighbor_cache }.get(&neighbor_tid) {
+        if let Some(neighbors) = graph_neighbor_cache_mut(opaque_ref)
+            .get(&neighbor_tid)
+            .cloned()
+        {
             record_graph_neighbor_cache_hit(opaque_ref);
-            return Arc::clone(neighbors);
+            return neighbors;
         }
     }
 
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    // SAFETY: `index_relation` is live for this scan and `neighbor_tid` was
+    // read from a cached graph element's neighbor pointer.
     let neighbors = Arc::new(unsafe { graph::load_graph_neighbors(index_relation, neighbor_tid) });
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
@@ -3063,7 +3156,10 @@ unsafe fn cached_graph_adjacency(
     opaque: *mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, Arc<graph::GraphNeighbors>) {
+    // SAFETY: `element_tid` belongs to the live graph traversal for this scan.
     let (element, _) = unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+    // SAFETY: `neighbortid` was copied from the cached graph element loaded
+    // from the live index relation.
     let neighbors = unsafe { cached_graph_neighbors(index_relation, opaque, element.neighbortid) };
     (element, neighbors)
 }
