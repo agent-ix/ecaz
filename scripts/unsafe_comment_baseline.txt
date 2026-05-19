@@ -1387,9 +1387,6 @@ src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs:436
 src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs:443
 src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs:445
 src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs:446
-src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs:16
-src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs:18
-src/am/ec_spire/coordinator/remote_candidates/fault_matrix.rs:74
 src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:321
 src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:332
 src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:35

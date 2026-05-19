@@ -13,9 +13,15 @@ pub(crate) unsafe fn remote_search_production_consistency_policy_summary_row(
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         let requested_consistency_mode = consistency_mode_name(requested_consistency_mode);
+        // SAFETY: index_relation is the live PostgreSQL index relation supplied
+        // by the SQL diagnostic caller for the duration of this summary read.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
-        let (epoch_manifest, _, _) =
-            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)? };
+        let (epoch_manifest, _, _) = {
+            // SAFETY: root_control was read from the same relation immediately
+            // above, so manifest locators are interpreted against their owning
+            // index relation.
+            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control) }?
+        };
         let active_consistency_mode = consistency_mode_name(epoch_manifest.consistency_mode);
 
         let (
@@ -71,6 +77,8 @@ pub(crate) unsafe fn remote_search_production_session_consistency_policy_summary
     requested_epoch: u64,
 ) -> SpireRemoteProductionConsistencyPolicySummaryRow {
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    // SAFETY: forwards the live index relation from the diagnostic caller and a
+    // backend-local session consistency-mode name into the checked summary path.
     unsafe {
         remote_search_production_consistency_policy_summary_row(
             index_relation,
@@ -714,4 +722,3 @@ fn stage_e_lifecycle_matrix_row(
         required_evidence,
     }
 }
-
