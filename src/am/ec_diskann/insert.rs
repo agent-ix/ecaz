@@ -677,6 +677,8 @@ unsafe fn apply_duplicate_bind_patches(
 
     while start < sorted.len() {
         let block_number = sorted[start].target_tid.block_number;
+        // SAFETY: Patch targets are TIDs from the materialized graph, and this
+        // block is opened under an exclusive lock before tuple mutation.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -690,7 +692,11 @@ unsafe fn apply_duplicate_bind_patches(
         })?;
 
         let page_size = buffer.page_size();
+        // SAFETY: `index_relation` is live while duplicate-bind page changes
+        // are WAL-logged.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        // SAFETY: `buffer` is exclusively locked and registered in this generic
+        // WAL transaction before producing a writable page pointer.
         let writable_page = unsafe {
             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
         };
@@ -702,6 +708,9 @@ unsafe fn apply_duplicate_bind_patches(
                 let patch = &sorted[start];
                 start += 1;
 
+                // SAFETY: `writable_page` is the registered, locked page for
+                // `patch.target_tid`; the helper validates offset and tuple
+                // bounds before yielding mutable tuple bytes.
                 let patch_outcome = unsafe {
                     with_page_tuple_bytes_mut(
                         writable_page,
@@ -807,6 +816,8 @@ unsafe fn apply_duplicate_bind_patches(
         match page_result {
             Ok(()) => {
                 if page_changed {
+                    // SAFETY: The registered page was mutated and must be
+                    // committed through the active generic WAL transaction.
                     unsafe { wal_txn.finish() };
                 } else {
                     std::mem::drop(wal_txn);
@@ -837,6 +848,8 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
 ) -> Result<DuplicateBindResult, String> {
     for _ in 0..MAX_BACKLINK_REPLAN_PASSES {
         let (metadata, chain) =
+            // SAFETY: `index_relation` is live for insert-time duplicate
+            // planning, and materialization copies page tuples into memory.
             unsafe { scan_state::materialize_chain_from_index(index_relation)? };
         let reader = PersistedGraphReader::new(
             &chain,
@@ -869,6 +882,8 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
 
         let appended_overflow_tid = if let Some(overflow_tuple) = append_tuple {
             let encoded = overflow_tuple.encode()?;
+            // SAFETY: `index_relation` is live and PostgreSQL can report the
+            // current main-fork size before choosing an append target block.
             let existing_blocks = unsafe {
                 pg_sys::RelationGetNumberOfBlocksInFork(
                     index_relation,
@@ -880,6 +895,9 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
             } else {
                 P_NEW
             };
+            // SAFETY: The overflow tuple bytes are encoded from a validated
+            // overflow tuple, and append_raw_tuple_payload handles page locking
+            // and WAL registration.
             unsafe {
                 append_raw_tuple_payload(
                     index_relation,
@@ -892,6 +910,9 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
             ItemPointer::INVALID
         };
 
+        // SAFETY: The patch plan was computed from the materialized graph and
+        // append result; the helper revalidates tuple state while holding page
+        // locks and may request a replan on concurrent shape changes.
         match unsafe {
             apply_duplicate_bind_patches(
                 index_relation,
@@ -1142,6 +1163,8 @@ pub(super) struct EmptyInsertBootstrapOutput {
 pub(super) unsafe fn read_metadata_page(
     index_relation: pg_sys::Relation,
 ) -> Result<VamanaMetadataPage, String> {
+    // SAFETY: `index_relation` is a live DISKANN index relation and the metadata
+    // block is read under a share lock.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1152,7 +1175,11 @@ pub(super) unsafe fn read_metadata_page(
     }
     .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
     let page = buffer.page();
+    // SAFETY: `page` comes from the locked metadata buffer; the special pointer
+    // identifies the metadata payload area.
     let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
+    // SAFETY: DISKANN metadata pages store exactly `VAMANA_METADATA_BYTES` in
+    // the special area, which remains pinned while the buffer guard is live.
     let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
     VamanaMetadataPage::decode(metadata_bytes)
 }
@@ -1161,6 +1188,8 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     index_relation: pg_sys::Relation,
     f: impl FnOnce(&mut VamanaMetadataPage) -> Result<T, String>,
 ) -> Result<T, String> {
+    // SAFETY: `index_relation` is live and the metadata block is opened under
+    // an exclusive lock before decoding and rewriting metadata.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1173,19 +1202,34 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
 
     let page = buffer.page();
     let page_size = buffer.page_size();
+    // SAFETY: `page` comes from the locked metadata buffer; the special pointer
+    // identifies the serialized metadata payload.
     let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
+    // SAFETY: The metadata special area contains the fixed-size metadata bytes
+    // while the buffer guard pins the page.
     let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
     let mut metadata = VamanaMetadataPage::decode(metadata_bytes)?;
     let result = f(&mut metadata)?;
 
     let encoded = metadata.encode();
     let special_size = (encoded.len() + 7) & !7;
+    // SAFETY: `index_relation` is live while metadata page changes are
+    // WAL-logged.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The exclusive metadata buffer is registered in the active generic
+    // WAL transaction before producing a writable page pointer.
     let writable_page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    // SAFETY: `writable_page` is the registered metadata page and `page_size`
+    // comes from the locked buffer; `special_size` is aligned from encoded size.
     unsafe { pg_sys::PageInit(writable_page, page_size, special_size) };
+    // SAFETY: The page was initialized with sufficient special space for the
+    // encoded metadata bytes.
     let dst = unsafe { pg_sys::PageGetSpecialPointer(writable_page) }.cast::<u8>();
+    // SAFETY: `dst` points at the initialized special area, and source/dest do
+    // not overlap because `encoded` is owned Rust memory.
     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len()) };
+    // SAFETY: All metadata page mutations are complete and can be committed.
     unsafe { wal_txn.finish() };
     Ok(result)
 }
@@ -1236,6 +1280,8 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
         search_code: training::derive_grouped_pq4_code(source_vector, &model),
     }];
 
+    // SAFETY: `index_relation` is live during empty-index bootstrap and its
+    // reloptions are read without mutating relation state.
     let relopts = unsafe { options::relation_options(index_relation) };
     let params = BuildParams {
         graph_degree_r: u16::try_from(relopts.graph_degree)
@@ -1311,6 +1357,8 @@ pub(super) unsafe fn append_live_node(
         ));
     }
 
+    // SAFETY: `index_relation` is live and PostgreSQL can report the current
+    // main-fork size before choosing an append target block.
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -1319,6 +1367,8 @@ pub(super) unsafe fn append_live_node(
     } else {
         P_NEW
     };
+    // SAFETY: `encoded` is a validated node tuple payload; the append helper
+    // owns page locking, free-space checks, and WAL registration.
     unsafe {
         append_raw_tuple_payload(
             index_relation,
@@ -1336,6 +1386,8 @@ unsafe fn append_raw_tuple_payload(
     target_block: pg_sys::BlockNumber,
 ) -> Result<ItemPointer, String> {
     let buffer = if target_block == P_NEW {
+        // SAFETY: `index_relation` is live and P_NEW requests a new zeroed page
+        // locked for appending this raw tuple payload.
         unsafe {
             LockedBufferGuard::read_main_locked(
                 index_relation,
@@ -1344,6 +1396,8 @@ unsafe fn append_raw_tuple_payload(
             )
         }
     } else {
+        // SAFETY: `target_block` is an existing data page selected from the
+        // relation size and is opened under an exclusive lock for append.
         unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -1356,16 +1410,25 @@ unsafe fn append_raw_tuple_payload(
     .ok_or_else(|| "ec_diskann failed to allocate append buffer".to_string())?;
 
     let page_size = buffer.page_size();
+    // SAFETY: `index_relation` is live while the append is WAL-logged.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The append buffer is exclusively locked and registered in the
+    // active generic WAL transaction before writing page contents.
     let page_ptr =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     if target_block == P_NEW {
+        // SAFETY: `page_ptr` is the newly allocated zeroed page and `page_size`
+        // comes from the locked buffer.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
     } else {
+        // SAFETY: `page_ptr` is a registered, locked existing page; checking
+        // free space is valid before appending.
         let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
         if free_space < required_bytes {
             std::mem::drop(wal_txn);
             std::mem::drop(buffer);
+            // SAFETY: The existing page lacked space, so the same validated raw
+            // tuple payload is retried on a new page.
             return unsafe {
                 append_raw_tuple_payload(index_relation, encoded, required_bytes, P_NEW)
             };
@@ -1373,6 +1436,8 @@ unsafe fn append_raw_tuple_payload(
     }
 
     let block_number = buffer.block_number();
+    // SAFETY: `page_ptr` is initialized/locked, and `encoded` remains live for
+    // the duration of the PostgreSQL page insertion call.
     let offset_number = unsafe {
         pg_sys::PageAddItemExtended(
             page_ptr,
@@ -1386,6 +1451,8 @@ unsafe fn append_raw_tuple_payload(
         return Err("ec_diskann failed to append live node tuple".into());
     }
 
+    // SAFETY: The page mutation is complete and can be committed through the
+    // active generic WAL transaction.
     unsafe { wal_txn.finish() };
     Ok(ItemPointer {
         block_number,
@@ -1415,6 +1482,8 @@ pub(super) unsafe fn add_backlinks_if_free(
 
     while start < targets.len() {
         let block_number = targets[start].block_number;
+        // SAFETY: Backlink targets are graph node TIDs and the target block is
+        // opened under an exclusive lock before mutation.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -1428,7 +1497,11 @@ pub(super) unsafe fn add_backlinks_if_free(
         })?;
 
         let page_size = buffer.page_size();
+        // SAFETY: `index_relation` is live while backlink page changes are
+        // WAL-logged.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        // SAFETY: The exclusive buffer is registered in the active generic WAL
+        // transaction before producing a writable page pointer.
         let writable_page = unsafe {
             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
         };
@@ -1439,6 +1512,9 @@ pub(super) unsafe fn add_backlinks_if_free(
                 let target_tid = targets[start];
                 start += 1;
 
+                // SAFETY: `writable_page` is the locked page for `target_tid`;
+                // the helper validates tuple location and yields mutable bytes
+                // only within the page bounds.
                 unsafe {
                     with_page_tuple_bytes_mut(writable_page, page_size, target_tid, |tuple_bytes| {
                         let mut tuple = VamanaNodeTuple::decode(
@@ -1481,6 +1557,8 @@ pub(super) unsafe fn add_backlinks_if_free(
         match page_result {
             Ok(page_changes) => {
                 if page_changed {
+                    // SAFETY: The registered page was mutated and must be
+                    // committed through the active generic WAL transaction.
                     unsafe { wal_txn.finish() };
                     changed += page_changes;
                 } else {
@@ -1519,6 +1597,8 @@ pub(super) unsafe fn apply_backlink_mutations(
 
     while start < sorted.len() {
         let block_number = sorted[start].target_tid.block_number;
+        // SAFETY: Mutation targets are graph node TIDs and this block is opened
+        // under an exclusive lock before tuple rewrite.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -1532,7 +1612,11 @@ pub(super) unsafe fn apply_backlink_mutations(
         })?;
 
         let page_size = buffer.page_size();
+        // SAFETY: `index_relation` is live while backlink rewrite changes are
+        // WAL-logged.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        // SAFETY: The exclusive buffer is registered in the active generic WAL
+        // transaction before producing a writable page pointer.
         let writable_page = unsafe {
             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
         };
@@ -1542,6 +1626,9 @@ pub(super) unsafe fn apply_backlink_mutations(
                 let mutation = &sorted[start];
                 start += 1;
 
+                // SAFETY: `writable_page` is the locked page for the mutation
+                // target; tuple-location validation happens before mutable
+                // bytes are exposed to the closure.
                 unsafe {
                     with_page_tuple_bytes_mut(
                         writable_page,
@@ -1593,6 +1680,8 @@ pub(super) unsafe fn apply_backlink_mutations(
         match page_result {
             Ok(()) => {
                 if page_changed {
+                    // SAFETY: The registered page was mutated and must be
+                    // committed through the active generic WAL transaction.
                     unsafe { wal_txn.finish() };
                 } else {
                     std::mem::drop(wal_txn);
@@ -1612,6 +1701,8 @@ pub(super) unsafe fn apply_backlink_mutations(
 pub(super) unsafe fn increment_inserted_since_rebuild(
     index_relation: pg_sys::Relation,
 ) -> Result<u64, String> {
+    // SAFETY: `index_relation` is live and the helper locks and WAL-logs the
+    // metadata page while updating the counter.
     unsafe {
         with_locked_metadata_page(index_relation, |metadata| {
             metadata.inserted_since_rebuild = metadata
@@ -1640,6 +1731,8 @@ unsafe fn page_tuple_location(
     page_size: usize,
     tid: ItemPointer,
 ) -> Result<(*mut u8, usize), String> {
+    // SAFETY: `page` is a locked PostgreSQL page and may be inspected for its
+    // current max line-pointer offset.
     let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
     if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
         return Err(format!(
@@ -1648,6 +1741,7 @@ unsafe fn page_tuple_location(
         ));
     }
 
+    // SAFETY: The offset was validated against the page's max offset.
     let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
     if item_id.is_null() {
         return Err(format!(
@@ -1655,6 +1749,8 @@ unsafe fn page_tuple_location(
             tid.block_number, tid.offset_number
         ));
     }
+    // SAFETY: `item_id` was checked non-null and points into the locked page's
+    // line pointer array.
     let item_id_ref = unsafe { &*item_id };
     if item_id_ref.lp_flags() == 0 {
         return Err(format!(
@@ -1672,6 +1768,8 @@ unsafe fn page_tuple_location(
         ));
     }
 
+    // SAFETY: The item id is valid and tuple bounds were checked against the
+    // locked page size before retrieving the tuple pointer.
     let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
     if tuple_ptr.is_null() {
         return Err(format!(
@@ -1691,7 +1789,11 @@ unsafe fn with_page_tuple_bytes_mut<R, F>(
 where
     F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
 {
+    // SAFETY: `page` is locked by the caller, and `page_tuple_location`
+    // validates the tuple offset and length before returning a pointer.
     let (tuple_ptr, tuple_len) = unsafe { page_tuple_location(page, page_size, tid)? };
+    // SAFETY: The tuple location was bounds-checked on the locked page, and the
+    // mutable slice is confined to the visitor call.
     let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
     visit(tuple_bytes)
 }
