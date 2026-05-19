@@ -41,6 +41,7 @@ Use `make hardening-tiers-report` for the current SHA-local report.
 | `miri-tree` | Nightly | variable | packet evidence |
 | `miri-many-seeds` | Nightly | variable | packet evidence |
 | `careful` | Nightly | variable | packet evidence |
+| `loom-real` | Local | variable | packet evidence |
 | `fuzz-all-short` | Nightly | variable | packet evidence |
 | `kani` | Nightly | variable | packet evidence |
 | `sanitizer-asan` | Nightly | variable | packet evidence |
@@ -53,8 +54,10 @@ Use `make hardening-tiers-report` for the current SHA-local report.
 
 The Task 34 `hardening/rudra`, `hardening/flux`, `hardening/loom`, and
 `hardening/shuttle` crates were removed because they proved synthetic examples
-instead of ECAZ behavior. They can return only through Tasks 40, 44, or 45 with
-real imports from `src/` and reviewer-visible signal evidence.
+instead of ECAZ behavior. Loom returned in Task 40 as `loom-real`, a path-lifted
+model over real `src/am/common/parallel_slot.rs` worker-slot state. Any
+additional returned model-checking lane must import real `src/` code and
+produce reviewer-visible signal evidence.
 
 `make hardening-validate` enforces that retained hardening crates import real
 repository code and that the retired synthetic lanes do not reappear as Makefile

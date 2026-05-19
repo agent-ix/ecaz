@@ -318,12 +318,19 @@ with either an interrupt check or a follow-up task.
 
 ## Concurrency And Formal Pilots
 
+- `make loom-real`: runs the standalone Loom harness in `hardening/loom/`.
+  The harness path-lifts real ECAZ code instead of reimplementing a synthetic
+  example. Current coverage targets the parallel scan worker-slot state machine
+  from `src/am/common/parallel_slot.rs`: exclusive claim, live claim count,
+  publish/release interleavings, and stale-epoch rejection. New Loom targets
+  should first lift the production protocol into a pgrx-free helper and then
+  model that helper from `hardening/loom/`.
 - `make kani`: bounded proof for `ItemPointer` decode length behavior.
 
 Kani is intentionally separate from normal `cargo test` so the repo does not
-acquire heavyweight model-checking dependencies on the default path. Flux,
-Loom, and Shuttle lanes are deferred until Tasks 44 and 40 can point them at
-real ECAZ invariants.
+acquire heavyweight model-checking dependencies on the default path. Flux and
+Shuttle lanes remain deferred until Tasks 44 and 40 can point them at real ECAZ
+invariants.
 
 ## Sanitizers
 
