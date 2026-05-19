@@ -1,0 +1,1061 @@
+Script started on 2026-05-19 03:57:01-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 6f6239e5..2ff9e7e6 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -482,82 +482,64 @@[m [msrc/am/ec_hnsw/insert.rs:879[m
+ src/am/ec_hnsw/insert.rs:908[m
+ src/am/ec_hnsw/insert.rs:909[m
+ src/am/ec_hnsw/insert.rs:952[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1004[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1018[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1023[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1050[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1060[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1064[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1074[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1077[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1110[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1117[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1119[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1125[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1129[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1149[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1176[m
+[31m-src/am/ec_hnsw/scan_debug.rs:118[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1183[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1199[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1212[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1242[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1249[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1265[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1278[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1307[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1314[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1330[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1343[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1376[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1384[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1389[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1391[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1394[m
+[31m-src/am/ec_hnsw/scan_debug.rs:140[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1420[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1425[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1437[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1446[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1473[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1478[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1490[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1496[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1522[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1530[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1535[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1537[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1539[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1540[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1542[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1548[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1568[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1569[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1583[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1591[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1596[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1598[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1600[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1601[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1603[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1609[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1625[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1650[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1171[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1181[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1185[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1195[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1198[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1231[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1238[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1240[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1246[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1250[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1270[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1297[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1304[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1320[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1333[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1363[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1370[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1386[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1399[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1428[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1435[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1451[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1464[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1497[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1505[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1510[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1512[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1515[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1541[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1546[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1558[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1567[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1594[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1599[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1611[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1617[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1643[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1651[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1656[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1658[m
+ src/am/ec_hnsw/scan_debug.rs:1660[m
+ src/am/ec_hnsw/scan_debug.rs:1661[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1678[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1688[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1693[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1695[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1697[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1698[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1700[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1706[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1663[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1669[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1689[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1690[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1704[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1712[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1717[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1719[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1721[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1722[m
+ src/am/ec_hnsw/scan_debug.rs:1724[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1747[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1772[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1730[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1746[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1771[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1781[m
+ src/am/ec_hnsw/scan_debug.rs:1782[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1783[m
+ src/am/ec_hnsw/scan_debug.rs:1799[m
+ src/am/ec_hnsw/scan_debug.rs:1809[m
+ src/am/ec_hnsw/scan_debug.rs:1814[m
+[36m@@ -566,276 +548,227 @@[m [msrc/am/ec_hnsw/scan_debug.rs:1818[m
+ src/am/ec_hnsw/scan_debug.rs:1819[m
+ src/am/ec_hnsw/scan_debug.rs:1821[m
+ src/am/ec_hnsw/scan_debug.rs:1827[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1848[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1853[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1867[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1890[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1891[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1905[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1913[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1918[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1845[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1868[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1893[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1903[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1904[m
+ src/am/ec_hnsw/scan_debug.rs:1920[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1922[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1923[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1925[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1938[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1930[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1935[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1937[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1939[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1940[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1942[m
+ src/am/ec_hnsw/scan_debug.rs:1948[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1973[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1983[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1984[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1993[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2000[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2003[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2004[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2010[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2019[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1969[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1974[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:1988[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2011[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2012[m
+ src/am/ec_hnsw/scan_debug.rs:2026[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2029[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2030[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2034[m
+ src/am/ec_hnsw/scan_debug.rs:2039[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2048[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2050[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2189[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2190[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2273[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2274[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2328[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2329[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2041[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2043[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2044[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2046[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2059[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2069[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2094[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2104[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2105[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2114[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2121[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2124[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2125[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2131[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2140[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2147[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2150[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2151[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2160[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2169[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2171[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2310[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2311[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2394[m
+ src/am/ec_hnsw/scan_debug.rs:2395[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2406[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2407[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2481[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2487[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2490[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2491[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2497[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2499[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2501[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2502[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2523[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2529[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2531[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2538[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2539[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2545[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2546[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2567[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2573[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2575[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2576[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2579[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2581[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2584[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2588[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2589[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2595[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2609[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2617[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2625[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2639[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2646[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2449[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2450[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2516[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2527[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2528[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2602[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2608[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2611[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2612[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2618[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2620[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2622[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2623[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2644[m
+ src/am/ec_hnsw/scan_debug.rs:2650[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2653[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2652[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2659[m
+ src/am/ec_hnsw/scan_debug.rs:2660[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2663[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2664[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2676[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2682[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2684[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2666[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2667[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2688[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2694[m
+ src/am/ec_hnsw/scan_debug.rs:2696[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2698[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2697[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2700[m
+ src/am/ec_hnsw/scan_debug.rs:2702[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2703[m
+[31m-src/am/ec_hnsw/scan_debug.rs:271[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2729[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2735[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2737[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2742[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2744[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2750[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2751[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2770[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2776[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2778[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2705[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2709[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2710[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2716[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2730[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2738[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2746[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2760[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2767[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2771[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2774[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2781[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2784[m
+ src/am/ec_hnsw/scan_debug.rs:2785[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2786[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2804[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2810[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2812[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2797[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2803[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2805[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2817[m
+ src/am/ec_hnsw/scan_debug.rs:2819[m
+ src/am/ec_hnsw/scan_debug.rs:2823[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2827[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2828[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2846[m
+[31m-src/am/ec_hnsw/scan_debug.rs:285[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2852[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2854[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2873[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2882[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2883[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2900[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2824[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2850[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2856[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2858[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2863[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2865[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2871[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2872[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2891[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2897[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2899[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2906[m
+ src/am/ec_hnsw/scan_debug.rs:2907[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2909[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2913[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2917[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2920[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2930[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2932[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2935[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2936[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2954[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2961[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2963[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2968[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2971[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2925[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2931[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2933[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2940[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2944[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2948[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2949[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2967[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2973[m
+ src/am/ec_hnsw/scan_debug.rs:2975[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2977[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2982[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2983[m
+[31m-src/am/ec_hnsw/scan_debug.rs:299[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3002[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3009[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3011[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3016[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3022[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3027[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:2994[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3003[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3004[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3021[m
+ src/am/ec_hnsw/scan_debug.rs:3028[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3047[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3054[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3030[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3034[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3038[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3041[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3051[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3053[m
+ src/am/ec_hnsw/scan_debug.rs:3056[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3060[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3066[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3087[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3088[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3108[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3115[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3117[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3121[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3124[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3127[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3128[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3131[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3057[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3075[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3082[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3084[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3089[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3092[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3096[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3098[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3103[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3104[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3123[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3130[m
+ src/am/ec_hnsw/scan_debug.rs:3132[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3156[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3163[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3165[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3178[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3137[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3143[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3148[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3149[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3168[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3175[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3177[m
+ src/am/ec_hnsw/scan_debug.rs:3181[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3188[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3190[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3194[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3195[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3187[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3208[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3209[m
+ src/am/ec_hnsw/scan_debug.rs:3229[m
+ src/am/ec_hnsw/scan_debug.rs:3236[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3239[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3238[m
+ src/am/ec_hnsw/scan_debug.rs:3242[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3247[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3250[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3256[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3258[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3268[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3270[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3275[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3276[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3298[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3304[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3305[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3308[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3312[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3318[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3326[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3327[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3349[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3355[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3358[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3361[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3369[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3372[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3245[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3248[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3249[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3252[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3253[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3277[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3284[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3286[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3299[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3302[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3309[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3311[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3315[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3316[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3350[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3357[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3360[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3363[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3368[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3371[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3377[m
+ src/am/ec_hnsw/scan_debug.rs:3379[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3380[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3389[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3391[m
+ src/am/ec_hnsw/scan_debug.rs:3396[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3402[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3403[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3414[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3421[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3424[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3397[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3419[m
+ src/am/ec_hnsw/scan_debug.rs:3425[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3434[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3437[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3438[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3443[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3444[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3456[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3463[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3466[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3471[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3477[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3480[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3481[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3486[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3487[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3496[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3426[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3429[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3433[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3439[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3447[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3448[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3470[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3476[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3479[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3482[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3490[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3493[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3500[m
+ src/am/ec_hnsw/scan_debug.rs:3501[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3503[m
+[31m-src/am/ec_hnsw/scan_debug.rs:521[m
+[31m-src/am/ec_hnsw/scan_debug.rs:522[m
+[31m-src/am/ec_hnsw/scan_debug.rs:524[m
+[31m-src/am/ec_hnsw/scan_debug.rs:525[m
+[31m-src/am/ec_hnsw/scan_debug.rs:527[m
+[31m-src/am/ec_hnsw/scan_debug.rs:534[m
+[31m-src/am/ec_hnsw/scan_debug.rs:535[m
+[31m-src/am/ec_hnsw/scan_debug.rs:537[m
+[31m-src/am/ec_hnsw/scan_debug.rs:538[m
+[31m-src/am/ec_hnsw/scan_debug.rs:540[m
+[31m-src/am/ec_hnsw/scan_debug.rs:541[m
+[31m-src/am/ec_hnsw/scan_debug.rs:543[m
+[31m-src/am/ec_hnsw/scan_debug.rs:554[m
+[31m-src/am/ec_hnsw/scan_debug.rs:560[m
+[31m-src/am/ec_hnsw/scan_debug.rs:562[m
+[31m-src/am/ec_hnsw/scan_debug.rs:584[m
+[31m-src/am/ec_hnsw/scan_debug.rs:585[m
+[31m-src/am/ec_hnsw/scan_debug.rs:597[m
+[31m-src/am/ec_hnsw/scan_debug.rs:604[m
+[31m-src/am/ec_hnsw/scan_debug.rs:611[m
+[31m-src/am/ec_hnsw/scan_debug.rs:613[m
+[31m-src/am/ec_hnsw/scan_debug.rs:635[m
+[31m-src/am/ec_hnsw/scan_debug.rs:636[m
+[31m-src/am/ec_hnsw/scan_debug.rs:643[m
+[31m-src/am/ec_hnsw/scan_debug.rs:649[m
+[31m-src/am/ec_hnsw/scan_debug.rs:656[m
+[31m-src/am/ec_hnsw/scan_debug.rs:663[m
+[31m-src/am/ec_hnsw/scan_debug.rs:673[m
+[31m-src/am/ec_hnsw/scan_debug.rs:675[m
+[31m-src/am/ec_hnsw/scan_debug.rs:681[m
+[31m-src/am/ec_hnsw/scan_debug.rs:683[m
+[31m-src/am/ec_hnsw/scan_debug.rs:705[m
+[31m-src/am/ec_hnsw/scan_debug.rs:706[m
+[31m-src/am/ec_hnsw/scan_debug.rs:707[m
+[31m-src/am/ec_hnsw/scan_debug.rs:715[m
+[31m-src/am/ec_hnsw/scan_debug.rs:728[m
+[31m-src/am/ec_hnsw/scan_debug.rs:735[m
+[31m-src/am/ec_hnsw/scan_debug.rs:737[m
+[31m-src/am/ec_hnsw/scan_debug.rs:743[m
+[31m-src/am/ec_hnsw/scan_debug.rs:749[m
+[31m-src/am/ec_hnsw/scan_debug.rs:750[m
+[31m-src/am/ec_hnsw/scan_debug.rs:760[m
+[31m-src/am/ec_hnsw/scan_debug.rs:766[m
+[31m-src/am/ec_hnsw/scan_debug.rs:767[m
+[31m-src/am/ec_hnsw/scan_debug.rs:769[m
+[31m-src/am/ec_hnsw/scan_debug.rs:770[m
+[31m-src/am/ec_hnsw/scan_debug.rs:779[m
+[31m-src/am/ec_hnsw/scan_debug.rs:786[m
+[31m-src/am/ec_hnsw/scan_debug.rs:789[m
+[31m-src/am/ec_hnsw/scan_debug.rs:791[m
+[31m-src/am/ec_hnsw/scan_debug.rs:795[m
+[31m-src/am/ec_hnsw/scan_debug.rs:804[m
+[31m-src/am/ec_hnsw/scan_debug.rs:813[m
+[31m-src/am/ec_hnsw/scan_debug.rs:822[m
+[31m-src/am/ec_hnsw/scan_debug.rs:826[m
+[31m-src/am/ec_hnsw/scan_debug.rs:845[m
+[31m-src/am/ec_hnsw/scan_debug.rs:852[m
+[31m-src/am/ec_hnsw/scan_debug.rs:863[m
+[31m-src/am/ec_hnsw/scan_debug.rs:992[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3517[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3523[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3524[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3535[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3542[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3545[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3546[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3555[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3558[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3559[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3564[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3565[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3577[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3584[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3587[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3592[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3598[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3601[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3602[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3607[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3608[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3617[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3622[m
+[32m+[m[32msrc/am/ec_hnsw/scan_debug.rs:3624[m
+ src/am/ec_hnsw/shared.rs:100[m
+ src/am/ec_hnsw/shared.rs:105[m
+ src/am/ec_hnsw/shared.rs:107[m
+[1mdiff --git a/src/am/ec_hnsw/scan_debug.rs b/src/am/ec_hnsw/scan_debug.rs[m
+[1mindex 3b9d33a8..31a8c048 100644[m
+[1m--- a/src/am/ec_hnsw/scan_debug.rs[m
+[1m+++ b/src/am/ec_hnsw/scan_debug.rs[m
+[36m@@ -115,6 +115,9 @@[m [munsafe fn debug_with_page_line_tuple_bytes<R, F>([m
+ where[m
+     F: for<'a> FnOnce(&'a [u8]) -> R,[m
+ {[m
+[32m+[m[32m    // SAFETY: Debug callers pass a locked page pointer and offset discovered[m
+[32m+[m[32m    // while scanning relation pages; the shared helper validates the line[m
+[32m+[m[32m    // pointer and tuple bounds before exposing bytes to `visit`.[m
+     unsafe {[m
+         super::shared::with_page_line_tuple_bytes([m
+             page_ptr,[m
+[36m@@ -136,6 +139,8 @@[m [munsafe fn debug_load_neighbor_tids_for_layer([m
+     m: usize,[m
+     layer: u8,[m
+ ) -> Vec<page::ItemPointer> {[m
+[32m+[m[32m    // SAFETY: Debug callers pass an element TID discovered from the graph[m
+[32m+[m[32m    // relation; the graph loader validates storage-specific tuple contents.[m
+     let (element, neighbors) =[m
+         unsafe { graph::load_exact_graph_adjacency(index_relation, element_tid, storage) };[m
+     graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)[m
+[36m@@ -268,6 +273,8 @@[m [mfn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {[m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `visited_tids` is owned by the live scan opaque while the debug[m
+[32m+[m[32m    // caller is inspecting the scan state, and null was handled above.[m
+     let mut tids = unsafe { &*opaque.visited_tids }[m
+         .iter()[m
+         .map(|tid| (tid.block_number, tid.offset_number))[m
+[36m@@ -282,6 +289,8 @@[m [mfn debug_sorted_expanded_source_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords[m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `expanded_source_tids` is owned by the live scan opaque while the[m
+[32m+[m[32m    // debug caller is inspecting the scan state, and null was handled above.[m
+     let mut tids = unsafe { &*opaque.expanded_source_tids }[m
+         .iter()[m
+         .map(|tid| (tid.block_number, tid.offset_number))[m
+[36m@@ -296,6 +305,8 @@[m [mfn debug_sorted_emitted_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {[m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `emitted_result_tids` is owned by the live scan opaque while the[m
+[32m+[m[32m    // debug caller is inspecting the scan state, and null was handled above.[m
+     let mut tids = unsafe { &*opaque.emitted_result_tids }[m
+         .iter()[m
+         .map(|tid| (tid.block_number, tid.offset_number))[m
+[36m@@ -518,12 +529,20 @@[m [munsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {[m
+ #[cfg(any(test, feature = "pg_test"))][m
+ pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {[m
+     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_begin_end_scan");[m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the relation open for the scan[m
+[32m+[m[32m    // descriptor returned by the AM begin callback.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+[32m+[m[32m    // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.[m
+     let has_opaque = unsafe { !(*scan).opaque.is_null() };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: `ec_hnsw_amendscan` clears the opaque field on the same live[m
+[32m+[m[32m    // descriptor.[m
+     let cleared_opaque = unsafe { (*scan).opaque.is_null() };[m
+ [m
+[32m+[m[32m    // SAFETY: The descriptor was allocated by `IndexScanBegin` through the AM[m
+[32m+[m[32m    // begin path and has had AM cleanup run above.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (has_opaque, cleared_opaque)[m
+ }[m
+[36m@@ -531,15 +550,26 @@[m [mpub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool[m
+ #[cfg(any(test, feature = "pg_test"))][m
+ pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {[m
+     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_end_scan_twice");[m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the relation open for the scan[m
+[32m+[m[32m    // descriptor returned by the AM begin callback.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+[32m+[m[32m    // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.[m
+     let has_opaque = unsafe { !(*scan).opaque.is_null() };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: The descriptor remains allocated after AM cleanup for this debug[m
+[32m+[m[32m    // idempotence check.[m
+     let cleared_after_first = unsafe { (*scan).opaque.is_null() };[m
+ [m
+[32m+[m[32m    // SAFETY: This deliberately repeats AM cleanup on the same descriptor to[m
+[32m+[m[32m    // verify the end callback tolerates an already-cleared opaque pointer.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: The descriptor remains allocated until `IndexScanEnd` below.[m
+     let cleared_after_second = unsafe { (*scan).opaque.is_null() };[m
+ [m
+[32m+[m[32m    // SAFETY: The descriptor was allocated by the AM begin path and is freed[m
+[32m+[m[32m    // exactly once after the idempotence probe.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (has_opaque, cleared_after_first, cleared_after_second)[m
+ }[m
+[36m@@ -551,14 +581,20 @@[m [mpub(crate) unsafe fn debug_rescan_query_dimensions([m
+ ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {[m
+     let index_relation =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_query_dimensions");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` points to[m
+[32m+[m[32m    // one initialized order-by key for the duration of the rescan call.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: `ec_hnsw_amrescan` initializes the HNSW scan opaque on the live[m
+[32m+[m[32m    // scan descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let result = ([m
+         opaque.rescan_called,[m
+[36m@@ -581,7 +617,9 @@[m [mpub(crate) unsafe fn debug_rescan_query_dimensions([m
+             .unwrap_or(0),[m
+     );[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     result[m
+ }[m
+[36m@@ -594,6 +632,8 @@[m [mpub(crate) unsafe fn debug_rescan_overwrites_query_dimensions([m
+ ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {[m
+     let index_relation =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_overwrites_query_dimensions");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+ [m
+     let mut first_orderby = pg_sys::ScanKeyData {[m
+[36m@@ -601,6 +641,8 @@[m [mpub(crate) unsafe fn debug_rescan_overwrites_query_dimensions([m
+             .expect("first query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `first_orderby`[m
+[32m+[m[32m    // points to one initialized order-by key for this rescan.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1) };[m
+ [m
+     let mut second_orderby = pg_sys::ScanKeyData {[m
+[36m@@ -608,8 +650,12 @@[m [mpub(crate) unsafe fn debug_rescan_overwrites_query_dimensions([m
+             .expect("second query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `second_orderby`[m
+[32m+[m[32m    // points to one initialized order-by key for this overwrite rescan.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: The second AM rescan leaves the HNSW scan opaque initialized on[m
+[32m+[m[32m    // the live descriptor for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let result = ([m
+         opaque.rescan_called,[m
+[36m@@ -632,7 +678,9 @@[m [mpub(crate) unsafe fn debug_rescan_overwrites_query_dimensions([m
+             .unwrap_or(0),[m
+     );[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     result[m
+ }[m
+[36m@@ -640,12 +688,16 @@[m [mpub(crate) unsafe fn debug_rescan_overwrites_query_dimensions([m
+ #[cfg(any(test, feature = "pg_test"))][m
+ pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {[m
+     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_rescan_null_query");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_flags: pg_sys::SK_ISNULL as i32,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` points to[m
+[32m+[m[32m    // one null order-by key for the duration of the error-path rescan probe.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ }[m
+ [m
+[36m@@ -653,6 +705,8 @@[m [mpub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {[m
+ pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {[m
+     let index_relation =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_index_qual");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 1, 1) };[m
+ [m
+     let mut key = pg_sys::ScanKeyData::default();[m
+[36m@@ -660,6 +714,8 @@[m [mpub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query:[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, `key` and `orderby` point to initialized[m
+[32m+[m[32m    // one-element buffers matching the supplied counts.[m
+     unsafe { ec_hnsw_amrescan(scan, &mut key, 1, &mut orderby, 1) };[m
+ }[m
+ [m
+[36m@@ -670,16 +726,23 @@[m [mpub(crate) unsafe fn debug_rescan_with_unused_key_buffer([m
+ ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {[m
+     let index_relation =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_unused_key_buffer");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: PostgreSQL allocates zeroed memory in the current memory context;[m
+[32m+[m[32m    // the pointer is freed before the descriptor is ended below.[m
+     let unused_keys = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }[m
+         .cast::<pg_sys::ScanKeyData>();[m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, the key count is intentionally zero so[m
+[32m+[m[32m    // `unused_keys` must be ignored, and `orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, unused_keys, 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initializes the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let result = ([m
+         opaque.rescan_called,[m
+[36m@@ -702,8 +765,12 @@[m [mpub(crate) unsafe fn debug_rescan_with_unused_key_buffer([m
+             .unwrap_or(0),[m
+     );[m
+ [m
+[32m+[m[32m    // SAFETY: `unused_keys` was allocated by `palloc0` above and has not been[m
+[32m+[m[32m    // freed yet.[m
+     unsafe { pg_sys::pfree(unused_keys.cast()) };[m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     result[m
+ }[m
+[36m@@ -712,6 +779,8 @@[m [mpub(crate) unsafe fn debug_rescan_with_unused_key_buffer([m
+ pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {[m
+     let index_relation =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_multiple_orderbys");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 2) };[m
+ [m
+     let datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -725,6 +794,8 @@[m [mpub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid,[m
+             ..Default::default()[m
+         },[m
+     ];[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderbys` contains[m
+[32m+[m[32m    // exactly two initialized keys matching the supplied order-by count.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, orderbys.as_mut_ptr(), 2) };[m
+ }[m
+ [m
+[36m@@ -732,21 +803,31 @@[m [mpub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid,[m
+ pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {[m
+     let index_relation =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_without_rescan");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: The debug probe deliberately invokes gettuple before rescan on a[m
+[32m+[m[32m    // live HNSW scan descriptor to exercise that error path.[m
+     unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+ }[m
+ [m
+ #[cfg(any(test, feature = "pg_test"))][m
+ pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {[m
+     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` points to[m
+[32m+[m[32m    // one initialized order-by key.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the[m
+[32m+[m[32m    // live descriptor.[m
+     unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+ }[m
+ [m
+[36m@@ -757,16 +838,24 @@[m [mpub(crate) unsafe fn debug_gettuple_after_rescan_result([m
+ ) -> bool {[m
+     let index_relation =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan_result");[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open for the AM scan[m
+[32m+[m[32m    // descriptor.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation.as_ptr(), 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` points to[m
+[32m+[m[32m    // one initialized order-by key.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the[m
+[32m+[m[32m    // live descriptor.[m
+     let result = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     result[m
+ }[m
+[36m@@ -776,6 +865,8 @@[m [mpub(crate) unsafe fn debug_gettuple_scan_heap_tids([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> Vec<HeapTidCoords> {[m
+[32m+[m[32m    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot[m
+[32m+[m[32m    // and keeps them alive in `scan_state`.[m
+     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };[m
+     let scan = scan_state.scan.as_ptr();[m
+ [m
+[36m@@ -783,15 +874,23 @@[m [mpub(crate) unsafe fn debug_gettuple_scan_heap_tids([m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index[m
+[32m+[m[32m    // quals, and `orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     let mut tids = Vec::new();[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live scan descriptor.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {[m
+[32m+[m[32m        // SAFETY: A successful gettuple call populated `xs_heaptid` for this[m
+[32m+[m[32m        // live index scan descriptor.[m
+         let (block_number, offset_number) =[m
+             pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });[m
+         tids.push((block_number, offset_number));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: `scan_state` owns the scan and relation guards and is consumed[m
+[32m+[m[32m    // once after iteration completes.[m
+     unsafe { debug_end_heap_backed_scan(scan_state) };[m
+     tids[m
+ }[m
+[36m@@ -801,6 +900,8 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> DebugScanProfile {[m
+[32m+[m[32m    // SAFETY: This debug wrapper forwards the caller-provided index oid and[m
+[32m+[m[32m    // query to the bounded profiler without changing ownership.[m
+     unsafe { debug_profile_ordered_scan_with_limit(index_oid, query, None) }[m
+ }[m
+ [m
+[36m@@ -810,6 +911,8 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_limit([m
+     query: Vec<f32>,[m
+     result_limit: Option<usize>,[m
+ ) -> DebugScanProfile {[m
+[32m+[m[32m    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot[m
+[32m+[m[32m    // and keeps them alive in `scan_state`.[m
+     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };[m
+     let scan = scan_state.scan.as_ptr();[m
+ [m
+[36m@@ -819,10 +922,13 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_limit([m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index[m
+[32m+[m[32m    // quals, and `orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+     let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())[m
+         .expect("rescan timing should fit in i64");[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let rescan_counters = opaque.explain_counters;[m
+     let rescan_phase = debug_execution_phase_label(opaque.execution_phase).to_string();[m
+[36m@@ -842,6 +948,8 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_limit([m
+     let mut result_count = 0_i32;[m
+     let result_limit = result_limit.unwrap_or(usize::MAX);[m
+     while usize::try_from(result_count).expect("result count should fit in usize") < result_limit[m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple[m
+[32m+[m[32m        // calls may advance the live scan descriptor.[m
+         && unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }[m
+     {[m
+         result_count += 1;[m
+[36m@@ -849,6 +957,8 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_limit([m
+     let emit_elapsed_us =[m
+         i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`[m
+[32m+[m[32m    // consumes `scan_state` below.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let total_counters = opaque.explain_counters;[m
+     let final_phase = debug_execution_phase_label(opaque.execution_phase).to_string();[m
+[36m@@ -860,6 +970,8 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_limit([m
+     let total_elapsed_us =[m
+         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");[m
+ [m
+[32m+[m[32m    // SAFETY: `scan_state` owns the scan and relation guards and is consumed[m
+[32m+[m[32m    // once after profiling completes.[m
+     unsafe { debug_end_heap_backed_scan(scan_state) };[m
+ [m
+     ([m
+[36m@@ -989,6 +1101,8 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch([m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is a live heap-backed index scan, there are no index quals,[m
+[32m+[m[32m    // and `orderby` points to one initialized order-by key.[m
+     unsafe { pg_sys::index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+     let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())[m
+         .expect("rescan timing should fit in i64");[m
+[36m@@ -1001,6 +1115,8 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch([m
+     let mut projection_elapsed_us = 0_i64;[m
+     while usize::try_from(result_count).expect("result count should fit in usize") < result_limit {[m
+         let slot_fetch_started = Instant::now();[m
+[32m+[m[32m        // SAFETY: `scan` and `slot` are live guards for the same heap-backed[m
+[32m+[m[32m        // scan; PostgreSQL fills the slot when a tuple is found.[m
+         let found = unsafe {[m
+             pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)[m
+         };[m
+[36m@@ -1015,11 +1131,16 @@[m [mpub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch([m
+         if let Some(attnum) = project_attnum {[m
+             let projection_started = Instant::now();[m
+             let mut isnull = false;[m
+[32m+[m[32m            // SAFETY: `slot` contains the tuple produced by the successful[m
+[32m+[m[32m            // `index_getnext_slot` call, and `attnum` is supplied by the debug[m
+[32m+[m[32m            // caller for projection timing.[m
+             let _ = unsafe { pg_sys::slot_getattr(slot, attnum, &mut isnull) };[m
+             projection_elapsed_us += i64::try_from(projection_started.elapsed().as_micros())[m
+                 .expect("projection timing should fit in i64");[m
+             projected_count += 1;[m
+         }[m
+[32m+[m[32m        // SAFETY: `slot` is the tuple table slot allocated for this scan and may[m
+[32m+[m[32m        // be cleared between successful fetches.[m
+         unsafe {[m
+             pg_sys::ExecClearTuple(slot);[m
+         }[m
+
+Script done on 2026-05-19 03:57:01-07:00 [COMMAND_EXIT_CODE="0"]
