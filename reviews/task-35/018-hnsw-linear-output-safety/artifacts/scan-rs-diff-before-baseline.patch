@@ -1,0 +1,164 @@
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index e1916f17..bae10579 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -4915,6 +4915,8 @@ pub(super) unsafe fn prefetch_next_graph_traversal_result(
+     }
+
+     let opaque_ptr = opaque as *mut TqScanOpaque;
++    // SAFETY: `opaque_ptr` is derived from the live graph-traversal scan
++    // opaque, and the cursor writes only this scan's active result state.
+     unsafe { graph_traversal_cursor(opaque).prefetch_next(index_relation, opaque_ptr) }
+ }
+
+@@ -4949,6 +4951,8 @@ unsafe fn produce_next_graph_traversal_heap_tid(
+     }
+     if emitted && graph_traversal_cursor(opaque).needs_prefetch_refresh() {
+         let opaque_ptr = opaque as *mut TqScanOpaque;
++        // SAFETY: after emitting pending output, the same live scan opaque can
++        // prefetch the next graph result into its active result state.
+         unsafe {
+             graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
+         }
+@@ -4976,6 +4980,8 @@ unsafe fn produce_next_linear_fallback_heap_tid(
+     }
+
+     let Some(selected) =
++        // SAFETY: linear fallback selection scans the live index relation using
++        // the fallback cursor state held by this scan opaque.
+         (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
+     else {
+         return false;
+@@ -5012,10 +5018,14 @@ unsafe fn select_next_linear_scan_result(
+             .linear_prefetch_state
+             .reset(opaque.next_block_number, max_block);
+         let stream = ensure_linear_read_stream(index_relation, opaque);
++        // SAFETY: `stream` is owned by the scan opaque and seeded from the
++        // linear prefetch state for this live index relation.
+         unsafe { pg_sys::read_stream_reset(stream) };
+
+         loop {
+             let mut per_buffer_data = ptr::null_mut();
++            // SAFETY: the read stream remains owned by `opaque`, and
++            // `per_buffer_data` is consumed before the next stream call.
+             let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+             if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+                 break;
+@@ -5024,13 +5034,19 @@ unsafe fn select_next_linear_scan_result(
+             let block_number = if per_buffer_data.is_null() {
+                 opaque.next_block_number
+             } else {
++                // SAFETY: the linear read-stream callback stores block-number
++                // pointers as per-buffer data for this stream.
+                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+             };
++            // SAFETY: read streams return pinned buffers; this takes a share
++            // lock guard and releases it when the guard is dropped.
+             let buffer =
+                 unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
+                     .unwrap_or_else(|| {
+                         pgrx::error!("ec_hnsw read stream returned an invalid buffer")
+                     });
++            // SAFETY: the buffer is share-locked for `block_number` and belongs
++            // to this scan's live relation.
+             let selected = unsafe {
+                 select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
+             };
+@@ -5047,6 +5063,8 @@ unsafe fn select_next_linear_scan_result(
+             .linear_prefetch_state
+             .reset(opaque.next_block_number, max_block);
+         while let Some(block_number) = opaque.linear_prefetch_state.next_block() {
++            // SAFETY: `index_relation` is live for this scan and the returned
++            // buffer is share-locked until the guard is dropped.
+             let buffer = unsafe {
+                 LockedBufferGuard::read_main(
+                     index_relation,
+@@ -5056,6 +5074,8 @@ unsafe fn select_next_linear_scan_result(
+                 )
+             }
+             .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open linear scan buffer"));
++            // SAFETY: the buffer is share-locked for `block_number` and belongs
++            // to this scan's live relation.
+             let selected = unsafe {
+                 select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
+             };
+@@ -5088,6 +5108,8 @@ unsafe fn select_linear_scan_result_from_buffer(
+     };
+
+     for offset in offset_start..=line_pointer_count {
++        // SAFETY: `buffer` is share-locked, `page_ptr/page_size` describe that
++        // page, and the tuple bytes are decoded inside the callback.
+         let element = unsafe {
+             super::shared::with_page_line_tuple_bytes(
+                 page_ptr,
+@@ -5191,7 +5213,8 @@ unsafe fn score_scan_element_result(
+
+     super::stats::record_distance_calc();
+     opaque.stats_delta.record_distance_calc();
+-    let quantizer = unsafe { &*opaque.cached_quantizer };
++    let quantizer = cached_quantizer_ref(opaque)
++        .unwrap_or_else(|| pgrx::error!("ec_hnsw scan scoring requires a cached quantizer"));
+     match opaque.turboquant_exact_score_mode {
+         TurboQuantExactScoreMode::Exact => {}
+         TurboQuantExactScoreMode::FullLut => {
+@@ -5200,6 +5223,8 @@ unsafe fn score_scan_element_result(
+                     "ec_hnsw TurboQuant full_lut exact-score mode requires a prepared LUT query"
+                 );
+             }
++            // SAFETY: non-null `turboquant_lut_query` is Box-owned by this scan
++            // opaque until scan prepared-query cleanup.
+             let prepared = unsafe { &*opaque.turboquant_lut_query };
+             return -quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, code_bytes);
+         }
+@@ -5209,6 +5234,8 @@ unsafe fn score_scan_element_result(
+                     "ec_hnsw TurboQuant tiled_lut exact-score mode requires a prepared tiled LUT query"
+                 );
+             }
++            // SAFETY: non-null `turboquant_tiled_lut_query` is Box-owned by
++            // this scan opaque until scan prepared-query cleanup.
+             let prepared = unsafe { &*opaque.turboquant_tiled_lut_query };
+             return -quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, code_bytes);
+         }
+@@ -5218,6 +5245,8 @@ unsafe fn score_scan_element_result(
+                     "ec_hnsw TurboQuant int8 exact-score mode requires a prepared int8 query"
+                 );
+             }
++            // SAFETY: non-null `turboquant_int8_query` is Box-owned by this
++            // scan opaque until scan prepared-query cleanup.
+             let prepared = unsafe { &*opaque.turboquant_int8_query };
+             return -quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, code_bytes);
+         }
+@@ -5225,11 +5254,15 @@ unsafe fn score_scan_element_result(
+     if opaque.prepared_query.is_null() {
+         pgrx::error!("ec_hnsw scan scoring requires a prepared query");
+     }
++    // SAFETY: non-null `prepared_query` is Box-owned by this scan opaque until
++    // scan prepared-query cleanup.
+     let prepared_query = unsafe { &*opaque.prepared_query };
+     -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
+ }
+
+ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
++    // SAFETY: `scan` is the live PostgreSQL index scan descriptor being filled
++    // for the current callback, and `xs_heaptid` is its output slot.
+     unsafe {
+         pgrx::itemptr::item_pointer_set_all(
+             &mut (*scan).xs_heaptid,
+@@ -5288,6 +5321,8 @@ fn emit_scan_output(
+ }
+
+ fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
++    // SAFETY: `scan` is the live PostgreSQL index scan descriptor; order-by
++    // arrays are allocated in the scan memory context on first use.
+     unsafe {
+         if (*scan).xs_orderbyvals.is_null() {
+             crate::fault::maybe_fail_palloc("ec_hnsw scan orderby values");
+@@ -5305,6 +5340,8 @@ fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
+ }
+
+ fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
++    // SAFETY: `scan` is the live PostgreSQL index scan descriptor; if the nulls
++    // array exists, setting its first slot marks the previous score as absent.
+     unsafe {
+         if !(*scan).xs_orderbynulls.is_null() {
+             *(*scan).xs_orderbynulls = true;
