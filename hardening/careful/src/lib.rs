@@ -25,6 +25,21 @@ pub mod careful_ivf_page;
 #[path = "../../../src/am/common/cost.rs"]
 pub mod careful_common_cost;
 
+extern crate self as pgrx;
+
+pub use crate::careful_pg_guards::pg_sys;
+
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {
+        panic!($($arg)*)
+    };
+}
+
+#[allow(dead_code, unused_imports)]
+#[path = "pg_guards.rs"]
+pub mod careful_pg_guards;
+
 #[allow(dead_code, unused_imports)]
 #[path = "spire.rs"]
 pub mod careful_spire;
