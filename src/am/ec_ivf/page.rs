@@ -2135,11 +2135,15 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
     index_relation: pg_sys::Relation,
     payload_len: usize,
 ) -> Result<Vec<IvfPostingBlockSummary>, String> {
+    // SAFETY: `index_relation` is live; this only reads the current main-fork
+    // block count to bound the debug scan.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let mut summaries = Vec::new();
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: `block_number` is within the relation block count read
+        // above, and the summary helper takes only a share lock.
         let summary =
             unsafe { debug_ivf_posting_block_summary(index_relation, block_number, payload_len)? };
         if summary.line_pointer_count > 0
@@ -2165,6 +2169,8 @@ unsafe fn rewrite_ivf_postings_for_list_block<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
+    // SAFETY: `block_number` comes from IVF posting-list metadata, and an
+    // exclusive lock is required before rewriting or deleting tuples.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -2175,6 +2181,8 @@ where
     }
     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
+    // SAFETY: `buffer` is exclusive-locked for `block_number`; the callee
+    // validates tuple line pointers before applying rewrite decisions.
     let result = unsafe {
         rewrite_ivf_postings_from_exclusive_buffer(
             index_relation,
@@ -2195,6 +2203,8 @@ unsafe fn debug_ivf_posting_block_summary(
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
 ) -> Result<IvfPostingBlockSummary, String> {
+    // SAFETY: `block_number` is bounded by the caller's block-count scan, and
+    // a share lock is sufficient for read-only debug summarization.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -2218,12 +2228,15 @@ unsafe fn debug_ivf_posting_block_summary(
         let mut list_ids = BTreeSet::new();
 
         for offset in 1..=line_pointer_count {
+            // SAFETY: `offset` is within the page line-pointer range.
             let item_id = unsafe { &*page_item_id(page_ptr, offset) };
             if item_id.lp_flags() == 0 {
                 unused_line_pointers = unused_line_pointers.saturating_add(1);
                 continue;
             }
 
+            // SAFETY: `page_ptr` and `page_size` come from the share-locked
+            // buffer, and the helper validates item-id bounds before decoding.
             match unsafe {
                 with_page_line_tuple_bytes(
                     page_ptr,
