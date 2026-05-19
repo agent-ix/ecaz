@@ -1360,13 +1360,6 @@ src/am/ec_spire/coordinator/hierarchy_snapshots.rs:799
 src/am/ec_spire/coordinator/hierarchy_snapshots.rs:809
 src/am/ec_spire/coordinator/hierarchy_snapshots.rs:834
 src/am/ec_spire/coordinator/hierarchy_snapshots.rs:985
-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:127
-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:1993
-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:1997
-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2011
-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2015
-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2016
-src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:34
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:10
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:123
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:131

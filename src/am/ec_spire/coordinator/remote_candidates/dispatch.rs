@@ -31,6 +31,8 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq dispatch summary top_k exceeds u64")?;
+        // SAFETY: forwards the live index relation and checked request fields
+        // into the libpq dispatch planner, which owns relation/page reads.
         let rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -124,6 +126,8 @@ pub(crate) unsafe fn remote_search_libpq_executor_budget_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchLibpqExecutorBudgetSummaryRow, String> {
+        // SAFETY: forwards the live index relation and checked request fields
+        // into the dispatch planner before reducing rows to budget counters.
         let rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -1990,10 +1994,14 @@ unsafe extern "C" {
 }
 
 fn postgres_sig_atomic_flag(symbol_name: &'static [u8]) -> i32 {
+    // SAFETY: symbol_name is a static NUL-terminated PostgreSQL global name and
+    // dlsym with a null handle searches the current backend process image.
     let ptr = unsafe { dlsym(std::ptr::null_mut(), symbol_name.as_ptr().cast()) };
     if ptr.is_null() {
         return 0;
     }
+    // SAFETY: callers pass names of PostgreSQL sig_atomic_t-compatible globals;
+    // a null lookup was rejected above and this only performs a single read.
     unsafe { *(ptr.cast::<std::ffi::c_int>()) }
 }
 
@@ -2008,11 +2016,18 @@ type PostgresGetTimeoutIndicator =
     unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;
 
 fn postgres_statement_timeout_pending() -> bool {
+    // SAFETY: the symbol name is static and NUL-terminated, and dlsym only
+    // returns a raw address that is checked for null before use.
     let ptr = unsafe { dlsym(std::ptr::null_mut(), b"get_timeout_indicator\0".as_ptr().cast()) };
     if ptr.is_null() {
         return false;
     }
+    // SAFETY: PostgreSQL exports get_timeout_indicator with this backend-local
+    // ABI; the resolved address is non-null and is invoked read-only for the
+    // statement-timeout indicator.
     let get_timeout_indicator: PostgresGetTimeoutIndicator = unsafe { std::mem::transmute(ptr) };
+    // SAFETY: the function pointer was resolved and typed above, and this call
+    // only reads PostgreSQL's statement-timeout indicator for the current backend.
     unsafe { get_timeout_indicator(POSTGRES_STATEMENT_TIMEOUT_ID, false) }
 }
 
