@@ -1,6 +1,6 @@
 # Review Request: HNSW Graph Tuple Loader Safety
 
-Head: `5b84fd25e88ff375d5eb015ebeca99d16f6f97c5`
+Head: `3bea2ceda9b15d115776652aa34074daa0a4ba99`
 
 Scope:
 - `src/am/ec_hnsw/graph.rs`

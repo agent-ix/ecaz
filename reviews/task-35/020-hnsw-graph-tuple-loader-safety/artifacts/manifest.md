@@ -1,6 +1,6 @@
 # Artifact Manifest: HNSW Graph Tuple Loader Safety
 
-Head SHA: `5b84fd25e88ff375d5eb015ebeca99d16f6f97c5`
+Head SHA: `3bea2ceda9b15d115776652aa34074daa0a4ba99`
 
 Task bucket: `reviews/task-35`
 Packet path: `reviews/task-35/020-hnsw-graph-tuple-loader-safety/`
