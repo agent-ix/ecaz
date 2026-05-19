@@ -9,7 +9,7 @@ quant/qjl.rs	100.00	Task 39 baseline raised by reviews/task-39/004-quant-careful
 quant/rabitq.rs	81.43	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/rotation.rs	98.53	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/simd.rs	94.59	Task 39 baseline raised by reviews/task-39/005-simd-mutation-triage
-storage/page.rs	76.57	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+storage/page.rs	97.90	Task 39 baseline raised by reviews/task-39/010-storage-page-coverage
 storage/buffer_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
 storage/lock_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
 storage/relation_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan

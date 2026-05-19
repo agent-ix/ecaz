@@ -250,6 +250,9 @@ Baseline sources:
   harness.
 - `reviews/task-39/005-simd-mutation-triage/artifacts/coverage/summary.txt`
   raises `src/quant/simd.rs` after adding explicit backend override tests.
+- `reviews/task-39/010-storage-page-coverage/artifacts/coverage-summary.txt`
+  raises `src/storage/page.rs` after adding page primitive error-path and
+  size-accounting tests.
 
 The current local coverage lane executes `ecaz-cli` tests and
 `hardening/careful`; it does not execute extension in-module tests, so AM page
@@ -261,7 +264,7 @@ callbacks, and storage guard drops remain recorded gaps.
 | `src/quant/{codebook,grouped_pq,hadamard,mse,prod,qjl,rabitq,rotation}.rs` | `81.43%` to `100.00%` |
 | `src/quant/simd.rs` | `94.59%` |
 | `src/quant/mod.rs` | `0.00%` |
-| `src/storage/page.rs` | `76.57%` |
+| `src/storage/page.rs` | `97.90%` |
 | `src/am/*/page.rs` | `0.00%` |
 | `src/am/ec_spire/storage/**` | `0.00%` |
 | `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
