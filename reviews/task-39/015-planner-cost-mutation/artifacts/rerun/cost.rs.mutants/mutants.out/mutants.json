@@ -1,0 +1,1858 @@
+[
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace PlannerCompareType::as_str -> &'static str with \"\"\n@@ -60,27 +60,17 @@\n     Gt,\n     Ne,\n     Overlap,\n     ContainedBy,\n }\n \n impl PlannerCompareType {\n     pub(crate) fn as_str(self) -> &'static str {\n-        match self {\n-            Self::Invalid => \"COMPARE_INVALID\",\n-            Self::Lt => \"COMPARE_LT\",\n-            Self::Le => \"COMPARE_LE\",\n-            Self::Eq => \"COMPARE_EQ\",\n-            Self::Ge => \"COMPARE_GE\",\n-            Self::Gt => \"COMPARE_GT\",\n-            Self::Ne => \"COMPARE_NE\",\n-            Self::Overlap => \"COMPARE_OVERLAP\",\n-            Self::ContainedBy => \"COMPARE_CONTAINED_BY\",\n-        }\n+        \"\" /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n pub(crate) struct StrategyTranslationSnapshot {\n     pub ordering_strategy: i32,\n     pub ordering_compare_type: PlannerCompareType,\n     pub pg18_callback_ready: bool,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "PlannerCompareType::as_str",
+      "return_type": "-> &'static str",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 79
+        },
+        "start": {
+          "column": 5,
+          "line": 67
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:68:9: replace PlannerCompareType::as_str -> &'static str with \"\"",
+    "package": "ecaz-careful-hardening",
+    "replacement": "\"\"",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 78
+      },
+      "start": {
+        "column": 9,
+        "line": 68
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace PlannerCompareType::as_str -> &'static str with \"xyzzy\"\n@@ -60,27 +60,17 @@\n     Gt,\n     Ne,\n     Overlap,\n     ContainedBy,\n }\n \n impl PlannerCompareType {\n     pub(crate) fn as_str(self) -> &'static str {\n-        match self {\n-            Self::Invalid => \"COMPARE_INVALID\",\n-            Self::Lt => \"COMPARE_LT\",\n-            Self::Le => \"COMPARE_LE\",\n-            Self::Eq => \"COMPARE_EQ\",\n-            Self::Ge => \"COMPARE_GE\",\n-            Self::Gt => \"COMPARE_GT\",\n-            Self::Ne => \"COMPARE_NE\",\n-            Self::Overlap => \"COMPARE_OVERLAP\",\n-            Self::ContainedBy => \"COMPARE_CONTAINED_BY\",\n-        }\n+        \"xyzzy\" /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n pub(crate) struct StrategyTranslationSnapshot {\n     pub ordering_strategy: i32,\n     pub ordering_compare_type: PlannerCompareType,\n     pub pg18_callback_ready: bool,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "PlannerCompareType::as_str",
+      "return_type": "-> &'static str",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 79
+        },
+        "start": {
+          "column": 5,
+          "line": 67
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:68:9: replace PlannerCompareType::as_str -> &'static str with \"xyzzy\"",
+    "package": "ecaz-careful-hardening",
+    "replacement": "\"xyzzy\"",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 78
+      },
+      "start": {
+        "column": 9,
+        "line": 68
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace gated_planner_cost_estimate -> PlannerCostEstimate with Default::default()\n@@ -82,23 +82,17 @@\n #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n pub(crate) struct StrategyTranslationSnapshot {\n     pub ordering_strategy: i32,\n     pub ordering_compare_type: PlannerCompareType,\n     pub pg18_callback_ready: bool,\n }\n \n pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstimate {\n-    PlannerCostEstimate {\n-        startup_cost: f64::MAX,\n-        total_cost: f64::MAX,\n-        selectivity: 0.0,\n-        correlation: 0.0,\n-        index_pages,\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(any(feature = \"pg17\", feature = \"pg18\"))]\n pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {\n     PlannerCostConstants {\n         random_page_cost: unsafe { pg_sys::random_page_cost },\n         seq_page_cost: unsafe { pg_sys::seq_page_cost },\n         cpu_operator_cost: unsafe { pg_sys::cpu_operator_cost },\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "gated_planner_cost_estimate",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 97
+        },
+        "start": {
+          "column": 1,
+          "line": 89
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:90:5: replace gated_planner_cost_estimate -> PlannerCostEstimate with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 96
+      },
+      "start": {
+        "column": 5,
+        "line": 90
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace metadata_fallback_tree_height -> PlannerTreeHeightInput with Default::default()\n@@ -102,21 +102,17 @@\n         random_page_cost: unsafe { pg_sys::random_page_cost },\n         seq_page_cost: unsafe { pg_sys::seq_page_cost },\n         cpu_operator_cost: unsafe { pg_sys::cpu_operator_cost },\n     }\n }\n \n #[cfg_attr(feature = \"pg18\", allow(dead_code))]\n pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {\n-    PlannerTreeHeightInput {\n-        tree_height: f64::from(max_level),\n-        source: \"metadata_fallback\",\n-        pg18_callback_ready: false,\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn resolved_tree_height_input(max_level: u8) -> PlannerTreeHeightInput {\n     #[cfg(feature = \"pg18\")]\n     {\n         PlannerTreeHeightInput {\n             tree_height: f64::from(amgettreeheight_callback_value(max_level)),\n             source: \"amgettreeheight_callback\",\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "metadata_fallback_tree_height",
+      "return_type": "-> PlannerTreeHeightInput",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 115
+        },
+        "start": {
+          "column": 1,
+          "line": 108
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:110:5: replace metadata_fallback_tree_height -> PlannerTreeHeightInput with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 114
+      },
+      "start": {
+        "column": 5,
+        "line": 110
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace resolved_tree_height_input -> PlannerTreeHeightInput with Default::default()\n@@ -110,29 +110,17 @@\n     PlannerTreeHeightInput {\n         tree_height: f64::from(max_level),\n         source: \"metadata_fallback\",\n         pg18_callback_ready: false,\n     }\n }\n \n pub(crate) fn resolved_tree_height_input(max_level: u8) -> PlannerTreeHeightInput {\n-    #[cfg(feature = \"pg18\")]\n-    {\n-        PlannerTreeHeightInput {\n-            tree_height: f64::from(amgettreeheight_callback_value(max_level)),\n-            source: \"amgettreeheight_callback\",\n-            pg18_callback_ready: true,\n-        }\n-    }\n-\n-    #[cfg(not(feature = \"pg18\"))]\n-    {\n-        metadata_fallback_tree_height(max_level)\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {\n     i32::from(max_level)\n }\n \n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "resolved_tree_height_input",
+      "return_type": "-> PlannerTreeHeightInput",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 131
+        },
+        "start": {
+          "column": 1,
+          "line": 117
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:118:5: replace resolved_tree_height_input -> PlannerTreeHeightInput with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 130
+      },
+      "start": {
+        "column": 5,
+        "line": 118
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace amgettreeheight_callback_value -> i32 with 0\n@@ -126,17 +126,17 @@\n \n     #[cfg(not(feature = \"pg18\"))]\n     {\n         metadata_fallback_tree_height(max_level)\n     }\n }\n \n pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {\n-    i32::from(max_level)\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n         1 => PlannerCompareType::Lt,\n         _ => PlannerCompareType::Invalid,\n     }\n }\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amgettreeheight_callback_value",
+      "return_type": "-> i32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 135
+        },
+        "start": {
+          "column": 1,
+          "line": 133
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 134
+      },
+      "start": {
+        "column": 5,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace amgettreeheight_callback_value -> i32 with 1\n@@ -126,17 +126,17 @@\n \n     #[cfg(not(feature = \"pg18\"))]\n     {\n         metadata_fallback_tree_height(max_level)\n     }\n }\n \n pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {\n-    i32::from(max_level)\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n         1 => PlannerCompareType::Lt,\n         _ => PlannerCompareType::Invalid,\n     }\n }\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amgettreeheight_callback_value",
+      "return_type": "-> i32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 135
+        },
+        "start": {
+          "column": 1,
+          "line": 133
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 134
+      },
+      "start": {
+        "column": 5,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace amgettreeheight_callback_value -> i32 with -1\n@@ -126,17 +126,17 @@\n \n     #[cfg(not(feature = \"pg18\"))]\n     {\n         metadata_fallback_tree_height(max_level)\n     }\n }\n \n pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {\n-    i32::from(max_level)\n+    -1 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n         1 => PlannerCompareType::Lt,\n         _ => PlannerCompareType::Invalid,\n     }\n }\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amgettreeheight_callback_value",
+      "return_type": "-> i32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 135
+        },
+        "start": {
+          "column": 1,
+          "line": 133
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with -1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-1",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 134
+      },
+      "start": {
+        "column": 5,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace amtranslatestrategy_callback -> PlannerCompareType with Default::default()\n@@ -130,20 +130,17 @@\n     }\n }\n \n pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {\n     i32::from(max_level)\n }\n \n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n-    match strategy {\n-        1 => PlannerCompareType::Lt,\n-        _ => PlannerCompareType::Invalid,\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {\n     match compare_type {\n         PlannerCompareType::Lt => 1,\n         PlannerCompareType::Invalid\n         | PlannerCompareType::Le\n         | PlannerCompareType::Eq\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amtranslatestrategy_callback",
+      "return_type": "-> PlannerCompareType",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 142
+        },
+        "start": {
+          "column": 1,
+          "line": 137
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:138:5: replace amtranslatestrategy_callback -> PlannerCompareType with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 141
+      },
+      "start": {
+        "column": 5,
+        "line": 138
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ delete match arm 1 in amtranslatestrategy_callback\n@@ -131,17 +131,17 @@\n }\n \n pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {\n     i32::from(max_level)\n }\n \n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n-        1 => PlannerCompareType::Lt,\n+         /* ~ changed by cargo-mutants ~ */\n         _ => PlannerCompareType::Invalid,\n     }\n }\n \n pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {\n     match compare_type {\n         PlannerCompareType::Lt => 1,\n         PlannerCompareType::Invalid\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amtranslatestrategy_callback",
+      "return_type": "-> PlannerCompareType",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 142
+        },
+        "start": {
+          "column": 1,
+          "line": 137
+        }
+      }
+    },
+    "genre": "MatchArm",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:139:9: delete match arm 1 in amtranslatestrategy_callback",
+    "package": "ecaz-careful-hardening",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 37,
+        "line": 139
+      },
+      "start": {
+        "column": 9,
+        "line": 139
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace amtranslatecmptype_callback -> i32 with 0\n@@ -137,27 +137,17 @@\n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n         1 => PlannerCompareType::Lt,\n         _ => PlannerCompareType::Invalid,\n     }\n }\n \n pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {\n-    match compare_type {\n-        PlannerCompareType::Lt => 1,\n-        PlannerCompareType::Invalid\n-        | PlannerCompareType::Le\n-        | PlannerCompareType::Eq\n-        | PlannerCompareType::Ge\n-        | PlannerCompareType::Gt\n-        | PlannerCompareType::Ne\n-        | PlannerCompareType::Overlap\n-        | PlannerCompareType::ContainedBy => 0,\n-    }\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {\n     StrategyTranslationSnapshot {\n         ordering_strategy: 1,\n         ordering_compare_type: amtranslatestrategy_callback(1),\n         pg18_callback_ready: cfg!(feature = \"pg18\"),\n     }\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amtranslatecmptype_callback",
+      "return_type": "-> i32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 156
+        },
+        "start": {
+          "column": 1,
+          "line": 144
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 155
+      },
+      "start": {
+        "column": 5,
+        "line": 145
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace amtranslatecmptype_callback -> i32 with 1\n@@ -137,27 +137,17 @@\n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n         1 => PlannerCompareType::Lt,\n         _ => PlannerCompareType::Invalid,\n     }\n }\n \n pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {\n-    match compare_type {\n-        PlannerCompareType::Lt => 1,\n-        PlannerCompareType::Invalid\n-        | PlannerCompareType::Le\n-        | PlannerCompareType::Eq\n-        | PlannerCompareType::Ge\n-        | PlannerCompareType::Gt\n-        | PlannerCompareType::Ne\n-        | PlannerCompareType::Overlap\n-        | PlannerCompareType::ContainedBy => 0,\n-    }\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {\n     StrategyTranslationSnapshot {\n         ordering_strategy: 1,\n         ordering_compare_type: amtranslatestrategy_callback(1),\n         pg18_callback_ready: cfg!(feature = \"pg18\"),\n     }\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amtranslatecmptype_callback",
+      "return_type": "-> i32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 156
+        },
+        "start": {
+          "column": 1,
+          "line": 144
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 155
+      },
+      "start": {
+        "column": 5,
+        "line": 145
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace amtranslatecmptype_callback -> i32 with -1\n@@ -137,27 +137,17 @@\n pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {\n     match strategy {\n         1 => PlannerCompareType::Lt,\n         _ => PlannerCompareType::Invalid,\n     }\n }\n \n pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {\n-    match compare_type {\n-        PlannerCompareType::Lt => 1,\n-        PlannerCompareType::Invalid\n-        | PlannerCompareType::Le\n-        | PlannerCompareType::Eq\n-        | PlannerCompareType::Ge\n-        | PlannerCompareType::Gt\n-        | PlannerCompareType::Ne\n-        | PlannerCompareType::Overlap\n-        | PlannerCompareType::ContainedBy => 0,\n-    }\n+    -1 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {\n     StrategyTranslationSnapshot {\n         ordering_strategy: 1,\n         ordering_compare_type: amtranslatestrategy_callback(1),\n         pg18_callback_ready: cfg!(feature = \"pg18\"),\n     }\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "amtranslatecmptype_callback",
+      "return_type": "-> i32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 156
+        },
+        "start": {
+          "column": 1,
+          "line": 144
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with -1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-1",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 155
+      },
+      "start": {
+        "column": 5,
+        "line": 145
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace strategy_translation_snapshot -> StrategyTranslationSnapshot with Default::default()\n@@ -151,21 +151,17 @@\n         | PlannerCompareType::Gt\n         | PlannerCompareType::Ne\n         | PlannerCompareType::Overlap\n         | PlannerCompareType::ContainedBy => 0,\n     }\n }\n \n pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {\n-    StrategyTranslationSnapshot {\n-        ordering_strategy: 1,\n-        ordering_compare_type: amtranslatestrategy_callback(1),\n-        pg18_callback_ready: cfg!(feature = \"pg18\"),\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(feature = \"pg18\")]\n pub(crate) unsafe extern \"C-unwind\" fn ec_hnsw_amgettreeheight(rel: pg_sys::Relation) -> i32 {\n     unsafe {\n         pgrx::pgrx_extern_c_guard(|| {\n             let metadata = shared::read_metadata_page(rel);\n             amgettreeheight_callback_value(metadata.max_level)\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "strategy_translation_snapshot",
+      "return_type": "-> StrategyTranslationSnapshot",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 164
+        },
+        "start": {
+          "column": 1,
+          "line": 158
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:159:5: replace strategy_translation_snapshot -> StrategyTranslationSnapshot with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 163
+      },
+      "start": {
+        "column": 5,
+        "line": 159
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace estimate_planner_cost -> PlannerCostEstimate with Default::default()\n@@ -214,63 +214,17 @@\n         })\n     }\n }\n \n pub(crate) fn estimate_planner_cost(\n     inputs: PlannerCostInputs,\n     constants: PlannerCostConstants,\n ) -> PlannerCostEstimate {\n-    if inputs.index_pages <= 0.0 {\n-        return gated_planner_cost_estimate(inputs.index_pages);\n-    }\n-\n-    let tuple_estimate = if inputs.reltuples > 0.0 {\n-        inputs.reltuples\n-    } else {\n-        inputs.index_pages * 10.0\n-    };\n-    let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n-    let ef_search = f64::from(inputs.ef_search);\n-    let tree_height = inputs.tree_height;\n-\n-    let (startup_cost, total_cost) = if tree_height <= 0.0 {\n-        let linear_cost = inputs.index_pages * constants.seq_page_cost;\n-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n-        (0.0, linear_cost + linear_cpu)\n-    } else {\n-        // Graph phase visits ~1 page per upper level (greedy descent to the\n-        // entry neighborhood) plus ef_search candidate pages at the bottom\n-        // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n-        // wildly overcharged by multiplying ef_search by m, which kept\n-        // ec_hnsw costlier than a seqscan on every realistic table size.\n-        let graph_pages = tree_height + ef_search;\n-        let graph_cost = graph_pages * constants.random_page_cost;\n-        let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n-        let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n-        let linear_cost = linear_pages * constants.seq_page_cost;\n-        // Scale per-tuple CPU work by the fraction of pages the graph phase\n-        // did NOT cover. Charging the full tuple_estimate sweep here would\n-        // double-count the graph traversal and make ec_hnsw always look\n-        // costlier than a seqscan, even when the graph covers the whole\n-        // index (linear_pages == 0).\n-        let linear_fraction = linear_pages / inputs.index_pages;\n-        let linear_cpu =\n-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n-        let startup_cost = graph_cost + graph_cpu;\n-        (startup_cost, startup_cost + linear_cost + linear_cpu)\n-    };\n-\n-    PlannerCostEstimate {\n-        startup_cost,\n-        total_cost,\n-        selectivity: 1.0,\n-        correlation: 0.0,\n-        index_pages: inputs.index_pages,\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(any(feature = \"pg17\", feature = \"pg18\"))]\n pub(crate) unsafe extern \"C-unwind\" fn ec_hnsw_amcostestimate(\n     _root: *mut pg_sys::PlannerInfo,\n     path: *mut pg_sys::IndexPath,\n     _loop_count: f64,\n     index_startup_cost: *mut pg_sys::Cost,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:222:5: replace estimate_planner_cost -> PlannerCostEstimate with Default::default()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 268
+      },
+      "start": {
+        "column": 5,
+        "line": 222
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace <= with > in estimate_planner_cost\n@@ -214,17 +214,17 @@\n         })\n     }\n }\n \n pub(crate) fn estimate_planner_cost(\n     inputs: PlannerCostInputs,\n     constants: PlannerCostConstants,\n ) -> PlannerCostEstimate {\n-    if inputs.index_pages <= 0.0 {\n+    if inputs.index_pages > /* ~ changed by cargo-mutants ~ */ 0.0 {\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n     let tuple_estimate = if inputs.reltuples > 0.0 {\n         inputs.reltuples\n     } else {\n         inputs.index_pages * 10.0\n     };\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:222:27: replace <= with > in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 222
+      },
+      "start": {
+        "column": 27,
+        "line": 222
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace > with == in estimate_planner_cost\n@@ -218,17 +218,17 @@\n pub(crate) fn estimate_planner_cost(\n     inputs: PlannerCostInputs,\n     constants: PlannerCostConstants,\n ) -> PlannerCostEstimate {\n     if inputs.index_pages <= 0.0 {\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n-    let tuple_estimate = if inputs.reltuples > 0.0 {\n+    let tuple_estimate = if inputs.reltuples == /* ~ changed by cargo-mutants ~ */ 0.0 {\n         inputs.reltuples\n     } else {\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with == in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 226
+      },
+      "start": {
+        "column": 46,
+        "line": 226
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace > with < in estimate_planner_cost\n@@ -218,17 +218,17 @@\n pub(crate) fn estimate_planner_cost(\n     inputs: PlannerCostInputs,\n     constants: PlannerCostConstants,\n ) -> PlannerCostEstimate {\n     if inputs.index_pages <= 0.0 {\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n-    let tuple_estimate = if inputs.reltuples > 0.0 {\n+    let tuple_estimate = if inputs.reltuples < /* ~ changed by cargo-mutants ~ */ 0.0 {\n         inputs.reltuples\n     } else {\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with < in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 226
+      },
+      "start": {
+        "column": 46,
+        "line": 226
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace > with >= in estimate_planner_cost\n@@ -218,17 +218,17 @@\n pub(crate) fn estimate_planner_cost(\n     inputs: PlannerCostInputs,\n     constants: PlannerCostConstants,\n ) -> PlannerCostEstimate {\n     if inputs.index_pages <= 0.0 {\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n-    let tuple_estimate = if inputs.reltuples > 0.0 {\n+    let tuple_estimate = if inputs.reltuples >= /* ~ changed by cargo-mutants ~ */ 0.0 {\n         inputs.reltuples\n     } else {\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with >= in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 226
+      },
+      "start": {
+        "column": 46,
+        "line": 226
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -221,17 +221,17 @@\n ) -> PlannerCostEstimate {\n     if inputs.index_pages <= 0.0 {\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n     let tuple_estimate = if inputs.reltuples > 0.0 {\n         inputs.reltuples\n     } else {\n-        inputs.index_pages * 10.0\n+        inputs.index_pages + /* ~ changed by cargo-mutants ~ */ 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:229:28: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 229
+      },
+      "start": {
+        "column": 28,
+        "line": 229
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -221,17 +221,17 @@\n ) -> PlannerCostEstimate {\n     if inputs.index_pages <= 0.0 {\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n     let tuple_estimate = if inputs.reltuples > 0.0 {\n         inputs.reltuples\n     } else {\n-        inputs.index_pages * 10.0\n+        inputs.index_pages / /* ~ changed by cargo-mutants ~ */ 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:229:28: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 229
+      },
+      "start": {
+        "column": 28,
+        "line": 229
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -223,17 +223,17 @@\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n     let tuple_estimate = if inputs.reltuples > 0.0 {\n         inputs.reltuples\n     } else {\n         inputs.index_pages * 10.0\n     };\n-    let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n+    let scoring_dimensions = f64::from(inputs.dimensions) + /* ~ changed by cargo-mutants ~ */ LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:231:59: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 60,
+        "line": 231
+      },
+      "start": {
+        "column": 59,
+        "line": 231
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -223,17 +223,17 @@\n         return gated_planner_cost_estimate(inputs.index_pages);\n     }\n \n     let tuple_estimate = if inputs.reltuples > 0.0 {\n         inputs.reltuples\n     } else {\n         inputs.index_pages * 10.0\n     };\n-    let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n+    let scoring_dimensions = f64::from(inputs.dimensions) / /* ~ changed by cargo-mutants ~ */ LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:231:59: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 60,
+        "line": 231
+      },
+      "start": {
+        "column": 59,
+        "line": 231
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace <= with > in estimate_planner_cost\n@@ -227,17 +227,17 @@\n         inputs.reltuples\n     } else {\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n-    let (startup_cost, total_cost) = if tree_height <= 0.0 {\n+    let (startup_cost, total_cost) = if tree_height > /* ~ changed by cargo-mutants ~ */ 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:235:53: replace <= with > in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 235
+      },
+      "start": {
+        "column": 53,
+        "line": 235
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -228,17 +228,17 @@\n     } else {\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n-        let linear_cost = inputs.index_pages * constants.seq_page_cost;\n+        let linear_cost = inputs.index_pages + /* ~ changed by cargo-mutants ~ */ constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:236:46: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 236
+      },
+      "start": {
+        "column": 46,
+        "line": 236
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -228,17 +228,17 @@\n     } else {\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n-        let linear_cost = inputs.index_pages * constants.seq_page_cost;\n+        let linear_cost = inputs.index_pages / /* ~ changed by cargo-mutants ~ */ constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:236:46: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 236
+      },
+      "start": {
+        "column": 46,
+        "line": 236
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -229,17 +229,17 @@\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n+        let linear_cpu = tuple_estimate * constants.cpu_operator_cost + /* ~ changed by cargo-mutants ~ */ scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:71: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 72,
+        "line": 237
+      },
+      "start": {
+        "column": 71,
+        "line": 237
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -229,17 +229,17 @@\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n+        let linear_cpu = tuple_estimate * constants.cpu_operator_cost / /* ~ changed by cargo-mutants ~ */ scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:71: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 72,
+        "line": 237
+      },
+      "start": {
+        "column": 71,
+        "line": 237
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -229,17 +229,17 @@\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n+        let linear_cpu = tuple_estimate + /* ~ changed by cargo-mutants ~ */ constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:41: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 42,
+        "line": 237
+      },
+      "start": {
+        "column": 41,
+        "line": 237
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -229,17 +229,17 @@\n         inputs.index_pages * 10.0\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n+        let linear_cpu = tuple_estimate / /* ~ changed by cargo-mutants ~ */ constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:41: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 42,
+        "line": 237
+      },
+      "start": {
+        "column": 41,
+        "line": 237
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with - in estimate_planner_cost\n@@ -230,17 +230,17 @@\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n-        (0.0, linear_cost + linear_cpu)\n+        (0.0, linear_cost - /* ~ changed by cargo-mutants ~ */ linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:238:27: replace + with - in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 238
+      },
+      "start": {
+        "column": 27,
+        "line": 238
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with * in estimate_planner_cost\n@@ -230,17 +230,17 @@\n     };\n     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;\n     let ef_search = f64::from(inputs.ef_search);\n     let tree_height = inputs.tree_height;\n \n     let (startup_cost, total_cost) = if tree_height <= 0.0 {\n         let linear_cost = inputs.index_pages * constants.seq_page_cost;\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n-        (0.0, linear_cost + linear_cpu)\n+        (0.0, linear_cost * /* ~ changed by cargo-mutants ~ */ linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:238:27: replace + with * in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 238
+      },
+      "start": {
+        "column": 27,
+        "line": 238
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with - in estimate_planner_cost\n@@ -237,17 +237,17 @@\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n-        let graph_pages = tree_height + ef_search;\n+        let graph_pages = tree_height - /* ~ changed by cargo-mutants ~ */ ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:245:39: replace + with - in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 245
+      },
+      "start": {
+        "column": 39,
+        "line": 245
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with * in estimate_planner_cost\n@@ -237,17 +237,17 @@\n         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * scoring_dimensions;\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n-        let graph_pages = tree_height + ef_search;\n+        let graph_pages = tree_height * /* ~ changed by cargo-mutants ~ */ ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:245:39: replace + with * in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 245
+      },
+      "start": {
+        "column": 39,
+        "line": 245
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -238,17 +238,17 @@\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n-        let graph_cost = graph_pages * constants.random_page_cost;\n+        let graph_cost = graph_pages + /* ~ changed by cargo-mutants ~ */ constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:246:38: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 39,
+        "line": 246
+      },
+      "start": {
+        "column": 38,
+        "line": 246
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -238,17 +238,17 @@\n         (0.0, linear_cost + linear_cpu)\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n-        let graph_cost = graph_pages * constants.random_page_cost;\n+        let graph_cost = graph_pages / /* ~ changed by cargo-mutants ~ */ constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:246:38: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 39,
+        "line": 246
+      },
+      "start": {
+        "column": 38,
+        "line": 246
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -239,17 +239,17 @@\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n-        let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n+        let graph_cpu = graph_pages * constants.cpu_operator_cost + /* ~ changed by cargo-mutants ~ */ scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:67: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 247
+      },
+      "start": {
+        "column": 67,
+        "line": 247
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -239,17 +239,17 @@\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n-        let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n+        let graph_cpu = graph_pages * constants.cpu_operator_cost / /* ~ changed by cargo-mutants ~ */ scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:67: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 247
+      },
+      "start": {
+        "column": 67,
+        "line": 247
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -239,17 +239,17 @@\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n-        let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n+        let graph_cpu = graph_pages + /* ~ changed by cargo-mutants ~ */ constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:37: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 247
+      },
+      "start": {
+        "column": 37,
+        "line": 247
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -239,17 +239,17 @@\n     } else {\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n-        let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n+        let graph_cpu = graph_pages / /* ~ changed by cargo-mutants ~ */ constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:37: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 247
+      },
+      "start": {
+        "column": 37,
+        "line": 247
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace - with + in estimate_planner_cost\n@@ -240,17 +240,17 @@\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n-        let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n+        let linear_pages = (inputs.index_pages + /* ~ changed by cargo-mutants ~ */ graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:248:48: replace - with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 248
+      },
+      "start": {
+        "column": 48,
+        "line": 248
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace - with / in estimate_planner_cost\n@@ -240,17 +240,17 @@\n         // Graph phase visits ~1 page per upper level (greedy descent to the\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n-        let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n+        let linear_pages = (inputs.index_pages / /* ~ changed by cargo-mutants ~ */ graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:248:48: replace - with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 248
+      },
+      "start": {
+        "column": 48,
+        "line": 248
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -241,17 +241,17 @@\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n-        let linear_cost = linear_pages * constants.seq_page_cost;\n+        let linear_cost = linear_pages + /* ~ changed by cargo-mutants ~ */ constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:249:40: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 249
+      },
+      "start": {
+        "column": 40,
+        "line": 249
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -241,17 +241,17 @@\n         // entry neighborhood) plus ef_search candidate pages at the bottom\n         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula\n         // wildly overcharged by multiplying ef_search by m, which kept\n         // ec_hnsw costlier than a seqscan on every realistic table size.\n         let graph_pages = tree_height + ef_search;\n         let graph_cost = graph_pages * constants.random_page_cost;\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n-        let linear_cost = linear_pages * constants.seq_page_cost;\n+        let linear_cost = linear_pages / /* ~ changed by cargo-mutants ~ */ constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:249:40: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 249
+      },
+      "start": {
+        "column": 40,
+        "line": 249
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace / with % in estimate_planner_cost\n@@ -247,17 +247,17 @@\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n-        let linear_fraction = linear_pages / inputs.index_pages;\n+        let linear_fraction = linear_pages % /* ~ changed by cargo-mutants ~ */ inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:255:44: replace / with % in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "%",
+    "span": {
+      "end": {
+        "column": 45,
+        "line": 255
+      },
+      "start": {
+        "column": 44,
+        "line": 255
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace / with * in estimate_planner_cost\n@@ -247,17 +247,17 @@\n         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;\n         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n-        let linear_fraction = linear_pages / inputs.index_pages;\n+        let linear_fraction = linear_pages * /* ~ changed by cargo-mutants ~ */ inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:255:44: replace / with * in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 45,
+        "line": 255
+      },
+      "start": {
+        "column": 44,
+        "line": 255
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -249,17 +249,17 @@\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n+            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions + /* ~ changed by cargo-mutants ~ */ linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:79: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 80,
+        "line": 257
+      },
+      "start": {
+        "column": 79,
+        "line": 257
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -249,17 +249,17 @@\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n+            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions / /* ~ changed by cargo-mutants ~ */ linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:79: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 80,
+        "line": 257
+      },
+      "start": {
+        "column": 79,
+        "line": 257
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -249,17 +249,17 @@\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n+            tuple_estimate * constants.cpu_operator_cost + /* ~ changed by cargo-mutants ~ */ scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:58: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 59,
+        "line": 257
+      },
+      "start": {
+        "column": 58,
+        "line": 257
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -249,17 +249,17 @@\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n+            tuple_estimate * constants.cpu_operator_cost / /* ~ changed by cargo-mutants ~ */ scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:58: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 59,
+        "line": 257
+      },
+      "start": {
+        "column": 58,
+        "line": 257
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with + in estimate_planner_cost\n@@ -249,17 +249,17 @@\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n+            tuple_estimate + /* ~ changed by cargo-mutants ~ */ constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:28: replace * with + in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 257
+      },
+      "start": {
+        "column": 28,
+        "line": 257
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace * with / in estimate_planner_cost\n@@ -249,17 +249,17 @@\n         let linear_cost = linear_pages * constants.seq_page_cost;\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n-            tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n+            tuple_estimate / /* ~ changed by cargo-mutants ~ */ constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:28: replace * with / in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 257
+      },
+      "start": {
+        "column": 28,
+        "line": 257
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with - in estimate_planner_cost\n@@ -250,17 +250,17 @@\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n-        let startup_cost = graph_cost + graph_cpu;\n+        let startup_cost = graph_cost - /* ~ changed by cargo-mutants ~ */ graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n         correlation: 0.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:258:39: replace + with - in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 258
+      },
+      "start": {
+        "column": 39,
+        "line": 258
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with * in estimate_planner_cost\n@@ -250,17 +250,17 @@\n         // Scale per-tuple CPU work by the fraction of pages the graph phase\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n-        let startup_cost = graph_cost + graph_cpu;\n+        let startup_cost = graph_cost * /* ~ changed by cargo-mutants ~ */ graph_cpu;\n         (startup_cost, startup_cost + linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n         correlation: 0.0,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:258:39: replace + with * in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 258
+      },
+      "start": {
+        "column": 39,
+        "line": 258
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with - in estimate_planner_cost\n@@ -251,17 +251,17 @@\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n-        (startup_cost, startup_cost + linear_cost + linear_cpu)\n+        (startup_cost, startup_cost + linear_cost - /* ~ changed by cargo-mutants ~ */ linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n         correlation: 0.0,\n         index_pages: inputs.index_pages,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:51: replace + with - in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 52,
+        "line": 259
+      },
+      "start": {
+        "column": 51,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with * in estimate_planner_cost\n@@ -251,17 +251,17 @@\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n-        (startup_cost, startup_cost + linear_cost + linear_cpu)\n+        (startup_cost, startup_cost + linear_cost * /* ~ changed by cargo-mutants ~ */ linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n         correlation: 0.0,\n         index_pages: inputs.index_pages,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:51: replace + with * in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 52,
+        "line": 259
+      },
+      "start": {
+        "column": 51,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with - in estimate_planner_cost\n@@ -251,17 +251,17 @@\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n-        (startup_cost, startup_cost + linear_cost + linear_cpu)\n+        (startup_cost, startup_cost - /* ~ changed by cargo-mutants ~ */ linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n         correlation: 0.0,\n         index_pages: inputs.index_pages,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:37: replace + with - in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 259
+      },
+      "start": {
+        "column": 37,
+        "line": 259
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/am/common/cost.rs\n+++ replace + with * in estimate_planner_cost\n@@ -251,17 +251,17 @@\n         // did NOT cover. Charging the full tuple_estimate sweep here would\n         // double-count the graph traversal and make ec_hnsw always look\n         // costlier than a seqscan, even when the graph covers the whole\n         // index (linear_pages == 0).\n         let linear_fraction = linear_pages / inputs.index_pages;\n         let linear_cpu =\n             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;\n         let startup_cost = graph_cost + graph_cpu;\n-        (startup_cost, startup_cost + linear_cost + linear_cpu)\n+        (startup_cost, startup_cost * /* ~ changed by cargo-mutants ~ */ linear_cost + linear_cpu)\n     };\n \n     PlannerCostEstimate {\n         startup_cost,\n         total_cost,\n         selectivity: 1.0,\n         correlation: 0.0,\n         index_pages: inputs.index_pages,\n",
+    "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+    "function": {
+      "function_name": "estimate_planner_cost",
+      "return_type": "-> PlannerCostEstimate",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 269
+        },
+        "start": {
+          "column": 1,
+          "line": 218
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:37: replace + with * in estimate_planner_cost",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 259
+      },
+      "start": {
+        "column": 37,
+        "line": 259
+      }
+    }
+  }
+]

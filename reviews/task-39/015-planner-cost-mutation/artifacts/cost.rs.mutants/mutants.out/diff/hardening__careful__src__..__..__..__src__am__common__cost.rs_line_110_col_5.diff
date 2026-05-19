@@ -1,0 +1,25 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace metadata_fallback_tree_height -> PlannerTreeHeightInput with Default::default()
+@@ -102,21 +102,17 @@
+         random_page_cost: unsafe { pg_sys::random_page_cost },
+         seq_page_cost: unsafe { pg_sys::seq_page_cost },
+         cpu_operator_cost: unsafe { pg_sys::cpu_operator_cost },
+     }
+ }
+ 
+ #[cfg_attr(feature = "pg18", allow(dead_code))]
+ pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
+-    PlannerTreeHeightInput {
+-        tree_height: f64::from(max_level),
+-        source: "metadata_fallback",
+-        pg18_callback_ready: false,
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ pub(crate) fn resolved_tree_height_input(max_level: u8) -> PlannerTreeHeightInput {
+     #[cfg(feature = "pg18")]
+     {
+         PlannerTreeHeightInput {
+             tree_height: f64::from(amgettreeheight_callback_value(max_level)),
+             source: "amgettreeheight_callback",

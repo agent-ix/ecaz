@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ delete match arm 1 in amtranslatestrategy_callback
+@@ -131,17 +131,17 @@
+ }
+ 
+ pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {
+     i32::from(max_level)
+ }
+ 
+ pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {
+     match strategy {
+-        1 => PlannerCompareType::Lt,
++         /* ~ changed by cargo-mutants ~ */
+         _ => PlannerCompareType::Invalid,
+     }
+ }
+ 
+ pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {
+     match compare_type {
+         PlannerCompareType::Lt => 1,
+         PlannerCompareType::Invalid

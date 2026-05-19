@@ -1,0 +1,6 @@
+hardening/careful/src/../../../src/am/common/cost.rs:110:5: replace metadata_fallback_tree_height -> PlannerTreeHeightInput with Default::default()
+hardening/careful/src/../../../src/am/common/cost.rs:90:5: replace gated_planner_cost_estimate -> PlannerCostEstimate with Default::default()
+hardening/careful/src/../../../src/am/common/cost.rs:118:5: replace resolved_tree_height_input -> PlannerTreeHeightInput with Default::default()
+hardening/careful/src/../../../src/am/common/cost.rs:138:5: replace amtranslatestrategy_callback -> PlannerCompareType with Default::default()
+hardening/careful/src/../../../src/am/common/cost.rs:159:5: replace strategy_translation_snapshot -> StrategyTranslationSnapshot with Default::default()
+hardening/careful/src/../../../src/am/common/cost.rs:222:5: replace estimate_planner_cost -> PlannerCostEstimate with Default::default()

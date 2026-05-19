@@ -1,0 +1,33 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace resolved_tree_height_input -> PlannerTreeHeightInput with Default::default()
+@@ -110,29 +110,17 @@
+     PlannerTreeHeightInput {
+         tree_height: f64::from(max_level),
+         source: "metadata_fallback",
+         pg18_callback_ready: false,
+     }
+ }
+ 
+ pub(crate) fn resolved_tree_height_input(max_level: u8) -> PlannerTreeHeightInput {
+-    #[cfg(feature = "pg18")]
+-    {
+-        PlannerTreeHeightInput {
+-            tree_height: f64::from(amgettreeheight_callback_value(max_level)),
+-            source: "amgettreeheight_callback",
+-            pg18_callback_ready: true,
+-        }
+-    }
+-
+-    #[cfg(not(feature = "pg18"))]
+-    {
+-        metadata_fallback_tree_height(max_level)
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {
+     i32::from(max_level)
+ }
+ 
+ pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {
+     match strategy {
