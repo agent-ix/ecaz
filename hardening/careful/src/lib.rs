@@ -44,6 +44,10 @@ pub mod careful_pg_guards;
 #[path = "spire.rs"]
 pub mod careful_spire;
 
+#[allow(dead_code, unused_imports)]
+#[path = "spire_diagnostics_helpers.rs"]
+pub mod careful_spire_diagnostics_helpers;
+
 #[allow(dead_code)]
 #[path = "../../../src/am/common/training.rs"]
 pub mod careful_common_training;

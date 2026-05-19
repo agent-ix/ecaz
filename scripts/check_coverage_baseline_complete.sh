@@ -18,6 +18,7 @@ trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
   find src/am/ec_spire/storage -maxdepth 1 -type f -name '*.rs' ! -name 'tests.rs'
   printf '%s\n' \
     src/am/ec_spire/coordinator/diagnostics.rs \
+    src/am/ec_spire/coordinator/diagnostics_helpers.rs \
     src/am/ec_diskann/build.rs \
     src/am/ec_diskann/routine.rs \
     src/am/ec_diskann/scan.rs \
