@@ -1,0 +1,230 @@
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index c3d28762..27b6f954 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -3645,6 +3645,8 @@ impl<'a> GraphTraversalCursor<'a> {
+         opaque: *mut TqScanOpaque,
+     ) -> bool {
+         let result_state = self.result_state as *mut ScanResultState;
++        // SAFETY: `opaque` is the live scan opaque for this cursor and
++        // `result_state` points at the cursor-owned active result state.
+         unsafe {
+             prefetch_next_graph_result_from_frontier(index_relation, &mut *opaque, result_state)
+         }
+@@ -3655,6 +3657,7 @@ impl<'a> GraphTraversalCursor<'a> {
+         index_relation: pg_sys::Relation,
+         opaque: *mut TqScanOpaque,
+     ) -> bool {
++        // SAFETY: callers pass the live scan opaque for this cursor.
+         let opaque = unsafe { &mut *opaque };
+         if !opaque.execution_phase.is_graph_traversal() {
+             return false;
+@@ -3664,6 +3667,8 @@ impl<'a> GraphTraversalCursor<'a> {
+             return true;
+         }
+
++        // SAFETY: the cast recreates the original scan opaque pointer after
++        // the phase check; prefetch owns only this cursor's result state.
+         if !unsafe { self.prefetch_next(index_relation, opaque as *mut TqScanOpaque) } {
+             mark_scan_exhausted(opaque);
+             return false;
+@@ -3740,9 +3745,13 @@ unsafe fn produce_next_scan_heap_tid(
+     code_len: usize,
+ ) -> bool {
+     match opaque.execution_phase {
++        // SAFETY: graph traversal uses the live scan descriptor, relation, and
++        // opaque state selected by the current execution phase.
+         ScanExecutionPhase::GraphTraversal => unsafe {
+             produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+         },
++        // SAFETY: linear fallback uses the same live scan descriptor/relation
++        // after graph traversal has moved the opaque into fallback phase.
+         ScanExecutionPhase::LinearFallback => unsafe {
+             produce_next_linear_fallback_heap_tid(scan, index_relation, opaque, code_len)
+         },
+@@ -3850,18 +3859,24 @@ unsafe fn prefetch_next_graph_result_from_frontier(
+ ) -> bool {
+     if !opaque.execution_phase.is_graph_traversal()
+         || opaque.scan_dimensions == 0
++        // SAFETY: `result_state` is the active result-state pointer passed by
++        // `GraphTraversalCursor::prefetch_next` for this scan.
+         || unsafe { (&*result_state).pending_count() != 0 }
+     {
+         return false;
+     }
+
+     if grouped_live_rerank_enabled(opaque) {
++        // SAFETY: grouped windowed traversal uses the same live relation,
++        // opaque, and result-state pointer after the phase/pending checks above.
+         return unsafe {
+             prefetch_next_grouped_windowed_graph_result(index_relation, opaque, result_state)
+         };
+     }
+
+     loop {
++        // SAFETY: frontier refinement works on the live graph relation and
++        // mutable scan opaque before consuming the next frontier head.
+         unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
+         #[cfg(any(test, feature = "pg_test"))]
+         let consume_started = Instant::now();
+@@ -3882,6 +3897,8 @@ unsafe fn prefetch_next_graph_result_from_frontier(
+         opaque.stats_delta.record_graph_hop();
+         #[cfg(any(test, feature = "pg_test"))]
+         let materialize_started = Instant::now();
++        // SAFETY: `candidate` was just consumed from this scan frontier, and
++        // materialization writes through the active result-state pointer.
+         if unsafe {
+             materialize_graph_result_candidate(index_relation, opaque, result_state, candidate)
+         }
+@@ -3914,6 +3931,8 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
+ ) -> bool {
+     let active_window = grouped_live_rerank_window(opaque);
+     while usize::from(opaque.grouped_live_rerank_buffer_len) < active_window {
++        // SAFETY: frontier refinement works on the live graph relation and
++        // mutable scan opaque before consuming the next frontier head.
+         unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
+         #[cfg(any(test, feature = "pg_test"))]
+         let consume_started = Instant::now();
+@@ -3934,6 +3953,8 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
+         opaque.stats_delta.record_graph_hop();
+         #[cfg(any(test, feature = "pg_test"))]
+         let materialize_started = Instant::now();
++        // SAFETY: `candidate` was just consumed from this scan frontier and is
++        // buffered before result-state emission.
+         unsafe { buffer_grouped_graph_result_candidate(index_relation, opaque, candidate) };
+         #[cfg(any(test, feature = "pg_test"))]
+         let materialize_elapsed_us = u64::try_from(materialize_started.elapsed().as_micros())
+@@ -3949,6 +3970,8 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
+
+     mark_emitted_element(opaque, buffered.element_tid);
+     let output_score = grouped_live_rerank_output_score(opaque, &buffered);
++    // SAFETY: `result_state` is the active result-state pointer passed by the
++    // graph traversal cursor for this scan.
+     let result_state = unsafe { &mut *result_state };
+     result_state.materialize_with_details(
+         buffered.element_tid,
+@@ -3972,12 +3995,16 @@ unsafe fn buffer_grouped_graph_result_candidate(
+     }
+
+     opaque.explain_counters.record_bootstrap_page_read();
++    // SAFETY: `candidate.node` was consumed from this scan frontier and names
++    // a graph element in the live index relation.
+     let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+     if element.deleted || element.heaptids.is_empty() {
+         opaque.explain_counters.record_element_skipped();
+         return;
+     }
+
++    // SAFETY: `element` was loaded for this candidate and the scan opaque owns
++    // any grouped rerank/query state used for comparison scoring.
+     let comparison_score = unsafe {
+         grouped_candidate_rerank_comparison_score(
+             index_relation,
+@@ -4017,6 +4044,8 @@ unsafe fn materialize_graph_result_candidate(
+     }
+
+     opaque.explain_counters.record_bootstrap_page_read();
++    // SAFETY: `candidate.node` was consumed from this scan frontier and names
++    // a graph element in the live index relation.
+     let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+     if element.deleted || element.heaptids.is_empty() {
+         opaque.explain_counters.record_element_skipped();
+@@ -4026,6 +4055,8 @@ unsafe fn materialize_graph_result_candidate(
+     // Keep traversal/output ordering on the grouped approximate score for now, but
+     // capture the cold rerank score alongside emitted results so the next packets
+     // can compare approximate-vs-exact behavior on real scan outputs.
++    // SAFETY: `element` was loaded for this candidate and the scan opaque owns
++    // any grouped rerank/query state used for comparison scoring.
+     let comparison_score = unsafe {
+         grouped_candidate_rerank_comparison_score(
+             index_relation,
+@@ -4035,6 +4066,8 @@ unsafe fn materialize_graph_result_candidate(
+     };
+     opaque.explain_counters.record_element_scored();
+     mark_emitted_element(opaque, candidate.node);
++    // SAFETY: `result_state` is the active result-state pointer passed by the
++    // graph traversal cursor for this scan.
+     let result_state = unsafe { &mut *result_state };
+     result_state.materialize_with_details(
+         candidate.node,
+@@ -4069,6 +4102,8 @@ fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize)
+     if opaque.bootstrap_expansion.is_null() {
+         opaque.bootstrap_expansion = Box::into_raw(Box::new(search::BeamSearch::new(ef_search)));
+     } else {
++        // SAFETY: non-null `bootstrap_expansion` is Box-owned by this scan
++        // opaque until `free_bootstrap_expansion` runs.
+         *unsafe { &mut *opaque.bootstrap_expansion } = search::BeamSearch::new(ef_search);
+     }
+ }
+@@ -4078,30 +4113,23 @@ fn bootstrap_frontier_limit(opaque: &TqScanOpaque) -> usize {
+ }
+
+ fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
+-    if !opaque.candidate_frontier.is_null() {
+-        drop(unsafe { Box::from_raw(opaque.candidate_frontier) });
+-        opaque.candidate_frontier = ptr::null_mut();
+-    }
++    drop_boxed_scan_ptr(&mut opaque.candidate_frontier);
+ }
+
+ fn free_bootstrap_expansion(opaque: &mut TqScanOpaque) {
+-    if !opaque.bootstrap_expansion.is_null() {
+-        drop(unsafe { Box::from_raw(opaque.bootstrap_expansion) });
+-        opaque.bootstrap_expansion = ptr::null_mut();
+-    }
++    drop_boxed_scan_ptr(&mut opaque.bootstrap_expansion);
+ }
+
+ fn free_graph_prefetch_state(opaque: &mut TqScanOpaque) {
+-    if !opaque.graph_prefetch_state.is_null() {
+-        drop(unsafe { Box::from_raw(opaque.graph_prefetch_state) });
+-        opaque.graph_prefetch_state = ptr::null_mut();
+-    }
++    drop_boxed_scan_ptr(&mut opaque.graph_prefetch_state);
+ }
+
+ fn reset_graph_prefetch_state(opaque: &mut TqScanOpaque) {
+     if opaque.graph_prefetch_state.is_null() {
+         opaque.graph_prefetch_state = Box::into_raw(Box::new(GraphPrefetchState::new(Vec::new())));
+     } else {
++        // SAFETY: non-null `graph_prefetch_state` is Box-owned by this scan
++        // opaque until `free_graph_prefetch_state` runs.
+         unsafe { &mut *opaque.graph_prefetch_state }.reset(Vec::new());
+     }
+ }
+@@ -4111,6 +4139,8 @@ fn reset_graph_prefetch_blocks(opaque: &mut TqScanOpaque, blocks: Vec<u32>) {
+     if opaque.graph_prefetch_state.is_null() {
+         opaque.graph_prefetch_state = Box::into_raw(Box::new(GraphPrefetchState::new(blocks)));
+     } else {
++        // SAFETY: non-null `graph_prefetch_state` is Box-owned by this scan
++        // opaque until `free_graph_prefetch_state` runs.
+         unsafe { &mut *opaque.graph_prefetch_state }.reset(blocks);
+     }
+ }
+@@ -4124,6 +4154,8 @@ fn reset_linear_prefetch_state(opaque: &mut TqScanOpaque) {
+ #[cfg(feature = "pg18")]
+ fn end_read_stream(stream: &mut *mut pg_sys::ReadStream) {
+     if !(*stream).is_null() {
++        // SAFETY: non-null read-stream slots are created by
++        // `read_stream_begin_relation` and cleared immediately after ending.
+         unsafe { pg_sys::read_stream_end(*stream) };
+         *stream = ptr::null_mut();
+     }
+@@ -4138,6 +4170,8 @@ fn ensure_graph_read_stream(
+         reset_graph_prefetch_state(opaque);
+     }
+     if opaque.graph_read_stream.is_null() {
++        // SAFETY: `index_relation` is live for this scan and
++        // `graph_prefetch_state` is the scan-owned callback state.
+         opaque.graph_read_stream = unsafe {
+             pg_sys::read_stream_begin_relation(
+                 pg_sys::READ_STREAM_DEFAULT as i32,
+@@ -4159,6 +4193,8 @@ fn ensure_linear_read_stream(
+     opaque: &mut TqScanOpaque,
+ ) -> *mut pg_sys::ReadStream {
+     if opaque.linear_read_stream.is_null() {
++        // SAFETY: `index_relation` is live for this scan and the linear
++        // prefetch state is embedded in the scan opaque.
+         opaque.linear_read_stream = unsafe {
+             pg_sys::read_stream_begin_relation(
+                 pg_sys::READ_STREAM_SEQUENTIAL as i32,
