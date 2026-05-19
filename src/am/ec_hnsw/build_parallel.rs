@@ -1173,6 +1173,8 @@ pub(super) unsafe fn concurrent_dsm_graph_to_build_nodes(
     layout: EcHnswConcurrentDsmGraphLayout,
     m: usize,
 ) -> Vec<build::HnswBuildNode> {
+    // SAFETY: `parts.nodes` points at `layout.node_count` initialized DSM
+    // nodes in an attached concurrent DSM graph image.
     let nodes = unsafe { slice::from_raw_parts(parts.nodes, layout.node_count as usize) };
     let mut build_nodes = Vec::with_capacity(nodes.len());
 
@@ -1181,6 +1183,8 @@ pub(super) unsafe fn concurrent_dsm_graph_to_build_nodes(
             pgrx::error!("concurrent DSM graph readback saw an uninserted node");
         }
 
+        // SAFETY: Node slot offsets and counts come from the validated graph
+        // layout and per-node DSM metadata initialized with that layout.
         let raw_neighbor_slots = unsafe {
             slice::from_raw_parts(
                 parts.neighbor_slots.add(node.neighbor_slot_offset as usize),
@@ -1216,6 +1220,8 @@ pub(super) unsafe fn current_format_flush_output_from_concurrent_dsm_graph(
     attachment: EcHnswConcurrentDsmGraphAttachment,
 ) -> build::BuildFlushOutput {
     let config = attachment.require_insert_config();
+    // SAFETY: The attachment was derived from one concurrent DSM graph image,
+    // and `config.m` is the insert configuration stored in that image header.
     let graph_nodes = unsafe {
         concurrent_dsm_graph_to_build_nodes(attachment.parts, attachment.layout, config.m)
     };
@@ -1238,19 +1244,25 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
         pgrx::error!("concurrent DSM graph insert requires m > 0");
     }
 
+    // SAFETY: `node_idx` was bounds-checked above, and the helper acquires the
+    // node lock before transitioning the DSM insert state.
     let Some(insert_level) =
         (unsafe { begin_concurrent_dsm_graph_node_insert(parts, node_idx, locks) })
     else {
         return false;
     };
 
+    // SAFETY: `parts.header` points at the graph header for this attached DSM
+    // image and remains valid while the graph attachment is in use.
     let entry_idx = unsafe { (*parts.header).entry_idx };
     if entry_idx == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
-        let selected_slots =
-            vec![
-                EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX;
-                unsafe { (*parts.nodes.add(node_idx as usize)).neighbor_slot_count as usize }
-            ];
+        // SAFETY: `node_idx` is in range and this metadata was written during
+        // DSM graph image initialization.
+        let selected_slot_count =
+            unsafe { (*parts.nodes.add(node_idx as usize)).neighbor_slot_count as usize };
+        let selected_slots = vec![EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX; selected_slot_count];
+        // SAFETY: The selected slot vector is sized from the target node's DSM
+        // slot count and the helper publishes the completed insert under lock.
         unsafe {
             complete_concurrent_dsm_graph_node_insert(parts, node_idx, &selected_slots, locks)
         };
@@ -1261,17 +1273,22 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
     }
 
     scratch.query_scores.begin_query();
+    // SAFETY: `node_idx` and `entry_idx` are in range; scoring helpers validate
+    // corpus offsets derived from the same graph layout.
     let entry_score =
         unsafe { score_concurrent_dsm_code(parts, layout, config, node_idx, entry_idx, scratch) };
     let entry_candidate = search::BeamCandidate::new(entry_idx, entry_score);
-    let mut selected_slots =
-        vec![
-            EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX;
-            unsafe { (*parts.nodes.add(node_idx as usize)).neighbor_slot_count as usize }
-        ];
+    // SAFETY: `node_idx` was bounds-checked and the node slot count is
+    // initialized DSM metadata.
+    let selected_slot_count =
+        unsafe { (*parts.nodes.add(node_idx as usize)).neighbor_slot_count as usize };
+    let mut selected_slots = vec![EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX; selected_slot_count];
     let mut selections = Vec::new();
 
+    // SAFETY: `entry_idx` was checked against `layout.node_count` above.
     let entry_level = unsafe { (*parts.nodes.add(entry_idx as usize)).level };
+    // SAFETY: All graph pointers come from one attachment; the helper only
+    // reads ready nodes and writes the local selected-slots buffer.
     let layer0_seeds = unsafe {
         populate_concurrent_dsm_upper_layer_forward_slots(
             parts,
@@ -1287,6 +1304,8 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
             locks,
         )
     };
+    // SAFETY: The layer search uses the same attached graph and scratch space;
+    // `node_idx` is the bounded query node currently being inserted.
     let layer0_candidates = unsafe {
         search_concurrent_dsm_layer_result_candidates(
             config.ef_construction,
@@ -1308,6 +1327,8 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
         layer0_candidates,
     );
 
+    // SAFETY: `selected_slots` is sized for the new node; backlink mutation
+    // validates each target index and holds target-node locks.
     unsafe {
         complete_concurrent_dsm_graph_node_insert(parts, node_idx, &selected_slots, locks);
         add_concurrent_dsm_backlinks(parts, layout, config, node_idx, &selections, scratch, locks);
@@ -1332,6 +1353,8 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_partition(
 
     let mut inserted = 0_u32;
     for node_idx in partition.start_node_idx..partition.end_node_idx {
+        // SAFETY: The partition was validated against `layout.node_count`; each
+        // node insert acquires the node lock before publishing state.
         if unsafe {
             insert_concurrent_dsm_graph_node(parts, layout, config, node_idx, scratch, locks)
         } {
@@ -1364,12 +1387,13 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_participant(
     );
     let mut inserted = 0_u32;
     for partition in partitions {
+        // SAFETY: Striped partitions are derived from the graph node count, and
+        // the partition helper revalidates bounds.
+        let partition_inserted = unsafe {
+            insert_concurrent_dsm_graph_partition(parts, layout, config, partition, scratch, locks)
+        };
         inserted = inserted
-            .checked_add(unsafe {
-                insert_concurrent_dsm_graph_partition(
-                    parts, layout, config, partition, scratch, locks,
-                )
-            })
+            .checked_add(partition_inserted)
             .unwrap_or_else(|| pgrx::error!("concurrent DSM inserted count overflow"));
     }
     inserted
@@ -1380,10 +1404,17 @@ unsafe fn begin_concurrent_dsm_graph_node_insert(
     node_idx: u32,
     locks: EcHnswConcurrentDsmLockOps,
 ) -> Option<u8> {
+    // SAFETY: The caller bounds-checks `node_idx`; the node array belongs to
+    // the attached concurrent DSM graph image.
     let node = unsafe { parts.nodes.add(node_idx as usize) };
+    // SAFETY: `node` points at an initialized DSM node containing an LWLock.
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
+    // SAFETY: `lock` is the initialized per-node lock for this DSM graph.
     let _lock_guard = unsafe { locks.exclusive(lock) };
+    // SAFETY: The exclusive node lock is held while reading insert metadata.
     let level = unsafe { (*node).level };
+    // SAFETY: The exclusive node lock is held and the insert_state field is the
+    // PostgreSQL atomic cell for this node.
     let state_cell = PgLockedDsmInsertStateCell(unsafe { ptr::addr_of_mut!((*node).insert_state) });
     let begin = match begin_concurrent_dsm_node_insert_state(&state_cell, level) {
         Ok(begin) => begin,
@@ -1401,18 +1432,26 @@ unsafe fn complete_concurrent_dsm_graph_node_insert(
     selected_slots: &[u32],
     locks: EcHnswConcurrentDsmLockOps,
 ) {
+    // SAFETY: Callers only complete bounded node inserts in the attached graph.
     let node = unsafe { parts.nodes.add(node_idx as usize) };
+    // SAFETY: `node` points at an initialized DSM node containing an LWLock.
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
+    // SAFETY: `lock` is the initialized per-node lock for this DSM graph.
     let _lock_guard = unsafe { locks.exclusive(lock) };
+    // SAFETY: The exclusive node lock is held while reading the slot count.
     let slot_count = unsafe { (*node).neighbor_slot_count as usize };
     if selected_slots.len() != slot_count {
         pgrx::error!("concurrent DSM graph insert selected slot count mismatch");
     }
+    // SAFETY: `selected_slots` was checked against the node slot count; the
+    // helper derives the mutable slot slice from the locked node metadata.
     unsafe {
         with_concurrent_dsm_node_slots_mut(parts, node, |slots| {
             slots.copy_from_slice(selected_slots);
         })
     };
+    // SAFETY: The exclusive node lock is still held while marking the node
+    // ready in its PostgreSQL atomic insert-state cell.
     unsafe {
         let state_cell = PgLockedDsmInsertStateCell(ptr::addr_of_mut!((*node).insert_state));
         if let Err(err) = complete_concurrent_dsm_node_insert_state(&state_cell) {
@@ -1441,6 +1480,8 @@ unsafe fn populate_concurrent_dsm_upper_layer_forward_slots(
 
     let mut seeds = vec![entry_candidate];
     for current_layer in (1..=entry_level).rev() {
+        // SAFETY: The graph attachment and query node are valid for this insert;
+        // the search helper validates neighbor indexes before scoring them.
         seeds = unsafe {
             search_concurrent_dsm_layer_result_candidates(
                 config.ef_construction,
@@ -1512,6 +1553,8 @@ unsafe fn search_concurrent_dsm_layer_result_candidates(
             break;
         }
 
+        // SAFETY: The candidate node came from validated seeds/search results;
+        // the loader acquires source locks and validates successor indexes.
         unsafe {
             load_concurrent_dsm_successor_candidates_into(
                 parts,
@@ -1580,14 +1623,21 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
         pgrx::error!("concurrent DSM graph search source index out of bounds");
     }
 
+    // SAFETY: `source_idx` was checked against the graph node count.
     let source = unsafe { parts.nodes.add(source_idx as usize) };
+    // SAFETY: `source` points at an initialized DSM node containing an LWLock.
     let source_lock = unsafe { ptr::addr_of_mut!((*source).lock) };
     {
+        // SAFETY: `source_lock` is the initialized per-node lock for this graph.
         let _source_lock_guard = unsafe { locks.shared(source_lock) };
+        // SAFETY: The shared node lock is held while reading insert state.
         let source_state = unsafe { (*source).insert_state.value };
         if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
+            // SAFETY: The shared node lock is held while reading the node level.
             let source_level = unsafe { (*source).level };
             if let Some((start, end)) = graph::layer_slot_bounds(source_level, config.m, layer) {
+                // SAFETY: The shared node lock is held and the helper derives a
+                // read-only slot slice from validated node metadata.
                 unsafe {
                     with_concurrent_dsm_node_slots(parts, source, |raw_slots| {
                         for neighbor_idx in raw_slots
@@ -1609,12 +1659,17 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
         if neighbor_idx >= layout.node_count {
             pgrx::error!("concurrent DSM graph search saw out-of-range neighbor index");
         }
+        // SAFETY: `neighbor_idx` was checked against the graph node count.
         let neighbor = unsafe { parts.nodes.add(neighbor_idx as usize) };
+        // SAFETY: The neighbor node is in range and contains the atomic
+        // insert-state cell waited on by the concurrent insert protocol.
         let state_cell =
             PgLockedDsmInsertStateCell(unsafe { ptr::addr_of_mut!((*neighbor).insert_state) });
         if !wait_until_concurrent_dsm_node_ready(&state_cell) {
             continue;
         }
+        // SAFETY: The neighbor is ready, and scoring validates the query and
+        // candidate corpus offsets against the graph layout.
         let score = unsafe {
             score_concurrent_dsm_code_with_cache(
                 parts,
@@ -1682,9 +1737,13 @@ unsafe fn add_concurrent_dsm_backlinks(
         if selection.node_idx >= layout.node_count {
             pgrx::error!("concurrent DSM backlink target index out of bounds");
         }
+        // SAFETY: `selection.node_idx` was checked against the graph node count.
         let target = unsafe { parts.nodes.add(selection.node_idx as usize) };
+        // SAFETY: `target` points at an initialized DSM node containing an LWLock.
         let target_lock = unsafe { ptr::addr_of_mut!((*target).lock) };
+        // SAFETY: `target_lock` is the initialized per-node lock for this graph.
         let _target_lock_guard = unsafe { locks.exclusive(target_lock) };
+        // SAFETY: The exclusive target-node lock is held while reading state.
         let target_state = unsafe { (*target).insert_state.value };
         if target_state != EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
             continue;
@@ -1692,11 +1751,15 @@ unsafe fn add_concurrent_dsm_backlinks(
 
         let Some((start, end)) = insert::backlink_slot_bounds(
             config.m,
+            // SAFETY: The exclusive target-node lock is held while reading the
+            // target slot count.
             unsafe { (*target).neighbor_slot_count as usize },
             selection.layer,
         ) else {
             continue;
         };
+        // SAFETY: The exclusive target-node lock is held; the helper derives a
+        // mutable slot slice from validated target-node metadata.
         unsafe {
             with_concurrent_dsm_node_slots_mut(parts, target, |slots| {
                 let layer_slice = &mut slots[start..end];
