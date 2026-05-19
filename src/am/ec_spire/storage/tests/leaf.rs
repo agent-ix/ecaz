@@ -134,6 +134,181 @@ fn leaf_partition_object_v2_store_preserves_empty_leaf_without_segments() {
 }
 
 #[test]
+fn miri_leaf_v2_meta_rejects_invalid_validate_inputs() {
+    // Baseline: a known-valid arg list for SpireLeafPartitionObjectV2Meta::new.
+    // Each sub-case clones the baseline and twists one field so a single
+    // error branch in validate() is the only thing that fires.
+    let valid_segment = ItemPointer {
+        block_number: 10,
+        offset_number: 1,
+    };
+    let build = |published_epoch_backref: u64,
+                 object_bytes_total: u64,
+                 assignment_count: u32,
+                 payload_format: u8,
+                 payload_stride: u32,
+                 vec_id_kind: SpireVecIdKind,
+                 vec_id_stride: u16,
+                 segment_count: u32,
+                 first_segment_locator: ItemPointer| {
+        SpireLeafPartitionObjectV2Meta::new(
+            17,
+            3,
+            5,
+            assignment_count,
+            payload_format,
+            payload_stride,
+            vec_id_kind,
+            vec_id_stride,
+            segment_count,
+            first_segment_locator,
+            object_bytes_total,
+            published_epoch_backref,
+        )
+    };
+
+    // Sanity: the baseline really does succeed.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::LocalU64,
+        LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        1,
+        valid_segment,
+    )
+    .is_ok());
+
+    // published_epoch_backref == 0 is invalid.
+    assert!(build(
+        0,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::LocalU64,
+        LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        1,
+        valid_segment,
+    )
+    .is_err());
+
+    // object_bytes_total == 0 is invalid.
+    assert!(build(
+        7,
+        0,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::LocalU64,
+        LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        1,
+        valid_segment,
+    )
+    .is_err());
+
+    // LocalU64 stride must equal LEAF_V2_LOCAL_VEC_ID_STRIDE.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::LocalU64,
+        (LEAF_V2_LOCAL_VEC_ID_STRIDE as u16) + 1,
+        1,
+        valid_segment,
+    )
+    .is_err());
+
+    // GlobalBytes stride below the 2-byte minimum is rejected.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::GlobalBytes,
+        1,
+        1,
+        valid_segment,
+    )
+    .is_err());
+
+    // GlobalBytes stride above SPIRE_VEC_ID_MAX_BYTES is rejected.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::GlobalBytes,
+        (SPIRE_VEC_ID_MAX_BYTES as u16) + 1,
+        1,
+        valid_segment,
+    )
+    .is_err());
+
+    // Non-empty assignment_count with segment_count == 0 is invalid.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::LocalU64,
+        LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        0,
+        valid_segment,
+    )
+    .is_err());
+
+    // Non-empty meta with INVALID first segment locator is invalid.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        2,
+        SpireVecIdKind::LocalU64,
+        LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        1,
+        ItemPointer::INVALID,
+    )
+    .is_err());
+
+    // Non-empty meta with payload_format == NONE is invalid.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_NONE,
+        2,
+        SpireVecIdKind::LocalU64,
+        LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        1,
+        valid_segment,
+    )
+    .is_err());
+
+    // Non-empty meta with payload_stride == 0 is invalid.
+    assert!(build(
+        7,
+        256,
+        2,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+        0,
+        SpireVecIdKind::LocalU64,
+        LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        1,
+        valid_segment,
+    )
+    .is_err());
+}
+
+#[test]
 fn miri_leaf_v2_empty_meta_rejects_segment_locator() {
     let meta = SpireLeafPartitionObjectV2Meta::new(
         17,
