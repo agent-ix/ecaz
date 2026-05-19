@@ -1,0 +1,66 @@
+Script started on 2026-05-19 01:08:15-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/diagnostics.rs b/src/am/ec_spire/coordinator/diagnostics.rs[m
+[1mindex a96fcbb7..21fa591e 100644[m
+[1m--- a/src/am/ec_spire/coordinator/diagnostics.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/diagnostics.rs[m
+[36m@@ -186,10 +186,16 @@[m [munsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics([m
+     if root_control.active_epoch == 0 {[m
+         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());[m
+     }[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation, and the TID was[m
+[32m+[m[32m    // read from its root/control page for the active epoch manifest.[m
+     let epoch_bytes =[m
+         unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation, and the TID was[m
+[32m+[m[32m    // read from its root/control page for the active object manifest.[m
+     let object_bytes =[m
+         unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation, and the TID was[m
+[32m+[m[32m    // read from its root/control page for the active placement directory.[m
+     let placement_bytes =[m
+         unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };[m
+     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;[m
+[36m@@ -313,12 +319,18 @@[m [mpub(crate) unsafe fn index_boundary_replica_identity_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireBoundaryReplicaIdentitySnapshotRow> {[m
+     let result = (|| -> Result<Vec<SpireBoundaryReplicaIdentitySnapshotRow>, String> {[m
+[32m+[m[32m        // SAFETY: index_relation is the open SPIRE index relation inspected by[m
+[32m+[m[32m        // this read-only diagnostic.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(Vec::new());[m
+         }[m
+[32m+[m[32m        // SAFETY: root_control was read from the same open relation and names[m
+[32m+[m[32m        // the active coordinator fanout manifest set.[m
+         let (_epoch_manifest, _object_manifest, placement_directory) =[m
+             unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)? };[m
+[32m+[m[32m        // SAFETY: placement_directory was decoded from the active relation[m
+[32m+[m[32m        // manifests and is used to open the corresponding local object stores.[m
+         let object_store = unsafe {[m
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                 index_relation,[m
+[36m@@ -419,16 +431,22 @@[m [mpub(crate) unsafe fn index_boundary_replica_placement_diagnostics([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Vec<SpireBoundaryReplicaPlacementDiagnosticRow> {[m
+     let result = (|| -> Result<Vec<SpireBoundaryReplicaPlacementDiagnosticRow>, String> {[m
+[32m+[m[32m        // SAFETY: index_relation is the open SPIRE index relation inspected by[m
+[32m+[m[32m        // this read-only diagnostic.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(Vec::new());[m
+         }[m
+[32m+[m[32m        // SAFETY: root_control was read from the same open relation and names[m
+[32m+[m[32m        // the active manifest set for boundary placement diagnostics.[m
+         let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {[m
+             load_relation_epoch_manifests_for_boundary_placement_diagnostics([m
+                 index_relation,[m
+                 root_control,[m
+             )?[m
+         };[m
+[32m+[m[32m        // SAFETY: placement_directory was decoded from the active relation[m
+[32m+[m[32m        // manifests and is used to open the corresponding local object stores.[m
+         let object_store = unsafe {[m
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements([m
+                 index_relation,[m
+
+Script done on 2026-05-19 01:08:15-07:00 [COMMAND_EXIT_CODE="0"]
