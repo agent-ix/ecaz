@@ -38,9 +38,7 @@ pub(super) fn spire_local_store_relation_name(
 
     let relation_name =
         format!("{SPIRE_STORE_RELATION_NAME_PREFIX}_{index_relid}_{local_store_id}");
-    let max_identifier_bytes = usize::try_from(pg_sys::NAMEDATALEN)
-        .map_err(|_| "ec_spire NAMEDATALEN exceeds usize".to_owned())?
-        .saturating_sub(1);
+    let max_identifier_bytes = pg_identifier_limit_bytes()?;
     if relation_name.len() > max_identifier_bytes {
         return Err(format!(
             "ec_spire local store relation name '{relation_name}' exceeds PostgreSQL identifier limit {max_identifier_bytes}"
@@ -48,6 +46,20 @@ pub(super) fn spire_local_store_relation_name(
     }
 
     Ok(relation_name)
+}
+
+fn pg_identifier_limit_bytes() -> Result<usize, String> {
+    #[cfg(any(feature = "pg17", feature = "pg18", feature = "pg_test"))]
+    {
+        usize::try_from(pg_sys::NAMEDATALEN)
+            .map(|namedatalen| namedatalen.saturating_sub(1))
+            .map_err(|_| "ec_spire NAMEDATALEN exceeds usize".to_owned())
+    }
+
+    #[cfg(not(any(feature = "pg17", feature = "pg18", feature = "pg_test")))]
+    {
+        Ok(63)
+    }
 }
 
 pub(super) fn plan_local_store_relations(
@@ -129,6 +141,7 @@ pub(super) fn local_store_config_from_relation_plan(
     SpireLocalStoreConfig::from_stores(generation, descriptors)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18", feature = "pg_test"))]
 unsafe fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
     let option = std::ffi::CString::new("autovacuum_enabled=false")
         .map_err(|_| "ec_spire auxiliary store reloption contains NUL".to_owned())?;
@@ -156,6 +169,7 @@ unsafe fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
     Ok(unsafe { pg_sys::PointerGetDatum(array.cast()) })
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18", feature = "pg_test"))]
 pub(super) unsafe fn create_local_store_relations_for_build(
     index_relation: pg_sys::Relation,
     relation_plan: &[SpireLocalStoreRelationPlanEntry],

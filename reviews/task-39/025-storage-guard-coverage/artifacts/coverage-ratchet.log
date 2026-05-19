@@ -1,0 +1,8 @@
+^Dcoverage ok: storage/buffer_guard.rs actual=100.00 baseline=0.00
+coverage ok: storage/lock_guard.rs actual=100.00 baseline=0.00
+coverage ok: storage/relation_guard.rs actual=100.00 baseline=0.00
+coverage ok: storage/scan_guard.rs actual=95.83 baseline=0.00
+coverage ok: storage/slot_guard.rs actual=91.30 baseline=0.00
+coverage ok: storage/snapshot_guard.rs actual=82.93 baseline=0.00
+coverage ok: storage/spi_guard.rs actual=100.00 baseline=0.00
+coverage baseline ratcheted: fixtures/quality/coverage-baseline.tsv

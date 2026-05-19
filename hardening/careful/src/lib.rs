@@ -25,6 +25,41 @@ pub mod careful_ivf_page;
 #[path = "../../../src/am/common/cost.rs"]
 pub mod careful_common_cost;
 
+extern crate self as pgrx;
+
+pub use crate::careful_pg_guards::pg_sys;
+
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {
+        panic!($($arg)*)
+    };
+}
+
+#[allow(dead_code, unused_imports)]
+#[path = "pg_guards.rs"]
+pub mod careful_pg_guards;
+
+#[allow(dead_code, unused_imports)]
+#[path = "spire.rs"]
+pub mod careful_spire;
+
+#[allow(dead_code)]
+#[path = "../../../src/am/common/training.rs"]
+pub mod careful_common_training;
+
+#[path = "../../../src/am/ec_diskann/persist.rs"]
+pub mod careful_diskann_persist;
+
+#[path = "../../../src/am/ec_diskann/reader.rs"]
+pub mod careful_diskann_reader;
+
+#[path = "../../../src/am/ec_diskann/build.rs"]
+pub mod careful_diskann_build;
+
+#[path = "../../../src/am/ec_diskann/scan.rs"]
+pub mod careful_diskann_scan;
+
 pub mod storage {
     pub use crate::careful_storage_page as page;
 }
@@ -37,10 +72,17 @@ pub mod am {
 
     pub mod common {
         pub use crate::careful_common_cost as cost;
+        pub use crate::careful_common_training as training;
     }
 
     pub mod ec_diskann {
+        pub(crate) fn maybe_check_for_interrupts() {}
+
+        pub use crate::careful_diskann_build as build;
         pub use crate::careful_diskann_page as page;
+        pub use crate::careful_diskann_persist as persist;
+        pub use crate::careful_diskann_reader as reader;
+        pub use crate::careful_diskann_scan as scan;
         pub use crate::careful_diskann_tuple as tuple;
         pub use crate::careful_diskann_vacuum as vacuum;
         pub use crate::careful_diskann_vamana as vamana;
@@ -53,6 +95,10 @@ pub mod am {
 
     pub mod ec_ivf {
         pub use crate::careful_ivf_page as page;
+    }
+
+    pub mod ec_spire {
+        pub use crate::careful_spire::{assign, meta, storage};
     }
 }
 
@@ -227,5 +273,36 @@ mod tests {
         assert_eq!(tuple.neighbor_count, 2);
         assert_eq!(&tuple.neighbors[..2], &[tid(1, 1), tid(3, 3)]);
         assert_eq!(&tuple.neighbors[2..], &[ItemPointer::INVALID; 2]);
+    }
+
+    #[test]
+    fn quant_family_default_and_names_are_stable() {
+        assert_eq!(super::quant::Family::DEFAULT, super::quant::Family::TurboQuant);
+        assert_eq!(super::quant::Family::TurboQuant.as_str(), "turboquant");
+        assert_eq!(super::quant::Family::PqFastScan.as_str(), "pq_fastscan");
+    }
+
+    #[test]
+    fn quant_family_reloption_parser_accepts_known_values() {
+        assert_eq!(
+            super::quant::Family::parse_reloption("turboquant").unwrap(),
+            super::quant::Family::TurboQuant
+        );
+        assert_eq!(
+            super::quant::Family::parse_reloption("pq_fastscan").unwrap(),
+            super::quant::Family::PqFastScan
+        );
+    }
+
+    #[test]
+    fn quant_family_reloption_parser_rejects_unknown_values() {
+        let error = super::quant::Family::parse_reloption("product_quant").unwrap_err();
+        assert!(error.contains("invalid ec_hnsw storage_format reloption"));
+        assert!(error.contains("product_quant"));
+    }
+
+    #[test]
+    fn quant_simd_backend_name_is_reported() {
+        assert!(!super::quant::simd_backend_name().is_empty());
     }
 }
