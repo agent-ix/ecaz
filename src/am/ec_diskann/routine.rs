@@ -33,13 +33,6 @@ use super::{
 
 type BulkDeleteCallback = unsafe extern "C-unwind" fn(pg_sys::ItemPointer, *mut c_void) -> bool;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct TupleRewrite {
-    tid: ItemPointer,
-    expected_raw: Vec<u8>,
-    replacement_raw: Vec<u8>,
-}
-
 const MAX_REPAIR_REPLAN_PASSES: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1579,20 +1572,6 @@ fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, Str
     )
 }
 
-fn count_live_tuples_in_chain(
-    chain: &DataPageChain,
-    graph_degree_r: u16,
-    binary_word_count: usize,
-    search_code_len: usize,
-) -> Result<usize, String> {
-    let reader =
-        PersistedGraphReader::new(chain, graph_degree_r, binary_word_count, search_code_len);
-    let live_count = reader
-        .iter_live_tids()
-        .try_fold(0usize, |count, item| item.map(|_| count + 1))?;
-    Ok(live_count)
-}
-
 fn chain_entry_point_needs_medoid_refresh(
     chain: &DataPageChain,
     metadata: &VamanaMetadataPage,
@@ -1608,96 +1587,6 @@ fn chain_entry_point_needs_medoid_refresh(
         metadata.entry_point,
     )?;
     Ok(tuple.deleted || vacuum::is_fully_dead(&tuple))
-}
-
-fn collect_node_tids(
-    chain: &DataPageChain,
-    graph_degree_r: u16,
-    binary_word_count: usize,
-    search_code_len: usize,
-) -> Result<Vec<ItemPointer>, String> {
-    let reader =
-        PersistedGraphReader::new(chain, graph_degree_r, binary_word_count, search_code_len);
-    reader.iter_node_tids().collect()
-}
-
-fn read_chain_node(
-    chain: &DataPageChain,
-    graph_degree_r: u16,
-    binary_word_count: usize,
-    search_code_len: usize,
-    tid: ItemPointer,
-) -> Result<VamanaNodeTuple, String> {
-    let reader =
-        PersistedGraphReader::new(chain, graph_degree_r, binary_word_count, search_code_len);
-    reader.read_node(tid)
-}
-
-fn write_chain_node(
-    chain: &mut DataPageChain,
-    graph_degree_r: u16,
-    binary_word_count: usize,
-    search_code_len: usize,
-    tid: ItemPointer,
-    tuple: &VamanaNodeTuple,
-) -> Result<(), String> {
-    let encoded = tuple.encode(graph_degree_r, binary_word_count, search_code_len)?;
-    let page = chain.get_page_mut(tid.block_number).ok_or_else(|| {
-        format!(
-            "ec_diskann vacuum rewrite could not find page {} for ({},{})",
-            tid.block_number, tid.block_number, tid.offset_number
-        )
-    })?;
-    page.update_raw_tuple(tid, encoded)
-}
-
-fn collect_tuple_rewrites(
-    original_chain: &DataPageChain,
-    mutated_chain: &DataPageChain,
-) -> Result<Vec<TupleRewrite>, String> {
-    if original_chain.pages().len() != mutated_chain.pages().len() {
-        return Err(format!(
-            "ec_diskann vacuum rewrite page-count mismatch: original {}, mutated {}",
-            original_chain.pages().len(),
-            mutated_chain.pages().len()
-        ));
-    }
-
-    let mut rewrites = Vec::new();
-    for (original_page, mutated_page) in original_chain.pages().iter().zip(mutated_chain.pages()) {
-        if original_page.block_number() != mutated_page.block_number() {
-            return Err(format!(
-                "ec_diskann vacuum rewrite block mismatch: original {}, mutated {}",
-                original_page.block_number(),
-                mutated_page.block_number()
-            ));
-        }
-        if original_page.tuple_count() != mutated_page.tuple_count() {
-            return Err(format!(
-                "ec_diskann vacuum rewrite tuple-count mismatch on block {}: original {}, mutated {}",
-                original_page.block_number(),
-                original_page.tuple_count(),
-                mutated_page.tuple_count()
-            ));
-        }
-
-        for offset in 1..=original_page.tuple_count() {
-            let tid = ItemPointer {
-                block_number: original_page.block_number(),
-                offset_number: offset as u16,
-            };
-            let expected_raw = original_page.raw_tuple(tid)?.to_vec();
-            let replacement_raw = mutated_page.raw_tuple(tid)?.to_vec();
-            if expected_raw != replacement_raw {
-                rewrites.push(TupleRewrite {
-                    tid,
-                    expected_raw,
-                    replacement_raw,
-                });
-            }
-        }
-    }
-    Ok(rewrites)
 }
 
 unsafe fn apply_tuple_rewrites(
@@ -1950,29 +1839,6 @@ where
     // permits mutable access for this visitor.
     let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
     visit(tuple_bytes)
-}
-
-fn expand_scan_results_with_bound_heap_tids(
-    chain: &DataPageChain,
-    node_results: &[scan::ScanResult],
-    top_k: usize,
-) -> Result<Vec<scan::ScanResult>, String> {
-    let mut expanded = Vec::with_capacity(top_k.min(node_results.len()));
-    for result in node_results {
-        let bound_heap_tids =
-            insert::bound_heap_tids_for_owner(chain, result.tid, result.primary_heaptid)?;
-        for heap_tid in bound_heap_tids {
-            expanded.push(scan::ScanResult {
-                tid: result.tid,
-                primary_heaptid: heap_tid,
-                distance: result.distance,
-            });
-            if expanded.len() >= top_k {
-                return Ok(expanded);
-            }
-        }
-    }
-    Ok(expanded)
 }
 
 #[cfg(feature = "pg18")]

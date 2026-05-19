@@ -102,7 +102,13 @@ pub mod pg_sys {
         _stream: *mut ReadStream,
         _per_buffer_data: *mut *mut std::ffi::c_void,
     ) -> Buffer {
-        InvalidBuffer
+        BUFFER_REGISTRY.with(|r| {
+            let mut reg = r.borrow_mut();
+            match reg.read_stream_queue.pop_front() {
+                Some((rd_id, block)) => reg.pin_buffer(rd_id, block),
+                None => InvalidBuffer,
+            }
+        })
     }
 
     pub unsafe fn read_stream_end(stream: *mut ReadStream) {
@@ -558,6 +564,10 @@ pub mod pg_sys {
         // buffer_id -> (relation_oid, block_number); legacy convention is
         // buffer == block_number + 1 so existing pg_guards tests stay green.
         buffers: std::collections::HashMap<Buffer, (Oid, BlockNumber)>,
+        // Drains in `read_stream_next_buffer`; populated by
+        // `enqueue_read_stream_blocks_for_test` so prefetch loops have
+        // something to iterate over.
+        read_stream_queue: std::collections::VecDeque<(Oid, BlockNumber)>,
     }
 
     impl BufferRegistry {
@@ -626,6 +636,48 @@ pub mod pg_sys {
 
     pub fn reset_buffer_registry() {
         BUFFER_REGISTRY.with(|r| *r.borrow_mut() = BufferRegistry::default());
+    }
+
+    /// Test-only: overwrite the raw bytes of an existing item on a
+    /// known (rd_id, block, offset). Used to craft chain-corruption
+    /// scenarios that the public insert API cannot produce. Returns
+    /// false when the (rd_id, block, offset) is unknown.
+    pub fn set_raw_tuple_bytes_for_test(
+        rd_id: Oid,
+        block_number: BlockNumber,
+        offset_number: u16,
+        new_bytes: &[u8],
+    ) -> bool {
+        if offset_number == InvalidOffsetNumber {
+            return false;
+        }
+        BUFFER_REGISTRY.with(|r| {
+            let mut reg = r.borrow_mut();
+            let Some(page) = reg.pages.get_mut(&(rd_id, block_number)) else {
+                return false;
+            };
+            let Some(item) = page.line_pointers.get_mut((offset_number - 1) as usize) else {
+                return false;
+            };
+            let lp_off = item.lp_off_value as usize;
+            let max_end = EMULATOR_PAGE_BYTES - page.special_size;
+            if lp_off + new_bytes.len() > max_end {
+                return false;
+            }
+            page.bytes[lp_off..lp_off + new_bytes.len()].copy_from_slice(new_bytes);
+            item.lp_len_value = new_bytes.len() as u32;
+            true
+        })
+    }
+
+    /// Test-only: queue a list of (rd_id, block_number) entries that
+    /// subsequent `read_stream_next_buffer` calls will surface. Drains
+    /// each buffer once and then returns `InvalidBuffer`.
+    pub fn enqueue_read_stream_blocks_for_test(blocks: Vec<(Oid, BlockNumber)>) {
+        BUFFER_REGISTRY.with(|r| {
+            let mut reg = r.borrow_mut();
+            reg.read_stream_queue.extend(blocks);
+        });
     }
 
     // Retained as a backward-compatible no-op for packets 033-034 tests that

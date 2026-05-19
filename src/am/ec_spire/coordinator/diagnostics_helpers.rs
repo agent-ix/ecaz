@@ -214,6 +214,34 @@ fn leaf_maintenance_thresholds(effective_total: u64, leaf_count: u64) -> (u64, u
     (split_threshold, merge_threshold)
 }
 
+fn epoch_cleanup_blocked_reason(
+    manifest: &meta::SpireEpochManifest,
+    now_micros: i64,
+    is_active_root_manifest: bool,
+    retained_retired: bool,
+    cleanup_eligible_now: bool,
+) -> &'static str {
+    if cleanup_eligible_now {
+        return "cleanup_eligible";
+    }
+    if is_active_root_manifest {
+        return "active_root_manifest";
+    }
+    match manifest.state {
+        meta::SpireEpochState::Building | meta::SpireEpochState::Published => {
+            "state_not_cleanup_eligible"
+        }
+        meta::SpireEpochState::Retired if manifest.active_query_count > 0 => "active_queries",
+        meta::SpireEpochState::Retired if retained_retired => "retained_retired_epoch",
+        meta::SpireEpochState::Retired | meta::SpireEpochState::Failed
+            if now_micros < manifest.retain_until_micros =>
+        {
+            "retention_window"
+        }
+        meta::SpireEpochState::Retired | meta::SpireEpochState::Failed => "cleanup_plan_retained",
+    }
+}
+
 fn leaf_maintenance_labels(
     effective_assignment_count: u64,
     split_threshold: u64,

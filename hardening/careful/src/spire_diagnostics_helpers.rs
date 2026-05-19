@@ -40,6 +40,19 @@ mod scaffold {
             Unavailable,
             Skipped,
         }
+
+        // Shim of `src/am/ec_spire/meta/epoch.rs::SpireEpochManifest`.
+        // The helpers only read `state`, `active_query_count`, and
+        // `retain_until_micros` from the manifest.
+        #[derive(Debug, Clone, Copy)]
+        pub struct SpireEpochManifest {
+            pub epoch: u64,
+            pub state: SpireEpochState,
+            pub consistency_mode: SpireConsistencyMode,
+            pub published_at_micros: i64,
+            pub retain_until_micros: i64,
+            pub active_query_count: u64,
+        }
     }
 
     pub(super) mod storage {
@@ -209,6 +222,77 @@ mod scaffold {
             assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Leaf), "leaf");
             assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Delta), "delta");
             assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::TopGraph), "top_graph");
+        }
+
+        #[test]
+        fn miri_epoch_cleanup_blocked_reason_walks_every_branch() {
+            let base = meta::SpireEpochManifest {
+                epoch: 5,
+                state: meta::SpireEpochState::Retired,
+                consistency_mode: meta::SpireConsistencyMode::Strict,
+                published_at_micros: 100,
+                retain_until_micros: 1_000,
+                active_query_count: 0,
+            };
+
+            // cleanup_eligible short-circuits.
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&base, 500, false, false, true),
+                "cleanup_eligible",
+            );
+            // is_active_root_manifest takes priority over state.
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&base, 500, true, false, false),
+                "active_root_manifest",
+            );
+            // Building → state_not_cleanup_eligible.
+            let mut building = base;
+            building.state = meta::SpireEpochState::Building;
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&building, 500, false, false, false),
+                "state_not_cleanup_eligible",
+            );
+            // Published → state_not_cleanup_eligible.
+            let mut published = base;
+            published.state = meta::SpireEpochState::Published;
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&published, 500, false, false, false),
+                "state_not_cleanup_eligible",
+            );
+            // Retired with active queries → active_queries.
+            let mut active = base;
+            active.active_query_count = 3;
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&active, 500, false, false, false),
+                "active_queries",
+            );
+            // Retired and retained_retired → retained_retired_epoch.
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&base, 500, false, true, false),
+                "retained_retired_epoch",
+            );
+            // Retired within retention window → retention_window.
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&base, 500, false, false, false),
+                "retention_window",
+            );
+            // Retired past retention window → cleanup_plan_retained.
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&base, 2_000, false, false, false),
+                "cleanup_plan_retained",
+            );
+            // Failed within retention → retention_window.
+            let mut failed = base;
+            failed.state = meta::SpireEpochState::Failed;
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&failed, 500, false, false, false),
+                "retention_window",
+            );
+            // Failed past retention → cleanup_plan_retained.
+            assert_eq!(
+                epoch_cleanup_blocked_reason(&failed, 2_000, false, false, false),
+                "cleanup_plan_retained",
+            );
         }
 
         #[test]
