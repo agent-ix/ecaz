@@ -740,9 +740,15 @@ pub(crate) struct PlannerIntegrationSnapshot {
 }
 
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+    // SAFETY: The index relation is live while its reloptions are decoded for
+    // admin diagnostics.
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
+    // SAFETY: The index relation is live and metadata is read under a shared
+    // buffer lock.
     let metadata = unsafe { read_metadata_page(index_relation) };
+    // SAFETY: The index relation is live while shared page traversal counts
+    // live HNSW element tuples.
     let total_live_nodes = unsafe { count_element_tuples(index_relation) };
     let inserted_since_rebuild =
         usize::try_from(metadata.inserted_since_rebuild).unwrap_or_else(|_| {
@@ -752,6 +758,8 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
             )
         });
     IndexAdminSnapshot {
+        // SAFETY: The index relation is live while its main-fork block count is
+        // copied into the snapshot.
         block_count: unsafe {
             pg_sys::RelationGetNumberOfBlocksInFork(
                 index_relation,
@@ -782,6 +790,8 @@ fn insert_drift_fraction(total_live_nodes: usize, inserted_since_rebuild: usize)
 pub(crate) unsafe fn index_explain_snapshot(
     index_relation: pg_sys::Relation,
 ) -> IndexExplainSnapshot {
+    // SAFETY: The index relation is live for the duration of this diagnostic
+    // snapshot and admin snapshot reads only relation metadata.
     let admin = unsafe { index_admin_snapshot(index_relation) };
     let translation = super::cost::strategy_translation_snapshot();
     let explain = super::explain::explain_option_snapshot();
@@ -803,15 +813,24 @@ pub(crate) unsafe fn index_explain_snapshot(
 }
 
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+    // SAFETY: The index relation is live while its reloptions are decoded for
+    // cost diagnostics.
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
+    // SAFETY: The index relation is live and metadata is read under a shared
+    // buffer lock.
     let metadata = unsafe { read_metadata_page(index_relation) };
+    // SAFETY: The index relation is live while its main-fork block count is read.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let index_pages = f64::from(block_count);
+    // SAFETY: `index_relation` is a live Relation and `rd_rel` points at
+    // PostgreSQL's relation catalog tuple for the relation lifetime.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
+    // SAFETY: Planner cost constants are read from PostgreSQL GUC state for this
+    // backend without retaining raw pointers.
     let constants = unsafe { super::cost::current_planner_cost_constants() };
     // Block 0 is always the metadata page; an empty index has block_count == 1.
     // FR-020's "Empty index (0 data pages)" gate must trip on
@@ -895,8 +914,12 @@ pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
 pub(crate) unsafe fn planner_integration_snapshot(
     index_relation: pg_sys::Relation,
 ) -> PlannerIntegrationSnapshot {
+    // SAFETY: The index relation is live for the duration of this diagnostic
+    // snapshot and admin snapshot reads only relation metadata.
     let admin = unsafe { index_admin_snapshot(index_relation) };
+    // SAFETY: Delegates to snapshot helpers using the same live index relation.
     let explain = unsafe { index_explain_snapshot(index_relation) };
+    // SAFETY: Delegates to snapshot helpers using the same live index relation.
     let cost = unsafe { index_cost_snapshot(index_relation) };
     let diagnostics = pg18_diagnostics_snapshot();
     let stream = read_stream_snapshot();
@@ -942,6 +965,8 @@ pub(crate) struct DebugPlannerTuningSnapshot {
 
 #[cfg(any(test, feature = "pg_test"))]
 fn planner_tuning_snapshot(index_relation: pg_sys::Relation) -> DebugPlannerTuningSnapshot {
+    // SAFETY: Test/debug callers hold the index relation open while the admin
+    // snapshot reads metadata and reloptions.
     let snapshot = unsafe { index_admin_snapshot(index_relation) };
     DebugPlannerTuningSnapshot {
         relation_ef_search: snapshot.relation_ef_search,
@@ -966,6 +991,8 @@ unsafe fn read_data_page(
     index_relation: pg_sys::Relation,
     block_number: u32,
 ) -> DebugIndexDataPage {
+    // SAFETY: The index relation is live and `block_number` was selected from
+    // the current main-fork block range.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -978,12 +1005,16 @@ unsafe fn read_data_page(
     let raw_page = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
     let page_header = raw_page.cast::<pg_sys::PageHeaderData>();
+    // SAFETY: The buffer guard pins the page while the line pointer count is
+    // read from the page header.
     let line_pointer_count = ((unsafe { (*page_header).pd_lower } as usize
         - size_of::<pg_sys::PageHeaderData>())
         / size_of::<pg_sys::ItemIdData>()) as u16;
 
     let mut tuples = Vec::with_capacity(line_pointer_count as usize);
     for offset in 1..=line_pointer_count {
+        // SAFETY: The page is shared-locked and `offset` is bounded by the page
+        // line pointer count before tuple bytes are copied.
         if let Some(tuple) = unsafe {
             with_page_line_tuple_bytes(
                 raw_page,
@@ -1011,13 +1042,18 @@ pub(crate) unsafe fn debug_index_metadata(
     index_oid: pg_sys::Oid,
 ) -> (u32, i32, i32, page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_metadata");
+    // SAFETY: The index relation guard keeps the relation open while reloptions
+    // are decoded.
     let options = unsafe { super::options::relation_options(index_relation.as_ptr()) };
+    // SAFETY: The index relation guard keeps the relation open while the
+    // main-fork block count is read.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(
             index_relation.as_ptr(),
             pg_sys::ForkNumber::MAIN_FORKNUM,
         )
     };
+    // SAFETY: The index relation guard keeps the metadata page readable.
     let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };
 
     (block_count, options.m, options.ef_construction, metadata)
@@ -1029,6 +1065,8 @@ pub(crate) unsafe fn debug_update_index_metadata(
     metadata: page::MetadataPage,
 ) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_update_index_metadata");
+    // SAFETY: The index relation guard keeps the relation open while the
+    // metadata page is rewritten under exclusive lock.
     unsafe { update_metadata_page(index_relation.as_ptr(), metadata) };
 }
 
@@ -1039,10 +1077,15 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
+    // SAFETY: The test constructs callback-duration vacuum info and invokes the
+    // AM bulkdelete entry with no delete callback for stats.
     let stats = unsafe {
         super::vacuum::ec_hnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
     };
+    // SAFETY: The same vacuum info and stats pointer are valid for cleanup.
     let stats = unsafe { super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats) };
+    // SAFETY: The AM returned a valid stats pointer; copy it before guards leave
+    // scope.
     let result = unsafe { *stats };
 
     result
