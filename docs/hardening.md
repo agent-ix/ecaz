@@ -194,6 +194,9 @@ Task 39 adds measurement lanes for the quality of existing tests:
   coverage run, then cite the owning review packet in the TSV note.
 - `make coverage-baseline-check`: fails when a critical Task 39 source file is
   missing from `fixtures/quality/coverage-baseline.tsv`.
+- `make test-quality-ci-audit`: checks that CI still runs the Task 39 coverage
+  lane on PRs, mutation lane weekly/manual, and flake-hunt lane nightly/manual
+  with artifact uploads.
 - `make coverage-report`: same lane with an HTML report under
   `target/quality/coverage/html`.
 - `make mutants MUTANTS_MODULE=src/quant/prod.rs`: checks for
@@ -202,7 +205,9 @@ Task 39 adds measurement lanes for the quality of existing tests:
   39. This is weekly/manual until survivor volume is triaged.
 - `make flake-hunt`: re-runs proptest and short fuzz targets across multiple
   seeds. Override with `FLAKE_HUNT_SEEDS=N` and
-  `FLAKE_HUNT_FUZZ_SECONDS=N`.
+  `FLAKE_HUNT_FUZZ_SECONDS=N`. The lane writes `manifest.txt` and
+  `expanded-commands.txt` under `target/quality/flake-hunt` by default so
+  nightly/manual CI runs preserve the exact seed budget and expanded commands.
 
 Current interpretation:
 
@@ -305,8 +310,10 @@ rather than relying on a later ARM/x86 mutation sweep to discover the gap.
 ### Flake-Hunt Seeds
 
 `make flake-hunt` defaults to 8 seeds and short fuzz runs. Nightly runs should
-record the seed count, fuzz seconds, and every expanded seed command in the
-packet log. A nondeterministic failure packet must include:
+record the seed count, fuzz seconds, and every expanded seed command in
+`target/quality/flake-hunt/manifest.txt` and
+`target/quality/flake-hunt/expanded-commands.txt`; CI uploads that directory as
+the `test-quality-flake-hunt` artifact. A nondeterministic failure packet must include:
 
 - the failing seed,
 - the lane and target name,

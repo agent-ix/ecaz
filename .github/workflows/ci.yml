@@ -407,6 +407,13 @@ jobs:
       - name: Seed sweep
         run: make flake-hunt FLAKE_HUNT_SEEDS=8 FLAKE_HUNT_FUZZ_SECONDS=10
 
+      - name: Upload flake-hunt artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-quality-flake-hunt
+          path: target/quality/flake-hunt
+
   benchmarks:
     name: Benchmark Regression
     runs-on: ubuntu-24.04

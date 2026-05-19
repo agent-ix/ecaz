@@ -2,7 +2,7 @@
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded miri-tree miri-many-seeds miri-full careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report coverage-baseline-check mutants mutants-full flake-hunt
+.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report coverage-baseline-check test-quality-ci-audit mutants mutants-full flake-hunt
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 .PHONY: recall-gate recall-gate-full cross-am-gate cost-gate
 
@@ -363,6 +363,7 @@ MUTANTS_MODULE ?=
 MUTANTS_JOBS ?= 0
 FLAKE_HUNT_SEEDS ?= 8
 FLAKE_HUNT_FUZZ_SECONDS ?= 10
+FLAKE_HUNT_OUTPUT_DIR ?= target/quality/flake-hunt
 
 coverage:
 	bash scripts/hardening.sh coverage --output-dir $(COVERAGE_OUTPUT_DIR)
@@ -373,6 +374,9 @@ coverage-report:
 coverage-baseline-check:
 	bash scripts/check_coverage_baseline_complete.sh fixtures/quality/coverage-baseline.tsv
 
+test-quality-ci-audit:
+	python3 scripts/check_task39_quality_ci.py
+
 mutants:
 	@if [ -z "$(MUTANTS_MODULE)" ]; then echo "error: set MUTANTS_MODULE=src/path.rs"; exit 2; fi
 	bash scripts/hardening.sh mutants --file $(MUTANTS_MODULE) --output-dir $(MUTANTS_OUTPUT_DIR) --jobs $(MUTANTS_JOBS)
@@ -381,7 +385,7 @@ mutants-full:
 	bash scripts/hardening.sh mutants-full --output-dir $(MUTANTS_OUTPUT_DIR) --jobs $(MUTANTS_JOBS)
 
 flake-hunt:
-	bash scripts/hardening.sh flake-hunt --seeds $(FLAKE_HUNT_SEEDS) --fuzz-seconds $(FLAKE_HUNT_FUZZ_SECONDS)
+	bash scripts/hardening.sh flake-hunt --seeds $(FLAKE_HUNT_SEEDS) --fuzz-seconds $(FLAKE_HUNT_FUZZ_SECONDS) --output-dir $(FLAKE_HUNT_OUTPUT_DIR)
 
 # --- Sanitizers / live-cluster hardening ---
 
