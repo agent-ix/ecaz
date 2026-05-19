@@ -9,7 +9,7 @@ mod tests {
         merge_candidate_model_inputs, SpireCandidateMergeModelInput,
     };
     use super::epoch_publish_model::{SpireEpochPublishModel, SpireEpochPublishVisibility};
-    use shuttle::sync::{Arc, Mutex};
+    use shuttle::sync::{Arc, Mutex, RwLock};
     use shuttle::thread;
 
     fn candidate(
@@ -75,18 +75,19 @@ mod tests {
     fn epoch_publish_visibility_never_exposes_partial_replacement() {
         shuttle::check_random(
             || {
-                let model = Arc::new(Mutex::new(SpireEpochPublishModel::new(7)));
+                let model = Arc::new(RwLock::new(SpireEpochPublishModel::new(7)));
                 let observed = Arc::new(Mutex::new(Vec::new()));
 
                 let writer = {
                     let model = Arc::clone(&model);
                     thread::spawn(move || {
-                        let mut model = model.lock().unwrap();
+                        let mut model = model.write().unwrap();
                         model.begin_publish(8).expect("publish should begin");
                         assert_eq!(
                             model.scanner_visibility(),
                             SpireEpochPublishVisibility::Old { epoch: 7 }
                         );
+                        thread::yield_now();
                         model.commit_publish().expect("publish should commit");
                     })
                 };
@@ -94,15 +95,18 @@ mod tests {
                     let model = Arc::clone(&model);
                     let observed = Arc::clone(&observed);
                     thread::spawn(move || {
-                        let model = model.lock().unwrap();
-                        observed.lock().unwrap().push(model.scanner_visibility());
+                        for _ in 0..2 {
+                            let visibility = model.read().unwrap().scanner_visibility();
+                            observed.lock().unwrap().push(visibility);
+                            thread::yield_now();
+                        }
                     })
                 };
 
                 writer.join().unwrap();
                 scanner.join().unwrap();
 
-                let final_visibility = model.lock().unwrap().active_visibility();
+                let final_visibility = model.read().unwrap().active_visibility();
                 assert_eq!(
                     final_visibility,
                     SpireEpochPublishVisibility::New { epoch: 8 }

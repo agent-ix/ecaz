@@ -333,7 +333,13 @@ with either an interrupt check or a follow-up task.
   simulation in `hardening/sim-spire/`. Current coverage drives path-lifted
   remote transport request/response state through deterministic UDP delivery,
   network partition handling, degraded skip behavior, stale served-epoch
-  rejection, and candidate merge selection.
+  rejection, and candidate merge selection. Set `SIM_SPIRE_SEEDS=N` to sweep
+  multiple Turmoil seeds per network scenario while keeping the default local
+  lane at one seed.
+- `make sim-spire-remote-deep`: pre-release / post-refactor budget knob for the
+  same simulation lane. It currently runs with
+  `SIM_SPIRE_REMOTE_DEEP_SEEDS=1000` by default and is intentionally not part
+  of the standard local hardening rollup.
 - `make kani`: bounded proof for `ItemPointer` decode length behavior.
 
 Kani is intentionally separate from normal `cargo test` so the repo does not

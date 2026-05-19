@@ -31,6 +31,20 @@ mod tests {
     const PARTITION_PORT: u16 = 46_041;
     const STALE_PORT: u16 = 46_042;
 
+    fn sim_spire_seed_count() -> u64 {
+        std::env::var("SIM_SPIRE_SEEDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(1)
+    }
+
+    fn sim_builder(seed: u64) -> turmoil::Builder {
+        let mut builder = turmoil::Builder::new();
+        builder.rng_seed(seed).enable_random_order();
+        builder
+    }
+
     #[derive(Clone)]
     struct NodeSpec {
         host: &'static str,
@@ -207,129 +221,141 @@ mod tests {
 
     #[test]
     fn turmoil_candidate_receive_merges_async_remote_responses() -> turmoil::Result {
-        let mut sim = turmoil::Builder::new().build();
-        add_node(
-            &mut sim,
-            NodeSpec {
-                host: "node-2",
-                node_id: 2,
-                served_epoch: 7,
-                score: 0.40,
-                dedupe_key: b"global-vec".to_vec(),
-            },
-            MERGE_PORT,
-        );
-        add_node(
-            &mut sim,
-            NodeSpec {
-                host: "node-3",
-                node_id: 3,
-                served_epoch: 7,
-                score: 0.20,
-                dedupe_key: b"global-vec".to_vec(),
-            },
-            MERGE_PORT,
-        );
-        sim.client("client", async move {
-            let state = run_client(
-                SpireRemoteTransportSimConsistency::Strict,
-                vec![
-                    request(2, SpireRemoteTransportSimConsistency::Strict),
-                    request(3, SpireRemoteTransportSimConsistency::Strict),
-                ],
-                None,
+        for seed in 0..sim_spire_seed_count() {
+            let mut sim = sim_builder(seed).build();
+            add_node(
+                &mut sim,
+                NodeSpec {
+                    host: "node-2",
+                    node_id: 2,
+                    served_epoch: 7,
+                    score: 0.40,
+                    dedupe_key: b"global-vec".to_vec(),
+                },
                 MERGE_PORT,
-            )
-            .await;
-            let summary = state.summary(Some(1)).expect("summary should build");
-            assert_eq!(summary.dispatch_count, 2);
-            assert_eq!(summary.ready_dispatch_count, 2);
-            assert_eq!(summary.failed_dispatch_count, 0);
-            assert_eq!(summary.selected_candidate_count, 1);
-            assert_eq!(summary.selected_input_nodes, vec![3]);
-            assert_eq!(summary.status, SPIRE_REMOTE_SIM_STATUS_READY);
-            Ok(())
-        });
-        sim.run()
+            );
+            add_node(
+                &mut sim,
+                NodeSpec {
+                    host: "node-3",
+                    node_id: 3,
+                    served_epoch: 7,
+                    score: 0.20,
+                    dedupe_key: b"global-vec".to_vec(),
+                },
+                MERGE_PORT,
+            );
+            sim.client("client", async move {
+                let state = run_client(
+                    SpireRemoteTransportSimConsistency::Strict,
+                    vec![
+                        request(2, SpireRemoteTransportSimConsistency::Strict),
+                        request(3, SpireRemoteTransportSimConsistency::Strict),
+                    ],
+                    None,
+                    MERGE_PORT,
+                )
+                .await;
+                let summary = state.summary(Some(1)).expect("summary should build");
+                assert_eq!(summary.dispatch_count, 2, "seed {seed}");
+                assert_eq!(summary.ready_dispatch_count, 2, "seed {seed}");
+                assert_eq!(summary.failed_dispatch_count, 0, "seed {seed}");
+                assert_eq!(summary.selected_candidate_count, 1, "seed {seed}");
+                assert_eq!(summary.selected_input_nodes, vec![3], "seed {seed}");
+                assert_eq!(summary.status, SPIRE_REMOTE_SIM_STATUS_READY, "seed {seed}");
+                Ok(())
+            });
+            sim.run()?;
+        }
+        Ok(())
     }
 
     #[test]
     fn turmoil_partition_degraded_skips_unreachable_remote() -> turmoil::Result {
-        let mut sim = turmoil::Builder::new().build();
-        add_node(
-            &mut sim,
-            NodeSpec {
-                host: "node-2",
-                node_id: 2,
-                served_epoch: 7,
-                score: 0.30,
-                dedupe_key: b"node-2-vec".to_vec(),
-            },
-            PARTITION_PORT,
-        );
-        add_node(
-            &mut sim,
-            NodeSpec {
-                host: "node-3",
-                node_id: 3,
-                served_epoch: 7,
-                score: 0.10,
-                dedupe_key: b"node-3-vec".to_vec(),
-            },
-            PARTITION_PORT,
-        );
-        sim.client("client", async move {
-            let state = run_client(
-                SpireRemoteTransportSimConsistency::Degraded,
-                vec![
-                    request(2, SpireRemoteTransportSimConsistency::Degraded),
-                    request(3, SpireRemoteTransportSimConsistency::Degraded),
-                ],
-                Some("node-3"),
+        for seed in 0..sim_spire_seed_count() {
+            let mut sim = sim_builder(seed).build();
+            add_node(
+                &mut sim,
+                NodeSpec {
+                    host: "node-2",
+                    node_id: 2,
+                    served_epoch: 7,
+                    score: 0.30,
+                    dedupe_key: b"node-2-vec".to_vec(),
+                },
                 PARTITION_PORT,
-            )
-            .await;
-            let summary = state.summary(Some(1)).expect("summary should build");
-            assert_eq!(summary.ready_dispatch_count, 1);
-            assert_eq!(summary.degraded_skipped_dispatch_count, 1);
-            assert_eq!(summary.failed_dispatch_count, 0);
-            assert_eq!(summary.selected_input_nodes, vec![2]);
-            assert_eq!(summary.status, SPIRE_REMOTE_SIM_STATUS_READY);
-            Ok(())
-        });
-        sim.run()
+            );
+            add_node(
+                &mut sim,
+                NodeSpec {
+                    host: "node-3",
+                    node_id: 3,
+                    served_epoch: 7,
+                    score: 0.10,
+                    dedupe_key: b"node-3-vec".to_vec(),
+                },
+                PARTITION_PORT,
+            );
+            sim.client("client", async move {
+                let state = run_client(
+                    SpireRemoteTransportSimConsistency::Degraded,
+                    vec![
+                        request(2, SpireRemoteTransportSimConsistency::Degraded),
+                        request(3, SpireRemoteTransportSimConsistency::Degraded),
+                    ],
+                    Some("node-3"),
+                    PARTITION_PORT,
+                )
+                .await;
+                let summary = state.summary(Some(1)).expect("summary should build");
+                assert_eq!(summary.ready_dispatch_count, 1, "seed {seed}");
+                assert_eq!(summary.degraded_skipped_dispatch_count, 1, "seed {seed}");
+                assert_eq!(summary.failed_dispatch_count, 0, "seed {seed}");
+                assert_eq!(summary.selected_input_nodes, vec![2], "seed {seed}");
+                assert_eq!(summary.status, SPIRE_REMOTE_SIM_STATUS_READY, "seed {seed}");
+                Ok(())
+            });
+            sim.run()?;
+        }
+        Ok(())
     }
 
     #[test]
     fn turmoil_strict_rejects_stale_served_epoch_response() -> turmoil::Result {
-        let mut sim = turmoil::Builder::new().build();
-        add_node(
-            &mut sim,
-            NodeSpec {
-                host: "node-2",
-                node_id: 2,
-                served_epoch: 6,
-                score: 0.10,
-                dedupe_key: b"stale-vec".to_vec(),
-            },
-            STALE_PORT,
-        );
-        sim.client("client", async move {
-            let state = run_client(
-                SpireRemoteTransportSimConsistency::Strict,
-                vec![request(2, SpireRemoteTransportSimConsistency::Strict)],
-                None,
+        for seed in 0..sim_spire_seed_count() {
+            let mut sim = sim_builder(seed).build();
+            add_node(
+                &mut sim,
+                NodeSpec {
+                    host: "node-2",
+                    node_id: 2,
+                    served_epoch: 6,
+                    score: 0.10,
+                    dedupe_key: b"stale-vec".to_vec(),
+                },
                 STALE_PORT,
-            )
-            .await;
-            let summary = state.summary(Some(1)).expect("summary should build");
-            assert_eq!(summary.ready_dispatch_count, 0);
-            assert_eq!(summary.failed_dispatch_count, 1);
-            assert_eq!(summary.selected_candidate_count, 0);
-            assert_eq!(summary.status, SPIRE_REMOTE_SIM_STATUS_RECEIVE_FAILED);
-            Ok(())
-        });
-        sim.run()
+            );
+            sim.client("client", async move {
+                let state = run_client(
+                    SpireRemoteTransportSimConsistency::Strict,
+                    vec![request(2, SpireRemoteTransportSimConsistency::Strict)],
+                    None,
+                    STALE_PORT,
+                )
+                .await;
+                let summary = state.summary(Some(1)).expect("summary should build");
+                assert_eq!(summary.ready_dispatch_count, 0, "seed {seed}");
+                assert_eq!(summary.failed_dispatch_count, 1, "seed {seed}");
+                assert_eq!(summary.selected_candidate_count, 0, "seed {seed}");
+                assert_eq!(
+                    summary.status, SPIRE_REMOTE_SIM_STATUS_RECEIVE_FAILED,
+                    "seed {seed}"
+                );
+                Ok(())
+            });
+            sim.run()?;
+        }
+        Ok(())
     }
 
     #[test]

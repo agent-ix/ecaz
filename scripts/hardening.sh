@@ -26,6 +26,7 @@ lane flags:
   loom-real runs the real ECAZ Loom path-lifted harness
   shuttle-real runs the real ECAZ Shuttle path-lifted harness
   sim-spire-remote runs the real ECAZ deterministic SPIRE remote simulation
+    set SIM_SPIRE_SEEDS=N to sweep N Turmoil seeds per network scenario
   any lane --log-file FILE
 EOF
 }

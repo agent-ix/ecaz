@@ -50,22 +50,20 @@ struct PgLockedDsmInsertStateCell(*mut pg_sys::pg_atomic_uint32);
 
 impl EcHnswConcurrentDsmInsertStateCell for PgLockedDsmInsertStateCell {
     fn load_acquire(&self) -> u32 {
-        unsafe { (*self.0).value }
+        unsafe { pg_sys::pg_atomic_read_u32(self.0) }
     }
 
     fn store_release(&self, value: u32) {
         unsafe {
-            (*self.0).value = value;
+            pg_sys::pg_atomic_write_membarrier_u32(self.0, value);
         }
     }
 
     fn compare_exchange_acqrel_acquire(&self, current: u32, new: u32) -> bool {
-        if self.load_acquire() == current {
-            self.store_release(new);
-            true
-        } else {
-            false
-        }
+        let mut expected = current;
+        // The lifted concurrent DSM insert protocol requires real CAS semantics.
+        // PostgreSQL's pg_atomic_compare_exchange_u32 is the production contract.
+        unsafe { pg_sys::pg_atomic_compare_exchange_u32(self.0, &mut expected, new) }
     }
 }
 
