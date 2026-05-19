@@ -32,6 +32,9 @@ pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqRequestPlanRow> {
+    // SAFETY: forwards the live index relation and caller-validated remote
+    // search request fields into the execution planner that owns relation
+    // page/catalog reads.
     let rows = unsafe {
         remote_search_execution_plan_rows(
             index_relation,
@@ -82,6 +85,8 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq request summary top_k exceeds u64")?;
+        // SAFETY: this SQL diagnostic wrapper forwards the live index relation
+        // and checked request fields to the request-plan builder.
         let rows = unsafe {
             remote_search_libpq_request_plan_rows(
                 index_relation,
@@ -318,6 +323,8 @@ pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqConnectionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqConnectionPlanRow>, String> {
+        // SAFETY: forwards the live index relation and checked request fields
+        // through the request-plan wrapper before local connection enrichment.
         let request_rows = unsafe {
             remote_search_libpq_request_plan_rows(
                 index_relation,
@@ -328,8 +335,12 @@ pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
                 consistency_mode,
             )
         };
+        // SAFETY: rd_id is stable while the caller keeps index_relation open;
+        // it is copied as an OID for descriptor lookups and not dereferenced
+        // after the relation lifetime ends.
+        let index_oid = unsafe { (*index_relation).rd_id };
         remote_search_libpq_connection_plan_rows_from_requests(
-            unsafe { (*index_relation).rd_id },
+            index_oid,
             &request_rows,
         )
     })();
@@ -441,6 +452,8 @@ pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq connection summary top_k exceeds u64")?;
+        // SAFETY: forwards the live index relation and checked request fields
+        // to the connection-plan builder that performs descriptor enrichment.
         let rows = unsafe {
             remote_search_libpq_connection_plan_rows(
                 index_relation,
@@ -533,6 +546,8 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqDispatchPlanRow> {
+    // SAFETY: forwards the live index relation and checked request fields into
+    // connection planning before deriving pure Rust dispatch rows.
     let connection_rows = unsafe {
         remote_search_libpq_connection_plan_rows(
             index_relation,
@@ -613,6 +628,8 @@ pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
     node_id: u32,
     served_epoch: u64,
 ) -> SpireCoordinatorInsertDispatchPlanRow {
+    // SAFETY: rd_id is stable while the caller keeps index_relation open; this
+    // copies the OID for descriptor lookup and result reporting only.
     let index_oid = unsafe { (*index_relation).rd_id };
     let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {
         let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;

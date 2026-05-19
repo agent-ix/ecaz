@@ -1367,13 +1367,6 @@ src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2011
 src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2015
 src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:2016
 src/am/ec_spire/coordinator/remote_candidates/dispatch.rs:34
-src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:321
-src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:332
-src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:35
-src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:444
-src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:536
-src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:616
-src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:85
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:10
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:123
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:131
