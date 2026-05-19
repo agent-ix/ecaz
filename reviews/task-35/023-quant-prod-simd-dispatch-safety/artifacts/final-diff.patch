@@ -1,0 +1,113 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 640e747d..417b5c3c 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -2476,18 +2476,6 @@ src/am/ec_spire/vacuum/mod.rs:74
+ src/am/ec_spire/vacuum/mod.rs:88
+ src/am/ec_spire/vacuum/mod.rs:89
+ src/am/ec_spire/vacuum/mod.rs:93
+-src/quant/prod.rs:1806
+-src/quant/prod.rs:1807
+-src/quant/prod.rs:1808
+-src/quant/prod.rs:1816
+-src/quant/prod.rs:272
+-src/quant/prod.rs:290
+-src/quant/prod.rs:516
+-src/quant/prod.rs:520
+-src/quant/prod.rs:759
+-src/quant/prod.rs:771
+-src/quant/prod.rs:781
+-src/quant/prod.rs:783
+ src/tests/build.rs:251
+ src/tests/build.rs:252
+ src/tests/build.rs:510
+diff --git a/src/quant/prod.rs b/src/quant/prod.rs
+index adeee1ab..55ffb84c 100644
+--- a/src/quant/prod.rs
++++ b/src/quant/prod.rs
+@@ -269,6 +269,8 @@ impl ProdQuantizer {
+             return None;
+         }
+         let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
++        // SAFETY: runtime feature detection above proves AVX2/FMA, and
++        // `qjl_enabled` ensures this test path supplies QJL payload bytes.
+         Some(unsafe {
+             self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
+         })
+@@ -287,6 +289,8 @@ impl ProdQuantizer {
+             return None;
+         }
+         let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
++        // SAFETY: runtime feature detection above proves NEON, and
++        // `qjl_enabled` ensures this test path supplies QJL payload bytes.
+         Some(unsafe {
+             self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
+         })
+@@ -513,10 +517,14 @@ impl ProdQuantizer {
+ 
+         match backend() {
+             #[cfg(target_arch = "x86_64")]
++            // SAFETY: `backend()` only selects `Avx2Fma` when AVX2/FMA are
++            // available, and this branch is only reached when QJL is active.
+             SimdBackend::Avx2Fma => unsafe {
+                 self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
+             },
+             #[cfg(target_arch = "aarch64")]
++            // SAFETY: `backend()` only selects `Neon` when NEON is available,
++            // and this branch is only reached when QJL is active.
+             SimdBackend::Neon => unsafe {
+                 self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
+             },
+@@ -756,6 +764,8 @@ impl ProdQuantizer {
+         }
+         let (mse_a, _) = self.split_code_bytes(code_a);
+         let (mse_b, _) = self.split_code_bytes(code_b);
++        // SAFETY: runtime feature detection proves AVX2/FMA and the guard above
++        // restricts this fast path to 3-bit MSE codes.
+         Some(unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) })
+     }
+ 
+@@ -768,6 +778,8 @@ impl ProdQuantizer {
+         }
+         let (mse_a, _) = self.split_code_bytes(code_a);
+         let (mse_b, _) = self.split_code_bytes(code_b);
++        // SAFETY: runtime feature detection proves NEON and the guard above
++        // restricts this fast path to 3-bit MSE codes.
+         Some(unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) })
+     }
+ 
+@@ -778,8 +790,12 @@ impl ProdQuantizer {
+         if mse_bits(self.original_dim, self.bits) == 3 {
+             match backend() {
+                 #[cfg(target_arch = "x86_64")]
++                // SAFETY: `backend()` only selects `Avx2Fma` when AVX2/FMA are
++                // available, and the enclosing branch restricts codes to 3 bits.
+                 SimdBackend::Avx2Fma => unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) },
+                 #[cfg(target_arch = "aarch64")]
++                // SAFETY: `backend()` only selects `Neon` when NEON is available,
++                // and the enclosing branch restricts codes to 3 bits.
+                 SimdBackend::Neon => unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) },
+                 SimdBackend::Scalar => self.score_ip_mse_codes_scalar(mse_a, mse_b),
+             }
+@@ -1803,8 +1819,12 @@ mod tests {
+             let indices = (0..8).map(|_| rng.gen_range(0u16..8)).collect::<Vec<_>>();
+             let packed = pack_mse_indices(&indices, 3);
+             let scalar = decode_eight_3bit_aligned(&packed, 0);
++            // SAFETY: this test exits unless AVX2 is available; these constants
++            // are immediate vector values and do not access memory.
+             let shifts = unsafe { _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21) };
+             let mask = unsafe { _mm256_set1_epi32(0x7) };
++            // SAFETY: AVX2 is available and `packed` contains one complete
++            // eight-lane 3-bit code group.
+             let lanes = unsafe {
+                 decode_eight_3bit_lanes_avx2(
+                     decode_eight_3bit_aligned_word(&packed, 0),
+@@ -1813,6 +1833,8 @@ mod tests {
+                 )
+             };
+             let mut avx = [0_i32; 8];
++            // SAFETY: `avx` is exactly eight i32 lanes, matching one 256-bit
++            // unaligned integer vector store.
+             unsafe { _mm256_storeu_si256(avx.as_mut_ptr().cast(), lanes) };
+             assert_eq!(avx.map(|lane| lane as usize), scalar);
+         }
