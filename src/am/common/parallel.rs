@@ -552,11 +552,17 @@ mod tests {
     #[derive(Copy, Clone)]
     struct SharedParallelScanState(*mut EcParallelScanState);
 
+    // SAFETY: tests create this pointer from stack storage that remains alive
+    // for the entire scoped-thread join, and shared access goes through atomics.
     unsafe impl Send for SharedParallelScanState {}
+    // SAFETY: the pointed-at descriptor is test-owned for the duration of the
+    // scoped threads, and concurrent fields use atomic slot operations.
     unsafe impl Sync for SharedParallelScanState {}
 
     impl SharedParallelScanState {
-        unsafe fn attachment(self) -> ParallelScanAttachment {
+        fn attachment(self) -> ParallelScanAttachment {
+            // SAFETY: `SharedParallelScanState` is only built after test
+            // initialization writes a valid AM-private descriptor header.
             unsafe { validate_parallel_scan_state(self.0) }
                 .expect("shared parallel scan state should validate")
         }
@@ -584,7 +590,7 @@ mod tests {
     const TEST_PARALLEL_SCAN_OFFSET: usize = 64;
     const TEST_WORKER_SLOT_COUNT: u32 = 3;
 
-    unsafe fn test_parallel_scan_desc(
+    fn test_parallel_scan_desc(
         storage: &mut TestParallelScanStorage,
     ) -> pg_sys::ParallelIndexScanDesc {
         let parallel_scan = storage
@@ -593,34 +599,186 @@ mod tests {
             .cast::<pg_sys::ParallelIndexScanDescData>();
         #[cfg(feature = "pg17")]
         {
+            // SAFETY: `parallel_scan` points into aligned test storage large
+            // enough for PostgreSQL's parallel scan descriptor header.
             unsafe { (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET };
         }
         #[cfg(feature = "pg18")]
         {
+            // SAFETY: `parallel_scan` points into aligned test storage large
+            // enough for PostgreSQL's parallel scan descriptor header.
             unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
         }
         parallel_scan
     }
 
-    unsafe fn test_parallel_scan_desc_and_target(
+    fn test_parallel_scan_desc_and_target(
         storage: &mut TestParallelScanStorage,
     ) -> (pg_sys::ParallelIndexScanDesc, *mut c_void) {
         let base = storage.bytes.as_mut_ptr();
         let parallel_scan = base.cast::<pg_sys::ParallelIndexScanDescData>();
         #[cfg(feature = "pg17")]
         {
+            // SAFETY: `parallel_scan` points into aligned test storage large
+            // enough for PostgreSQL's parallel scan descriptor header.
             unsafe { (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET };
         }
         #[cfg(feature = "pg18")]
         {
+            // SAFETY: `parallel_scan` points into aligned test storage large
+            // enough for PostgreSQL's parallel scan descriptor header.
             unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
         }
+        // SAFETY: the fixed test offset stays within `TestParallelScanStorage`
+        // and leaves enough space for the AM-private descriptor under test.
         let target = unsafe { base.add(TEST_PARALLEL_SCAN_OFFSET) }.cast::<c_void>();
         (parallel_scan, target)
     }
 
-    unsafe fn test_parallel_scan_target(storage: &mut TestParallelScanStorage) -> *mut c_void {
+    fn test_parallel_scan_target(storage: &mut TestParallelScanStorage) -> *mut c_void {
+        // SAFETY: the fixed test offset stays within `TestParallelScanStorage`
+        // and leaves enough space for the AM-private descriptor under test.
         unsafe { storage.bytes.as_mut_ptr().add(TEST_PARALLEL_SCAN_OFFSET) }.cast::<c_void>()
+    }
+
+    fn initialize_test_parallel_scan_target(target: *mut c_void) {
+        // SAFETY: test targets come from `TestParallelScanStorage`, whose fixed
+        // AM-private offset reserves enough bytes for `TEST_WORKER_SLOT_COUNT`.
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+    }
+
+    fn test_parallel_scan_attachment(
+        parallel_scan: pg_sys::ParallelIndexScanDesc,
+    ) -> ParallelScanAttachment {
+        // SAFETY: test descriptors are initialized by `test_parallel_scan_desc`
+        // to point at the AM-private region inside `TestParallelScanStorage`.
+        unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state")
+    }
+
+    fn test_parallel_scan_attachment_error(
+        parallel_scan: pg_sys::ParallelIndexScanDesc,
+    ) -> &'static str {
+        // SAFETY: this negative test intentionally passes an uninitialized
+        // descriptor region and expects validation to reject it.
+        unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect_err("attachment should reject uninitialized AM-private state")
+    }
+
+    fn claim_test_worker_slot(attachment: &ParallelScanAttachment) -> u32 {
+        // SAFETY: attachments used by tests come from validated test
+        // descriptors and remain live for the duration of each test.
+        unsafe { claim_parallel_scan_worker_slot(attachment) }.expect("claim should succeed")
+    }
+
+    fn try_claim_test_worker_slot(
+        attachment: &ParallelScanAttachment,
+    ) -> Result<u32, &'static str> {
+        // SAFETY: attachments used by tests come from validated test
+        // descriptors and remain live for the duration of each test.
+        unsafe { claim_parallel_scan_worker_slot(attachment) }
+    }
+
+    fn release_test_worker_slot(attachment: &ParallelScanAttachment, slot_index: u32) -> bool {
+        // SAFETY: the attachment state and slot index are produced by the same
+        // initialized test descriptor.
+        unsafe {
+            release_parallel_scan_worker_slot(attachment.state, slot_index, attachment.rescan_epoch)
+        }
+        .expect("release should succeed")
+    }
+
+    fn publish_test_worker_slot_runtime_snapshot(
+        attachment: &ParallelScanAttachment,
+        slot_index: u32,
+        runtime: EcParallelWorkerSlotRuntimeSnapshot,
+    ) -> bool {
+        // SAFETY: the attachment state and slot index are produced by the same
+        // initialized test descriptor.
+        unsafe {
+            publish_parallel_scan_worker_slot_runtime_snapshot(
+                attachment.state,
+                slot_index,
+                attachment.rescan_epoch,
+                runtime,
+            )
+        }
+        .expect("publish should succeed")
+    }
+
+    fn read_test_worker_slot_snapshot(
+        attachment: &ParallelScanAttachment,
+        slot_index: u32,
+    ) -> EcParallelWorkerSlotSnapshot {
+        // SAFETY: the attachment state and slot index are produced by the same
+        // initialized test descriptor.
+        unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
+            .expect("worker slot snapshot should read back")
+    }
+
+    fn reset_test_parallel_scan_state(parallel_scan: pg_sys::ParallelIndexScanDesc) -> u32 {
+        // SAFETY: test descriptors are initialized by `test_parallel_scan_desc`
+        // to point at the AM-private region inside `TestParallelScanStorage`.
+        unsafe { reset_parallel_scan_state(parallel_scan) }
+            .expect("parallel rescan should succeed")
+            .expect("parallel rescan should see initialized state")
+    }
+
+    fn worker_slot_for_test(
+        attachment: &ParallelScanAttachment,
+        slot_index: u32,
+    ) -> *mut EcParallelWorkerSlot {
+        // SAFETY: callers either pass an in-range test slot or intentionally
+        // use `worker_slot_error_for_test` for negative coverage.
+        unsafe { attachment.worker_slot(slot_index) }
+            .expect("slot index should stay within the configured capacity")
+    }
+
+    fn worker_slot_error_for_test(
+        attachment: &ParallelScanAttachment,
+        slot_index: u32,
+    ) -> &'static str {
+        // SAFETY: this negative test intentionally passes an out-of-range slot
+        // index and expects the helper to reject it before pointer arithmetic.
+        unsafe { attachment.worker_slot(slot_index) }
+            .expect_err("slot lookup should reject indices outside the descriptor capacity")
+    }
+
+    fn worker_slot_header_snapshot_for_test(
+        attachment: &ParallelScanAttachment,
+        slot_index: u32,
+    ) -> (u32, u32, u32) {
+        let slot = worker_slot_for_test(attachment, slot_index);
+        // SAFETY: `worker_slot_for_test` returned a pointer inside the
+        // validated AM-private test descriptor.
+        worker_slot_header_snapshot(unsafe { &*slot })
+    }
+
+    fn coordinator_claimed_worker_slots(attachment: &ParallelScanAttachment) -> u32 {
+        // SAFETY: validated attachments carry a coordinator pointer derived
+        // from the same AM-private test descriptor.
+        unsafe { &*attachment.coordinator }
+            .claimed_worker_slots
+            .load(Ordering::Acquire)
+    }
+
+    fn stage_claimed_state_for_rescan_test(attachment: &ParallelScanAttachment) {
+        // SAFETY: the staged coordinator and slot pointers are derived from the
+        // same validated descriptor and are reset by the test immediately after.
+        unsafe {
+            (&*attachment.coordinator)
+                .claimed_worker_slots
+                .store(2, Ordering::Release);
+            (&*attachment
+                .worker_slot(1)
+                .expect("slot index should stay in bounds"))
+                .flags
+                .store(EC_PARALLEL_WORKER_SLOT_CLAIMED, Ordering::Release);
+        }
     }
 
     #[test]
@@ -663,16 +821,11 @@ mod tests {
     #[test]
     fn initialize_parallel_scan_target_round_trips_through_attachment() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
 
         assert!(
             ptr::eq(attachment.state.cast::<c_void>(), target),
@@ -692,9 +845,7 @@ mod tests {
             "freshly initialized parallel scan state should start at epoch zero"
         );
         assert_eq!(
-            unsafe { &*attachment.coordinator }
-                .claimed_worker_slots
-                .load(Ordering::Acquire),
+            coordinator_claimed_worker_slots(&attachment),
             0,
             "freshly initialized coordinator state should start with no claimed worker slots"
         );
@@ -703,28 +854,20 @@ mod tests {
     #[test]
     fn initialize_parallel_scan_target_seeds_slot_headers() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
 
         for slot_index in 0..TEST_WORKER_SLOT_COUNT {
-            let slot = unsafe { attachment.worker_slot(slot_index) }
-                .expect("slot index should stay within the configured capacity");
             assert_eq!(
-                worker_slot_header_snapshot(unsafe { &*slot }),
+                worker_slot_header_snapshot_for_test(&attachment, slot_index),
                 (EC_PARALLEL_WORKER_SLOT_FREE, slot_index, 0),
                 "worker slot headers should be initialized deterministically"
             );
             assert_eq!(
-                unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
-                    .expect("worker slot snapshot should read back"),
+                read_test_worker_slot_snapshot(&attachment, slot_index),
                 EcParallelWorkerSlotSnapshot {
                     flags: EC_PARALLEL_WORKER_SLOT_FREE,
                     slot_index,
@@ -739,33 +882,24 @@ mod tests {
     #[test]
     fn claim_parallel_scan_worker_slot_claims_first_free_slots_in_order() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
 
         assert_eq!(
-            unsafe { claim_parallel_scan_worker_slot(&attachment) }
-                .expect("first claim should succeed"),
+            claim_test_worker_slot(&attachment),
             0,
             "first claim should reserve slot zero"
         );
         assert_eq!(
-            unsafe { claim_parallel_scan_worker_slot(&attachment) }
-                .expect("second claim should succeed"),
+            claim_test_worker_slot(&attachment),
             1,
             "second claim should reserve the next free slot"
         );
         assert_eq!(
-            unsafe { &*attachment.coordinator }
-                .claimed_worker_slots
-                .load(Ordering::Acquire),
+            coordinator_claimed_worker_slots(&attachment),
             2,
             "coordinator claim count should track the number of live claims"
         );
@@ -774,18 +908,12 @@ mod tests {
     #[test]
     fn publish_parallel_scan_worker_slot_runtime_snapshot_records_live_state() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
-        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
-            .expect("claim should succeed before publishing");
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
+        let slot_index = claim_test_worker_slot(&attachment);
         let runtime = EcParallelWorkerSlotRuntimeSnapshot {
             execution_phase: EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL,
             scan_dimensions: 1536,
@@ -799,20 +927,11 @@ mod tests {
         };
 
         assert!(
-            unsafe {
-                publish_parallel_scan_worker_slot_runtime_snapshot(
-                    attachment.state,
-                    slot_index,
-                    attachment.rescan_epoch,
-                    runtime,
-                )
-            }
-            .expect("publish should succeed"),
+            publish_test_worker_slot_runtime_snapshot(&attachment, slot_index, runtime),
             "publishing should update the claimed slot for the active epoch"
         );
         assert_eq!(
-            unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
-                .expect("worker slot snapshot should read back"),
+            read_test_worker_slot_snapshot(&attachment, slot_index),
             EcParallelWorkerSlotSnapshot {
                 flags: EC_PARALLEL_WORKER_SLOT_CLAIMED,
                 slot_index,
@@ -826,51 +945,28 @@ mod tests {
     #[test]
     fn release_parallel_scan_worker_slot_drops_live_claims_only_once() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
-        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
-            .expect("claim should succeed before release");
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
+        let slot_index = claim_test_worker_slot(&attachment);
 
         assert!(
-            unsafe {
-                release_parallel_scan_worker_slot(
-                    attachment.state,
-                    slot_index,
-                    attachment.rescan_epoch,
-                )
-            }
-            .expect("release should succeed"),
+            release_test_worker_slot(&attachment, slot_index),
             "release should report that it dropped a live claim"
         );
         assert!(
-            !unsafe {
-                release_parallel_scan_worker_slot(
-                    attachment.state,
-                    slot_index,
-                    attachment.rescan_epoch,
-                )
-            }
-            .expect("double release should stay benign"),
+            !release_test_worker_slot(&attachment, slot_index),
             "releasing the same slot twice should not underflow the claim count"
         );
         assert_eq!(
-            unsafe { &*attachment.coordinator }
-                .claimed_worker_slots
-                .load(Ordering::Acquire),
+            coordinator_claimed_worker_slots(&attachment),
             0,
             "coordinator claim count should return to zero after release"
         );
         assert_eq!(
-            unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
-                .expect("worker slot snapshot should stay readable"),
+            read_test_worker_slot_snapshot(&attachment, slot_index),
             EcParallelWorkerSlotSnapshot {
                 flags: EC_PARALLEL_WORKER_SLOT_FREE,
                 slot_index,
@@ -884,12 +980,9 @@ mod tests {
     #[test]
     fn miri_parallel_worker_slots_are_unique_under_threaded_contention() {
         let mut storage = TestParallelScanStorage::default();
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
+        initialize_test_parallel_scan_target(target);
         let shared_state = SharedParallelScanState(target.cast::<EcParallelScanState>());
         let worker_count = TEST_WORKER_SLOT_COUNT as usize + 2;
         let start = Arc::new(Barrier::new(worker_count));
@@ -903,8 +996,8 @@ mod tests {
                 let attempted = Arc::clone(&attempted);
                 scope.spawn(move || {
                     start.wait();
-                    let attachment = unsafe { shared_state.attachment() };
-                    let claim = unsafe { claim_parallel_scan_worker_slot(&attachment) };
+                    let attachment = shared_state.attachment();
+                    let claim = try_claim_test_worker_slot(&attachment);
                     match claim {
                         Ok(slot_index) => {
                             let runtime = EcParallelWorkerSlotRuntimeSnapshot {
@@ -919,15 +1012,11 @@ mod tests {
                                 active_result_has_current: worker_id % 2 == 0,
                             };
                             assert!(
-                                unsafe {
-                                    publish_parallel_scan_worker_slot_runtime_snapshot(
-                                        attachment.state,
-                                        slot_index,
-                                        attachment.rescan_epoch,
-                                        runtime,
-                                    )
-                                }
-                                .expect("claimed worker should publish runtime"),
+                                publish_test_worker_slot_runtime_snapshot(
+                                    &attachment,
+                                    slot_index,
+                                    runtime
+                                ),
                                 "claimed worker should publish into its active epoch slot"
                             );
                             claimed.lock().expect("claim log lock").push((
@@ -937,14 +1026,7 @@ mod tests {
                             ));
                             attempted.wait();
                             assert!(
-                                unsafe {
-                                    release_parallel_scan_worker_slot(
-                                        attachment.state,
-                                        slot_index,
-                                        attachment.rescan_epoch,
-                                    )
-                                }
-                                .expect("claimed worker should release"),
+                                release_test_worker_slot(&attachment, slot_index),
                                 "claimed worker should release exactly once"
                             );
                         }
@@ -960,7 +1042,7 @@ mod tests {
             }
         });
 
-        let attachment = unsafe { shared_state.attachment() };
+        let attachment = shared_state.attachment();
         let claimed = claimed.lock().expect("claim log lock");
         assert_eq!(
             claimed.len(),
@@ -982,8 +1064,7 @@ mod tests {
                 "slot {slot_index} should be claimed exactly once under contention"
             );
             assert_eq!(
-                unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
-                    .expect("worker slot snapshot should read back after threaded release"),
+                read_test_worker_slot_snapshot(&attachment, slot_index),
                 EcParallelWorkerSlotSnapshot {
                     flags: EC_PARALLEL_WORKER_SLOT_FREE,
                     slot_index,
@@ -994,9 +1075,7 @@ mod tests {
             );
         }
         assert_eq!(
-            unsafe { &*attachment.coordinator }
-                .claimed_worker_slots
-                .load(Ordering::Acquire),
+            coordinator_claimed_worker_slots(&attachment),
             0,
             "all threaded releases should return the coordinator claim count to zero"
         );
@@ -1005,50 +1084,37 @@ mod tests {
     #[test]
     fn miri_publish_parallel_scan_worker_slot_runtime_snapshot_rejects_stale_epoch() {
         let mut storage = TestParallelScanStorage::default();
-        let (parallel_scan, target) = unsafe { test_parallel_scan_desc_and_target(&mut storage) };
+        let (parallel_scan, target) = test_parallel_scan_desc_and_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
-        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
-            .expect("claim should succeed before stale publish check");
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
+        let slot_index = claim_test_worker_slot(&attachment);
 
         assert_eq!(
-            unsafe { reset_parallel_scan_state(parallel_scan) }
-                .expect("parallel rescan should succeed")
-                .expect("parallel rescan should see initialized state"),
+            reset_test_parallel_scan_state(parallel_scan),
             1,
             "rescan should advance the shared epoch before the stale publish check"
         );
         assert!(
-            !unsafe {
-                publish_parallel_scan_worker_slot_runtime_snapshot(
-                    attachment.state,
-                    slot_index,
-                    attachment.rescan_epoch,
-                    EcParallelWorkerSlotRuntimeSnapshot {
-                        execution_phase: EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK,
-                        scan_dimensions: 96,
-                        bootstrap_frontier_limit: 12,
-                        visible_frontier_len: 2,
-                        scheduler_frontier_len: 4,
-                        visited_count: 7,
-                        emitted_count: 1,
-                        active_result_pending_count: 1,
-                        active_result_has_current: true,
-                    },
-                )
-            }
-            .expect("stale publish should return a benign false"),
+            !publish_test_worker_slot_runtime_snapshot(
+                &attachment,
+                slot_index,
+                EcParallelWorkerSlotRuntimeSnapshot {
+                    execution_phase: EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK,
+                    scan_dimensions: 96,
+                    bootstrap_frontier_limit: 12,
+                    visible_frontier_len: 2,
+                    scheduler_frontier_len: 4,
+                    visited_count: 7,
+                    emitted_count: 1,
+                    active_result_pending_count: 1,
+                    active_result_has_current: true,
+                },
+            ),
             "publishing with a stale epoch should not mutate the reset slot"
         );
         assert_eq!(
-            unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
-                .expect("worker slot snapshot should remain readable after rescan"),
+            read_test_worker_slot_snapshot(&attachment, slot_index),
             EcParallelWorkerSlotSnapshot {
                 flags: EC_PARALLEL_WORKER_SLOT_FREE,
                 slot_index,
@@ -1062,57 +1128,32 @@ mod tests {
     #[test]
     fn reset_parallel_scan_state_advances_epoch_and_reinitializes_layout() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
-        unsafe {
-            (&*attachment.coordinator)
-                .claimed_worker_slots
-                .store(2, Ordering::Release);
-            (&*attachment
-                .worker_slot(1)
-                .expect("slot index should stay in bounds"))
-                .flags
-                .store(EC_PARALLEL_WORKER_SLOT_CLAIMED, Ordering::Release);
-        }
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
+        stage_claimed_state_for_rescan_test(&attachment);
 
         assert_eq!(
-            unsafe { reset_parallel_scan_state(parallel_scan) }
-                .expect("parallel rescan should succeed")
-                .expect("parallel rescan should see the initialized state"),
+            reset_test_parallel_scan_state(parallel_scan),
             1,
             "first rescan should advance the shared epoch to one"
         );
 
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should keep validating")
-            .expect("parallel descriptor should keep exposing AM state");
+        let attachment = test_parallel_scan_attachment(parallel_scan);
         assert_eq!(
-            unsafe { &*attachment.coordinator }
-                .claimed_worker_slots
-                .load(Ordering::Acquire),
+            coordinator_claimed_worker_slots(&attachment),
             0,
             "rescan should clear coordinator-side worker slot claims"
         );
         assert_eq!(
-            worker_slot_header_snapshot(unsafe {
-                &*attachment
-                    .worker_slot(1)
-                    .expect("slot index should stay in bounds")
-            }),
+            worker_slot_header_snapshot_for_test(&attachment, 1),
             (EC_PARALLEL_WORKER_SLOT_FREE, 1, 1),
             "rescan should stamp worker slots with the new shared epoch"
         );
         assert_eq!(
-            unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, 1) }
-                .expect("worker slot snapshot should read back after rescan"),
+            read_test_worker_slot_snapshot(&attachment, 1),
             EcParallelWorkerSlotSnapshot {
                 flags: EC_PARALLEL_WORKER_SLOT_FREE,
                 slot_index: 1,
@@ -1126,19 +1167,13 @@ mod tests {
     #[test]
     fn worker_slot_lookup_rejects_out_of_bounds_indices() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
-        let target = unsafe { test_parallel_scan_target(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
+        let target = test_parallel_scan_target(&mut storage);
 
-        unsafe {
-            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
-        }
-        .expect("parallel target should init");
-        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect("parallel descriptor should validate")
-            .expect("parallel descriptor should expose AM state");
+        initialize_test_parallel_scan_target(target);
+        let attachment = test_parallel_scan_attachment(parallel_scan);
 
-        let err = unsafe { attachment.worker_slot(TEST_WORKER_SLOT_COUNT) }
-            .expect_err("slot lookup should reject indices outside the descriptor capacity");
+        let err = worker_slot_error_for_test(&attachment, TEST_WORKER_SLOT_COUNT);
         assert!(
             err.contains("outside"),
             "out-of-bounds slot lookup should fail with the capacity check"
@@ -1148,10 +1183,9 @@ mod tests {
     #[test]
     fn parallel_scan_attachment_rejects_uninitialized_state() {
         let mut storage = TestParallelScanStorage::default();
-        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let parallel_scan = test_parallel_scan_desc(&mut storage);
 
-        let err = unsafe { parallel_scan_attachment(parallel_scan) }
-            .expect_err("attachment should reject uninitialized AM-private state");
+        let err = test_parallel_scan_attachment_error(parallel_scan);
         assert!(
             err.contains("magic"),
             "uninitialized shared state should fail the magic check first"
