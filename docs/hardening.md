@@ -221,6 +221,18 @@ The first coverage scope intentionally avoids claiming live pgrx callback
 coverage. PG18 integration coverage is still a gap until instrumentation is
 stable for `cargo pgrx test pg18` and the resulting logs are packeted.
 
+Task 39 packet `reviews/task-39/013-pgrx-coverage-feasibility/` records the
+current PG18 instrumentation decision. A probe with
+`RUSTFLAGS="-C instrument-coverage"` can build the pgrx test profile far enough
+to emit some `.profraw` files, but it does not reach live backend tests on the
+current macOS PG18 setup: the lib test binary aborts before execution with
+`dyld` failing to resolve `_BufferBlocks`. The coverage runner also needs an
+absolute `LLVM_PROFILE_FILE` path; relative paths are resolved from child
+process working directories and produce profile-write errors. Until both issues
+are fixed and a packet shows merged backend coverage for callback-heavy files,
+the supported Task 39 coverage surface is the shim-based subset exercised by
+`make coverage`: `ecaz-cli` plus `hardening/careful`.
+
 ### Coverage Ratchet
 
 Coverage ratchets are manual and packet-backed. Do not update
