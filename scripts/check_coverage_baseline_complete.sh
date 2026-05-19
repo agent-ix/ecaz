@@ -21,6 +21,7 @@ trap 'rm -f "$tmp_expected" "$tmp_actual"' EXIT
     src/am/ec_spire/coordinator/diagnostics_helpers.rs \
     src/am/ec_diskann/build.rs \
     src/am/ec_diskann/routine.rs \
+    src/am/ec_diskann/routine_helpers.rs \
     src/am/ec_diskann/scan.rs \
     src/am/common/cost.rs
 } | sed 's#^src/##' | sort -u > "$tmp_expected"

@@ -48,6 +48,10 @@ pub mod careful_spire;
 #[path = "spire_diagnostics_helpers.rs"]
 pub mod careful_spire_diagnostics_helpers;
 
+#[allow(dead_code, unused_imports)]
+#[path = "diskann_routine_helpers.rs"]
+pub mod careful_diskann_routine_helpers;
+
 #[allow(dead_code)]
 #[path = "../../../src/am/common/training.rs"]
 pub mod careful_common_training;

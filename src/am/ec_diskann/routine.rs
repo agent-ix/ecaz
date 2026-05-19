@@ -954,10 +954,9 @@ unsafe fn plan_backlink_mutations(
     Ok((metadata, planned?))
 }
 
-fn sort_and_dedup_item_pointers(tids: &mut Vec<ItemPointer>) {
-    tids.sort_unstable_by(insert::cmp_item_pointer_physical);
-    tids.dedup();
-}
+// Pure helpers shared with the hardening shadow crate live in
+// `routine_helpers.rs` so the careful crate can `include!` them.
+include!("routine_helpers.rs");
 
 unsafe fn ec_diskann_noop_vacuum_stats(
     index_relation: pg_sys::Relation,
@@ -1568,10 +1567,6 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         .collect())
 }
 
-fn vacuum_repair_scan_budget(build_list_size: usize, graph_degree_r: usize) -> usize {
-    build_list_size.min(graph_degree_r.max(1))
-}
-
 fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {
     // SAFETY: The index relation is live and materialization only reads the
     // persisted DiskANN page chain.
@@ -1978,15 +1973,6 @@ fn expand_scan_results_with_bound_heap_tids(
         }
     }
     Ok(expanded)
-}
-
-fn sql_scan_result_cap(reloption_top_k: usize, rerank_budget: usize) -> usize {
-    // `LIMIT` is not visible to `amrescan`, so the SQL scan path must
-    // materialize the full rerank window and let the executor truncate.
-    // The reloption `top_k` remains a pure scan-shell knob rather than a
-    // hard SQL result cap.
-    let _ = reloption_top_k;
-    rerank_budget
 }
 
 #[cfg(feature = "pg18")]
