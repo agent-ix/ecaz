@@ -927,6 +927,181 @@ pub mod storage {
         }
 
         #[test]
+        fn relation_store_chain_meta_codec_round_trip_and_error_branches() {
+            // Direct encode/decode error coverage for the chain helpers.
+            use super::SpirePartitionObjectKind;
+
+            let valid_header = SpirePartitionObjectHeader {
+                kind: SpirePartitionObjectKind::Root,
+                pid: 11,
+                object_version: 1,
+                published_epoch_backref: 1,
+                level: 1,
+                parent_pid: 0,
+                child_count: 2,
+                assignment_count: 0,
+                flags: 0,
+            };
+            let valid_locator = ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            };
+
+            // Happy path: encode → decode round-trip.
+            let encoded = super::encode_relation_object_chain_meta(
+                valid_header,
+                256,
+                3,
+                valid_locator,
+                1024,
+            )
+            .unwrap();
+            let decoded =
+                super::decode_relation_object_chain_meta(&encoded).unwrap().unwrap();
+            assert_eq!(decoded.dimensions, 256);
+            assert_eq!(decoded.segment_count, 3);
+            assert_eq!(decoded.first_segment_locator, valid_locator);
+            assert_eq!(decoded.object_bytes_total, 1024);
+
+            // Encode rejects unsupported kind.
+            let mut bad_kind = valid_header;
+            bad_kind.kind = SpirePartitionObjectKind::Leaf;
+            assert!(super::encode_relation_object_chain_meta(
+                bad_kind, 256, 3, valid_locator, 1024,
+            )
+            .is_err());
+
+            // Encode rejects dimensions=0, segment_count=0, INVALID first segment.
+            assert!(super::encode_relation_object_chain_meta(
+                valid_header, 0, 3, valid_locator, 1024,
+            )
+            .is_err());
+            assert!(super::encode_relation_object_chain_meta(
+                valid_header, 256, 0, valid_locator, 1024,
+            )
+            .is_err());
+            assert!(super::encode_relation_object_chain_meta(
+                valid_header,
+                256,
+                3,
+                ItemPointer::INVALID,
+                1024,
+            )
+            .is_err());
+
+            // Decode returns None for a non-V2 header (single-tuple input).
+            let single_routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let single_encoded = single_routing.encode().unwrap();
+            assert!(super::decode_relation_object_chain_meta(&single_encoded)
+                .unwrap()
+                .is_none());
+
+            // Decode rejects object_bytes_total=0.
+            let mut zero_bytes = encoded.clone();
+            // Patch object_bytes_total bytes at the tail (last 8 LE bytes).
+            let len = zero_bytes.len();
+            zero_bytes[len - 8..].copy_from_slice(&0_u64.to_le_bytes());
+            assert!(super::decode_relation_object_chain_meta(&zero_bytes).is_err());
+        }
+
+        #[test]
+        fn relation_store_chain_segment_codec_round_trip_and_error_branches() {
+            use super::SpirePartitionObjectKind;
+
+            let meta_header = SpirePartitionObjectHeader {
+                kind: SpirePartitionObjectKind::Root,
+                pid: 11,
+                object_version: 1,
+                published_epoch_backref: 1,
+                level: 1,
+                parent_pid: 0,
+                child_count: 2,
+                assignment_count: 0,
+                flags: 0,
+            };
+            let valid_locator = ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            };
+
+            // Round-trip happy path: encode segment + decode against meta.
+            let encoded_meta = super::encode_relation_object_chain_meta(
+                meta_header,
+                256,
+                2,
+                valid_locator,
+                256,
+            )
+            .unwrap();
+            let meta = super::decode_relation_object_chain_meta(&encoded_meta)
+                .unwrap()
+                .unwrap();
+
+            let payload = vec![1, 2, 3, 4, 5, 6, 7, 8];
+            let encoded_segment = super::encode_relation_object_chain_segment(
+                meta_header,
+                0,
+                0,
+                valid_locator,
+                &payload,
+            )
+            .unwrap();
+            let decoded_segment =
+                super::decode_relation_object_chain_segment(&encoded_segment, &meta).unwrap();
+            assert_eq!(decoded_segment.segment_no, 0);
+            assert_eq!(decoded_segment.byte_base, 0);
+            assert_eq!(decoded_segment.payload, payload);
+
+            // Encode rejects unsupported kind.
+            let mut bad_kind = meta_header;
+            bad_kind.kind = SpirePartitionObjectKind::Leaf;
+            assert!(super::encode_relation_object_chain_segment(
+                bad_kind, 0, 0, valid_locator, &payload,
+            )
+            .is_err());
+
+            // Encode rejects empty payload.
+            assert!(super::encode_relation_object_chain_segment(
+                meta_header, 0, 0, valid_locator, &[],
+            )
+            .is_err());
+
+            // Decode rejects header that does not match meta (different pid).
+            let mut mismatched_header = meta_header;
+            mismatched_header.pid = 999;
+            let encoded_mismatched = super::encode_relation_object_chain_segment(
+                mismatched_header,
+                0,
+                0,
+                valid_locator,
+                &payload,
+            )
+            .unwrap();
+            assert!(
+                super::decode_relation_object_chain_segment(&encoded_mismatched, &meta)
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn relation_store_max_segment_payload_bytes_is_positive() {
+            // Drive max_partition_object_chain_segment_payload_bytes and
+            // max_relation_object_tuple_payload_bytes happy paths so the
+            // capacity helpers report sane values used by the chain inserter.
+            let max_tuple =
+                super::max_relation_object_tuple_payload_bytes(pg_sys::BLCKSZ as usize)
+                    .unwrap();
+            assert!(max_tuple > 0);
+            assert!(max_tuple <= 7_000, "should be capped to 7000-byte tuple ceiling");
+
+            let max_segment =
+                super::max_partition_object_chain_segment_payload_bytes().unwrap();
+            assert!(max_segment > 0);
+            assert!(max_segment < max_tuple);
+        }
+
+        #[test]
         fn relation_store_read_object_bytes_returns_single_tuple_payload() {
             // Covers the with_single_tuple_object_bytes path in
             // read_object_bytes when the placement points at a non-chained
