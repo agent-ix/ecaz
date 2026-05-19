@@ -281,22 +281,25 @@ Baseline sources:
 
 The current local coverage lane executes `ecaz-cli` tests and
 `hardening/careful`; it does not execute extension in-module tests, so AM page
-callbacks, SPIRE coordinator paths, DiskANN build/scan paths, live
-planner-cost callbacks, and storage guard drops remain recorded gaps.
+callbacks, SPIRE coordinator paths, DiskANN routine callback glue, live
+relation-store I/O, live planner-cost callbacks, and storage guard drops remain
+recorded gaps.
 
 | Critical area | Baseline line coverage |
 | --- | ---: |
 | `src/quant/{codebook,grouped_pq,hadamard,mse,prod,qjl,rabitq,rotation}.rs` | `81.43%` to `100.00%` |
 | `src/quant/simd.rs` | `94.59%` |
-| `src/quant/mod.rs` | `0.00%` |
+| `src/quant/mod.rs` | `100.00%` |
 | `src/storage/page.rs` | `97.90%` |
 | `src/am/ec_diskann/page.rs` | `97.35%` |
 | `src/am/ec_hnsw/page.rs` | `84.76%` |
 | `src/am/ec_ivf/page.rs` | `95.86%` |
 | `src/am/ec_spire/page.rs` | `0.00%` |
-| `src/am/ec_spire/storage/**` | `0.00%` |
+| `src/am/ec_spire/storage/{assignment,header,helpers,leaf_v1,leaf_v2,leaf_v2_parts,local_store,local_store_set,relation_plan,routing_delta,top_graph,vec_id}.rs` | `41.52%` to `97.70%` |
+| `src/am/ec_spire/storage/relation_store.rs` | `0.00%` |
 | `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
-| `src/am/ec_diskann/{routine,scan,build}.rs` | `0.00%` |
+| `src/am/ec_diskann/{build,scan}.rs` | `96.69%` to `96.95%` |
+| `src/am/ec_diskann/routine.rs` | `0.00%` |
 | `src/am/common/cost.rs` | `98.98%` |
 | `src/storage/*_guard.rs` | `0.00%` |
 
