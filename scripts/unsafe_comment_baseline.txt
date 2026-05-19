@@ -1887,15 +1887,6 @@ src/am/ec_spire/storage/relation_store.rs:708
 src/am/ec_spire/storage/relation_store.rs:710
 src/am/ec_spire/storage/relation_store.rs:722
 src/am/ec_spire/storage/relation_store.rs:836
-src/am/ec_spire/update/publish/relation.rs:133
-src/am/ec_spire/update/publish/relation.rs:144
-src/am/ec_spire/update/publish/relation.rs:152
-src/am/ec_spire/update/publish/relation.rs:153
-src/am/ec_spire/update/publish/relation.rs:48
-src/am/ec_spire/update/publish/relation.rs:64
-src/am/ec_spire/update/publish/relation.rs:72
-src/am/ec_spire/update/publish/relation.rs:73
-src/am/ec_spire/update/publish/relation.rs:97
 src/am/ec_spire/vacuum/mod.rs:102
 src/am/ec_spire/vacuum/mod.rs:103
 src/am/ec_spire/vacuum/mod.rs:112
