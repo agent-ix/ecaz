@@ -20,6 +20,8 @@ pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: page::MetadataPage,
 ) {
+    // SAFETY: The index relation is live while initializing its main fork and
+    // PostgreSQL returns the current block count for that fork.
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -44,19 +46,31 @@ pub(super) unsafe fn initialize_metadata_page(
     }
     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to allocate metadata buffer"));
     let page_size = buffer.page_size();
+    // SAFETY: The WAL transaction is scoped to this live index relation.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The buffer is locked exclusively above and registered for a full
+    // image rewrite of the metadata page.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
+    // SAFETY: `page` is the WAL-registered metadata page and `page_size` comes
+    // from the locked buffer guard.
     unsafe { pg_sys::PageInit(page, page_size, special_size) };
+    // SAFETY: The page was initialized with a special area large enough for the
+    // encoded metadata bytes.
     unsafe { write_metadata_bytes(page, &metadata_bytes) };
 
+    // SAFETY: All metadata page writes were made through the registered page.
     unsafe { wal_txn.finish() };
 }
 
 unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {
+    // SAFETY: The caller initialized the page with a special area large enough
+    // to hold `metadata_bytes`.
     let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
+    // SAFETY: Source and destination are non-overlapping and the destination
+    // special area was sized by the caller.
     unsafe {
         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), page_contents, metadata_bytes.len());
     }
@@ -74,13 +88,21 @@ pub(super) unsafe fn update_metadata_page(
     )
     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));
     let page_size = buffer.page_size();
+    // SAFETY: The WAL transaction is scoped to this live index relation.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The metadata buffer is locked exclusively above and registered for
+    // a full image rewrite.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
+    // SAFETY: `page` is the WAL-registered metadata page and `page_size` comes
+    // from the locked buffer guard.
     unsafe { pg_sys::PageInit(page, page_size, special_size) };
+    // SAFETY: The page was initialized with a special area large enough for the
+    // encoded metadata bytes.
     unsafe { write_metadata_bytes(page, &metadata_bytes) };
+    // SAFETY: All metadata page writes were made through the registered page.
     unsafe { wal_txn.finish() };
 }
 
@@ -97,18 +119,28 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));
     let raw_page = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
+    // SAFETY: The buffer guard pins the metadata page for the duration of this
+    // borrow and `page_size` bounds the slice.
     let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
     let mut metadata =
         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
     let result = f(&mut metadata);
 
+    // SAFETY: The WAL transaction is scoped to this live index relation.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: The metadata buffer remains locked exclusively and is registered
+    // for a full image rewrite.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
+    // SAFETY: `page` is the WAL-registered metadata page and `page_size` comes
+    // from the locked buffer guard.
     unsafe { pg_sys::PageInit(page, page_size, special_size) };
+    // SAFETY: The page was initialized with a special area large enough for the
+    // encoded metadata bytes.
     unsafe { write_metadata_bytes(page, &metadata_bytes) };
+    // SAFETY: All metadata page writes were made through the registered page.
     unsafe { wal_txn.finish() };
     result
 }
@@ -118,11 +150,15 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
+        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats
+        // struct owned by the current vacuum callback.
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats
     };
 
+    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above, and the
+    // index relation is live while page/live-tuple stats are computed.
     unsafe {
         (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork(
             index_relation,
@@ -136,10 +172,15 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
 }
 
 pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+    // SAFETY: The index relation is live and the metadata page is read under a
+    // shared buffer lock.
     let metadata = unsafe { read_metadata_page(index_relation) };
+    // SAFETY: Metadata was decoded from this index and describes its graph
+    // storage layout.
     let storage =
         unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
             .unwrap_or_else(|e| pgrx::error!("{e}"));
+    // SAFETY: The index relation is live while reading its main-fork block count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -156,6 +197,8 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                 .saturating_sub(1)
                 .max(page::FIRST_DATA_BLOCK_NUMBER),
         );
+        // SAFETY: The index relation and callback state live until
+        // `read_stream_end`; the stream callback yields main-fork block numbers.
         let stream = unsafe {
             pg_sys::read_stream_begin_relation(
                 pg_sys::READ_STREAM_SEQUENTIAL as i32,
@@ -167,9 +210,11 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                 std::mem::size_of::<pg_sys::BlockNumber>(),
             )
         };
+        // SAFETY: `stream` was just opened and can be reset before consumption.
         unsafe { pg_sys::read_stream_reset(stream) };
         loop {
             let mut per_buffer_data = ptr::null_mut();
+            // SAFETY: `stream` remains valid until `read_stream_end` below.
             let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
             if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
                 break;
@@ -177,8 +222,12 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
             let block_number = if per_buffer_data.is_null() {
                 page::FIRST_DATA_BLOCK_NUMBER
             } else {
+                // SAFETY: The stream callback stores a BlockNumber-sized payload
+                // when per-buffer data is non-null.
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
+            // SAFETY: `read_stream_next_buffer` returns a pinned buffer that is
+            // locked here for shared tuple inspection.
             let buffer =
                 unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
                     .unwrap_or_else(|| {
@@ -186,14 +235,19 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                             "ec_hnsw failed to open data buffer while counting live tuples"
                         )
                     });
+            // SAFETY: The buffer guard owns a shared lock and `storage` matches
+            // the decoded index metadata.
             count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };
         }
+        // SAFETY: Ends the read stream opened above after all buffers are consumed.
         unsafe { pg_sys::read_stream_end(stream) };
     }
 
     #[cfg(not(feature = "pg18"))]
     {
         for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+            // SAFETY: The index relation is live and the block range was derived
+            // from the current main-fork block count.
             let buffer = unsafe {
                 LockedBufferGuard::read_main(
                     index_relation,
@@ -205,6 +259,8 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
             .unwrap_or_else(|| {
                 pgrx::error!("ec_hnsw failed to open data buffer while counting live tuples")
             });
+            // SAFETY: The buffer guard owns a shared lock and `storage` matches
+            // the decoded index metadata.
             count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };
         }
     }
@@ -223,6 +279,8 @@ unsafe fn count_live_elements_on_buffer(
     let mut count = 0_usize;
 
     for offset in 1..=line_pointer_count {
+        // SAFETY: The buffer is shared-locked by the caller; offsets are bounded
+        // by this page's line pointer count before tuple bytes are visited.
         unsafe {
             with_page_line_tuple_bytes(
                 page_ptr,
@@ -290,6 +348,7 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
 ) -> Option<LiveEntryCandidate> {
+    // SAFETY: The index relation is live while reading its main-fork block count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -297,6 +356,8 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
     let mut best = None;
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: The index relation is live and the block range was derived
+        // from the current main-fork block count.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -317,6 +378,8 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                 block_number,
                 offset_number: offset,
             };
+            // SAFETY: The buffer is shared-locked and the offset is bounded by
+            // this page's line pointer count before tuple bytes are decoded.
             let candidate = unsafe {
                 with_page_line_tuple_bytes(
                     page_ptr,
@@ -424,6 +487,8 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
 }
 
 pub(super) unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+    // SAFETY: The caller bounds-checks `offset` against the page line pointer
+    // count before using the returned ItemId pointer.
     unsafe {
         page_ptr
             .add(
@@ -435,6 +500,8 @@ pub(super) unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_s
 
 pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
     let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
+    // SAFETY: `page_ptr` points at a pinned PostgreSQL page and `pd_lower`
+    // identifies the end of the line pointer array.
     ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
         / size_of::<pg_sys::ItemIdData>()) as u16
 }
@@ -450,6 +517,8 @@ pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
 where
     F: for<'a> FnOnce(&'a [u8]) -> R,
 {
+    // SAFETY: The caller bounds-checks `offset` against the page line pointer
+    // count before this helper reads the ItemId.
     let item_id = unsafe { &*page_item_id(page_ptr, offset) };
     if item_id.lp_flags() == 0 {
         return Ok(None);
@@ -463,6 +532,8 @@ where
         ));
     }
 
+    // SAFETY: Tuple bounds were checked against `page_size` above and the page
+    // is shared-locked for immutable tuple inspection.
     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
     Ok(Some(visit(tuple_bytes)))
 }
@@ -477,6 +548,8 @@ pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(
 where
     F: for<'a> FnOnce(&'a mut [u8]) -> R,
 {
+    // SAFETY: The caller owns an exclusive page lock and supplies a tuple offset
+    // selected from this page.
     let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!(
@@ -495,6 +568,8 @@ where
         );
     }
 
+    // SAFETY: Tuple bounds were checked against `page_size` above and the caller
+    // owns an exclusive lock for mutable tuple access.
     let tuple_bytes =
         unsafe { std::slice::from_raw_parts_mut(page_ptr.add(tuple_offset), tuple_len) };
     visit(tuple_bytes)
@@ -504,6 +579,8 @@ pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPoin
     if tid.is_null() {
         pgrx::error!("ec_hnsw ambuild received a null heap tid");
     }
+    // SAFETY: Null was checked above and PostgreSQL supplied this heap TID for
+    // the AM callback currently decoding it.
     let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
     page::ItemPointer {
         block_number,
@@ -523,6 +600,8 @@ pub(crate) unsafe fn debug_index_pages(
     index_oid: pg_sys::Oid,
 ) -> (u32, page::MetadataPage, Vec<DebugIndexDataPage>) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_pages");
+    // SAFETY: The index relation guard keeps the relation open while the block
+    // count is read.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(
             index_relation.as_ptr(),
@@ -530,9 +609,12 @@ pub(crate) unsafe fn debug_index_pages(
         )
     };
 
+    // SAFETY: The index relation guard keeps the metadata page readable.
     let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };
     let mut data_pages = Vec::new();
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: `block_number` is within the current main-fork block range and
+        // the guard keeps the relation open.
         data_pages.push(unsafe { read_data_page(index_relation.as_ptr(), block_number) });
     }
 
@@ -540,6 +622,8 @@ pub(crate) unsafe fn debug_index_pages(
 }
 
 pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+    // SAFETY: The index relation is live and the metadata block is read under a
+    // shared buffer lock.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -551,6 +635,8 @@ pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));
     let raw_page = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
+    // SAFETY: The buffer guard pins the metadata page for the duration of this
+    // borrow and `page_size` bounds the slice.
     let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
     let metadata =
         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
