@@ -1,0 +1,154 @@
+Script started on 2026-05-19 00:14:41-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/maintenance.rs b/src/am/ec_spire/coordinator/maintenance.rs[m
+[1mindex 232acfe4..07ddf2ef 100644[m
+[1m--- a/src/am/ec_spire/coordinator/maintenance.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/maintenance.rs[m
+[36m@@ -223,12 +223,19 @@[m [munsafe fn build_relation_selected_scheduled_maintenance_input([m
+     let object_versions =[m
+         scheduled_replacement_object_version_plan(selected, parent.header.object_version, rows)?;[m
+     let (published_at_micros, retain_until_micros) =[m
+[32m+[m[32m        // SAFETY: reads PostgreSQL backend-local current timestamp state.[m
+         unsafe { build::current_epoch_publish_times()? };[m
+ [m
+     match selected.decision.mode {[m
+         update::SpireLeafReplacementScheduleMode::Split => {[m
+[32m+[m[32m            // SAFETY: index_relation is a live SPIRE index relation; the guard[m
+[32m+[m[32m            // opens the owning heap relation for this maintenance operation.[m
+             let heap_relation = unsafe { open_spire_heap_relation_for_index(index_relation)? };[m
+[32m+[m[32m            // SAFETY: split replacement reads heap source rows under the[m
+[32m+[m[32m            // backend's active maintenance snapshot.[m
+             let heap_snapshot = unsafe { active_spire_maintenance_snapshot()? };[m
+[32m+[m[32m            // SAFETY: heap_relation/index_relation are live while resolving the[m
+[32m+[m[32m            // indexed vector attribute for replacement tuple reconstruction.[m
+             let indexed_attribute = unsafe {[m
+                 crate::am::ec_hnsw::source::resolve_indexed_vector_attribute([m
+                     heap_relation.as_ptr(),[m
+[36m@@ -243,6 +250,9 @@[m [munsafe fn build_relation_selected_scheduled_maintenance_input([m
+                 "ec_spire maintenance failed to allocate a heap tuple slot".to_owned()[m
+             })?;[m
+             let relation_options = options::relation_options(index_relation);[m
+[32m+[m[32m            // SAFETY: the heap relation, active snapshot, tuple slot, snapshot[m
+[32m+[m[32m            // metadata, object store, and selected plan all remain live while[m
+[32m+[m[32m            // building split replacement input from heap source rows.[m
+             unsafe {[m
+                 update::build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources([m
+                     heap_relation.as_ptr(),[m
+[36m@@ -340,6 +350,8 @@[m [mpub(crate) unsafe fn index_maintenance_plan_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexMaintenancePlanSnapshot {[m
+     let result = (|| -> Result<SpireIndexMaintenancePlanSnapshot, String> {[m
+[32m+[m[32m        // SAFETY: caller passes a live SPIRE index relation with a root/control[m
+[32m+[m[32m        // page readable for maintenance planning.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(no_maintenance_plan_snapshot([m
+[36m@@ -351,6 +363,8 @@[m [mpub(crate) unsafe fn index_maintenance_plan_snapshot([m
+         }[m
+ [m
+         let (epoch_manifest, object_manifest, placement_directory) =[m
+[32m+[m[32m            // SAFETY: root_control came from the live index relation and points[m
+[32m+[m[32m            // at the active epoch manifest tuple locators.[m
+             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+         let snapshot = meta::SpireValidatedEpochSnapshot::new([m
+             &epoch_manifest,[m
+[36m@@ -358,6 +372,8 @@[m [mpub(crate) unsafe fn index_maintenance_plan_snapshot([m
+             &placement_directory,[m
+         )?;[m
+         let object_store =[m
+[32m+[m[32m            // SAFETY: the live SPIRE index relation identifies the object store[m
+[32m+[m[32m            // used to inspect maintenance candidates.[m
+             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };[m
+         reject_recursive_maintenance_until_update_propagation(&snapshot, &object_store)?;[m
+         let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;[m
+[36m@@ -369,15 +385,22 @@[m [mpub(crate) unsafe fn index_maintenance_plan_snapshot([m
+ pub(crate) unsafe fn index_locked_maintenance_plan_snapshot([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexMaintenancePlanSnapshot {[m
+[32m+[m[32m    // SAFETY: caller passes a live SPIRE index relation; the guard serializes[m
+[32m+[m[32m    // maintenance planning against concurrent publish operations.[m
+     let _guard = unsafe { lock_publish_relation(index_relation) };[m
+[32m+[m[32m    // SAFETY: the publish lock is held while planning from the live relation.[m
+     unsafe { index_maintenance_plan_snapshot(index_relation) }[m
+ }[m
+ [m
+ pub(crate) unsafe fn index_locked_maintenance_run_plan([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexMaintenanceRunResult {[m
+[32m+[m[32m    // SAFETY: caller passes a live SPIRE index relation; the guard serializes[m
+[32m+[m[32m    // run planning against concurrent publish operations.[m
+     let _guard = unsafe { lock_publish_relation(index_relation) };[m
+     let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {[m
+[32m+[m[32m        // SAFETY: publish lock is held while reading root/control state from[m
+[32m+[m[32m        // the live SPIRE index relation.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(no_maintenance_run_result([m
+[36m@@ -389,6 +412,8 @@[m [mpub(crate) unsafe fn index_locked_maintenance_run_plan([m
+         }[m
+ [m
+         let (epoch_manifest, object_manifest, placement_directory) =[m
+[32m+[m[32m            // SAFETY: root_control came from the live index relation and points[m
+[32m+[m[32m            // at the active epoch manifest tuple locators.[m
+             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+         let snapshot = meta::SpireValidatedEpochSnapshot::new([m
+             &epoch_manifest,[m
+[36m@@ -396,6 +421,8 @@[m [mpub(crate) unsafe fn index_locked_maintenance_run_plan([m
+             &placement_directory,[m
+         )?;[m
+         let object_store =[m
+[32m+[m[32m            // SAFETY: the live SPIRE index relation identifies the object store[m
+[32m+[m[32m            // used to inspect maintenance candidates.[m
+             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };[m
+         reject_recursive_maintenance_until_update_propagation(&snapshot, &object_store)?;[m
+         let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;[m
+[36m@@ -407,8 +434,12 @@[m [mpub(crate) unsafe fn index_locked_maintenance_run_plan([m
+ pub(crate) unsafe fn index_maintenance_run([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireIndexMaintenanceRunResult {[m
+[32m+[m[32m    // SAFETY: caller passes a live SPIRE index relation; the guard serializes[m
+[32m+[m[32m    // maintenance execution and replacement publish.[m
+     let _guard = unsafe { lock_publish_relation(index_relation) };[m
+     let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {[m
+[32m+[m[32m        // SAFETY: publish lock is held while reading root/control state from[m
+[32m+[m[32m        // the live SPIRE index relation.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch == 0 {[m
+             return Ok(no_maintenance_run_result([m
+[36m@@ -420,6 +451,8 @@[m [mpub(crate) unsafe fn index_maintenance_run([m
+         }[m
+ [m
+         let (epoch_manifest, object_manifest, placement_directory) =[m
+[32m+[m[32m            // SAFETY: root_control came from the live index relation and points[m
+[32m+[m[32m            // at the active epoch manifest tuple locators.[m
+             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };[m
+         let published_snapshot = meta::SpirePublishedEpochSnapshot::new([m
+             &epoch_manifest,[m
+[36m@@ -429,6 +462,8 @@[m [mpub(crate) unsafe fn index_maintenance_run([m
+         let validated_snapshot =[m
+             meta::SpireValidatedEpochSnapshot::from_snapshot(published_snapshot)?;[m
+         let mut object_store =[m
+[32m+[m[32m            // SAFETY: the live SPIRE index relation identifies the mutable[m
+[32m+[m[32m            // object store used for scheduled replacement publishing.[m
+             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };[m
+         reject_recursive_maintenance_until_update_propagation(&validated_snapshot, &object_store)?;[m
+         let rows = collect_leaf_snapshot_rows(root_control, &validated_snapshot, &object_store)?;[m
+[36m@@ -447,6 +482,8 @@[m [mpub(crate) unsafe fn index_maintenance_run([m
+                 "active leaves are within split/merge thresholds",[m
+             ));[m
+         };[m
+[32m+[m[32m        // SAFETY: publish lock is held and all inputs are derived from the same[m
+[32m+[m[32m        // live epoch snapshot and selected scheduled replacement plan.[m
+         let input = unsafe {[m
+             build_relation_selected_scheduled_maintenance_input([m
+                 index_relation,[m
+[36m@@ -456,6 +493,8 @@[m [mpub(crate) unsafe fn index_maintenance_run([m
+                 &rows,[m
+             )?[m
+         };[m
+[32m+[m[32m        // SAFETY: publish lock is held; the selected plan and execution input[m
+[32m+[m[32m        // append replacement objects/manifests for the same live index relation.[m
+         unsafe {[m
+             update::publish_relation_selected_scheduled_replacement_epoch([m
+                 index_relation,[m
+
+Script done on 2026-05-19 00:14:41-07:00 [COMMAND_EXIT_CODE="0"]
