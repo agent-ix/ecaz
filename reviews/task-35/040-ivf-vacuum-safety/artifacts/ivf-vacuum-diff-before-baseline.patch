@@ -1,0 +1,224 @@
+Script started on 2026-05-18 23:45:17-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_ivf/vacuum.rs b/src/am/ec_ivf/vacuum.rs[m
+[1mindex b6095a63..6f02efd7 100644[m
+[1m--- a/src/am/ec_ivf/vacuum.rs[m
+[1m+++ b/src/am/ec_ivf/vacuum.rs[m
+[36m@@ -33,6 +33,8 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_ivf_ambulkdelete([m
+     callback: pg_sys::IndexBulkDeleteCallback,[m
+     callback_state: *mut c_void,[m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes this AM callback with vacuum info, optional[m
+[32m+[m[32m    // stats, and callback pointers that remain valid for the guarded call.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if info.is_null() {[m
+[36m@@ -51,6 +53,8 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_ivf_amvacuumcleanup([m
+     info: *mut pg_sys::IndexVacuumInfo,[m
+     stats: *mut pg_sys::IndexBulkDeleteResult,[m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes this AM callback with vacuum info and[m
+[32m+[m[32m    // optional stats that remain valid for the guarded call.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             if info.is_null() {[m
+[36m@@ -66,7 +70,10 @@[m [munsafe fn noop_vacuum_stats([m
+     index_relation: pg_sys::Relation,[m
+     stats: *mut pg_sys::IndexBulkDeleteResult,[m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+[32m+[m[32m    // SAFETY: caller passes the live IVF index relation being vacuumed.[m
+     let metadata = unsafe { page::read_metadata_page(index_relation) };[m
+[32m+[m[32m    // SAFETY: same live relation and metadata; helper allocates stats if the[m
+[32m+[m[32m    // caller supplied null.[m
+     unsafe { finish_vacuum_stats(index_relation, stats, &metadata) }[m
+ }[m
+ [m
+[36m@@ -78,16 +85,21 @@[m [munsafe fn run_bulkdelete([m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+     let stats = if stats.is_null() {[m
+         crate::fault::maybe_fail_palloc("ec_ivf bulkdelete stats");[m
+[32m+[m[32m        // SAFETY: allocates a zeroed PostgreSQL-owned stats struct when[m
+[32m+[m[32m        // PostgreSQL did not pass one to this bulkdelete call.[m
+         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }[m
+     } else {[m
+         stats[m
+     };[m
+[32m+[m[32m    // SAFETY: `index_relation` is the live IVF index relation being vacuumed.[m
+     let mut metadata = unsafe { page::read_metadata_page(index_relation) };[m
+ [m
+     if metadata.directory_head == ItemPointer::INVALID {[m
+         if metadata.total_live_tuples != 0 {[m
+             pgrx::error!("ec_ivf metadata has live tuples but no directory head");[m
+         }[m
+[32m+[m[32m        // SAFETY: relation and metadata are live; stats is either caller-owned[m
+[32m+[m[32m        // or allocated above.[m
+         return unsafe { finish_vacuum_stats(index_relation, stats, &metadata) };[m
+     }[m
+ [m
+[36m@@ -98,6 +110,8 @@[m [munsafe fn run_bulkdelete([m
+     for expected_list_id in 0..metadata.nlists {[m
+         let directory_tid = next_tid;[m
+         let (mut directory, following_tid) =[m
+[32m+[m[32m            // SAFETY: `index_relation` is live and `next_tid` follows the[m
+[32m+[m[32m            // metadata directory chain.[m
+             unsafe { page::read_ivf_list_directory_and_next(index_relation, directory_tid) }[m
+                 .unwrap_or_else(|e| pgrx::error!("{e}"));[m
+         if directory.list_id != expected_list_id {[m
+[36m@@ -108,17 +122,20 @@[m [munsafe fn run_bulkdelete([m
+             );[m
+         }[m
+ [m
+[31m-        let list_result = unsafe {[m
+[31m-            bulkdelete_list_postings([m
+[31m-                index_relation,[m
+[31m-                &directory,[m
+[31m-                directory_tid.block_number,[m
+[31m-                payload_len,[m
+[31m-                callback,[m
+[31m-                callback_state,[m
+[31m-            )[m
+[31m-        }[m
+[31m-        .unwrap_or_else(|e| pgrx::error!("{e}"));[m
+[32m+[m[32m        let list_result =[m
+[32m+[m[32m            // SAFETY: directory was read from this live relation; callback and[m
+[32m+[m[32m            // state are PostgreSQL-provided for this bulkdelete invocation.[m
+[32m+[m[32m            unsafe {[m
+[32m+[m[32m                bulkdelete_list_postings([m
+[32m+[m[32m                    index_relation,[m
+[32m+[m[32m                    &directory,[m
+[32m+[m[32m                    directory_tid.block_number,[m
+[32m+[m[32m                    payload_len,[m
+[32m+[m[32m                    callback,[m
+[32m+[m[32m                    callback_state,[m
+[32m+[m[32m                )[m
+[32m+[m[32m            }[m
+[32m+[m[32m            .unwrap_or_else(|e| pgrx::error!("{e}"));[m
+         live_heap_tids = live_heap_tids[m
+             .checked_add(list_result.live_heap_tids)[m
+             .unwrap_or_else(|| pgrx::error!("ec_ivf live heap tid count overflow during vacuum"));[m
+[36m@@ -141,6 +158,8 @@[m [munsafe fn run_bulkdelete([m
+                 });[m
+             directory.head_block = repaired_head;[m
+             directory.tail_block = repaired_tail;[m
+[32m+[m[32m            // SAFETY: `directory_tid` identifies the directory tuple just[m
+[32m+[m[32m            // read from this live relation and `directory` keeps its list id.[m
+             unsafe { page::rewrite_ivf_list_directory(index_relation, directory_tid, directory) }[m
+                 .unwrap_or_else(|e| pgrx::error!("{e}"));[m
+             removed_heap_tids = removed_heap_tids[m
+[36m@@ -157,12 +176,18 @@[m [munsafe fn run_bulkdelete([m
+             .total_dead_tuples[m
+             .checked_add(removed_heap_tids)[m
+             .unwrap_or_else(|| pgrx::error!("ec_ivf metadata dead count overflow during vacuum"));[m
+[32m+[m[32m        // SAFETY: `index_relation` is the live IVF index relation and the[m
+[32m+[m[32m        // updated metadata preserves the same on-disk format fields.[m
+         unsafe { page::initialize_metadata_page(index_relation, metadata) };[m
+[32m+[m[32m        // SAFETY: `stats` is non-null after allocation/selection above and is[m
+[32m+[m[32m        // owned by PostgreSQL for this vacuum cycle.[m
+         unsafe {[m
+             (*stats).tuples_removed += removed_heap_tids as f64;[m
+         }[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: relation and metadata are live; stats is either caller-owned or[m
+[32m+[m[32m    // allocated by this function.[m
+     unsafe { finish_vacuum_stats(index_relation, stats, &metadata) }[m
+ }[m
+ [m
+[36m@@ -191,6 +216,9 @@[m [munsafe fn bulkdelete_list_postings([m
+     callback_state: *mut c_void,[m
+ ) -> Result<ListBulkDeleteResult, String> {[m
+     let mut result = ListBulkDeleteResult::default();[m
+[32m+[m[32m    // SAFETY: caller passes the live IVF index relation and a directory tuple[m
+[32m+[m[32m    // from that relation; the rewrite visitor only mutates posting tuples for[m
+[32m+[m[32m    // the listed blocks during this call.[m
+     unsafe {[m
+         page::rewrite_ivf_postings_for_list_blocks([m
+             index_relation,[m
+[36m@@ -227,6 +255,9 @@[m [mfn bulkdelete_posting([m
+     let starting_len = posting.heaptids.len();[m
+     posting[m
+         .heaptids[m
+[32m+[m[32m        // SAFETY: PostgreSQL's bulkdelete callback and opaque state remain[m
+[32m+[m[32m        // valid for this retain pass; each heap TID is copied into a local[m
+[32m+[m[32m        // ItemPointerData before callback invocation.[m
+         .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });[m
+     let removed = starting_len.saturating_sub(posting.heaptids.len());[m
+ [m
+[36m@@ -260,14 +291,20 @@[m [munsafe fn finish_vacuum_stats([m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+     let stats = if stats.is_null() {[m
+         crate::fault::maybe_fail_palloc("ec_ivf vacuum stats");[m
+[32m+[m[32m        // SAFETY: allocates a zeroed PostgreSQL-owned stats struct when[m
+[32m+[m[32m        // PostgreSQL did not pass one to the vacuum callback.[m
+         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }[m
+     } else {[m
+         stats[m
+     };[m
+[32m+[m[32m    // SAFETY: `index_relation` is the live IVF index relation; PostgreSQL[m
+[32m+[m[32m    // accepts this relation pointer for main-fork block counting.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: `stats` is non-null after allocation/selection above and is[m
+[32m+[m[32m    // writable for the current vacuum callback.[m
+     unsafe {[m
+         (*stats).num_pages = block_count;[m
+         (*stats).estimated_count = false;[m
+[36m@@ -284,6 +321,9 @@[m [munsafe fn heap_tid_is_dead([m
+ ) -> bool {[m
+     let mut tid = pg_sys::ItemPointerData::default();[m
+     item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);[m
+[32m+[m[32m    // SAFETY: callback and callback_state come from PostgreSQL's bulkdelete[m
+[32m+[m[32m    // invocation and remain valid for this call; `tid` lives until callback[m
+[32m+[m[32m    // returns.[m
+     unsafe { callback((&mut tid) as pg_sys::ItemPointer, callback_state) }[m
+ }[m
+ [m
+[36m@@ -298,6 +338,8 @@[m [munsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback([m
+     itemptr: pg_sys::ItemPointer,[m
+     state: *mut c_void,[m
+ ) -> bool {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes this callback through the bulkdelete path[m
+[32m+[m[32m    // with the state pointer supplied by the debug helper below.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let state = &*(state.cast::<DebugVacuumCallbackState>());[m
+[36m@@ -320,9 +362,15 @@[m [mpub(crate) unsafe fn debug_ec_ivf_vacuum_stats([m
+     info.index = index_relation.as_ptr();[m
+     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;[m
+ [m
+[32m+[m[32m    // SAFETY: `info` and the guarded index relation remain live for the[m
+[32m+[m[32m    // callback; null callback requests a stats-only bulkdelete pass.[m
+     let stats =[m
+         unsafe { ec_ivf_ambulkdelete(info_ptr, std::ptr::null_mut(), None, std::ptr::null_mut()) };[m
+[32m+[m[32m    // SAFETY: reuses the stats pointer returned by bulkdelete while `info` and[m
+[32m+[m[32m    // the guarded relation are still live.[m
+     let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };[m
+[32m+[m[32m    // SAFETY: vacuum cleanup returns a valid stats pointer for this debug[m
+[32m+[m[32m    // helper; the result is copied out before guards are dropped.[m
+     let result = unsafe { *stats };[m
+ [m
+     result[m
+[36m@@ -345,6 +393,8 @@[m [mpub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids([m
+         dead_tids: dead_tids.iter().copied().collect(),[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: `info`, guarded relation, and callback_state remain live for[m
+[32m+[m[32m    // the duration of the bulkdelete callback invocation.[m
+     let stats = unsafe {[m
+         ec_ivf_ambulkdelete([m
+             info_ptr,[m
+[36m@@ -353,7 +403,11 @@[m [mpub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids([m
+             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),[m
+         )[m
+     };[m
+[32m+[m[32m    // SAFETY: reuses the stats pointer returned by bulkdelete while `info` and[m
+[32m+[m[32m    // the guarded relation are still live.[m
+     let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };[m
+[32m+[m[32m    // SAFETY: vacuum cleanup returns a valid stats pointer for this debug[m
+[32m+[m[32m    // helper; the result is copied out before guards are dropped.[m
+     let result = unsafe { *stats };[m
+ [m
+     result[m
+
+Script done on 2026-05-18 23:45:17-07:00 [COMMAND_EXIT_CODE="0"]
