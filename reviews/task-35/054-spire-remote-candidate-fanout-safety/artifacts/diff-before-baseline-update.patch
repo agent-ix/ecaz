@@ -1,0 +1,120 @@
+Script started on 2026-05-19 00:52:18-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/fanout.rs b/src/am/ec_spire/coordinator/remote_candidates/fanout.rs[m
+[1mindex 95b95209..cab15f85 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/fanout.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/fanout.rs[m
+[36m@@ -141,6 +141,8 @@[m [mpub(crate) unsafe fn remote_search_fanout_plan_rows([m
+             );[m
+         }[m
+         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;[m
+[32m+[m[32m        // SAFETY: callers provide an open SPIRE index relation; this only reads[m
+[32m+[m[32m        // its root control page to verify the active epoch.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch != requested_epoch {[m
+             return Err(format!([m
+[36m@@ -149,6 +151,8 @@[m [mpub(crate) unsafe fn remote_search_fanout_plan_rows([m
+             ));[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: index_relation is the same open relation used for the root[m
+[32m+[m[32m        // control read, and root_control identifies the active manifest set.[m
+         let (epoch_manifest, object_manifest, placement_directory) = unsafe {[m
+             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?[m
+         };[m
+[36m@@ -234,6 +238,8 @@[m [mpub(crate) unsafe fn remote_search_target_plan_rows([m
+             );[m
+         }[m
+         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;[m
+[32m+[m[32m        // SAFETY: callers provide an open SPIRE index relation; this only reads[m
+[32m+[m[32m        // its root control page to verify the active epoch.[m
+         let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+         if root_control.active_epoch != requested_epoch {[m
+             return Err(format!([m
+[36m@@ -242,6 +248,8 @@[m [mpub(crate) unsafe fn remote_search_target_plan_rows([m
+             ));[m
+         }[m
+ [m
+[32m+[m[32m        // SAFETY: index_relation is the same open relation used for the root[m
+[32m+[m[32m        // control read, and root_control identifies the active manifest set.[m
+         let (epoch_manifest, object_manifest, placement_directory) = unsafe {[m
+             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?[m
+         };[m
+[36m@@ -318,6 +326,8 @@[m [mpub(crate) unsafe fn remote_search_target_readiness_rows([m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchTargetReadinessRow> {[m
+     let result = (|| -> Result<Vec<SpireRemoteSearchTargetReadinessRow>, String> {[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the target-plan wrapper,[m
+[32m+[m[32m        // which validates the active epoch and selected placement snapshot.[m
+         let target_rows = unsafe {[m
+             remote_search_target_plan_rows([m
+                 index_relation,[m
+[36m@@ -326,6 +336,8 @@[m [mpub(crate) unsafe fn remote_search_target_readiness_rows([m
+                 consistency_mode,[m
+             )[m
+         };[m
+[32m+[m[32m        // SAFETY: index_relation is the open SPIRE index relation used to read[m
+[32m+[m[32m        // the coordinator node snapshot.[m
+         let node_rows = unsafe { remote_node_snapshot(index_relation) }[m
+             .into_iter()[m
+             .map(|row| (row.node_id, row))[m
+[36m@@ -401,6 +413,8 @@[m [mpub(crate) unsafe fn remote_search_request_plan_rows([m
+         let top_k = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search request plan top_k exceeds u64")?;[m
+         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the target-plan wrapper,[m
+[32m+[m[32m        // which validates epoch and placement state before returning rows.[m
+         let rows = unsafe {[m
+             remote_search_target_plan_rows([m
+                 index_relation,[m
+[36m@@ -447,6 +461,8 @@[m [mpub(crate) unsafe fn remote_search_request_readiness_rows([m
+         let top_k = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search request readiness top_k exceeds u64")?;[m
+         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the readiness wrapper,[m
+[32m+[m[32m        // which derives node/capability status from the open index relation.[m
+         let rows = unsafe {[m
+             remote_search_target_readiness_rows([m
+                 index_relation,[m
+[36m@@ -493,6 +509,8 @@[m [mpub(crate) unsafe fn remote_search_request_summary_row([m
+         let query_for_empty_plan = query.clone();[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search request summary top_k exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the request-plan wrapper,[m
+[32m+[m[32m        // which validates query, epoch, and target fanout state.[m
+         let rows = unsafe {[m
+             remote_search_request_plan_rows([m
+                 index_relation,[m
+[36m@@ -561,6 +579,8 @@[m [mpub(crate) unsafe fn remote_search_readiness_summary_row([m
+         let query_for_empty_plan = query.clone();[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search readiness summary top_k exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the request-readiness[m
+[32m+[m[32m        // wrapper, which validates query, epoch, and target readiness state.[m
+         let rows = unsafe {[m
+             remote_search_request_readiness_rows([m
+                 index_relation,[m
+[36m@@ -631,6 +651,8 @@[m [mpub(crate) unsafe fn remote_search_execution_plan_rows([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> Vec<SpireRemoteSearchExecutionPlanRow> {[m
+[32m+[m[32m    // SAFETY: arguments are forwarded unchanged to the request-readiness wrapper,[m
+[32m+[m[32m    // which validates query, epoch, and remote target readiness.[m
+     let rows = unsafe {[m
+         remote_search_request_readiness_rows([m
+             index_relation,[m
+[36m@@ -703,6 +725,8 @@[m [mpub(crate) unsafe fn remote_search_execution_summary_row([m
+         let query_for_empty_plan = query.clone();[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire remote search execution summary top_k exceeds u64")?;[m
+[32m+[m[32m        // SAFETY: arguments are forwarded unchanged to the execution-plan wrapper,[m
+[32m+[m[32m        // which derives rows from validated request readiness.[m
+         let rows = unsafe {[m
+             remote_search_execution_plan_rows([m
+                 index_relation,[m
+[36m@@ -777,4 +801,3 @@[m [mfn remote_search_execution_summary_from_plan_rows([m
+             status,[m
+         })[m
+ }[m
+[31m-[m
+
+Script done on 2026-05-19 00:52:18-07:00 [COMMAND_EXIT_CODE="0"]
