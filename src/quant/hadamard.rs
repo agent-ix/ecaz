@@ -14,8 +14,12 @@ pub fn fwht_in_place(values: &mut [f32]) {
 
     match backend() {
         #[cfg(target_arch = "x86_64")]
+        // SAFETY: `backend()` only returns `Avx2Fma` on x86_64 when AVX2 and
+        // FMA are available for this process.
         SimdBackend::Avx2Fma => unsafe { fwht_in_place_avx2(values) },
         #[cfg(target_arch = "aarch64")]
+        // SAFETY: `backend()` only returns `Neon` on aarch64 when NEON is
+        // available for this process.
         SimdBackend::Neon => unsafe { fwht_in_place_neon(values) },
         SimdBackend::Scalar => fwht_in_place_scalar(values),
     }
@@ -48,6 +52,8 @@ pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
     if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
         return false;
     }
+    // SAFETY: runtime feature detection above guarantees the AVX2/FMA target
+    // features required by the specialized implementation.
     unsafe { fwht_in_place_avx2(values) };
     true
 }
@@ -57,6 +63,8 @@ pub fn fwht_in_place_neon_for_test(values: &mut [f32]) -> bool {
     if !std::arch::is_aarch64_feature_detected!("neon") {
         return false;
     }
+    // SAFETY: runtime feature detection above guarantees the NEON target
+    // feature required by the specialized implementation.
     unsafe { fwht_in_place_neon(values) };
     true
 }
@@ -105,16 +113,22 @@ pub fn orthonormal_fwht_tiled_in_place(values: &mut [f32], tile_size: usize) {
 #[target_feature(enable = "avx2,fma")]
 unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
     if values.len() == 1024 {
+        // SAFETY: this function requires AVX2/FMA and the fixed two-level
+        // widths divide the exact 1024-element power-of-two input.
         unsafe { fwht_in_place_avx2_two_level(values, 512, 256) };
         return;
     }
 
     if values.len() == 2048 {
+        // SAFETY: this function requires AVX2/FMA and the fixed two-level
+        // widths divide the exact 2048-element power-of-two input.
         unsafe { fwht_in_place_avx2_two_level(values, 1024, 256) };
         return;
     }
 
     if values.len() == 4096 {
+        // SAFETY: this function requires AVX2/FMA and the fixed two-level
+        // widths divide the exact 4096-element power-of-two input.
         unsafe { fwht_in_place_avx2_two_level(values, 2048, 256) };
         return;
     }
@@ -122,14 +136,24 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
     let tile_width = avx2_fwht_tile_width(values.len());
     if tile_width > 0 {
         for chunk in values.chunks_exact_mut(tile_width) {
+            // SAFETY: each chunk has `tile_width >= 128`, so the AVX2 bootstrap
+            // processes complete 64-lane groups and returns width 64.
             unsafe { fwht_in_place_avx2_bootstrap(chunk) };
+            // SAFETY: width 64 divides every selected tile width and the caller
+            // is already executing under the AVX2 target feature.
             unsafe { fwht_in_place_avx2_stages(chunk, 64) };
         }
+        // SAFETY: `tile_width` is a power-of-two stage width selected to divide
+        // `values.len()`, and this function has the required AVX2 target feature.
         unsafe { fwht_in_place_avx2_stages(values, tile_width) };
         return;
     }
 
+    // SAFETY: this AVX2 function is only called after dispatch or tests prove
+    // AVX2 availability; bootstrap handles the small power-of-two widths.
     let bootstrap_width = unsafe { fwht_in_place_avx2_bootstrap(values) };
+    // SAFETY: bootstrap returns the completed power-of-two width for `values`,
+    // so the remaining stage loop starts at a valid divisor.
     unsafe { fwht_in_place_avx2_stages(values, bootstrap_width) };
 }
 
@@ -149,12 +173,20 @@ unsafe fn fwht_in_place_avx2_two_level(
 
     for outer_chunk in values.chunks_exact_mut(outer_tile_width) {
         for inner_chunk in outer_chunk.chunks_exact_mut(inner_tile_width) {
+            // SAFETY: every inner chunk has at least 64 lanes and this function
+            // carries the AVX2 target feature required by the bootstrap.
             unsafe { fwht_in_place_avx2_bootstrap(inner_chunk) };
+            // SAFETY: width 64 divides `inner_tile_width`; the debug asserts
+            // above encode the two-level tiling contract.
             unsafe { fwht_in_place_avx2_stages(inner_chunk, 64) };
         }
+        // SAFETY: `inner_tile_width` divides `outer_tile_width`, so the outer
+        // chunk can continue from that completed stage width.
         unsafe { fwht_in_place_avx2_stages(outer_chunk, inner_tile_width) };
     }
 
+    // SAFETY: `outer_tile_width` divides the full input length by contract, so
+    // this final stage combines complete outer chunks only.
     unsafe { fwht_in_place_avx2_stages(values, outer_tile_width) };
 }
 
@@ -184,16 +216,27 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
         4
     } else if values.len() < 16 {
         for chunk in values.chunks_exact_mut(8) {
+            // SAFETY: `chunk` is exactly eight contiguous f32 values; unaligned
+            // AVX2 loads and stores are permitted for `_mm256_loadu/storeu_ps`.
             let block = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
+            // SAFETY: this function carries the AVX2 target feature required by
+            // the block transform.
             let transformed = unsafe { fwht8_avx2_block(block) };
+            // SAFETY: `chunk` still owns eight writable f32 values.
             unsafe { _mm256_storeu_ps(chunk.as_mut_ptr(), transformed) };
         }
         8
     } else if values.len() < 32 {
         for chunk in values.chunks_exact_mut(16) {
+            // SAFETY: `chunk` is 16 f32 values, so offsets 0 and 8 each expose
+            // a full unaligned eight-lane AVX2 block.
             let left = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
             let right = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
+            // SAFETY: this function carries AVX2 and the inputs are the two
+            // halves of the 16-lane chunk.
             let (sum, diff) = unsafe { fwht16_avx2_block(left, right) };
+            // SAFETY: the two stores write back to the same non-overlapping
+            // eight-lane halves loaded above.
             unsafe {
                 _mm256_storeu_ps(chunk.as_mut_ptr(), sum);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), diff);
@@ -202,11 +245,19 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
         16
     } else if values.len() < 64 {
         for chunk in values.chunks_exact_mut(32) {
+            // SAFETY: `chunk` is 32 f32 values, so offsets 0, 8, 16, and 24
+            // each address a complete unaligned eight-lane AVX2 block.
             let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
             let a1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
+            // SAFETY: the remaining offsets are still within the same 32-lane
+            // chunk and each exposes a full eight-lane block.
             let b0 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(16)) };
             let b1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(24)) };
+            // SAFETY: this function carries AVX2 and the inputs partition the
+            // 32-lane chunk into four eight-lane blocks.
             let (sum0, sum1, diff0, diff1) = unsafe { fwht32_avx2_block(a0, a1, b0, b1) };
+            // SAFETY: the stores target the same four non-overlapping
+            // eight-lane regions loaded above.
             unsafe {
                 _mm256_storeu_ps(chunk.as_mut_ptr(), sum0);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), sum1);
@@ -217,16 +268,28 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
         32
     } else {
         for chunk in values.chunks_exact_mut(64) {
+            // SAFETY: `chunk` is 64 f32 values, so offsets 0 through 56 in
+            // steps of eight each address a complete unaligned AVX2 block.
             let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
             let a1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
+            // SAFETY: offsets 16 and 24 are within the same 64-lane chunk and
+            // each exposes a full eight-lane block.
             let a2 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(16)) };
             let a3 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(24)) };
+            // SAFETY: offsets 32 and 40 are within the same 64-lane chunk and
+            // each exposes a full eight-lane block.
             let b0 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(32)) };
             let b1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(40)) };
+            // SAFETY: offsets 48 and 56 are within the same 64-lane chunk and
+            // each exposes a full eight-lane block.
             let b2 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(48)) };
             let b3 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(56)) };
+            // SAFETY: this function carries AVX2 and the inputs partition the
+            // 64-lane chunk into eight eight-lane blocks.
             let (sum0, sum1, sum2, sum3, diff0, diff1, diff2, diff3) =
                 unsafe { fwht64_avx2_block(a0, a1, a2, a3, b0, b1, b2, b3) };
+            // SAFETY: the stores target the same eight non-overlapping
+            // eight-lane regions loaded above.
             unsafe {
                 _mm256_storeu_ps(chunk.as_mut_ptr(), sum0);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), sum1);
@@ -246,6 +309,8 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
 #[target_feature(enable = "avx2")]
 unsafe fn fwht_in_place_avx2_stages(values: &mut [f32], mut width: usize) {
     while width < values.len() {
+        // SAFETY: callers start at a completed power-of-two stage width that
+        // divides the power-of-two input length; the loop doubles that width.
         unsafe { fwht_in_place_avx2_stage_width(values, width) };
         width *= 2;
     }
@@ -266,14 +331,20 @@ unsafe fn fwht_in_place_avx2_stage_width(values: &mut [f32], width: usize) {
 
         let mut offset = 0;
         while offset < len {
+            // SAFETY: `offset` advances by `step`, `len % step == 0`, and
+            // `right` starts `width` lanes into the current chunk.
             let left = unsafe { ptr.add(offset) };
             let right = unsafe { left.add(width) };
             let mut i = 0;
             while i < width {
+                // SAFETY: `width % 8 == 0`; every `i` addresses complete,
+                // non-overlapping eight-lane left/right vectors inside chunk.
                 let a = unsafe { _mm256_loadu_ps(left.add(i)) };
                 let b = unsafe { _mm256_loadu_ps(right.add(i)) };
                 let sum = _mm256_add_ps(a, b);
                 let diff = _mm256_sub_ps(a, b);
+                // SAFETY: the stores write back to the exact left/right
+                // eight-lane regions loaded above.
                 unsafe {
                     _mm256_storeu_ps(left.add(i), sum);
                     _mm256_storeu_ps(right.add(i), diff);
@@ -288,10 +359,14 @@ unsafe fn fwht_in_place_avx2_stage_width(values: &mut [f32], width: usize) {
 
     let mut offset = 0;
     while offset < len {
+        // SAFETY: `offset` advances by `step`, `len % step == 0`, and `right`
+        // starts `width` scalar lanes into the current chunk.
         let left = unsafe { ptr.add(offset) };
         let right = unsafe { left.add(width) };
         let mut i = 0;
         while i < width {
+            // SAFETY: `i < width` keeps both left/right scalar accesses inside
+            // their halves of the current `step`-sized chunk.
             unsafe {
                 let a = *left.add(i);
                 let b = *right.add(i);
@@ -342,6 +417,8 @@ unsafe fn fwht16_avx2_block(
 ) -> (std::arch::x86_64::__m256, std::arch::x86_64::__m256) {
     use std::arch::x86_64::{_mm256_add_ps, _mm256_sub_ps};
 
+    // SAFETY: this function carries AVX2 and delegates each eight-lane half to
+    // the AVX2 block transform before combining them.
     let left = unsafe { fwht8_avx2_block(left) };
     let right = unsafe { fwht8_avx2_block(right) };
     (_mm256_add_ps(left, right), _mm256_sub_ps(left, right))
@@ -362,6 +439,8 @@ unsafe fn fwht32_avx2_block(
 ) {
     use std::arch::x86_64::{_mm256_add_ps, _mm256_sub_ps};
 
+    // SAFETY: this function carries AVX2 and delegates each 16-lane half to the
+    // AVX2 block transform before combining them.
     let (a0, a1) = unsafe { fwht16_avx2_block(a0, a1) };
     let (b0, b1) = unsafe { fwht16_avx2_block(b0, b1) };
     (
@@ -395,6 +474,8 @@ unsafe fn fwht64_avx2_block(
 ) {
     use std::arch::x86_64::{_mm256_add_ps, _mm256_sub_ps};
 
+    // SAFETY: this function carries AVX2 and delegates each 32-lane half to the
+    // AVX2 block transform before combining them.
     let (a0, a1, a2, a3) = unsafe { fwht32_avx2_block(a0, a1, a2, a3) };
     let (b0, b1, b2, b3) = unsafe { fwht32_avx2_block(b0, b1, b2, b3) };
     (
@@ -421,10 +502,14 @@ unsafe fn fwht_in_place_neon(values: &mut [f32]) {
             let (left, right) = chunk.split_at_mut(width);
             let mut i = 0;
             while i + 4 <= width {
+                // SAFETY: this function carries NEON; `i + 4 <= width` keeps
+                // each unaligned four-lane load inside the split slice halves.
                 let a = unsafe { vld1q_f32(left.as_ptr().add(i)) };
                 let b = unsafe { vld1q_f32(right.as_ptr().add(i)) };
                 let sum = vaddq_f32(a, b);
                 let diff = vsubq_f32(a, b);
+                // SAFETY: the stores write back to the same four-lane left and
+                // right regions loaded above.
                 unsafe {
                     vst1q_f32(left.as_mut_ptr().add(i), sum);
                     vst1q_f32(right.as_mut_ptr().add(i), diff);
@@ -559,6 +644,8 @@ mod tests {
         let mut avx = scalar.clone();
         fwht_in_place_scalar(&mut scalar);
 
+        // SAFETY: test exits unless AVX2 is available; `avx` contains exactly
+        // eight f32 values for one unaligned load/store block.
         unsafe {
             use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
 
@@ -583,6 +670,8 @@ mod tests {
         let mut avx = scalar.clone();
         fwht_in_place_scalar(&mut scalar);
 
+        // SAFETY: test exits unless AVX2 is available; `avx` contains exactly
+        // 16 f32 values, covering two eight-lane unaligned load/store blocks.
         unsafe {
             use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
 
@@ -609,6 +698,8 @@ mod tests {
         let mut avx = scalar.clone();
         fwht_in_place_scalar(&mut scalar);
 
+        // SAFETY: test exits unless AVX2 is available; `avx` contains exactly
+        // 32 f32 values, covering four eight-lane unaligned load/store blocks.
         unsafe {
             use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
 
@@ -639,6 +730,8 @@ mod tests {
         let mut avx = scalar.clone();
         fwht_in_place_scalar(&mut scalar);
 
+        // SAFETY: test exits unless AVX2 is available; `avx` contains exactly
+        // 64 f32 values, covering eight eight-lane unaligned load/store blocks.
         unsafe {
             use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
 
@@ -705,6 +798,8 @@ mod tests {
             let mut avx = scalar.clone();
             fwht_in_place_scalar(&mut scalar);
 
+            // SAFETY: the test exits unless AVX2/FMA is available and every
+            // listed size is a supported power-of-two FWHT input.
             unsafe { fwht_in_place_avx2(&mut avx) };
 
             assert_eq!(scalar, avx, "size={size}");
