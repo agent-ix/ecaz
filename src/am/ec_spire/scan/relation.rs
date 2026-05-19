@@ -1,4 +1,6 @@
 pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
+    // SAFETY: scan is the live IndexScanDesc for this AM callback; xs_heaptid is
+    // PostgreSQL-owned scan output storage for the current tuple.
     unsafe {
         pgrx::itemptr::item_pointer_set_all(
             &mut (*scan).xs_heaptid,
@@ -9,6 +11,8 @@ pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPoint
 }
 
 pub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
+    // SAFETY: scan is the live IndexScanDesc for this AM callback; orderby
+    // output arrays are allocated in PostgreSQL memory before being written.
     unsafe {
         if (*scan).xs_orderbyvals.is_null() {
             crate::fault::maybe_fail_palloc("ec_spire scan orderby values");
@@ -26,6 +30,8 @@ pub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
 }
 
 pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    // SAFETY: scan is the live IndexScanDesc for this AM callback; when the
+    // orderby null array exists, setting the first flag clears the score output.
     unsafe {
         if !(*scan).xs_orderbynulls.is_null() {
             *(*scan).xs_orderbynulls = true;
@@ -73,12 +79,20 @@ pub(super) unsafe fn load_relation_epoch_manifests(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
+    // SAFETY: root_control belongs to this open relation and stores the active
+    // epoch manifest tuple id; page helper returns owned bytes.
     let epoch_bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+    // SAFETY: root_control belongs to this open relation and stores the active
+    // object manifest tuple id; page helper returns owned bytes.
     let object_bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+    // SAFETY: root_control belongs to this open relation and stores the active
+    // placement-directory tuple id; page helper returns owned bytes.
     let placement_bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+    // SAFETY: root_control belongs to this relation and names the local store
+    // config for the same active epoch manifest set.
     let local_store_config =
         unsafe { load_relation_local_store_config(index_relation, root_control)? };
     let epoch_manifest = SpireEpochManifest::decode(&epoch_bytes)?;
@@ -132,6 +146,8 @@ pub(super) unsafe fn load_relation_local_store_config(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load local store config for empty active epoch".to_owned());
     }
+    // SAFETY: root_control belongs to this open relation and stores the active
+    // local-store config tuple id; page helper returns owned bytes.
     let bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.local_store_config_tid)? };
     SpireLocalStoreConfig::decode(&bytes)
@@ -142,6 +158,8 @@ unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireSc
         return Err("ec_spire amrescan received null order-by scan keys".to_owned());
     }
 
+    // SAFETY: orderbys was checked non-null and points at PostgreSQL's first
+    // ORDER BY ScanKey for the active rescan callback.
     let orderby = unsafe { &*orderbys };
     if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
         return Err("ec_spire scan query must not be NULL".to_owned());
@@ -163,6 +181,8 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
     let heap_relation = resolve_scan_heap_relation(scan);
     let heap_relation_ptr = heap_relation.as_ptr();
     let snapshot_pg = resolve_scan_snapshot(scan);
+    // SAFETY: scan is the live IndexScanDesc for this scan path; indexRelation
+    // is read only to resolve the indexed vector attribute.
     let indexed_attribute = unsafe {
         source::resolve_indexed_vector_attribute(
             heap_relation_ptr,
@@ -178,18 +198,24 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
         query,
         options,
         |candidates| {
+            // SAFETY: heap_relation_ptr is held by heap_relation for the
+            // duration of candidate preparation.
             unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates) };
             Ok(())
         },
-        |candidate| unsafe {
-            exact_heap_source_inner_product(
-                heap_relation_ptr,
-                snapshot_pg,
-                slot.as_ptr(),
-                indexed_attribute,
-                query.values(),
-                candidate.heap_tid,
-            )
+        |candidate| {
+            // SAFETY: heap_relation, snapshot, and slot stay live while
+            // reranking this candidate's heap tuple.
+            unsafe {
+                exact_heap_source_inner_product(
+                    heap_relation_ptr,
+                    snapshot_pg,
+                    slot.as_ptr(),
+                    indexed_attribute,
+                    query.values(),
+                    candidate.heap_tid,
+                )
+            }
         },
     );
 
@@ -216,6 +242,8 @@ unsafe fn prefetch_heap_rerank_candidate_blocks(
     if block_numbers.is_empty() {
         return;
     }
+    // SAFETY: heap_relation is open for the scan and block_numbers were derived
+    // from candidate heap TIDs for this relation.
     unsafe { prefetch_heap_rerank_blocks(heap_relation, &block_numbers) };
 }
 
@@ -225,6 +253,8 @@ unsafe fn prefetch_heap_rerank_blocks(
     block_numbers: &[pg_sys::BlockNumber],
 ) {
     let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers.to_vec());
+    // SAFETY: heap_relation is open for the scan; state lives until
+    // read_stream_end and is only used by the block-sequence callback.
     let stream = unsafe {
         pg_sys::read_stream_begin_relation(
             pg_sys::READ_STREAM_DEFAULT as i32,
@@ -239,14 +269,19 @@ unsafe fn prefetch_heap_rerank_blocks(
 
     loop {
         let mut per_buffer_data = ptr::null_mut();
+        // SAFETY: stream was created above and remains open until read_stream_end.
         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
+        // SAFETY: read_stream_next_buffer returned a valid pinned buffer; the
+        // guard unpins it at the end of this loop iteration.
         let _buffer = unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
             .unwrap_or_else(|| pgrx::error!("ec_spire read stream returned an invalid buffer"));
     }
 
+    // SAFETY: stream was opened by read_stream_begin_relation and is no longer
+    // used after this call.
     unsafe { pg_sys::read_stream_end(stream) };
 }
 
@@ -256,6 +291,8 @@ unsafe fn prefetch_heap_rerank_blocks(
     block_numbers: &[pg_sys::BlockNumber],
 ) {
     for block_number in block_numbers {
+        // SAFETY: heap_relation is open for the scan and block_number came from
+        // candidate heap TIDs for this relation.
         unsafe {
             pg_sys::PrefetchBuffer(
                 heap_relation,
@@ -325,6 +362,8 @@ unsafe fn exact_heap_source_inner_product(
     query: &[f32],
     heap_tid: ItemPointer,
 ) -> Result<Option<f32>, String> {
+    // SAFETY: heap relation/snapshot/slot are live for this rerank call and the
+    // helper clears/reuses the slot before returning.
     let Some(source_vector) = unsafe {
         load_indexed_source_vector_from_heap_row(
             heap_relation,
@@ -349,12 +388,18 @@ pub(super) unsafe fn load_indexed_source_vector_from_heap_row(
     heap_tid: ItemPointer,
     label: &str,
 ) -> Result<Option<Vec<f32>>, String> {
+    // SAFETY: heap_relation, snapshot, and slot are live for this scan callback;
+    // helper fetches at most the tuple version identified by heap_tid.
     if !unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? } {
         return Ok(None);
     }
+    // SAFETY: slot contains the fetched heap tuple and attnum was resolved from
+    // the index definition for this relation.
     let datum = unsafe { required_slot_datum(slot, indexed_attribute.attnum, label)? };
+    // SAFETY: datum is the non-null vector datum read from the fetched slot.
     let result =
         unsafe { indexed_vector_datum_to_source_vector(datum, indexed_attribute.kind, label) };
+    // SAFETY: slot belongs to this scan helper and can be cleared before reuse.
     unsafe { pg_sys::ExecClearTuple(slot) };
     result.map(Some)
 }
@@ -367,7 +412,11 @@ unsafe fn fetch_heap_row_version(
 ) -> Result<bool, String> {
     let mut tid = pg_sys::ItemPointerData::default();
     pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
+    // SAFETY: slot belongs to this scan helper and is cleared before fetching a
+    // new heap tuple version.
     unsafe { pg_sys::ExecClearTuple(slot) };
+    // SAFETY: heap_relation/snapshot/slot are live and tid was initialized
+    // from the candidate heap TID for this fetch.
     let fetched =
         unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
     if !fetched {
@@ -381,14 +430,21 @@ unsafe fn required_slot_datum(
     attnum: i32,
     label: &str,
 ) -> Result<pg_sys::Datum, String> {
+    // SAFETY: slot is a live TupleTableSlot and tts_nvalid is read before
+    // deciding whether PostgreSQL must materialize more attributes.
     if unsafe { (*slot).tts_nvalid } < attnum as i16 {
+        // SAFETY: slot is live and attnum is the positive indexed vector
+        // attribute number that must be available in the slot.
         unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
     }
     let attr_index = usize::try_from(attnum - 1)
         .map_err(|_| "ec_spire heap rerank attribute number must be positive".to_owned())?;
+    // SAFETY: slot_getsomeattrs_int above ensures attr_index is materialized;
+    // tts_isnull is PostgreSQL-owned slot null storage.
     if unsafe { *(*slot).tts_isnull.add(attr_index) } {
         return Err(format!("ec_spire does not support NULL {label}"));
     }
+    // SAFETY: same materialized slot attribute as above; NULL was rejected.
     Ok(unsafe { *(*slot).tts_values.add(attr_index) })
 }
 
@@ -397,6 +453,7 @@ unsafe fn indexed_vector_datum_to_source_vector(
     kind: source::IndexedVectorKind,
     label: &str,
 ) -> Result<Vec<f32>, String> {
+    // SAFETY: datum is a non-null varlena vector datum read from a live slot.
     let bytes = unsafe { detoasted_varlena_bytes(datum, label)? };
     match kind {
         source::IndexedVectorKind::Ecvector => crate::unpack_raw_f32(&bytes, label),
@@ -418,6 +475,8 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<V
     if datum.is_null() {
         return Err(format!("ec_spire does not support NULL {label}"));
     }
+    // SAFETY: datum is a non-null varlena value borrowed from PostgreSQL; pgrx
+    // detoasts/copies it into owned bytes before the slot is cleared.
     unsafe { DetoastedVarlena::packed_from_datum(datum) }
         .ok_or_else(|| format!("ec_spire could not detoast {label}"))
         .map(|datum| datum.to_vec())
