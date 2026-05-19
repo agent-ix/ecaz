@@ -12,11 +12,17 @@ Add a narrow target:
 PATHS ?= src
 
 unsafe-block-count:
-	rg --count-matches 'unsafe\s*\{' $(PATHS) | awk -F: '{printf "%4d %s\n", $$2, $$1}' | sort -nr
+	@if command -v rg >/dev/null 2>&1; then \
+		rg --count-matches 'unsafe\s*\{' $(PATHS); \
+	else \
+		grep -R -E -c 'unsafe[[:space:]]*\{' $(PATHS); \
+	fi | awk -F: '$$2 > 0 {printf "%4d %s\n", $$2, $$1}' | sort -nr
 ```
 
 The target should print a stable per-file table, sorted descending by count.
 It should not read `scripts/unsafe_comment_baseline.txt`.
+It must not assume ripgrep is installed; use the `grep -R -E -c` fallback above
+or fail with an explicit install message.
 
 ## Optional Script Form
 
@@ -36,7 +42,11 @@ Contract:
 Suggested command:
 
 ```sh
-rg --count-matches 'unsafe\s*\{' "$@" | awk -F: '{printf "%4d %s\n", $2, $1}' | sort -nr
+if command -v rg >/dev/null 2>&1; then
+  rg --count-matches 'unsafe\s*\{' "$@"
+else
+  grep -R -E -c 'unsafe[[:space:]]*\{' "$@"
+fi | awk -F: '$2 > 0 {printf "%4d %s\n", $2, $1}' | sort -nr
 ```
 
 ## Packet Artifact Convention
@@ -84,3 +94,7 @@ Captured from direct source grep at HEAD `363b13c5f717`:
 Execution should not blindly start at rank 1. The priority bridge is:
 SPIRE and IVF/RaBitQ first, then shared helpers, then HNSW/DiskANN density
 cleanup.
+
+`top-15-coverage-map.md` reconciles this priority order with the Task 50 exit
+criterion by assigning each top-15 file to projected direct or shared-helper
+reduction slices.

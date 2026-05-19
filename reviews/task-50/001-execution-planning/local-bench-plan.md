@@ -1,9 +1,9 @@
 # Task 50 Local Bench Plan
 
-Companion to `bench-baseline-plan.md`. The cloud lane is canonical
-for the regression-gate decision; local benches are a **smoke
-gate** for fast iteration and a **required cross-arch second
-measurement** for SIMD slices.
+Companion to `bench-baseline-plan.md`. Local benches are the
+fast-iteration gate for Task 50 slices; AWS benches are closeout
+confirmation. SIMD slices also require a local x86_64 measurement
+because the AWS Graviton lane exercises the NEON path, not AVX2/FMA.
 
 ## Current local bench inventory
 
@@ -178,19 +178,17 @@ the failures most likely to slip through a `cargo check` —
 inlining inhibition, accidental allocation, recall regression
 from a wrong invariant.
 
-## What local benches MUST NOT be used for
+## What local benches are for
 
-- **Citing as evidence in request.md** for the regression-gate
-  decision. The gate is cloud-vs-cloud. Local numbers go in the
-  packet only as supplementary smoke evidence, not as the basis
-  for "no regression."
-- **Comparing local-after vs. cloud-before.** Different hardware,
-  different SIMD path, different page-cache behavior. Always
-  compare same-host before-vs-after.
-- **Replacing the SPIRE cloud baseline** that Slice 3 needs
-  (per `bench-baseline-plan.md` point 5). SPIRE coordinator
-  paths involve PostgreSQL distributed-coordination latency
-  that local single-node measurement does not exercise.
+- **Fast iteration and packet-level evidence.** Same-host local
+  before/after numbers are the expected per-slice signal for hot
+  scoring, traversal, page, heap, vector-datum, and SIMD changes.
+- **Same-host before/after comparison.** Different hardware,
+  different SIMD path, and different page-cache behavior make
+  local-after vs. cloud-before comparisons invalid.
+- **Not final closeout by itself.** Local numbers do not replace
+  AWS closeout confirmation for hot paths, especially SPIRE
+  distributed-read behavior.
 
 ## Coordination with cloud lane
 
@@ -198,22 +196,129 @@ When a slice has both required local and cloud measurements:
 
 1. Capture local before+after first (fast iteration).
 2. Push the packet branch.
-3. Capture cloud lane on the m8g.large host (per the existing AWS
-   bench infrastructure under `infra/cloud/terraform/` and
-   `ecaz cloud ...`).
+3. Capture cloud lane on the m8g.2xlarge-class Graviton host
+   (per the existing AWS bench infrastructure under
+   `infra/cloud/terraform/` and `ecaz cloud ...`). Smaller
+   m8g.large lanes are historical context and did not complete the
+   full benchmark set reliably.
 4. Both before/after pairs land in the packet's `artifacts/`
    directory.
-5. The packet's `request.md` cites the cloud comparison as the
-   gate decision and the local comparison as smoke evidence.
+5. The packet's `request.md` cites local comparison as the
+   iteration gate and AWS comparison as closeout confirmation.
 
-This keeps the audit trail clear about which measurement actually
-gated the packet, without losing the diagnostic value of the
-local capture.
+This keeps the audit trail clear: local measurements guide slice
+iteration, and AWS measurements confirm closeout on the scaled
+hardware.
 
 ## Baselines required before code lands
 
 The local pre-Task-50 baseline capture should run once on the dev
-host before Slice 1a lands:
+host before Slice 1a lands. This packet is responsible for
+generating and loading any missing local corpus profiles, not just
+running microbenches against whatever happens to exist already.
+
+## Full local corpus spread
+
+Available subset profiles in `crates/ecaz-cli/src/commands/corpus/prepare.rs`:
+
+| Profile | Corpus rows | Query rows |
+| --- | ---: | ---: |
+| `ec_real_10k` | 10,000 | 200 |
+| `ec_real_25k` | 25,000 | 500 |
+| `ec_real_50k` | 50,000 | 1,000 |
+| `ec_real_100k` | 100,000 | 1,000 |
+| `ec_real_ann_benchmarks_anchor` | 990,000 | 10,000 |
+
+Baseline generation rule:
+
+- check whether each profile's prepared TSVs and manifest exist locally;
+- run `ecaz corpus prepare` for missing profiles from the canonical parquet
+  source;
+- load each prepared profile for the Task 50 AM surfaces needed locally:
+  IVF/RaBitQ, SPIRE, HNSW, and DiskANN where supported;
+- run recall, latency, and storage rows for each loaded AM/profile pair;
+- record missing or intentionally deferred rows in `manifest.md` with a reason.
+
+Minimum AM/storage matrix:
+
+| Surface label | Load args | Notes |
+| --- | --- | --- |
+| `ec_ivf_rabitq` | `--profile ec_ivf --storage-format rabitq` | Priority IVF/RaBitQ lane. |
+| `ec_spire_rabitq` | `--profile ec_spire --storage-format rabitq` | Priority SPIRE lane where local SPIRE load/search is ready. |
+| `ec_hnsw` | `--profile ec_hnsw` | Required for top-15 unsafe-density follow-through. |
+| `ec_diskann` | `--profile ec_diskann` | Required for top-15 unsafe-density follow-through. |
+
+Add IVF `turboquant` / `pq_fastscan` rows when a slice touches shared
+storage-format code, but do not treat them as replacements for the RaBitQ row.
+
+Suggested profile loop skeleton:
+
+```sh
+for profile in \
+  ec_real_10k \
+  ec_real_25k \
+  ec_real_50k \
+  ec_real_100k \
+  ec_real_ann_benchmarks_anchor
+do
+  ecaz corpus prepare \
+    --profile "$profile" \
+    --parquet "$DBPEDIA_PARQUET" \
+    --output-dir "$TASK50_STAGED" \
+    2>&1 | tee "benchmarks/task-50-local-baseline/artifacts/corpus-prepare-$profile.log"
+done
+```
+
+Suggested AM/profile baseline skeleton:
+
+```sh
+for profile in ec_real_10k ec_real_25k ec_real_50k ec_real_100k ec_real_ann_benchmarks_anchor
+do
+  for surface in \
+    "ec_ivf_rabitq:ec_ivf:rabitq" \
+    "ec_spire_rabitq:ec_spire:rabitq" \
+    "ec_hnsw:ec_hnsw:" \
+    "ec_diskann:ec_diskann:"
+  do
+    label="${surface%%:*}"
+    rest="${surface#*:}"
+    am="${rest%%:*}"
+    storage_format="${rest#*:}"
+
+    storage_args=()
+    if [ -n "$storage_format" ]; then
+      storage_args=(--storage-format "$storage_format")
+    fi
+
+    ecaz corpus load \
+      --prefix "$profile" \
+      --profile "$am" \
+      "${storage_args[@]}" \
+      --corpus-file "$TASK50_STAGED/${profile}_corpus.tsv" \
+      --queries-file "$TASK50_STAGED/${profile}_queries.tsv" \
+      --manifest-file "$TASK50_STAGED/${profile}_manifest.json" \
+      2>&1 | tee "benchmarks/task-50-local-baseline/artifacts/corpus-load-$profile-$label.log"
+
+    ecaz bench recall --prefix "$profile" --profile "$am" \
+      2>&1 | tee "benchmarks/task-50-local-baseline/artifacts/recall-$profile-$label.log"
+    ecaz bench latency --prefix "$profile" --profile "$am" \
+      2>&1 | tee "benchmarks/task-50-local-baseline/artifacts/latency-$profile-$label.log"
+  done
+
+  ecaz bench storage --prefix "$profile" \
+    2>&1 | tee "benchmarks/task-50-local-baseline/artifacts/storage-$profile.log"
+done
+```
+
+The loop is a plan, not a blind command: if a profile/AM combination is not
+supported or would overwrite an existing index, use an isolated prefix and
+record the exact command in the manifest. `ecaz bench storage` is prefix-based,
+so it should run once per loaded corpus prefix and report every index on that
+corpus table. The 990k anchor can be time-consuming; do not drop it silently.
+Either run it as the local closeout-scale row or mark it as deferred with the
+operational blocker.
+
+## Kernel and microbench baseline
 
 ```sh
 mkdir -p benchmarks/task-50-local-baseline/artifacts
