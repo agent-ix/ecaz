@@ -1,0 +1,147 @@
+Script started on 2026-05-19 03:44:42-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 8ce5d2a5..e1ba4c99 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1136,22 +1136,6 @@[m [msrc/am/ec_hnsw/vacuum.rs:956[m
+ src/am/ec_hnsw/vacuum.rs:96[m
+ src/am/ec_hnsw/vacuum.rs:968[m
+ src/am/ec_hnsw/vacuum.rs:982[m
+[31m-src/am/ec_spire/custom_scan/tests.rs:431[m
+[31m-src/am/ec_spire/custom_scan/tests.rs:432[m
+[31m-src/am/ec_spire/custom_scan/tests.rs:433[m
+[31m-src/am/ec_spire/custom_scan/tests.rs:434[m
+[31m-src/am/ec_spire/custom_scan/tests.rs:435[m
+[31m-src/am/ec_spire/custom_scan/tests.rs:436[m
+[31m-src/am/ec_spire/custom_scan/tests.rs:437[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:209[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:219[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:231[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:251[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:269[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:296[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:306[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:347[m
+[31m-src/am/ec_spire/dml_frontdoor/tests.rs:359[m
+ src/tests/build.rs:251[m
+ src/tests/build.rs:252[m
+ src/tests/build.rs:510[m
+[1mdiff --git a/src/am/ec_spire/custom_scan/tests.rs b/src/am/ec_spire/custom_scan/tests.rs[m
+[1mindex 736bdd8b..80751848 100644[m
+[1m--- a/src/am/ec_spire/custom_scan/tests.rs[m
+[1m+++ b/src/am/ec_spire/custom_scan/tests.rs[m
+[36m@@ -426,15 +426,18 @@[m [mmod tests {[m
+ [m
+     #[test][m
+     fn custom_scan_exec_methods_do_not_advertise_mark_restore_callbacks() {[m
+[31m-        let methods = &raw const CUSTOM_EXEC_METHODS;[m
+[31m-[m
+[31m-        assert!(unsafe { (*methods).MarkPosCustomScan.is_none() });[m
+[31m-        assert!(unsafe { (*methods).RestrPosCustomScan.is_none() });[m
+[31m-        assert!(unsafe { (*methods).BeginCustomScan.is_some() });[m
+[31m-        assert!(unsafe { (*methods).ExecCustomScan.is_some() });[m
+[31m-        assert!(unsafe { (*methods).EndCustomScan.is_some() });[m
+[31m-        assert!(unsafe { (*methods).ReScanCustomScan.is_some() });[m
+[31m-        assert!(unsafe { (*methods).ExplainCustomScan.is_some() });[m
+[32m+[m[32m        // SAFETY: `CUSTOM_EXEC_METHODS` is a static method table initialized by[m
+[32m+[m[32m        // this module, so taking a shared reference for read-only assertions is[m
+[32m+[m[32m        // valid for the duration of the test.[m
+[32m+[m[32m        let methods = unsafe { &*(&raw const CUSTOM_EXEC_METHODS) };[m
+[32m+[m
+[32m+[m[32m        assert!(methods.MarkPosCustomScan.is_none());[m
+[32m+[m[32m        assert!(methods.RestrPosCustomScan.is_none());[m
+[32m+[m[32m        assert!(methods.BeginCustomScan.is_some());[m
+[32m+[m[32m        assert!(methods.ExecCustomScan.is_some());[m
+[32m+[m[32m        assert!(methods.EndCustomScan.is_some());[m
+[32m+[m[32m        assert!(methods.ReScanCustomScan.is_some());[m
+[32m+[m[32m        assert!(methods.ExplainCustomScan.is_some());[m
+     }[m
+ [m
+     #[test][m
+[1mdiff --git a/src/am/ec_spire/dml_frontdoor/tests.rs b/src/am/ec_spire/dml_frontdoor/tests.rs[m
+[1mindex ae98d202..98fd91ca 100644[m
+[1m--- a/src/am/ec_spire/dml_frontdoor/tests.rs[m
+[1m+++ b/src/am/ec_spire/dml_frontdoor/tests.rs[m
+[36m@@ -206,6 +206,8 @@[m [mmod tests {[m
+         bigint_const.xpr.type_ = pg_sys::NodeTag::T_Const;[m
+         bigint_const.consttype = pg_sys::INT8OID;[m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The test fixture initializes a `Const` node and casts it[m
+[32m+[m[32m            // to the `Expr` base pointer expected by the classifier.[m
+             unsafe {[m
+                 dml_frontdoor_value_kind([m
+                     (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),[m
+[36m@@ -216,6 +218,8 @@[m [mmod tests {[m
+ [m
+         bigint_const.constisnull = true;[m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The same initialized `Const` fixture remains live while[m
+[32m+[m[32m            // the classifier inspects its null flag.[m
+             unsafe {[m
+                 dml_frontdoor_value_kind([m
+                     (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),[m
+[36m@@ -228,6 +232,8 @@[m [mmod tests {[m
+         bigint_param.xpr.type_ = pg_sys::NodeTag::T_Param;[m
+         bigint_param.paramtype = pg_sys::INT8OID;[m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The test fixture initializes a `Param` node and casts it[m
+[32m+[m[32m            // to the `Expr` base pointer expected by the classifier.[m
+             unsafe {[m
+                 dml_frontdoor_value_kind([m
+                     (&mut bigint_param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),[m
+[36m@@ -248,6 +254,8 @@[m [mmod tests {[m
+             const_expr.xpr.type_ = pg_sys::NodeTag::T_Const;[m
+             const_expr.consttype = consttype;[m
+             assert_eq!([m
+[32m+[m[32m                // SAFETY: The loop fixture initializes a `Const` node for the[m
+[32m+[m[32m                // duration of this classifier call.[m
+                 unsafe {[m
+                     dml_frontdoor_value_kind([m
+                         (&mut const_expr as *mut pg_sys::Const).cast::<pg_sys::Expr>(),[m
+[36m@@ -266,6 +274,8 @@[m [mmod tests {[m
+             param.xpr.type_ = pg_sys::NodeTag::T_Param;[m
+             param.paramtype = paramtype;[m
+             assert_eq!([m
+[32m+[m[32m                // SAFETY: The loop fixture initializes a `Param` node for the[m
+[32m+[m[32m                // duration of this classifier call.[m
+                 unsafe {[m
+                     dml_frontdoor_value_kind([m
+                         (&mut param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),[m
+[36m@@ -293,6 +303,8 @@[m [mmod tests {[m
+         relabel.arg = (&mut coerce as *mut pg_sys::CoerceViaIO).cast::<pg_sys::Expr>();[m
+ [m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The nested expression nodes are stack fixtures linked by[m
+[32m+[m[32m            // valid child pointers for the duration of this classifier call.[m
+             unsafe {[m
+                 dml_frontdoor_value_kind([m
+                     (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),[m
+[36m@@ -303,6 +315,8 @@[m [mmod tests {[m
+ [m
+         relabel.resulttype = pg_sys::INT4OID;[m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The relabel fixture still points at the live nested[m
+[32m+[m[32m            // expression tree while the classifier checks the changed type.[m
+             unsafe {[m
+                 dml_frontdoor_value_kind([m
+                     (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),[m
+[36m@@ -344,6 +358,8 @@[m [mmod tests {[m
+         var.varattno = 1;[m
+ [m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The test fixture initializes a `Var` node and casts it to[m
+[32m+[m[32m            // the `Expr` base pointer expected by the column resolver.[m
+             unsafe {[m
+                 dml_frontdoor_var_column([m
+                     (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),[m
+[36m@@ -356,6 +372,8 @@[m [mmod tests {[m
+ [m
+         var.varno = 2;[m
+         assert_eq!([m
+[32m+[m[32m            // SAFETY: The same initialized `Var` fixture remains live while the[m
+[32m+[m[32m            // resolver observes the changed range-table index.[m
+             unsafe {[m
+                 dml_frontdoor_var_column([m
+                     (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),[m
+
+Script done on 2026-05-19 03:44:42-07:00 [COMMAND_EXIT_CODE="0"]
