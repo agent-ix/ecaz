@@ -2602,6 +2602,8 @@ fn next_physical_tuple_tid(
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+    // SAFETY: callers pass a page pointer and a nonzero line pointer offset
+    // that has been range-checked against `page_line_pointer_count`.
     unsafe {
         page_ptr
             .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
@@ -2627,6 +2629,8 @@ where
         ));
     }
 
+    // SAFETY: `offset` is nonzero and callers only use this helper after
+    // bounding offsets by the page's line-pointer count.
     let item_id = unsafe { &*page_item_id(page_ptr, offset) };
     if item_id.lp_flags() == 0 {
         return Ok(PageTupleVisit::Unused);
@@ -2639,6 +2643,8 @@ where
             "ec_ivf {tuple_kind} tuple bounds exceed block {block_number}"
         ));
     }
+    // SAFETY: tuple offset and length were checked against `page_size`, and
+    // the page remains locked for the duration of the visitor call.
     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
     visit(tuple_bytes).map(PageTupleVisit::Present)
 }
@@ -2654,6 +2660,8 @@ unsafe fn with_required_page_tuple_bytes<R, F>(
 where
     F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
 {
+    // SAFETY: forwards the caller's page pointer and required tuple TID to the
+    // line helper, which validates item-id state and tuple byte bounds.
     match unsafe {
         with_page_line_tuple_bytes(
             page_ptr,
@@ -2671,6 +2679,8 @@ where
 
 fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
     let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
+    // SAFETY: callers pass a valid PostgreSQL page pointer; `pd_lower`
+    // identifies the end of the line-pointer array.
     ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
         / size_of::<pg_sys::ItemIdData>()) as u16
 }
