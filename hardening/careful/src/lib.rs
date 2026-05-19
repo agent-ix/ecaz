@@ -4,6 +4,9 @@ pub mod careful_storage_page;
 #[path = "../../../src/am/ec_diskann/tuple.rs"]
 pub mod careful_diskann_tuple;
 
+#[path = "../../../src/am/ec_diskann/page.rs"]
+pub mod careful_diskann_page;
+
 #[path = "../../../src/am/ec_diskann/vacuum.rs"]
 pub mod careful_diskann_vacuum;
 
@@ -24,6 +27,7 @@ pub mod am {
     }
 
     pub mod ec_diskann {
+        pub use crate::careful_diskann_page as page;
         pub use crate::careful_diskann_tuple as tuple;
         pub use crate::careful_diskann_vacuum as vacuum;
         pub use crate::careful_diskann_vamana as vamana;
