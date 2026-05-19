@@ -141,6 +141,8 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
             );
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        // SAFETY: callers provide an open SPIRE index relation; this only reads
+        // its root control page to verify the active epoch.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
@@ -149,6 +151,8 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
             ));
         }
 
+        // SAFETY: index_relation is the same open relation used for the root
+        // control read, and root_control identifies the active manifest set.
         let (epoch_manifest, object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
@@ -234,6 +238,8 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
             );
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        // SAFETY: callers provide an open SPIRE index relation; this only reads
+        // its root control page to verify the active epoch.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
@@ -242,6 +248,8 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
             ));
         }
 
+        // SAFETY: index_relation is the same open relation used for the root
+        // control read, and root_control identifies the active manifest set.
         let (epoch_manifest, object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
@@ -318,6 +326,8 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchTargetReadinessRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchTargetReadinessRow>, String> {
+        // SAFETY: arguments are forwarded unchanged to the target-plan wrapper,
+        // which validates the active epoch and selected placement snapshot.
         let target_rows = unsafe {
             remote_search_target_plan_rows(
                 index_relation,
@@ -326,6 +336,8 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
                 consistency_mode,
             )
         };
+        // SAFETY: index_relation is the open SPIRE index relation used to read
+        // the coordinator node snapshot.
         let node_rows = unsafe { remote_node_snapshot(index_relation) }
             .into_iter()
             .map(|row| (row.node_id, row))
@@ -401,6 +413,8 @@ pub(crate) unsafe fn remote_search_request_plan_rows(
         let top_k = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request plan top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        // SAFETY: arguments are forwarded unchanged to the target-plan wrapper,
+        // which validates epoch and placement state before returning rows.
         let rows = unsafe {
             remote_search_target_plan_rows(
                 index_relation,
@@ -447,6 +461,8 @@ pub(crate) unsafe fn remote_search_request_readiness_rows(
         let top_k = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request readiness top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        // SAFETY: arguments are forwarded unchanged to the readiness wrapper,
+        // which derives node/capability status from the open index relation.
         let rows = unsafe {
             remote_search_target_readiness_rows(
                 index_relation,
@@ -493,6 +509,8 @@ pub(crate) unsafe fn remote_search_request_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request summary top_k exceeds u64")?;
+        // SAFETY: arguments are forwarded unchanged to the request-plan wrapper,
+        // which validates query, epoch, and target fanout state.
         let rows = unsafe {
             remote_search_request_plan_rows(
                 index_relation,
@@ -561,6 +579,8 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search readiness summary top_k exceeds u64")?;
+        // SAFETY: arguments are forwarded unchanged to the request-readiness
+        // wrapper, which validates query, epoch, and target readiness state.
         let rows = unsafe {
             remote_search_request_readiness_rows(
                 index_relation,
@@ -631,6 +651,8 @@ pub(crate) unsafe fn remote_search_execution_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchExecutionPlanRow> {
+    // SAFETY: arguments are forwarded unchanged to the request-readiness wrapper,
+    // which validates query, epoch, and remote target readiness.
     let rows = unsafe {
         remote_search_request_readiness_rows(
             index_relation,
@@ -703,6 +725,8 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search execution summary top_k exceeds u64")?;
+        // SAFETY: arguments are forwarded unchanged to the execution-plan wrapper,
+        // which derives rows from validated request readiness.
         let rows = unsafe {
             remote_search_execution_plan_rows(
                 index_relation,
@@ -777,4 +801,3 @@ fn remote_search_execution_summary_from_plan_rows(
             status,
         })
 }
-
