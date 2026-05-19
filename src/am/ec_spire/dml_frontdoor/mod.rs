@@ -208,6 +208,8 @@ const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape."
 const DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH: usize = 32;
 
 pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+    // SAFETY: planner_hook is PostgreSQL backend-local process state; install
+    // only once during extension initialization and preserve the previous hook.
     unsafe {
         if !PLANNER_HOOK_INSTALLED {
             PREVIOUS_PLANNER_HOOK = pg_sys::planner_hook;
@@ -219,6 +221,8 @@ pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
 }
 
 unsafe fn dml_frontdoor_register_relcache_callback() {
+    // SAFETY: the relcache callback registry is backend-local; this flag keeps
+    // registration idempotent for the current backend.
     unsafe {
         if !RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED {
             CacheRegisterRelcacheCallback(
@@ -234,6 +238,8 @@ unsafe extern "C-unwind" fn dml_frontdoor_relation_context_relcache_callback(
     _arg: pg_sys::Datum,
     relid: pg_sys::Oid,
 ) {
+    // SAFETY: PostgreSQL invokes this callback with a valid relid sentinel or
+    // relation OID; pgrx_extern_c_guard converts Rust unwinds before returning.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let Some(cache) = RELATION_CONTEXT_CACHE.get() else {
@@ -266,6 +272,7 @@ pub(crate) fn dml_frontdoor_relation_context_cache_row() -> SpireDmlFrontdoorRel
         .get()
         .and_then(|cache| cache.lock().ok().map(|guard| guard.len()))
         .unwrap_or(0);
+    // SAFETY: this diagnostic reads backend-local hook registration state.
     let callback_registered = unsafe { RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED };
     SpireDmlFrontdoorRelationContextCacheRow {
         relcache_callback_registered: callback_registered,
@@ -287,6 +294,9 @@ pub(crate) fn dml_frontdoor_relation_context_cache_row() -> SpireDmlFrontdoorRel
 }
 
 pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow {
+    // SAFETY: hook diagnostics are backend-local scalars updated by the
+    // planner hook in this backend; copying them for a status row is atomic
+    // enough for diagnostic reporting.
     let (installed, classifier_invoked, last_supported, last_kind, last_status, last_action) = unsafe {
         (
             PLANNER_HOOK_INSTALLED,
@@ -376,6 +386,8 @@ pub(crate) fn dml_frontdoor_relation_context_row(
 pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
     heap_relation_oid: pg_sys::Oid,
 ) -> Result<SpireDmlFrontdoorRelationContext, String> {
+    // SAFETY: relation-context catalog loading runs inside PostgreSQL backend
+    // code; callback registration is idempotent for this backend.
     unsafe { dml_frontdoor_register_relcache_callback() };
     if heap_relation_oid == pg_sys::InvalidOid {
         return Err(
@@ -398,6 +410,8 @@ pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
         return Err("ec_spire DML frontdoor catalog relation open returned NULL".to_owned());
     };
 
+    // SAFETY: HeapRelationGuard keeps the relation open while catalog fields
+    // are inspected and copied into owned Rust values.
     let result = unsafe {
         dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation.as_ptr()).map(
             |(context, watched_relation_oids)| {
@@ -430,13 +444,25 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
 ) -> *mut pg_sys::PlannedStmt {
     // Run the SPIRE fail-closed guard before chained hooks so unsupported
     // distributed DML cannot be rewritten into a coordinator-heap base plan.
+    // SAFETY: PostgreSQL calls planner hooks with a live Query pointer and
+    // planner arguments; called helpers only inspect or chain the active hook.
     let decision = unsafe { dml_frontdoor_observe_planner_query(parse) };
+    // SAFETY: the same live Query pointer is used to prepare an optional owned
+    // primitive-plan expression before planner output is rewritten.
     let plan_expr = unsafe { dml_frontdoor_plan_tree_replacement_expr(parse, decision.as_ref()) };
+    // SAFETY: PREVIOUS_PLANNER_HOOK is the backend-local hook snapshot captured
+    // at install time; if absent, standard_planner is the PostgreSQL fallback.
     let planned_stmt = if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
+        // SAFETY: previous_hook is the planner hook captured before installing
+        // this hook and is called with PostgreSQL's original planner arguments.
         unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
     } else {
+        // SAFETY: standard_planner is PostgreSQL's planner entry point and is
+        // called with the original planner-hook arguments.
         unsafe { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
     };
+    // SAFETY: planned_stmt was returned by PostgreSQL planner code and remains
+    // live for planner-hook replacement before control returns to PostgreSQL.
     unsafe { dml_frontdoor_maybe_replace_plan_tree(planned_stmt, plan_expr) }
 }
 
@@ -444,6 +470,8 @@ unsafe fn dml_frontdoor_plan_tree_replacement_expr(
     query: *mut pg_sys::Query,
     decision: Option<&SpireDmlFrontdoorReplacementDecisionRow>,
 ) -> Option<SpireDmlFrontdoorPrimitivePlanExpr> {
+    // SAFETY: caller supplies a planner Query pointer from PostgreSQL; helper
+    // calls only inspect the tree and build owned Rust handoff data.
     unsafe {
         let decision = decision?;
         if !dml_frontdoor_uses_plan_tree_replacement(decision) {
@@ -463,6 +491,8 @@ unsafe fn dml_frontdoor_maybe_replace_plan_tree(
     planned_stmt: *mut pg_sys::PlannedStmt,
     plan_expr: Option<SpireDmlFrontdoorPrimitivePlanExpr>,
 ) -> *mut pg_sys::PlannedStmt {
+    // SAFETY: planned_stmt is owned by PostgreSQL planner memory for this hook
+    // invocation; replacing planTree mirrors planner-hook mutation semantics.
     unsafe {
         let Some(plan_expr) = plan_expr else {
             return planned_stmt;
@@ -492,10 +522,13 @@ fn dml_frontdoor_uses_plan_tree_replacement(
 unsafe fn dml_frontdoor_observe_planner_query(
     query: *mut pg_sys::Query,
 ) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
+    // SAFETY: the planner hook passes a live Query tree for observation.
     let Some(decision) = (unsafe { dml_frontdoor_replacement_decision_catalog_row(query) }) else {
         return None;
     };
     let action = dml_frontdoor_hook_action(&decision);
+    // SAFETY: hook status fields are backend-local diagnostics updated only by
+    // this backend while processing planner-hook calls.
     unsafe {
         HOOK_CLASSIFICATION_ATTEMPTED = true;
         LAST_HOOK_CLASSIFICATION_SUPPORTED = Some(decision.supported);
@@ -555,7 +588,11 @@ fn dml_frontdoor_raise_planner_error(decision: &SpireDmlFrontdoorReplacementDeci
 pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
     query: *mut pg_sys::Query,
 ) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
+    // SAFETY: planner supplies a live Query pointer; target relation lookup
+    // only reads the range table and returns an owned OID.
     let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+    // SAFETY: the target OID came from the Query range table and is opened
+    // through relation guards before any relcache fields are copied.
     let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
     {
         Ok(relation) => relation,
@@ -581,6 +618,8 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
             });
         }
     };
+    // SAFETY: detail extraction walks the same planner Query under hook
+    // lifetime and copies needed facts into owned Rust values.
     let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, &relation)? };
     Some(dml_frontdoor_replacement_decision_from_shape(
         target_relation_oid,
@@ -592,7 +631,11 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
 pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
     query: *mut pg_sys::Query,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    // SAFETY: planner supplies a live Query pointer; target relation lookup
+    // only reads PostgreSQL-owned planner structures during the call.
     let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+    // SAFETY: relation context opens the OID under relcache guards and returns
+    // owned data, so no borrowed relcache pointers escape.
     let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
     {
         Ok(relation) => relation,
@@ -603,6 +646,8 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
             ));
         }
     };
+    // SAFETY: the Query tree remains live while extracting expression pointers
+    // for the planner/executor handoff.
     let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, &relation)? };
     let updated_value_exprs = detail.updated_value_exprs.clone();
     let pk_value_expr = detail.pk_value_expr.ok_or_else(|| {
@@ -628,6 +673,8 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    // SAFETY: set_rel_pathlist supplies live PlannerInfo/RelOptInfo pointers;
+    // this helper keeps all raw planner references inside the hook callback.
     unsafe {
         if root.is_null() || rel.is_null() {
             return None;
@@ -689,6 +736,8 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    // SAFETY: the baserel hook supplies the same live planner pointers to the
+    // shared primitive-plan extractor.
     unsafe {
         let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
         Some(plan_expr.and_then(|plan_expr| {
@@ -705,6 +754,8 @@ pub(crate) unsafe fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    // SAFETY: the baserel hook supplies the same live planner pointers to the
+    // shared primitive-plan extractor.
     unsafe {
         let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
         Some(plan_expr.and_then(|plan_expr| {
@@ -721,6 +772,8 @@ pub(crate) unsafe fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    // SAFETY: the baserel hook supplies the same live planner pointers to the
+    // shared primitive-plan extractor.
     unsafe {
         let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
         Some(plan_expr.and_then(|plan_expr| {
@@ -878,6 +931,8 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
         SpireDmlFrontdoorPkValuePlan::ParamBigint(param_id) => {
+            // SAFETY: executor parameter memory is valid for this callback and
+            // the helper copies the bigint value before returning.
             let value = unsafe { dml_frontdoor_bound_param_bigint_value(params, param_id)? };
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
@@ -888,6 +943,8 @@ pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
     plan: &SpireDmlFrontdoorPrimitivePlan,
     params: pg_sys::ParamListInfo,
 ) -> Result<SpireDmlFrontdoorPrimitiveInvocation, String> {
+    // SAFETY: params is PostgreSQL executor callback state; the helper only
+    // reads the selected parameter and returns copied bytes.
     let pk_value = unsafe { dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)? };
     if plan.pk_argument.pk_column.is_empty() {
         return Err("ec_spire DML frontdoor primitive invocation requires pk_column".to_owned());
@@ -917,6 +974,8 @@ unsafe fn dml_frontdoor_bound_param_bigint_value(
             "ec_spire DML frontdoor PK parameter ${param_id} has no bound parameter list"
         ));
     }
+    // SAFETY: null was rejected above; ParamListInfo is valid for the executor
+    // callback and is only read while producing an owned i64.
     let params_ref = unsafe { &*params };
     if param_id > params_ref.numParams {
         return Err(format!(
@@ -928,8 +987,12 @@ unsafe fn dml_frontdoor_bound_param_bigint_value(
         let mut workspace = pg_sys::ParamExternData::default();
         // paramFetch may return a pointer into workspace; consume it before
         // this function returns rather than handing it to a caller.
+        // SAFETY: PostgreSQL's paramFetch contract accepts this workspace and
+        // returns data valid at least until the next fetch or function return.
         unsafe { fetch(params, param_id, false, &mut workspace) }
     } else {
+        // SAFETY: numParams bounds were checked above; params points to the
+        // PostgreSQL parameter array for this executor invocation.
         unsafe { params_ref.params.as_ptr().add((param_id - 1) as usize) }
     };
     if param.is_null() {
@@ -937,12 +1000,15 @@ unsafe fn dml_frontdoor_bound_param_bigint_value(
             "ec_spire DML frontdoor PK parameter ${param_id} fetch returned NULL"
         ));
     }
+    // SAFETY: paramFetch/direct lookup returned a non-null ParamExternData
+    // pointer, which is consumed immediately.
     let param_ref = unsafe { &*param };
     if param_ref.isnull {
         return Err(format!(
             "ec_spire DML frontdoor PK parameter ${param_id} must not be NULL"
         ));
     }
+    // SAFETY: the datum type OID is checked before extracting an integer.
     unsafe { dml_frontdoor_param_datum_to_bigint(param_id, param_ref.value, param_ref.ptype) }
 }
 
@@ -952,6 +1018,7 @@ unsafe fn dml_frontdoor_param_datum_to_bigint(
     typoid: pg_sys::Oid,
 ) -> Result<i64, String> {
     match typoid {
+        // SAFETY: typoid selects the matching by-value integer Datum accessor.
         pg_sys::INT2OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt16(datum) })),
         pg_sys::INT4OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt32(datum) })),
         pg_sys::INT8OID => Ok(unsafe { pg_sys::DatumGetInt64(datum) }),
@@ -998,7 +1065,11 @@ fn dml_frontdoor_primitive_for_mode(mode: SpireDmlFrontdoorCustomScanMode) -> &'
 unsafe fn dml_frontdoor_classify_query_with_catalog_context(
     query: *mut pg_sys::Query,
 ) -> Option<SpireDmlFrontdoorShapeRow> {
+    // SAFETY: the Query pointer is owned by PostgreSQL for the active planner
+    // callback; target relation extraction only reads that tree.
     let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+    // SAFETY: relation context opens relcache entries under guards and copies
+    // the facts needed for classification.
     let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
     {
         Ok(relation) => relation,
@@ -1013,6 +1084,8 @@ unsafe fn dml_frontdoor_classify_query_with_catalog_context(
             });
         }
     };
+    // SAFETY: classifier reads the live Query tree during the same planner
+    // callback and returns an owned shape row.
     unsafe { dml_frontdoor_classify_query_with_relation(query, &relation) }
 }
 
@@ -1020,6 +1093,8 @@ unsafe fn dml_frontdoor_classify_query_with_relation(
     query: *mut pg_sys::Query,
     relation: &SpireDmlFrontdoorRelationContext,
 ) -> Option<SpireDmlFrontdoorShapeRow> {
+    // SAFETY: caller guarantees query is a live PostgreSQL Query tree for this
+    // planner callback; detail extraction does not retain borrowed tree refs.
     let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, relation)? };
     Some(detail.shape)
 }
@@ -1045,6 +1120,8 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
     query: *mut pg_sys::Query,
     relation: &SpireDmlFrontdoorRelationContext,
 ) -> Option<SpireDmlFrontdoorQueryDetail> {
+    // SAFETY: query is a live PostgreSQL Query pointer for this planner
+    // callback; as_ref is used only for immediate tree inspection.
     let query_ref = unsafe { query.as_ref()? };
     let operation = dml_frontdoor_operation_for_query(query_ref)?;
     let pk_column = relation.pk_column.as_deref().unwrap_or("");
@@ -1064,18 +1141,24 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
+    // SAFETY: shape classification walks the same live Query tree and copies
+    // all reported facts into owned Rust values.
     let shape = unsafe { classify_dml_frontdoor_query(query, query_context)? };
     let target_rtindex = match operation {
         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
             query_ref.resultRelation
         }
+        // SAFETY: single_range_table_ref only reads the live Query jointree.
         SpireDmlFrontdoorOperation::PkSelect => unsafe {
             single_range_table_ref(query_ref).unwrap_or_default()
         },
     };
+    // SAFETY: predicate and target-list helpers only inspect planner-owned
+    // nodes while the Query remains live for this callback.
     let predicate =
         unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context) };
     let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
+        // SAFETY: targetList belongs to the live Query tree for this callback.
         unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
     } else {
         Vec::new()
@@ -1089,6 +1172,7 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
         .map(|(_column, expr)| *expr)
         .collect::<Vec<_>>();
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
+        // SAFETY: targetList belongs to the live Query tree for this callback.
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
     } else {
         Vec::new()
@@ -1132,6 +1216,8 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
     target_rtindex: i32,
     relation: &SpireDmlFrontdoorRelationContext,
 ) -> Option<SpireDmlFrontdoorQueryDetail> {
+    // SAFETY: query comes from PlannerInfo::parse and is live during
+    // set_rel_pathlist processing.
     let query_ref = unsafe { query.as_ref()? };
     if dml_frontdoor_operation_for_query(query_ref) != Some(operation) {
         return None;
@@ -1155,6 +1241,8 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
     };
     // set_rel_pathlist_hook sees planner-normalized RestrictInfo clauses;
     // diagnostic SQL helpers operate on a freshly analyzed Query jointree.
+    // SAFETY: baserestrictinfo and Query jointree are planner-owned structures
+    // valid during this hook; helpers copy only the decision facts they need.
     let predicate = unsafe {
         dml_frontdoor_pk_predicate_from_baserestrictinfo(
             rel.baserestrictinfo,
@@ -1164,6 +1252,7 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
         .unwrap_or_else(|| dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context))
     };
     let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
+        // SAFETY: targetList belongs to the live Query tree for this callback.
         unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
     } else {
         Vec::new()
@@ -1177,6 +1266,7 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
         .map(|(_column, expr)| *expr)
         .collect::<Vec<_>>();
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
+        // SAFETY: targetList belongs to the live Query tree for this callback.
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
     } else {
         Vec::new()
@@ -1189,6 +1279,7 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
+    // SAFETY: join-shape inspection only walks the live Query jointree.
     let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
     let shape = classify_dml_frontdoor_shape(SpireDmlFrontdoorShapeInput {
         operation,
@@ -1281,14 +1372,22 @@ struct SpireDmlFrontdoorPrimaryKeyColumn {
 unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
     heap_relation: pg_sys::Relation,
 ) -> Result<(SpireDmlFrontdoorRelationContext, Vec<pg_sys::Oid>), String> {
+    // SAFETY: heap_relation is held open by HeapRelationGuard in the caller;
+    // rd_id and descriptor fields are copied while that guard is live.
     let heap_relation_oid = unsafe { (*heap_relation).rd_id };
+    // SAFETY: heap_relation remains open while tuple descriptor attributes are
+    // copied into owned column-name pairs.
     let column_names = unsafe { dml_frontdoor_relation_column_names_from_rel(heap_relation)? };
+    // SAFETY: heap_relation remains open while index metadata and PK shape are
+    // copied from guarded index relations.
     let (index_oid, pk, mut watched_relation_oids) =
         unsafe { dml_frontdoor_catalog_index_and_pk(heap_relation)? };
     watched_relation_oids.push(heap_relation_oid);
     let embedding_columns = if index_oid == pg_sys::InvalidOid {
         Vec::new()
     } else {
+        // SAFETY: heap_relation remains open while index key attnums are mapped
+        // back to copied heap attribute names.
         unsafe { dml_frontdoor_index_key_column_names_from_rel(index_oid, heap_relation)? }
     };
 
@@ -1341,9 +1440,13 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
     ),
     String,
 > {
+    // SAFETY: get_index_am_oid reads PostgreSQL syscache by static C string;
+    // missing AM is represented by InvalidOid because missing_ok is true.
     let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
     // RelationGetIndexList returns a private OID list, so each index can be
     // opened and closed under AccessShareLock while walking this copy.
+    // SAFETY: heap_relation is open and RelationGetIndexList returns a list
+    // allocated for the current memory context, consumed immediately by PgList.
     let index_list =
         unsafe { PgList::<pg_sys::Oid>::from_pg(pg_sys::RelationGetIndexList(heap_relation)) };
     let mut ec_spire_index_count = 0_i64;
@@ -1356,6 +1459,8 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
         let Some(index_relation) = IndexRelationGuard::try_access_share(index_oid) else {
             continue;
         };
+        // SAFETY: IndexRelationGuard holds the relation open while relcache
+        // metadata pointers are read and copied into local decisions.
         let index_form = unsafe { (*index_relation.as_ptr()).rd_index.as_ref() };
         let class_form = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() };
         if let Some(class_form) = class_form {
@@ -1370,6 +1475,8 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
         }
         if primary_key.is_none() {
             if let Some(index_form) = index_form {
+                // SAFETY: heap relation and current index metadata are both
+                // guard-protected during primary-key attribute extraction.
                 primary_key = unsafe {
                     dml_frontdoor_primary_key_column_from_index(heap_relation, index_form)?
                 };
@@ -1393,11 +1500,13 @@ unsafe fn dml_frontdoor_primary_key_column_from_index(
     if !index_form.indisprimary || index_form.indnkeyatts != 1 {
         return Ok(None);
     }
+    // SAFETY: indnkeyatts == 1 guarantees one indkey value is available.
     let attnum = unsafe { *index_form.indkey.values.as_ptr() };
     if attnum <= 0 {
         return Ok(None);
     }
     let Some((column_name, attr)) =
+        // SAFETY: heap_relation is open while the attribute name/form is copied.
         (unsafe { dml_frontdoor_relation_attr_name_and_form(heap_relation, attnum)? })
     else {
         return Ok(None);
@@ -1407,6 +1516,7 @@ unsafe fn dml_frontdoor_primary_key_column_from_index(
     }
     Ok(Some(SpireDmlFrontdoorPrimaryKeyColumn {
         column_name,
+        // SAFETY: atttypid came from a copied FormData_pg_attribute.
         column_type: unsafe { dml_frontdoor_format_type_name(attr.atttypid)? },
     }))
 }
@@ -1414,21 +1524,28 @@ unsafe fn dml_frontdoor_primary_key_column_from_index(
 unsafe fn dml_frontdoor_relation_column_names_from_rel(
     heap_relation: pg_sys::Relation,
 ) -> Result<Vec<(pg_sys::AttrNumber, String)>, String> {
+    // SAFETY: heap_relation is open under HeapRelationGuard while rd_att is
+    // read and attribute names are copied into owned Strings.
     let tuple_desc = unsafe { (*heap_relation).rd_att };
     if tuple_desc.is_null() {
         return Err("ec_spire DML frontdoor catalog relation tuple descriptor is NULL".to_owned());
     }
+    // SAFETY: tuple_desc was checked non-null and remains valid while relation
+    // is open in the current backend.
     let natts = unsafe { (*tuple_desc).natts };
     let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
     for attr_index in 0..natts {
+        // SAFETY: attr_index is in 0..natts for this tuple descriptor.
         let attr = unsafe { pg_sys::TupleDescAttr(tuple_desc, attr_index) };
         if attr.is_null() || unsafe { (*attr).attisdropped } {
             continue;
         }
+        // SAFETY: attr was checked non-null and belongs to the live descriptor.
         let attnum = unsafe { (*attr).attnum };
         if attnum <= 0 {
             continue;
         }
+        // SAFETY: attr name storage is PostgreSQL NameData copied immediately.
         let name = unsafe { dml_frontdoor_attr_name(attr)? };
         columns.push((attnum, name));
     }
@@ -1442,6 +1559,8 @@ unsafe fn dml_frontdoor_index_key_column_names_from_rel(
     let Some(index_relation) = IndexRelationGuard::try_access_share(index_oid) else {
         return Err("ec_spire DML frontdoor catalog index open returned NULL".to_owned());
     };
+    // SAFETY: IndexRelationGuard holds the index open while rd_index and indkey
+    // values are inspected; heap_relation is open for attribute-name lookup.
     let result = unsafe {
         let index_form = (*index_relation.as_ptr())
             .rd_index
@@ -1472,14 +1591,19 @@ unsafe fn dml_frontdoor_relation_attr_name_and_form(
     heap_relation: pg_sys::Relation,
     attnum: pg_sys::AttrNumber,
 ) -> Result<Option<(String, pg_sys::FormData_pg_attribute)>, String> {
+    // SAFETY: heap_relation is open while its tuple descriptor is read.
     let tuple_desc = unsafe { (*heap_relation).rd_att };
     if tuple_desc.is_null() || attnum <= 0 || i32::from(attnum) > unsafe { (*tuple_desc).natts } {
         return Ok(None);
     }
+    // SAFETY: attnum was bounds-checked against natts and converted to the
+    // zero-based TupleDescAttr index expected by PostgreSQL.
     let attr = unsafe { pg_sys::TupleDescAttr(tuple_desc, i32::from(attnum - 1)) };
     if attr.is_null() || unsafe { (*attr).attisdropped } {
         return Ok(None);
     }
+    // SAFETY: attr is non-null and copied before leaving the relation guard's
+    // lifetime; the name is copied into an owned String.
     Ok(Some((unsafe { dml_frontdoor_attr_name(attr)? }, unsafe {
         *attr
     })))
@@ -1488,6 +1612,8 @@ unsafe fn dml_frontdoor_relation_attr_name_and_form(
 unsafe fn dml_frontdoor_attr_name(
     attr: *mut pg_sys::FormData_pg_attribute,
 ) -> Result<String, String> {
+    // SAFETY: attr points at a live FormData_pg_attribute and NameData is
+    // nul-terminated by PostgreSQL catalog conventions.
     unsafe { CStr::from_ptr((*attr).attname.data.as_ptr()) }
         .to_str()
         .map(str::to_owned)
@@ -1495,14 +1621,20 @@ unsafe fn dml_frontdoor_attr_name(
 }
 
 unsafe fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
+    // SAFETY: format_type_be returns a palloc'd C string for a catalog type OID
+    // or NULL; the pointer is checked before decoding and then freed.
     let type_name = unsafe { pg_sys::format_type_be(type_oid) };
     if type_name.is_null() {
         return Err("ec_spire DML frontdoor catalog format_type returned NULL".to_owned());
     }
+    // SAFETY: type_name was checked non-null and is copied into an owned String
+    // before pfree releases PostgreSQL memory.
     let decoded = unsafe { CStr::from_ptr(type_name) }
         .to_str()
         .map(str::to_owned)
         .map_err(|e| format!("ec_spire DML frontdoor catalog type name is not UTF-8: {e}"));
+    // SAFETY: type_name was allocated by format_type_be in the current memory
+    // context and is released after decoding.
     unsafe { pg_sys::pfree(type_name.cast()) };
     decoded
 }
@@ -1774,6 +1906,8 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
     if query.is_null() {
         return None;
     }
+    // SAFETY: query was checked non-null and is owned by PostgreSQL for the
+    // active planner callback; it is not retained beyond this function.
     let query_ref = unsafe { query.as_ref()? };
     let operation = dml_frontdoor_operation_for_query(query_ref)?;
     let target_rtindex = match operation {
@@ -1783,17 +1917,24 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         SpireDmlFrontdoorOperation::PkSelect => {
             // Keep unsupported SELECT shapes flowing into the shared classifier
             // so diagnostics report the same fail-closed status/kind matrix.
+            // SAFETY: single_range_table_ref only reads the live Query jointree.
             unsafe { single_range_table_ref(query_ref) }.unwrap_or_default()
         }
     };
+    // SAFETY: these helpers only read the live Query jointree/targetlist and
+    // copy names and classification facts into owned Rust values.
     let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
+    // SAFETY: predicate extraction walks the live Query expression tree and
+    // copies the predicate facts it returns.
     let predicate = unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
     let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
+        // SAFETY: targetList belongs to the live Query tree for this callback.
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
     } else {
         Vec::new()
     };
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
+        // SAFETY: targetList belongs to the live Query tree for this callback.
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
     } else {
         Vec::new()
@@ -1830,14 +1971,19 @@ pub(crate) unsafe fn dml_frontdoor_target_relation_oid(
     if query.is_null() {
         return None;
     }
+    // SAFETY: query was checked non-null and is inspected only during the
+    // PostgreSQL planner callback.
     let query_ref = unsafe { query.as_ref()? };
     let operation = dml_frontdoor_operation_for_query(query_ref)?;
     let target_rtindex = match operation {
         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
             query_ref.resultRelation
         }
+        // SAFETY: single_range_table_ref only reads the Query jointree.
         SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query_ref)? },
     };
+    // SAFETY: rtable lookup reads the live Query range table and returns an OID
+    // by value.
     unsafe { dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex) }
 }
 
@@ -1858,7 +2004,9 @@ unsafe fn dml_frontdoor_query_has_join_shape(
     // only the result relation in the jointree; FROM/USING relations make the
     // shape a join even though baserel handoff skips those non-target rels.
     match operation {
+        // SAFETY: single_range_table_ref only reads the Query jointree.
         SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query).is_none() },
+        // SAFETY: DML join-shape inspection only reads the Query jointree.
         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => unsafe {
             dml_frontdoor_dml_has_extra_from_shape(query)
         },
@@ -1866,12 +2014,16 @@ unsafe fn dml_frontdoor_query_has_join_shape(
 }
 
 unsafe fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
+    // SAFETY: query is a live planner Query; jointree may be null and is
+    // checked before dereferencing.
     let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
         return false;
     };
     if jointree.fromlist.is_null() {
         return false;
     }
+    // SAFETY: fromlist is a PostgreSQL List pointer owned by the live Query and
+    // is consumed only for immediate inspection.
     let fromlist = unsafe { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
     if fromlist.is_empty() {
         return false;
@@ -1882,10 +2034,13 @@ unsafe fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool 
     let Some(from_node) = fromlist.get_ptr(0) else {
         return false;
     };
+    // SAFETY: from_node is checked for null before reading its NodeTag.
     if from_node.is_null() || unsafe { (*from_node).type_ } != pg_sys::NodeTag::T_RangeTblRef {
         return true;
     }
     let range_table_ref = from_node.cast::<pg_sys::RangeTblRef>();
+    // SAFETY: NodeTag confirmed T_RangeTblRef, so the cast has the expected
+    // layout and rtindex can be read.
     unsafe { (*range_table_ref).rtindex != query.resultRelation }
 }
 
@@ -1898,19 +2053,23 @@ fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
 }
 
 unsafe fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+    // SAFETY: query is live and jointree is checked for null by as_ref.
     let jointree = unsafe { query.jointree.as_ref()? };
     if jointree.fromlist.is_null() {
         return None;
     }
+    // SAFETY: fromlist belongs to the live Query and is inspected immediately.
     let fromlist = unsafe { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
     if fromlist.len() != 1 {
         return None;
     }
     let from_node = fromlist.get_ptr(0)?;
+    // SAFETY: from_node is checked for null before reading NodeTag.
     if from_node.is_null() || unsafe { (*from_node).type_ } != pg_sys::NodeTag::T_RangeTblRef {
         return None;
     }
     let range_table_ref = from_node.cast::<pg_sys::RangeTblRef>();
+    // SAFETY: NodeTag confirmed T_RangeTblRef, so rtindex is valid to read.
     Some(unsafe { (*range_table_ref).rtindex })
 }
 
@@ -1921,8 +2080,12 @@ unsafe fn dml_frontdoor_relation_oid_from_rtable(
     if rtindex <= 0 || query.rtable.is_null() {
         return None;
     }
+    // SAFETY: rtable is a PostgreSQL List owned by the live Query and is only
+    // read during this function call.
     let rtable = unsafe { PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable) };
     let rte = rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?;
+    // SAFETY: get_ptr returned a non-nullable option; as_ref handles null and
+    // the RTE is only read by value.
     let rte = unsafe { rte.as_ref()? };
     if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
         return None;
@@ -1935,10 +2098,14 @@ unsafe fn dml_frontdoor_pk_predicate(
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> SpireDmlFrontdoorPkPredicate {
+    // SAFETY: query is a live planner Query; jointree may be absent and is
+    // checked before reading quals.
     let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
         return dml_frontdoor_empty_pk_predicate();
     };
     let qual = jointree.quals;
+    // SAFETY: quals is a planner expression pointer, allowed to be null and
+    // validated by the clause walker.
     unsafe { dml_frontdoor_pk_predicate_from_clause(qual.cast(), target_rtindex, context) }
         .unwrap_or_else(dml_frontdoor_empty_pk_predicate)
 }
@@ -1951,11 +2118,16 @@ unsafe fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
     if baserestrictinfo.is_null() {
         return None;
     }
+    // SAFETY: baserestrictinfo is a planner-owned RestrictInfo List valid for
+    // the set_rel_pathlist callback.
     let restrict_infos = unsafe { PgList::<pg_sys::RestrictInfo>::from_pg(baserestrictinfo) };
     for restrict_info in restrict_infos.iter_ptr() {
+        // SAFETY: list cells may contain null pointers; as_ref handles that and
+        // the RestrictInfo is only inspected during the callback.
         let Some(restrict_info) = (unsafe { restrict_info.as_ref() }) else {
             continue;
         };
+        // SAFETY: RestrictInfo::clause belongs to the live planner tree.
         if let Some(predicate) = unsafe {
             dml_frontdoor_pk_predicate_from_clause(restrict_info.clause, target_rtindex, context)
         } {
@@ -1973,7 +2145,10 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     if clause.is_null() {
         return None;
     }
+    // SAFETY: clause was checked non-null before reading its NodeTag.
     if unsafe { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr {
+        // SAFETY: expression walker validates node tags before recursing into
+        // supported PostgreSQL expression shapes.
         if unsafe {
             dml_frontdoor_expr_references_column(clause, target_rtindex, context, context.pk_column)
         } {
@@ -1988,11 +2163,14 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     }
     let op_expr = clause.cast::<pg_sys::OpExpr>();
     let operator =
+        // SAFETY: NodeTag confirmed T_OpExpr, so opno can be passed to
+        // PostgreSQL's opcode lookup.
         if dml_frontdoor_bigint_equality_opcode(unsafe { pg_sys::get_opcode((*op_expr).opno) }) {
             Some("=")
         } else {
             Some("other")
         };
+    // SAFETY: OpExpr::args is a PostgreSQL List owned by the live expression.
     let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
     if args.len() != 2 {
         return Some(SpireDmlFrontdoorPkPredicate {
@@ -2006,22 +2184,29 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     let right = args.get_ptr(1);
     match (left, right) {
         (Some(left), Some(right)) => {
+            // SAFETY: left/right are expression pointers from OpExpr::args and
+            // the helpers check tags/nulls before reading fields.
             if let Some(column) =
                 unsafe { dml_frontdoor_predicate_var_column(left, target_rtindex, context) }
             {
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
+                    // SAFETY: right is the opposite expression argument from
+                    // the validated OpExpr argument list.
                     value: unsafe { dml_frontdoor_predicate_value(right) },
                     value_expr: Some(right),
                 });
             }
+            // SAFETY: same as above, checking the mirrored var/value position.
             if let Some(column) =
                 unsafe { dml_frontdoor_predicate_var_column(right, target_rtindex, context) }
             {
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
+                    // SAFETY: left is the opposite expression argument from
+                    // the validated OpExpr argument list.
                     value: unsafe { dml_frontdoor_predicate_value(left) },
                     value_expr: Some(left),
                 });
@@ -2047,23 +2232,32 @@ unsafe fn dml_frontdoor_predicate_var_column(
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<String> {
+    // SAFETY: var-column helper validates null and NodeTag before reading Var
+    // fields, and returns an owned column name.
     if let Some(column) = unsafe { dml_frontdoor_var_column(expr, target_rtindex, context) } {
         return Some(column);
     }
     if expr.is_null() {
         return None;
     }
+    // SAFETY: expr was checked non-null before reading its NodeTag.
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
         pg_sys::NodeTag::T_RelabelType => {
             let relabel = expr.cast::<pg_sys::RelabelType>();
+            // SAFETY: NodeTag confirmed RelabelType; arg is another planner
+            // expression pointer validated by recursive descent.
             unsafe { dml_frontdoor_predicate_var_column((*relabel).arg, target_rtindex, context) }
         }
         pg_sys::NodeTag::T_CoerceViaIO => {
             let coerce = expr.cast::<pg_sys::CoerceViaIO>();
+            // SAFETY: NodeTag confirmed CoerceViaIO; arg is validated by the
+            // recursive predicate walker.
             unsafe { dml_frontdoor_predicate_var_column((*coerce).arg, target_rtindex, context) }
         }
         pg_sys::NodeTag::T_FuncExpr => {
             let func_expr = expr.cast::<pg_sys::FuncExpr>();
+            // SAFETY: NodeTag confirmed FuncExpr; args is a planner List
+            // consumed immediately by the single-arg helper.
             unsafe {
                 dml_frontdoor_single_predicate_var_column(
                     (*func_expr).args,
@@ -2084,11 +2278,14 @@ unsafe fn dml_frontdoor_single_predicate_var_column(
     if exprs.is_null() {
         return None;
     }
+    // SAFETY: exprs is a PostgreSQL List pointer owned by the live planner
+    // expression and is inspected immediately.
     let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
     if exprs.len() != 1 {
         return None;
     }
     let expr = exprs.get_ptr(0)?;
+    // SAFETY: expr comes from the validated one-element PostgreSQL List.
     unsafe { dml_frontdoor_predicate_var_column(expr, target_rtindex, context) }
 }
 
@@ -2101,12 +2298,14 @@ unsafe fn dml_frontdoor_expr_references_column(
     if expr.is_null() {
         return false;
     }
+    // SAFETY: expr was checked non-null before reading NodeTag.
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
         pg_sys::NodeTag::T_Var => unsafe {
             dml_frontdoor_var_column(expr, target_rtindex, context).as_deref() == Some(column_name)
         },
         pg_sys::NodeTag::T_OpExpr => {
             let op_expr = expr.cast::<pg_sys::OpExpr>();
+            // SAFETY: NodeTag confirmed OpExpr; args is walked immediately.
             unsafe {
                 dml_frontdoor_expr_list_references_column(
                     (*op_expr).args,
@@ -2118,6 +2317,8 @@ unsafe fn dml_frontdoor_expr_references_column(
         }
         pg_sys::NodeTag::T_ScalarArrayOpExpr => {
             let array_expr = expr.cast::<pg_sys::ScalarArrayOpExpr>();
+            // SAFETY: NodeTag confirmed ScalarArrayOpExpr; args is walked
+            // immediately and no pointers escape.
             unsafe {
                 dml_frontdoor_expr_list_references_column(
                     (*array_expr).args,
@@ -2129,6 +2330,7 @@ unsafe fn dml_frontdoor_expr_references_column(
         }
         pg_sys::NodeTag::T_BoolExpr => {
             let bool_expr = expr.cast::<pg_sys::BoolExpr>();
+            // SAFETY: NodeTag confirmed BoolExpr; args is walked immediately.
             unsafe {
                 dml_frontdoor_expr_list_references_column(
                     (*bool_expr).args,
@@ -2140,6 +2342,7 @@ unsafe fn dml_frontdoor_expr_references_column(
         }
         pg_sys::NodeTag::T_FuncExpr => {
             let func_expr = expr.cast::<pg_sys::FuncExpr>();
+            // SAFETY: NodeTag confirmed FuncExpr; args is walked immediately.
             unsafe {
                 dml_frontdoor_expr_list_references_column(
                     (*func_expr).args,
@@ -2151,6 +2354,8 @@ unsafe fn dml_frontdoor_expr_references_column(
         }
         pg_sys::NodeTag::T_RelabelType => {
             let relabel = expr.cast::<pg_sys::RelabelType>();
+            // SAFETY: NodeTag confirmed RelabelType; arg is another expression
+            // pointer validated by recursive descent.
             unsafe {
                 dml_frontdoor_expr_references_column(
                     (*relabel).arg,
@@ -2162,6 +2367,8 @@ unsafe fn dml_frontdoor_expr_references_column(
         }
         pg_sys::NodeTag::T_CoerceViaIO => {
             let coerce = expr.cast::<pg_sys::CoerceViaIO>();
+            // SAFETY: NodeTag confirmed CoerceViaIO; arg is validated by
+            // recursive descent.
             unsafe {
                 dml_frontdoor_expr_references_column(
                     (*coerce).arg,
@@ -2184,7 +2391,10 @@ unsafe fn dml_frontdoor_expr_list_references_column(
     if exprs.is_null() {
         return false;
     }
+    // SAFETY: exprs is a PostgreSQL expression List valid for the current
+    // planner callback and consumed immediately.
     let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
+    // SAFETY: each expression pointer is validated by the recursive walker.
     let references_column = exprs.iter_ptr().any(|expr| unsafe {
         dml_frontdoor_expr_references_column(expr, target_rtindex, context, column_name)
     });
@@ -2212,9 +2422,12 @@ unsafe fn dml_frontdoor_var_column(
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<String> {
+    // SAFETY: expr may be null; NodeTag is read only after the null check.
     if expr.is_null() || unsafe { (*expr.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_Var {
         return None;
     }
+    // SAFETY: NodeTag confirmed Var, and the planner-owned node is read only
+    // during this callback.
     let var = unsafe { &*expr.cast::<pg_sys::Var>() };
     if var.varno != target_rtindex || var.varlevelsup != 0 || var.varattno <= 0 {
         return None;
@@ -2226,12 +2439,14 @@ unsafe fn dml_frontdoor_var_column(
 }
 
 unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+    // SAFETY: predicate value decoding handles nulls and unsupported node tags.
     unsafe { dml_frontdoor_predicate_value(expr).kind }
 }
 
 unsafe fn dml_frontdoor_predicate_value(
     expr: *mut pg_sys::Expr,
 ) -> SpireDmlFrontdoorPredicateValue {
+    // SAFETY: predicate value decoding handles nulls and unsupported node tags.
     unsafe { dml_frontdoor_predicate_value_inner(expr, 0) }
 }
 
@@ -2245,14 +2460,18 @@ unsafe fn dml_frontdoor_predicate_value_inner(
     if wrapper_depth > DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH {
         return dml_frontdoor_other_predicate_value();
     }
+    // SAFETY: expr was checked non-null before reading NodeTag.
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
         pg_sys::NodeTag::T_Const => {
+            // SAFETY: NodeTag confirmed Const, and the node is read only while
+            // the planner expression remains live.
             let const_expr = unsafe { &*expr.cast::<pg_sys::Const>() };
             if !const_expr.constisnull
                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
             {
                 SpireDmlFrontdoorPredicateValue {
                     kind: SpireDmlFrontdoorValueKind::ConstBigint,
+                    // SAFETY: consttype was checked to be an integer type.
                     const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
                     param_id: None,
                 }
@@ -2261,6 +2480,7 @@ unsafe fn dml_frontdoor_predicate_value_inner(
             }
         }
         pg_sys::NodeTag::T_Param => {
+            // SAFETY: NodeTag confirmed Param, and param metadata is copied.
             let param = unsafe { &*expr.cast::<pg_sys::Param>() };
             if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
                 SpireDmlFrontdoorPredicateValue {
@@ -2273,24 +2493,36 @@ unsafe fn dml_frontdoor_predicate_value_inner(
             }
         }
         pg_sys::NodeTag::T_FuncExpr => {
+            // SAFETY: NodeTag confirmed FuncExpr; args is passed to a helper
+            // that validates it is a single expression.
             let func_expr = unsafe { &*expr.cast::<pg_sys::FuncExpr>() };
             if func_expr.funcresulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
+            // SAFETY: FuncExpr result type is bigint and the helper validates a
+            // single coercion argument before recursive decoding.
             unsafe { dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth) }
         }
         pg_sys::NodeTag::T_RelabelType => {
+            // SAFETY: NodeTag confirmed RelabelType; arg is recursively
+            // decoded with a bounded wrapper depth.
             let relabel = unsafe { &*expr.cast::<pg_sys::RelabelType>() };
             if relabel.resulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
+            // SAFETY: RelabelType result type is bigint and recursive decoding
+            // is bounded by wrapper_depth.
             unsafe { dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth) }
         }
         pg_sys::NodeTag::T_CoerceViaIO => {
+            // SAFETY: NodeTag confirmed CoerceViaIO; arg is recursively
+            // decoded with a bounded wrapper depth.
             let coerce = unsafe { &*expr.cast::<pg_sys::CoerceViaIO>() };
             if coerce.resulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
+            // SAFETY: CoerceViaIO result type is bigint and recursive decoding
+            // is bounded by wrapper_depth.
             unsafe { dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth) }
         }
         _ => dml_frontdoor_other_predicate_value(),
@@ -2301,19 +2533,25 @@ unsafe fn dml_frontdoor_single_coerced_arg_value(
     args: *mut pg_sys::List,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
+    // SAFETY: args is validated as a single-expression PostgreSQL List before
+    // the expression pointer is recursively decoded.
     let Some(arg) = (unsafe { dml_frontdoor_single_list_expr_arg(args) }) else {
         return dml_frontdoor_other_predicate_value();
     };
+    // SAFETY: arg came from the validated one-element expression list.
     unsafe { dml_frontdoor_coercible_integer_value(arg, wrapper_depth) }
 }
 
 unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+    // SAFETY: args may be null; as_ref handles that before any List fields are
+    // inspected.
     let args = unsafe { args.as_ref()? };
     if args.type_ != pg_sys::NodeTag::T_List || args.length != 1 || args.elements.is_null() {
         return None;
     }
     // PG18 exposes List cells through `elements`; this remains the stable
     // single-argument check for implicit-cast FuncExpr wrappers.
+    // SAFETY: args was checked to be a one-element List with non-null elements.
     Some(unsafe { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
 }
 
@@ -2324,14 +2562,18 @@ unsafe fn dml_frontdoor_coercible_integer_value(
     if expr.is_null() {
         return dml_frontdoor_other_predicate_value();
     }
+    // SAFETY: expr was checked non-null before reading NodeTag.
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
         pg_sys::NodeTag::T_Const => {
+            // SAFETY: NodeTag confirmed Const, and the planner node is only
+            // read while decoding to an owned value.
             let const_expr = unsafe { &*expr.cast::<pg_sys::Const>() };
             if !const_expr.constisnull
                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
             {
                 SpireDmlFrontdoorPredicateValue {
                     kind: SpireDmlFrontdoorValueKind::ConstBigint,
+                    // SAFETY: consttype was checked to be an integer type.
                     const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
                     param_id: None,
                 }
@@ -2340,6 +2582,7 @@ unsafe fn dml_frontdoor_coercible_integer_value(
             }
         }
         pg_sys::NodeTag::T_Param => {
+            // SAFETY: NodeTag confirmed Param; only by-value metadata is read.
             let param = unsafe { &*expr.cast::<pg_sys::Param>() };
             if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
                 SpireDmlFrontdoorPredicateValue {
@@ -2351,6 +2594,8 @@ unsafe fn dml_frontdoor_coercible_integer_value(
                 dml_frontdoor_other_predicate_value()
             }
         }
+        // SAFETY: recursive decoding is bounded by
+        // DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH.
         _ => unsafe { dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1) },
     }
 }
@@ -2364,6 +2609,8 @@ fn dml_frontdoor_other_predicate_value() -> SpireDmlFrontdoorPredicateValue {
 }
 
 unsafe fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
+    // SAFETY: callers pass Const nodes whose consttype is one of int2/int4/int8;
+    // FromDatum copies the by-value integer Datum into Rust.
     unsafe {
         if const_expr.constisnull {
             return None;
@@ -2404,6 +2651,8 @@ unsafe fn dml_frontdoor_target_columns(
     target_list: *mut pg_sys::List,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Vec<String> {
+    // SAFETY: target-list expression extraction validates the PostgreSQL List
+    // and copies column names; only names are retained here.
     unsafe {
         dml_frontdoor_target_column_exprs(target_list, context)
             .into_iter()
@@ -2419,9 +2668,13 @@ unsafe fn dml_frontdoor_target_column_exprs(
     if target_list.is_null() {
         return Vec::new();
     }
+    // SAFETY: target_list is a PostgreSQL TargetEntry List from a live Query and
+    // is consumed immediately.
     let targets = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(target_list) };
     let mut columns = Vec::new();
     for target_entry in targets.iter_ptr() {
+        // SAFETY: list entries may be null; as_ref handles nulls before reading
+        // TargetEntry fields.
         let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {
             continue;
         };
@@ -2437,6 +2690,8 @@ unsafe fn dml_frontdoor_target_column_exprs(
             continue;
         }
         if !target_entry.resname.is_null() {
+            // SAFETY: resname was checked non-null and points at a PostgreSQL
+            // C string for the target entry; it is copied immediately.
             if let Ok(column) = unsafe { CStr::from_ptr(target_entry.resname) }.to_str() {
                 columns.push((column.to_owned(), target_entry.expr));
             }
