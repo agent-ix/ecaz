@@ -1,0 +1,6 @@
+[install] repo=/Users/peter/dev/tqvector
+[install] pgrx_home=/Users/peter/.pgrx
+[install] pg_config=/opt/homebrew/opt/postgresql@18/bin/pg_config
+[install] backend artifact assertion passed
+[install] installed_backend=/opt/homebrew/lib/postgresql@18/ecaz.dylib
+[install] sha256=9e2be2dac3c268a06117f495de6807de76f4c9df7b6c62d018b5e8ae192f5356

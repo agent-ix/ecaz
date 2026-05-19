@@ -1,0 +1,107 @@
+{
+  "suite": "task47-cost-gate-small",
+  "schema_version": 1,
+  "config": "fixtures/gates/cost-gate-small.json",
+  "config_sha256": "00d20d648514a8acddc8a2afcaab1674c2d61eaa39e28a24094ee4cb2aba2b2b",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779149234165,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "ivf-small-cost",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "target/gates/cost-small/ivf-real10k-cost.sql",
+        "--log-output",
+        "target/gates/cost-small/ivf-real10k-cost.log"
+      ],
+      "selected": true,
+      "tags": [
+        "cost",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/cost-small/ivf-real10k-cost.sql",
+        "target/gates/cost-small/ivf-real10k-cost.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "hnsw-small-cost",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "target/gates/cost-small/hnsw-real10k-cost.sql",
+        "--log-output",
+        "target/gates/cost-small/hnsw-real10k-cost.log"
+      ],
+      "selected": true,
+      "tags": [
+        "cost",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/cost-small/hnsw-real10k-cost.sql",
+        "target/gates/cost-small/hnsw-real10k-cost.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "diskann-small-cost",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "target/gates/cost-small/diskann-real10k-cost.sql",
+        "--log-output",
+        "target/gates/cost-small/diskann-real10k-cost.log"
+      ],
+      "selected": true,
+      "tags": [
+        "cost",
+        "small",
+        "pr"
+      ],
+      "expected_artifacts": [
+        "target/gates/cost-small/diskann-real10k-cost.sql",
+        "target/gates/cost-small/diskann-real10k-cost.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
