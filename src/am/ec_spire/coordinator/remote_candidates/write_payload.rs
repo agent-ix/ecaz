@@ -537,6 +537,8 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
     let mut dispatches = Vec::with_capacity(requests.len());
     let mut prepare_requests = Vec::with_capacity(requests.len());
     for (node_id, served_epoch, remote_sql) in requests {
+        // SAFETY: index_relation is the open SPIRE index relation; the dispatch
+        // planner validates node/epoch readiness for the requested remote write.
         let dispatch =
             unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
         if dispatch.status != SPIRE_REMOTE_STATUS_READY {
@@ -626,6 +628,8 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
     served_epoch: u64,
     remote_sql: &str,
 ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
+    // SAFETY: arguments are forwarded unchanged to the batch prepare helper,
+    // which validates dispatch readiness and records prepared-xact intent.
     unsafe {
         coordinator_insert_prepare_remote_sql_batch(
             index_relation,
@@ -644,6 +648,8 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
     row_payload_json: &str,
     requested_columns: &[String],
 ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
+    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
+    // planner validates node/epoch readiness for this insert payload.
     let dispatch =
         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
@@ -657,6 +663,8 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
         row_payload_json,
         requested_columns,
     )?;
+    // SAFETY: remote_sql was built from validated payload inputs and dispatch
+    // metadata; the helper revalidates dispatch before remote prepare.
     unsafe {
         coordinator_insert_prepare_remote_sql(index_relation, node_id, served_epoch, &remote_sql)
     }
@@ -669,6 +677,8 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch(
 ) -> Result<Vec<SpireCoordinatorInsertRemotePrepareRow>, String> {
     let mut requests = Vec::with_capacity(rows.len());
     for (node_id, served_epoch, row_payload_json) in rows {
+        // SAFETY: index_relation is the open SPIRE index relation; the dispatch
+        // planner validates node/epoch readiness for this insert payload.
         let dispatch =
             unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
         if dispatch.status != SPIRE_REMOTE_STATUS_READY {
@@ -684,6 +694,8 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch(
         )?;
         requests.push((node_id, served_epoch, remote_sql));
     }
+    // SAFETY: each request was built from validated dispatch metadata above;
+    // the batch helper performs the final dispatch check and prepare handling.
     unsafe { coordinator_insert_prepare_remote_sql_batch(index_relation, requests) }
 }
 
@@ -696,6 +708,8 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
     row_payload_json: &str,
     updated_columns: &[String],
 ) -> Result<SpireCoordinatorUpdateRemoteRow, String> {
+    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
+    // planner validates node/epoch readiness for this update payload.
     let dispatch =
         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
@@ -751,6 +765,8 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
     pk_column: &str,
     pk_value: &[u8],
 ) -> Result<SpireCoordinatorDeleteRemotePrepareRow, String> {
+    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
+    // planner validates node/epoch readiness for this delete payload.
     let dispatch =
         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
@@ -850,6 +866,8 @@ pub(crate) unsafe fn coordinator_select_remote_tuple_payload(
     pk_value: &[u8],
     requested_columns: &[String],
 ) -> Result<SpireCoordinatorSelectRemoteRow, String> {
+    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
+    // planner validates node/epoch readiness for this select payload.
     let dispatch =
         unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {

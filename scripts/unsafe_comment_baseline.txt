@@ -1454,15 +1454,6 @@ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:830
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:831
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:857
 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs:97
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:541
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:629
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:648
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:660
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:673
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:687
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:700
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:755
-src/am/ec_spire/coordinator/remote_candidates/write_payload.rs:854
 src/am/ec_spire/coordinator/snapshots.rs:10
 src/am/ec_spire/coordinator/snapshots.rs:113
 src/am/ec_spire/coordinator/snapshots.rs:115
