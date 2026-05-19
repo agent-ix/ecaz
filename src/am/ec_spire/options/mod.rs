@@ -637,18 +637,25 @@ pub(super) unsafe fn resolve_local_store_tablespace_plan(
     if index_relation.is_null() {
         return Err("ec_spire local store tablespace plan needs a valid index relation".to_owned());
     }
+    // SAFETY: index_relation is checked non-null above and remains live while
+    // reading its relcache tablespace.
     let index_tablespace_oid = unsafe { (*(*index_relation).rd_rel).reltablespace }.into();
     plan_local_store_tablespaces_with_resolver(
         options.local_store_count,
         index_tablespace_oid,
         options.local_store_tablespaces.as_deref(),
-        |name| unsafe { resolve_tablespace_name(name) },
+        |name| {
+            // SAFETY: resolve_tablespace_name only passes a NUL-free CString
+            // pointer to PostgreSQL for the duration of the lookup call.
+            unsafe { resolve_tablespace_name(name) }
+        },
     )
 }
 
 unsafe fn resolve_tablespace_name(name: &str) -> Result<u32, String> {
     let c_name = CString::new(name)
         .map_err(|_| "ec_spire local_store_tablespaces cannot contain NUL bytes".to_owned())?;
+    // SAFETY: c_name is a NUL-terminated CString that lives for the lookup call.
     let oid = unsafe { pg_sys::get_tablespace_oid(c_name.as_ptr(), true) };
     if oid == pg_sys::InvalidOid {
         return Err(format!(
@@ -1364,6 +1371,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
     reloptions: pg_sys::Datum,
     validate: bool,
 ) -> *mut pg_sys::bytea {
+    // SAFETY: PostgreSQL invokes amoptions with a reloptions Datum and validate
+    // flag; the guarded closure registers the local reloptions layout and
+    // returns the bytea allocated by PostgreSQL's reloptions builder.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut relopts = pg_sys::local_relopts::default();
@@ -1579,12 +1589,16 @@ unsafe fn read_string_reloption(
         return None;
     }
 
+    // SAFETY: rd_options points to EcSpireReloptions storage and offset is a
+    // nonzero reloption string offset supplied by PostgreSQL's reloptions parser.
     let value_ptr = unsafe {
         rd_options
             .cast::<u8>()
             .add(offset as usize)
             .cast::<std::ffi::c_char>()
     };
+    // SAFETY: value_ptr points at PostgreSQL's NUL-terminated reloption string
+    // storage for this rd_options allocation.
     let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
         .to_str()
         .unwrap_or_else(|e| pgrx::error!("invalid ec_spire {name} reloption: {e}"));
@@ -1595,11 +1609,15 @@ unsafe fn read_string_reloption(
 }
 
 pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
+    // SAFETY: index_relation is live for the relcache callback and rd_options is
+    // read from its relation descriptor.
     let rd_options = unsafe { (*index_relation).rd_options };
     if rd_options.is_null() {
         return EcSpireOptions::DEFAULT;
     }
 
+    // SAFETY: ec_spire_amoptions registers rd_options with the
+    // EcSpireReloptions layout for this index AM.
     let reloptions = unsafe { &*rd_options.cast::<EcSpireReloptions>() };
     validate_recursive_fanout_value(reloptions.recursive_fanout)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -1619,6 +1637,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     validate_top_graph_search_list_size_value(reloptions.top_graph_search_list_size)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
+    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
+    // read_string_reloption handles offset 0 and validates string contents.
     let storage_format_reloption = unsafe {
         read_string_reloption(
             rd_options,
@@ -1626,6 +1646,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
             "storage_format",
         )
     };
+    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
+    // read_string_reloption handles offset 0 and validates string contents.
     let quantizer_reloption =
         unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
     if let (Some(storage_format), Some(quantizer)) =
@@ -1645,6 +1667,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
             SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
         })
         .unwrap_or(SpireStorageFormat::Auto);
+    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
+    // read_string_reloption handles offset 0 and validates string contents.
     let source_identity = unsafe {
         read_string_reloption(
             rd_options,
@@ -1656,6 +1680,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         SpireSourceIdentityProvider::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
     })
     .unwrap_or(SpireSourceIdentityProvider::None);
+    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
+    // read_string_reloption handles offset 0 and validates string contents.
     let local_store_tablespaces = unsafe {
         read_string_reloption(
             rd_options,
@@ -1667,6 +1693,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         normalize_local_store_tablespaces_reloption(&value, reloptions.local_store_count)
             .unwrap_or_else(|e| pgrx::error!("{e}"))
     });
+    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
+    // read_string_reloption handles offset 0 and validates string contents.
     let nprobe_per_level = unsafe {
         read_string_reloption(
             rd_options,
