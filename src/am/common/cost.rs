@@ -95,8 +95,14 @@ pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstima
 
 pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
     PlannerCostConstants {
+        // SAFETY: PostgreSQL exposes these backend-local planner cost globals
+        // for read-only access during planner callback execution.
         random_page_cost: unsafe { pg_sys::random_page_cost },
+        // SAFETY: same backend-local planner cost global read during planner
+        // callback execution.
         seq_page_cost: unsafe { pg_sys::seq_page_cost },
+        // SAFETY: same backend-local planner cost global read during planner
+        // callback execution.
         cpu_operator_cost: unsafe { pg_sys::cpu_operator_cost },
     }
 }
@@ -161,6 +167,8 @@ pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
 
 #[cfg(feature = "pg18")]
 pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amgettreeheight(rel: pg_sys::Relation) -> i32 {
+    // SAFETY: PostgreSQL invokes this AM callback with a live index relation;
+    // the guard converts Rust panics into PostgreSQL errors.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = shared::read_metadata_page(rel);
@@ -174,6 +182,8 @@ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amtranslatestrategy(
     strategy: pg_sys::StrategyNumber,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::CompareType::Type {
+    // SAFETY: PostgreSQL invokes this AM callback at the C ABI boundary; the
+    // closure does not dereference raw pointers and is panic-guarded.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| match amtranslatestrategy_callback(i32::from(strategy)) {
             PlannerCompareType::Invalid => pg_sys::CompareType::COMPARE_INVALID,
@@ -194,6 +204,8 @@ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amtranslatecmptype(
     compare_type: pg_sys::CompareType::Type,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::StrategyNumber {
+    // SAFETY: PostgreSQL invokes this AM callback at the C ABI boundary; the
+    // closure does not dereference raw pointers and is panic-guarded.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             amtranslatecmptype_callback(match compare_type {
@@ -278,6 +290,8 @@ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
     index_correlation: *mut f64,
     index_pages: *mut f64,
 ) {
+    // SAFETY: PostgreSQL invokes `amcostestimate` with non-null planner output
+    // pointers and an IndexPath whose IndexOptInfo stays live for the call.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let index_info = (*path).indexinfo;
@@ -304,6 +318,8 @@ unsafe fn planner_tree_height_from_index_info(
 ) -> PlannerTreeHeightInput {
     #[cfg(feature = "pg18")]
     {
+        // SAFETY: caller passes the live `IndexOptInfo` received from
+        // PostgreSQL's planner callback.
         let planner_tree_height = unsafe { (*index_info).tree_height };
         if planner_tree_height > 0 {
             return PlannerTreeHeightInput {
@@ -327,8 +343,11 @@ unsafe fn compute_amcostestimate(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexOptInfo,
 ) -> PlannerCostEstimate {
+    // SAFETY: caller passes a live index relation for this planner callback.
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
+    // SAFETY: `index_relation` is live and opened by the planner callback
+    // wrapper while the main fork page count is read.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -340,10 +359,18 @@ unsafe fn compute_amcostestimate(
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return gated_planner_cost_estimate(index_pages);
     }
+    // SAFETY: `index_relation` is live and its pg_class tuple is available for
+    // planner metadata reads.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    // SAFETY: `index_relation` is a live ec_hnsw relation with block 0 present
+    // because the empty-index gate above returned for metadata-only indexes.
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
+    // SAFETY: `index_info` is the live planner callback input paired with this
+    // index relation.
     let tree_height =
         unsafe { planner_tree_height_from_index_info(index_info, metadata.max_level) };
+    // SAFETY: planner cost constants are backend-local globals read during
+    // planner callback execution.
     let constants = unsafe { current_planner_cost_constants() };
 
     estimate_planner_cost(

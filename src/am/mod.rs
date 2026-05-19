@@ -322,6 +322,8 @@ pub(crate) fn register_custom_scan() {
 }
 
 pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+    // SAFETY: caller runs during extension initialization before concurrent
+    // planner-hook use; SPIRE owns the process-local hook state it installs.
     unsafe { ec_spire::register_dml_frontdoor_planner_hook() };
 }
 
@@ -408,54 +410,72 @@ pub(crate) use self::ec_spire::{
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IndexCostSnapshot {
+    // SAFETY: callers pass a live ec_hnsw index relation opened for the
+    // duration of the snapshot read.
     unsafe { ec_hnsw::index_cost_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn index_admin_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IndexAdminSnapshot {
+    // SAFETY: callers pass a live ec_hnsw index relation opened for the
+    // duration of the metadata/admin snapshot read.
     unsafe { ec_hnsw::index_admin_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn planner_integration_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> PlannerIntegrationSnapshot {
+    // SAFETY: callers pass a live ec_hnsw index relation opened while planner
+    // integration metadata is read.
     unsafe { ec_hnsw::planner_integration_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn ivf_index_drift_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IndexDriftSnapshot {
+    // SAFETY: callers pass a live ec_ivf index relation opened for this drift
+    // snapshot read.
     unsafe { ec_ivf::index_drift_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn ivf_index_admin_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IvfIndexAdminSnapshot {
+    // SAFETY: callers pass a live ec_ivf index relation opened for this admin
+    // snapshot read.
     unsafe { ec_ivf::index_admin_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn ivf_index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IvfIndexCostSnapshot {
+    // SAFETY: callers pass a live ec_ivf index relation opened for this cost
+    // snapshot read.
     unsafe { ec_ivf::index_cost_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn ivf_index_page_ownership(
     index_relation: pgrx::pg_sys::Relation,
 ) -> Vec<IvfIndexPageOwnershipSnapshot> {
+    // SAFETY: callers pass a live ec_ivf index relation opened while page
+    // ownership metadata is inspected.
     unsafe { ec_ivf::index_page_ownership(index_relation) }
 }
 
 pub(crate) unsafe fn diskann_graph_summary(
     index_relation: pgrx::pg_sys::Relation,
 ) -> Result<DiskannGraphSummary, String> {
+    // SAFETY: callers pass a live ec_diskann index relation opened for the
+    // duration of graph summary page reads.
     unsafe { ec_diskann::diagnostics::graph_summary(index_relation) }
 }
 
 pub(crate) unsafe fn diskann_index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> DiskannIndexCostSnapshot {
+    // SAFETY: callers pass a live ec_diskann index relation opened for this
+    // cost snapshot read.
     unsafe { ec_diskann::index_cost_snapshot(index_relation) }
 }
 

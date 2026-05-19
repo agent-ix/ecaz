@@ -16,12 +16,16 @@ pub(crate) struct DetoastedVarlena {
 impl DetoastedVarlena {
     pub(crate) unsafe fn packed_from_datum(datum: pg_sys::Datum) -> Option<Self> {
         let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+        // SAFETY: caller guarantees `datum` is a varlena Datum valid in the
+        // current PostgreSQL memory context.
         let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
         Self::from_raw(original, varlena)
     }
 
     pub(crate) unsafe fn plain_from_datum(datum: pg_sys::Datum) -> Option<Self> {
         let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+        // SAFETY: caller guarantees `datum` is a varlena Datum valid in the
+        // current PostgreSQL memory context.
         let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
         Self::from_raw(original, varlena)
     }
@@ -41,6 +45,8 @@ impl DetoastedVarlena {
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8] {
+        // SAFETY: `self.varlena` is non-null and remains owned or borrowed by
+        // this wrapper for the returned slice lifetime.
         unsafe { pgrx::varlena::varlena_to_byte_slice(self.varlena) }
     }
 
@@ -52,6 +58,8 @@ impl DetoastedVarlena {
 impl Drop for DetoastedVarlena {
     fn drop(&mut self) {
         if self.owned {
+            // SAFETY: `owned` is set only when PostgreSQL returned a detoasted
+            // copy distinct from the original Datum pointer.
             unsafe { pg_sys::pfree(self.varlena.cast()) };
         }
     }
