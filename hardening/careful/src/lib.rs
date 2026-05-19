@@ -25,6 +25,10 @@ pub mod careful_ivf_page;
 #[path = "../../../src/am/common/cost.rs"]
 pub mod careful_common_cost;
 
+#[allow(dead_code, unused_imports)]
+#[path = "spire.rs"]
+pub mod careful_spire;
+
 #[allow(dead_code)]
 #[path = "../../../src/am/common/training.rs"]
 pub mod careful_common_training;
@@ -76,6 +80,10 @@ pub mod am {
 
     pub mod ec_ivf {
         pub use crate::careful_ivf_page as page;
+    }
+
+    pub mod ec_spire {
+        pub use crate::careful_spire::{assign, meta, storage};
     }
 }
 
