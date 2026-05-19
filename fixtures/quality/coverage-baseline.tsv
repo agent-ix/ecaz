@@ -2,7 +2,7 @@
 quant/codebook.rs	98.15	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/grouped_pq.rs	94.72	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/hadamard.rs	92.70	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
-quant/mod.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+quant/mod.rs	100.00	Task 39 baseline raised by reviews/task-39/020-quant-family-coverage
 quant/mse.rs	100.00	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/prod.rs	93.02	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/qjl.rs	100.00	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage

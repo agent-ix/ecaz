@@ -251,4 +251,35 @@ mod tests {
         assert_eq!(&tuple.neighbors[..2], &[tid(1, 1), tid(3, 3)]);
         assert_eq!(&tuple.neighbors[2..], &[ItemPointer::INVALID; 2]);
     }
+
+    #[test]
+    fn quant_family_default_and_names_are_stable() {
+        assert_eq!(super::quant::Family::DEFAULT, super::quant::Family::TurboQuant);
+        assert_eq!(super::quant::Family::TurboQuant.as_str(), "turboquant");
+        assert_eq!(super::quant::Family::PqFastScan.as_str(), "pq_fastscan");
+    }
+
+    #[test]
+    fn quant_family_reloption_parser_accepts_known_values() {
+        assert_eq!(
+            super::quant::Family::parse_reloption("turboquant").unwrap(),
+            super::quant::Family::TurboQuant
+        );
+        assert_eq!(
+            super::quant::Family::parse_reloption("pq_fastscan").unwrap(),
+            super::quant::Family::PqFastScan
+        );
+    }
+
+    #[test]
+    fn quant_family_reloption_parser_rejects_unknown_values() {
+        let error = super::quant::Family::parse_reloption("product_quant").unwrap_err();
+        assert!(error.contains("invalid ec_hnsw storage_format reloption"));
+        assert!(error.contains("product_quant"));
+    }
+
+    #[test]
+    fn quant_simd_backend_name_is_reported() {
+        assert!(!super::quant::simd_backend_name().is_empty());
+    }
 }
