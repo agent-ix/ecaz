@@ -25,6 +25,7 @@ lane flags:
   miri-many-seeds uses MIRI_MANY_SEEDS, default 0..128
   loom-real runs the real ECAZ Loom path-lifted harness
   shuttle-real runs the real ECAZ Shuttle path-lifted harness
+  sim-spire-remote runs the real ECAZ deterministic SPIRE remote simulation
   any lane --log-file FILE
 EOF
 }
@@ -503,6 +504,9 @@ EOF
     ;;
   shuttle-real)
     cargo test --manifest-path hardening/shuttle/Cargo.toml --lib
+    ;;
+  sim-spire-remote)
+    cargo test --manifest-path hardening/sim-spire/Cargo.toml --lib
     ;;
   kani)
     need_cmd cargo-kani "cargo install --locked kani-verifier"

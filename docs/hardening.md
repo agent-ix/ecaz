@@ -329,6 +329,11 @@ with either an interrupt check or a follow-up task.
   `hardening/shuttle/`. Current coverage targets SPIRE remote candidate merge
   order invariance and epoch-publish visibility using path-lifted helpers under
   `src/am/ec_spire/`.
+- `make sim-spire-remote`: runs the standalone Turmoil-based SPIRE remote
+  simulation in `hardening/sim-spire/`. Current coverage drives path-lifted
+  remote transport request/response state through deterministic UDP delivery,
+  network partition handling, degraded skip behavior, stale served-epoch
+  rejection, and candidate merge selection.
 - `make kani`: bounded proof for `ItemPointer` decode length behavior.
 
 Kani is intentionally separate from normal `cargo test` so the repo does not
