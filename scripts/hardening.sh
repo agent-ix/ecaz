@@ -116,11 +116,19 @@ EOF
 run_coverage_lane() {
   need_cmd cargo-llvm-cov "cargo install cargo-llvm-cov"
   local coverage_cargo=(cargo)
-  if [ -x "$RUSTUP_CARGO" ]; then
+  if [ -x "$RUSTUP_CARGO" ] && "$RUSTUP_CARGO" +stable --version >/dev/null 2>&1; then
     coverage_cargo=("$RUSTUP_CARGO" "+stable")
     if [ -x "$RUSTUP_BIN" ]; then
       "$RUSTUP_BIN" component add llvm-tools-preview >/dev/null
     fi
+  fi
+  if [ -z "${LLVM_COV:-}" ] && [ -x /opt/homebrew/opt/llvm/bin/llvm-cov ]; then
+    LLVM_COV=/opt/homebrew/opt/llvm/bin/llvm-cov
+    export LLVM_COV
+  fi
+  if [ -z "${LLVM_PROFDATA:-}" ] && [ -x /opt/homebrew/opt/llvm/bin/llvm-profdata ]; then
+    LLVM_PROFDATA=/opt/homebrew/opt/llvm/bin/llvm-profdata
+    export LLVM_PROFDATA
   fi
   local output_dir="target/quality/coverage"
   local report_dir=""

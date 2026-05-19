@@ -18,6 +18,11 @@ pub mod storage {
 }
 
 pub mod am {
+    pub(crate) mod page {
+        pub(crate) const INDEX_FORMAT_V1_SCALAR: u16 = 1;
+        pub(crate) const INDEX_FORMAT_V2_GROUPED: u16 = 2;
+    }
+
     pub mod ec_diskann {
         pub use crate::careful_diskann_tuple as tuple;
         pub use crate::careful_diskann_vacuum as vacuum;
@@ -32,13 +37,6 @@ pub mod am {
 #[allow(dead_code)]
 #[path = "../../../src/quant/mod.rs"]
 mod quant;
-
-mod am {
-    pub(crate) mod page {
-        pub(crate) const INDEX_FORMAT_V1_SCALAR: u16 = 1;
-        pub(crate) const INDEX_FORMAT_V2_GROUPED: u16 = 2;
-    }
-}
 
 #[cfg(test)]
 mod tests {
