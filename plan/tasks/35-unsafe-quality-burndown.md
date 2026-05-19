@@ -1,10 +1,26 @@
 # Task 35: Unsafe Quality Burndown
 
-Status: **paused pending Tasks 41, 40, and 43** — Task 34 installed the
-local-first hardening lanes and grandfathered the historical unsafe-comment
-debt. This task owns burning that baseline down to zero through reviewed
-subsystem packets, but broad annotation-only packets are deferred while the
-structural safety tasks remove unsafe sites by construction.
+Status: **complete** as of 2026-05-19 (final closeout commit
+`5bc35c9a`; baseline is empty). Task 34 installed the local-first
+hardening lanes and grandfathered the historical unsafe-comment debt;
+Task 35 burned that baseline down to zero through reviewed subsystem
+packets.
+
+Final accounting:
+
+- `scripts/unsafe_comment_baseline.txt` is empty
+  (`bash scripts/unsafe_baseline_report.sh` reports
+  `entries: 0`, `files: 0`).
+- ~3,397 baseline entries cleared across ~120 code-bearing packets.
+- AM closeouts on file: SPIRE (083), HNSW (104), DiskANN / `src/am`
+  residual (107), IVF retroactive (122).
+- Top-level closeout: 121.
+- Test-only sweep (packets 108–120) cleared 499 entries and
+  prototyped the AM callback wrapper macro pattern in 10 test files
+  — Task 50 has working prototypes to mine from.
+
+Follow-on structural-reduction work is tracked by Task 50
+(`50-unsafe-structural-reduction.md`).
 
 ## Scope
 
