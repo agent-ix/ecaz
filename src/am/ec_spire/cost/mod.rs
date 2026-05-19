@@ -68,6 +68,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
     index_correlation: *mut f64,
     index_pages: *mut f64,
 ) {
+    // SAFETY: PostgreSQL invokes this planner callback with a live IndexPath
+    // and non-null output pointers for the duration of the guarded call.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let index_info = (*path).indexinfo;
@@ -91,14 +93,21 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexCostSnapshot {
+    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
+    // it for main-fork block counting.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let index_pages = f64::from(block_count);
+    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    // SAFETY: reads planner cost GUCs for the current backend.
     let constants = unsafe { current_planner_cost_constants() };
+    // SAFETY: relation options are read from the live index relation.
     let relation_options = unsafe { options::relation_options(index_relation) };
+    // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+    // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
     let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
@@ -153,13 +162,19 @@ pub(crate) unsafe fn index_cost_snapshot(
 pub(crate) unsafe fn index_cost_tuning_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexCostTuningSnapshot {
+    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
+    // it for main-fork block counting.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let index_pages = f64::from(block_count);
+    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    // SAFETY: relation options are read from the live index relation.
     let relation_options = unsafe { options::relation_options(index_relation) };
+    // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+    // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
     let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
@@ -191,14 +206,21 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
 }
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
+    // it for main-fork block counting.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let index_pages = f64::from(block_count);
+    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    // SAFETY: reads planner cost GUCs for the current backend.
     let constants = unsafe { current_planner_cost_constants() };
+    // SAFETY: relation options are read from the live index relation.
     let relation_options = unsafe { options::relation_options(index_relation) };
+    // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+    // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
     let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
@@ -212,12 +234,15 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
 }
 
 fn spire_tree_height_callback_value(index_relation: pg_sys::Relation) -> i32 {
+    // SAFETY: caller passes the live SPIRE index relation; hierarchy snapshot
+    // only reads index metadata.
     let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
     i32::from(hierarchy.hierarchy_depth)
 }
 
 #[cfg(feature = "pg18")]
 pub(super) unsafe extern "C-unwind" fn ec_spire_amgettreeheight(rel: pg_sys::Relation) -> i32 {
+    // SAFETY: PostgreSQL invokes this PG18 AM callback with a live relation.
     unsafe { pgrx::pgrx_extern_c_guard(|| spire_tree_height_callback_value(rel)) }
 }
 
@@ -499,6 +524,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amtranslatestrategy(
     strategy: pg_sys::StrategyNumber,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::CompareType::Type {
+    // SAFETY: PostgreSQL invokes this PG18 AM callback with scalar strategy
+    // metadata; the guarded closure performs no raw pointer access.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             match cost::amtranslatestrategy_callback(i32::from(strategy)) {
@@ -521,6 +548,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amtranslatecmptype(
     compare_type: pg_sys::CompareType::Type,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::StrategyNumber {
+    // SAFETY: PostgreSQL invokes this PG18 AM callback with scalar compare
+    // metadata; the guarded closure performs no raw pointer access.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             cost::amtranslatecmptype_callback(match compare_type {
