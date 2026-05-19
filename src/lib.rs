@@ -41,11 +41,15 @@ use storage::relation_guard::IndexRelationGuard;
 pub unsafe extern "C-unwind" fn _PG_init() {
     fault::register_gucs();
     am::register_gucs();
+    // SAFETY: `_PG_init` runs once in a backend during extension load, before
+    // SQL callbacks use these process-local hook registrations.
     unsafe {
         am::register_custom_scan();
         am::register_dml_frontdoor_planner_hook();
     }
     #[cfg(feature = "pg18")]
+    // SAFETY: PG18 hook/stat registrations are process-local initialization
+    // steps and are called from PostgreSQL's extension-load entrypoint.
     unsafe {
         am::explain::register_pg18_explain_hooks();
         am::stats::register_pg18_stats();
@@ -607,8 +611,12 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
         return Err("invalid tqvector binary: missing input buffer".into());
     }
 
+    // SAFETY: caller supplies PostgreSQL's live `StringInfo` for the current
+    // type receive call; the null pointer case is rejected above.
     let total_len =
         usize::try_from(unsafe { (*msg).len }).map_err(|_| "invalid tqvector binary length")?;
+    // SAFETY: same live `StringInfo`; reading the cursor field does not mutate
+    // the input buffer.
     let cursor =
         usize::try_from(unsafe { (*msg).cursor }).map_err(|_| "invalid tqvector binary cursor")?;
     if cursor > total_len {
@@ -622,7 +630,11 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
         ));
     }
 
+    // SAFETY: `remaining >= MIN_BINARY_BYTES`, so PostgreSQL can advance the
+    // message cursor by the fixed tqvector prefix length.
     let prefix = unsafe { pg_sys::pq_getmsgbytes(msg, MIN_BINARY_BYTES as i32) as *const u8 };
+    // SAFETY: `pq_getmsgbytes` returns a pointer to at least the requested
+    // prefix bytes inside the live message buffer.
     let prefix = unsafe { std::slice::from_raw_parts(prefix, MIN_BINARY_BYTES) };
 
     let expected_len = expected_binary_len(prefix)?;
@@ -639,11 +651,16 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
 
     let code_bytes_len = expected_len - MIN_BINARY_BYTES;
     if code_bytes_len > 0 {
+        // SAFETY: `remaining == expected_len`, and the prefix has already been
+        // consumed, so exactly `code_bytes_len` bytes remain in `msg`.
         let codes = unsafe { pg_sys::pq_getmsgbytes(msg, code_bytes_len as i32) as *const u8 };
+        // SAFETY: PostgreSQL returned a pointer to the requested code payload
+        // bytes in the live message buffer.
         let codes = unsafe { std::slice::from_raw_parts(codes, code_bytes_len) };
         bytes.extend_from_slice(codes);
     }
 
+    // SAFETY: all bytes in the message have been consumed and validated.
     unsafe { pg_sys::pq_getmsgend(msg) };
     unpack(&bytes)?;
     Ok(bytes)
@@ -750,8 +767,12 @@ unsafe fn recv_raw_f32_message(msg: pg_sys::StringInfo, label: &str) -> Result<V
         return Err(format!("{label}: missing input buffer"));
     }
 
+    // SAFETY: caller supplies PostgreSQL's live `StringInfo` for the current
+    // type receive call; the null pointer case is rejected above.
     let total_len = usize::try_from(unsafe { (*msg).len })
         .map_err(|_| format!("{label}: invalid binary length"))?;
+    // SAFETY: same live `StringInfo`; reading the cursor field does not mutate
+    // the input buffer.
     let cursor = usize::try_from(unsafe { (*msg).cursor })
         .map_err(|_| format!("{label}: invalid binary cursor"))?;
     if cursor > total_len {
@@ -761,11 +782,16 @@ unsafe fn recv_raw_f32_message(msg: pg_sys::StringInfo, label: &str) -> Result<V
     let remaining = total_len - cursor;
     let mut bytes = Vec::with_capacity(remaining);
     if remaining > 0 {
+        // SAFETY: `remaining` is computed from the live message length and
+        // cursor, and the cursor has been checked not to exceed the length.
         let payload = unsafe { pg_sys::pq_getmsgbytes(msg, remaining as i32) as *const u8 };
+        // SAFETY: PostgreSQL returned a pointer to exactly the requested
+        // remaining payload bytes in the live message buffer.
         let payload = unsafe { std::slice::from_raw_parts(payload, remaining) };
         bytes.extend_from_slice(payload);
     }
 
+    // SAFETY: all bytes in the message have been consumed and validated.
     unsafe { pg_sys::pq_getmsgend(msg) };
     unpack_raw_f32(&bytes, label)?;
     Ok(bytes)
@@ -799,6 +825,8 @@ fn ecvector_send(vec: Vec<u8>) -> Vec<u8> {
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn ecvector_recv(input: Internal, _type_oid: pg_sys::Oid, typmod: i32) -> Vec<u8> {
+    // SAFETY: PostgreSQL type receive functions are invoked with an `internal`
+    // argument pointing at a live `StringInfoData` input buffer.
     let msg = unsafe {
         input
             .get::<pg_sys::StringInfoData>()
@@ -806,6 +834,8 @@ fn ecvector_recv(input: Internal, _type_oid: pg_sys::Oid, typmod: i32) -> Vec<u8
             as *const pg_sys::StringInfoData as pg_sys::StringInfo
     };
 
+    // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current
+    // receive call.
     let bytes = unsafe { recv_raw_f32_message(msg, "ecvector") }
         .unwrap_or_else(|e| pgrx::error!("invalid ecvector binary: {e}"));
     validate_ecvector_dim(bytes.len() / std::mem::size_of::<f32>(), typmod, "ecvector")
@@ -852,6 +882,8 @@ fn ecvector_coerce(vec: Vec<u8>, typmod: i32, _explicit: bool) -> Vec<u8> {
 pub unsafe extern "C-unwind" fn ecvector_typmod_in(
     fcinfo: pg_sys::FunctionCallInfo,
 ) -> pg_sys::Datum {
+    // SAFETY: this is the PostgreSQL C ABI typmod input callback. `#[pg_guard]`
+    // plus `pgrx_extern_c_guard` converts Rust panics back into PG errors.
     pgrx::pgrx_extern_c_guard(|| unsafe {
         let datum = pgrx::fcinfo::pg_getarg_datum_raw(fcinfo, 0);
         let array = DetoastedTypmodArray::from_datum(datum);
@@ -882,6 +914,8 @@ struct DetoastedTypmodArray {
 
 impl DetoastedTypmodArray {
     unsafe fn from_datum(datum: pg_sys::Datum) -> Self {
+        // SAFETY: PostgreSQL passes typmod input as an int4 array Datum; the
+        // detoast helper copies or borrows the varlena under PG memory rules.
         let array = unsafe { am::common::detoast::DetoastedVarlena::packed_from_datum(datum) }
             .unwrap_or_else(|| pgrx::error!("invalid type modifier"));
         Self { array }
@@ -889,6 +923,8 @@ impl DetoastedTypmodArray {
 
     fn single_typmod(&self) -> i32 {
         let mut count = 0;
+        // SAFETY: `self.array` is a detoasted PostgreSQL ArrayType varlena kept
+        // alive by this wrapper while PostgreSQL decodes integer typmods.
         let raw_typmods = unsafe {
             pg_sys::ArrayGetIntegerTypmods(
                 self.array.as_ptr().cast::<pg_sys::ArrayType>(),
@@ -896,6 +932,8 @@ impl DetoastedTypmodArray {
             )
         };
         if count == 1 {
+            // SAFETY: PostgreSQL reported exactly one typmod element, so the
+            // returned pointer has a first `i32` value to read.
             unsafe { *raw_typmods }
         } else {
             pgrx::error!("invalid type modifier");
@@ -1308,6 +1346,8 @@ fn ec_spire_dml_frontdoor_relation_context_catalog(
         name!(next_step, &'static str),
     ),
 > {
+    // SAFETY: this SQL wrapper passes a heap relation OID supplied by
+    // PostgreSQL into the DML frontdoor catalog resolver for read-only lookup.
     let row = unsafe { am::spire_dml_frontdoor_relation_context_catalog_row(heap_relation_oid) }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     TableIterator::once((
@@ -1365,10 +1405,14 @@ fn ec_spire_dml_frontdoor_classify_sql(
         name!(next_step, &'static str),
     ),
 > {
+    // SAFETY: `analyze_single_dml_frontdoor_query` parses and analyzes this
+    // SQL text in the current backend memory context for immediate inspection.
     let query = unsafe {
         analyze_single_dml_frontdoor_query(sql)
             .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
     };
+    // SAFETY: `query` is the analyzed Query pointer returned above and remains
+    // live for this SQL function call.
     let Some(target_relation_oid) = (unsafe { am::spire_dml_frontdoor_target_relation_oid(query) })
     else {
         return TableIterator::once((
@@ -1402,6 +1446,8 @@ fn ec_spire_dml_frontdoor_classify_sql(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
+    // SAFETY: `query_context` borrows local vectors that live through this
+    // immediate classifier call; `query` remains live from analysis above.
     let Some(shape) = (unsafe { am::spire_classify_dml_frontdoor_query(query, query_context) })
     else {
         return TableIterator::once((
@@ -1460,10 +1506,14 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         name!(next_step, &'static str),
     ),
 > {
+    // SAFETY: the returned analyzed Query is inspected immediately during this
+    // SQL function call and is owned by PostgreSQL's current memory context.
     let query = unsafe {
         analyze_single_dml_frontdoor_query(sql)
             .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
     };
+    // SAFETY: `query` remains live for the duration of this immediate
+    // replacement-decision catalog lookup.
     let Some(decision) =
         (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
     else {
@@ -1537,10 +1587,14 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         name!(next_step, &'static str),
     ),
 > {
+    // SAFETY: the returned analyzed Query is inspected immediately during this
+    // SQL function call and is owned by PostgreSQL's current memory context.
     let query = unsafe {
         analyze_single_dml_frontdoor_query(sql)
             .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
     };
+    // SAFETY: `query` remains live for the duration of this immediate
+    // replacement-decision catalog lookup.
     let Some(decision) =
         (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
     else {
@@ -1639,14 +1693,22 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
 
 unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
     let sql = CString::new(sql).map_err(|_| "SQL text contains an interior NUL byte".to_owned())?;
+    // SAFETY: `sql` is a NUL-terminated CString that lives through this parser
+    // call in the current backend.
     let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
     if raw_parses.is_null() {
         return Err("parser returned no statements".to_owned());
     }
+    // SAFETY: `raw_parses` is the non-null PostgreSQL List returned by
+    // `pg_parse_query`.
     if unsafe { pg_sys::list_length(raw_parses) } != 1 {
         return Err("expected exactly one SQL statement".to_owned());
     }
+    // SAFETY: the list length check above guarantees element 0 exists and is a
+    // RawStmt pointer from PostgreSQL's parser.
     let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
+    // SAFETY: `raw_stmt` and `sql` come from PostgreSQL parsing in this backend
+    // and are analyzed immediately with no external parameter values.
     let queries = unsafe {
         pg_sys::pg_analyze_and_rewrite_fixedparams(
             raw_stmt,
@@ -1659,9 +1721,13 @@ unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Q
     if queries.is_null() {
         return Err("analyzer returned no query".to_owned());
     }
+    // SAFETY: `queries` is the non-null PostgreSQL List returned by the
+    // analyzer/rewrite step.
     if unsafe { pg_sys::list_length(queries) } != 1 {
         return Err("expected exactly one analyzed query".to_owned());
     }
+    // SAFETY: the list length check above guarantees element 0 exists and is
+    // the single analyzed Query pointer inspected by callers.
     Ok(unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>())
 }
 
