@@ -4239,6 +4239,8 @@ fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState
     if opaque.candidate_frontier.is_null() {
         &EMPTY_VISIBLE_FRONTIER_STATE
     } else {
+        // SAFETY: non-null `candidate_frontier` is Box-owned by this scan
+        // opaque until `free_scan_candidate_frontier` runs.
         unsafe { &*opaque.candidate_frontier }
     }
 }
@@ -4248,6 +4250,8 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
         opaque.candidate_frontier =
             Box::into_raw(Box::new(VisibleCandidateFrontierState::default()));
     }
+    // SAFETY: non-null `candidate_frontier` is Box-owned by this scan opaque
+    // until `free_scan_candidate_frontier` runs.
     unsafe { &mut *opaque.candidate_frontier }
 }
 
@@ -4313,100 +4317,85 @@ fn bootstrap_expansion_mut(
     if opaque.bootstrap_expansion.is_null() {
         reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     }
+    // SAFETY: non-null `bootstrap_expansion` is Box-owned by this scan opaque
+    // until `free_bootstrap_expansion` runs.
     unsafe { &mut *opaque.bootstrap_expansion }
 }
 
-fn reset_scan_visited_state(opaque: &mut TqScanOpaque) {
-    if opaque.visited_tids.is_null() {
-        opaque.visited_tids = Box::into_raw(Box::new(HashSet::new()));
+fn reset_scan_tid_set(slot: &mut *mut HashSet<page::ItemPointer>) {
+    if (*slot).is_null() {
+        *slot = Box::into_raw(Box::new(HashSet::new()));
     } else {
-        unsafe { &mut *opaque.visited_tids }.clear();
+        // SAFETY: scan TID-set slots are populated with `Box::into_raw` and
+        // remain Box-owned by the scan opaque until freed.
+        unsafe { &mut **slot }.clear();
     }
+}
+
+fn scan_tid_set_insert(slot: *mut HashSet<page::ItemPointer>, tid: page::ItemPointer) {
+    if slot.is_null() || tid == page::ItemPointer::INVALID {
+        return;
+    }
+    // SAFETY: non-null scan TID-set slots are Box-owned by the scan opaque
+    // until their corresponding free helper runs.
+    unsafe { &mut *slot }.insert(tid);
+}
+
+fn scan_tid_set_contains(slot: *const HashSet<page::ItemPointer>, tid: page::ItemPointer) -> bool {
+    if slot.is_null() || tid == page::ItemPointer::INVALID {
+        return false;
+    }
+    // SAFETY: non-null scan TID-set slots are Box-owned by the scan opaque
+    // until their corresponding free helper runs.
+    unsafe { &*slot }.contains(&tid)
+}
+
+fn reset_scan_visited_state(opaque: &mut TqScanOpaque) {
+    reset_scan_tid_set(&mut opaque.visited_tids);
 }
 
 fn free_scan_visited_set(opaque: &mut TqScanOpaque) {
-    if !opaque.visited_tids.is_null() {
-        drop(unsafe { Box::from_raw(opaque.visited_tids) });
-        opaque.visited_tids = ptr::null_mut();
-    }
+    drop_boxed_scan_ptr(&mut opaque.visited_tids);
 }
 
 fn mark_visited_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer) {
-    if opaque.visited_tids.is_null() || element_tid == page::ItemPointer::INVALID {
-        return;
-    }
-
-    unsafe { &mut *opaque.visited_tids }.insert(element_tid);
+    scan_tid_set_insert(opaque.visited_tids, element_tid);
 }
 
 fn visited_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> bool {
-    if opaque.visited_tids.is_null() || element_tid == page::ItemPointer::INVALID {
-        return false;
-    }
-
-    unsafe { &*opaque.visited_tids }.contains(&element_tid)
+    scan_tid_set_contains(opaque.visited_tids, element_tid)
 }
 
 fn reset_scan_expanded_state(opaque: &mut TqScanOpaque) {
-    if opaque.expanded_source_tids.is_null() {
-        opaque.expanded_source_tids = Box::into_raw(Box::new(HashSet::new()));
-    } else {
-        unsafe { &mut *opaque.expanded_source_tids }.clear();
-    }
+    reset_scan_tid_set(&mut opaque.expanded_source_tids);
 }
 
 fn free_scan_expanded_set(opaque: &mut TqScanOpaque) {
-    if !opaque.expanded_source_tids.is_null() {
-        drop(unsafe { Box::from_raw(opaque.expanded_source_tids) });
-        opaque.expanded_source_tids = ptr::null_mut();
-    }
+    drop_boxed_scan_ptr(&mut opaque.expanded_source_tids);
 }
 
 fn mark_expanded_source(opaque: &mut TqScanOpaque, source_tid: page::ItemPointer) {
-    if opaque.expanded_source_tids.is_null() || source_tid == page::ItemPointer::INVALID {
-        return;
-    }
-
-    unsafe { &mut *opaque.expanded_source_tids }.insert(source_tid);
+    scan_tid_set_insert(opaque.expanded_source_tids, source_tid);
 }
 
 fn expanded_contains_source(opaque: &TqScanOpaque, source_tid: page::ItemPointer) -> bool {
-    if opaque.expanded_source_tids.is_null() || source_tid == page::ItemPointer::INVALID {
-        return false;
-    }
-
-    unsafe { &*opaque.expanded_source_tids }.contains(&source_tid)
+    scan_tid_set_contains(opaque.expanded_source_tids, source_tid)
 }
 
 fn reset_scan_emitted_state(opaque: &mut TqScanOpaque) {
-    if opaque.emitted_result_tids.is_null() {
-        opaque.emitted_result_tids = Box::into_raw(Box::new(HashSet::new()));
-    } else {
-        unsafe { &mut *opaque.emitted_result_tids }.clear();
-    }
+    reset_scan_tid_set(&mut opaque.emitted_result_tids);
 }
 
 fn free_scan_emitted_set(opaque: &mut TqScanOpaque) {
-    if !opaque.emitted_result_tids.is_null() {
-        drop(unsafe { Box::from_raw(opaque.emitted_result_tids) });
-        opaque.emitted_result_tids = ptr::null_mut();
-    }
+    drop_boxed_scan_ptr(&mut opaque.emitted_result_tids);
 }
 
 fn mark_emitted_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer) {
-    if opaque.emitted_result_tids.is_null() || element_tid == page::ItemPointer::INVALID {
-        return;
-    }
-
-    unsafe { &mut *opaque.emitted_result_tids }.insert(element_tid);
+    scan_tid_set_insert(opaque.emitted_result_tids, element_tid);
 }
 
 fn emitted_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> bool {
-    if opaque.emitted_result_tids.is_null() || element_tid == page::ItemPointer::INVALID {
-        return false;
-    }
-
-    unsafe { &*opaque.emitted_result_tids }.contains(&element_tid)
+    scan_tid_set_contains(opaque.emitted_result_tids, element_tid)
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -4421,6 +4410,8 @@ unsafe fn initialize_scan_entry_candidate(
     }
 
     let entry_candidate = if metadata.entry_point != page::ItemPointer::INVALID {
+        // SAFETY: metadata entry point comes from the live index metadata page,
+        // and the scan relation/opaque remain live during seeding.
         let (entry, entry_score) = unsafe {
             cached_graph_element_and_score(
                 index_relation,
@@ -4436,6 +4427,8 @@ unsafe fn initialize_scan_entry_candidate(
     let (entry, entry_score) = match entry_candidate {
         Some(candidate) => candidate,
         None => {
+            // SAFETY: fallback scans the same live index relation using the
+            // graph storage descriptor attached to this scan.
             let Some(fallback) = (unsafe {
                 super::shared::highest_level_live_entry_candidate(
                     index_relation,
@@ -4444,6 +4437,8 @@ unsafe fn initialize_scan_entry_candidate(
             }) else {
                 return;
             };
+            // SAFETY: the fallback TID/level came from the live graph storage
+            // helper above and is scored through the same scan opaque.
             let (entry, entry_score) = unsafe {
                 cached_graph_element_and_score(index_relation, opaque, fallback.tid, fallback.level)
             };
@@ -4461,6 +4456,8 @@ unsafe fn initialize_scan_entry_candidate(
     let opaque_ptr = opaque as *mut TqScanOpaque;
     #[cfg(any(test, feature = "pg_test"))]
     let upper_layer_started = Instant::now();
+    // SAFETY: the entry candidate was loaded from this scan's live graph and
+    // the opaque pointer remains valid while upper layers are traversed.
     let upper_layer_seed = unsafe {
         cached_upper_layer_seed_candidate(index_relation, opaque_ptr, entry_candidate, entry.level)
     };
@@ -4475,6 +4472,8 @@ unsafe fn initialize_scan_entry_candidate(
     let ordered_candidates = graph::search_layer0_result_candidates_with_successors(
         bootstrap_frontier_limit(opaque),
         [upper_layer_seed],
+        // SAFETY: layer-0 expansion uses the same live scan relation and
+        // opaque pointer; the closure only tests/marks value-copy TIDs.
         |source_tid| unsafe {
             cached_scan_successor_candidates_for_layer(
                 index_relation,
@@ -4522,6 +4521,8 @@ fn seed_bootstrap_trace(
     reset_scan_expanded_state(opaque);
     let opaque_ptr = opaque as *mut TqScanOpaque;
     with_visible_frontier_mut_and_bootstrap_expansion(
+        // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
+        // callbacks can mark visited/expanded sets while the frontier mutates.
         unsafe { &mut *opaque_ptr },
         |visible_frontier, expansion| {
             visible_frontier.seed_bootstrap_trace(
@@ -4546,9 +4547,13 @@ fn seed_discovered_candidates(
 
     let opaque_ptr = opaque as *mut TqScanOpaque;
     with_visible_frontier_mut_and_bootstrap_expansion(
+        // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
+        // callbacks can mark visited sets while the frontier mutates.
         unsafe { &mut *opaque_ptr },
         |visible_frontier, expansion| {
             visible_frontier.seed_discovered(expansion, candidates, |node| {
+                // SAFETY: callback execution is synchronous while `opaque_ptr`
+                // remains the live scan opaque.
                 mark_visited_element(unsafe { &mut *opaque_ptr }, node)
             });
         },
