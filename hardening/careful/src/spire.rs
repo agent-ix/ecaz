@@ -404,6 +404,171 @@ pub mod storage {
             placement.local_store_id = 99;
             assert!(store_set.read_routing_object(&placement).is_err());
         }
+
+        // ----------------------------------------------------------------
+        // Relation-store round trips through the backing-page emulator.
+        // ----------------------------------------------------------------
+
+        use super::super::page;
+        use std::sync::Mutex;
+
+        static EMULATOR_LOCK: Mutex<()> = Mutex::new(());
+
+        fn synth_relation(oid: u32) -> pg_sys::RelationData {
+            pg_sys::RelationData {
+                rd_att: std::ptr::null_mut(),
+                rd_id: oid,
+            }
+        }
+
+        const ROUND_TRIP_LOCAL_STORE_ID: u32 = 0;
+
+        fn make_store(rel: &mut pg_sys::RelationData) -> SpireRelationObjectStore {
+            let store_relid = rel.rd_id;
+            let store = SpireRelationObjectStore::for_store_relation_id(
+                rel,
+                ROUND_TRIP_LOCAL_STORE_ID,
+                store_relid,
+            );
+            // SAFETY: relation is alive for the test; metadata block 0 must
+            // exist before any object tuple insert.
+            unsafe { page::initialize_aux_store_metadata_page(rel) };
+            store
+        }
+
+        #[test]
+        fn relation_store_insert_and_read_routing_object_round_trip() {
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(45001);
+            let store = make_store(&mut rel);
+
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let placement = store.insert_routing_object(7, &routing).unwrap();
+            assert_eq!(placement.epoch, 7);
+            assert_eq!(placement.pid, 11);
+            assert_eq!(placement.local_store_id, ROUND_TRIP_LOCAL_STORE_ID);
+
+            // SAFETY: placement came from the same store; validated by the
+            // store's own read path before tuple bytes are pinned for decode.
+            let decoded = unsafe { store.read_routing_object(&placement) }.unwrap();
+            assert_eq!(decoded.header.pid, 11);
+            assert_eq!(decoded.header.object_version, 3);
+            assert_eq!(decoded.children().count(), 2);
+
+            // SAFETY: same placement; header dispatch must report routing kind.
+            let header = unsafe { store.read_object_header(&placement) }.unwrap();
+            assert_eq!(header.pid, 11);
+            assert_eq!(header.kind, SpirePartitionObjectKind::Root);
+        }
+
+        #[test]
+        fn relation_store_insert_and_read_leaf_v2_round_trip() {
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(45002);
+            let store = make_store(&mut rel);
+
+            let assignments = vec![leaf_v2_assignment(1, 8), leaf_v2_assignment(2, 8)];
+            let placement = store
+                .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &assignments)
+                .unwrap();
+            assert_eq!(placement.epoch, 7);
+            assert_eq!(placement.pid, 17);
+
+            // SAFETY: same placement; segment chain is walked under share locks.
+            let decoded = unsafe { store.read_leaf_object_v2(&placement) }.unwrap();
+            assert_eq!(decoded.meta.header.pid, 17);
+            assert_eq!(decoded.meta.header.object_version, 3);
+            assert_eq!(decoded.meta.header.parent_pid, 5);
+            assert_eq!(decoded.meta.header.assignment_count, 2);
+            assert_eq!(decoded.segments.len(), 1);
+
+            // SAFETY: header dispatch over leaf V2 meta.
+            let header = unsafe { store.read_object_header(&placement) }.unwrap();
+            assert_eq!(header.pid, 17);
+            assert_eq!(header.kind, SpirePartitionObjectKind::Leaf);
+        }
+
+        #[test]
+        fn relation_store_insert_and_read_delta_object_round_trip() {
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(45003);
+            let store = make_store(&mut rel);
+
+            let delta = SpireDeltaPartitionObject::new(
+                19,
+                4,
+                17,
+                vec![SpireLeafAssignmentRow {
+                    flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                    vec_id: SpireVecId::local(1),
+                    heap_tid: ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    },
+                    payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2, 3, 4],
+                }],
+            )
+            .unwrap();
+            let placement = store.insert_delta_object(7, &delta).unwrap();
+            assert_eq!(placement.epoch, 7);
+            assert_eq!(placement.pid, 19);
+
+            // SAFETY: placement came from the same store; single-tuple decode.
+            let decoded = unsafe { store.read_delta_object(&placement) }.unwrap();
+            assert_eq!(decoded.header.pid, 19);
+            assert_eq!(decoded.header.parent_pid, 17);
+            assert_eq!(decoded.assignments.len(), 1);
+
+            // SAFETY: header dispatch over delta object.
+            let header = unsafe { store.read_object_header(&placement) }.unwrap();
+            assert_eq!(header.pid, 19);
+            assert_eq!(header.kind, SpirePartitionObjectKind::Delta);
+        }
+
+        #[test]
+        fn relation_store_insert_and_read_top_graph_round_trip() {
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(45004);
+            let store = make_store(&mut rel);
+
+            let top_graph = SpireTopGraphPartitionObject::new(
+                90,
+                3,
+                11,
+                2,
+                2,
+                2,
+                4,
+                1.2,
+                0,
+                vec![SpireTopGraphNodeRecord {
+                    child_pid: 21,
+                    centroid_ordinal: 0,
+                    neighbors: vec![],
+                }],
+            )
+            .unwrap();
+            let placement = store.insert_top_graph_object(7, &top_graph).unwrap();
+            assert_eq!(placement.epoch, 7);
+            assert_eq!(placement.pid, 90);
+
+            // SAFETY: same store; round-trip read path.
+            let decoded = unsafe { store.read_top_graph_object(&placement) }.unwrap();
+            assert_eq!(decoded.header.pid, 90);
+            assert_eq!(decoded.nodes.len(), 1);
+
+            // SAFETY: header dispatch over top-graph object.
+            let header = unsafe { store.read_object_header(&placement) }.unwrap();
+            assert_eq!(header.pid, 90);
+            assert_eq!(header.kind, SpirePartitionObjectKind::TopGraph);
+        }
     }
 }
 
@@ -411,17 +576,31 @@ pub mod storage {
 mod page_tests {
     //! Tests for `src/am/ec_spire/page.rs` via the careful shadow crate.
     //!
-    //! These exercise the early-error paths that return `Err` before any
-    //! `pg_sys` page operation runs. The page-level stubs in
-    //! `careful_pg_guards::pg_sys` (PageInit, PageAddItemExtended, ...)
-    //! are no-ops; tests here deliberately do not depend on them, so the
-    //! shadow scaffold can stay minimal.
+    //! Early-error paths return `Err` before any `pg_sys` page operation runs.
+    //! Success-path round-trips exercise the Phase-1 backing-page emulator in
+    //! `careful_pg_guards::pg_sys` (real `PageInit`, `PageAddItemExtended`,
+    //! `PageGetItem`, etc., backed by per-relation `[u8; 8192]` pages).
     use super::page;
     use crate::careful_pg_guards::pg_sys;
     use crate::storage::page::{ItemPointer, FIRST_DATA_BLOCK_NUMBER, METADATA_BLOCK_NUMBER};
+    use std::sync::Mutex;
+
+    use super::meta::SpireRootControlState;
+
+    // Page-emulator tests share thread-local registry state with the
+    // pg_guards module's tests; serialize independently so cargo test's
+    // thread pool reset is deterministic per emulator-aware test.
+    static EMULATOR_LOCK: Mutex<()> = Mutex::new(());
 
     fn null_relation() -> pg_sys::Relation {
         std::ptr::null_mut()
+    }
+
+    fn synth_relation(oid: u32) -> pg_sys::RelationData {
+        pg_sys::RelationData {
+            rd_att: std::ptr::null_mut(),
+            rd_id: oid,
+        }
     }
 
     #[test]
@@ -495,5 +674,150 @@ mod page_tests {
         // Pin the on-disk-layout invariant the page.rs guards rely on.
         assert_eq!(METADATA_BLOCK_NUMBER, 0);
         assert_eq!(FIRST_DATA_BLOCK_NUMBER, 1);
+    }
+
+    #[test]
+    fn initialize_and_read_root_control_round_trip_through_emulator() {
+        let _serial = EMULATOR_LOCK.lock().unwrap();
+        pg_sys::reset_counters();
+        let mut rel = synth_relation(35001);
+        let relation: pg_sys::Relation = &mut rel;
+
+        let initial = SpireRootControlState::empty();
+        // SAFETY: emulator-backed relation is alive for the call; the helper
+        // allocates a fresh root/control block via P_NEW + RBM_ZERO_AND_LOCK
+        // and writes the encoded root/control state into the special area.
+        unsafe { page::initialize_root_control_page(relation, initial) };
+        // SAFETY: same relation; share-lock path reads the special area back.
+        let read_back = unsafe { page::read_root_control_page(relation) };
+        assert_eq!(read_back, initial);
+    }
+
+    #[test]
+    fn append_and_read_object_tuple_round_trip_through_emulator() {
+        let _serial = EMULATOR_LOCK.lock().unwrap();
+        pg_sys::reset_counters();
+        let mut rel = synth_relation(35002);
+        let relation: pg_sys::Relation = &mut rel;
+
+        // SAFETY: emulator relation; metadata block 0 must exist before any
+        // object tuple append.
+        unsafe { page::initialize_root_control_page(relation, SpireRootControlState::empty()) };
+
+        let payload = b"ec-spire round-trip payload";
+        // SAFETY: relation has its metadata block; helper allocates a new
+        // data block via P_NEW and appends the tuple under WAL.
+        let tid = unsafe { page::append_object_tuple(relation, payload) }
+            .expect("append should succeed on an initialized relation");
+        assert!(tid.block_number >= FIRST_DATA_BLOCK_NUMBER);
+        assert_eq!(tid.offset_number, 1);
+
+        // SAFETY: tid came from append above; read pins the data page under
+        // a share lock and copies the tuple bytes out.
+        let read_back = unsafe { page::read_object_tuple(relation, tid) }
+            .expect("read should succeed for a valid tid");
+        assert_eq!(read_back.as_slice(), payload);
+    }
+
+    #[test]
+    fn scan_object_tuples_visits_every_appended_tuple_in_order() {
+        let _serial = EMULATOR_LOCK.lock().unwrap();
+        pg_sys::reset_counters();
+        let mut rel = synth_relation(35003);
+        let relation: pg_sys::Relation = &mut rel;
+
+        // SAFETY: emulator relation; metadata + several object tuples appended
+        // so the scan has multiple entries to visit.
+        unsafe { page::initialize_root_control_page(relation, SpireRootControlState::empty()) };
+        let payloads: [&[u8]; 3] = [b"first", b"second-payload", b"third value"];
+        let mut tids = Vec::new();
+        for payload in &payloads {
+            // SAFETY: same emulator relation.
+            let tid = unsafe { page::append_object_tuple(relation, payload) }.unwrap();
+            tids.push(tid);
+        }
+
+        let mut visited: Vec<(ItemPointer, Vec<u8>)> = Vec::new();
+        // SAFETY: same emulator relation; visitor copies bytes out under the
+        // per-page share lock.
+        unsafe {
+            page::scan_object_tuples(relation, |tid, tuple| {
+                visited.push((tid, tuple.to_vec()));
+                Ok(())
+            })
+        }
+        .expect("scan should succeed");
+
+        assert_eq!(visited.len(), payloads.len());
+        for ((expected_tid, expected_payload), (actual_tid, actual_payload)) in
+            tids.iter().zip(payloads.iter()).zip(visited.iter())
+        {
+            // payload, tid each compared explicitly so failures point at the
+            // wrong column.
+            let (expected_tid, expected_payload) = (expected_tid, expected_payload);
+            let (actual_tid, actual_payload) = (actual_tid, actual_payload);
+            assert_eq!(actual_tid, expected_tid);
+            assert_eq!(actual_payload.as_slice(), *expected_payload);
+        }
+    }
+
+    #[test]
+    fn rewrite_object_tuple_same_len_updates_payload_in_place() {
+        let _serial = EMULATOR_LOCK.lock().unwrap();
+        pg_sys::reset_counters();
+        let mut rel = synth_relation(35004);
+        let relation: pg_sys::Relation = &mut rel;
+
+        // SAFETY: emulator relation; setup mirrors the prior round-trip test.
+        unsafe { page::initialize_root_control_page(relation, SpireRootControlState::empty()) };
+        let original = b"original-payload";
+        let replacement = b"replaced-payload";
+        // SAFETY: lengths chosen to match.
+        let tid = unsafe { page::append_object_tuple(relation, original) }.unwrap();
+        unsafe { page::rewrite_object_tuple_same_len(relation, tid, replacement) }
+            .expect("same-length rewrite should succeed");
+        let read_back = unsafe { page::read_object_tuple(relation, tid) }.unwrap();
+        assert_eq!(read_back.as_slice(), replacement);
+
+        // Length-mismatch rewrite must error and leave the tuple unchanged.
+        let mismatched = b"too-short";
+        let err = unsafe { page::rewrite_object_tuple_same_len(relation, tid, mismatched) }
+            .expect_err("length mismatch must be rejected");
+        assert!(err.contains("length changed"), "unexpected error: {err}");
+        let read_after_failure = unsafe { page::read_object_tuple(relation, tid) }.unwrap();
+        assert_eq!(read_after_failure.as_slice(), replacement);
+    }
+
+    #[test]
+    fn delete_object_tuples_no_compact_removes_real_tuples_and_reports_bytes() {
+        let _serial = EMULATOR_LOCK.lock().unwrap();
+        pg_sys::reset_counters();
+        let mut rel = synth_relation(35005);
+        let relation: pg_sys::Relation = &mut rel;
+
+        // SAFETY: emulator relation.
+        unsafe { page::initialize_root_control_page(relation, SpireRootControlState::empty()) };
+        let payloads: [&[u8]; 2] = [b"keep-me", b"delete-me-please"];
+        let mut tids = Vec::new();
+        for payload in &payloads {
+            // SAFETY: same emulator relation.
+            tids.push(unsafe { page::append_object_tuple(relation, payload) }.unwrap());
+        }
+
+        // SAFETY: delete the second tuple; first remains readable.
+        let (count, bytes) =
+            unsafe { page::delete_object_tuples_no_compact(relation, &tids[1..]) }
+                .expect("delete should succeed");
+        assert_eq!(count, 1);
+        assert_eq!(bytes, payloads[1].len() as u64);
+
+        // First tuple still readable.
+        let still_there = unsafe { page::read_object_tuple(relation, tids[0]) }.unwrap();
+        assert_eq!(still_there.as_slice(), payloads[0]);
+
+        // Deleted tuple now reports an unused slot.
+        let err = unsafe { page::read_object_tuple(relation, tids[1]) }
+            .expect_err("deleted tuple must surface as unused");
+        assert!(err.contains("unused slot"), "unexpected error: {err}");
     }
 }

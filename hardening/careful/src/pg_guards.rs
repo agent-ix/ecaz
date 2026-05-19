@@ -147,6 +147,7 @@ pub mod pg_sys {
         ] {
             counter.store(0, Ordering::SeqCst);
         }
+        reset_buffer_registry();
     }
 
     pub unsafe fn LWLockAcquire(_lock: *mut LWLock, _mode: LWLockMode) {
@@ -158,16 +159,50 @@ pub mod pg_sys {
     }
 
     pub unsafe fn ReadBufferExtended(
-        _relation: Relation,
+        relation: Relation,
         _fork: i32,
         block_number: BlockNumber,
-        _mode: ReadBufferMode::Type,
+        mode: ReadBufferMode::Type,
         _strategy: *mut (),
     ) -> Buffer {
+        // SAFETY: relation may be null; only dereferenced after the check.
+        let rd_id = if relation.is_null() {
+            InvalidOid
+        } else {
+            unsafe { (*relation).rd_id }
+        };
+
         if block_number == BlockNumber::MAX {
-            return 0;
+            // P_NEW: only valid with RBM_ZERO_AND_LOCK in this emulator. Other
+            // modes preserve the prior `return 0 (== InvalidBuffer)` behavior
+            // that the existing pg_guards tests still rely on.
+            if mode != ReadBufferMode::RBM_ZERO_AND_LOCK || rd_id == InvalidOid {
+                return InvalidBuffer;
+            }
+            return BUFFER_REGISTRY.with(|r| {
+                let mut reg = r.borrow_mut();
+                let new_block = reg.allocate_block(rd_id);
+                reg.pin_buffer(rd_id, new_block)
+            });
         }
-        block_number as Buffer + 1
+
+        if rd_id == InvalidOid {
+            // Legacy pg_guards tests pass synthetic block numbers through a
+            // non-emulator-backed relation; keep the old `block + 1` mapping.
+            return block_number as Buffer + 1;
+        }
+
+        BUFFER_REGISTRY.with(|r| {
+            let mut reg = r.borrow_mut();
+            // Allocate up to block_number so legacy tests that pre-pin an
+            // arbitrary block keep working; the emulator round-trip tests
+            // exclusively use P_NEW for first-touch and never widen the range
+            // out from under themselves.
+            while reg.relation_block_count(rd_id).unwrap_or(0) <= block_number {
+                reg.allocate_block(rd_id);
+            }
+            reg.pin_buffer(rd_id, block_number)
+        })
     }
 
     pub unsafe fn BufferIsValid(buffer: Buffer) -> bool {
@@ -179,15 +214,15 @@ pub mod pg_sys {
     }
 
     pub unsafe fn BufferGetBlockNumber(buffer: Buffer) -> BlockNumber {
-        buffer as BlockNumber - 1
+        BUFFER_REGISTRY.with(|r| r.borrow().buffer_block_number(buffer))
     }
 
     pub unsafe fn LockBuffer(_buffer: Buffer, _lockmode: i32) {
         LOCK_BUFFER_CALLS.fetch_add(1, Ordering::SeqCst);
     }
 
-    pub unsafe fn BufferGetPage(_buffer: Buffer) -> Page {
-        ptr::dangling_mut::<u8>()
+    pub unsafe fn BufferGetPage(buffer: Buffer) -> Page {
+        BUFFER_REGISTRY.with(|r| r.borrow().buffer_page_ptr(buffer))
     }
 
     pub unsafe fn BufferGetPageSize(_buffer: Buffer) -> usize {
@@ -337,13 +372,19 @@ pub mod pg_sys {
         }
     }
 
-    /// Returns 0 by default; tests that need a non-zero block count can use
-    /// `set_relation_block_count` to override the count for the next call.
+    /// Sources the block count from the emulator's buffer registry. Returns 0
+    /// when the relation is null (legacy pg_guards tests rely on this) or when
+    /// no block has been allocated for the relation's OID yet.
     pub unsafe fn RelationGetNumberOfBlocksInFork(
-        _relation: Relation,
+        relation: Relation,
         _fork: i32,
     ) -> BlockNumber {
-        RELATION_BLOCK_COUNT.with(|c| c.get())
+        if relation.is_null() {
+            return 0;
+        }
+        // SAFETY: relation was checked non-null; rd_id is a u32 read by value.
+        let rd_id = unsafe { (*relation).rd_id };
+        BUFFER_REGISTRY.with(|r| r.borrow().relation_block_count(rd_id).unwrap_or(0))
     }
 
     pub unsafe fn GetPageWithFreeSpace(
@@ -387,56 +428,318 @@ pub mod pg_sys {
         }
     }
 
-    // Page-level stubs. These do not implement real PostgreSQL page layout;
-    // they exist so that `src/am/ec_spire/page.rs` compiles inside the
-    // careful shadow crate. Tests in the careful crate only exercise
-    // early-error paths that return Err before touching these.
-    pub unsafe fn PageInit(_page: Page, _page_size: usize, _special_size: usize) {}
+    // Phase-1 backing-page emulator. Each (relation_oid, block_number) holds a
+    // real `[u8; 8192]` page plus a stable line-pointer table; the page-level
+    // helpers below operate on that storage so the success paths in
+    // `src/am/ec_spire/page.rs` and `src/am/ec_spire/storage/relation_store.rs`
+    // are exercisable from the careful shadow crate.
+
+    const EMULATOR_PAGE_BYTES: usize = 8192;
+    const EMULATOR_TUPLE_HEADER_BYTES: usize = 4;
+    const EMULATOR_LINE_POINTER_BYTES: usize = 4;
+    const EMULATOR_ALIGNMENT_BYTES: usize = 8;
+    const EMULATOR_LP_NORMAL: u32 = 1;
+
+    fn emulator_align_up(value: usize, alignment: usize) -> usize {
+        let remainder = value % alignment;
+        if remainder == 0 {
+            value
+        } else {
+            value + (alignment - remainder)
+        }
+    }
+
+    fn emulator_raw_tuple_storage_bytes(payload_len: usize) -> usize {
+        emulator_align_up(
+            EMULATOR_TUPLE_HEADER_BYTES + payload_len + EMULATOR_LINE_POINTER_BYTES,
+            EMULATOR_ALIGNMENT_BYTES,
+        )
+    }
+
+    pub(super) struct BackingPage {
+        bytes: Box<[u8; EMULATOR_PAGE_BYTES]>,
+        line_pointers: Vec<Box<ItemIdData>>,
+        next_tuple_offset: usize,
+        bytes_consumed: usize,
+        special_size: usize,
+        initialized: bool,
+    }
+
+    impl BackingPage {
+        fn new() -> Self {
+            Self {
+                bytes: Box::new([0u8; EMULATOR_PAGE_BYTES]),
+                line_pointers: Vec::new(),
+                next_tuple_offset: EMULATOR_PAGE_BYTES,
+                bytes_consumed: 0,
+                special_size: 0,
+                initialized: false,
+            }
+        }
+
+        fn init(&mut self, special_size: usize) {
+            self.bytes.fill(0);
+            self.line_pointers.clear();
+            self.special_size = special_size;
+            self.next_tuple_offset = EMULATOR_PAGE_BYTES - special_size;
+            self.bytes_consumed = 0;
+            self.initialized = true;
+        }
+
+        fn page_ptr(&self) -> *mut u8 {
+            // SAFETY of cast: callers only read/write through the returned
+            // pointer while their buffer pin keeps this BackingPage alive.
+            self.bytes.as_ptr() as *mut u8
+        }
+
+        fn special_ptr(&self) -> *mut u8 {
+            // SAFETY: special_size <= EMULATOR_PAGE_BYTES is enforced by init().
+            unsafe {
+                self.bytes
+                    .as_ptr()
+                    .add(EMULATOR_PAGE_BYTES - self.special_size) as *mut u8
+            }
+        }
+
+        fn free_space(&self) -> usize {
+            EMULATOR_PAGE_BYTES.saturating_sub(self.special_size + self.bytes_consumed)
+        }
+
+        fn add_item(&mut self, payload: &[u8]) -> Option<u16> {
+            let cost = emulator_raw_tuple_storage_bytes(payload.len());
+            if self.free_space() < cost {
+                return None;
+            }
+            let aligned_payload = emulator_align_up(payload.len(), EMULATOR_ALIGNMENT_BYTES);
+            let new_offset = self.next_tuple_offset - aligned_payload;
+            self.bytes[new_offset..new_offset + payload.len()].copy_from_slice(payload);
+            self.next_tuple_offset = new_offset;
+            self.bytes_consumed += cost;
+            self.line_pointers.push(Box::new(ItemIdData {
+                lp_off_value: new_offset as u32,
+                lp_flags_value: EMULATOR_LP_NORMAL,
+                lp_len_value: payload.len() as u32,
+            }));
+            Some(self.line_pointers.len() as u16)
+        }
+
+        fn delete_item(&mut self, offset: u16) {
+            if offset == InvalidOffsetNumber {
+                return;
+            }
+            if let Some(item) = self.line_pointers.get_mut((offset - 1) as usize) {
+                let aligned = emulator_align_up(
+                    item.lp_len_value as usize,
+                    EMULATOR_ALIGNMENT_BYTES,
+                );
+                self.bytes_consumed = self.bytes_consumed.saturating_sub(aligned);
+                item.lp_flags_value = 0;
+                item.lp_len_value = 0;
+            }
+        }
+
+        fn item_id_ptr(&mut self, offset: u16) -> *mut ItemIdData {
+            if offset == InvalidOffsetNumber {
+                return ptr::null_mut();
+            }
+            match self.line_pointers.get_mut((offset - 1) as usize) {
+                Some(boxed) => &mut **boxed as *mut ItemIdData,
+                None => ptr::null_mut(),
+            }
+        }
+    }
+
+    #[derive(Default)]
+    pub(super) struct BufferRegistry {
+        pages: std::collections::HashMap<(Oid, BlockNumber), Box<BackingPage>>,
+        relation_block_counts: std::collections::HashMap<Oid, BlockNumber>,
+        // bytes-pointer (as usize) -> stable raw pointer into Box<BackingPage>
+        page_lookup: std::collections::HashMap<usize, *mut BackingPage>,
+        // buffer_id -> (relation_oid, block_number); legacy convention is
+        // buffer == block_number + 1 so existing pg_guards tests stay green.
+        buffers: std::collections::HashMap<Buffer, (Oid, BlockNumber)>,
+    }
+
+    impl BufferRegistry {
+        fn allocate_block(&mut self, rd_id: Oid) -> BlockNumber {
+            let count = self.relation_block_counts.entry(rd_id).or_insert(0);
+            let block_number = *count;
+            *count = count
+                .checked_add(1)
+                .expect("emulator block count overflow");
+            let mut backing = Box::new(BackingPage::new());
+            let bytes_ptr = backing.page_ptr();
+            let raw = &mut *backing as *mut BackingPage;
+            self.page_lookup.insert(bytes_ptr as usize, raw);
+            self.pages.insert((rd_id, block_number), backing);
+            block_number
+        }
+
+        fn pin_buffer(&mut self, rd_id: Oid, block_number: BlockNumber) -> Buffer {
+            let buffer = (block_number as Buffer)
+                .checked_add(1)
+                .expect("emulator buffer id overflow");
+            self.buffers.insert(buffer, (rd_id, block_number));
+            buffer
+        }
+
+        fn buffer_page_ptr(&self, buffer: Buffer) -> *mut u8 {
+            if let Some((rd_id, block)) = self.buffers.get(&buffer) {
+                if let Some(page) = self.pages.get(&(*rd_id, *block)) {
+                    return page.page_ptr();
+                }
+            }
+            // Legacy fallback for tests that pass synthetic Buffer ids without
+            // going through ReadBufferExtended; preserves the
+            // `!page().is_null()` assertions in the existing pg_guards tests.
+            ptr::dangling_mut::<u8>()
+        }
+
+        fn buffer_block_number(&self, buffer: Buffer) -> BlockNumber {
+            if let Some((_oid, block)) = self.buffers.get(&buffer) {
+                return *block;
+            }
+            // Legacy: buffer = block + 1.
+            (buffer as BlockNumber).saturating_sub(1)
+        }
+
+        fn relation_block_count(&self, rd_id: Oid) -> Option<BlockNumber> {
+            self.relation_block_counts.get(&rd_id).copied()
+        }
+
+        fn page_mut(&self, page_ptr: Page) -> Option<&mut BackingPage> {
+            let raw = *self.page_lookup.get(&(page_ptr as usize))?;
+            // SAFETY: raw points into a Box<BackingPage> owned by self.pages.
+            // The Box keeps the BackingPage at a stable heap address for as
+            // long as the entry is in the map; reset_buffer_registry drops
+            // everything together. We never hand out two &mut to the same
+            // BackingPage simultaneously because each pg_sys page helper
+            // borrows the registry, looks up exactly one page, and returns.
+            Some(unsafe { &mut *raw })
+        }
+    }
+
+    std::thread_local! {
+        static BUFFER_REGISTRY: std::cell::RefCell<BufferRegistry> =
+            std::cell::RefCell::new(BufferRegistry::default());
+    }
+
+    pub fn reset_buffer_registry() {
+        BUFFER_REGISTRY.with(|r| *r.borrow_mut() = BufferRegistry::default());
+    }
+
+    // Retained as a backward-compatible no-op for packets 033-034 tests that
+    // still call it; the emulator's `RelationGetNumberOfBlocksInFork` now
+    // sources its answer from `BUFFER_REGISTRY`, so a non-null relation that
+    // has never been pinned returns 0 naturally.
+    pub fn set_relation_block_count(_count: BlockNumber) {}
+
+    pub unsafe fn PageInit(page: Page, _page_size: usize, special_size: usize) {
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            if let Some(backing) = reg.page_mut(page) {
+                backing.init(special_size);
+            }
+        });
+    }
 
     pub unsafe fn PageAddItemExtended(
-        _page: Page,
-        _item: *mut std::ffi::c_void,
-        _size: usize,
+        page: Page,
+        item: *mut std::ffi::c_void,
+        size: usize,
         _offset_number: u16,
         _flags: i32,
     ) -> u16 {
-        InvalidOffsetNumber
+        if item.is_null() {
+            return InvalidOffsetNumber;
+        }
+        // SAFETY: caller pins the page; `item` points at `size` bytes of
+        // PostgreSQL-owned tuple memory and stays live for the call.
+        let payload = unsafe { std::slice::from_raw_parts(item as *const u8, size) };
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            match reg.page_mut(page) {
+                Some(backing) => backing.add_item(payload).unwrap_or(InvalidOffsetNumber),
+                None => InvalidOffsetNumber,
+            }
+        })
     }
 
-    pub unsafe fn PageGetItem(_page: Page, _item_id: ItemId) -> *mut std::ffi::c_void {
-        ptr::null_mut()
+    pub unsafe fn PageGetItem(page: Page, item_id: ItemId) -> *mut std::ffi::c_void {
+        if item_id.is_null() {
+            return ptr::null_mut();
+        }
+        // SAFETY: caller pins the page; `item_id` came from `PageGetItemId`
+        // for this page and is alive while the buffer pin is held.
+        let id = unsafe { &*item_id };
+        let offset = id.lp_off_value as usize;
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            match reg.page_mut(page) {
+                // SAFETY: lp_off was checked < EMULATOR_PAGE_BYTES when added.
+                Some(backing) => unsafe { backing.page_ptr().add(offset) as *mut std::ffi::c_void },
+                None => ptr::null_mut(),
+            }
+        })
     }
 
-    pub unsafe fn PageGetItemId(_page: Page, _offset: u16) -> ItemId {
-        ptr::null_mut()
+    pub unsafe fn PageGetItemId(page: Page, offset: u16) -> ItemId {
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            match reg.page_mut(page) {
+                Some(backing) => backing.item_id_ptr(offset),
+                None => ptr::null_mut(),
+            }
+        })
     }
 
-    pub unsafe fn PageGetMaxOffsetNumber(_page: Page) -> u16 {
-        0
+    pub unsafe fn PageGetMaxOffsetNumber(page: Page) -> u16 {
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            match reg.page_mut(page) {
+                Some(backing) => backing.line_pointers.len() as u16,
+                None => 0,
+            }
+        })
     }
 
-    pub unsafe fn PageGetFreeSpace(_page: Page) -> usize {
-        0
+    pub unsafe fn PageGetFreeSpace(page: Page) -> usize {
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            match reg.page_mut(page) {
+                Some(backing) => backing.free_space(),
+                None => 0,
+            }
+        })
     }
 
-    pub unsafe fn PageGetSpecialPointer(_page: Page) -> *mut std::ffi::c_void {
-        ptr::null_mut()
+    pub unsafe fn PageGetSpecialPointer(page: Page) -> *mut std::ffi::c_void {
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            match reg.page_mut(page) {
+                Some(backing) => backing.special_ptr() as *mut std::ffi::c_void,
+                None => ptr::null_mut(),
+            }
+        })
     }
 
-    pub unsafe fn PageGetSpecialSize(_page: Page) -> u16 {
-        0
+    pub unsafe fn PageGetSpecialSize(page: Page) -> u16 {
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            match reg.page_mut(page) {
+                Some(backing) => backing.special_size as u16,
+                None => 0,
+            }
+        })
     }
 
-    pub unsafe fn PageIndexTupleDeleteNoCompact(_page: Page, _offset: u16) {}
-
-    // Test hook: lets a `careful_ec_spire_page::tests` test set the value
-    // returned by `RelationGetNumberOfBlocksInFork` for the current thread.
-    std::thread_local! {
-        static RELATION_BLOCK_COUNT: std::cell::Cell<BlockNumber> = const { std::cell::Cell::new(0) };
-    }
-
-    pub fn set_relation_block_count(count: BlockNumber) {
-        RELATION_BLOCK_COUNT.with(|c| c.set(count));
+    pub unsafe fn PageIndexTupleDeleteNoCompact(page: Page, offset: u16) {
+        BUFFER_REGISTRY.with(|r| {
+            let reg = r.borrow();
+            if let Some(backing) = reg.page_mut(page) {
+                backing.delete_item(offset);
+            }
+        });
     }
 }
 
@@ -595,9 +898,13 @@ mod tests {
             )
         }
         .is_none());
+        // MAX + RBM_ZERO_AND_LOCK on a valid relation is the legitimate P_NEW
+        // allocation path under the backing-page emulator; pass a null
+        // relation to keep this assertion covering the InvalidBuffer
+        // early-out instead.
         assert!(unsafe {
             LockedBufferGuard::read_main_locked(
-                relation.as_ptr(),
+                std::ptr::null_mut(),
                 pg_sys::BlockNumber::MAX,
                 pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
             )
