@@ -6,6 +6,9 @@ pub mod assign {
 #[path = "../../../src/am/ec_spire/meta.rs"]
 pub mod meta;
 
+#[path = "../../../src/am/ec_spire/page.rs"]
+pub mod page;
+
 pub mod storage {
     use std::{
         collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -306,5 +309,96 @@ pub mod storage {
             placement.local_store_id = 99;
             assert!(store_set.read_routing_object(&placement).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod page_tests {
+    //! Tests for `src/am/ec_spire/page.rs` via the careful shadow crate.
+    //!
+    //! These exercise the early-error paths that return `Err` before any
+    //! `pg_sys` page operation runs. The page-level stubs in
+    //! `careful_pg_guards::pg_sys` (PageInit, PageAddItemExtended, ...)
+    //! are no-ops; tests here deliberately do not depend on them, so the
+    //! shadow scaffold can stay minimal.
+    use super::page;
+    use crate::careful_pg_guards::pg_sys;
+    use crate::storage::page::{ItemPointer, FIRST_DATA_BLOCK_NUMBER, METADATA_BLOCK_NUMBER};
+
+    fn null_relation() -> pg_sys::Relation {
+        std::ptr::null_mut()
+    }
+
+    #[test]
+    fn read_object_tuple_rejects_metadata_block_tid() {
+        let tid = ItemPointer {
+            block_number: METADATA_BLOCK_NUMBER,
+            offset_number: 1,
+        };
+        // SAFETY: returns Err before touching the relation pointer.
+        let err = unsafe { page::read_object_tuple(null_relation(), tid) }
+            .expect_err("metadata block must be rejected");
+        assert!(
+            err.contains("cannot use metadata block"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn append_object_tuple_rejects_empty_payload() {
+        // SAFETY: returns Err before touching the relation pointer.
+        let err = unsafe { page::append_object_tuple(null_relation(), &[]) }
+            .expect_err("empty payload must be rejected");
+        assert!(
+            err.contains("payload must not be empty"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn append_object_tuple_rejects_uninitialized_relation() {
+        // Force RelationGetNumberOfBlocksInFork to report zero blocks so the
+        // append helper bails out before requesting any page.
+        pg_sys::set_relation_block_count(0);
+        // SAFETY: shadow RelationGetNumberOfBlocksInFork returns 0; the
+        // helper returns Err before touching the relation pointer.
+        let err = unsafe { page::append_object_tuple(null_relation(), &[1, 2, 3]) }
+            .expect_err("uninitialized relation must be rejected");
+        assert!(
+            err.contains("root/control block must be initialized"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn delete_object_tuples_no_compact_is_noop_for_empty_input() {
+        // SAFETY: the helper iterates the empty slice and returns Ok early.
+        let (count, bytes) = unsafe { page::delete_object_tuples_no_compact(null_relation(), &[]) }
+            .expect("empty delete should succeed");
+        assert_eq!(count, 0);
+        assert_eq!(bytes, 0);
+    }
+
+    #[test]
+    fn delete_object_tuples_no_compact_rejects_metadata_block_tid() {
+        let tids = [ItemPointer {
+            block_number: METADATA_BLOCK_NUMBER,
+            offset_number: 1,
+        }];
+        // SAFETY: returns Err while validating the TID list, before opening
+        // any buffer.
+        let err = unsafe { page::delete_object_tuples_no_compact(null_relation(), &tids) }
+            .expect_err("metadata block tid must be rejected");
+        assert!(
+            err.contains("cannot remove metadata block"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn first_data_block_is_immediately_after_metadata_block() {
+        // Pin the on-disk-layout invariant the page.rs guards rely on.
+        assert_eq!(METADATA_BLOCK_NUMBER, 0);
+        assert_eq!(FIRST_DATA_BLOCK_NUMBER, 1);
     }
 }

@@ -13,7 +13,33 @@ pub mod pg_sys {
     pub type TableScanDesc = *mut ScanData;
 
     pub const AccessShareLock: i32 = 1;
+    pub const RowExclusiveLock: i32 = 3;
     pub const BUFFER_LOCK_UNLOCK: i32 = 0;
+    pub const BUFFER_LOCK_SHARE: i32 = 1;
+    pub const BUFFER_LOCK_EXCLUSIVE: i32 = 2;
+    pub const GENERIC_XLOG_FULL_IMAGE: i32 = 1;
+    pub const InvalidOffsetNumber: u16 = 0;
+
+    pub type XLogRecPtr = u64;
+    pub struct GenericXLogState;
+    pub struct ItemIdData {
+        lp_off_value: u32,
+        lp_flags_value: u32,
+        lp_len_value: u32,
+    }
+
+    impl ItemIdData {
+        pub fn lp_off(&self) -> u32 {
+            self.lp_off_value
+        }
+        pub fn lp_flags(&self) -> u32 {
+            self.lp_flags_value
+        }
+        pub fn lp_len(&self) -> u32 {
+            self.lp_len_value
+        }
+    }
+    pub type ItemId = *mut ItemIdData;
 
     pub mod ForkNumber {
         pub const MAIN_FORKNUM: i32 = 0;
@@ -269,6 +295,108 @@ pub mod pg_sys {
             drop(unsafe { Box::from_raw(tuptable) });
         }
     }
+
+    /// Returns 0 by default; tests that need a non-zero block count can use
+    /// `set_relation_block_count` to override the count for the next call.
+    pub unsafe fn RelationGetNumberOfBlocksInFork(
+        _relation: Relation,
+        _fork: i32,
+    ) -> BlockNumber {
+        RELATION_BLOCK_COUNT.with(|c| c.get())
+    }
+
+    pub unsafe fn GetPageWithFreeSpace(
+        _relation: Relation,
+        _required_space: usize,
+    ) -> BlockNumber {
+        BlockNumber::MAX
+    }
+
+    pub unsafe fn RecordPageWithFreeSpace(
+        _relation: Relation,
+        _block: BlockNumber,
+        _free_space: usize,
+    ) {
+    }
+
+    // GenericXLog stubs. These do not actually emit WAL; the registered page
+    // is just whatever the buffer points to.
+    pub unsafe fn GenericXLogStart(_relation: Relation) -> *mut GenericXLogState {
+        Box::into_raw(Box::new(GenericXLogState))
+    }
+
+    pub unsafe fn GenericXLogRegisterBuffer(
+        _state: *mut GenericXLogState,
+        buffer: Buffer,
+        _flags: i32,
+    ) -> Page {
+        unsafe { BufferGetPage(buffer) }
+    }
+
+    pub unsafe fn GenericXLogFinish(state: *mut GenericXLogState) -> XLogRecPtr {
+        if !state.is_null() {
+            drop(unsafe { Box::from_raw(state) });
+        }
+        0
+    }
+
+    pub unsafe fn GenericXLogAbort(state: *mut GenericXLogState) {
+        if !state.is_null() {
+            drop(unsafe { Box::from_raw(state) });
+        }
+    }
+
+    // Page-level stubs. These do not implement real PostgreSQL page layout;
+    // they exist so that `src/am/ec_spire/page.rs` compiles inside the
+    // careful shadow crate. Tests in the careful crate only exercise
+    // early-error paths that return Err before touching these.
+    pub unsafe fn PageInit(_page: Page, _page_size: usize, _special_size: usize) {}
+
+    pub unsafe fn PageAddItemExtended(
+        _page: Page,
+        _item: *mut std::ffi::c_void,
+        _size: usize,
+        _offset_number: u16,
+        _flags: i32,
+    ) -> u16 {
+        InvalidOffsetNumber
+    }
+
+    pub unsafe fn PageGetItem(_page: Page, _item_id: ItemId) -> *mut std::ffi::c_void {
+        ptr::null_mut()
+    }
+
+    pub unsafe fn PageGetItemId(_page: Page, _offset: u16) -> ItemId {
+        ptr::null_mut()
+    }
+
+    pub unsafe fn PageGetMaxOffsetNumber(_page: Page) -> u16 {
+        0
+    }
+
+    pub unsafe fn PageGetFreeSpace(_page: Page) -> usize {
+        0
+    }
+
+    pub unsafe fn PageGetSpecialPointer(_page: Page) -> *mut std::ffi::c_void {
+        ptr::null_mut()
+    }
+
+    pub unsafe fn PageGetSpecialSize(_page: Page) -> u16 {
+        0
+    }
+
+    pub unsafe fn PageIndexTupleDeleteNoCompact(_page: Page, _offset: u16) {}
+
+    // Test hook: lets a `careful_ec_spire_page::tests` test set the value
+    // returned by `RelationGetNumberOfBlocksInFork` for the current thread.
+    std::thread_local! {
+        static RELATION_BLOCK_COUNT: std::cell::Cell<BlockNumber> = const { std::cell::Cell::new(0) };
+    }
+
+    pub fn set_relation_block_count(count: BlockNumber) {
+        RELATION_BLOCK_COUNT.with(|c| c.set(count));
+    }
 }
 
 #[path = "../../../src/storage/buffer_guard.rs"]
@@ -291,6 +419,9 @@ pub mod slot_guard;
 
 #[path = "../../../src/storage/spi_guard.rs"]
 pub mod spi_guard;
+
+#[path = "../../../src/storage/wal.rs"]
+pub mod wal;
 
 #[cfg(test)]
 mod tests {

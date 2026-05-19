@@ -61,6 +61,8 @@ pub mod careful_diskann_build;
 pub mod careful_diskann_scan;
 
 pub mod storage {
+    pub use crate::careful_pg_guards::buffer_guard;
+    pub use crate::careful_pg_guards::wal;
     pub use crate::careful_storage_page as page;
 }
 
@@ -98,7 +100,7 @@ pub mod am {
     }
 
     pub mod ec_spire {
-        pub use crate::careful_spire::{assign, meta, storage};
+        pub use crate::careful_spire::{assign, meta, page, storage};
     }
 }
 
