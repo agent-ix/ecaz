@@ -2,6 +2,8 @@
 unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
     _cscan: *mut pg_sys::CustomScan,
 ) -> *mut pg_sys::Node {
+    // SAFETY: PostgreSQL calls this provider callback during custom scan state
+    // creation; palloc0 allocates executor-lifetime memory for the state.
     unsafe {
         let allocation_context = pg_sys::CurrentMemoryContext;
         custom_scan_note_memory_baseline_for_test(allocation_context);
@@ -20,6 +22,8 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
 
 fn custom_scan_default_exec_state() -> SpireCustomScanExecState {
     SpireCustomScanExecState {
+        // SAFETY: CustomScanState is a C struct initialized field-by-field by
+        // PostgreSQL/executor setup after this Rust wrapper is allocated.
         custom_scan_state: unsafe { std::mem::zeroed() },
         mode: SpireCustomScanPlanMode::VectorOrderLimit,
         index_oid: pg_sys::InvalidOid,
@@ -49,6 +53,8 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     _estate: *mut pg_sys::EState,
     _eflags: core::ffi::c_int,
 ) {
+    // SAFETY: PostgreSQL invokes BeginCustomScan with the live CustomScanState
+    // returned by this provider; the embedded plan belongs to that state.
     unsafe {
         let state = node.cast::<SpireCustomScanExecState>();
         let custom_scan = custom_scan_plan(node);
@@ -140,6 +146,8 @@ unsafe fn custom_scan_tuple_payload_state_from_plan(
     Vec<String>,
     Vec<Option<SpireCustomScanPayloadAttrIo>>,
 ) {
+    // SAFETY: node/custom_scan are the live executor state and matching plan;
+    // the current relation tuple descriptor remains valid during BeginCustomScan.
     unsafe {
         (
             custom_scan_tuple_payload_columns(node, custom_scan),
@@ -153,6 +161,8 @@ unsafe fn custom_scan_init_tuple_payload_state(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) {
+    // SAFETY: state is this provider's live executor state and node/custom_scan
+    // are the matching executor state and plan.
     unsafe {
         let (tuple_payload_columns, tuple_payload_inputs) =
             custom_scan_tuple_payload_state_from_plan(node, custom_scan);
@@ -165,6 +175,8 @@ unsafe fn custom_scan_init_tuple_payload_state(
 unsafe extern "C-unwind" fn ec_spire_exec_custom_scan(
     node: *mut pg_sys::CustomScanState,
 ) -> *mut pg_sys::TupleTableSlot {
+    // SAFETY: PostgreSQL invokes ExecCustomScan with the live CustomScanState;
+    // ExecScan owns callback invocation and scan tuple slot handling.
     unsafe {
         pg_sys::ExecScan(
             &mut (*node).ss,
@@ -176,6 +188,8 @@ unsafe extern "C-unwind" fn ec_spire_exec_custom_scan(
 
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomScanState) {
+    // SAFETY: PostgreSQL invokes EndCustomScan at most once for the live state
+    // allocated by create_custom_scan_state; this path drops Rust fields then pfree's it.
     unsafe {
         if node.is_null() {
             return;
@@ -240,6 +254,8 @@ fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext
         return u64::MAX;
     }
     let mut counters = pg_sys::MemoryContextCounters::default();
+    // SAFETY: context is a live PostgreSQL MemoryContext captured from the
+    // executor allocation path for test-only accounting.
     unsafe {
         pg_sys::MemoryContextMemConsumed(context, &mut counters);
     }
@@ -337,6 +353,8 @@ pub(crate) fn custom_scan_rescan_snapshot_for_test() -> SpireCustomScanRescanSna
 
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
+    // SAFETY: PostgreSQL invokes ReScanCustomScan with this provider's live
+    // CustomScanState, so it can be cast back to SpireCustomScanExecState.
     unsafe {
         let state = node.cast::<SpireCustomScanExecState>();
         custom_scan_reset_exec_state_for_rescan(&mut *state);
@@ -383,6 +401,8 @@ fn custom_scan_next_output_index(state: &mut SpireCustomScanExecState) -> Option
 unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
+    // SAFETY: ExecScan invokes this access callback with the live ScanState
+    // embedded in this provider's SpireCustomScanExecState.
     unsafe {
         if scan_state.is_null() {
             pgrx::error!("EcSpireDistributedScan access method received null scan state");
@@ -434,6 +454,8 @@ unsafe fn custom_scan_dml_pk_select_access(
     state: *mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
+    // SAFETY: state and scan_state are the live custom scan executor objects;
+    // this path emits at most one PK SELECT tuple payload.
     unsafe {
         custom_scan_ensure_dml_pk_select_payload(state);
         if (*state).dml_payload_emitted {
@@ -455,6 +477,8 @@ unsafe fn custom_scan_dml_update_access(
     state: *mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
+    // SAFETY: state and scan_state are live executor objects; this path performs
+    // the UPDATE once and reports the processed count through EState.
     unsafe {
         if !(*state).dml_payload_emitted {
             let updated_count = custom_scan_execute_dml_update(state, scan_state);
@@ -472,6 +496,8 @@ unsafe fn custom_scan_dml_delete_access(
     state: *mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
+    // SAFETY: state and scan_state are live executor objects; this path performs
+    // the DELETE once and reports the processed count through EState.
     unsafe {
         if !(*state).dml_payload_emitted {
             let deleted_count = custom_scan_execute_dml_delete(state);
