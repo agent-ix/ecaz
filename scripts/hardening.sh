@@ -232,7 +232,7 @@ EOF
   local mutate_file="$file"
   local args=(mutants)
   case "$file" in
-    src/quant/*|src/storage/page.rs|src/am/common/cost.rs)
+    src/quant/*|src/storage/page.rs|src/am/common/cost.rs|src/am/ec_diskann/page.rs)
       mutate_file="hardening/careful/src/../../../$file"
       args+=(--package ecaz-careful-hardening)
       ;;
