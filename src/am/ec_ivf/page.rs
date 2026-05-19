@@ -2302,7 +2302,11 @@ unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
+    // SAFETY: starts a generic WAL transaction for the live index relation;
+    // the caller holds `buffer` with an exclusive lock for this block.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
+    // yielding a mutable page pointer for rewrite/delete decisions.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
@@ -2313,6 +2317,10 @@ where
     let mut saw_non_posting_tuple = false;
 
     for offset in 1..=line_pointer_count {
+        // SAFETY: `page_ptr` and `page_size` come from the exclusive-locked
+        // registered page; the helper validates item-id bounds before exposing
+        // tuple bytes. In-place rewrites preserve tuple length and use the
+        // validated line pointer's tuple offset.
         let tuple_visit = unsafe {
             with_page_line_tuple_bytes(
                 page_ptr,
@@ -2376,6 +2384,9 @@ where
     if should_compact_posting_deletes(compact_deletes, saw_non_posting_tuple)
         && !delete_offsets.is_empty()
     {
+        // SAFETY: offsets were collected from valid posting tuple line
+        // pointers on the registered page and converted to PostgreSQL's count
+        // type after checking the length fits.
         unsafe {
             pg_sys::PageIndexMultiDelete(
                 page,
@@ -2388,14 +2399,20 @@ where
         };
     } else {
         for offset in delete_offsets.iter().rev() {
+            // SAFETY: each offset was collected from a valid posting tuple line
+            // pointer on this registered page; reverse order preserves the
+            // remaining offsets while deleting without compaction.
             unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, *offset) };
         }
     }
 
     if changed {
+        // SAFETY: finishes the WAL transaction after registered page changes.
         unsafe { wal_txn.finish() };
     }
+    // SAFETY: `page` is the registered page image for the still-held buffer.
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    // SAFETY: records the measured free space for the live relation block.
     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
     Ok(())
 }
