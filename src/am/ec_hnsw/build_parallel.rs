@@ -50,10 +50,15 @@ struct PgLockedDsmInsertStateCell(*mut pg_sys::pg_atomic_uint32);
 
 impl EcHnswConcurrentDsmInsertStateCell for PgLockedDsmInsertStateCell {
     fn load_acquire(&self) -> u32 {
+        // SAFETY: The cell wraps a PostgreSQL atomic field inside a DSM node;
+        // callers hold the appropriate node lock or are using the atomic
+        // protocol's acquire load.
         unsafe { pg_sys::pg_atomic_read_u32(self.0) }
     }
 
     fn store_release(&self, value: u32) {
+        // SAFETY: The cell points at a PostgreSQL atomic field inside a DSM
+        // node, and the release barrier publishes node insert-state changes.
         unsafe {
             pg_sys::pg_atomic_write_membarrier_u32(self.0, value);
         }
@@ -63,6 +68,8 @@ impl EcHnswConcurrentDsmInsertStateCell for PgLockedDsmInsertStateCell {
         let mut expected = current;
         // The lifted concurrent DSM insert protocol requires real CAS semantics.
         // PostgreSQL's pg_atomic_compare_exchange_u32 is the production contract.
+        // SAFETY: The cell points at a PostgreSQL atomic insert-state field, and
+        // the compare-exchange uses PostgreSQL's acquire/release primitive.
         unsafe { pg_sys::pg_atomic_compare_exchange_u32(self.0, &mut expected, new) }
     }
 }
@@ -122,6 +129,8 @@ impl EcHnswParallelBuildPlan {
         let requested_workers = if index_info.is_null() {
             0
         } else {
+            // SAFETY: Non-null `IndexInfo` is supplied by PostgreSQL build
+            // callback setup and remains live while planning this build.
             unsafe { (*index_info).ii_ParallelWorkers }
         };
         let graph_assembly = if options::enable_parallel_build_concurrent_dsm() {
@@ -477,10 +486,14 @@ impl EcHnswConcurrentDsmLockOps {
     }
 
     unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        // SAFETY: Callers pass an initialized LWLock pointer from the DSM graph;
+        // the selected lock operation returns a guard that releases it.
         unsafe { (self.acquire_shared)(lock) }
     }
 
     unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
+        // SAFETY: Callers pass an initialized LWLock pointer from the DSM graph;
+        // the selected lock operation returns a guard that releases it.
         unsafe { (self.acquire_exclusive)(lock) }
     }
 }
@@ -786,6 +799,8 @@ impl EcHnswConcurrentDsmGraphLayout {
             pgrx::error!("concurrent DSM graph header pointer is null");
         }
 
+        // SAFETY: Null was rejected above; the caller points at the header bytes
+        // at the beginning of a DSM graph image.
         let header = unsafe { &*header };
         let entry_idx = match header.entry_idx {
             EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX => None,
@@ -954,6 +969,8 @@ pub(super) unsafe fn concurrent_dsm_graph_layout_from_image(
         pgrx::error!("concurrent DSM graph base pointer is null");
     }
 
+    // SAFETY: Null was rejected above; the graph layout is encoded in the image
+    // header and validated while deriving offsets.
     unsafe { EcHnswConcurrentDsmGraphLayout::from_header(base.cast()) }
 }
 
@@ -965,6 +982,8 @@ pub(super) unsafe fn concurrent_dsm_insert_config_from_image(
         pgrx::error!("concurrent DSM graph base pointer is null");
     }
 
+    // SAFETY: Null was rejected above; the DSM graph image begins with the
+    // header written by `initialize_concurrent_dsm_graph_image`.
     let header = unsafe { &*base.cast::<EcHnswConcurrentDsmGraphHeader>() };
     if header.node_count == 0 {
         return None;
@@ -995,8 +1014,14 @@ pub(super) unsafe fn concurrent_dsm_insert_config_from_image(
 pub(super) unsafe fn attach_concurrent_dsm_graph_image(
     base: *mut c_void,
 ) -> EcHnswConcurrentDsmGraphAttachment {
+    // SAFETY: The caller passes the DSM graph base pointer; the layout helper
+    // validates the image header and derives bounded offsets.
     let layout = unsafe { concurrent_dsm_graph_layout_from_image(base) };
+    // SAFETY: The same DSM graph header stores insert configuration for
+    // non-empty images and is validated by the helper.
     let insert_config = unsafe { concurrent_dsm_insert_config_from_image(base) };
+    // SAFETY: `layout` was derived from the image header, so offsets refer to
+    // regions inside this DSM graph image.
     let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
 
     EcHnswConcurrentDsmGraphAttachment {
@@ -1017,16 +1042,26 @@ pub(super) unsafe fn concurrent_dsm_graph_parts(
 
     let base = base.cast::<u8>();
     EcHnswConcurrentDsmGraphParts {
+        // SAFETY: `layout` was computed from this image and header_offset is
+        // the beginning of the allocation.
         header: unsafe {
             base.add(layout.header_offset)
                 .cast::<EcHnswConcurrentDsmGraphHeader>()
         },
+        // SAFETY: `layout.nodes_offset` is aligned and bounds-checked while the
+        // layout is constructed from header values.
         nodes: unsafe {
             base.add(layout.nodes_offset)
                 .cast::<EcHnswConcurrentDsmNode>()
         },
+        // SAFETY: The neighbor slot offset is aligned and within the DSM image
+        // described by `layout`.
         neighbor_slots: unsafe { base.add(layout.neighbor_slots_offset).cast::<u32>() },
+        // SAFETY: The code corpus offset is aligned and within the DSM image
+        // described by `layout`.
         codes: unsafe { base.add(layout.codes_offset) },
+        // SAFETY: The source corpus offset is aligned and within the DSM image
+        // described by `layout`.
         sources: unsafe { base.add(layout.sources_offset).cast::<f32>() },
     }
 }
@@ -1038,6 +1073,8 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
     mut initialize_node_lock: impl FnMut(*mut pg_sys::LWLock),
 ) -> EcHnswConcurrentDsmGraphParts {
     let layout = plan.graph_layout;
+    // SAFETY: `base` points at a DSM allocation sized from `plan.graph_layout`;
+    // the helper turns its checked offsets into typed region pointers.
     let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
     let insert_config = plan
         .insert_config
@@ -1049,6 +1086,9 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
             ef_construction: 0,
         });
 
+    // SAFETY: `parts` points into an allocated DSM image sized by `layout`; this
+    // block writes the header, nodes, neighbor slots, and corpora exactly once
+    // during image initialization.
     unsafe {
         ptr::write(
             parts.header,
