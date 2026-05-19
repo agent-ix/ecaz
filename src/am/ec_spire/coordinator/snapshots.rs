@@ -2,11 +2,15 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> SpireActiveSnapshotDiagnostics {
     let result = (|| -> Result<SpireActiveSnapshotDiagnostics, String> {
+        // SAFETY: reads root/control state through the live SPIRE index
+        // relation supplied by the SQL diagnostic wrapper.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));
         }
 
+        // SAFETY: root_control came from the same live index relation and names
+        // the active manifests used by snapshot diagnostics.
         let (epoch_manifest, object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
@@ -15,6 +19,8 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens relation-backed object stores for placements in the
+        // active snapshot while holding AccessShareLock.
         let object_store =
             unsafe {
                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
@@ -82,6 +88,8 @@ fn open_storage_relation_or_index(
 }
 
 pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
+    // SAFETY: reads root/control state through the live index relation and
+    // returns only the copied active epoch value.
     unsafe { page::read_root_control_page(index_relation).active_epoch }
 }
 
@@ -90,6 +98,8 @@ pub(crate) unsafe fn index_allocator_snapshot(
     warn_within: u64,
 ) -> SpireIndexAllocatorSnapshot {
     let result = (|| -> Result<SpireIndexAllocatorSnapshot, String> {
+        // SAFETY: reads root/control state through the live index relation for
+        // allocator diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let diagnostics = diagnostics::collect_allocator_diagnostics(&root_control, warn_within)?;
         Ok(SpireIndexAllocatorSnapshot {
@@ -110,13 +120,19 @@ pub(crate) unsafe fn index_options_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexOptionsSnapshot {
     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
+        // SAFETY: reads PostgreSQL reloptions from the live index relation for
+        // options diagnostics only.
         let relation_options = unsafe { options::relation_options(index_relation) };
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
+        // SAFETY: reads root/control state through the live index relation for
+        // active options diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let mut recursive_level_parameters = Vec::new();
         let active_leaf_count = if root_control.active_epoch == 0 {
             0
         } else {
+            // SAFETY: root_control came from the same live index relation and
+            // names the active manifests used by options diagnostics.
             let (epoch_manifest, object_manifest, placement_directory) =
                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
             let snapshot = meta::SpirePublishedEpochSnapshot::new(
@@ -124,6 +140,8 @@ pub(crate) unsafe fn index_options_snapshot(
                 &object_manifest,
                 &placement_directory,
             )?;
+            // SAFETY: opens relation-backed object stores for placements in the
+            // active options snapshot while holding AccessShareLock.
             let object_store = unsafe {
                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                     index_relation,
@@ -233,7 +251,11 @@ pub(crate) unsafe fn index_options_snapshot(
 pub(crate) unsafe fn index_writer_identity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexWriterIdentitySnapshot {
+    // SAFETY: reads PostgreSQL reloptions from the live index relation for
+    // writer identity diagnostics only.
     let relation_options = unsafe { options::relation_options(index_relation) };
+    // SAFETY: reads root/control state through the live index relation for the
+    // active writer identity status.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     let (writer_identity_status, writer_identity_recommendation) =
         writer_identity_snapshot_status(relation_options.source_identity, root_control.active_epoch);
@@ -275,12 +297,18 @@ pub(crate) unsafe fn index_level_parameter_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLevelParameterSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
+        // SAFETY: reads PostgreSQL reloptions from the live index relation for
+        // level-parameter diagnostics only.
         let relation_options = unsafe { options::relation_options(index_relation) };
+        // SAFETY: reads root/control state through the live index relation for
+        // the active level-parameter snapshot epoch.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
 
+        // SAFETY: root_control came from the same live index relation and names
+        // the active manifests used by level-parameter diagnostics.
         let (epoch_manifest, object_manifest, placement_directory) =
             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
         let snapshot = meta::SpireValidatedEpochSnapshot::new(
@@ -288,6 +316,8 @@ pub(crate) unsafe fn index_level_parameter_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens relation-backed object stores for placements in the
+        // active level-parameter snapshot while holding AccessShareLock.
         let object_store = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
@@ -386,12 +416,18 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexScanSanitySnapshot {
     let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {
+        // SAFETY: reads PostgreSQL reloptions from the live index relation for
+        // scan-sanity diagnostics only.
         let relation_options = unsafe { options::relation_options(index_relation) };
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
+        // SAFETY: reads root/control state through the live index relation for
+        // active scan-sanity diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let active_leaf_count = if root_control.active_epoch == 0 {
             0
         } else {
+            // SAFETY: root_control came from the same live index relation and
+            // names the active manifests used by scan-sanity diagnostics.
             let (epoch_manifest, object_manifest, placement_directory) =
                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
             let snapshot = meta::SpirePublishedEpochSnapshot::new(
@@ -399,6 +435,8 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
                 &object_manifest,
                 &placement_directory,
             )?;
+            // SAFETY: opens relation-backed object stores for placements in the
+            // active scan-sanity snapshot while holding AccessShareLock.
             let object_store = unsafe {
                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                     index_relation,
@@ -442,6 +480,8 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
 pub(crate) unsafe fn index_health_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexHealthSnapshot {
+    // SAFETY: forwards the live index relation to the active snapshot
+    // diagnostic wrapper before converting diagnostics to a health row.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
     health_snapshot_from_diagnostics(&diagnostics)
 }
@@ -450,7 +490,11 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexRelationStorageSnapshot {
     let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {
+        // SAFETY: rd_id is stable while index_relation is open; it is copied as
+        // the index OID for storage relation accounting.
         let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        // SAFETY: reads root/control state through the live index relation for
+        // relation-storage diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
         let mut storage_relids = HashSet::from([index_relid]);
@@ -460,6 +504,8 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
             active_tids.insert((index_relid, root_control.placement_directory_tid));
             active_tids.insert((index_relid, root_control.local_store_config_tid));
 
+            // SAFETY: root_control came from the same live index relation and
+            // names the active manifests used to mark referenced tuples.
             let (_epoch_manifest, object_manifest, placement_directory) =
                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
             for entry in &object_manifest.entries {
@@ -469,6 +515,8 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 storage_relids.insert(placement.store_relid);
             }
 
+            // SAFETY: opens relation-backed object stores for active placements
+            // while holding AccessShareLock before enumerating object tuples.
             let object_store = unsafe {
                 storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                     index_relation,
@@ -477,6 +525,8 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 )?
             };
             for placement in &placement_directory.entries {
+                // SAFETY: placement belongs to the active placement directory
+                // and object_store was opened for that directory.
                 for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
                     active_tids.insert((placement.store_relid, tid));
                 }
@@ -498,6 +548,8 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
 
+            // SAFETY: storage_relation is open in AccessShareLock mode and is
+            // only queried for its main-fork block count.
             let storage_block_count = unsafe {
                 pg_sys::RelationGetNumberOfBlocksInFork(
                     storage_relation,
@@ -508,6 +560,8 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 .checked_add(u64::from(storage_block_count))
                 .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;
 
+            // SAFETY: storage_relation is open for object tuple scanning; the
+            // callback only records tuple sizes and active-reference matches.
             let scan_result = unsafe { page::scan_object_tuples(storage_relation, |tid, tuple| {
                 relation_object_tuple_count = relation_object_tuple_count
                     .checked_add(1)
@@ -564,8 +618,12 @@ pub(crate) unsafe fn index_epoch_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexEpochSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexEpochSnapshotRow>, String> {
+        // SAFETY: reads root/control state through the live index relation for
+        // epoch snapshot diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let mut manifests = Vec::new();
+        // SAFETY: scans object tuples in the live index relation and decodes
+        // only tuples matching the epoch-manifest encoded length.
         unsafe {
             page::scan_object_tuples(index_relation, |tid, tuple| {
                 if tuple.len() != meta::SpireEpochManifest::encoded_len() {
@@ -577,6 +635,8 @@ pub(crate) unsafe fn index_epoch_snapshot(
                 Ok(())
             })?
         };
+        // SAFETY: reads PostgreSQL's current backend timestamp for cleanup-age
+        // diagnostics; no pointer is retained.
         let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
         epoch_snapshot_rows_from_manifests(root_control, manifests, now_micros)
     })();
@@ -587,6 +647,8 @@ fn collect_epoch_manifests_for_cleanup(
     index_relation: pg_sys::Relation,
 ) -> Result<Vec<(crate::storage::page::ItemPointer, meta::SpireEpochManifest)>, String> {
     let mut manifests = Vec::new();
+    // SAFETY: scans object tuples in the live index relation and records only
+    // successfully decoded epoch manifests.
     unsafe {
         page::scan_object_tuples(index_relation, |tid, tuple| {
             if tuple.len() != meta::SpireEpochManifest::encoded_len() {
@@ -647,6 +709,8 @@ fn collect_physical_cleanup_candidates(
     HashSet<(u32, crate::storage::page::ItemPointer)>,
     BTreeMap<u32, Vec<crate::storage::page::ItemPointer>>,
 ), String> {
+    // SAFETY: rd_id is stable while index_relation is open; it is copied as the
+    // index OID for cleanup protection/candidate accounting.
     let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
     let manifests = collect_epoch_manifests_for_cleanup(index_relation)?;
     let latest_manifests = latest_epoch_manifests(&manifests);
@@ -672,6 +736,8 @@ fn collect_physical_cleanup_candidates(
         root_control.local_store_config_tid,
     );
 
+    // SAFETY: scans object tuples in the live index relation to classify
+    // manifests/directories and protect non-cleanup epochs.
     unsafe {
         page::scan_object_tuples(index_relation, |tid, tuple| {
             if let Ok(manifest) = meta::SpireEpochManifest::decode(tuple) {
@@ -704,6 +770,8 @@ fn collect_physical_cleanup_candidates(
     };
 
     for directory in &protected_directories {
+        // SAFETY: directory was decoded from the live index relation and is
+        // protected from cleanup; open its relation-backed object stores.
         let object_store = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
@@ -713,6 +781,8 @@ fn collect_physical_cleanup_candidates(
         };
         for placement in &directory.entries {
             protect_tuple(&mut protected, placement.store_relid, placement.object_tid);
+            // SAFETY: placement belongs to the protected directory and the
+            // object_store was opened for that directory.
             for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
                 protect_tuple(&mut protected, placement.store_relid, tid);
             }
@@ -730,6 +800,8 @@ fn collect_physical_cleanup_candidates(
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?;
         let mut candidates = Vec::new();
+        // SAFETY: storage_relation is open with RowExclusiveLock for cleanup
+        // planning; this pass only records unprotected tuple IDs.
         let scan_result = unsafe {
             page::scan_object_tuples(storage_relation, |tid, _tuple| {
                 if !protected.contains(&(storage_relid, tid)) {
@@ -750,8 +822,12 @@ fn collect_physical_cleanup_candidates(
 pub(crate) unsafe fn index_epoch_cleanup_run(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexEpochCleanupRunResult {
+    // SAFETY: acquires the publish relation lock for the live index relation
+    // before physical cleanup inspects and deletes object tuples.
     let _guard = unsafe { lock_publish_relation(index_relation) };
     let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {
+        // SAFETY: reads root/control state through the live locked index
+        // relation for cleanup planning.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(SpireIndexEpochCleanupRunResult {
@@ -765,6 +841,8 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
             });
         }
 
+        // SAFETY: reads PostgreSQL's current backend timestamp for epoch
+        // retention planning; no pointer is retained.
         let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
         let (cleanup_epochs, protected, candidates_by_relid) =
             collect_physical_cleanup_candidates(index_relation, root_control, now_micros)?;
@@ -783,6 +861,8 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
             });
         }
 
+        // SAFETY: rd_id is stable while index_relation is open and locked; it
+        // is copied as the index OID for cleanup deletion accounting.
         let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
         let mut removed_tuple_count = 0_u64;
         let mut removed_tuple_bytes = 0_u64;
@@ -794,6 +874,8 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
             )?;
             let delete_result =
+                // SAFETY: storage_relation is open with RowExclusiveLock and
+                // tids were selected by the protected/candidate cleanup plan.
                 unsafe { page::delete_object_tuples_no_compact(storage_relation, &tids) };
             let (deleted_count, deleted_bytes) = delete_result?;
             removed_tuple_count = removed_tuple_count
@@ -827,11 +909,15 @@ pub(crate) unsafe fn index_placement_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexPlacementSnapshotRow>, String> {
+        // SAFETY: reads root/control state through the live index relation for
+        // placement diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
 
+        // SAFETY: root_control came from the same live index relation and names
+        // the active manifests used by placement diagnostics.
         let (epoch_manifest, object_manifest, placement_directory) =
             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
@@ -839,6 +925,8 @@ pub(crate) unsafe fn index_placement_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens relation-backed object stores for placements in the
+        // active placement snapshot while holding AccessShareLock.
         let object_store = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
@@ -881,11 +969,15 @@ pub(crate) unsafe fn remote_node_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeSnapshotRow> {
     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
+        // SAFETY: reads root/control state through the live index relation for
+        // remote-node diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
 
+        // SAFETY: root_control came from the same live index relation and names
+        // the active placement directory used by remote-node diagnostics.
         let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
@@ -954,6 +1046,8 @@ pub(crate) unsafe fn remote_node_snapshot(
             .copied()
             .filter(|node_id| *node_id != meta::SPIRE_LOCAL_NODE_ID)
             .collect::<Vec<_>>();
+        // SAFETY: rd_id is stable while index_relation is open; it is copied as
+        // the coordinator index OID for descriptor lookup.
         let descriptors =
             load_remote_node_descriptor_rows(unsafe { (*index_relation).rd_id }, &remote_node_ids)?;
         for descriptor in descriptors {
@@ -1419,6 +1513,8 @@ pub(crate) unsafe fn remote_node_descriptor_readiness(
 ) -> Vec<SpireRemoteNodeDescriptorReadinessRow> {
     let mut rows = Vec::new();
     let contract_rows = remote_node_descriptor_contract_rows();
+    // SAFETY: forwards the live index relation to remote-node snapshot
+    // diagnostics before expanding descriptor contract rows.
     for node in unsafe { remote_node_snapshot(index_relation) } {
         if node.node_id == meta::SPIRE_LOCAL_NODE_ID {
             continue;
@@ -1465,6 +1561,8 @@ pub(crate) unsafe fn remote_node_descriptor_readiness(
 pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteNodeDescriptorReadinessSummaryRow {
+    // SAFETY: reads root/control state through the live index relation for the
+    // descriptor-readiness summary epoch.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     let mut summary = SpireRemoteNodeDescriptorReadinessSummaryRow {
         active_epoch: root_control.active_epoch,
@@ -1482,6 +1580,8 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
     }
 
     let mut seen_nodes = HashSet::new();
+    // SAFETY: forwards the live index relation to descriptor-readiness rows
+    // before reducing them into a summary.
     for row in unsafe { remote_node_descriptor_readiness(index_relation) } {
         if seen_nodes.insert(row.node_id) {
             summary.remote_node_count =
@@ -1541,6 +1641,8 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
 pub(crate) unsafe fn remote_node_capability_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
+    // SAFETY: forwards the live index relation to remote-node snapshot
+    // diagnostics before mapping rows to capability plan entries.
     unsafe { remote_node_snapshot(index_relation) }
         .into_iter()
         .map(remote_node_capability_plan_row)
@@ -1550,6 +1652,8 @@ pub(crate) unsafe fn remote_node_capability_plan(
 pub(crate) unsafe fn remote_node_capability_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteNodeCapabilitySummaryRow {
+    // SAFETY: reads root/control state through the live index relation for the
+    // remote-node capability summary epoch.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     let mut summary = SpireRemoteNodeCapabilitySummaryRow {
         active_epoch: root_control.active_epoch,
@@ -1568,6 +1672,8 @@ pub(crate) unsafe fn remote_node_capability_summary(
         return summary;
     }
 
+    // SAFETY: forwards the live index relation to capability-plan diagnostics
+    // before reducing plan rows into a summary.
     for row in unsafe { remote_node_capability_plan(index_relation) } {
         summary.node_count = summary.node_count.checked_add(1).unwrap_or_else(|| {
             pgrx::error!("ec_spire remote node capability summary node count overflow")
@@ -1631,6 +1737,8 @@ pub(crate) unsafe fn remote_node_capability_summary(
 pub(crate) unsafe fn remote_epoch_publish_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteEpochPublishPlanRow> {
+    // SAFETY: forwards the live index relation to remote-node snapshot
+    // diagnostics before filtering remote publish plan rows.
     unsafe { remote_node_snapshot(index_relation) }
         .into_iter()
         .filter(|node| node.node_id != meta::SPIRE_LOCAL_NODE_ID)
@@ -1641,6 +1749,8 @@ pub(crate) unsafe fn remote_epoch_publish_plan(
 pub(crate) unsafe fn remote_epoch_publish_readiness(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteEpochPublishReadinessRow {
+    // SAFETY: reads root/control state through the live index relation for the
+    // remote epoch publish readiness epoch.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     let mut summary = SpireRemoteEpochPublishReadinessRow {
         active_epoch: root_control.active_epoch,
@@ -1659,6 +1769,8 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
         return summary;
     }
 
+    // SAFETY: forwards the live index relation to publish-plan diagnostics
+    // before reducing remote rows into readiness counters.
     for row in unsafe { remote_epoch_publish_plan(index_relation) } {
         summary.remote_node_count =
             summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
@@ -1748,6 +1860,8 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
 pub(crate) unsafe fn remote_epoch_publish_gate_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteEpochPublishGateSummaryRow {
+    // SAFETY: forwards the live index relation to the publish-readiness summary
+    // before deriving the publish gate decision.
     let readiness = unsafe { remote_epoch_publish_readiness(index_relation) };
     let (publish_scope, publish_decision, next_blocker, recommendation) =
         if readiness.active_epoch == 0 {
@@ -1804,6 +1918,8 @@ pub(crate) unsafe fn remote_epoch_publish_gate_summary(
 pub(crate) unsafe fn remote_epoch_manifest_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteEpochManifestPlanRow> {
+    // SAFETY: forwards the live index relation to remote publish planning
+    // before mapping rows to manifest-plan entries.
     unsafe { remote_epoch_publish_plan(index_relation) }
         .into_iter()
         .map(remote_epoch_manifest_plan_row)
@@ -1813,6 +1929,8 @@ pub(crate) unsafe fn remote_epoch_manifest_plan(
 pub(crate) unsafe fn remote_epoch_manifest_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteEpochManifestSummaryRow {
+    // SAFETY: forwards the live index relation to the publish gate summary
+    // before deriving the manifest decision.
     let gate = unsafe { remote_epoch_publish_gate_summary(index_relation) };
     let (manifest_decision, recommendation) = if gate.active_epoch == 0 {
         ("build_required", gate.recommendation)
@@ -2174,11 +2292,15 @@ pub(crate) unsafe fn index_leaf_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLeafSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {
+        // SAFETY: reads root/control state through the live index relation for
+        // leaf snapshot diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
 
+        // SAFETY: root_control came from the same live index relation and names
+        // the active manifests used by leaf diagnostics.
         let (epoch_manifest, object_manifest, placement_directory) =
             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
         let snapshot = meta::SpireValidatedEpochSnapshot::new(
@@ -2186,6 +2308,8 @@ pub(crate) unsafe fn index_leaf_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens the SPIRE relation object store for the live index
+        // relation before reading local leaf objects.
         let object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
         collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)
