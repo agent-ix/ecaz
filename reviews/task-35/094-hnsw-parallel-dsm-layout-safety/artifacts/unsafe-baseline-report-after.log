@@ -1,0 +1,53 @@
+Script started on 2026-05-19 04:18:26-07:00 [<not executed on terminal>]
+unsafe comment baseline
+file: scripts/unsafe_comment_baseline.txt
+entries: 1214
+files: 42
+
+top directories
+715 src/am
+499 src/tests
+
+top files
+184 src/am/ec_hnsw/build_parallel.rs
+133 src/am/ec_hnsw/insert.rs
+99 src/am/ec_hnsw/vacuum.rs
+91 src/am/ec_diskann/routine.rs
+83 src/tests/ec_ivf.rs
+78 src/am/ec_hnsw/source.rs
+73 src/am/ec_hnsw/shared.rs
+57 src/am/ec_diskann/ambuild.rs
+54 src/tests/ec_hnsw_scan_gettuple.rs
+41 src/tests/ec_hnsw_storage_lifecycle.rs
+40 src/tests/mod.rs
+29 src/tests/dml_frontdoor.rs
+28 src/tests/ec_hnsw_runtime_profiles.rs
+28 src/tests/ec_hnsw_recall_helpers.rs
+27 src/tests/ec_hnsw_graph_lifecycle.rs
+19 src/tests/ec_hnsw_build.rs
+18 src/tests/remote_search/contracts.rs
+18 src/tests/ec_hnsw_recall_debug_exports.rs
+16 src/tests/insert.rs
+12 src/tests/vacuum.rs
+11 src/tests/remote_search/libpq_executor.rs
+11 src/tests/ec_hnsw_runtime_comparisons.rs
+8 src/tests/diagnostics.rs
+8 src/tests/custom_scan.rs
+7 src/tests/remote_search/epoch_manifest.rs
+6 src/tests/remote_search/coordinator_catalog.rs
+4 src/tests/remote_search/production_summary.rs
+4 src/tests/remote_search/node_catalog.rs
+4 src/tests/build.rs
+3 src/tests/remote_search/contracts_libpq.rs
+3 src/tests/custom_scan_concurrency.rs
+2 src/tests/scan.rs
+2 src/tests/remote_search/tuple_heap.rs
+2 src/tests/remote_search/transport_faults.rs
+2 src/tests/remote_search/catalog_cleanup_policy.rs
+2 src/tests/hnsw_misc.rs
+2 src/tests/data_shape.rs
+1 src/tests/placement.rs
+1 src/tests/custom_scan_planner.rs
+1 src/tests/custom_scan_lifecycle.rs
+
+Script done on 2026-05-19 04:18:26-07:00 [COMMAND_EXIT_CODE="0"]
