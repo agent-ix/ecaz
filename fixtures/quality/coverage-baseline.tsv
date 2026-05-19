@@ -20,7 +20,7 @@ storage/spi_guard.rs	100.00	Task 39 baseline raised by reviews/task-39/025-stora
 am/ec_diskann/page.rs	97.35	Task 39 baseline raised by reviews/task-39/011-diskann-page-coverage
 am/ec_hnsw/page.rs	84.76	Task 39 baseline raised by reviews/task-39/012-hnsw-page-coverage
 am/ec_ivf/page.rs	95.86	Task 39 baseline raised by reviews/task-39/018-ivf-page-coverage
-am/ec_spire/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+am/ec_spire/page.rs	11.01	Task 39 baseline raised by reviews/task-39/033-ec-spire-page-scaffold
 am/ec_spire/storage/assignment.rs	87.14	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
 am/ec_spire/storage/header.rs	82.00	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
 am/ec_spire/storage/helpers.rs	83.50	Task 39 baseline raised by reviews/task-39/021-spire-storage-codec-coverage
