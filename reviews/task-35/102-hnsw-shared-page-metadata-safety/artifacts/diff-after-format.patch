@@ -1,0 +1,439 @@
+Script started on 2026-05-19 05:17:14-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex dda9fa57..28f9db84 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -55,79 +55,30 @@[m [msrc/am/ec_diskann/ambuild.rs:834[m
+ src/am/ec_diskann/ambuild.rs:840[m
+ src/am/ec_diskann/ambuild.rs:848[m
+ src/am/ec_diskann/ambuild.rs:892[m
+[31m-src/am/ec_hnsw/shared.rs:100[m
+[31m-src/am/ec_hnsw/shared.rs:105[m
+[31m-src/am/ec_hnsw/shared.rs:107[m
+[31m-src/am/ec_hnsw/shared.rs:110[m
+[31m-src/am/ec_hnsw/shared.rs:111[m
+[31m-src/am/ec_hnsw/shared.rs:112[m
+[31m-src/am/ec_hnsw/shared.rs:121[m
+[31m-src/am/ec_hnsw/shared.rs:126[m
+[31m-src/am/ec_hnsw/shared.rs:139[m
+[31m-src/am/ec_hnsw/shared.rs:141[m
+[31m-src/am/ec_hnsw/shared.rs:143[m
+[31m-src/am/ec_hnsw/shared.rs:159[m
+[31m-src/am/ec_hnsw/shared.rs:170[m
+[31m-src/am/ec_hnsw/shared.rs:173[m
+[31m-src/am/ec_hnsw/shared.rs:180[m
+[31m-src/am/ec_hnsw/shared.rs:183[m
+[31m-src/am/ec_hnsw/shared.rs:189[m
+[31m-src/am/ec_hnsw/shared.rs:191[m
+[31m-src/am/ec_hnsw/shared.rs:197[m
+[31m-src/am/ec_hnsw/shared.rs:208[m
+[31m-src/am/ec_hnsw/shared.rs:226[m
+[31m-src/am/ec_hnsw/shared.rs:23[m
+[31m-src/am/ec_hnsw/shared.rs:293[m
+[31m-src/am/ec_hnsw/shared.rs:300[m
+[31m-src/am/ec_hnsw/shared.rs:320[m
+[31m-src/am/ec_hnsw/shared.rs:427[m
+[31m-src/am/ec_hnsw/shared.rs:438[m
+[31m-src/am/ec_hnsw/shared.rs:453[m
+[31m-src/am/ec_hnsw/shared.rs:466[m
+[31m-src/am/ec_hnsw/shared.rs:47[m
+[31m-src/am/ec_hnsw/shared.rs:480[m
+[31m-src/am/ec_hnsw/shared.rs:49[m
+[31m-src/am/ec_hnsw/shared.rs:499[m
+[31m-src/am/ec_hnsw/shared.rs:507[m
+[31m-src/am/ec_hnsw/shared.rs:52[m
+[31m-src/am/ec_hnsw/shared.rs:526[m
+[31m-src/am/ec_hnsw/shared.rs:53[m
+[31m-src/am/ec_hnsw/shared.rs:533[m
+[31m-src/am/ec_hnsw/shared.rs:536[m
+[31m-src/am/ec_hnsw/shared.rs:543[m
+[31m-src/am/ec_hnsw/shared.rs:55[m
+[31m-src/am/ec_hnsw/shared.rs:554[m
+[31m-src/am/ec_hnsw/shared.rs:59[m
+[31m-src/am/ec_hnsw/shared.rs:60[m
+[31m-src/am/ec_hnsw/shared.rs:657[m
+[31m-src/am/ec_hnsw/shared.rs:659[m
+[31m-src/am/ec_hnsw/shared.rs:660[m
+[31m-src/am/ec_hnsw/shared.rs:669[m
+[31m-src/am/ec_hnsw/shared.rs:699[m
+[31m-src/am/ec_hnsw/shared.rs:720[m
+[31m-src/am/ec_hnsw/shared.rs:722[m
+[31m-src/am/ec_hnsw/shared.rs:723[m
+[31m-src/am/ec_hnsw/shared.rs:727[m
+[31m-src/am/ec_hnsw/shared.rs:729[m
+[31m-src/am/ec_hnsw/shared.rs:77[m
+[31m-src/am/ec_hnsw/shared.rs:79[m
+[31m-src/am/ec_hnsw/shared.rs:812[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:1014[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:1015[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:1021[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:1032[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:1042[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:1045[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:1046[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:743[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:745[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:746[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:755[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:785[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:806[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:808[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:809[m
+ src/am/ec_hnsw/shared.rs:813[m
+[31m-src/am/ec_hnsw/shared.rs:814[m
+[31m-src/am/ec_hnsw/shared.rs:82[m
+[31m-src/am/ec_hnsw/shared.rs:83[m
+[31m-src/am/ec_hnsw/shared.rs:84[m
+[31m-src/am/ec_hnsw/shared.rs:859[m
+[31m-src/am/ec_hnsw/shared.rs:883[m
+[31m-src/am/ec_hnsw/shared.rs:895[m
+[31m-src/am/ec_hnsw/shared.rs:901[m
+[31m-src/am/ec_hnsw/shared.rs:928[m
+[31m-src/am/ec_hnsw/shared.rs:929[m
+[31m-src/am/ec_hnsw/shared.rs:935[m
+[31m-src/am/ec_hnsw/shared.rs:946[m
+[31m-src/am/ec_hnsw/shared.rs:956[m
+[31m-src/am/ec_hnsw/shared.rs:959[m
+[31m-src/am/ec_hnsw/shared.rs:960[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:815[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:898[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:899[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:900[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:945[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:969[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:981[m
+[32m+[m[32msrc/am/ec_hnsw/shared.rs:987[m
+ src/tests/build.rs:251[m
+ src/tests/build.rs:252[m
+ src/tests/build.rs:510[m
+[1mdiff --git a/src/am/ec_hnsw/shared.rs b/src/am/ec_hnsw/shared.rs[m
+[1mindex 91465738..b4b6c067 100644[m
+[1m--- a/src/am/ec_hnsw/shared.rs[m
+[1m+++ b/src/am/ec_hnsw/shared.rs[m
+[36m@@ -20,6 +20,8 @@[m [mpub(super) unsafe fn initialize_metadata_page([m
+     index_relation: pg_sys::Relation,[m
+     metadata: page::MetadataPage,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: The index relation is live while initializing its main fork and[m
+[32m+[m[32m    // PostgreSQL returns the current block count for that fork.[m
+     let existing_blocks = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -44,19 +46,31 @@[m [mpub(super) unsafe fn initialize_metadata_page([m
+     }[m
+     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to allocate metadata buffer"));[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: The WAL transaction is scoped to this live index relation.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: The buffer is locked exclusively above and registered for a full[m
+[32m+[m[32m    // image rewrite of the metadata page.[m
+     let page =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+     let metadata_bytes = metadata.encode();[m
+     let special_size = (metadata_bytes.len() + 7) & !7;[m
+[32m+[m[32m    // SAFETY: `page` is the WAL-registered metadata page and `page_size` comes[m
+[32m+[m[32m    // from the locked buffer guard.[m
+     unsafe { pg_sys::PageInit(page, page_size, special_size) };[m
+[32m+[m[32m    // SAFETY: The page was initialized with a special area large enough for the[m
+[32m+[m[32m    // encoded metadata bytes.[m
+     unsafe { write_metadata_bytes(page, &metadata_bytes) };[m
+ [m
+[32m+[m[32m    // SAFETY: All metadata page writes were made through the registered page.[m
+     unsafe { wal_txn.finish() };[m
+ }[m
+ [m
+ unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {[m
+[32m+[m[32m    // SAFETY: The caller initialized the page with a special area large enough[m
+[32m+[m[32m    // to hold `metadata_bytes`.[m
+     let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();[m
+[32m+[m[32m    // SAFETY: Source and destination are non-overlapping and the destination[m
+[32m+[m[32m    // special area was sized by the caller.[m
+     unsafe {[m
+         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), page_contents, metadata_bytes.len());[m
+     }[m
+[36m@@ -74,13 +88,21 @@[m [mpub(super) unsafe fn update_metadata_page([m
+     )[m
+     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: The WAL transaction is scoped to this live index relation.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: The metadata buffer is locked exclusively above and registered for[m
+[32m+[m[32m    // a full image rewrite.[m
+     let page =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+     let metadata_bytes = metadata.encode();[m
+     let special_size = (metadata_bytes.len() + 7) & !7;[m
+[32m+[m[32m    // SAFETY: `page` is the WAL-registered metadata page and `page_size` comes[m
+[32m+[m[32m    // from the locked buffer guard.[m
+     unsafe { pg_sys::PageInit(page, page_size, special_size) };[m
+[32m+[m[32m    // SAFETY: The page was initialized with a special area large enough for the[m
+[32m+[m[32m    // encoded metadata bytes.[m
+     unsafe { write_metadata_bytes(page, &metadata_bytes) };[m
+[32m+[m[32m    // SAFETY: All metadata page writes were made through the registered page.[m
+     unsafe { wal_txn.finish() };[m
+ }[m
+ [m
+[36m@@ -97,18 +119,28 @@[m [mpub(super) unsafe fn with_locked_metadata_page<T>([m
+     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));[m
+     let raw_page = buffer.page().cast::<u8>();[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: The buffer guard pins the metadata page for the duration of this[m
+[32m+[m[32m    // borrow and `page_size` bounds the slice.[m
+     let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };[m
+     let mut metadata =[m
+         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");[m
+     let result = f(&mut metadata);[m
+ [m
+[32m+[m[32m    // SAFETY: The WAL transaction is scoped to this live index relation.[m
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };[m
+[32m+[m[32m    // SAFETY: The metadata buffer remains locked exclusively and is registered[m
+[32m+[m[32m    // for a full image rewrite.[m
+     let page =[m
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };[m
+     let metadata_bytes = metadata.encode();[m
+     let special_size = (metadata_bytes.len() + 7) & !7;[m
+[32m+[m[32m    // SAFETY: `page` is the WAL-registered metadata page and `page_size` comes[m
+[32m+[m[32m    // from the locked buffer guard.[m
+     unsafe { pg_sys::PageInit(page, page_size, special_size) };[m
+[32m+[m[32m    // SAFETY: The page was initialized with a special area large enough for the[m
+[32m+[m[32m    // encoded metadata bytes.[m
+     unsafe { write_metadata_bytes(page, &metadata_bytes) };[m
+[32m+[m[32m    // SAFETY: All metadata page writes were made through the registered page.[m
+     unsafe { wal_txn.finish() };[m
+     result[m
+ }[m
+[36m@@ -118,11 +150,15 @@[m [mpub(super) unsafe fn ec_hnsw_noop_vacuum_stats([m
+     stats: *mut pg_sys::IndexBulkDeleteResult,[m
+ ) -> *mut pg_sys::IndexBulkDeleteResult {[m
+     let stats = if stats.is_null() {[m
+[32m+[m[32m        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats[m
+[32m+[m[32m        // struct owned by the current vacuum callback.[m
+         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }[m
+     } else {[m
+         stats[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above, and the[m
+[32m+[m[32m    // index relation is live while page/live-tuple stats are computed.[m
+     unsafe {[m
+         (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork([m
+             index_relation,[m
+[36m@@ -136,10 +172,15 @@[m [mpub(super) unsafe fn ec_hnsw_noop_vacuum_stats([m
+ }[m
+ [m
+ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {[m
+[32m+[m[32m    // SAFETY: The index relation is live and the metadata page is read under a[m
+[32m+[m[32m    // shared buffer lock.[m
+     let metadata = unsafe { read_metadata_page(index_relation) };[m
+[32m+[m[32m    // SAFETY: Metadata was decoded from this index and describes its graph[m
+[32m+[m[32m    // storage layout.[m
+     let storage =[m
+         unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }[m
+             .unwrap_or_else(|e| pgrx::error!("{e}"));[m
+[32m+[m[32m    // SAFETY: The index relation is live while reading its main-fork block count.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -156,6 +197,8 @@[m [mpub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u[m
+                 .saturating_sub(1)[m
+                 .max(page::FIRST_DATA_BLOCK_NUMBER),[m
+         );[m
+[32m+[m[32m        // SAFETY: The index relation and callback state live until[m
+[32m+[m[32m        // `read_stream_end`; the stream callback yields main-fork block numbers.[m
+         let stream = unsafe {[m
+             pg_sys::read_stream_begin_relation([m
+                 pg_sys::READ_STREAM_SEQUENTIAL as i32,[m
+[36m@@ -167,9 +210,11 @@[m [mpub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u[m
+                 std::mem::size_of::<pg_sys::BlockNumber>(),[m
+             )[m
+         };[m
+[32m+[m[32m        // SAFETY: `stream` was just opened and can be reset before consumption.[m
+         unsafe { pg_sys::read_stream_reset(stream) };[m
+         loop {[m
+             let mut per_buffer_data = ptr::null_mut();[m
+[32m+[m[32m            // SAFETY: `stream` remains valid until `read_stream_end` below.[m
+             let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };[m
+             if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {[m
+                 break;[m
+[36m@@ -177,8 +222,12 @@[m [mpub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u[m
+             let block_number = if per_buffer_data.is_null() {[m
+                 page::FIRST_DATA_BLOCK_NUMBER[m
+             } else {[m
+[32m+[m[32m                // SAFETY: The stream callback stores a BlockNumber-sized payload[m
+[32m+[m[32m                // when per-buffer data is non-null.[m
+                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }[m
+             };[m
+[32m+[m[32m            // SAFETY: `read_stream_next_buffer` returns a pinned buffer that is[m
+[32m+[m[32m            // locked here for shared tuple inspection.[m
+             let buffer =[m
+                 unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }[m
+                     .unwrap_or_else(|| {[m
+[36m@@ -186,14 +235,19 @@[m [mpub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u[m
+                             "ec_hnsw failed to open data buffer while counting live tuples"[m
+                         )[m
+                     });[m
+[32m+[m[32m            // SAFETY: The buffer guard owns a shared lock and `storage` matches[m
+[32m+[m[32m            // the decoded index metadata.[m
+             count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };[m
+         }[m
+[32m+[m[32m        // SAFETY: Ends the read stream opened above after all buffers are consumed.[m
+         unsafe { pg_sys::read_stream_end(stream) };[m
+     }[m
+ [m
+     #[cfg(not(feature = "pg18"))][m
+     {[m
+         for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {[m
+[32m+[m[32m            // SAFETY: The index relation is live and the block range was derived[m
+[32m+[m[32m            // from the current main-fork block count.[m
+             let buffer = unsafe {[m
+                 LockedBufferGuard::read_main([m
+                     index_relation,[m
+[36m@@ -205,6 +259,8 @@[m [mpub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u[m
+             .unwrap_or_else(|| {[m
+                 pgrx::error!("ec_hnsw failed to open data buffer while counting live tuples")[m
+             });[m
+[32m+[m[32m            // SAFETY: The buffer guard owns a shared lock and `storage` matches[m
+[32m+[m[32m            // the decoded index metadata.[m
+             count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };[m
+         }[m
+     }[m
+[36m@@ -223,6 +279,8 @@[m [munsafe fn count_live_elements_on_buffer([m
+     let mut count = 0_usize;[m
+ [m
+     for offset in 1..=line_pointer_count {[m
+[32m+[m[32m        // SAFETY: The buffer is shared-locked by the caller; offsets are bounded[m
+[32m+[m[32m        // by this page's line pointer count before tuple bytes are visited.[m
+         unsafe {[m
+             with_page_line_tuple_bytes([m
+                 page_ptr,[m
+[36m@@ -290,6 +348,7 @@[m [mpub(super) unsafe fn highest_level_live_entry_candidate([m
+     index_relation: pg_sys::Relation,[m
+     storage: graph::GraphStorageDescriptor,[m
+ ) -> Option<LiveEntryCandidate> {[m
+[32m+[m[32m    // SAFETY: The index relation is live while reading its main-fork block count.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)[m
+     };[m
+[36m@@ -297,6 +356,8 @@[m [mpub(super) unsafe fn highest_level_live_entry_candidate([m
+     let mut best = None;[m
+ [m
+     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {[m
+[32m+[m[32m        // SAFETY: The index relation is live and the block range was derived[m
+[32m+[m[32m        // from the current main-fork block count.[m
+         let buffer = unsafe {[m
+             LockedBufferGuard::read_main([m
+                 index_relation,[m
+[36m@@ -317,6 +378,8 @@[m [mpub(super) unsafe fn highest_level_live_entry_candidate([m
+                 block_number,[m
+                 offset_number: offset,[m
+             };[m
+[32m+[m[32m            // SAFETY: The buffer is shared-locked and the offset is bounded by[m
+[32m+[m[32m            // this page's line pointer count before tuple bytes are decoded.[m
+             let candidate = unsafe {[m
+                 with_page_line_tuple_bytes([m
+                     page_ptr,[m
+[36m@@ -424,6 +487,8 @@[m [mpub(super) unsafe fn highest_level_live_entry_candidate([m
+ }[m
+ [m
+ pub(super) unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {[m
+[32m+[m[32m    // SAFETY: The caller bounds-checks `offset` against the page line pointer[m
+[32m+[m[32m    // count before using the returned ItemId pointer.[m
+     unsafe {[m
+         page_ptr[m
+             .add([m
+[36m@@ -435,6 +500,8 @@[m [mpub(super) unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_s[m
+ [m
+ pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {[m
+     let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();[m
+[32m+[m[32m    // SAFETY: `page_ptr` points at a pinned PostgreSQL page and `pd_lower`[m
+[32m+[m[32m    // identifies the end of the line pointer array.[m
+     ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())[m
+         / size_of::<pg_sys::ItemIdData>()) as u16[m
+ }[m
+[36m@@ -450,6 +517,8 @@[m [mpub(super) unsafe fn with_page_line_tuple_bytes<R, F>([m
+ where[m
+     F: for<'a> FnOnce(&'a [u8]) -> R,[m
+ {[m
+[32m+[m[32m    // SAFETY: The caller bounds-checks `offset` against the page line pointer[m
+[32m+[m[32m    // count before this helper reads the ItemId.[m
+     let item_id = unsafe { &*page_item_id(page_ptr, offset) };[m
+     if item_id.lp_flags() == 0 {[m
+         return Ok(None);[m
+[36m@@ -463,6 +532,8 @@[m [mwhere[m
+         ));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Tuple bounds were checked against `page_size` above and the page[m
+[32m+[m[32m    // is shared-locked for immutable tuple inspection.[m
+     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };[m
+     Ok(Some(visit(tuple_bytes)))[m
+ }[m
+[36m@@ -477,6 +548,8 @@[m [mpub(super) unsafe fn with_writable_page_tuple_bytes<R, F>([m
+ where[m
+     F: for<'a> FnOnce(&'a mut [u8]) -> R,[m
+ {[m
+[32m+[m[32m    // SAFETY: The caller owns an exclusive page lock and supplies a tuple offset[m
+[32m+[m[32m    // selected from this page.[m
+     let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };[m
+     if item_id.lp_flags() == 0 {[m
+         pgrx::error!([m
+[36m@@ -495,6 +568,8 @@[m [mwhere[m
+         );[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Tuple bounds were checked against `page_size` above and the caller[m
+[32m+[m[32m    // owns an exclusive lock for mutable tuple access.[m
+     let tuple_bytes =[m
+         unsafe { std::slice::from_raw_parts_mut(page_ptr.add(tuple_offset), tuple_len) };[m
+     visit(tuple_bytes)[m
+[36m@@ -504,6 +579,8 @@[m [mpub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPoin[m
+     if tid.is_null() {[m
+         pgrx::error!("ec_hnsw ambuild received a null heap tid");[m
+     }[m
+[32m+[m[32m    // SAFETY: Null was checked above and PostgreSQL supplied this heap TID for[m
+[32m+[m[32m    // the AM callback currently decoding it.[m
+     let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });[m
+     page::ItemPointer {[m
+         block_number,[m
+[36m@@ -523,6 +600,8 @@[m [mpub(crate) unsafe fn debug_index_pages([m
+     index_oid: pg_sys::Oid,[m
+ ) -> (u32, page::MetadataPage, Vec<DebugIndexDataPage>) {[m
+     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_pages");[m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the relation open while the block[m
+[32m+[m[32m    // count is read.[m
+     let block_count = unsafe {[m
+         pg_sys::RelationGetNumberOfBlocksInFork([m
+             index_relation.as_ptr(),[m
+[36m@@ -530,9 +609,12 @@[m [mpub(crate) unsafe fn debug_index_pages([m
+         )[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: The index relation guard keeps the metadata page readable.[m
+     let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };[m
+     let mut data_pages = Vec::new();[m
+     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {[m
+[32m+[m[32m        // SAFETY: `block_number` is within the current main-fork block range and[m
+[32m+[m[32m        // the guard keeps the relation open.[m
+         data_pages.push(unsafe { read_data_page(index_relation.as_ptr(), block_number) });[m
+     }[m
+ [m
+[36m@@ -540,6 +622,8 @@[m [mpub(crate) unsafe fn debug_index_pages([m
+ }[m
+ [m
+ pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {[m
+[32m+[m[32m    // SAFETY: The index relation is live and the metadata block is read under a[m
+[32m+[m[32m    // shared buffer lock.[m
+     let buffer = unsafe {[m
+         LockedBufferGuard::read_main([m
+             index_relation,[m
+[36m@@ -551,6 +635,8 @@[m [mpub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag[m
+     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));[m
+     let raw_page = buffer.page().cast::<u8>();[m
+     let page_size = buffer.page_size();[m
+[32m+[m[32m    // SAFETY: The buffer guard pins the metadata page for the duration of this[m
+[32m+[m[32m    // borrow and `page_size` bounds the slice.[m
+     let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };[m
+     let metadata =[m
+         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");[m
+
+Script done on 2026-05-19 05:17:14-07:00 [COMMAND_EXIT_CODE="0"]
