@@ -122,6 +122,8 @@ fn custom_scan_dml_primitive_invocation(
 }
 
 unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
+    // SAFETY: executor passes the CustomScan node produced by this provider;
+    // plan_private offset 2 stores the encoded LIMIT value.
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing private LIMIT");
@@ -136,6 +138,8 @@ unsafe fn custom_scan_query_from_plan(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) -> Vec<f32> {
+    // SAFETY: executor passes the live CustomScanState and matching CustomScan
+    // plan; custom_exprs offset 0 stores the ORDER BY query expression.
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing ORDER BY query expression");
@@ -182,6 +186,8 @@ unsafe fn custom_scan_query_from_plan(
 }
 
 unsafe fn custom_scan_query_values_from_datum(datum: pg_sys::Datum) -> Option<Vec<f32>> {
+    // SAFETY: caller supplies a non-null real[] Datum from a validated Const or
+    // evaluated Param; pgrx decodes it without taking PostgreSQL ownership.
     let values =
         unsafe { Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)? };
     if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
@@ -194,6 +200,8 @@ unsafe fn custom_scan_tuple_payload_columns(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) -> Vec<String> {
+    // SAFETY: executor passes live CustomScanState/CustomScan pointers; relation
+    // and targetlist metadata are read only for tuple payload column discovery.
     unsafe {
         let relation = (*node).ss.ss_currentRelation;
         if relation.is_null() {
@@ -257,6 +265,8 @@ unsafe fn custom_scan_tuple_payload_columns(
 }
 
 unsafe fn custom_scan_validate_tuple_payload_attr(attr: pg_sys::Form_pg_attribute, name: &str) {
+    // SAFETY: attr is a live tuple descriptor attribute from the scan relation;
+    // only PostgreSQL type metadata is read.
     unsafe {
         let mut typreceive = pg_sys::InvalidOid;
         let mut typioparam = pg_sys::InvalidOid;
@@ -272,6 +282,8 @@ unsafe fn custom_scan_validate_tuple_payload_attr(attr: pg_sys::Form_pg_attribut
 unsafe fn custom_scan_payload_attr_io(
     tuple_desc: pg_sys::TupleDesc,
 ) -> Vec<Option<SpireCustomScanPayloadAttrIo>> {
+    // SAFETY: tuple_desc belongs to the live scan relation while executor
+    // payload input functions are looked up.
     unsafe {
         if tuple_desc.is_null() {
             pgrx::error!("EcSpireDistributedScan tuple payload input descriptor is null");
@@ -313,6 +325,8 @@ unsafe fn custom_scan_payload_attr_io(
 }
 
 unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> String {
+    // SAFETY: executor passes a live CustomScanState whose current relation is
+    // the DML target relation.
     unsafe {
         let relation = (*node).ss.ss_currentRelation;
         if relation.is_null() {
@@ -330,6 +344,8 @@ unsafe fn custom_scan_dml_pk_value_from_plan(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) -> [u8; 8] {
+    // SAFETY: executor passes live CustomScanState/CustomScan pointers and
+    // custom_exprs offset 0 stores the PK expression.
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
             pgrx::error!("EcSpireDistributedScan DML plan is missing PK expression");
@@ -344,6 +360,8 @@ unsafe fn custom_scan_dml_update_value_exprs_from_plan(
     custom_scan: *mut pg_sys::CustomScan,
     expected_count: usize,
 ) -> Vec<*mut pg_sys::Expr> {
+    // SAFETY: executor passes the CustomScan plan produced by this provider;
+    // custom_exprs offset 0 is PK and following entries are UPDATE values.
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
             pgrx::error!("EcSpireDistributedScan DML UPDATE plan is missing value expressions");
@@ -373,6 +391,8 @@ unsafe fn custom_scan_bigint_expr_value(
     node: *mut pg_sys::CustomScanState,
     expr: *mut pg_sys::Expr,
 ) -> i64 {
+    // SAFETY: expr comes from the provider-owned DML custom_exprs list; NodeTag
+    // dispatch below guards Const/Param casts and evaluation.
     unsafe {
         if expr.is_null() {
             pgrx::error!("EcSpireDistributedScan DML PK expression is null");
@@ -409,6 +429,8 @@ unsafe fn custom_scan_bigint_expr_value(
 }
 
 unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::Oid) -> i64 {
+    // SAFETY: caller supplies a non-null integer Datum and its exact PostgreSQL
+    // type OID; each DatumGet branch matches that OID.
     unsafe {
         match typoid {
             pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(datum)),
@@ -423,6 +445,8 @@ unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::O
 }
 
 unsafe fn custom_scan_execute_dml_delete(state: *mut SpireCustomScanExecState) -> u64 {
+    // SAFETY: executor passes the live custom scan state; this function only
+    // reads owned DML invocation fields before executing SPI.
     unsafe {
         let state_ref = &mut *state;
         let invocation =
@@ -476,6 +500,8 @@ unsafe fn custom_scan_execute_dml_update(
     state: *mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> u64 {
+    // SAFETY: executor passes live custom/scan state pointers; UPDATE payload
+    // expressions are evaluated against the matching scan state's ExprContext.
     unsafe {
         let state_ref = &mut *state;
         let invocation =
@@ -547,6 +573,8 @@ unsafe fn custom_scan_dml_update_row_payload_json(
     updated_columns: &[String],
     value_exprs: &[*mut pg_sys::Expr],
 ) -> String {
+    // SAFETY: node is the live CustomScanState and value_exprs are provider-owned
+    // UPDATE expressions matched one-for-one with updated_columns.
     unsafe {
         if updated_columns.len() != value_exprs.len() {
             pgrx::error!("EcSpireDistributedScan DML UPDATE payload column/value width mismatch");
@@ -564,6 +592,8 @@ unsafe fn custom_scan_dml_update_expr_json_value(
     node: *mut pg_sys::CustomScanState,
     expr: *mut pg_sys::Expr,
 ) -> serde_json::Value {
+    // SAFETY: expr is a provider-owned UPDATE value expression; NodeTag dispatch
+    // below guards Const/Param casts and evaluation.
     unsafe {
         if expr.is_null() {
             pgrx::error!("EcSpireDistributedScan DML UPDATE value expression is null");
@@ -610,6 +640,8 @@ unsafe fn custom_scan_dml_update_datum_json_value(
     datum: pg_sys::Datum,
     typoid: pg_sys::Oid,
 ) -> serde_json::Value {
+    // SAFETY: caller supplies a non-null Datum and its PostgreSQL type OID;
+    // output function metadata is read before converting to UTF-8 JSON string.
     unsafe {
         if typoid == pg_sys::InvalidOid {
             pgrx::error!("EcSpireDistributedScan DML UPDATE value has invalid type OID");
@@ -634,6 +666,8 @@ unsafe fn custom_scan_dml_update_datum_json_value(
 }
 
 unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanExecState) {
+    // SAFETY: executor passes the live custom scan state; this function owns the
+    // transition from unloaded to loaded DML PK SELECT tuple payload.
     unsafe {
         let state_ref = &mut *state;
         if state_ref.dml_payload_loaded {
