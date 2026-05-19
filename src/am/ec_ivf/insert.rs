@@ -13,6 +13,8 @@ struct RelationLockGuard {
 
 impl Drop for RelationLockGuard {
     fn drop(&mut self) {
+        // SAFETY: guard construction records the relation OID and lock mode
+        // acquired by `LockRelationOid`; Drop releases that exact lock once.
         unsafe { pg_sys::UnlockRelationOid(self.relid, self.lockmode) };
     }
 }
@@ -27,6 +29,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
     _index_unchanged: bool,
     index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
+    // SAFETY: PostgreSQL invokes this AM callback with live relation pointers,
+    // datum/null arrays, heap TID, and index info for the duration of the call.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             crate::fault::maybe_fail_palloc("ec_ivf aminsert entry");
@@ -65,7 +69,10 @@ fn validate_metadata_runtime_options(metadata: &page::MetadataPage) -> Result<()
 }
 
 unsafe fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
+    // SAFETY: caller passes a live index relation; reading rd_id does not take
+    // ownership of the relation.
     let relid = unsafe { (*index_relation).rd_id };
+    // SAFETY: locks the relation OID read above until the returned guard drops.
     unsafe { pg_sys::LockRelationOid(relid, EMPTY_BOOTSTRAP_LOCK_MODE) };
     RelationLockGuard {
         relid,
@@ -77,13 +84,19 @@ unsafe fn insert_with_empty_bootstrap_lock(
     index_relation: pg_sys::Relation,
     tuple: build::BuildTuple,
 ) -> Result<(), String> {
+    // SAFETY: caller passes the live index relation; the guard serializes the
+    // empty-index bootstrap recheck and build flush.
     let guard = unsafe { lock_empty_bootstrap_relation(index_relation) };
+    // SAFETY: same live index relation, reread under the bootstrap lock.
     let metadata = unsafe { page::read_metadata_page(index_relation) };
     validate_metadata_runtime_options(&metadata)?;
     if metadata.dimensions == 0 {
+        // SAFETY: relation is still locked and metadata confirms the index is
+        // empty, so the single-tuple bootstrap may initialize storage.
         return unsafe { bootstrap_empty_index(index_relation, &metadata, tuple) };
     }
     drop(guard);
+    // SAFETY: relation is live and metadata now describes a trained index.
     unsafe { insert_into_trained_index(index_relation, &metadata, tuple) }
 }
 
@@ -95,6 +108,8 @@ unsafe fn reencode_tuple_for_storage(
     if metadata.storage_format != options::StorageFormat::PqFastScan {
         return Ok(tuple);
     }
+    // SAFETY: caller passes the live IVF index relation and metadata read from
+    // it; the model chain is validated by the loader.
     let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
     let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
@@ -118,10 +133,14 @@ unsafe fn insert_into_trained_index(
     validate_insert_tuple(metadata, &tuple)
         .map_err(|e| format!("ec_ivf aminsert found invalid tuple: {e}"))?;
 
+    // SAFETY: relation is live and metadata has been validated for a trained
+    // IVF index with centroid storage.
     let model = unsafe { load_centroid_model(index_relation, metadata) }?;
     let list_id = training::assign_vector_to_centroid(&tuple.source_vector, &model)
         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
     let (directory_tid, directory) =
+        // SAFETY: relation is live and metadata directory storage belongs to
+        // the same index.
         unsafe { load_directory_entry(index_relation, metadata, list_id) }?;
 
     let posting = page::IvfPostingTuple {
@@ -140,8 +159,12 @@ unsafe fn insert_into_trained_index(
     // a heap line pointer can be reused. The debug validation helper below
     // keeps the corruption-check path available without scanning on inserts.
     let posting_tid =
+        // SAFETY: relation is live, block_range comes from the selected
+        // directory entry, and `posting` is fully encoded for this index.
         unsafe { page::append_ivf_posting_to_list_range(index_relation, block_range, &posting) }?;
 
+    // SAFETY: `directory_tid` identifies the selected list directory tuple in
+    // this live relation; the closure only updates insert counters/range refs.
     unsafe {
         page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
             if latest_directory.list_id != posting.list_id {
@@ -154,6 +177,8 @@ unsafe fn insert_into_trained_index(
         })
     }
     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
+    // SAFETY: relation is live and the callback only increments metadata
+    // insert counters.
     unsafe { page::update_metadata_page(index_relation, apply_metadata_insert_stats) }
         .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
 
@@ -178,6 +203,8 @@ unsafe fn ensure_heap_tid_absent(
     let mut next_tid = metadata.directory_head;
     for expected_list_id in 0..metadata.nlists {
         let (directory, following_tid) =
+            // SAFETY: relation is live and `next_tid` follows the metadata
+            // directory chain.
             unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
         if directory.list_id != expected_list_id {
             return Err(format!(
@@ -186,15 +213,18 @@ unsafe fn ensure_heap_tid_absent(
             ));
         }
 
-        let postings = unsafe {
-            page::read_ivf_postings_for_list_blocks(
-                index_relation,
-                directory.list_id,
-                directory.head_block,
-                directory.tail_block,
-                payload_len,
-            )?
-        };
+        let postings =
+            // SAFETY: directory tuple was read from this live relation and its
+            // posting block refs delimit this list.
+            unsafe {
+                page::read_ivf_postings_for_list_blocks(
+                    index_relation,
+                    directory.list_id,
+                    directory.head_block,
+                    directory.tail_block,
+                    payload_len,
+                )?
+            };
         if postings
             .iter()
             .filter(|posting| !posting.deleted)
@@ -219,6 +249,8 @@ unsafe fn bootstrap_empty_index(
 ) -> Result<(), String> {
     let options = options_from_metadata(metadata)?;
     let plan = build::stage_single_tuple_build_plan(options, tuple)?;
+    // SAFETY: caller holds the empty-bootstrap lock and passes metadata from
+    // this live index relation; the staged single-tuple plan initializes it.
     unsafe { build::flush_build_plan(index_relation, &plan) };
     Ok(())
 }
@@ -304,6 +336,8 @@ unsafe fn load_centroid_model(
     let mut centroids = Vec::with_capacity(metadata.nlists as usize);
     let mut next_tid = metadata.centroid_head;
     for expected_list_id in 0..metadata.nlists {
+        // SAFETY: relation is live, `next_tid` follows the centroid chain, and
+        // metadata dimensions define the centroid payload width.
         let (centroid, following_tid) = unsafe {
             page::read_ivf_centroid_and_next(
                 index_relation,
@@ -340,6 +374,8 @@ unsafe fn load_directory_entry(
     for expected_list_id in 0..metadata.nlists {
         let current_tid = next_tid;
         let (directory, following_tid) =
+            // SAFETY: relation is live and `current_tid` follows the metadata
+            // directory chain.
             unsafe { page::read_ivf_list_directory_and_next(index_relation, current_tid)? };
         if directory.list_id != expected_list_id {
             return Err(format!(
@@ -443,11 +479,14 @@ pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
         index_oid,
         "debug_ec_ivf_validate_no_duplicate_heap_tid",
     );
+    // SAFETY: the guarded index relation is live for this metadata read.
     let metadata = unsafe { page::read_metadata_page(index_relation.as_ptr()) };
     let heap_tid = ItemPointer {
         block_number,
         offset_number,
     };
+    // SAFETY: metadata was read from the same guarded relation and the helper
+    // only scans IVF directory/posting storage.
     let result = unsafe { ensure_heap_tid_absent(index_relation.as_ptr(), &metadata, heap_tid) };
     result.unwrap_or_else(|e| pgrx::error!("ec_ivf duplicate heap tid validation failed: {e}"));
 }
