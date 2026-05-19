@@ -545,6 +545,8 @@ fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
 #[cfg(target_arch = "x86_64")]
 pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma") {
+        // SAFETY: Runtime feature detection guarantees the target features
+        // required by the AVX2/FMA kernel before entering the target-feature fn.
         unsafe { source_inner_product_avx2_fma(left, right) }
     } else {
         source_inner_product_scalar(left, right)
@@ -554,6 +556,8 @@ pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
 #[cfg(target_arch = "aarch64")]
 pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     if std::arch::is_aarch64_feature_detected!("neon") {
+        // SAFETY: Runtime feature detection guarantees NEON support before
+        // entering the target-feature fn.
         unsafe { source_inner_product_neon(left, right) }
     } else {
         source_inner_product_scalar(left, right)
@@ -583,6 +587,8 @@ pub(super) fn source_inner_product_avx2_fma_for_test(left: &[f32], right: &[f32]
     if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
         return None;
     }
+    // SAFETY: This test/bench helper performs the same runtime feature check
+    // as production dispatch before calling the target-feature kernel.
     Some(unsafe { source_inner_product_avx2_fma(left, right) })
 }
 
@@ -591,6 +597,8 @@ pub(super) fn source_inner_product_neon_for_test(left: &[f32], right: &[f32]) ->
     if !std::arch::is_aarch64_feature_detected!("neon") {
         return None;
     }
+    // SAFETY: This test/bench helper performs the same runtime feature check
+    // as production dispatch before calling the target-feature kernel.
     Some(unsafe { source_inner_product_neon(left, right) })
 }
 
@@ -609,14 +617,21 @@ unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     let mut acc3 = _mm256_setzero_ps();
 
     while i + 32 <= len {
-        let l0 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i)) };
-        let r0 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i)) };
-        let l1 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i + 8)) };
-        let r1 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i + 8)) };
-        let l2 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i + 16)) };
-        let r2 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i + 16)) };
-        let l3 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i + 24)) };
-        let r3 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i + 24)) };
+        // SAFETY: The loop condition proves `i + 32 <= len`, where `len` is
+        // the minimum slice length. Each unaligned 8-lane load stays within
+        // both input slices.
+        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+            (
+                _mm256_loadu_ps(left.as_ptr().add(i)),
+                _mm256_loadu_ps(right.as_ptr().add(i)),
+                _mm256_loadu_ps(left.as_ptr().add(i + 8)),
+                _mm256_loadu_ps(right.as_ptr().add(i + 8)),
+                _mm256_loadu_ps(left.as_ptr().add(i + 16)),
+                _mm256_loadu_ps(right.as_ptr().add(i + 16)),
+                _mm256_loadu_ps(left.as_ptr().add(i + 24)),
+                _mm256_loadu_ps(right.as_ptr().add(i + 24)),
+            )
+        };
 
         acc0 = _mm256_fmadd_ps(l0, r0, acc0);
         acc1 = _mm256_fmadd_ps(l1, r1, acc1);
@@ -627,10 +642,14 @@ unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
 
     let total = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
     let mut lanes = [0.0_f32; 8];
+    // SAFETY: `lanes` has exactly eight contiguous `f32` slots, matching the
+    // width of a single AVX register store.
     unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), total) };
     let mut ip = lanes.iter().sum::<f32>();
 
     while i < len {
+        // SAFETY: The tail loop maintains `i < len`, and `len` is the minimum
+        // of the two slice lengths, so both unchecked reads are in bounds.
         ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
         i += 1;
     }
@@ -653,14 +672,21 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     let mut i = 0_usize;
 
     while i + 16 <= len {
-        let l0 = unsafe { vld1q_f32(left.as_ptr().add(i)) };
-        let r0 = unsafe { vld1q_f32(right.as_ptr().add(i)) };
-        let l1 = unsafe { vld1q_f32(left.as_ptr().add(i + 4)) };
-        let r1 = unsafe { vld1q_f32(right.as_ptr().add(i + 4)) };
-        let l2 = unsafe { vld1q_f32(left.as_ptr().add(i + 8)) };
-        let r2 = unsafe { vld1q_f32(right.as_ptr().add(i + 8)) };
-        let l3 = unsafe { vld1q_f32(left.as_ptr().add(i + 12)) };
-        let r3 = unsafe { vld1q_f32(right.as_ptr().add(i + 12)) };
+        // SAFETY: The loop condition proves `i + 16 <= len`, where `len` is
+        // the minimum slice length. Each 4-lane load remains within both
+        // input slices.
+        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+            (
+                vld1q_f32(left.as_ptr().add(i)),
+                vld1q_f32(right.as_ptr().add(i)),
+                vld1q_f32(left.as_ptr().add(i + 4)),
+                vld1q_f32(right.as_ptr().add(i + 4)),
+                vld1q_f32(left.as_ptr().add(i + 8)),
+                vld1q_f32(right.as_ptr().add(i + 8)),
+                vld1q_f32(left.as_ptr().add(i + 12)),
+                vld1q_f32(right.as_ptr().add(i + 12)),
+            )
+        };
         acc0 = vfmaq_f32(acc0, l0, r0);
         acc1 = vfmaq_f32(acc1, l1, r1);
         acc2 = vfmaq_f32(acc2, l2, r2);
@@ -669,18 +695,28 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     }
 
     while i + 4 <= len {
-        let l = unsafe { vld1q_f32(left.as_ptr().add(i)) };
-        let r = unsafe { vld1q_f32(right.as_ptr().add(i)) };
+        // SAFETY: The loop condition proves the next 4-lane chunk lies within
+        // both slices because `len` is their minimum length.
+        let (l, r) = unsafe {
+            (
+                vld1q_f32(left.as_ptr().add(i)),
+                vld1q_f32(right.as_ptr().add(i)),
+            )
+        };
         acc0 = vfmaq_f32(acc0, l, r);
         i += 4;
     }
 
     let acc = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
     let mut lanes = [0.0_f32; 4];
+    // SAFETY: `lanes` has exactly four contiguous `f32` slots, matching the
+    // width of a single NEON register store.
     unsafe { vst1q_f32(lanes.as_mut_ptr(), acc) };
     let mut ip = lanes.iter().sum::<f32>();
 
     while i < len {
+        // SAFETY: The tail loop maintains `i < len`, and `len` is the minimum
+        // of the two slice lengths, so both unchecked reads are in bounds.
         ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
         i += 1;
     }
@@ -934,12 +970,18 @@ mod tests {
     #[cfg(target_arch = "aarch64")]
     #[test]
     fn source_inner_product_neon_matches_scalar_at_loop_boundaries() {
+        if !std::arch::is_aarch64_feature_detected!("neon") {
+            return;
+        }
+
         // Lengths chosen so the kernel exercises the 16-lane main loop, the
         // 4-lane tail, and the scalar remainder in turn.
         for len in [1usize, 3, 4, 7, 16, 17, 19, 64, 1536, 1539] {
             let left: Vec<f32> = (0..len).map(|i| ((i as f32) * 0.013).sin()).collect();
             let right: Vec<f32> = (0..len).map(|i| ((i as f32) * 0.017).cos()).collect();
             let scalar = super::source_inner_product_scalar(&left, &right);
+            // SAFETY: The test performs NEON runtime feature detection before
+            // directly exercising the target-feature kernel at loop boundaries.
             let neon = unsafe { super::source_inner_product_neon(&left, &right) };
             assert!(
                 (scalar - neon).abs() <= 0.0001,
