@@ -180,6 +180,8 @@
     #[test]
     fn local_object_store_rejects_invalid_store_and_epoch() {
         assert!(SpireLocalObjectStore::with_default_page_size(0).is_err());
+        // The other branch in new_for_store: a valid relid with page_size == 0.
+        assert!(SpireLocalObjectStore::new(12345, 0).is_err());
         let object = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
         let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
 
@@ -191,6 +193,22 @@
 
         let root = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
         assert!(store.insert_routing_object(0, &root).is_err());
+
+        // Top-graph insert shares the epoch == 0 guard with the other inserts.
+        let top_graph = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            2,
+            2,
+            4,
+            1.2,
+            0,
+            vec![top_graph_node(21, 0, vec![])],
+        )
+        .unwrap();
+        assert!(store.insert_top_graph_object(0, &top_graph).is_err());
     }
 
     #[test]
