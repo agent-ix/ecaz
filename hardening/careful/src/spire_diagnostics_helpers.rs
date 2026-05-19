@@ -69,6 +69,54 @@ mod scaffold {
         }
     }
 
+    // Shim of `coordinator/types.rs::SpireActiveSnapshotDiagnostics`
+    // used by health_snapshot_from_diagnostics.
+    #[derive(Debug, Clone)]
+    pub(super) struct SpireActiveSnapshotDiagnostics {
+        pub(super) active_epoch: u64,
+        pub(super) next_pid: u64,
+        pub(super) next_local_vec_seq: u64,
+        pub(super) consistency_mode: &'static str,
+        pub(super) object_count: u64,
+        pub(super) placement_count: u64,
+        pub(super) local_store_count: u64,
+        pub(super) available_placement_count: u64,
+        pub(super) stale_placement_count: u64,
+        pub(super) unavailable_placement_count: u64,
+        pub(super) skipped_placement_count: u64,
+        pub(super) root_object_count: u64,
+        pub(super) internal_object_count: u64,
+        pub(super) leaf_object_count: u64,
+        pub(super) delta_object_count: u64,
+        pub(super) routing_child_count: u64,
+        pub(super) leaf_assignment_count: u64,
+        pub(super) delta_assignment_count: u64,
+        pub(super) available_object_bytes: u64,
+        pub(super) routing_object_bytes: u64,
+        pub(super) leaf_object_bytes: u64,
+        pub(super) delta_object_bytes: u64,
+    }
+
+    // Shim of `coordinator/types.rs::SpireIndexHealthSnapshot` produced
+    // by health_snapshot_from_diagnostics.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(super) struct SpireIndexHealthSnapshot {
+        pub(super) active_epoch: u64,
+        pub(super) consistency_mode: &'static str,
+        pub(super) status: &'static str,
+        pub(super) healthy: bool,
+        pub(super) recommendation: &'static str,
+        pub(super) compaction_recommended: bool,
+        pub(super) object_count: u64,
+        pub(super) leaf_assignment_count: u64,
+        pub(super) delta_assignment_count: u64,
+        pub(super) delta_object_count: u64,
+        pub(super) available_placement_count: u64,
+        pub(super) stale_placement_count: u64,
+        pub(super) unavailable_placement_count: u64,
+        pub(super) skipped_placement_count: u64,
+    }
+
     pub(super) mod quantizer {
         // Minimal shim of the production enum at
         // `src/am/ec_spire/quantizer/mod.rs::SpireAssignmentPayloadFormat`.
@@ -222,6 +270,92 @@ mod scaffold {
             assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Leaf), "leaf");
             assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Delta), "delta");
             assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::TopGraph), "top_graph");
+        }
+
+        fn empty_diagnostics() -> SpireActiveSnapshotDiagnostics {
+            SpireActiveSnapshotDiagnostics {
+                active_epoch: 7,
+                next_pid: 1,
+                next_local_vec_seq: 1,
+                consistency_mode: "strict",
+                object_count: 0,
+                placement_count: 0,
+                local_store_count: 0,
+                available_placement_count: 0,
+                stale_placement_count: 0,
+                unavailable_placement_count: 0,
+                skipped_placement_count: 0,
+                root_object_count: 0,
+                internal_object_count: 0,
+                leaf_object_count: 0,
+                delta_object_count: 0,
+                routing_child_count: 0,
+                leaf_assignment_count: 0,
+                delta_assignment_count: 0,
+                available_object_bytes: 0,
+                routing_object_bytes: 0,
+                leaf_object_bytes: 0,
+                delta_object_bytes: 0,
+            }
+        }
+
+        #[test]
+        fn miri_health_snapshot_walks_every_status_branch() {
+            // active_epoch == 0 short-circuits to "empty".
+            let mut diag = empty_diagnostics();
+            diag.active_epoch = 0;
+            let snap = health_snapshot_from_diagnostics(&diag);
+            assert_eq!(snap.status, "empty");
+            assert!(snap.healthy);
+            assert!(!snap.compaction_recommended);
+
+            // unavailable placements take priority over stale/skipped.
+            let mut diag = empty_diagnostics();
+            diag.unavailable_placement_count = 1;
+            diag.stale_placement_count = 1;
+            assert_eq!(
+                health_snapshot_from_diagnostics(&diag).status,
+                "unavailable_placements",
+            );
+
+            // stale placements.
+            let mut diag = empty_diagnostics();
+            diag.stale_placement_count = 1;
+            assert_eq!(
+                health_snapshot_from_diagnostics(&diag).status,
+                "stale_placements",
+            );
+
+            // skipped placements.
+            let mut diag = empty_diagnostics();
+            diag.skipped_placement_count = 1;
+            assert_eq!(
+                health_snapshot_from_diagnostics(&diag).status,
+                "skipped_placements",
+            );
+
+            // delta objects → maintenance_recommended + compaction.
+            let mut diag = empty_diagnostics();
+            diag.delta_object_count = 5;
+            let snap = health_snapshot_from_diagnostics(&diag);
+            assert_eq!(snap.status, "maintenance_recommended");
+            assert!(snap.compaction_recommended);
+            assert!(snap.healthy);
+
+            // degraded consistency.
+            let mut diag = empty_diagnostics();
+            diag.consistency_mode = "degraded";
+            assert_eq!(
+                health_snapshot_from_diagnostics(&diag).status,
+                "degraded_consistency",
+            );
+
+            // ok path with all clean counters.
+            let diag = empty_diagnostics();
+            let snap = health_snapshot_from_diagnostics(&diag);
+            assert_eq!(snap.status, "ok");
+            assert!(snap.healthy);
+            assert_eq!(snap.recommendation, "none");
         }
 
         #[test]
