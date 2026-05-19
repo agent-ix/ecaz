@@ -1,0 +1,57 @@
+Script started on 2026-05-19 01:52:08-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/coordinator/remote_candidates/pipeline.rs b/src/am/ec_spire/coordinator/remote_candidates/pipeline.rs[m
+[1mindex ad6176cb..0a66bf91 100644[m
+[1m--- a/src/am/ec_spire/coordinator/remote_candidates/pipeline.rs[m
+[1m+++ b/src/am/ec_spire/coordinator/remote_candidates/pipeline.rs[m
+[36m@@ -19,6 +19,8 @@[m [mimpl SpireCoordinatorPipeline {[m
+         let top_k_for_empty_plan = u64::try_from(top_k)[m
+             .map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;[m
+         let query_for_summary_fallback = query.clone();[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and checked request fields[m
+[32m+[m[32m        // into the readiness planner that owns relation page/catalog reads.[m
+         let readiness_rows = unsafe {[m
+             remote_search_request_readiness_rows([m
+                 index_relation,[m
+[36m@@ -41,8 +43,11 @@[m [mimpl SpireCoordinatorPipeline {[m
+             consistency_mode,[m
+         )?;[m
+         let request_rows = remote_search_libpq_request_plan_rows_from_execution(&execution_rows);[m
+[32m+[m[32m        // SAFETY: rd_id is stable while the relation is open for this pipeline[m
+[32m+[m[32m        // read and is only used as the local index OID for connection planning.[m
+[32m+[m[32m        let index_oid = unsafe { (*index_relation).rd_id };[m
+         let connection_rows = remote_search_libpq_connection_plan_rows_from_requests([m
+[31m-            unsafe { (*index_relation).rd_id },[m
+[32m+[m[32m            index_oid,[m
+             &request_rows,[m
+         )?;[m
+         let dispatch_rows = remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);[m
+[36m@@ -83,6 +88,8 @@[m [mpub(crate) unsafe fn remote_search_coordinator_gate_summary_row([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteSearchCoordinatorGateSummaryRow {[m
+[32m+[m[32m    // SAFETY: executes the coordinator pipeline with the live index relation[m
+[32m+[m[32m    // supplied by the SQL diagnostic caller and checked request fields.[m
+     let pipeline = unsafe {[m
+         SpireCoordinatorPipeline::execute_once([m
+             index_relation,[m
+[36m@@ -186,6 +193,8 @@[m [mpub(crate) unsafe fn remote_search_heap_resolution_summary_row([m
+     top_k: usize,[m
+     consistency_mode: &str,[m
+ ) -> SpireRemoteSearchHeapResolutionSummaryRow {[m
+[32m+[m[32m    // SAFETY: forwards the live index relation and request fields into the[m
+[32m+[m[32m    // coordinator gate summary before deriving heap-resolution status.[m
+     let gate = unsafe {[m
+         remote_search_coordinator_gate_summary_row([m
+             index_relation,[m
+[36m@@ -200,6 +209,9 @@[m [mpub(crate) unsafe fn remote_search_heap_resolution_summary_row([m
+     let decoded_local_locator_count = if gate.remote_plan_count == 0[m
+         && gate.status != SPIRE_REMOTE_STATUS_EMPTY_TOP_K[m
+     {[m
+[32m+[m[32m        // SAFETY: forwards the live index relation and cloned request fields to[m
+[32m+[m[32m        // the local heap-resolution planner only when the gate selected a local[m
+[32m+[m[32m        // heap-only path.[m
+         let rows = unsafe {[m
+             remote_search_local_heap_resolution_plan_rows([m
+                 index_relation,[m
+
+Script done on 2026-05-19 01:52:08-07:00 [COMMAND_EXIT_CODE="0"]
