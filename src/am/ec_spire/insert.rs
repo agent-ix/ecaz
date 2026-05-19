@@ -32,6 +32,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_aminsert(
     _index_unchanged: bool,
     index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
+    // SAFETY: PostgreSQL invokes aminsert with live relation pointers, Datum
+    // arrays, heap TID, and IndexInfo for the duration of the guarded callback.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             crate::fault::maybe_fail_palloc("ec_spire aminsert entry");
@@ -57,9 +59,15 @@ unsafe fn publish_insert_delta_epoch(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> Result<(), String> {
+    // SAFETY: aminsert supplies a live SPIRE index relation; the guard only
+    // captures and locks its OID while this publish path runs.
     let _guard = unsafe { lock_publish_relation(index_relation) };
+    // SAFETY: the locked SPIRE index relation has a root/control page.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
+    // SAFETY: relation options are read from the live index relation.
     let relation_options = unsafe { options::relation_options(index_relation) };
+    // SAFETY: heap_relation and IndexInfo come from PostgreSQL's aminsert
+    // callback and remain valid while deriving the indexed tuple layout.
     let tuple_layout = unsafe {
         build::resolve_indexed_tuple_layout(
             heap_relation,
@@ -68,7 +76,10 @@ unsafe fn publish_insert_delta_epoch(
             "aminsert",
         )
     };
+    // SAFETY: heap_tid is the non-null item pointer supplied to aminsert.
     let heap_tid = unsafe { build::decode_heap_tid(heap_tid, "aminsert") };
+    // SAFETY: values/isnull are aminsert tuple arrays and tuple_layout was
+    // derived from the matching live heap/index metadata.
     let tuple = unsafe {
         build::build_spire_index_tuple(
             values,
@@ -81,13 +92,19 @@ unsafe fn publish_insert_delta_epoch(
     };
 
     if root_control.active_epoch == 0 {
+        // SAFETY: the publish lock is held and tuple/root_control were derived
+        // from the same live index relation.
         return unsafe {
             publish_empty_insert_bootstrap_epoch(index_relation, root_control, tuple)
         };
     }
 
+    // SAFETY: the live index relation and freshly read root control identify
+    // the local-store config for the active SPIRE epoch.
     let local_store_config =
         unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
+    // SAFETY: the live index relation and root control identify the active
+    // manifest tuple locators for this publish operation.
     let (active_epoch_manifest, object_manifest, placement_directory) =
         unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
     let active_snapshot = super::meta::SpirePublishedEpochSnapshot::new(
@@ -96,6 +113,8 @@ unsafe fn publish_insert_delta_epoch(
         &placement_directory,
     )?;
     let active_lookup = super::meta::SpireValidatedEpochSnapshot::from_snapshot(active_snapshot)?;
+    // SAFETY: the live SPIRE index relation and active local-store config open
+    // the relation-backed stores needed for delta object writes.
     let mut store = unsafe {
         SpireRelationObjectStoreSet::for_index_relation_and_config(
             index_relation,
@@ -138,6 +157,7 @@ unsafe fn publish_insert_delta_epoch(
         .checked_add(1)
         .ok_or_else(|| "ec_spire insert epoch overflow".to_owned())?;
     let (published_at_micros, retain_until_micros) =
+        // SAFETY: reads PostgreSQL backend-local current timestamp state.
         unsafe { build::current_epoch_publish_times()? };
 
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
@@ -182,6 +202,8 @@ unsafe fn publish_insert_delta_epoch(
     }
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;
     let placement_evidence =
+        // SAFETY: publish lock is held and placement entries are validated for
+        // appending to the live SPIRE index relation.
         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
     let object_manifest = object_manifest_from_placement_writes(
         new_epoch,
@@ -206,6 +228,8 @@ unsafe fn publish_insert_delta_epoch(
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
+    // SAFETY: publish lock is held; replacement publish appends manifests and
+    // updates the root/control page of the live index relation.
     unsafe {
         build::publish_replacement_epoch_to_relation(index_relation, active_epoch_manifest, input)
     }
@@ -221,6 +245,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         .checked_add(1)
         .ok_or_else(|| "ec_spire insert bootstrap epoch overflow".to_owned())?;
     let (published_at_micros, retain_until_micros) =
+        // SAFETY: reads PostgreSQL backend-local current timestamp state.
         unsafe { build::current_epoch_publish_times()? };
 
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
@@ -247,11 +272,15 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         }],
     )?;
 
+    // SAFETY: the live SPIRE index relation identifies the relation-backed
+    // object store used for the bootstrap epoch.
     let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
-    let local_store_config = SpireLocalStoreConfig::embedded_single_store(
-        unsafe { (*index_relation).rd_id }.into(),
-        unsafe { (*(*index_relation).rd_rel).reltablespace }.into(),
-    )?;
+    // SAFETY: index_relation remains live while reading its relcache OID.
+    let index_oid = unsafe { (*index_relation).rd_id };
+    // SAFETY: index_relation remains live while reading its relcache tablespace.
+    let tablespace = unsafe { (*(*index_relation).rd_rel).reltablespace };
+    let local_store_config =
+        SpireLocalStoreConfig::embedded_single_store(index_oid.into(), tablespace.into())?;
     let placements = vec![
         store.insert_routing_object(new_epoch, &routing_object)?,
         store.insert_leaf_object_v2_from_rows(
@@ -264,6 +293,8 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
     ];
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placements)?;
     let placement_evidence =
+        // SAFETY: publish lock is held and bootstrap placement entries are
+        // validated for appending to the live SPIRE index relation.
         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
     let object_manifest = object_manifest_from_placement_writes(
         new_epoch,
@@ -289,8 +320,11 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
     let manifests = encode_manifest_bundle_for_publish(input.clone())?;
+    // SAFETY: publish lock is held and the encoded manifest bundle belongs to
+    // this live SPIRE index relation.
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
+    // SAFETY: publish lock is held while initializing the root/control page.
     unsafe { page::initialize_root_control_page(index_relation, root_control) };
     Ok(())
 }
