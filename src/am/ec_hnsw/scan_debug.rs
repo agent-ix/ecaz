@@ -1168,6 +1168,8 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
     query: Vec<f32>,
     limit_count: i32,
 ) -> DebugGroupedRerankProfile {
+    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
+    // and keeps them alive in `scan_state`.
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
     let scan = scan_state.scan.as_ptr();
     let result_limit =
@@ -1178,10 +1180,14 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
+    // quals, and `orderby` is a valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
     let emit_started = Instant::now();
     let mut emitted = 0_i32;
     while usize::try_from(emitted).expect("emitted count should fit in usize") < result_limit
+        // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple
+        // calls may advance the live scan descriptor.
         && unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
     {
         emitted += 1;
@@ -1192,9 +1198,13 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
+    // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`
+    // consumes `scan_state` below.
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let debug_profile = opaque.debug_profile;
 
+    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
+    // once after profiling completes.
     unsafe { debug_end_heap_backed_scan(scan_state) };
 
     (
@@ -1228,6 +1238,8 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugTurboQuantScanStageProfile {
+    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
+    // and keeps them alive in `scan_state`.
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
     let scan = scan_state.scan.as_ptr();
 
@@ -1235,18 +1247,25 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
+    // quals, and `orderby` is a valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
+    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     if !matches!(
         opaque.scan_graph_storage,
         graph::GraphStorageDescriptor::TurboQuant { .. }
             | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
     ) {
+        // SAFETY: `scan_state` owns the scan and relation guards and is
+        // consumed before the debug error aborts this path.
         unsafe { debug_end_heap_backed_scan(scan_state) };
         pgrx::error!("debug turboquant scan stage profile requires a turboquant index");
     }
     if opaque.cached_quantizer.is_null() {
+        // SAFETY: `scan_state` owns the scan and relation guards and is
+        // consumed before the debug error aborts this path.
         unsafe { debug_end_heap_backed_scan(scan_state) };
         pgrx::error!("debug turboquant scan stage profile requires a prepared quantizer");
     }
@@ -1267,6 +1286,8 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
     let exact_score_uses_lut = turboquant_exact_score_uses_lut(opaque);
     let exact_score_uses_qjl = turboquant_exact_score_uses_qjl(opaque);
 
+    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
+    // once after profiling completes.
     unsafe { debug_end_heap_backed_scan(scan_state) };
 
     (
@@ -1294,6 +1315,8 @@ unsafe fn debug_collect_element_tids_at_level(
     storage: graph::GraphStorageDescriptor,
     target_level: u8,
 ) -> Vec<page::ItemPointer> {
+    // SAFETY: `index_relation` is an open index relation supplied by the debug
+    // caller; PostgreSQL returns the current main-fork block count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -1301,6 +1324,8 @@ unsafe fn debug_collect_element_tids_at_level(
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: The block number is within the relation's main-fork block
+        // count and is read under a shared buffer lock for inspection.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -1317,6 +1342,8 @@ unsafe fn debug_collect_element_tids_at_level(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
+            // SAFETY: The buffer remains share-locked while the helper validates
+            // this line pointer and exposes tuple bytes only to the closure.
             let matches_element_tag = unsafe {
                 debug_with_page_line_tuple_bytes(
                     page_ptr,
@@ -1330,6 +1357,8 @@ unsafe fn debug_collect_element_tids_at_level(
                 continue;
             }
 
+            // SAFETY: The tuple tag matched the graph element tag on a locked
+            // page, and the graph loader validates the storage-specific body.
             let element = unsafe {
                 graph::load_exact_graph_element(
                     index_relation,
@@ -1360,6 +1389,8 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
     storage: graph::GraphStorageDescriptor,
     min_level: u8,
 ) -> Vec<page::ItemPointer> {
+    // SAFETY: `index_relation` is an open index relation supplied by the debug
+    // caller; PostgreSQL returns the current main-fork block count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -1367,6 +1398,8 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: The block number is within the relation's main-fork block
+        // count and is read under a shared buffer lock for inspection.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -1383,6 +1416,8 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
+            // SAFETY: The buffer remains share-locked while the helper validates
+            // this line pointer and exposes tuple bytes only to the closure.
             let matches_element_tag = unsafe {
                 debug_with_page_line_tuple_bytes(
                     page_ptr,
@@ -1396,6 +1431,8 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
                 continue;
             }
 
+            // SAFETY: The tuple tag matched the graph element tag on a locked
+            // page, and the graph loader validates the storage-specific body.
             let element = unsafe {
                 graph::load_exact_graph_element(
                     index_relation,
@@ -1425,6 +1462,8 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
 ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
+    // SAFETY: `index_relation` is an open index relation supplied by the debug
+    // caller; PostgreSQL returns the current main-fork block count.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -1432,6 +1471,8 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
     let mut map = std::collections::HashMap::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // SAFETY: The block number is within the relation's main-fork block
+        // count and is read under a shared buffer lock for inspection.
         let buffer = unsafe {
             LockedBufferGuard::read_main(
                 index_relation,
@@ -1448,6 +1489,8 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
+            // SAFETY: The buffer remains share-locked while the helper validates
+            // this line pointer and exposes tuple bytes only to the closure.
             let matches_element_tag = unsafe {
                 debug_with_page_line_tuple_bytes(
                     page_ptr,
@@ -1461,6 +1504,8 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
                 continue;
             }
 
+            // SAFETY: The tuple tag matched the graph element tag on a locked
+            // page, and the graph loader validates the storage-specific body.
             let element = unsafe {
                 graph::load_exact_graph_element(
                     index_relation,
@@ -1494,6 +1539,8 @@ pub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids(
     query: Vec<f32>,
     ef_search: usize,
 ) -> Vec<HeapTidCoords> {
+    // SAFETY: This wrapper forwards the caller-provided index oid, query, and
+    // bounded search parameters to the k-seed oracle helper.
     unsafe { debug_top_level_oracle_k_seed_scan_heap_tids(index_oid, query, ef_search, 1) }
 }
 
@@ -1502,16 +1549,25 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_all_top_level_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
 
+    // SAFETY: Metadata was read from the open index relation and validated
+    // enough to resolve the graph storage descriptor for debug inspection.
     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    // SAFETY: The relation guard keeps the graph relation open while the helper
+    // scans locked pages for top-level element TIDs.
     let mut heap_tids =
         unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) }
             .into_iter()
             .filter_map(|element_tid| {
+                // SAFETY: `element_tid` was collected from graph pages matching
+                // the storage element tag, and the graph loader validates the
+                // tuple body.
                 let element = unsafe {
                     graph::load_exact_graph_element(index_relation, element_tid, storage)
                 };
@@ -1538,11 +1594,15 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_top_level_reachable_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
 
+    // SAFETY: Metadata was read from the open index relation and validated
+    // enough to resolve the graph storage descriptor for debug inspection.
     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
@@ -1554,6 +1614,9 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
             continue;
         }
 
+        // SAFETY: `element_tid` is either the metadata entry point or a neighbor
+        // returned by graph adjacency loading; the graph loader validates the
+        // tuple body before returning it.
         let element =
             unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
         if element.deleted {
@@ -1564,6 +1627,9 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
             heap_tids.push(debug_item_pointer_coords(heap_tid));
         }
 
+        // SAFETY: The current element was loaded from graph storage and `m`
+        // comes from validated metadata; adjacency loading validates the graph
+        // tuple before returning layer neighbors.
         for neighbor_tid in unsafe {
             debug_load_neighbor_tids_for_layer(
                 index_relation,
@@ -1591,11 +1657,15 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_layer0_reachable_live_element_tids");
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
 
+    // SAFETY: Metadata was read from the open index relation and validated
+    // enough to resolve the graph storage descriptor for debug inspection.
     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
@@ -1607,6 +1677,9 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
             continue;
         }
 
+        // SAFETY: `element_tid` is either the metadata entry point or a neighbor
+        // returned by graph adjacency loading; the graph loader validates the
+        // tuple body before returning it.
         let element =
             unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
         if element.deleted || element.heaptids.is_empty() {
@@ -1614,6 +1687,9 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
         }
         reachable.push(element_tid);
 
+        // SAFETY: The current element was loaded from graph storage and `m`
+        // comes from validated metadata; adjacency loading validates the graph
+        // tuple before returning layer-0 neighbors.
         for neighbor_tid in unsafe {
             debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0)
         } {
@@ -1640,6 +1716,8 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_top_level_oracle_k_seed_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
@@ -1648,23 +1726,36 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
         return Vec::new();
     }
 
+    // SAFETY: The relation guard keeps the index open for the AM scan
+    // descriptor used to prepare query state.
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
+    // valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
+    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
+    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
+    // quantizer for score computation.
     let quantizer = unsafe { &*opaque.cached_quantizer };
+    // SAFETY: The opaque belongs to the live scan and rescan prepares query
+    // storage for score computation.
     let prepared_query = unsafe { &*opaque.prepared_query };
+    // SAFETY: The relation guard keeps the graph relation open while the helper
+    // scans locked pages for top-level element TIDs.
     let top_level_tids =
         unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
 
     let mut heap_tids = top_level_tids
         .into_iter()
         .filter_map(|seed_tid| {
+            // SAFETY: `seed_tid` was collected from graph pages matching the
+            // storage element tag, and the graph loader validates the tuple.
             let element =
                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
@@ -1686,7 +1777,9 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
         .map(|(_, heap_tid)| heap_tid)
         .collect();
 
+    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     unsafe { ec_hnsw_amendscan(scan) };
+    // SAFETY: AM cleanup has run, and the descriptor is released once here.
     unsafe { pg_sys::IndexScanEnd(scan) };
     heap_tids
 }
@@ -1701,6 +1794,8 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_top_level_oracle_k_seed_scan_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
@@ -1709,23 +1804,36 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
         return Vec::new();
     }
 
+    // SAFETY: The relation guard keeps the index open for the AM scan
+    // descriptor used to prepare query state.
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
+    // valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
+    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
+    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
+    // quantizer for score computation.
     let quantizer = unsafe { &*opaque.cached_quantizer };
+    // SAFETY: The opaque belongs to the live scan and rescan prepares query
+    // storage for score computation.
     let prepared_query = unsafe { &*opaque.prepared_query };
+    // SAFETY: The relation guard keeps the graph relation open while the helper
+    // scans locked pages for top-level element TIDs.
     let top_level_tids =
         unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
 
     let mut seeds = top_level_tids
         .into_iter()
         .filter_map(|seed_tid| {
+            // SAFETY: `seed_tid` was collected from graph pages matching the
+            // storage element tag, and the graph loader validates the tuple.
             let element =
                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
@@ -1743,6 +1851,9 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
     let tids = if seeds.is_empty() {
         Vec::new()
     } else {
+        // SAFETY: The seed candidates were loaded from graph storage for this
+        // index, and the search helper validates neighbor tuples as it walks
+        // layer 0 with the supplied storage descriptor.
         let ordered_candidates = unsafe {
             graph::search_layer0_result_candidates_with_storage(
                 index_relation,
@@ -1767,6 +1878,8 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
                 continue;
             }
 
+            // SAFETY: Search candidates come from graph traversal on this
+            // relation/storage pair, and the loader validates the tuple body.
             let element =
                 unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
             if element.deleted || element.heaptids.is_empty() {
@@ -1778,7 +1891,9 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
         heap_tids
     };
 
+    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     unsafe { ec_hnsw_amendscan(scan) };
+    // SAFETY: AM cleanup has run, and the descriptor is released once here.
     unsafe { pg_sys::IndexScanEnd(scan) };
     tids
 }
@@ -1796,6 +1911,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         "debug_layer_oracle_k_carrydown_scan_heap_tids",
     );
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
@@ -1806,23 +1923,36 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         return Vec::new();
     }
 
+    // SAFETY: The relation guard keeps the index open for the AM scan
+    // descriptor used to prepare query state.
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
+    // valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
+    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
+    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
+    // quantizer for score computation.
     let quantizer = unsafe { &*opaque.cached_quantizer };
+    // SAFETY: The opaque belongs to the live scan and rescan prepares query
+    // storage for score computation.
     let prepared_query = unsafe { &*opaque.prepared_query };
+    // SAFETY: The relation guard keeps the graph relation open while the helper
+    // scans locked pages for candidate element TIDs.
     let layer_tids =
         unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
 
     let mut seeds = layer_tids
         .into_iter()
         .filter_map(|seed_tid| {
+            // SAFETY: `seed_tid` was collected from graph pages matching the
+            // storage element tag, and the graph loader validates the tuple.
             let element =
                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
@@ -1842,6 +1972,9 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     } else {
         let mut carrydown_seeds = seeds;
         for current_layer in (1..=layer).rev() {
+            // SAFETY: The carrydown seeds were loaded from graph storage for
+            // this index, and the search helper validates neighbor tuples as it
+            // walks the requested upper layer.
             carrydown_seeds = unsafe {
                 graph::search_layer_result_candidates_with_storage(
                     index_relation,
@@ -1865,6 +1998,9 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
             }
         }
 
+        // SAFETY: The carrydown seeds came from upper-layer graph traversal on
+        // this relation/storage pair, and the layer-0 helper validates neighbor
+        // tuples as it walks.
         let ordered_candidates = unsafe {
             graph::search_layer0_result_candidates_with_storage(
                 index_relation,
@@ -1889,6 +2025,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
                 continue;
             }
 
+            // SAFETY: Search candidates come from graph traversal on this
+            // relation/storage pair, and the loader validates the tuple body.
             let element =
                 unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
             if element.deleted || element.heaptids.is_empty() {
@@ -1900,7 +2038,9 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         heap_tids
     };
 
+    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     unsafe { ec_hnsw_amendscan(scan) };
+    // SAFETY: AM cleanup has run, and the descriptor is released once here.
     unsafe { pg_sys::IndexScanEnd(scan) };
     tids
 }
@@ -1917,6 +2057,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         "debug_layer_oracle_k_seed_layer0_neighbor_heap_tids",
     );
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
@@ -1927,23 +2069,36 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         return Vec::new();
     }
 
+    // SAFETY: The relation guard keeps the index open for the AM scan
+    // descriptor used to prepare query state.
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
+    // valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
+    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
+    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
+    // quantizer for score computation.
     let quantizer = unsafe { &*opaque.cached_quantizer };
+    // SAFETY: The opaque belongs to the live scan and rescan prepares query
+    // storage for score computation.
     let prepared_query = unsafe { &*opaque.prepared_query };
+    // SAFETY: The relation guard keeps the graph relation open while the helper
+    // scans locked pages for candidate element TIDs.
     let layer_tids =
         unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
 
     let mut seeds = layer_tids
         .into_iter()
         .filter_map(|seed_tid| {
+            // SAFETY: `seed_tid` was collected from graph pages matching the
+            // storage element tag, and the graph loader validates the tuple.
             let element =
                 unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
@@ -1965,12 +2120,17 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
             continue;
         }
 
+        // SAFETY: Seed candidates were loaded from graph pages for this
+        // relation/storage pair, and the graph loader validates the tuple.
         let seed_element =
             unsafe { graph::load_exact_graph_element(index_relation, seed.node, storage) };
         if !seed_element.deleted {
             scored_elements.push((seed.score, seed_element.heaptids.clone()));
         }
 
+        // SAFETY: The seed element was loaded from graph storage and `scan_m`
+        // comes from the initialized scan opaque; adjacency loading validates
+        // the graph tuple before returning layer-0 neighbors.
         for neighbor_tid in unsafe {
             debug_load_neighbor_tids_for_layer(
                 index_relation,
@@ -1984,6 +2144,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
                 continue;
             }
 
+            // SAFETY: Neighbor TIDs come from graph adjacency loading for this
+            // relation/storage pair, and the loader validates the tuple body.
             let neighbor =
                 unsafe { graph::load_exact_graph_element(index_relation, neighbor_tid, storage) };
             if neighbor.deleted || neighbor.heaptids.is_empty() {
@@ -2008,7 +2170,9 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         }
     }
 
+    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     unsafe { ec_hnsw_amendscan(scan) };
+    // SAFETY: AM cleanup has run, and the descriptor is released once here.
     unsafe { pg_sys::IndexScanEnd(scan) };
     heap_tids
 }
@@ -2023,6 +2187,8 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_exact_seed_scan_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
@@ -2031,17 +2197,28 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
         return Vec::new();
     }
 
+    // SAFETY: The relation guard keeps the index open for the AM scan
+    // descriptor used to prepare query state.
     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
+    // valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
+    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
+    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
+    // quantizer for score computation.
     let quantizer = unsafe { &*opaque.cached_quantizer };
+    // SAFETY: The opaque belongs to the live scan and rescan prepares query
+    // storage for score computation.
     let prepared_query = unsafe { &*opaque.prepared_query };
+    // SAFETY: The relation guard keeps the graph relation open while the helper
+    // scans locked graph pages and maps heap TIDs to element TIDs.
     let element_by_heap_tid =
         unsafe { debug_collect_element_tid_by_heap_tid(index_relation, storage) };
     let seed_element_tids = seed_heap_tids
@@ -2055,6 +2232,8 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
         let seeds = seed_element_tids
             .into_iter()
             .filter_map(|seed_tid| {
+                // SAFETY: Seed element TIDs were resolved from graph pages for
+                // this relation/storage pair, and the loader validates tuples.
                 let element =
                     unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
                 if element.deleted || element.heaptids.is_empty() {
@@ -2066,6 +2245,9 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
                 ))
             })
             .collect::<Vec<_>>();
+        // SAFETY: Seed candidates were resolved from graph storage for this
+        // index, and the search helper validates neighbor tuples as it walks
+        // layer 0 with the supplied storage descriptor.
         let ordered_candidates = unsafe {
             graph::search_layer0_result_candidates_with_storage(
                 index_relation,
@@ -2090,6 +2272,8 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
                 continue;
             }
 
+            // SAFETY: Search candidates come from graph traversal on this
+            // relation/storage pair, and the loader validates the tuple body.
             let element =
                 unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
             if element.deleted || element.heaptids.is_empty() {
@@ -2101,7 +2285,9 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
         heap_tids
     };
 
+    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     unsafe { ec_hnsw_amendscan(scan) };
+    // SAFETY: AM cleanup has run, and the descriptor is released once here.
     unsafe { pg_sys::IndexScanEnd(scan) };
     tids
 }
@@ -2111,6 +2297,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
+    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
+    // and keeps them alive in `scan_state`.
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
     let scan = scan_state.scan.as_ptr();
 
@@ -2118,16 +2306,24 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
+    // quals, and `orderby` is a valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut tids = Vec::new();
+    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
+    // may advance the live scan descriptor.
     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
+        // live index scan descriptor.
         let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
         let score = debug_scan_orderby_score(scan)
             .expect("graph-first scan should publish an order-by score for emitted tuples");
         tids.push((heap_tid, score));
     }
 
+    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
+    // once after iteration completes.
     unsafe { debug_end_heap_backed_scan(scan_state) };
     tids
 }
@@ -2137,6 +2333,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
+    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
+    // and keeps them alive in `scan_state`.
     let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
     let scan = scan_state.scan.as_ptr();
 
@@ -2144,10 +2342,16 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
+    // quals, and `orderby` is a valid one-key buffer.
     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut tids = Vec::new();
+    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
+    // may advance the live scan descriptor.
     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
+        // live index scan descriptor.
         let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
         let approx_score = debug_current_result_approx_score(scan)
             .or_else(|| debug_scan_orderby_score(scan))
@@ -2157,6 +2361,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         tids.push((heap_tid, approx_score, comparison_score, approx_rank));
     }
 
+    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
+    // once after iteration completes.
     unsafe { debug_end_heap_backed_scan(scan_state) };
     tids
 }
@@ -2166,8 +2372,12 @@ unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_scan_uses_grouped_storage");
     let index_relation = index_relation_guard.as_ptr();
+    // SAFETY: The relation guard keeps the index relation open while its
+    // metadata page is read.
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     let grouped_results = matches!(
+        // SAFETY: Metadata was read from the open index relation and is used to
+        // resolve the graph storage descriptor for debug classification.
         unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
             .unwrap_or_else(|e| {
                 pgrx::error!("ec_hnsw debug grouped scan comparison requires valid metadata: {e}")
