@@ -1,0 +1,64 @@
+diff --git a/plan/tasks/35-unsafe-quality-burndown.md b/plan/tasks/35-unsafe-quality-burndown.md
+index 275bc357..2ef44c6b 100644
+--- a/plan/tasks/35-unsafe-quality-burndown.md
++++ b/plan/tasks/35-unsafe-quality-burndown.md
+@@ -36,16 +36,49 @@ reason and a reviewer accepts it.
+ ## Packet Sequence
+ 
+ Work in narrow, reviewable slices, roughly 100-300 baseline entries when the
+-subsystem permits it:
+-
+-1. `src/lib.rs` pgrx SQL and FFI entrypoints.
+-2. `ec_hnsw` scan, scan-debug, build, insert, vacuum, and shared-state paths.
+-3. `ec_ivf` page, scan, build, insert, vacuum, and admin paths.
+-4. `ec_spire` DML frontdoor, page, coordinator, storage, CustomScan, build,
+-   update, and vacuum paths.
+-5. `ec_diskann` routine, insert, build, and scan-state paths.
+-6. common AM support, quant helpers, pgstat shims, and standalone stubs.
+-7. test-only unsafe sites, after production paths are reviewed.
++subsystem permits it. The initial HNSW scan/graph packets established the
++pattern for production read-path comments and wrappers; new packets should now
++pivot to the reviewer-prioritized gaps before returning to HNSW residuals.
++
++1. Quant / RABITQ-adjacent SIMD:
++   - `src/quant/hadamard.rs`
++   - `src/quant/prod.rs`
++2. IVF planner, options, and admin boundaries:
++   - `src/am/ec_ivf/cost.rs`
++   - `src/am/ec_ivf/options.rs`
++   - `src/am/ec_ivf/admin.rs`
++3. IVF page and storage substrate:
++   - `src/am/ec_ivf/page.rs`
++4. IVF scan and posting-list traversal:
++   - `src/am/ec_ivf/scan.rs`
++5. IVF build, insert, and vacuum maintenance paths:
++   - `src/am/ec_ivf/build.rs`
++   - `src/am/ec_ivf/insert.rs`
++   - `src/am/ec_ivf/vacuum.rs`
++6. SPIRE small callback and coordinator surfaces:
++   - `src/am/ec_spire/scan/callbacks.rs`
++   - `src/am/ec_spire/coordinator/lifecycle.rs`
++   - `src/am/ec_spire/coordinator/diagnostics.rs`
++   - small `src/am/ec_spire/remote_candidates/*` files
++7. SPIRE relation, vacuum, and cost surfaces:
++   - `src/am/ec_spire/scan/relation.rs`
++   - `src/am/ec_spire/vacuum/mod.rs`
++   - `src/am/ec_spire/cost/mod.rs`
++8. SPIRE storage and page substrate:
++   - `src/am/ec_spire/storage/relation_store.rs`
++   - `src/am/ec_spire/page.rs`
++9. SPIRE coordinator snapshots:
++   - `src/am/ec_spire/coordinator/snapshots.rs`
++   - `src/am/ec_spire/coordinator/hierarchy_snapshots.rs`
++10. SPIRE CustomScan surfaces:
++    - `src/am/ec_spire/custom_scan/*`
++11. SPIRE DML frontdoor:
++    - `src/am/ec_spire/dml_frontdoor/mod.rs`
++12. HNSW residual build, insert, vacuum, routine, and shared-state paths.
++13. `ec_diskann` routine, insert, build, and scan-state paths.
++14. common AM support, pgstat shims, standalone stubs, and remaining shared
++    helper surfaces.
++15. test-only unsafe sites, after production paths are reviewed.
+ 
+ Within each subsystem, prefer deletion or safe wrappers over comments when the
+ unsafe pattern repeats and a wrapper can encode the real contract.
