@@ -1,0 +1,954 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.084720292,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.8367601669999996,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:765:13: replace || with && in CenteredScorer::score_at",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "CenteredScorer::score_at",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 787,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 765,
+              "column": 13
+            },
+            "end": {
+              "line": 765,
+              "column": 15
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_13.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_13.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.721339458,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 17.488071,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:763:24: replace < with == in CenteredScorer::score_at",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "CenteredScorer::score_at",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 787,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 763,
+              "column": 24
+            },
+            "end": {
+              "line": 763,
+              "column": 25
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_763_col_24.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_763_col_24.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.776983958,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 20.927264375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:763:24: replace < with > in CenteredScorer::score_at",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "CenteredScorer::score_at",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 787,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 763,
+              "column": 24
+            },
+            "end": {
+              "line": 763,
+              "column": 25
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_763_col_24_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_763_col_24_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.914877875,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 20.452946042,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:763:24: replace < with <= in CenteredScorer::score_at",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "CenteredScorer::score_at",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 787,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 763,
+              "column": 24
+            },
+            "end": {
+              "line": 763,
+              "column": 25
+            }
+          },
+          "replacement": "<=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_763_col_24_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_763_col_24_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.776920167,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 19.915274541,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:765:35: replace < with == in CenteredScorer::score_at",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "CenteredScorer::score_at",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 787,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 765,
+              "column": 35
+            },
+            "end": {
+              "line": 765,
+              "column": 36
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_35.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_35.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.522966167,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 20.192410041,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:765:35: replace < with > in CenteredScorer::score_at",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "CenteredScorer::score_at",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 787,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 765,
+              "column": 35
+            },
+            "end": {
+              "line": 765,
+              "column": 36
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_35_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_35_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.092878,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 21.5191405,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:765:35: replace < with <= in CenteredScorer::score_at",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "CenteredScorer::score_at",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 787,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 765,
+              "column": 35
+            },
+            "end": {
+              "line": 765,
+              "column": 36
+            }
+          },
+          "replacement": "<=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_35_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_765_col_35_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.495084584,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 20.241164625,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1006:31: replace / with % in quantize_level",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "quantize_level",
+            "return_type": "-> (u32, f32)",
+            "span": {
+              "start": {
+                "line": 979,
+                "column": 1
+              },
+              "end": {
+                "line": 1013,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 1006,
+              "column": 31
+            },
+            "end": {
+              "line": 1006,
+              "column": 32
+            }
+          },
+          "replacement": "%",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_31.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_31.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.853078459,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 19.987957583,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1006:31: replace / with * in quantize_level",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "quantize_level",
+            "return_type": "-> (u32, f32)",
+            "span": {
+              "start": {
+                "line": 979,
+                "column": 1
+              },
+              "end": {
+                "line": 1013,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 1006,
+              "column": 31
+            },
+            "end": {
+              "line": 1006,
+              "column": 32
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_31_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_31_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.768986375,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 21.630212916,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1006:26: replace + with - in quantize_level",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "quantize_level",
+            "return_type": "-> (u32, f32)",
+            "span": {
+              "start": {
+                "line": 979,
+                "column": 1
+              },
+              "end": {
+                "line": 1013,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 1006,
+              "column": 26
+            },
+            "end": {
+              "line": 1006,
+              "column": 27
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_26.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_26.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.98736075,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 19.797073375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1006:26: replace + with * in quantize_level",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "quantize_level",
+            "return_type": "-> (u32, f32)",
+            "span": {
+              "start": {
+                "line": 979,
+                "column": 1
+              },
+              "end": {
+                "line": 1013,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 1006,
+              "column": 26
+            },
+            "end": {
+              "line": 1006,
+              "column": 27
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_26_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1006_col_26_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.90432625,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 19.692191166,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1140:30: replace < with == in estimate_ip_impl",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "estimate_ip_impl",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 1071,
+                "column": 1
+              },
+              "end": {
+                "line": 1167,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 1140,
+              "column": 30
+            },
+            "end": {
+              "line": 1140,
+              "column": 31
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1140_col_30.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1140_col_30.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.835834209,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 18.569343542,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1140:30: replace < with > in estimate_ip_impl",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "estimate_ip_impl",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 1071,
+                "column": 1
+              },
+              "end": {
+                "line": 1167,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 1140,
+              "column": 30
+            },
+            "end": {
+              "line": 1140,
+              "column": 31
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1140_col_30_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1140_col_30_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 9.716433084,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 21.606486,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/quant/rabitq.rs:1140:30: replace < with <= in estimate_ip_impl",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/quant/rabitq.rs",
+          "function": {
+            "function_name": "estimate_ip_impl",
+            "return_type": "-> DistanceEstimate",
+            "span": {
+              "start": {
+                "line": 1071,
+                "column": 1
+              },
+              "end": {
+                "line": 1167,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 1140,
+              "column": 30
+            },
+            "end": {
+              "line": 1140,
+              "column": 31
+            }
+          },
+          "replacement": "<=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1140_col_30_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__quant__rabitq.rs_line_1140_col_30_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 10.014133167,
+          "process_status": "Success",
+          "argv": [
+            "cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 21.515628666,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 14,
+  "missed": 0,
+  "caught": 14,
+  "timeout": 0,
+  "unviable": 0,
+  "success": 0,
+  "start_time": "2026-05-19T17:19:22.527091Z",
+  "end_time": "2026-05-19T17:26:22.395049Z",
+  "cargo_mutants_version": "27.0.0"
+}
