@@ -120,12 +120,6 @@ src/am/ec_diskann/insert.rs:840
 src/am/ec_diskann/insert.rs:872
 src/am/ec_diskann/insert.rs:883
 src/am/ec_diskann/insert.rs:895
-src/am/ec_diskann/options.rs:166
-src/am/ec_diskann/options.rs:262
-src/am/ec_diskann/options.rs:268
-src/am/ec_diskann/options.rs:279
-src/am/ec_diskann/options.rs:284
-src/am/ec_diskann/options.rs:285
 src/am/ec_diskann/routine.rs:1008
 src/am/ec_diskann/routine.rs:1012
 src/am/ec_diskann/routine.rs:1042

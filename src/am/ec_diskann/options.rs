@@ -163,6 +163,9 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
     reloptions: pg_sys::Datum,
     validate: bool,
 ) -> *mut pg_sys::bytea {
+    // SAFETY: PostgreSQL calls amoptions with a reloptions Datum owned by the
+    // backend; the guarded body registers fixed offsets for TqDiskannReloptions
+    // before handing parsing back to build_local_reloptions.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut relopts = pg_sys::local_relopts::default();
@@ -259,12 +262,16 @@ unsafe fn read_string_reloption(
         return None;
     }
 
+    // SAFETY: offset is a nonzero PostgreSQL reloption string offset inside
+    // rd_options, which points at the varlena reloptions blob for this relation.
     let value_ptr = unsafe {
         rd_options
             .cast::<u8>()
             .add(offset as usize)
             .cast::<std::ffi::c_char>()
     };
+    // SAFETY: PostgreSQL stores string reloptions as NUL-terminated C strings at
+    // their declared offsets inside the reloptions blob.
     let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
         .to_str()
         .unwrap_or_else(|e| pgrx::error!("invalid ec_diskann {name} reloption: {e}"));
@@ -276,12 +283,18 @@ unsafe fn read_string_reloption(
 
 #[allow(dead_code)]
 pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {
+    // SAFETY: index_relation is a live PostgreSQL relation while callers decode
+    // relation options; rd_options may be null when defaults apply.
     let rd_options = unsafe { (*index_relation).rd_options };
     if rd_options.is_null() {
         return TqDiskannOptions::DEFAULT;
     }
 
+    // SAFETY: rd_options was built by ec_diskann_amoptions using the
+    // TqDiskannReloptions layout and remains live with the relation cache entry.
     let reloptions = unsafe { &*rd_options.cast::<TqDiskannReloptions>() };
+    // SAFETY: storage_format_offset is read from the validated reloptions blob
+    // and read_string_reloption returns None for the default zero offset.
     let storage_format = match unsafe {
         read_string_reloption(
             rd_options,
