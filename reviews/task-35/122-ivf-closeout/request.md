@@ -11,14 +11,14 @@
 
 This packet closes out the `src/am/ec_ivf` production-source portion of
 Task 35 retroactively. The IVF burndown landed across packets 024 and
-025–042 (21 packets total) before the closeout template was established
+025–042 (19 packets total) before the closeout template was established
 by packet 083 (SPIRE). Reviewer feedback on packets 107 and 121 asked
 for a retroactive IVF closeout to complete the symmetric AM closeout
 set; this packet lands that.
 
 It records:
 
-- the IVF production coverage table assembled from the 21 burndown
+- the IVF production coverage table assembled from the 19 burndown
   packets;
 - current residual IVF baseline entries;
 - the IVF invariant graph across cost/admin/options, page substrate,
@@ -30,7 +30,7 @@ It records:
 
 - Current global unsafe-comment baseline: `0` entries across `0` files.
 - Current `src/am/ec_ivf` residual: `0` entries.
-- IVF production source cleared in Task 35: `326` entries across `21`
+- IVF production source cleared in Task 35: `326` entries across `19`
   packets.
 - Remaining IVF-named baseline: none. (`src/tests/ec_ivf.rs` cleared in
   packet 108 with the `ec_ivf_debug!` macro consolidation.)

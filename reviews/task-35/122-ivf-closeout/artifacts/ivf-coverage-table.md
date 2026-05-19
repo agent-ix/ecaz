@@ -33,7 +33,7 @@ This table summarizes the Task 35 packets that cleared
 | Page series | 025–035 | `page.rs` | 134 (133 + 1 absorbed drift) |
 | Scan series | 036–039 | `scan.rs` | 101 |
 | Maintenance | 040, 041, 042 | vacuum + insert + build | 70 |
-| **Total** | **21 packets** | **`src/am/ec_ivf/*`** | **326** (327 with drift) |
+| **Total** | **19 packets** | **`src/am/ec_ivf/*`** | **326** (327 with drift) |
 
 ## Drift Note
 
