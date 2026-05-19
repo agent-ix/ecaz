@@ -1,0 +1,43 @@
+Script started on 2026-05-19 04:33:16-07:00 [<not executed on terminal>]
+149:src/am/ec_hnsw/build_parallel.rs:3230
+150:src/am/ec_hnsw/build_parallel.rs:3238
+151:src/am/ec_hnsw/build_parallel.rs:3249
+152:src/am/ec_hnsw/build_parallel.rs:3259
+153:src/am/ec_hnsw/build_parallel.rs:3726
+154:src/am/ec_hnsw/build_parallel.rs:3734
+155:src/am/ec_hnsw/build_parallel.rs:3809
+156:src/am/ec_hnsw/build_parallel.rs:3817
+157:src/am/ec_hnsw/build_parallel.rs:3845
+158:src/am/ec_hnsw/build_parallel.rs:3866
+159:src/am/ec_hnsw/build_parallel.rs:3875
+160:src/am/ec_hnsw/build_parallel.rs:3883
+161:src/am/ec_hnsw/build_parallel.rs:3909
+162:src/am/ec_hnsw/build_parallel.rs:3917
+163:src/am/ec_hnsw/build_parallel.rs:3941
+164:src/am/ec_hnsw/build_parallel.rs:3964
+165:src/am/ec_hnsw/build_parallel.rs:3972
+166:src/am/ec_hnsw/build_parallel.rs:3983
+167:src/am/ec_hnsw/build_parallel.rs:3991
+168:src/am/ec_hnsw/build_parallel.rs:4020
+169:src/am/ec_hnsw/build_parallel.rs:4034
+170:src/am/ec_hnsw/build_parallel.rs:4044
+171:src/am/ec_hnsw/build_parallel.rs:4058
+172:src/am/ec_hnsw/build_parallel.rs:4072
+173:src/am/ec_hnsw/build_parallel.rs:4086
+174:src/am/ec_hnsw/build_parallel.rs:4098
+175:src/am/ec_hnsw/build_parallel.rs:4120
+176:src/am/ec_hnsw/build_parallel.rs:4135
+177:src/am/ec_hnsw/build_parallel.rs:4145
+178:src/am/ec_hnsw/build_parallel.rs:4155
+179:src/am/ec_hnsw/build_parallel.rs:4170
+180:src/am/ec_hnsw/build_parallel.rs:4188
+181:src/am/ec_hnsw/build_parallel.rs:4202
+182:src/am/ec_hnsw/build_parallel.rs:4215
+183:src/am/ec_hnsw/build_parallel.rs:4218
+184:src/am/ec_hnsw/build_parallel.rs:4237
+185:src/am/ec_hnsw/build_parallel.rs:4249
+186:src/am/ec_hnsw/build_parallel.rs:4256
+187:src/am/ec_hnsw/build_parallel.rs:4272
+entries: 39
+
+Script done on 2026-05-19 04:33:16-07:00 [COMMAND_EXIT_CODE="0"]
