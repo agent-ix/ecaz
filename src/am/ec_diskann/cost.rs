@@ -53,6 +53,9 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
     index_correlation: *mut f64,
     index_pages: *mut f64,
 ) {
+    // SAFETY: PostgreSQL calls this access-method callback with planner-owned
+    // output pointers. The guarded body rejects null inputs before reading the
+    // IndexPath or writing the cost outputs.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if path.is_null()
@@ -149,6 +152,8 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
                 gated_planner_cost_estimate(index_pages),
             )
         } else {
+            // SAFETY: The diagnostic caller supplies a live index relation, and
+            // this branch only reads metadata after confirming data pages exist.
             let metadata = unsafe { insert::read_metadata_page(index_relation) }
                 .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot failed: {e}"));
             let estimate = estimate_planner_cost(

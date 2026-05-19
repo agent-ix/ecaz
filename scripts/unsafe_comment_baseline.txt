@@ -70,8 +70,6 @@ src/am/ec_diskann/ambuild.rs:834
 src/am/ec_diskann/ambuild.rs:840
 src/am/ec_diskann/ambuild.rs:848
 src/am/ec_diskann/ambuild.rs:892
-src/am/ec_diskann/cost.rs:152
-src/am/ec_diskann/cost.rs:56
 src/am/ec_diskann/insert.rs:1145
 src/am/ec_diskann/insert.rs:1155
 src/am/ec_diskann/insert.rs:1156
