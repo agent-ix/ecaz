@@ -105,6 +105,9 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
+    // SAFETY: PostgreSQL calls this callback with a `BuildState` pointer passed
+    // as callback state; `pgrx_extern_c_guard` converts Rust panics/errors at
+    // the C boundary while the synchronous callback owns the tuple arrays.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = &mut *state.cast::<BuildState>();
@@ -184,6 +187,9 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
+    // SAFETY: This is PostgreSQL's `ambuild` entry point. The guard keeps Rust
+    // unwinding across the C boundary contained while all relation pointers and
+    // `index_info` are valid for the duration of the build call.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut state = BuildState::new(index_relation);
@@ -305,6 +311,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuildempty(index_relation: pg_sys::Relation) {
+    // SAFETY: This is PostgreSQL's `ambuildempty` entry point; the guard keeps
+    // Rust unwinding contained and PostgreSQL provides a live index relation.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = BuildState::new(index_relation);
@@ -316,7 +324,11 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuildempty(index_relation: pg_s
 
 impl BuildState {
     pub(super) fn new(index_relation: pg_sys::Relation) -> Self {
+        // SAFETY: BuildState is constructed from a live PostgreSQL index
+        // relation during build/empty-build setup.
         let options = unsafe { options::relation_options(index_relation) };
+        // SAFETY: `index_relation` is live and its `rd_id` can be resolved to
+        // the heap relation OID, or InvalidOid for test-only detached state.
         let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
         let indexed_vector_kind = if heap_oid == pg_sys::InvalidOid {
             source::IndexedVectorKind::Ecvector
@@ -324,6 +336,8 @@ impl BuildState {
             let Some(heap_relation) = HeapRelationGuard::try_access_share(heap_oid) else {
                 pgrx::error!("ec_hnsw build could not open heap relation for indexed column")
             };
+            // SAFETY: The heap and index relations are live while BuildState is
+            // initialized, and the resolver validates the indexed attribute.
             let indexed_attribute = unsafe {
                 source::resolve_indexed_vector_attribute(
                     heap_relation.as_ptr(),
@@ -497,6 +511,8 @@ fn validate_grouped_rerank_source_column(
         return;
     };
 
+    // SAFETY: `heap_relation` is live during build validation, and the source
+    // resolver validates that the configured rerank column is usable.
     unsafe {
         source::resolve_source_attribute(
             heap_relation,
@@ -515,6 +531,8 @@ fn validate_grouped_rerank_source_column_for_empty_build(
         return;
     }
 
+    // SAFETY: `index_relation` is live during empty-build validation, and
+    // PostgreSQL resolves its heap relation OID from the index relcache entry.
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw rerank_source_column could not resolve heap relation for validation");
@@ -538,15 +556,21 @@ pub(super) unsafe fn build_heap_tuple(
     if values.is_null() || isnull.is_null() {
         pgrx::error!("ec_hnsw ambuild received null tuple value arrays");
     }
+    // SAFETY: PostgreSQL passed a non-null `isnull` array for the indexed build
+    // value; only the first indexed column is read by this access method.
     if unsafe { *isnull } {
         pgrx::error!("ec_hnsw does not support NULL indexed values");
     }
 
+    // SAFETY: PostgreSQL passed a non-null `values` array for the indexed build
+    // value, and NULL status was checked before reading the datum.
     let datum = unsafe { *values };
     if datum.is_null() {
         pgrx::error!("ec_hnsw ambuild received a null indexed datum");
     }
 
+    // SAFETY: The datum is non-null and comes from the indexed column; the
+    // helper validates/detoasts according to the indexed vector kind.
     unsafe { build_heap_tuple_from_indexed_datum(datum, heap_tid, indexed_vector_kind, None) }
 }
 
@@ -605,6 +629,8 @@ unsafe fn build_heap_tuple_from_indexed_datum(
 ) -> BuildTuple {
     match indexed_vector_kind {
         source::IndexedVectorKind::Ecvector => {
+            // SAFETY: `vector_datum` is a non-null indexed datum whose declared
+            // source kind is ecvector; the helper validates the varlena shape.
             let index_vector = unsafe {
                 source::with_flat_float4_source_from_datum(
                     vector_datum,
@@ -625,6 +651,8 @@ unsafe fn build_heap_tuple_from_indexed_datum(
             build_quantized_build_tuple(dimensions, gamma, code, heap_tid, source_vector)
         }
         source::IndexedVectorKind::Tqvector => {
+            // SAFETY: `vector_datum` is a non-null indexed tqvector datum; the
+            // detoast wrapper returns owned packed bytes before unpacking.
             let bytes = unsafe { DetoastedVarlena::packed_from_datum(vector_datum) }
                 .unwrap_or_else(|| pgrx::error!("ec_hnsw could not detoast indexed tqvector"))
                 .to_vec();
@@ -655,6 +683,8 @@ pub(super) unsafe fn build_heap_tuple_with_source(
     if vector_datum.is_null() {
         pgrx::error!("ec_hnsw ambuild received a null indexed datum");
     }
+    // SAFETY: The datum is non-null and the caller supplied the corresponding
+    // build source vector; the helper validates the indexed datum shape.
     unsafe {
         build_heap_tuple_from_indexed_datum(
             vector_datum,
@@ -675,6 +705,8 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         .build_source_column
         .clone()
         .expect("source scan should only run when build_source_column is configured");
+    // SAFETY: `heap_relation` and `index_info` are live during ambuild, and the
+    // resolver validates the indexed attribute for this index.
     let indexed_attribute = unsafe {
         source::resolve_indexed_vector_attribute_from_index_info(
             heap_relation,
@@ -682,6 +714,8 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
             "indexed column",
         )
     };
+    // SAFETY: `heap_relation` is live during the scan, and the resolver
+    // validates the configured build source column and source policy.
     let source_attribute = unsafe {
         source::resolve_source_attribute(
             heap_relation,
@@ -708,6 +742,8 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
     .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to begin heap scan"));
 
     let mut scanned_tuples = 0.0_f64;
+    // SAFETY: The heap scan and slot remain live for the loop, and PostgreSQL
+    // fills `slot_ptr` when `heap_getnextslot` returns true.
     while unsafe {
         pg_sys::heap_getnextslot(
             scan.as_ptr(),
@@ -716,10 +752,16 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         )
     } {
         scanned_tuples += 1.0;
+        // SAFETY: `slot_ptr` contains the current tuple after heap_getnextslot
+        // returned true.
         let heap_tid = unsafe { decode_slot_tid(slot_ptr) };
+        // SAFETY: The current slot is populated, and the resolver returned a
+        // valid indexed attribute number for this relation.
         let vector_datum = unsafe {
             source::required_slot_datum(slot_ptr, indexed_attribute.attnum, "indexed column")
         };
+        // SAFETY: The current slot is populated, and the resolver returned a
+        // valid build-source attribute number for this relation.
         let source_datum = unsafe {
             source::required_slot_datum(
                 slot_ptr,
@@ -727,6 +769,8 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
                 "ec_hnsw build_source_column",
             )
         };
+        // SAFETY: `source_datum` comes from the validated source attribute; the
+        // helper validates the flat float4 source representation.
         let source_vector = unsafe {
             source::with_flat_float4_source_from_datum(
                 source_datum,
@@ -736,6 +780,8 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
             )
         };
 
+        // SAFETY: `vector_datum` is the non-null indexed value from the current
+        // slot and `source_vector` was decoded from the configured source.
         let tuple = unsafe {
             build_heap_tuple_with_source(
                 vector_datum,
@@ -751,6 +797,8 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
 }
 
 unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointer {
+    // SAFETY: Callers pass a populated tuple table slot from a successful heap
+    // scan step, so `tts_tid` is initialized for the current tuple.
     let heap_tid = unsafe { (*slot).tts_tid };
     let tid = pg_sys::ItemPointerData {
         ip_blkid: heap_tid.ip_blkid,
@@ -1559,6 +1607,8 @@ struct NativeForwardSelection {
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
     let mut timing = BuildFlushTiming::default();
+    // SAFETY: `index_relation` is live during build flush and `state` owns the
+    // fully staged build tuples used to produce and write index pages.
     unsafe { flush_build_state_with_timing(index_relation, state, &mut timing) };
 }
 
@@ -1573,6 +1623,8 @@ unsafe fn flush_build_state_with_timing(
             .unwrap_or_else(|e| pgrx::error!("ec_hnsw pq_fastscan build failed: {e}")),
     };
     let write_start = Instant::now();
+    // SAFETY: `output` was produced from the validated build state, and the
+    // live index relation is still held by ambuild while pages are written.
     unsafe { flush_build_output(index_relation, &output) };
     timing.write_us = elapsed_us(write_start);
 }
@@ -1780,7 +1832,11 @@ fn current_format_flush_output_from_graph_nodes_with_timing(
 }
 
 unsafe fn flush_build_output(index_relation: pg_sys::Relation, output: &BuildFlushOutput) {
+    // SAFETY: `output.data_pages` is an in-memory chain produced by the build
+    // planner, and `index_relation` is live while ambuild writes index pages.
     unsafe { write_data_pages(index_relation, &output.data_pages) };
+    // SAFETY: The data pages have been written, and metadata was produced from
+    // the same validated build output for this live index relation.
     unsafe { shared::initialize_metadata_page(index_relation, output.metadata.clone()) };
 }
 
@@ -2351,6 +2407,8 @@ pub(super) unsafe fn write_data_pages(
     data_pages: &page::DataPageChain,
 ) {
     for staged_page in data_pages.pages() {
+        // SAFETY: `index_relation` is live and P_NEW requests a new zeroed page
+        // locked exclusively for this build writer.
         let buffer = unsafe {
             LockedBufferGuard::read_main_locked(
                 index_relation,
@@ -2366,13 +2424,20 @@ pub(super) unsafe fn write_data_pages(
         });
 
         let page_size = buffer.page_size();
+        // SAFETY: The live index relation is the WAL target for this page write.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        // SAFETY: The buffer is locked by `buffer`, and registering it with the
+        // active generic WAL transaction returns the page pointer to modify.
         let page_ptr = unsafe {
             wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
         };
+        // SAFETY: `page_ptr` refers to the newly allocated zeroed page and
+        // `page_size` comes from the locked buffer.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
 
         for tuple in staged_page.tuples() {
+            // SAFETY: `page_ptr` is initialized and locked, and each staged
+            // tuple byte slice remains live for the duration of the call.
             let offset = unsafe {
                 pg_sys::PageAddItemExtended(
                     page_ptr,
@@ -2390,6 +2455,8 @@ pub(super) unsafe fn write_data_pages(
             }
         }
 
+        // SAFETY: All page mutations for this registered buffer are complete
+        // and can be committed through the generic WAL transaction.
         unsafe { wal_txn.finish() };
     }
 }
