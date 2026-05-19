@@ -1,0 +1,1293 @@
+Script started on 2026-05-19 04:13:09-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 56d4b6ac..d2150d92 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -482,187 +482,6 @@[m [msrc/am/ec_hnsw/insert.rs:879[m
+ src/am/ec_hnsw/insert.rs:908[m
+ src/am/ec_hnsw/insert.rs:909[m
+ src/am/ec_hnsw/insert.rs:952[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1621[m
+[31m-src/am/ec_hnsw/scan_debug.rs:1684[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2520[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2521[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2604[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2605[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2659[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2660[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2726[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2737[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2738[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2812[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2818[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2821[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2822[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2828[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2830[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2832[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2833[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2854[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2860[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2862[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2869[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2870[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2876[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2877[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2898[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2904[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2906[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2907[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2910[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2912[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2915[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2919[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2920[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2926[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2940[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2948[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2956[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2970[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2977[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2981[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2984[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2991[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2994[m
+[31m-src/am/ec_hnsw/scan_debug.rs:2995[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3007[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3013[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3015[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3027[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3029[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3033[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3034[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3060[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3066[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3068[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3073[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3075[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3081[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3082[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3101[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3107[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3109[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3116[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3117[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3135[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3141[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3143[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3150[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3154[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3158[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3159[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3177[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3183[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3185[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3204[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3213[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3214[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3231[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3238[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3240[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3244[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3248[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3251[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3261[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3263[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3266[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3267[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3285[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3292[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3294[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3299[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3302[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3306[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3308[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3313[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3314[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3333[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3340[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3342[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3347[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3353[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3358[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3359[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3378[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3385[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3387[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3391[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3397[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3418[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3419[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3439[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3446[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3448[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3452[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3455[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3458[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3459[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3462[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3463[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3487[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3494[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3496[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3509[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3512[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3519[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3521[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3525[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3526[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3560[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3567[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3570[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3573[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3578[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3581[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3587[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3589[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3599[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3601[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3606[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3607[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3629[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3635[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3636[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3639[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3643[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3649[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3657[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3658[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3680[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3686[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3689[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3692[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3700[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3703[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3710[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3711[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3727[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3733[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3734[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3745[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3752[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3755[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3756[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3765[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3768[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3769[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3774[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3775[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3787[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3794[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3797[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3802[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3808[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3811[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3812[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3817[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3818[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3827[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3832[m
+[31m-src/am/ec_hnsw/scan_debug.rs:3834[m
+ src/am/ec_hnsw/shared.rs:100[m
+ src/am/ec_hnsw/shared.rs:105[m
+ src/am/ec_hnsw/shared.rs:107[m
+[1mdiff --git a/src/am/ec_hnsw/scan_debug.rs b/src/am/ec_hnsw/scan_debug.rs[m
+[1mindex ef535a76..365ca20d 100644[m
+[1m--- a/src/am/ec_hnsw/scan_debug.rs[m
+[1m+++ b/src/am/ec_hnsw/scan_debug.rs[m
+[36m@@ -1614,10 +1614,10 @@[m [mpub(crate) unsafe fn debug_top_level_reachable_heap_tids([m
+             continue;[m
+         }[m
+ [m
+[31m-        // SAFETY: `element_tid` is either the metadata entry point or a neighbor[m
+[31m-        // returned by graph adjacency loading; the graph loader validates the[m
+[31m-        // tuple body before returning it.[m
+         let element =[m
+[32m+[m[32m            // SAFETY: `element_tid` is either the metadata entry point or a[m
+[32m+[m[32m            // neighbor returned by graph adjacency loading; the graph loader[m
+[32m+[m[32m            // validates the tuple body before returning it.[m
+             unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };[m
+         if element.deleted {[m
+             continue;[m
+[36m@@ -1677,10 +1677,10 @@[m [mpub(crate) unsafe fn debug_layer0_reachable_live_element_tids([m
+             continue;[m
+         }[m
+ [m
+[31m-        // SAFETY: `element_tid` is either the metadata entry point or a neighbor[m
+[31m-        // returned by graph adjacency loading; the graph loader validates the[m
+[31m-        // tuple body before returning it.[m
+         let element =[m
+[32m+[m[32m            // SAFETY: `element_tid` is either the metadata entry point or a[m
+[32m+[m[32m            // neighbor returned by graph adjacency loading; the graph loader[m
+[32m+[m[32m            // validates the tuple body before returning it.[m
+             unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };[m
+         if element.deleted || element.heaptids.is_empty() {[m
+             continue;[m
+[36m@@ -2517,7 +2517,11 @@[m [mpub(crate) unsafe fn debug_grouped_scan_comparison_rows([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> Vec<DebugGroupedScanComparisonRow> {[m
+[32m+[m[32m    // SAFETY: The debug wrapper forwards the caller-provided index oid to the[m
+[32m+[m[32m    // grouped-storage classifier, which opens and reads index metadata.[m
+     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };[m
+[32m+[m[32m    // SAFETY: The score-comparison helper owns its scan descriptor and returns[m
+[32m+[m[32m    // materialized debug rows before cleanup.[m
+     let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };[m
+     let ordered_rows = if grouped_results {[m
+         let mut ordered_rows = rows[m
+[36m@@ -2601,7 +2605,11 @@[m [mpub(crate) unsafe fn debug_grouped_scan_comparison_summary([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> DebugGroupedScanComparisonSummary {[m
+[32m+[m[32m    // SAFETY: The debug wrapper forwards the caller-provided index oid to the[m
+[32m+[m[32m    // grouped-storage classifier, which opens and reads index metadata.[m
+     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };[m
+[32m+[m[32m    // SAFETY: The score-comparison helper owns its scan descriptor and returns[m
+[32m+[m[32m    // materialized debug rows before cleanup.[m
+     let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };[m
+     let emitted_result_count =[m
+         i32::try_from(rows.len()).expect("debug comparison summary count should fit in i32");[m
+[36m@@ -2656,7 +2664,11 @@[m [mpub(crate) unsafe fn debug_grouped_scan_order_drift_summary([m
+     index_oid: pg_sys::Oid,[m
+     query: Vec<f32>,[m
+ ) -> DebugGroupedScanOrderDriftSummary {[m
+[32m+[m[32m    // SAFETY: The debug wrapper forwards the caller-provided index oid to the[m
+[32m+[m[32m    // grouped-storage classifier, which opens and reads index metadata.[m
+     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };[m
+[32m+[m[32m    // SAFETY: The comparison-row helper owns its scan descriptor and returns[m
+[32m+[m[32m    // materialized debug rows before cleanup.[m
+     let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };[m
+     let emitted_result_count =[m
+         i32::try_from(rows.len()).expect("debug order drift summary count should fit in i32");[m
+[36m@@ -2723,6 +2735,8 @@[m [mpub(crate) unsafe fn debug_grouped_scan_windowed_rows([m
+     query: Vec<f32>,[m
+     window_size: i32,[m
+ ) -> Vec<DebugGroupedScanWindowedRow> {[m
+[32m+[m[32m    // SAFETY: The comparison-row helper owns its scan descriptor and returns[m
+[32m+[m[32m    // materialized debug rows before cleanup.[m
+     let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };[m
+     let window_size = debug_grouped_window_size(window_size);[m
+     debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, window_size)[m
+[36m@@ -2734,7 +2748,11 @@[m [mpub(crate) unsafe fn debug_grouped_scan_windowed_summary([m
+     query: Vec<f32>,[m
+     window_size: i32,[m
+ ) -> DebugGroupedScanWindowedSummary {[m
+[32m+[m[32m    // SAFETY: The debug wrapper forwards the caller-provided index oid to the[m
+[32m+[m[32m    // grouped-storage classifier, which opens and reads index metadata.[m
+     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };[m
+[32m+[m[32m    // SAFETY: The comparison-row helper owns its scan descriptor and returns[m
+[32m+[m[32m    // materialized debug rows before cleanup.[m
+     let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };[m
+     let window_size = debug_grouped_window_size(window_size);[m
+     let emitted_result_count =[m
+[36m@@ -2809,27 +2827,41 @@[m [mpub(crate) unsafe fn debug_gettuple_exhaustion_state([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_exhaustion_state");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this exhaustion probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     let mut tids = Vec::new();[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live scan descriptor.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {[m
+[32m+[m[32m        // SAFETY: A successful gettuple call populated `xs_heaptid` for this[m
+[32m+[m[32m        // live index scan descriptor.[m
+         tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {[m
+             (*scan).xs_heaptid[m
+         }));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after exhaustion for this debug[m
+[32m+[m[32m    // probe's first post-exhaustion gettuple call.[m
+     let exhausted_once =[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after the first exhaustion probe[m
+[32m+[m[32m    // for this second idempotence check.[m
+     let exhausted_twice =[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (tids, exhausted_once, exhausted_twice)[m
+ }[m
+[36m@@ -2851,14 +2883,19 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_state([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_state");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this current-result probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let before_found = active_result_state_ref(opaque).current().has_element();[m
+     let before_tid =[m
+[36m@@ -2866,14 +2903,20 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_state([m
+     let before_score = active_result_state_ref(opaque).current().score_valid();[m
+     let before_score_value = active_result_state_ref(opaque).current().score();[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the[m
+[32m+[m[32m    // live descriptor and update current-result state.[m
+     let found = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let after_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+     let after_score = active_result_state_ref(opaque).current().score_valid();[m
+     let after_score_value = active_result_state_ref(opaque).current().score();[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_found,[m
+[36m@@ -2895,34 +2938,51 @@[m [mpub(crate) unsafe fn debug_gettuple_orderby_score([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_orderby_score");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this order-by score probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the[m
+[32m+[m[32m    // live descriptor and publish order-by score slots.[m
+     let found = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+[32m+[m[32m    // SAFETY: `scan` is a live descriptor; null is checked before reading the[m
+[32m+[m[32m    // order-by null flag.[m
+     let is_null = if unsafe { (*scan).xs_orderbynulls.is_null() } {[m
+         true[m
+     } else {[m
+[32m+[m[32m        // SAFETY: The order-by nulls pointer was checked non-null above.[m
+         unsafe { *(*scan).xs_orderbynulls }[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is a live descriptor; null is checked before reading the[m
+[32m+[m[32m    // order-by datum slot.[m
+     let score = if unsafe { (*scan).xs_orderbyvals.is_null() } {[m
+         0.0[m
+     } else {[m
+[32m+[m[32m        // SAFETY: The order-by datum pointer was checked non-null above, and the[m
+[32m+[m[32m        // HNSW AM publishes f32 scores in this debug path.[m
+         f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, is_null)[m
+             .expect("orderby score should decode")[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (found, is_null, score)[m
+ }[m
+ [m
+ #[cfg(any(test, feature = "pg_test"))][m
+ fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {[m
+[32m+[m[32m    // SAFETY: Callers pass a live scan descriptor; both order-by pointers are[m
+[32m+[m[32m    // checked before dereference, and the AM publishes f32 order-by datums.[m
+     unsafe {[m
+         if (*scan).xs_orderbyvals.is_null() || (*scan).xs_orderbynulls.is_null() {[m
+             return None;[m
+[36m@@ -2937,6 +2997,8 @@[m [mfn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {[m
+ [m
+ #[cfg(any(test, feature = "pg_test"))][m
+ fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {[m
+[32m+[m[32m    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was[m
+[32m+[m[32m    // initialized by AM rescan.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     opaque[m
+         .last_emitted_comparison_score_valid[m
+[36m@@ -2945,6 +3007,8 @@[m [mfn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<[m
+ [m
+ #[cfg(any(test, feature = "pg_test"))][m
+ fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {[m
+[32m+[m[32m    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was[m
+[32m+[m[32m    // initialized by AM rescan.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     opaque[m
+         .last_emitted_approx_score_valid[m
+[36m@@ -2953,6 +3017,8 @@[m [mfn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32>[m
+ [m
+ #[cfg(any(test, feature = "pg_test"))][m
+ fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> {[m
+[32m+[m[32m    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was[m
+[32m+[m[32m    // initialized by AM rescan.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     opaque[m
+         .last_emitted_approx_rank_valid[m
+[36m@@ -2967,6 +3033,8 @@[m [mpub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_orderby_score_lifecycle");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this order-by lifecycle probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -2974,13 +3042,19 @@[m [mpub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     let before = debug_scan_orderby_score(scan);[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the[m
+[32m+[m[32m    // live descriptor and publish an order-by score.[m
+     unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+     let after_first = debug_scan_orderby_score(scan);[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live descriptor until exhaustion.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}[m
+     let exhausted = debug_scan_orderby_score(scan);[m
+ [m
+[36m@@ -2988,10 +3062,14 @@[m [mpub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` remains live after exhaustion, and `rescan_orderby` is a[m
+[32m+[m[32m    // valid one-key buffer for the lifecycle rescan.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };[m
+     let rescanned = debug_scan_orderby_score(scan);[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (before, after_first, exhausted, rescanned)[m
+ }[m
+[36m@@ -3004,14 +3082,19 @@[m [mpub(crate) unsafe fn debug_rescan_entry_candidate_state([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_entry_candidate_state");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this candidate-state probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let current = active_result_state_ref(opaque).current();[m
+     let (before_valid, before_tid, before_score) = if current.has_element() {[m
+[36m@@ -3024,13 +3107,19 @@[m [mpub(crate) unsafe fn debug_rescan_entry_candidate_state([m
+         debug_candidate_slot(visible_frontier_slot(opaque, 0))[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live descriptor until exhaustion.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after exhaustion and still owns[m
+[32m+[m[32m    // its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let (after_valid, after_tid, after_score) =[m
+         debug_candidate_slot(visible_frontier_slot(opaque, 0));[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_valid,[m
+[36m@@ -3057,28 +3146,39 @@[m [mpub(crate) unsafe fn debug_rescan_successor_candidate_state([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_successor_candidate_state");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this successor-state probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     let entry_tid = ([m
+         metadata.entry_point.block_number,[m
+         metadata.entry_point.offset_number,[m
+     );[m
+[32m+[m[32m    // SAFETY: The debug helper opens the same index and materializes entry[m
+[32m+[m[32m    // point neighbor TIDs before returning.[m
+     let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let successor_slot = debug_runtime_ordered_provenance_slots(opaque)[m
+         .get(1)[m
+         .copied()[m
+         .unwrap_or((false, (u32::MAX, u16::MAX), (u32::MAX, u16::MAX), 0.0));[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         entry_tid,[m
+[36m@@ -3098,14 +3198,19 @@[m [mpub(crate) unsafe fn debug_rescan_candidate_frontier([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_rescan_candidate_frontier");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this frontier probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let frontier_slots = debug_runtime_ordered_slots(opaque);[m
+     let frontier = frontier_slots.clone();[m
+[36m@@ -3113,7 +3218,9 @@[m [mpub(crate) unsafe fn debug_rescan_candidate_frontier([m
+     let expanded_sources = debug_sorted_expanded_source_tids(opaque);[m
+     let head = debug_runtime_ordered_head(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         head,[m
+[36m@@ -3132,14 +3239,19 @@[m [mpub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_consumes_bootstrap_candidate");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this bootstrap-consume probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let before_head = debug_runtime_ordered_head(opaque);[m
+     let before_slots = debug_runtime_ordered_slots(opaque);[m
+[36m@@ -3147,15 +3259,21 @@[m [mpub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate([m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may[m
+[32m+[m[32m        // advance the live descriptor and consume the bootstrap candidate.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "bootstrap-consume helper requires a first tuple"[m
+     );[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let after_head = debug_runtime_ordered_head(opaque);[m
+     let after_slots = debug_runtime_ordered_slots(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_head,[m
+[36m@@ -3174,14 +3292,19 @@[m [mpub(crate) unsafe fn debug_materialize_bootstrap_candidate_result([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_materialize_bootstrap_candidate_result");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this materialization probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let current = active_result_state_ref(opaque).current();[m
+     let candidate_before = if current.has_element() {[m
+[36m@@ -3201,6 +3324,8 @@[m [mpub(crate) unsafe fn debug_materialize_bootstrap_candidate_result([m
+         )[m
+     };[m
+     let materialized = current.has_element()[m
+[32m+[m[32m        // SAFETY: `opaque` belongs to the live scan and `index_relation` is held[m
+[32m+[m[32m        // open by the guard while prefetch materializes the next graph result.[m
+         || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };[m
+     let current_result_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+[36m@@ -3210,7 +3335,9 @@[m [mpub(crate) unsafe fn debug_materialize_bootstrap_candidate_result([m
+         .map(|tid| (tid.block_number, tid.offset_number))[m
+         .collect::<Vec<_>>();[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         candidate_before,[m
+[36m@@ -3228,6 +3355,8 @@[m [mpub(crate) unsafe fn debug_bootstrap_phase_transition([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_bootstrap_phase_transition");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this phase-transition probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3235,19 +3364,28 @@[m [mpub(crate) unsafe fn debug_bootstrap_phase_transition([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let before_complete = !opaque.execution_phase.is_graph_traversal();[m
+ [m
+     while opaque.execution_phase.is_graph_traversal()[m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple[m
+[32m+[m[32m        // calls may advance the live descriptor through graph traversal.[m
+         && unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }[m
+     {}[m
+ [m
+     if opaque.execution_phase.is_graph_traversal() {[m
+[32m+[m[32m        // SAFETY: The descriptor remains live and this final gettuple probes the[m
+[32m+[m[32m        // transition out of graph traversal.[m
+         let _ = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after traversal and still owns[m
+[32m+[m[32m    // its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let after_complete = !opaque.execution_phase.is_graph_traversal();[m
+     let after_head = current_candidate_frontier_head(opaque)[m
+[36m@@ -3258,12 +3396,17 @@[m [mpub(crate) unsafe fn debug_bootstrap_phase_transition([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` remains live after traversal, and `rescan_orderby` is a[m
+[32m+[m[32m    // valid one-key buffer for this reset probe.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan refreshed the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let rescanned_complete = !opaque.execution_phase.is_graph_traversal();[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_complete,[m
+[36m@@ -3282,6 +3425,8 @@[m [mpub(crate) unsafe fn debug_candidate_frontier_head_lifecycle([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_candidate_frontier_head_lifecycle");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this frontier lifecycle probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3289,28 +3434,41 @@[m [mpub(crate) unsafe fn debug_candidate_frontier_head_lifecycle([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let before_head = debug_runtime_ordered_head(opaque);[m
+     let before_frontier = debug_runtime_ordered_slots(opaque);[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may[m
+[32m+[m[32m        // advance the live descriptor for this partial lifecycle sample.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "frontier-head lifecycle helper requires a first tuple"[m
+     );[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let partial_head = debug_runtime_ordered_head(opaque);[m
+     let partial_frontier = debug_runtime_ordered_slots(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live descriptor until exhaustion.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after exhaustion and still owns[m
+[32m+[m[32m    // its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let exhausted_head = current_candidate_frontier_head(opaque)[m
+         .map(|candidate| debug_item_pointer_coords(candidate.node));[m
+     let exhausted_frontier = debug_candidate_frontier_slots(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_head,[m
+[36m@@ -3330,6 +3488,8 @@[m [mpub(crate) unsafe fn debug_consume_candidate_frontier_head([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_consume_candidate_frontier_head");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this frontier consume probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3337,25 +3497,34 @@[m [mpub(crate) unsafe fn debug_consume_candidate_frontier_head([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let before_head = current_candidate_frontier_head(opaque)[m
+         .map(|candidate| debug_item_pointer_coords(candidate.node));[m
+     let before_frontier = debug_candidate_frontier_slots(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: `opaque` belongs to the live scan and `index_relation` is held[m
+[32m+[m[32m    // open by the guard while the bootstrap frontier is consumed/refilled.[m
+     let first_consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };[m
+     debug_assert_eq!(first_consumed.is_some(), before_head.is_some());[m
+     let after_first_head = current_candidate_frontier_head(opaque)[m
+         .map(|candidate| debug_item_pointer_coords(candidate.node));[m
+     let after_first_frontier = debug_candidate_frontier_slots(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: `opaque` still belongs to the live scan and `index_relation` is[m
+[32m+[m[32m    // held open while the second frontier consumption is probed.[m
+     unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };[m
+     let after_second_head = current_candidate_frontier_head(opaque)[m
+         .map(|candidate| debug_item_pointer_coords(candidate.node));[m
+     let after_second_frontier = debug_candidate_frontier_slots(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_head,[m
+[36m@@ -3375,6 +3544,8 @@[m [mpub(crate) unsafe fn debug_consume_candidate_frontier_head_slots([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_consume_candidate_frontier_head_slots");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this frontier slot consume probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3382,18 +3553,25 @@[m [mpub(crate) unsafe fn debug_consume_candidate_frontier_head_slots([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let before_head = current_candidate_frontier_head(opaque)[m
+         .map(|candidate| debug_item_pointer_coords(candidate.node));[m
+     let before_slots = debug_candidate_frontier_slots(opaque);[m
+[32m+[m[32m    // SAFETY: `opaque` belongs to the live scan and `index_relation` is held[m
+[32m+[m[32m    // open by the guard while the bootstrap frontier is consumed/refilled.[m
+     let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };[m
+     let consumed_tid = consumed[m
+         .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))[m
+         .unwrap_or((u32::MAX, u16::MAX));[m
+     let consumed_neighbors = consumed[m
+         .map(|candidate| {[m
+[32m+[m[32m            // SAFETY: The consumed candidate came from the scan's graph[m
+[32m+[m[32m            // frontier; adjacency loading validates the graph tuple body.[m
+             let (_, neighbors) = unsafe {[m
+                 graph::load_exact_graph_adjacency([m
+                     index_relation,[m
+[36m@@ -3415,7 +3593,9 @@[m [mpub(crate) unsafe fn debug_consume_candidate_frontier_head_slots([m
+     let after_slots = debug_candidate_frontier_slots(opaque);[m
+     let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_head,[m
+[36m@@ -3436,6 +3616,8 @@[m [mpub(crate) unsafe fn debug_visited_seed_lifecycle([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_visited_seed_lifecycle");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this visited-set lifecycle probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3443,23 +3625,36 @@[m [mpub(crate) unsafe fn debug_visited_seed_lifecycle([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let before = debug_sorted_visited_tids(opaque);[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may[m
+[32m+[m[32m        // advance the live descriptor for this partial lifecycle sample.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "visited-seed lifecycle helper requires a first tuple"[m
+     );[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let partial = debug_sorted_visited_tids(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live descriptor until exhaustion.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after exhaustion and still owns[m
+[32m+[m[32m    // its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let exhausted = debug_sorted_visited_tids(opaque);[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (before, partial, exhausted)[m
+ }[m
+[36m@@ -3484,6 +3679,8 @@[m [mpub(crate) unsafe fn debug_entry_candidate_lifecycle([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_entry_candidate_lifecycle");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this entry-candidate lifecycle probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3491,8 +3688,11 @@[m [mpub(crate) unsafe fn debug_entry_candidate_lifecycle([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let current = active_result_state_ref(opaque).current();[m
+     let (before_valid, before_tid, before_score) = if current.has_element() {[m
+[36m@@ -3506,9 +3706,13 @@[m [mpub(crate) unsafe fn debug_entry_candidate_lifecycle([m
+     };[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may[m
+[32m+[m[32m        // advance the live descriptor for this partial lifecycle sample.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "entry-candidate lifecycle helper requires a first tuple"[m
+     );[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let (partial_valid, partial_tid, partial_score) =[m
+         debug_candidate_slot(visible_frontier_slot(opaque, 0));[m
+[36m@@ -3516,13 +3720,19 @@[m [mpub(crate) unsafe fn debug_entry_candidate_lifecycle([m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+     let partial_exhausted = opaque.execution_phase.is_exhausted();[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live descriptor until exhaustion.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after exhaustion and still owns[m
+[32m+[m[32m    // its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let (exhausted_valid, exhausted_tid, exhausted_score) =[m
+         debug_candidate_slot(visible_frontier_slot(opaque, 0));[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         before_valid,[m
+[36m@@ -3557,6 +3767,8 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_lifecycle([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_lifecycle");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this current-result lifecycle probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3564,28 +3776,42 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_lifecycle([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may[m
+[32m+[m[32m        // advance the live descriptor for the first lifecycle sample.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "first tuple production should succeed for lifecycle debug helper"[m
+     );[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let first_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: The live descriptor may be advanced again to sample the second[m
+[32m+[m[32m        // current-result state.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "second tuple production should succeed for duplicate-drain lifecycle debug helper"[m
+     );[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after the second gettuple and[m
+[32m+[m[32m    // still owns its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let second_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+     let second_score = active_result_state_ref(opaque).current().score_valid();[m
+     let second_score_value = active_result_state_ref(opaque).current().score();[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live descriptor until exhaustion.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after exhaustion and still owns[m
+[32m+[m[32m    // its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let exhausted_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+[36m@@ -3596,14 +3822,19 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_lifecycle([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` remains live after exhaustion, and `rescan_orderby` is a[m
+[32m+[m[32m    // valid one-key buffer for this lifecycle rescan.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan refreshed the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let rescanned_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+     let rescanned_score = active_result_state_ref(opaque).current().score_valid();[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         first_tid,[m
+[36m@@ -3626,26 +3857,37 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_neighbors([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_neighbors");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this neighbor probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let prefetched_tid = active_result_state_ref(opaque).current().element_tid();[m
+     assert!([m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may[m
+[32m+[m[32m        // advance the live descriptor for the neighbor sample.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "neighbor debug helper requires a non-empty scan result"[m
+     );[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let current_result_tid = if active_result_state_ref(opaque).current().has_element() {[m
+         active_result_state_ref(opaque).current().element_tid()[m
+     } else {[m
+         prefetched_tid[m
+     };[m
+[32m+[m[32m    // SAFETY: `current_result_tid` was produced by the live scan, and adjacency[m
+[32m+[m[32m    // loading validates the graph tuple body.[m
+     let (_element, neighbors) = unsafe {[m
+         graph::load_exact_graph_adjacency([m
+             index_relation,[m
+[36m@@ -3654,7 +3896,9 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_neighbors([m
+         )[m
+     };[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         debug_item_pointer_coords(current_result_tid),[m
+[36m@@ -3677,18 +3921,26 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_heap_progress([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_heap_progress");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this heap-progress probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may[m
+[32m+[m[32m        // advance the live descriptor for the first heap-progress sample.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "heap-progress debug helper requires a first tuple"[m
+     );[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after gettuple and still owns its[m
+[32m+[m[32m    // HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let first_heap_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid());[m
+[36m@@ -3697,9 +3949,13 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_heap_progress([m
+     let first_score = active_result_state_ref(opaque).current().score();[m
+ [m
+     assert!([m
+[32m+[m[32m        // SAFETY: The live descriptor may be advanced again to sample duplicate[m
+[32m+[m[32m        // heap progress for the same graph element.[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },[m
+         "heap-progress debug helper requires a duplicate tuple"[m
+     );[m
+[32m+[m[32m    // SAFETY: The scan descriptor remains live after the second gettuple and[m
+[32m+[m[32m    // still owns its HNSW opaque for debug inspection.[m
+     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };[m
+     let second_heap_tid =[m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid());[m
+[36m@@ -3707,7 +3963,9 @@[m [mpub(crate) unsafe fn debug_gettuple_current_result_heap_progress([m
+         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());[m
+     let second_score = active_result_state_ref(opaque).current().score();[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     ([m
+         element_tid,[m
+[36m@@ -3724,13 +3982,19 @@[m [mpub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid[m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_backward_after_rescan");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this backward-direction error probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let mut orderby = pg_sys::ScanKeyData {[m
+         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+[32m+[m[32m    // SAFETY: The debug probe deliberately invokes backward gettuple on a live[m
+[32m+[m[32m    // HNSW descriptor after rescan to exercise that error path.[m
+     unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::BackwardScanDirection) };[m
+ }[m
+ [m
+[36m@@ -3742,6 +4006,8 @@[m [mpub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_rescan_after_exhaustion");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this exhaustion-rescan probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3749,10 +4015,16 @@[m [mpub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+     let mut first_pass = Vec::new();[m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls[m
+[32m+[m[32m    // may advance the live descriptor until exhaustion.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {[m
+[32m+[m[32m        // SAFETY: A successful gettuple call populated `xs_heaptid` for this[m
+[32m+[m[32m        // live index scan descriptor.[m
+         first_pass.push(pgrx::itemptr::item_pointer_get_both(unsafe {[m
+             (*scan).xs_heaptid[m
+         }));[m
+[36m@@ -3762,16 +4034,24 @@[m [mpub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` remains live after exhaustion, and `rescan_orderby` is a[m
+[32m+[m[32m    // valid one-key buffer for the second pass.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };[m
+ [m
+     let mut rescanned = Vec::new();[m
+[32m+[m[32m    // SAFETY: The second AM rescan reinitialized the HNSW opaque, so repeated[m
+[32m+[m[32m    // gettuple calls may advance the live descriptor.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {[m
+[32m+[m[32m        // SAFETY: A successful gettuple call populated `xs_heaptid` for this[m
+[32m+[m[32m        // live index scan descriptor.[m
+         rescanned.push(pgrx::itemptr::item_pointer_get_both(unsafe {[m
+             (*scan).xs_heaptid[m
+         }));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (first_pass, rescanned)[m
+ }[m
+[36m@@ -3784,6 +4064,8 @@[m [mpub(crate) unsafe fn debug_gettuple_rescan_after_partial([m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_gettuple_rescan_after_partial");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index open for the AM scan[m
+[32m+[m[32m    // descriptor used by this partial-rescan probe.[m
+     let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };[m
+ [m
+     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");[m
+[36m@@ -3791,30 +4073,44 @@[m [mpub(crate) unsafe fn debug_gettuple_rescan_after_partial([m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` is live, there are no index quals, and `orderby` is a[m
+[32m+[m[32m    // valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };[m
+ [m
+[32m+[m[32m    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the[m
+[32m+[m[32m    // live descriptor for the partial first pass.[m
+     let found_first =[m
+         unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };[m
+     assert!([m
+         found_first,[m
+         "partial scan should yield at least one heap tid"[m
+     );[m
+[32m+[m[32m    // SAFETY: The successful gettuple call populated `xs_heaptid` for this live[m
+[32m+[m[32m    // index scan descriptor.[m
+     let first_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });[m
+ [m
+     let mut rescan_orderby = pg_sys::ScanKeyData {[m
+         sk_argument: query_datum,[m
+         ..Default::default()[m
+     };[m
+[32m+[m[32m    // SAFETY: `scan` remains live after the partial first pass, and[m
+[32m+[m[32m    // `rescan_orderby` is a valid one-key buffer.[m
+     unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };[m
+ [m
+     let mut tids = Vec::new();[m
+[32m+[m[32m    // SAFETY: The second AM rescan reinitialized the HNSW opaque, so repeated[m
+[32m+[m[32m    // gettuple calls may advance the live descriptor.[m
+     while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {[m
+[32m+[m[32m        // SAFETY: A successful gettuple call populated `xs_heaptid` for this[m
+[32m+[m[32m        // live index scan descriptor.[m
+         tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {[m
+             (*scan).xs_heaptid[m
+         }));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.[m
+     unsafe { ec_hnsw_amendscan(scan) };[m
+[32m+[m[32m    // SAFETY: AM cleanup has run, and the descriptor is released once here.[m
+     unsafe { pg_sys::IndexScanEnd(scan) };[m
+     (first_tid, tids)[m
+ }[m
+[36m@@ -3824,12 +4120,18 @@[m [mpub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) ->[m
+     let index_relation_guard =[m
+         IndexRelationGuard::access_share(index_oid, "debug_entry_point_neighbor_tids");[m
+     let index_relation = index_relation_guard.as_ptr();[m
+[32m+[m[32m    // SAFETY: The relation guard keeps the index relation open while its[m
+[32m+[m[32m    // metadata page is read.[m
+     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };[m
+     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {[m
+         return Vec::new();[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: Metadata was read from the open index relation and validated[m
+[32m+[m[32m    // enough to resolve the graph storage descriptor for debug inspection.[m
+     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };[m
+[32m+[m[32m    // SAFETY: The metadata entry point is valid, and adjacency loading validates[m
+[32m+[m[32m    // the graph tuple body before returning neighbors.[m
+     let (_element, neighbors) =[m
+         unsafe { graph::load_exact_graph_adjacency(index_relation, metadata.entry_point, storage) };[m
+     neighbors[m
+
+Script done on 2026-05-19 04:13:09-07:00 [COMMAND_EXIT_CODE="0"]
