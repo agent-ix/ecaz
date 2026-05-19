@@ -835,6 +835,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambeginscan(
     nkeys: std::ffi::c_int,
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
+    // SAFETY: pgrx guards the PostgreSQL callback boundary; the guarded body
+    // checks allocation results before storing AM-private scan state.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
@@ -857,6 +859,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
     orderbys: pg_sys::ScanKey,
     norderbys: std::ffi::c_int,
 ) {
+    // SAFETY: pgrx guards the PostgreSQL callback boundary; null scan/orderby
+    // inputs are rejected before dereferencing PostgreSQL-owned pointers.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
@@ -1080,6 +1084,8 @@ fn validate_runtime_scan_format(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> Result<graph::GraphStorageDescriptor, String> {
+    // SAFETY: callers pass the live index relation from PostgreSQL's scan
+    // descriptor, and the metadata was read from that same relation.
     unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
 }
 
@@ -1101,6 +1107,36 @@ fn parallel_scan_worker_phase(phase: ScanExecutionPhase) -> u32 {
     }
 }
 
+fn bootstrap_expansion_frontier_len(opaque: &TqScanOpaque) -> usize {
+    if opaque.bootstrap_expansion.is_null() {
+        0
+    } else {
+        // SAFETY: non-null `bootstrap_expansion` is Box-owned by this scan
+        // opaque until `free_bootstrap_expansion` runs at scan teardown.
+        unsafe { &*opaque.bootstrap_expansion }.frontier_len()
+    }
+}
+
+fn visited_tid_count(opaque: &TqScanOpaque) -> usize {
+    if opaque.visited_tids.is_null() {
+        0
+    } else {
+        // SAFETY: non-null `visited_tids` is Box-owned by this scan opaque
+        // until `free_scan_visited_set` runs at scan teardown.
+        unsafe { &*opaque.visited_tids }.len()
+    }
+}
+
+fn emitted_result_tid_count(opaque: &TqScanOpaque) -> usize {
+    if opaque.emitted_result_tids.is_null() {
+        0
+    } else {
+        // SAFETY: non-null `emitted_result_tids` is Box-owned by this scan
+        // opaque until `free_scan_emitted_set` runs at scan teardown.
+        unsafe { &*opaque.emitted_result_tids }.len()
+    }
+}
+
 fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     if opaque.parallel_scan_state.is_null()
         || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
@@ -1109,21 +1145,10 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     }
 
     let active_result_state = active_result_state_ref(opaque);
-    let scheduler_frontier_len = if opaque.bootstrap_expansion.is_null() {
-        0
-    } else {
-        saturating_u32_from_usize(unsafe { &*opaque.bootstrap_expansion }.frontier_len())
-    };
-    let visited_count = if opaque.visited_tids.is_null() {
-        0
-    } else {
-        saturating_u32_from_usize(unsafe { &*opaque.visited_tids }.len())
-    };
-    let emitted_count = if opaque.emitted_result_tids.is_null() {
-        0
-    } else {
-        saturating_u32_from_usize(unsafe { &*opaque.emitted_result_tids }.len())
-    };
+    let scheduler_frontier_len =
+        saturating_u32_from_usize(bootstrap_expansion_frontier_len(opaque));
+    let visited_count = saturating_u32_from_usize(visited_tid_count(opaque));
+    let emitted_count = saturating_u32_from_usize(emitted_result_tid_count(opaque));
 
     let snapshot = super::parallel::EcParallelWorkerSlotRuntimeSnapshot {
         execution_phase: parallel_scan_worker_phase(opaque.execution_phase),
@@ -1137,6 +1162,8 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
         active_result_has_current: active_result_state.current().has_element(),
     };
 
+    // SAFETY: non-null parallel scan state and a claimed slot index are stored
+    // together by `bind_parallel_scan_state` for the active rescan epoch.
     match unsafe {
         super::parallel::publish_parallel_scan_worker_slot_runtime_snapshot(
             opaque.parallel_scan_state,
@@ -1157,6 +1184,8 @@ fn release_parallel_scan_state(opaque: &mut TqScanOpaque) {
         return;
     }
 
+    // SAFETY: non-null parallel scan state and a claimed slot index are stored
+    // together by `bind_parallel_scan_state` for the active rescan epoch.
     match unsafe {
         super::parallel::release_parallel_scan_worker_slot(
             opaque.parallel_scan_state,
@@ -1183,8 +1212,12 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
         return;
     }
 
+    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `parallel_scan` is
+    // either null/absent or points at PostgreSQL's parallel index scan state.
     match unsafe { super::parallel::parallel_scan_attachment((*scan).parallel_scan) } {
         Ok(Some(attachment)) => {
+            // SAFETY: the attachment was validated from this scan descriptor
+            // and owns the slot array used by this worker claim.
             let worker_slot_index =
                 unsafe { super::parallel::claim_parallel_scan_worker_slot(&attachment) }
                     .unwrap_or_else(|err| {
@@ -1301,13 +1334,23 @@ fn turboquant_non_default_exact_score_enabled(opaque: &TqScanOpaque) -> bool {
         && opaque.turboquant_exact_score_mode != TurboQuantExactScoreMode::Exact
 }
 
+fn cached_quantizer_ref(opaque: &TqScanOpaque) -> Option<&ProdQuantizer> {
+    if opaque.cached_quantizer.is_null() {
+        None
+    } else {
+        // SAFETY: non-null `cached_quantizer` is an Arc raw pointer retained by
+        // this scan opaque until `free_scan_prepared_query` reconstructs it.
+        Some(unsafe { &*opaque.cached_quantizer })
+    }
+}
+
 pub(super) fn turboquant_exact_score_mode_name(opaque: &TqScanOpaque) -> &'static str {
     if turboquant_non_default_exact_score_enabled(opaque) {
         opaque.turboquant_exact_score_mode.as_str()
-    } else if opaque.cached_quantizer.is_null() {
-        TurboQuantExactScoreMode::Exact.as_str()
     } else {
-        unsafe { &*opaque.cached_quantizer }.exact_score_mode_name()
+        cached_quantizer_ref(opaque)
+            .map(ProdQuantizer::exact_score_mode_name)
+            .unwrap_or_else(|| TurboQuantExactScoreMode::Exact.as_str())
     }
 }
 
@@ -1315,18 +1358,18 @@ pub(super) fn turboquant_exact_score_uses_lut(opaque: &TqScanOpaque) -> bool {
     if turboquant_non_default_exact_score_enabled(opaque) {
         opaque.turboquant_exact_score_mode.uses_lut()
     } else {
-        !opaque.cached_quantizer.is_null()
-            && unsafe { &*opaque.cached_quantizer }.exact_score_uses_lut()
+        cached_quantizer_ref(opaque).is_some_and(ProdQuantizer::exact_score_uses_lut)
     }
 }
 
 pub(super) fn turboquant_exact_score_uses_qjl(opaque: &TqScanOpaque) -> bool {
     !turboquant_non_default_exact_score_enabled(opaque)
-        && !opaque.cached_quantizer.is_null()
-        && unsafe { &*opaque.cached_quantizer }.exact_score_uses_qjl()
+        && cached_quantizer_ref(opaque).is_some_and(ProdQuantizer::exact_score_uses_qjl)
 }
 
 unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) -> bool {
+    // SAFETY: `index_relation` is a live index relation supplied by the scan
+    // path; PostgreSQL maps its relid back to the heap relation OID.
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         return false;
@@ -1334,6 +1377,8 @@ unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) ->
     let Some(heap_relation) = HeapRelationGuard::try_access_share(heap_oid) else {
         pgrx::error!("ec_hnsw scan could not open heap relation for indexed column")
     };
+    // SAFETY: both relation pointers are live for this lookup; the heap is held
+    // by `HeapRelationGuard` and `index_relation` is owned by the caller scan.
     let indexed_attribute = unsafe {
         source::resolve_indexed_vector_attribute(
             heap_relation.as_ptr(),
@@ -1404,6 +1449,8 @@ fn resolve_grouped_rerank_mode_decision(
     index_relation: pg_sys::Relation,
     index_options: &super::options::TqHnswOptions,
 ) -> PqFastScanRerankModeDecision {
+    // SAFETY: callers supply the live index relation being scanned; the helper
+    // only opens the associated heap long enough to inspect source metadata.
     let has_default_heap_f32_source = unsafe { index_has_default_heap_f32_source(index_relation) };
     let Some(raw_mode) = pq_fastscan_env_var(
         PQ_FASTSCAN_RERANK_MODE_ENV,
@@ -1448,6 +1495,8 @@ pub(crate) unsafe fn resolve_pq_fastscan_rerank_mode_decision(
         };
     }
 
+    // SAFETY: callers pass the live index relation whose reloptions determine
+    // the scan-time grouped rerank mode.
     let index_options = unsafe { super::options::relation_options(index_relation) };
     resolve_grouped_rerank_mode_decision(index_relation, &index_options)
 }
@@ -1684,10 +1733,16 @@ impl GroupedHeapRerankState {
 }
 
 unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanHeapRelation {
+    // SAFETY: `scan` is a live PostgreSQL scan descriptor while grouped heap
+    // rerank state is configured; `heapRelation` may be pre-filled by executor.
     if !unsafe { (*scan).heapRelation }.is_null() {
+        // SAFETY: the non-null heap relation pointer belongs to the live scan
+        // descriptor and remains borrowed for the scan callback.
         return ResolvedHnswScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
     }
 
+    // SAFETY: `indexRelation` is live in the scan descriptor; its relid maps to
+    // the heap relation OID when PostgreSQL did not pre-fill `heapRelation`.
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve heap relation");
@@ -1699,10 +1754,15 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHns
 }
 
 unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanSnapshot {
+    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `xs_snapshot` may be
+    // set by the executor and is borrowed without taking ownership.
     if !unsafe { (*scan).xs_snapshot }.is_null() {
+        // SAFETY: the non-null snapshot pointer belongs to the active scan.
         return ResolvedHnswScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
     }
 
+    // SAFETY: `GetActiveSnapshot` is valid inside PostgreSQL backend scan
+    // execution and returns a borrowed active snapshot or null.
     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
         return ResolvedHnswScanSnapshot::borrowed(active_snapshot);
@@ -1719,6 +1779,8 @@ unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
     if !opaque.grouped_heap_rerank_state.is_null() {
         let state = opaque.grouped_heap_rerank_state;
         opaque.grouped_heap_rerank_state = ptr::null_mut();
+        // SAFETY: non-null `grouped_heap_rerank_state` was allocated with
+        // `Box::into_raw` by `configure_grouped_heap_rerank_state`.
         drop(unsafe { Box::from_raw(state) });
     }
 }
@@ -1728,6 +1790,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     opaque: &mut TqScanOpaque,
     index_options: &super::options::TqHnswOptions,
 ) {
+    // SAFETY: the scan opaque owns at most one boxed grouped rerank state.
     unsafe { free_grouped_heap_rerank_state(opaque) };
     let rerank = resolve_grouped_rerank_mode_decision((*scan).indexRelation, index_options);
     opaque.grouped_rerank_mode = rerank.mode;
@@ -1748,10 +1811,14 @@ unsafe fn configure_grouped_heap_rerank_state(
     } else {
         "indexed column"
     };
+    // SAFETY: `scan` is the live descriptor for this rescan configuration.
     let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
     let heap_relation_ptr = heap_relation.as_ptr();
+    // SAFETY: `scan` is the live descriptor for this rescan configuration.
     let snapshot = unsafe { resolve_scan_snapshot(scan) };
     let source_attribute = if let Some(source_column) = rerank.source_column {
+        // SAFETY: `heap_relation_ptr` is held live by `heap_relation`, and the
+        // source column is resolved only for this scan's rerank state.
         unsafe {
             source::resolve_source_attribute(
                 heap_relation_ptr,
@@ -1761,6 +1828,8 @@ unsafe fn configure_grouped_heap_rerank_state(
             )
         }
     } else {
+        // SAFETY: heap relation is held live by `heap_relation`; index relation
+        // is borrowed from the live scan descriptor.
         let indexed_attribute = unsafe {
             source::resolve_indexed_vector_attribute(
                 heap_relation_ptr,
@@ -1795,6 +1864,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> bool {
+    // SAFETY: pgrx guards the PostgreSQL callback boundary; the guarded body
+    // validates the scan descriptor and opaque pointer before dereferencing.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
@@ -1832,6 +1903,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScanDesc) {
+    // SAFETY: pgrx guards the PostgreSQL callback boundary; null scan and
+    // opaque pointers are checked before releasing AM-private state.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
@@ -1874,16 +1947,22 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
         return TqExplainCounters::default();
     }
 
+    // SAFETY: `index_state` is PostgreSQL's live executor index scan node; the
+    // scan descriptor pointer may still be null before execution starts.
     let scan_desc = unsafe { (*index_state).iss_ScanDesc };
     if scan_desc.is_null() {
         return TqExplainCounters::default();
     }
 
+    // SAFETY: `scan_desc` was checked non-null and remains owned by the
+    // executor while EXPLAIN inspects AM-private counters.
     let opaque = unsafe { (*scan_desc).opaque };
     if opaque.is_null() {
         return TqExplainCounters::default();
     }
 
+    // SAFETY: HNSW scans store a `TqScanOpaque` in `scan_desc.opaque`; a
+    // missing opaque was rejected above.
     unsafe { (*opaque.cast::<TqScanOpaque>()).explain_counters }
 }
 
@@ -1892,11 +1971,15 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
 
     let query_bytes = std::mem::size_of_val(query);
     crate::fault::maybe_fail_palloc("ec_hnsw scan query values");
+    // SAFETY: palloc allocates `query_bytes` in the PostgreSQL memory context;
+    // the result is checked for null before use and freed by `free_scan_query`.
     let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
     if query_values.is_null() {
         pgrx::error!("ec_hnsw failed to allocate scan query state");
     }
 
+    // SAFETY: `query_values` points to `query.len()` contiguous f32 slots
+    // allocated above, and the source slice does not overlap palloc memory.
     unsafe {
         ptr::copy_nonoverlapping(query.as_ptr(), query_values, query.len());
     }
@@ -1906,10 +1989,32 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
 
 unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
     if !opaque.query_values.is_null() {
+        // SAFETY: non-null `query_values` was allocated by `store_scan_query`
+        // with PostgreSQL `palloc` and has not been freed yet.
         unsafe { pg_sys::pfree(opaque.query_values.cast()) };
         opaque.query_values = ptr::null_mut();
     }
     opaque.query_dimensions = 0;
+}
+
+fn drop_boxed_scan_ptr<T>(slot: &mut *mut T) {
+    if !slot.is_null() {
+        let ptr = *slot;
+        *slot = ptr::null_mut();
+        // SAFETY: scan-owned pointer slots are populated with `Box::into_raw`
+        // and this helper clears the slot before reconstructing the Box.
+        drop(unsafe { Box::from_raw(ptr) });
+    }
+}
+
+fn drop_cached_quantizer_ptr(slot: &mut *const ProdQuantizer) {
+    if !slot.is_null() {
+        let ptr = *slot;
+        *slot = ptr::null();
+        // SAFETY: `cached_quantizer` is populated with `Arc::into_raw` and the
+        // scan drops exactly one retained raw Arc pointer through this helper.
+        drop(unsafe { Arc::from_raw(ptr) });
+    }
 }
 
 fn store_scan_prepared_query(
@@ -2012,35 +2117,14 @@ fn store_scan_prepared_query(
 }
 
 fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
-    if !opaque.grouped_query.is_null() {
-        drop(unsafe { Box::from_raw(opaque.grouped_query) });
-        opaque.grouped_query = ptr::null_mut();
-    }
-    if !opaque.prepared_query.is_null() {
-        drop(unsafe { Box::from_raw(opaque.prepared_query) });
-        opaque.prepared_query = ptr::null_mut();
-    }
-    if !opaque.binary_sign_query.is_null() {
-        drop(unsafe { Box::from_raw(opaque.binary_sign_query) });
-        opaque.binary_sign_query = ptr::null_mut();
-    }
-    if !opaque.turboquant_lut_query.is_null() {
-        drop(unsafe { Box::from_raw(opaque.turboquant_lut_query) });
-        opaque.turboquant_lut_query = ptr::null_mut();
-    }
-    if !opaque.turboquant_tiled_lut_query.is_null() {
-        drop(unsafe { Box::from_raw(opaque.turboquant_tiled_lut_query) });
-        opaque.turboquant_tiled_lut_query = ptr::null_mut();
-    }
-    if !opaque.turboquant_int8_query.is_null() {
-        drop(unsafe { Box::from_raw(opaque.turboquant_int8_query) });
-        opaque.turboquant_int8_query = ptr::null_mut();
-    }
+    drop_boxed_scan_ptr(&mut opaque.grouped_query);
+    drop_boxed_scan_ptr(&mut opaque.prepared_query);
+    drop_boxed_scan_ptr(&mut opaque.binary_sign_query);
+    drop_boxed_scan_ptr(&mut opaque.turboquant_lut_query);
+    drop_boxed_scan_ptr(&mut opaque.turboquant_tiled_lut_query);
+    drop_boxed_scan_ptr(&mut opaque.turboquant_int8_query);
     opaque.turboquant_exact_score_mode = TurboQuantExactScoreMode::Exact;
-    if !opaque.cached_quantizer.is_null() {
-        drop(unsafe { Arc::from_raw(opaque.cached_quantizer) });
-        opaque.cached_quantizer = ptr::null();
-    }
+    drop_cached_quantizer_ptr(&mut opaque.cached_quantizer);
 }
 
 fn build_prepared_grouped_scan_query(
@@ -2072,6 +2156,8 @@ unsafe fn load_grouped_scan_query(
     metadata: &page::MetadataPage,
     prepared_query: &PreparedQuery,
 ) -> PreparedGroupedScanQuery {
+    // SAFETY: callers pass the live index relation and metadata for a
+    // PqFastScan relation whose grouped codebook model is read-only at scan time.
     let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
     build_prepared_grouped_scan_query(prepared_query, &model)
 }
@@ -2092,7 +2178,11 @@ unsafe fn store_grouped_scan_query(
             "ec_hnsw PqFastScan scan cannot prepare PqFastScan query state without a query"
         );
     }
+    // SAFETY: `prepared_query` is allocated with `Box::into_raw` by
+    // `store_scan_prepared_query` and remains owned by this scan opaque.
     let prepared_query = unsafe { &*opaque.prepared_query };
+    // SAFETY: `index_relation` and `metadata` describe the live PqFastScan
+    // index relation currently being rescanned.
     let grouped_prepared =
         unsafe { load_grouped_scan_query(index_relation, metadata, prepared_query) };
     opaque.grouped_query = Box::into_raw(Box::new(grouped_prepared));
@@ -2102,6 +2192,8 @@ fn grouped_scan_query(opaque: &TqScanOpaque) -> Option<&PreparedGroupedScanQuery
     if opaque.grouped_query.is_null() {
         None
     } else {
+        // SAFETY: non-null `grouped_query` is Box-owned by the scan opaque
+        // until `free_scan_prepared_query` runs.
         Some(unsafe { &*opaque.grouped_query })
     }
 }
@@ -2131,13 +2223,13 @@ fn reset_scan_graph_cache(opaque: &mut TqScanOpaque) {
     if opaque.graph_element_cache.is_null() {
         opaque.graph_element_cache = Box::into_raw(Box::new(HashMap::new()));
     } else {
-        unsafe { &mut *opaque.graph_element_cache }.clear();
+        graph_element_cache_mut(opaque).clear();
     }
 
     if opaque.graph_neighbor_cache.is_null() {
         opaque.graph_neighbor_cache = Box::into_raw(Box::new(HashMap::new()));
     } else {
-        unsafe { &mut *opaque.graph_neighbor_cache }.clear();
+        graph_neighbor_cache_mut(opaque).clear();
     }
 }
 
@@ -2145,27 +2237,17 @@ fn reset_scan_score_cache(opaque: &mut TqScanOpaque) {
     if opaque.score_cache.is_null() {
         opaque.score_cache = Box::into_raw(Box::new(HashMap::new()));
     } else {
-        unsafe { &mut *opaque.score_cache }.clear();
+        score_cache_mut(opaque).clear();
     }
 }
 
 fn free_scan_graph_cache(opaque: &mut TqScanOpaque) {
-    if !opaque.graph_element_cache.is_null() {
-        drop(unsafe { Box::from_raw(opaque.graph_element_cache) });
-        opaque.graph_element_cache = ptr::null_mut();
-    }
-
-    if !opaque.graph_neighbor_cache.is_null() {
-        drop(unsafe { Box::from_raw(opaque.graph_neighbor_cache) });
-        opaque.graph_neighbor_cache = ptr::null_mut();
-    }
+    drop_boxed_scan_ptr(&mut opaque.graph_element_cache);
+    drop_boxed_scan_ptr(&mut opaque.graph_neighbor_cache);
 }
 
 fn free_scan_score_cache(opaque: &mut TqScanOpaque) {
-    if !opaque.score_cache.is_null() {
-        drop(unsafe { Box::from_raw(opaque.score_cache) });
-        opaque.score_cache = ptr::null_mut();
-    }
+    drop_boxed_scan_ptr(&mut opaque.score_cache);
 }
 
 fn graph_element_cache_mut(
@@ -2175,6 +2257,8 @@ fn graph_element_cache_mut(
         opaque.graph_element_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
+    // SAFETY: non-null `graph_element_cache` is Box-owned by the scan opaque
+    // until `free_scan_graph_cache` runs.
     unsafe { &mut *opaque.graph_element_cache }
 }
 
@@ -2185,6 +2269,8 @@ fn graph_neighbor_cache_mut(
         opaque.graph_neighbor_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
+    // SAFETY: non-null `graph_neighbor_cache` is Box-owned by the scan opaque
+    // until `free_scan_graph_cache` runs.
     unsafe { &mut *opaque.graph_neighbor_cache }
 }
 
@@ -2193,6 +2279,8 @@ fn score_cache_mut(opaque: &mut TqScanOpaque) -> &mut HashMap<page::ItemPointer,
         opaque.score_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
+    // SAFETY: non-null `score_cache` is Box-owned by the scan opaque until
+    // `free_scan_score_cache` runs.
     unsafe { &mut *opaque.score_cache }
 }
 
@@ -2201,6 +2289,8 @@ fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPoint
         return None;
     }
 
+    // SAFETY: non-null `score_cache` is Box-owned by the scan opaque until
+    // `free_scan_score_cache` runs.
     unsafe { &*opaque.score_cache }.get(&element_tid).copied()
 }
 
@@ -2231,6 +2321,8 @@ fn binary_sign_query(opaque: &TqScanOpaque) -> Option<&BinarySignNoQjl4BitQuery>
     if opaque.binary_sign_query.is_null() {
         None
     } else {
+        // SAFETY: non-null `binary_sign_query` is Box-owned by the scan opaque
+        // until `free_scan_prepared_query` runs.
         Some(unsafe { &*opaque.binary_sign_query })
     }
 }
@@ -2252,6 +2344,8 @@ unsafe fn score_and_cache_scan_element(
     record_score_cache_miss(opaque);
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    // SAFETY: callers provide code bytes loaded from a live graph tuple that
+    // match this scan's prepared query and quantizer state.
     let score = unsafe { score_scan_element_result(opaque, gamma, code_bytes) };
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
@@ -2276,7 +2370,9 @@ fn build_cached_graph_element(
         } else {
             match element.exact_payload() {
                 Some((_gamma, code_bytes)) => {
-                    let quantizer = unsafe { &*opaque_ref.cached_quantizer };
+                    let Some(quantizer) = cached_quantizer_ref(opaque_ref) else {
+                        pgrx::error!("ec_hnsw binary derivation requires cached quantizer state");
+                    };
                     CachedBinaryWords::from_vec(
                         quantizer.binary_sign_words_from_packed_no_qjl_4bit(code_bytes),
                     )
@@ -2292,6 +2388,8 @@ fn build_cached_graph_element(
     if live_element {
         loaded_state = match (opaque_ref.scan_graph_storage, element.exact_payload()) {
             (graph::GraphStorageDescriptor::TurboQuantHotCold(_), None) => LoadedElementState::None,
+            // SAFETY: `element` is a live graph tuple view for `element_tid`;
+            // the helper copies any payload bytes it needs into scan-owned state.
             (_, exact_payload) => unsafe {
                 live_loaded_state_from_exact_payload(
                     opaque_ref,
@@ -2314,16 +2412,23 @@ unsafe fn cached_graph_element(
     opaque: *mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
+    // SAFETY: callers pass the current scan opaque pointer; it remains live for
+    // the duration of candidate scoring and graph tuple loading.
     let opaque_ref = unsafe { &mut *opaque };
     if !opaque_ref.graph_element_cache.is_null() {
-        if let Some(element) = unsafe { &*opaque_ref.graph_element_cache }.get(&element_tid) {
+        if let Some(element) = graph_element_cache_mut(opaque_ref)
+            .get(&element_tid)
+            .cloned()
+        {
             record_graph_element_cache_hit(opaque_ref);
-            return (Arc::clone(element), LoadedElementState::None);
+            return (element, LoadedElementState::None);
         }
     }
 
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    // SAFETY: `index_relation` is live for the scan and `element_tid` came from
+    // HNSW graph traversal; the tuple view is consumed inside the closure.
     let (element, loaded_state) = unsafe {
         graph::with_graph_storage_tuple(
             index_relation,
