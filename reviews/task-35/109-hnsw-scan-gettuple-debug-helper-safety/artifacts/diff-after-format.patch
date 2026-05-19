@@ -1,0 +1,575 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 0c6de7fd..b240b688 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -187,60 +187,6 @@ src/tests/ec_hnsw_runtime_profiles.rs:788
+ src/tests/ec_hnsw_runtime_profiles.rs:790
+ src/tests/ec_hnsw_runtime_profiles.rs:977
+ src/tests/ec_hnsw_runtime_profiles.rs:981
+-src/tests/ec_hnsw_scan_gettuple.rs:1023
+-src/tests/ec_hnsw_scan_gettuple.rs:1070
+-src/tests/ec_hnsw_scan_gettuple.rs:1126
+-src/tests/ec_hnsw_scan_gettuple.rs:1208
+-src/tests/ec_hnsw_scan_gettuple.rs:1267
+-src/tests/ec_hnsw_scan_gettuple.rs:128
+-src/tests/ec_hnsw_scan_gettuple.rs:1329
+-src/tests/ec_hnsw_scan_gettuple.rs:1409
+-src/tests/ec_hnsw_scan_gettuple.rs:1476
+-src/tests/ec_hnsw_scan_gettuple.rs:1477
+-src/tests/ec_hnsw_scan_gettuple.rs:1595
+-src/tests/ec_hnsw_scan_gettuple.rs:1640
+-src/tests/ec_hnsw_scan_gettuple.rs:1684
+-src/tests/ec_hnsw_scan_gettuple.rs:1722
+-src/tests/ec_hnsw_scan_gettuple.rs:1766
+-src/tests/ec_hnsw_scan_gettuple.rs:1824
+-src/tests/ec_hnsw_scan_gettuple.rs:1908
+-src/tests/ec_hnsw_scan_gettuple.rs:1920
+-src/tests/ec_hnsw_scan_gettuple.rs:2007
+-src/tests/ec_hnsw_scan_gettuple.rs:2061
+-src/tests/ec_hnsw_scan_gettuple.rs:2109
+-src/tests/ec_hnsw_scan_gettuple.rs:2159
+-src/tests/ec_hnsw_scan_gettuple.rs:2161
+-src/tests/ec_hnsw_scan_gettuple.rs:2211
+-src/tests/ec_hnsw_scan_gettuple.rs:2214
+-src/tests/ec_hnsw_scan_gettuple.rs:2251
+-src/tests/ec_hnsw_scan_gettuple.rs:2252
+-src/tests/ec_hnsw_scan_gettuple.rs:2299
+-src/tests/ec_hnsw_scan_gettuple.rs:2381
+-src/tests/ec_hnsw_scan_gettuple.rs:2472
+-src/tests/ec_hnsw_scan_gettuple.rs:2557
+-src/tests/ec_hnsw_scan_gettuple.rs:2584
+-src/tests/ec_hnsw_scan_gettuple.rs:2686
+-src/tests/ec_hnsw_scan_gettuple.rs:2696
+-src/tests/ec_hnsw_scan_gettuple.rs:2774
+-src/tests/ec_hnsw_scan_gettuple.rs:2799
+-src/tests/ec_hnsw_scan_gettuple.rs:28
+-src/tests/ec_hnsw_scan_gettuple.rs:2832
+-src/tests/ec_hnsw_scan_gettuple.rs:392
+-src/tests/ec_hnsw_scan_gettuple.rs:438
+-src/tests/ec_hnsw_scan_gettuple.rs:466
+-src/tests/ec_hnsw_scan_gettuple.rs:493
+-src/tests/ec_hnsw_scan_gettuple.rs:541
+-src/tests/ec_hnsw_scan_gettuple.rs:576
+-src/tests/ec_hnsw_scan_gettuple.rs:583
+-src/tests/ec_hnsw_scan_gettuple.rs:590
+-src/tests/ec_hnsw_scan_gettuple.rs:612
+-src/tests/ec_hnsw_scan_gettuple.rs:630
+-src/tests/ec_hnsw_scan_gettuple.rs:654
+-src/tests/ec_hnsw_scan_gettuple.rs:661
+-src/tests/ec_hnsw_scan_gettuple.rs:686
+-src/tests/ec_hnsw_scan_gettuple.rs:714
+-src/tests/ec_hnsw_scan_gettuple.rs:879
+-src/tests/ec_hnsw_scan_gettuple.rs:943
+ src/tests/ec_hnsw_storage_lifecycle.rs:1011
+ src/tests/ec_hnsw_storage_lifecycle.rs:1042
+ src/tests/ec_hnsw_storage_lifecycle.rs:1056
+diff --git a/src/tests/ec_hnsw_scan_gettuple.rs b/src/tests/ec_hnsw_scan_gettuple.rs
+index a6a00be4..e016126f 100644
+--- a/src/tests/ec_hnsw_scan_gettuple.rs
++++ b/src/tests/ec_hnsw_scan_gettuple.rs
+@@ -1,3 +1,12 @@
++    macro_rules! hnsw_scan_debug {
++        ($call:expr) => {{
++            // SAFETY: These pg_test fixtures create the referenced HNSW index
++            // before calling the extension's test-only scan debug helper. The
++            // helper owns the PostgreSQL relation and scan access for the OID.
++            unsafe { $call }
++        }};
++    }
++
+     #[pg_test]
+     fn test_ech_debug_scan_result_count_matches_scan_helper() {
+         Spi::run(
+@@ -25,9 +34,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let query = vec![1.0, 0.0, 0.5, -1.0];
+-        let rust_count = i32::try_from(unsafe {
+-            am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len()
+-        })
++        let rust_count = i32::try_from(hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len()))
+         .expect("scan result count should fit in i32");
+         let sql_count = Spi::get_one::<i32>(
+             "SELECT tests.ec_hnsw_debug_scan_result_count(
+@@ -125,7 +132,7 @@
+             grouped_traversal_budgeted_expansions,
+             grouped_traversal_budgeted_candidates,
+             grouped_traversal_budgeted_exact_candidates,
+-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++        ) = hnsw_scan_debug!(am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_eq!(
+             rescan_phase, "graph_traversal",
+@@ -389,7 +396,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let rust_count =
+-            i32::try_from(unsafe { am::debug_layer0_reachable_live_element_tids(index_oid).len() })
++            i32::try_from(hnsw_scan_debug!(am::debug_layer0_reachable_live_element_tids(index_oid).len()))
+                 .expect("reachable live element count should fit in i32");
+         let sql_count = Spi::get_one::<i32>(
+             "SELECT tests.ec_hnsw_debug_reachable_live_element_count(
+@@ -435,7 +442,7 @@
+             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_scan_scaffold_idx'::regclass::oid")
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+-        let (has_opaque, cleared_opaque) = unsafe { am::debug_begin_end_scan(index_oid) };
++        let (has_opaque, cleared_opaque) = hnsw_scan_debug!(am::debug_begin_end_scan(index_oid));
+         assert!(has_opaque, "ambeginscan should allocate scan opaque state");
+         assert!(cleared_opaque, "amendscan should release scan opaque state");
+     }
+@@ -463,7 +470,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (has_opaque, cleared_after_first, cleared_after_second) =
+-            unsafe { am::debug_end_scan_twice(index_oid) };
++            hnsw_scan_debug!(am::debug_end_scan_twice(index_oid));
+         assert!(has_opaque, "ambeginscan should allocate scan opaque state");
+         assert!(
+             cleared_after_first,
+@@ -490,7 +497,7 @@
+             has_prepared_query,
+             prepared_lut_len,
+             prepared_sq_len,
+-        ) = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++        ) = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+         assert!(
+             rescan_called,
+             "amrescan should mark scan state as initialized"
+@@ -538,13 +545,11 @@
+             has_prepared_query,
+             prepared_lut_len,
+             prepared_sq_len,
+-        ) = unsafe {
+-            am::debug_rescan_overwrites_query_dimensions(
++        ) = hnsw_scan_debug!(am::debug_rescan_overwrites_query_dimensions(
+                 index_oid,
+                 vec![1.0, 0.0, 0.5, -1.0],
+                 second_query.clone(),
+-            )
+-        };
++            ));
+         assert!(
+             rescan_called,
+             "repeated amrescan should keep scan state initialized"
+@@ -573,21 +578,21 @@
+     #[should_panic(expected = "ec_hnsw scan query dimension mismatch")]
+     fn test_ech_rescan_scaffold_rejects_wrong_query_dimensions() {
+         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_mismatch");
+-        let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]) };
++        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]));
+     }
+ 
+     #[pg_test]
+     #[should_panic(expected = "ec_hnsw scan query must not be NULL")]
+     fn test_ech_rescan_scaffold_rejects_null_query() {
+         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_null");
+-        unsafe { am::debug_rescan_null_query(index_oid) };
++        hnsw_scan_debug!(am::debug_rescan_null_query(index_oid));
+     }
+ 
+     #[pg_test]
+     #[should_panic(expected = "ec_hnsw scan query must not be empty")]
+     fn test_ech_rescan_scaffold_rejects_empty_query() {
+         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_empty");
+-        let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![]) };
++        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![]));
+     }
+ 
+     #[pg_test]
+@@ -609,7 +614,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let oversized_query = vec![0.0_f32; (u16::MAX as usize) + 1];
+-        let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, oversized_query) };
++        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, oversized_query));
+     }
+ 
+     #[pg_test]
+@@ -627,7 +632,7 @@
+             has_prepared_query,
+             prepared_lut_len,
+             prepared_sq_len,
+-        ) = unsafe { am::debug_rescan_with_unused_key_buffer(index_oid, query.clone()) };
++        ) = hnsw_scan_debug!(am::debug_rescan_with_unused_key_buffer(index_oid, query.clone()));
+ 
+         assert!(rescan_called, "amrescan should still initialize scan state");
+         assert_eq!(query_dimensions, query.len() as u16);
+@@ -651,14 +656,14 @@
+     #[should_panic(expected = "ec_hnsw scan does not support index quals yet")]
+     fn test_ech_rescan_scaffold_rejects_index_quals() {
+         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_quals");
+-        unsafe { am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++        hnsw_scan_debug!(am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+     }
+ 
+     #[pg_test]
+     #[should_panic(expected = "ec_hnsw scan currently requires exactly one ORDER BY query")]
+     fn test_ech_rescan_scaffold_rejects_multiple_orderbys() {
+         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_multi_orderby");
+-        unsafe { am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++        hnsw_scan_debug!(am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+     }
+ 
+     #[pg_test]
+@@ -683,7 +688,7 @@
+             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_gettuple_scaffold_idx'::regclass::oid")
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+-        unsafe { am::debug_gettuple_without_rescan(index_oid) };
++        hnsw_scan_debug!(am::debug_gettuple_without_rescan(index_oid));
+     }
+ 
+     #[pg_test]
+@@ -711,7 +716,7 @@
+         .expect("index oid should exist");
+ 
+         let observed_tids =
+-            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+         let expected_tids = Spi::connect(|client| {
+             client
+                 .select(
+@@ -876,9 +881,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let ctid_to_id = ctid_id_map("ec_hnsw_graph_first_ordered_scores");
+-        let observed = unsafe {
+-            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0])
+-        };
++        let observed = hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0]));
+ 
+         assert!(
+             observed.len() >= 3,
+@@ -940,7 +943,7 @@
+             after_tid,
+             after_score,
+             after_score_value,
+-        ) = unsafe { am::debug_gettuple_current_result_state(index_oid, query.clone()) };
++        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+         let expected_score = Spi::get_one::<f32>(&format!(
+             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
+              FROM ec_hnsw_gettuple_result_state WHERE id = 1",
+@@ -1020,7 +1023,7 @@
+         .expect("index oid should exist");
+         let query = vec![1.0, 0.0, 0.5, -1.0];
+         let (found, orderby_is_null, orderby_score) =
+-            unsafe { am::debug_gettuple_orderby_score(index_oid, query.clone()) };
++            hnsw_scan_debug!(am::debug_gettuple_orderby_score(index_oid, query.clone()));
+         let expected_score = Spi::get_one::<f32>(&format!(
+             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
+              FROM ec_hnsw_gettuple_orderby_score WHERE id = 1",
+@@ -1067,9 +1070,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let (before, after_first, exhausted, rescanned) = unsafe {
+-            am::debug_gettuple_orderby_score_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        let (before, after_first, exhausted, rescanned) = hnsw_scan_debug!(am::debug_gettuple_orderby_score_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_eq!(
+             before, None,
+@@ -1123,9 +1124,7 @@
+             exhausted_score_value,
+             rescanned_tid,
+             rescanned_score,
+-        ) = unsafe {
+-            am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_ne!(
+             second_tid, first_tid,
+@@ -1205,9 +1204,7 @@
+             second_heap_tid,
+             first_score,
+             second_score,
+-        ) = unsafe {
+-            am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_ne!(
+             element_tid,
+@@ -1264,7 +1261,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (before_valid, before_tid, before_score, after_valid, after_tid, after_score) =
+-            unsafe { am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert!(
+             before_valid,
+@@ -1326,7 +1323,7 @@
+             exhausted_valid,
+             exhausted_tid,
+             exhausted_score,
+-        ) = unsafe { am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++        ) = hnsw_scan_debug!(am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert!(
+             before_valid,
+@@ -1406,9 +1403,7 @@
+             successor_tid,
+             _successor_source_tid,
+             successor_score,
+-        ) = unsafe {
+-            am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        ) = hnsw_scan_debug!(am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_ne!(
+             entry_tid,
+@@ -1473,8 +1468,8 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (head, frontier, frontier_slots, frontier_provenance, expanded_sources) =
+-            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+-        let valid_entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
++            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
++        let valid_entry_neighbors = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid))
+             .into_iter()
+             .filter(|tid| *tid != (u32::MAX, u16::MAX))
+             .collect::<Vec<_>>();
+@@ -1592,7 +1587,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
+-            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_eq!(
+             frontier.len(),
+@@ -1637,7 +1632,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
+-            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_eq!(
+             frontier.len(),
+@@ -1681,7 +1676,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let snapshot = unsafe { am::debug_planner_tuning_snapshot(index_oid) };
++        let snapshot = hnsw_scan_debug!(am::debug_planner_tuning_snapshot(index_oid));
+ 
+         assert_eq!(snapshot.relation_ef_search, 111);
+         assert_eq!(snapshot.session_ef_search, None);
+@@ -1719,7 +1714,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let snapshot = unsafe { am::debug_planner_tuning_snapshot(index_oid) };
++        let snapshot = hnsw_scan_debug!(am::debug_planner_tuning_snapshot(index_oid));
+ 
+         assert_eq!(snapshot.relation_ef_search, 111);
+         assert_eq!(snapshot.session_ef_search, Some(7));
+@@ -1763,9 +1758,7 @@
+             partial_frontier,
+             exhausted_head,
+             exhausted_frontier,
+-        ) = unsafe {
+-            am::debug_candidate_frontier_head_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        ) = hnsw_scan_debug!(am::debug_candidate_frontier_head_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert_ne!(
+             before_head, None,
+@@ -1821,9 +1814,7 @@
+             after_first_frontier,
+             after_second_head,
+             after_second_frontier,
+-        ) = unsafe {
+-            am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        ) = hnsw_scan_debug!(am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         if let Some(consumed_tid) = before_head {
+             let remaining_slot = before_frontier
+@@ -1905,7 +1896,7 @@
+             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_frontier_head_refill_idx'::regclass::oid")
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+-        let valid_entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
++        let valid_entry_neighbors = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid))
+             .into_iter()
+             .filter(|tid| *tid != (u32::MAX, u16::MAX))
+             .collect::<Vec<_>>();
+@@ -1917,9 +1908,7 @@
+             after_head,
+             after_slots,
+             after_provenance_slots,
+-        ) = unsafe {
+-            am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        ) = hnsw_scan_debug!(am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         let expected_visible_width = 1 + valid_entry_neighbors.len().min(2);
+         assert!(
+@@ -2004,9 +1993,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let (before_head, before_slots, current_result_tid, after_head, after_slots) = unsafe {
+-            am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        let (before_head, before_slots, current_result_tid, after_head, after_slots) = hnsw_scan_debug!(am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         let consumed_slot = before_slots
+             .first()
+@@ -2058,9 +2045,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let (candidate_before, current_result_tid, pending_heap_tids, materialized) = unsafe {
+-            am::debug_materialize_bootstrap_candidate_result(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        let (candidate_before, current_result_tid, pending_heap_tids, materialized) = hnsw_scan_debug!(am::debug_materialize_bootstrap_candidate_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert!(
+             candidate_before.0,
+@@ -2106,7 +2091,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (before_complete, after_complete, after_head, after_frontier, rescanned_complete) =
+-            unsafe { am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert!(
+             !before_complete,
+@@ -2156,9 +2141,9 @@
+                 .expect("index oid should exist");
+ 
+         let (head, _frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
+-            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+         let (before, partial, exhausted) =
+-            unsafe { am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         let mut expected = frontier_slots
+             .into_iter()
+@@ -2208,10 +2193,8 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let (current_result_tid, neighbor_count) = unsafe {
+-            am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
+-        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
++        let (current_result_tid, neighbor_count) = hnsw_scan_debug!(am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
++        let (_block_count, metadata, _data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+ 
+         assert_ne!(
+             current_result_tid,
+@@ -2248,8 +2231,8 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let neighbor_tids = unsafe { am::debug_entry_point_neighbor_tids(index_oid) };
+-        let (_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
++        let neighbor_tids = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid));
++        let (_block_count, _metadata, data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+         let element_tids = data_pages
+             .iter()
+             .flat_map(|page| {
+@@ -2296,7 +2279,7 @@
+         .expect("index oid should exist");
+ 
+         let observed_tids =
+-            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+         let expected_tids = Spi::connect(|client| {
+             client
+                 .select(
+@@ -2378,7 +2361,7 @@
+                 .expect("SPI query should succeed")
+                 .expect("index oid should exist");
+         let (observed_tids, exhausted_once, exhausted_twice) =
+-            unsafe { am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         let expected_tids = Spi::connect(|client| {
+             client
+@@ -2469,9 +2452,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let (first_pass, rescanned_tids) = unsafe {
+-            am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        let (first_pass, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         let expected_tids = Spi::connect(|client| {
+             client
+@@ -2554,7 +2535,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        unsafe { am::debug_gettuple_backward_after_rescan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++        hnsw_scan_debug!(am::debug_gettuple_backward_after_rescan(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+     }
+ 
+     #[pg_test]
+@@ -2581,9 +2562,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let (first_tid, rescanned_tids) = unsafe {
+-            am::debug_gettuple_rescan_after_partial(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        let (first_tid, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_partial(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         let expected_tids = Spi::connect(|client| {
+             client
+@@ -2683,7 +2662,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+ 
+-        let (block_count, _metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
++        let (block_count, _metadata, _data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+         assert!(
+             block_count > 2,
+             "duplicate-heavy linear scan coverage should span multiple data pages"
+@@ -2693,7 +2672,7 @@
+         query[0] = 1.0;
+         query[2] = 0.5;
+         query[3] = -1.0;
+-        let observed_tids = unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) };
++        let observed_tids = hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query));
+         let expected_tids = Spi::connect(|client| {
+             client
+                 .select(
+@@ -2771,7 +2750,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let found_tuple =
+-            unsafe { am::debug_gettuple_after_rescan_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_gettuple_after_rescan_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+         assert!(
+             !found_tuple,
+             "amgettuple should report no tuples for a valid rescan on an empty index"
+@@ -2796,7 +2775,7 @@
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+         let (observed_tids, exhausted_once, exhausted_twice) =
+-            unsafe { am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
++            hnsw_scan_debug!(am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert!(
+             observed_tids.is_empty(),
+@@ -2829,9 +2808,7 @@
+         )
+         .expect("SPI query should succeed")
+         .expect("index oid should exist");
+-        let (first_pass, rescanned_tids) = unsafe {
+-            am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+-        };
++        let (first_pass, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+ 
+         assert!(
+             first_pass.is_empty(),
