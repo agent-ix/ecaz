@@ -206,6 +206,8 @@ mod tests {
         bigint_const.xpr.type_ = pg_sys::NodeTag::T_Const;
         bigint_const.consttype = pg_sys::INT8OID;
         assert_eq!(
+            // SAFETY: The test fixture initializes a `Const` node and casts it
+            // to the `Expr` base pointer expected by the classifier.
             unsafe {
                 dml_frontdoor_value_kind(
                     (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
@@ -216,6 +218,8 @@ mod tests {
 
         bigint_const.constisnull = true;
         assert_eq!(
+            // SAFETY: The same initialized `Const` fixture remains live while
+            // the classifier inspects its null flag.
             unsafe {
                 dml_frontdoor_value_kind(
                     (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
@@ -228,6 +232,8 @@ mod tests {
         bigint_param.xpr.type_ = pg_sys::NodeTag::T_Param;
         bigint_param.paramtype = pg_sys::INT8OID;
         assert_eq!(
+            // SAFETY: The test fixture initializes a `Param` node and casts it
+            // to the `Expr` base pointer expected by the classifier.
             unsafe {
                 dml_frontdoor_value_kind(
                     (&mut bigint_param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),
@@ -248,6 +254,8 @@ mod tests {
             const_expr.xpr.type_ = pg_sys::NodeTag::T_Const;
             const_expr.consttype = consttype;
             assert_eq!(
+                // SAFETY: The loop fixture initializes a `Const` node for the
+                // duration of this classifier call.
                 unsafe {
                     dml_frontdoor_value_kind(
                         (&mut const_expr as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
@@ -266,6 +274,8 @@ mod tests {
             param.xpr.type_ = pg_sys::NodeTag::T_Param;
             param.paramtype = paramtype;
             assert_eq!(
+                // SAFETY: The loop fixture initializes a `Param` node for the
+                // duration of this classifier call.
                 unsafe {
                     dml_frontdoor_value_kind(
                         (&mut param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),
@@ -293,6 +303,8 @@ mod tests {
         relabel.arg = (&mut coerce as *mut pg_sys::CoerceViaIO).cast::<pg_sys::Expr>();
 
         assert_eq!(
+            // SAFETY: The nested expression nodes are stack fixtures linked by
+            // valid child pointers for the duration of this classifier call.
             unsafe {
                 dml_frontdoor_value_kind(
                     (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),
@@ -303,6 +315,8 @@ mod tests {
 
         relabel.resulttype = pg_sys::INT4OID;
         assert_eq!(
+            // SAFETY: The relabel fixture still points at the live nested
+            // expression tree while the classifier checks the changed type.
             unsafe {
                 dml_frontdoor_value_kind(
                     (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),
@@ -344,6 +358,8 @@ mod tests {
         var.varattno = 1;
 
         assert_eq!(
+            // SAFETY: The test fixture initializes a `Var` node and casts it to
+            // the `Expr` base pointer expected by the column resolver.
             unsafe {
                 dml_frontdoor_var_column(
                     (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),
@@ -356,6 +372,8 @@ mod tests {
 
         var.varno = 2;
         assert_eq!(
+            // SAFETY: The same initialized `Var` fixture remains live while the
+            // resolver observes the changed range-table index.
             unsafe {
                 dml_frontdoor_var_column(
                     (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),

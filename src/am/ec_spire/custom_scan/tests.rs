@@ -426,15 +426,18 @@ mod tests {
 
     #[test]
     fn custom_scan_exec_methods_do_not_advertise_mark_restore_callbacks() {
-        let methods = &raw const CUSTOM_EXEC_METHODS;
+        // SAFETY: `CUSTOM_EXEC_METHODS` is a static method table initialized by
+        // this module, so taking a shared reference for read-only assertions is
+        // valid for the duration of the test.
+        let methods = unsafe { &*(&raw const CUSTOM_EXEC_METHODS) };
 
-        assert!(unsafe { (*methods).MarkPosCustomScan.is_none() });
-        assert!(unsafe { (*methods).RestrPosCustomScan.is_none() });
-        assert!(unsafe { (*methods).BeginCustomScan.is_some() });
-        assert!(unsafe { (*methods).ExecCustomScan.is_some() });
-        assert!(unsafe { (*methods).EndCustomScan.is_some() });
-        assert!(unsafe { (*methods).ReScanCustomScan.is_some() });
-        assert!(unsafe { (*methods).ExplainCustomScan.is_some() });
+        assert!(methods.MarkPosCustomScan.is_none());
+        assert!(methods.RestrPosCustomScan.is_none());
+        assert!(methods.BeginCustomScan.is_some());
+        assert!(methods.ExecCustomScan.is_some());
+        assert!(methods.EndCustomScan.is_some());
+        assert!(methods.ReScanCustomScan.is_some());
+        assert!(methods.ExplainCustomScan.is_some());
     }
 
     #[test]
