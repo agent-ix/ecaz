@@ -1,5 +1,6 @@
 include!("sort.rs");
 include!("vocab.rs");
+include!("candidate_merge_model.rs");
 include!("contracts.rs");
 include!("tls.rs");
 include!("fanout.rs");

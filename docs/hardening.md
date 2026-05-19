@@ -325,12 +325,15 @@ with either an interrupt check or a follow-up task.
   publish/release interleavings, and stale-epoch rejection. New Loom targets
   should first lift the production protocol into a pgrx-free helper and then
   model that helper from `hardening/loom/`.
+- `make shuttle-real`: runs the standalone Shuttle harness in
+  `hardening/shuttle/`. Current coverage targets SPIRE remote candidate merge
+  order invariance and epoch-publish visibility using path-lifted helpers under
+  `src/am/ec_spire/`.
 - `make kani`: bounded proof for `ItemPointer` decode length behavior.
 
 Kani is intentionally separate from normal `cargo test` so the repo does not
-acquire heavyweight model-checking dependencies on the default path. Flux and
-Shuttle lanes remain deferred until Tasks 44 and 40 can point them at real ECAZ
-invariants.
+acquire heavyweight model-checking dependencies on the default path. Flux
+remains deferred until Task 44 can point it at real ECAZ invariants.
 
 ## Sanitizers
 

@@ -21,6 +21,7 @@ miri-tree               nightly     variable     Tree Borrows Miri prefixes
 miri-many-seeds         nightly     variable     many-seeds Miri prefixes
 careful                 nightly     variable     cargo-careful standalone harness
 loom-real               local       variable     real parallel worker-slot Loom model
+shuttle-real            local       variable     real SPIRE candidate/epoch Shuttle model
 fuzz-all-short          nightly     variable     short libFuzzer smoke
 kani                    nightly     variable     ItemPointer decode proof
 sanitizer-asan          nightly     variable     pure-Rust ASan

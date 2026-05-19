@@ -24,6 +24,7 @@ lane flags:
   sqlsmith-pg18 --dsn LIBPQ_DSN
   miri-many-seeds uses MIRI_MANY_SEEDS, default 0..128
   loom-real runs the real ECAZ Loom path-lifted harness
+  shuttle-real runs the real ECAZ Shuttle path-lifted harness
   any lane --log-file FILE
 EOF
 }
@@ -499,6 +500,9 @@ EOF
     ;;
   loom-real)
     cargo test --manifest-path hardening/loom/Cargo.toml --lib
+    ;;
+  shuttle-real)
+    cargo test --manifest-path hardening/shuttle/Cargo.toml --lib
     ;;
   kani)
     need_cmd cargo-kani "cargo install --locked kani-verifier"
