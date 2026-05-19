@@ -1085,6 +1085,57 @@ pub mod storage {
         }
 
         #[test]
+        fn relation_store_with_single_tuple_object_bytes_rejects_length_mismatch() {
+            // validate_local_available_placement guards epoch/state/oid;
+            // the length-mismatch branch lives inside the with_pinned_object_tuple
+            // closure. Insert a routing object then read with a mutated
+            // placement.object_bytes so the length check fires.
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46010);
+            let store = make_store(&mut rel);
+
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let placement = store.insert_routing_object(7, &routing).unwrap();
+
+            let mut wrong_bytes = placement;
+            wrong_bytes.object_bytes = placement.object_bytes + 17;
+            // SAFETY: same store; placement validation passes (epoch/oid OK)
+            // but the read should surface the length-mismatch error.
+            let err = unsafe { store.read_routing_object(&wrong_bytes) }
+                .expect_err("placement object_bytes mismatch must be rejected");
+            assert!(
+                err.contains("object byte length mismatch") || err.contains("does not match"),
+                "unexpected error: {err}"
+            );
+        }
+
+        #[test]
+        fn relation_store_validate_placement_rejects_non_local_node_id() {
+            // SPIRE_LOCAL_NODE_ID == 0; any non-zero node_id is rejected
+            // by validate_local_available_placement before tuple bytes are
+            // pinned.
+            let _serial = EMULATOR_LOCK.lock().unwrap();
+            pg_sys::reset_counters();
+            let mut rel = synth_relation(46011);
+            let store = make_store(&mut rel);
+            let routing =
+                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let placement = store.insert_routing_object(7, &routing).unwrap();
+
+            let mut non_local = placement;
+            non_local.node_id = 7;
+            // SAFETY: same store; node_id mismatch must surface a specific error.
+            let err = unsafe { store.read_routing_object(&non_local) }
+                .expect_err("non-local node_id must be rejected");
+            assert!(
+                err.contains("cannot read node_id"),
+                "unexpected error: {err}"
+            );
+        }
+
+        #[test]
         fn relation_store_max_segment_payload_bytes_is_positive() {
             // Drive max_partition_object_chain_segment_payload_bytes and
             // max_relation_object_tuple_payload_bytes happy paths so the
