@@ -1,0 +1,179 @@
+diff --git a/src/am/ec_hnsw/graph.rs b/src/am/ec_hnsw/graph.rs
+index 9ad4ef5b..2f095fe3 100644
+--- a/src/am/ec_hnsw/graph.rs
++++ b/src/am/ec_hnsw/graph.rs
+@@ -36,6 +36,8 @@ impl GraphStorageDescriptor {
+         metadata: &page::MetadataPage,
+     ) -> Result<Self, String> {
+         let descriptor = Self::from_metadata(metadata)?;
++        // SAFETY: `index_relation` is the live index relation whose reloptions
++        // are being compared against its already-read metadata page.
+         let expected = unsafe { options::relation_options(index_relation) }.storage_format;
+         if descriptor.matches_storage_format(expected) {
+             return Ok(descriptor);
+@@ -338,6 +340,8 @@ pub(crate) unsafe fn load_graph_element(
+     element_tid: page::ItemPointer,
+     code_len: usize,
+ ) -> GraphElement {
++    // SAFETY: `index_relation` is live and `element_tid` names an element tuple
++    // whose bytes are decoded inside the page-tuple callback.
+     let element = unsafe {
+         read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+             page::TqElementTuple::decode(tuple_bytes, code_len)
+@@ -361,16 +365,22 @@ pub(crate) unsafe fn load_exact_graph_element(
+     storage: GraphStorageDescriptor,
+ ) -> GraphElement {
+     match storage {
++        // SAFETY: TurboQuant exact storage keeps the full scalar payload in the
++        // graph element tuple identified by `element_tid`.
+         GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+             load_graph_element(index_relation, element_tid, code_len)
+         },
+         GraphStorageDescriptor::TurboQuantHotCold(layout) => {
++            // SAFETY: `element_tid` names a hot graph tuple in the live index
++            // relation; only the hot tuple fields are used after decoding.
+             let hot = unsafe {
+                 read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                 })
+             }
+             .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
++            // SAFETY: `hot.reranktid` was decoded from the live hot tuple and
++            // points at the cold rerank payload for this graph element.
+             let rerank = unsafe {
+                 load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len)
+             };
+@@ -385,7 +395,11 @@ pub(crate) unsafe fn load_exact_graph_element(
+             }
+         }
+         GraphStorageDescriptor::PqFastScan(layout) => {
++            // SAFETY: `element_tid` names a grouped hot tuple in the live index
++            // relation for the supplied PqFastScan layout.
+             let hot = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
++            // SAFETY: `hot.reranktid` was decoded from that grouped hot tuple
++            // and points at the cold rerank payload.
+             let rerank =
+                 unsafe { load_grouped_rerank_payload(index_relation, hot.reranktid, layout) };
+             GraphElement {
+@@ -407,6 +421,8 @@ pub(crate) unsafe fn load_grouped_graph_element(
+     element_tid: page::ItemPointer,
+     layout: PqFastScanLayout,
+ ) -> GroupedGraphElement {
++    // SAFETY: `index_relation` is live and `element_tid` names a grouped hot
++    // tuple whose bytes are decoded inside the page-tuple callback.
+     let element = unsafe {
+         read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+             page::TqGroupedHotTuple::decode(
+@@ -438,6 +454,8 @@ pub(crate) unsafe fn with_graph_element_tuple<R, F>(
+ where
+     F: FnOnce(page::TqElementTupleRef<'_>) -> R,
+ {
++    // SAFETY: `index_relation` is live and `element_tid` names a scalar graph
++    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
+     unsafe {
+         read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+             Ok(f(page::TqElementTupleRef::decode(tuple_bytes, code_len)?))
+@@ -455,6 +473,8 @@ pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
+ where
+     F: FnOnce(page::TqTurboHotTupleRef<'_>) -> R,
+ {
++    // SAFETY: `index_relation` is live and `element_tid` names a TurboQuant hot
++    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
+     unsafe {
+         read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+             Ok(f(page::TqTurboHotTupleRef::decode(
+@@ -476,6 +496,8 @@ pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
+ where
+     F: FnOnce(page::TqGroupedHotTupleRef<'_>) -> R,
+ {
++    // SAFETY: `index_relation` is live and `element_tid` names a grouped hot
++    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
+     unsafe {
+         read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+             Ok(f(page::TqGroupedHotTupleRef::decode(
+@@ -499,16 +521,22 @@ where
+     F: FnOnce(GraphTupleRef<'_>) -> R,
+ {
+     match storage {
++        // SAFETY: storage descriptor selects the tuple format used for
++        // `element_tid` in this live index relation.
+         GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+             with_graph_element_tuple(index_relation, element_tid, code_len, |tuple| {
+                 f(GraphTupleRef::Scalar(tuple))
+             })
+         },
++        // SAFETY: storage descriptor selects the tuple format used for
++        // `element_tid` in this live index relation.
+         GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+             with_turbo_hot_graph_tuple(index_relation, element_tid, layout, |tuple| {
+                 f(GraphTupleRef::TurboHot(tuple))
+             })
+         },
++        // SAFETY: storage descriptor selects the tuple format used for
++        // `element_tid` in this live index relation.
+         GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+             with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
+                 f(GraphTupleRef::GroupedHot(tuple))
+@@ -528,6 +556,8 @@ where
+     F: FnOnce(GraphTupleRef<'_>) -> R,
+ {
+     match storage {
++        // SAFETY: `buffer` is pinned/share-locked by the caller for
++        // `element_tid`'s block, and the tuple ref is consumed in the callback.
+         GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+             read_page_tuple_from_buffer(buffer, element_tid, "element", |tuple_bytes| {
+                 Ok(f(GraphTupleRef::Scalar(page::TqElementTupleRef::decode(
+@@ -536,6 +566,8 @@ where
+                 )?)))
+             })
+         },
++        // SAFETY: `buffer` is pinned/share-locked by the caller for
++        // `element_tid`'s block, and the tuple ref is consumed in the callback.
+         GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+             read_page_tuple_from_buffer(buffer, element_tid, "turbo hot", |tuple_bytes| {
+                 Ok(f(GraphTupleRef::TurboHot(
+@@ -543,6 +575,8 @@ where
+                 )))
+             })
+         },
++        // SAFETY: `buffer` is pinned/share-locked by the caller for
++        // `element_tid`'s block, and the tuple ref is consumed in the callback.
+         GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+             read_page_tuple_from_buffer(buffer, element_tid, "grouped hot", |tuple_bytes| {
+                 Ok(f(GraphTupleRef::GroupedHot(
+@@ -568,6 +602,8 @@ pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
+ where
+     F: FnOnce(page::TqRerankTupleRef<'_>) -> R,
+ {
++    // SAFETY: `index_relation` is live and `rerank_tid` names a rerank payload
++    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
+     unsafe {
+         read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+             Ok(f(page::TqRerankTupleRef::decode(
+@@ -585,6 +621,8 @@ pub(crate) unsafe fn load_rerank_payload(
+     rerank_tid: page::ItemPointer,
+     rerank_code_len: usize,
+ ) -> GroupedRerankPayload {
++    // SAFETY: `index_relation` is live and `rerank_tid` names a rerank payload
++    // tuple whose bytes are decoded inside the page-tuple callback.
+     let rerank = unsafe {
+         read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+             page::TqRerankTuple::decode(tuple_bytes, rerank_code_len)
+@@ -604,6 +642,8 @@ pub(crate) unsafe fn load_grouped_rerank_payload(
+     rerank_tid: page::ItemPointer,
+     layout: PqFastScanLayout,
+ ) -> GroupedRerankPayload {
++    // SAFETY: `rerank_tid` came from a grouped hot tuple for this layout and
++    // names the cold rerank payload in the live index relation.
+     unsafe { load_rerank_payload(index_relation, rerank_tid, layout.rerank_code_len) }
+ }
+
+@@ -617,6 +657,8 @@ pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
+ where
+     F: FnOnce(page::TqGroupedCodebookTupleRef<'_>) -> R,
+ {
++    // SAFETY: `index_relation` is live and `codebook_tid` names a persisted
++    // grouped codebook tuple consumed inside the page-tuple callback.
+     unsafe {
+         read_page_tuple(
+             index_relation,
