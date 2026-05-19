@@ -1057,8 +1057,12 @@ pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
     next_local_vec_seq: u64,
     local_store_config: SpireLocalStoreConfig,
 ) -> Result<(), String> {
-    let placement_evidence =
-        unsafe { write_placement_entries_to_relation(index_relation, &draft.placement_directory)? };
+    let placement_evidence = {
+        // SAFETY: index_relation is the open PostgreSQL index relation for this
+        // publish, and the draft placement directory was validated while building
+        // the recursive epoch before being serialized into relation pages.
+        unsafe { write_placement_entries_to_relation(index_relation, &draft.placement_directory) }?
+    };
     let object_manifest = object_manifest_from_placement_writes(
         draft.epoch_manifest.epoch,
         &draft.placement_directory,
@@ -1066,8 +1070,13 @@ pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
     )?;
     let input = draft.relation_publish_input(&object_manifest, next_local_vec_seq, local_store_config);
     let manifests = encode_manifest_bundle_for_publish(input.clone())?;
+    // SAFETY: manifests were encoded from the just-assembled publish input, and
+    // index_relation still names the target relation that receives those
+    // manifest pages.
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
+    // SAFETY: root_control references locators returned by the manifest write
+    // above and is written to the root control page of the same open relation.
     unsafe { page::initialize_root_control_page(index_relation, root_control) };
     Ok(())
 }
