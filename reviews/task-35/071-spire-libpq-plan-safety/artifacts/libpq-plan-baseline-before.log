@@ -1,0 +1,11 @@
+Script started on 2026-05-19 02:06:29-07:00 [<not executed on terminal>]
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:321
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:332
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:35
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:444
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:536
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:616
+src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs:85
+entries: 7
+
+Script done on 2026-05-19 02:06:29-07:00 [COMMAND_EXIT_CODE="0"]
