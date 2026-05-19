@@ -1,0 +1,423 @@
+hardening/careful/src/../../../src/quant/rabitq.rs:63:76: replace + with -
+hardening/careful/src/../../../src/quant/rabitq.rs:63:76: replace + with *
+hardening/careful/src/../../../src/quant/rabitq.rs:63:54: replace + with -
+hardening/careful/src/../../../src/quant/rabitq.rs:63:54: replace + with *
+hardening/careful/src/../../../src/quant/rabitq.rs:126:5: replace code_len_for -> Result<usize, String> with Ok(0)
+hardening/careful/src/../../../src/quant/rabitq.rs:126:5: replace code_len_for -> Result<usize, String> with Ok(1)
+hardening/careful/src/../../../src/quant/rabitq.rs:126:8: delete ! in code_len_for
+hardening/careful/src/../../../src/quant/rabitq.rs:132:57: replace + with - in code_len_for
+hardening/careful/src/../../../src/quant/rabitq.rs:132:57: replace + with * in code_len_for
+hardening/careful/src/../../../src/quant/rabitq.rs:132:20: replace * with + in code_len_for
+hardening/careful/src/../../../src/quant/rabitq.rs:132:20: replace * with / in code_len_for
+hardening/careful/src/../../../src/quant/rabitq.rs:243:9: replace SrhtRotation::prod -> Option<&Arc<ProdQuantizer>> with None
+hardening/careful/src/../../../src/quant/rabitq.rs:251:9: replace SrhtRotation::seed -> Option<u64> with None
+hardening/careful/src/../../../src/quant/rabitq.rs:251:9: replace SrhtRotation::seed -> Option<u64> with Some(0)
+hardening/careful/src/../../../src/quant/rabitq.rs:251:9: replace SrhtRotation::seed -> Option<u64> with Some(1)
+hardening/careful/src/../../../src/quant/rabitq.rs:257:9: replace <impl Rotation for SrhtRotation>::dimensions -> usize with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:257:9: replace <impl Rotation for SrhtRotation>::dimensions -> usize with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:261:9: replace <impl Rotation for SrhtRotation>::apply -> Vec<f32> with vec![]
+hardening/careful/src/../../../src/quant/rabitq.rs:261:9: replace <impl Rotation for SrhtRotation>::apply -> Vec<f32> with vec![0.0]
+hardening/careful/src/../../../src/quant/rabitq.rs:261:9: replace <impl Rotation for SrhtRotation>::apply -> Vec<f32> with vec![1.0]
+hardening/careful/src/../../../src/quant/rabitq.rs:261:9: replace <impl Rotation for SrhtRotation>::apply -> Vec<f32> with vec![-1.0]
+hardening/careful/src/../../../src/quant/rabitq.rs:319:12: delete ! in RaBitQQuantizer::with_bits
+hardening/careful/src/../../../src/quant/rabitq.rs:363:9: replace RaBitQQuantizer::dimensions -> usize with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:363:9: replace RaBitQQuantizer::dimensions -> usize with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:367:9: replace RaBitQQuantizer::bits_per_dim -> u8 with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:367:9: replace RaBitQQuantizer::bits_per_dim -> u8 with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:373:9: replace RaBitQQuantizer::packed_bytes -> usize with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:373:9: replace RaBitQQuantizer::packed_bytes -> usize with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:375:13: replace - with + in RaBitQQuantizer::packed_bytes
+hardening/careful/src/../../../src/quant/rabitq.rs:375:13: replace - with / in RaBitQQuantizer::packed_bytes
+hardening/careful/src/../../../src/quant/rabitq.rs:382:9: replace RaBitQQuantizer::sign_bytes -> usize with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:382:9: replace RaBitQQuantizer::sign_bytes -> usize with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:386:9: replace RaBitQQuantizer::rotated -> Vec<f32> with vec![]
+hardening/careful/src/../../../src/quant/rabitq.rs:386:9: replace RaBitQQuantizer::rotated -> Vec<f32> with vec![0.0]
+hardening/careful/src/../../../src/quant/rabitq.rs:386:9: replace RaBitQQuantizer::rotated -> Vec<f32> with vec![1.0]
+hardening/careful/src/../../../src/quant/rabitq.rs:386:9: replace RaBitQQuantizer::rotated -> Vec<f32> with vec![-1.0]
+hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with == in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:409:32: replace > with < in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:409:44: replace / with % in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:409:44: replace / with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:421:61: replace * with + in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:421:61: replace * with / in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:423:26: replace += with -= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:423:26: replace += with *= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:423:33: replace * with + in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:423:33: replace * with / in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:424:27: replace += with -= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:424:27: replace += with *= in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:424:40: replace * with + in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:424:40: replace * with / in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:428:26: replace * with + in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:428:26: replace * with / in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:429:30: replace > with == in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:429:30: replace > with < in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:430:26: replace / with % in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:430:26: replace / with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:436:18: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:436:18: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:437:15: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:437:15: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:437:54: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:437:54: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:437:36: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:437:36: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:439:33: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:439:33: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:439:15: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:439:15: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:439:58: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:439:58: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+hardening/careful/src/../../../src/quant/rabitq.rs:460:9: replace <impl crate::quant::Quantizer for RaBitQQuantizer>::code_len -> usize with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:460:9: replace <impl crate::quant::Quantizer for RaBitQQuantizer>::code_len -> usize with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:460:29: replace + with - in <impl crate::quant::Quantizer for RaBitQQuantizer>::code_len
+hardening/careful/src/../../../src/quant/rabitq.rs:460:29: replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::code_len
+hardening/careful/src/../../../src/quant/rabitq.rs:464:9: replace <impl crate::quant::Quantizer for RaBitQQuantizer>::wire_format_version -> u32 with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:568:42: replace - with + in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:568:42: replace - with / in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:580:32: replace >= with < in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:582:21: replace += with -= in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:582:21: replace += with *= in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:584:33: replace == with != in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:584:57: delete - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:585:29: replace += with -= in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:585:29: replace += with *= in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:585:50: replace * with + in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:588:41: replace > with == in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:588:41: replace > with < in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:589:17: replace / with % in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:589:17: replace / with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:589:33: replace * with + in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:589:33: replace * with / in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:593:29: replace * with + in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:593:29: replace * with / in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:596:42: replace / with % in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:596:42: replace / with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:599:18: replace + with - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:599:18: replace + with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:600:15: replace + with - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:600:15: replace + with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:600:54: replace + with - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:600:54: replace + with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:600:36: replace + with - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:600:36: replace + with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:602:33: replace + with - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:602:33: replace + with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:602:15: replace + with - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:602:15: replace + with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:602:58: replace + with - in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:602:58: replace + with * in RaBitQQuantizer::encode_code_centered
+hardening/careful/src/../../../src/quant/rabitq.rs:638:9: replace RaBitQQuantizer::centered_residual_magnitude -> f32 with 0.0
+hardening/careful/src/../../../src/quant/rabitq.rs:638:9: replace RaBitQQuantizer::centered_residual_magnitude -> f32 with 1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:638:9: replace RaBitQQuantizer::centered_residual_magnitude -> f32 with -1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:640:23: replace + with - in RaBitQQuantizer::centered_residual_magnitude
+hardening/careful/src/../../../src/quant/rabitq.rs:640:23: replace + with * in RaBitQQuantizer::centered_residual_magnitude
+hardening/careful/src/../../../src/quant/rabitq.rs:666:9: replace CenterContext::raw -> &[f32] with Vec::leak(Vec::new())
+hardening/careful/src/../../../src/quant/rabitq.rs:666:9: replace CenterContext::raw -> &[f32] with Vec::leak(vec![0.0])
+hardening/careful/src/../../../src/quant/rabitq.rs:666:9: replace CenterContext::raw -> &[f32] with Vec::leak(vec![1.0])
+hardening/careful/src/../../../src/quant/rabitq.rs:666:9: replace CenterContext::raw -> &[f32] with Vec::leak(vec![-1.0])
+hardening/careful/src/../../../src/quant/rabitq.rs:704:23: replace + with - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:704:23: replace + with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:709:20: replace + with - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:709:20: replace + with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:709:59: replace + with - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:709:59: replace + with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:709:41: replace + with - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:709:41: replace + with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:714:38: replace + with - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:714:38: replace + with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:714:20: replace + with - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:714:20: replace + with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:714:63: replace + with - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:714:63: replace + with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:725:31: replace / with % in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:725:31: replace / with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:726:41: replace & with | in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:726:41: replace & with ^ in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:726:29: replace >> with << in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:726:35: replace % with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:726:35: replace % with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:727:31: replace == with != in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:727:55: delete - in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:728:24: replace += with -= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:728:24: replace += with *= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:728:49: replace * with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:731:41: replace / with % in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:731:41: replace / with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:738:39: replace - with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:738:39: replace - with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:739:31: replace += with -= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:739:31: replace += with *= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:739:36: replace * with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:739:36: replace * with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:753:13: replace || with && in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:752:13: replace || with && in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:751:13: replace || with && in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:750:24: replace < with == in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:750:24: replace < with > in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:751:16: delete ! in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:752:35: replace < with > in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:753:29: replace <= with > in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:760:58: replace / with % in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:760:58: replace / with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:760:44: replace - with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:760:44: replace - with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:761:37: replace / with % in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:761:37: replace / with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:766:30: replace * with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:766:30: replace * with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:767:54: replace / with % in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:767:54: replace / with * in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:767:32: replace - with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:767:32: replace - with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:767:80: replace * with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:767:80: replace * with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:768:45: replace * with + in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:768:45: replace * with / in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:791:9: replace PreparedEstimator::dimensions -> usize with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:791:9: replace PreparedEstimator::dimensions -> usize with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:794:9: replace PreparedEstimator::query_norm -> f32 with 0.0
+hardening/careful/src/../../../src/quant/rabitq.rs:794:9: replace PreparedEstimator::query_norm -> f32 with 1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:794:9: replace PreparedEstimator::query_norm -> f32 with -1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:797:9: replace PreparedEstimator::bits_per_dim -> u8 with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:797:9: replace PreparedEstimator::bits_per_dim -> u8 with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:822:9: replace <impl crate::quant::QueryScorer for RaBitQScorer>::score -> f32 with 0.0
+hardening/careful/src/../../../src/quant/rabitq.rs:822:9: replace <impl crate::quant::QueryScorer for RaBitQScorer>::score -> f32 with 1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:822:9: replace <impl crate::quant::QueryScorer for RaBitQScorer>::score -> f32 with -1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:853:5: replace sign_words_from_rotated -> Vec<u64> with vec![]
+hardening/careful/src/../../../src/quant/rabitq.rs:853:5: replace sign_words_from_rotated -> Vec<u64> with vec![0]
+hardening/careful/src/../../../src/quant/rabitq.rs:853:5: replace sign_words_from_rotated -> Vec<u64> with vec![1]
+hardening/careful/src/../../../src/quant/rabitq.rs:855:18: replace >= with < in sign_words_from_rotated
+hardening/careful/src/../../../src/quant/rabitq.rs:856:31: replace |= with &= in sign_words_from_rotated
+hardening/careful/src/../../../src/quant/rabitq.rs:856:25: replace / with % in sign_words_from_rotated
+hardening/careful/src/../../../src/quant/rabitq.rs:856:25: replace / with * in sign_words_from_rotated
+hardening/careful/src/../../../src/quant/rabitq.rs:856:40: replace << with >> in sign_words_from_rotated
+hardening/careful/src/../../../src/quant/rabitq.rs:856:50: replace % with / in sign_words_from_rotated
+hardening/careful/src/../../../src/quant/rabitq.rs:856:50: replace % with + in sign_words_from_rotated
+hardening/careful/src/../../../src/quant/rabitq.rs:871:5: replace sign_words_from_packed_4bit -> Vec<u64> with vec![]
+hardening/careful/src/../../../src/quant/rabitq.rs:871:5: replace sign_words_from_packed_4bit -> Vec<u64> with vec![0]
+hardening/careful/src/../../../src/quant/rabitq.rs:871:5: replace sign_words_from_packed_4bit -> Vec<u64> with vec![1]
+hardening/careful/src/../../../src/quant/rabitq.rs:875:22: replace >= with < in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:879:34: replace & with | in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:879:34: replace & with ^ in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:880:36: replace != with == in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:881:35: replace |= with &= in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:881:29: replace / with % in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:881:29: replace / with * in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:881:44: replace << with >> in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:881:58: replace % with / in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:881:58: replace % with + in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:883:19: replace += with -= in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:883:19: replace += with *= in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:885:22: replace >= with < in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:889:35: replace >> with << in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:890:37: replace != with == in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:891:35: replace |= with &= in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:891:29: replace / with % in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:891:29: replace / with * in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:891:44: replace << with >> in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:891:58: replace % with / in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:891:58: replace % with + in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:893:19: replace += with -= in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:893:19: replace += with *= in sign_words_from_packed_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:902:5: replace hamming_similarity -> f32 with 0.0
+hardening/careful/src/../../../src/quant/rabitq.rs:902:5: replace hamming_similarity -> f32 with 1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:902:5: replace hamming_similarity -> f32 with -1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:905:42: replace ^ with | in hamming_similarity
+hardening/careful/src/../../../src/quant/rabitq.rs:905:42: replace ^ with & in hamming_similarity
+hardening/careful/src/../../../src/quant/rabitq.rs:909:14: replace - with + in hamming_similarity
+hardening/careful/src/../../../src/quant/rabitq.rs:909:14: replace - with / in hamming_similarity
+hardening/careful/src/../../../src/quant/rabitq.rs:909:19: replace * with + in hamming_similarity
+hardening/careful/src/../../../src/quant/rabitq.rs:909:19: replace * with / in hamming_similarity
+hardening/careful/src/../../../src/quant/rabitq.rs:916:5: replace binary_sign_lookup_4bit -> [u8; 16] with [0; 16]
+hardening/careful/src/../../../src/quant/rabitq.rs:916:5: replace binary_sign_lookup_4bit -> [u8; 16] with [1; 16]
+hardening/careful/src/../../../src/quant/rabitq.rs:923:39: replace >= with < in binary_sign_lookup_4bit
+hardening/careful/src/../../../src/quant/rabitq.rs:937:5: replace persisted_sidecar_word_count -> usize with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:937:5: replace persisted_sidecar_word_count -> usize with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:951:5: replace derive_persisted_sidecar_words -> Vec<u64> with vec![]
+hardening/careful/src/../../../src/quant/rabitq.rs:951:5: replace derive_persisted_sidecar_words -> Vec<u64> with vec![0]
+hardening/careful/src/../../../src/quant/rabitq.rs:951:5: replace derive_persisted_sidecar_words -> Vec<u64> with vec![1]
+hardening/careful/src/../../../src/quant/rabitq.rs:963:5: replace l2_norm -> f32 with 0.0
+hardening/careful/src/../../../src/quant/rabitq.rs:963:5: replace l2_norm -> f32 with 1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:963:5: replace l2_norm -> f32 with -1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:963:30: replace * with + in l2_norm
+hardening/careful/src/../../../src/quant/rabitq.rs:963:30: replace * with / in l2_norm
+hardening/careful/src/../../../src/quant/rabitq.rs:983:5: replace quantize_level -> (u32, f32) with (0, 0.0)
+hardening/careful/src/../../../src/quant/rabitq.rs:983:5: replace quantize_level -> (u32, f32) with (0, 1.0)
+hardening/careful/src/../../../src/quant/rabitq.rs:983:5: replace quantize_level -> (u32, f32) with (0, -1.0)
+hardening/careful/src/../../../src/quant/rabitq.rs:983:5: replace quantize_level -> (u32, f32) with (1, 0.0)
+hardening/careful/src/../../../src/quant/rabitq.rs:983:5: replace quantize_level -> (u32, f32) with (1, 1.0)
+hardening/careful/src/../../../src/quant/rabitq.rs:983:5: replace quantize_level -> (u32, f32) with (1, -1.0)
+hardening/careful/src/../../../src/quant/rabitq.rs:983:13: replace == with != in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:984:20: replace >= with < in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:987:17: delete - in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:990:28: replace << with >> in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:992:30: replace * with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:992:30: replace * with / in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:993:31: replace / with % in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:993:31: replace / with * in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:993:26: replace + with - in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:993:26: replace + with * in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:993:38: replace * with / in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:994:25: replace * with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:994:25: replace * with / in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:994:61: replace - with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:994:61: replace - with / in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:76: replace - with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:76: replace - with / in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:72: replace * with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:72: replace * with / in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:66: replace * with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:66: replace * with / in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:50: replace / with % in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:50: replace / with * in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:43: replace + with - in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:996:43: replace + with * in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:997:37: replace / with % in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:997:37: replace / with * in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1005:5: replace dequant_level -> f32 with 0.0
+hardening/careful/src/../../../src/quant/rabitq.rs:1005:5: replace dequant_level -> f32 with 1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:1005:5: replace dequant_level -> f32 with -1.0
+hardening/careful/src/../../../src/quant/rabitq.rs:1005:13: replace == with != in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1006:18: replace == with != in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1009:13: delete - in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1012:28: replace << with >> in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:76: replace - with + in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:76: replace - with / in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:72: replace * with + in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:72: replace * with / in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:66: replace * with + in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:66: replace * with / in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:50: replace / with % in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:50: replace / with * in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:43: replace + with - in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1014:43: replace + with * in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1015:23: replace / with % in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1015:23: replace / with * in dequant_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1024:5: replace write_level with ()
+hardening/careful/src/../../../src/quant/rabitq.rs:1025:9: delete match arm 1 in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1030:9: delete match arm 2 in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1035:9: delete match arm 4 in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1040:9: delete match arm 8 in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1026:22: replace == with != in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1027:28: replace |= with &= in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1027:23: replace / with % in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1027:23: replace / with * in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1027:36: replace << with >> in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1027:42: replace % with / in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1027:42: replace % with + in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1031:26: replace / with % in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1031:26: replace / with * in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1032:33: replace * with + in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1032:33: replace * with / in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1032:28: replace % with / in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1032:28: replace % with + in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1033:23: replace |= with &= in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1033:49: replace << with >> in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1033:41: replace & with | in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1033:41: replace & with ^ in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1036:26: replace / with % in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1036:26: replace / with * in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1037:33: replace * with + in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1037:33: replace * with / in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1037:28: replace % with / in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1037:28: replace % with + in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1038:23: replace |= with &= in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1038:49: replace << with >> in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1038:41: replace & with | in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1038:41: replace & with ^ in write_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1049:5: replace read_level -> u32 with 0
+hardening/careful/src/../../../src/quant/rabitq.rs:1049:5: replace read_level -> u32 with 1
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:9: delete match arm 1 in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:9: delete match arm 2 in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:9: delete match arm 4 in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1053:9: delete match arm 8 in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:40: replace & with | in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:40: replace & with ^ in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:28: replace >> with << in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:23: replace / with % in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:23: replace / with * in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:34: replace % with / in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1050:34: replace % with + in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:46: replace & with | in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:46: replace & with ^ in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:28: replace >> with << in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:23: replace / with % in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:23: replace / with * in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:40: replace * with + in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:40: replace * with / in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:35: replace % with / in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1051:35: replace % with + in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:46: replace & with | in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:46: replace & with ^ in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:28: replace >> with << in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:23: replace / with % in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:23: replace / with * in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:40: replace * with + in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:40: replace * with / in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:35: replace % with / in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1052:35: replace % with + in read_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1091:36: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1091:36: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1100:19: replace + with - in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1100:19: replace + with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1105:16: replace + with - in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1105:16: replace + with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1105:55: replace + with - in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1105:55: replace + with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1105:37: replace + with - in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1105:37: replace + with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1110:34: replace + with - in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1110:34: replace + with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1110:16: replace + with - in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1110:16: replace + with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1110:59: replace + with - in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1110:59: replace + with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1122:23: replace += with -= in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1122:23: replace += with *= in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1122:34: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1122:34: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1130:9: replace || with && in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1129:9: replace || with && in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1128:9: replace || with && in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1127:30: replace < with > in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1128:12: delete ! in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1129:29: replace <= with > in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1130:12: delete ! in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1147:51: replace / with % in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1147:51: replace / with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1147:35: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1147:35: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1147:70: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1147:70: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1149:36: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1149:36: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1150:50: replace / with % in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1150:50: replace / with * in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1150:28: replace - with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1150:28: replace - with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1150:71: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1150:71: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1151:71: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1151:71: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1151:54: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1151:54: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1151:41: replace * with + in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1151:41: replace * with / in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1157:5: replace sign_words_from_byte_slice -> Vec<u64> with vec![]
+hardening/careful/src/../../../src/quant/rabitq.rs:1157:5: replace sign_words_from_byte_slice -> Vec<u64> with vec![0]
+hardening/careful/src/../../../src/quant/rabitq.rs:1157:5: replace sign_words_from_byte_slice -> Vec<u64> with vec![1]
+hardening/careful/src/../../../src/quant/rabitq.rs:1159:32: replace / with % in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1159:32: replace / with * in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1160:38: replace == with != in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1160:34: replace & with | in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1160:34: replace & with ^ in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1160:18: replace >> with << in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1160:28: replace % with / in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1160:28: replace % with + in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1161:31: replace |= with &= in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1161:25: replace / with % in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1161:25: replace / with * in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1161:40: replace << with >> in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1161:50: replace % with / in sign_words_from_byte_slice
+hardening/careful/src/../../../src/quant/rabitq.rs:1161:50: replace % with + in sign_words_from_byte_slice
