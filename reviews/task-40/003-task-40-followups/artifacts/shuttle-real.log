@@ -1,0 +1,12 @@
+Script started on 2026-05-18 19:33:30-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (hardening/shuttle/target/debug/deps/ecaz_shuttle_hardening-f678c51d13d996ee)
+
+running 2 tests
+test tests::candidate_merge_is_order_invariant_under_concurrent_receive ... ok
+test tests::epoch_publish_visibility_never_exposes_partial_replacement ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+Script done on 2026-05-18 19:33:30-07:00 [COMMAND_EXIT_CODE="0"]
