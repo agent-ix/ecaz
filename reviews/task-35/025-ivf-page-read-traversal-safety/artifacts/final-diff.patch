@@ -1,0 +1,487 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index e2e6fc78..c9b35ef5 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,140 +1307,127 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/page.rs:1005
+-src/am/ec_ivf/page.rs:1020
+-src/am/ec_ivf/page.rs:1043
+-src/am/ec_ivf/page.rs:1087
+-src/am/ec_ivf/page.rs:1118
+-src/am/ec_ivf/page.rs:1131
+-src/am/ec_ivf/page.rs:1161
+-src/am/ec_ivf/page.rs:1174
+-src/am/ec_ivf/page.rs:1201
+-src/am/ec_ivf/page.rs:1215
+-src/am/ec_ivf/page.rs:1221
+-src/am/ec_ivf/page.rs:1226
+-src/am/ec_ivf/page.rs:1228
+-src/am/ec_ivf/page.rs:1233
+-src/am/ec_ivf/page.rs:1238
+-src/am/ec_ivf/page.rs:1253
+-src/am/ec_ivf/page.rs:1267
+-src/am/ec_ivf/page.rs:1273
+-src/am/ec_ivf/page.rs:1278
+-src/am/ec_ivf/page.rs:1280
+-src/am/ec_ivf/page.rs:1285
+-src/am/ec_ivf/page.rs:1290
+-src/am/ec_ivf/page.rs:1305
+-src/am/ec_ivf/page.rs:1319
+-src/am/ec_ivf/page.rs:1325
+-src/am/ec_ivf/page.rs:1330
+-src/am/ec_ivf/page.rs:1332
+-src/am/ec_ivf/page.rs:1337
+-src/am/ec_ivf/page.rs:1342
+-src/am/ec_ivf/page.rs:1357
+-src/am/ec_ivf/page.rs:1367
++src/am/ec_ivf/page.rs:1227
++src/am/ec_ivf/page.rs:1241
++src/am/ec_ivf/page.rs:1247
++src/am/ec_ivf/page.rs:1252
++src/am/ec_ivf/page.rs:1254
++src/am/ec_ivf/page.rs:1259
++src/am/ec_ivf/page.rs:1264
++src/am/ec_ivf/page.rs:1279
++src/am/ec_ivf/page.rs:1293
++src/am/ec_ivf/page.rs:1299
++src/am/ec_ivf/page.rs:1304
++src/am/ec_ivf/page.rs:1306
++src/am/ec_ivf/page.rs:1311
++src/am/ec_ivf/page.rs:1316
++src/am/ec_ivf/page.rs:1331
++src/am/ec_ivf/page.rs:1345
++src/am/ec_ivf/page.rs:1351
++src/am/ec_ivf/page.rs:1356
++src/am/ec_ivf/page.rs:1358
++src/am/ec_ivf/page.rs:1363
++src/am/ec_ivf/page.rs:1368
+ src/am/ec_ivf/page.rs:1383
+-src/am/ec_ivf/page.rs:1394
+-src/am/ec_ivf/page.rs:1408
+-src/am/ec_ivf/page.rs:1418
+-src/am/ec_ivf/page.rs:1435
+-src/am/ec_ivf/page.rs:1464
+-src/am/ec_ivf/page.rs:1505
+-src/am/ec_ivf/page.rs:1554
+-src/am/ec_ivf/page.rs:1560
+-src/am/ec_ivf/page.rs:1579
+-src/am/ec_ivf/page.rs:1587
+-src/am/ec_ivf/page.rs:1590
+-src/am/ec_ivf/page.rs:1602
+-src/am/ec_ivf/page.rs:1614
+-src/am/ec_ivf/page.rs:1623
+-src/am/ec_ivf/page.rs:1631
+-src/am/ec_ivf/page.rs:1641
+-src/am/ec_ivf/page.rs:1650
+-src/am/ec_ivf/page.rs:1660
+-src/am/ec_ivf/page.rs:1662
+-src/am/ec_ivf/page.rs:1663
+-src/am/ec_ivf/page.rs:1665
+-src/am/ec_ivf/page.rs:1670
++src/am/ec_ivf/page.rs:1393
++src/am/ec_ivf/page.rs:1409
++src/am/ec_ivf/page.rs:1420
++src/am/ec_ivf/page.rs:1434
++src/am/ec_ivf/page.rs:1444
++src/am/ec_ivf/page.rs:1461
++src/am/ec_ivf/page.rs:1490
++src/am/ec_ivf/page.rs:1531
++src/am/ec_ivf/page.rs:1580
++src/am/ec_ivf/page.rs:1586
++src/am/ec_ivf/page.rs:1605
++src/am/ec_ivf/page.rs:1613
++src/am/ec_ivf/page.rs:1616
++src/am/ec_ivf/page.rs:1628
++src/am/ec_ivf/page.rs:1640
++src/am/ec_ivf/page.rs:1649
++src/am/ec_ivf/page.rs:1657
++src/am/ec_ivf/page.rs:1667
++src/am/ec_ivf/page.rs:1676
+ src/am/ec_ivf/page.rs:1686
+-src/am/ec_ivf/page.rs:1687
+ src/am/ec_ivf/page.rs:1688
+-src/am/ec_ivf/page.rs:1700
+-src/am/ec_ivf/page.rs:1710
++src/am/ec_ivf/page.rs:1689
++src/am/ec_ivf/page.rs:1691
++src/am/ec_ivf/page.rs:1696
+ src/am/ec_ivf/page.rs:1712
+ src/am/ec_ivf/page.rs:1713
+-src/am/ec_ivf/page.rs:1715
+-src/am/ec_ivf/page.rs:1730
+-src/am/ec_ivf/page.rs:1731
+-src/am/ec_ivf/page.rs:1732
+-src/am/ec_ivf/page.rs:1746
+-src/am/ec_ivf/page.rs:1761
+-src/am/ec_ivf/page.rs:1763
+-src/am/ec_ivf/page.rs:1775
+-src/am/ec_ivf/page.rs:1798
++src/am/ec_ivf/page.rs:1714
++src/am/ec_ivf/page.rs:1726
++src/am/ec_ivf/page.rs:1736
++src/am/ec_ivf/page.rs:1738
++src/am/ec_ivf/page.rs:1739
++src/am/ec_ivf/page.rs:1741
++src/am/ec_ivf/page.rs:1756
++src/am/ec_ivf/page.rs:1757
++src/am/ec_ivf/page.rs:1758
++src/am/ec_ivf/page.rs:1772
++src/am/ec_ivf/page.rs:1787
++src/am/ec_ivf/page.rs:1789
+ src/am/ec_ivf/page.rs:1801
+-src/am/ec_ivf/page.rs:1814
+-src/am/ec_ivf/page.rs:1829
+-src/am/ec_ivf/page.rs:1831
+-src/am/ec_ivf/page.rs:1843
+-src/am/ec_ivf/page.rs:1874
+-src/am/ec_ivf/page.rs:1876
+-src/am/ec_ivf/page.rs:1879
+-src/am/ec_ivf/page.rs:1890
++src/am/ec_ivf/page.rs:1824
++src/am/ec_ivf/page.rs:1827
++src/am/ec_ivf/page.rs:1840
++src/am/ec_ivf/page.rs:1855
++src/am/ec_ivf/page.rs:1857
++src/am/ec_ivf/page.rs:1869
++src/am/ec_ivf/page.rs:1900
++src/am/ec_ivf/page.rs:1902
+ src/am/ec_ivf/page.rs:1905
+-src/am/ec_ivf/page.rs:1907
+-src/am/ec_ivf/page.rs:1919
+-src/am/ec_ivf/page.rs:1942
++src/am/ec_ivf/page.rs:1916
++src/am/ec_ivf/page.rs:1931
++src/am/ec_ivf/page.rs:1933
+ src/am/ec_ivf/page.rs:1945
+-src/am/ec_ivf/page.rs:1976
+-src/am/ec_ivf/page.rs:1982
+-src/am/ec_ivf/page.rs:2006
+-src/am/ec_ivf/page.rs:2016
+-src/am/ec_ivf/page.rs:2036
+-src/am/ec_ivf/page.rs:2059
+-src/am/ec_ivf/page.rs:2065
+-src/am/ec_ivf/page.rs:2130
+-src/am/ec_ivf/page.rs:2132
+-src/am/ec_ivf/page.rs:2141
+-src/am/ec_ivf/page.rs:2204
+-src/am/ec_ivf/page.rs:2216
+-src/am/ec_ivf/page.rs:2221
+-src/am/ec_ivf/page.rs:2223
+-src/am/ec_ivf/page.rs:2224
+-src/am/ec_ivf/page.rs:2283
+-src/am/ec_ivf/page.rs:2308
+-src/am/ec_ivf/page.rs:2321
+-src/am/ec_ivf/page.rs:2327
+-src/am/ec_ivf/page.rs:2344
+-src/am/ec_ivf/page.rs:2401
+-src/am/ec_ivf/page.rs:2426
+-src/am/ec_ivf/page.rs:2438
+-src/am/ec_ivf/page.rs:2453
+-src/am/ec_ivf/page.rs:2470
+-src/am/ec_ivf/page.rs:2499
+-src/am/ec_ivf/page.rs:2513
+-src/am/ec_ivf/page.rs:2515
+-src/am/ec_ivf/page.rs:2527
+-src/am/ec_ivf/page.rs:2529
+-src/am/ec_ivf/page.rs:2532
+-src/am/ec_ivf/page.rs:2533
+-src/am/ec_ivf/page.rs:2534
+-src/am/ec_ivf/page.rs:2538
+-src/am/ec_ivf/page.rs:2543
+-src/am/ec_ivf/page.rs:2554
++src/am/ec_ivf/page.rs:1968
++src/am/ec_ivf/page.rs:1971
++src/am/ec_ivf/page.rs:2002
++src/am/ec_ivf/page.rs:2008
++src/am/ec_ivf/page.rs:2032
++src/am/ec_ivf/page.rs:2042
++src/am/ec_ivf/page.rs:2062
++src/am/ec_ivf/page.rs:2085
++src/am/ec_ivf/page.rs:2091
++src/am/ec_ivf/page.rs:2156
++src/am/ec_ivf/page.rs:2158
++src/am/ec_ivf/page.rs:2167
++src/am/ec_ivf/page.rs:2230
++src/am/ec_ivf/page.rs:2242
++src/am/ec_ivf/page.rs:2247
++src/am/ec_ivf/page.rs:2249
++src/am/ec_ivf/page.rs:2250
++src/am/ec_ivf/page.rs:2309
++src/am/ec_ivf/page.rs:2334
++src/am/ec_ivf/page.rs:2347
++src/am/ec_ivf/page.rs:2353
++src/am/ec_ivf/page.rs:2370
++src/am/ec_ivf/page.rs:2427
++src/am/ec_ivf/page.rs:2452
++src/am/ec_ivf/page.rs:2464
++src/am/ec_ivf/page.rs:2479
++src/am/ec_ivf/page.rs:2496
++src/am/ec_ivf/page.rs:2525
++src/am/ec_ivf/page.rs:2539
++src/am/ec_ivf/page.rs:2541
++src/am/ec_ivf/page.rs:2553
+ src/am/ec_ivf/page.rs:2555
+-src/am/ec_ivf/page.rs:2567
+-src/am/ec_ivf/page.rs:2577
+-src/am/ec_ivf/page.rs:2579
++src/am/ec_ivf/page.rs:2558
++src/am/ec_ivf/page.rs:2559
++src/am/ec_ivf/page.rs:2560
++src/am/ec_ivf/page.rs:2564
++src/am/ec_ivf/page.rs:2569
+ src/am/ec_ivf/page.rs:2580
+ src/am/ec_ivf/page.rs:2581
+-src/am/ec_ivf/page.rs:2595
+-src/am/ec_ivf/page.rs:2596
+-src/am/ec_ivf/page.rs:3091
+-src/am/ec_ivf/page.rs:908
+-src/am/ec_ivf/page.rs:921
+-src/am/ec_ivf/page.rs:927
+-src/am/ec_ivf/page.rs:944
+-src/am/ec_ivf/page.rs:961
++src/am/ec_ivf/page.rs:2593
++src/am/ec_ivf/page.rs:2603
++src/am/ec_ivf/page.rs:2605
++src/am/ec_ivf/page.rs:2606
++src/am/ec_ivf/page.rs:2607
++src/am/ec_ivf/page.rs:2621
++src/am/ec_ivf/page.rs:2622
++src/am/ec_ivf/page.rs:3121
+ src/am/ec_ivf/scan.rs:1028
+ src/am/ec_ivf/scan.rs:1033
+ src/am/ec_ivf/scan.rs:1101
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 793a5f7f..a0f2fda5 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1,9 +1,9 @@
+ //! ec_ivf page layout: metadata, centroid, directory, and posting-list codecs.
+ 
+-use std::mem::size_of;
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+ use std::collections::BTreeSet;
+ use std::collections::HashMap;
++use std::mem::size_of;
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+ use std::ptr;
+ use std::sync::{Mutex, OnceLock};
+@@ -35,13 +35,13 @@ const P_NEW: pg_sys::BlockNumber = u32::MAX;
+ #[cfg(feature = "pg18")]
+ use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-use crate::storage::{buffer_guard::LockedBufferGuard, wal};
+-#[cfg(any(feature = "pg17", feature = "pg18"))]
+ use crate::storage::page::{align_up, raw_tuple_storage_bytes, ALIGNMENT_BYTES, PAGE_HEADER_BYTES};
+ use crate::storage::page::{
+     aligned_tuple_bytes, usable_page_bytes, DataPage, DataPageChain, ItemPointer,
+     HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+ };
++#[cfg(any(feature = "pg17", feature = "pg18"))]
++use crate::storage::{buffer_guard::LockedBufferGuard, wal};
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+ pub(super) const METADATA_BLOCK_NUMBER: pg_sys::BlockNumber = 0;
+@@ -905,6 +905,8 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
+     tid: ItemPointer,
+     dimensions: usize,
+ ) -> Result<(IvfCentroidTuple, ItemPointer), String> {
++    // SAFETY: `index_relation` is a live IVF index relation and `tid` names a
++    // centroid tuple; `read_page_tuple` validates page/line-pointer bounds.
+     let (centroid, line_pointer_count) = unsafe {
+         read_page_tuple(index_relation, tid, "centroid", |tuple_bytes| {
+             IvfCentroidTuple::decode(tuple_bytes, dimensions)
+@@ -918,12 +920,16 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
+     index_relation: pg_sys::Relation,
+     tid: ItemPointer,
+ ) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
++    // SAFETY: `index_relation` is live and `tid` names a list-directory tuple;
++    // `read_page_tuple` validates page/line-pointer bounds before decode.
+     let (directory, line_pointer_count) = unsafe {
+         read_page_tuple(index_relation, tid, "list directory", |tuple_bytes| {
+             IvfListDirectoryTuple::decode(tuple_bytes)
+         })?
+     };
+     let physical_next = next_physical_tuple_tid(tid, line_pointer_count)?;
++    // SAFETY: `physical_next` is the next valid physical tuple slot candidate
++    // from the same page chain; the search helper validates tuple tags/bounds.
+     let next_directory = unsafe {
+         find_next_tuple_with_tag(
+             index_relation,
+@@ -941,6 +947,8 @@ pub(super) unsafe fn read_ivf_pq_codebook(
+     tid: ItemPointer,
+     centroid_count: usize,
+ ) -> Result<IvfPqCodebookTuple, String> {
++    // SAFETY: `index_relation` is live and `tid` names a PQ codebook tuple;
++    // `read_page_tuple` validates bounds before decoding `centroid_count` lanes.
+     let (codebook, _) = unsafe {
+         read_page_tuple(index_relation, tid, "pq codebook", |tuple_bytes| {
+             IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
+@@ -958,6 +966,8 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks(
+     payload_len: usize,
+ ) -> Result<Vec<IvfPostingTuple>, String> {
+     let mut postings = Vec::new();
++    // SAFETY: the block range was supplied from IVF list metadata; the visitor
++    // helper validates range consistency and tuple bounds while collecting.
+     unsafe {
+         visit_ivf_postings_for_list_blocks(
+             index_relation,
+@@ -1002,6 +1012,8 @@ where
+ 
+     #[cfg(feature = "pg18")]
+     {
++        // SAFETY: the validated list block range is traversed by the PG18 read
++        // stream helper, which locks each buffer before decoding postings.
+         unsafe {
+             visit_ivf_posting_blocks_with_read_stream(
+                 index_relation,
+@@ -1017,6 +1029,8 @@ where
+     #[cfg(not(feature = "pg18"))]
+     {
+         for block_number in head_block.block_number..=tail_block.block_number {
++            // SAFETY: each block number is inside the validated inclusive list
++            // range; the per-block visitor locks and validates tuple contents.
+             unsafe {
+                 visit_ivf_postings_for_list_block(
+                     index_relation,
+@@ -1040,6 +1054,8 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
+     payload_len: usize,
+ ) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
+     let mut postings = Vec::new();
++    // SAFETY: the block range was supplied from IVF list metadata; the visitor
++    // helper validates range consistency and tuple bounds while collecting TIDs.
+     unsafe {
+         visit_ivf_postings_for_list_blocks(
+             index_relation,
+@@ -1084,6 +1100,8 @@ where
+     }
+ 
+     for block_number in head_block.block_number..=tail_block.block_number {
++        // SAFETY: each block number is inside the validated inclusive list
++        // range; rewrite helper locks the block and validates posting tuples.
+         unsafe {
+             rewrite_ivf_postings_for_list_block(
+                 index_relation,
+@@ -1115,6 +1133,8 @@ where
+ 
+     #[cfg(feature = "pg18")]
+     {
++        // SAFETY: the provided block sequence belongs to this live IVF relation;
++        // the PG18 read-stream helper locks buffers before decoding postings.
+         unsafe {
+             visit_ivf_posting_block_sequence_with_read_stream(
+                 index_relation,
+@@ -1128,6 +1148,8 @@ where
+     #[cfg(not(feature = "pg18"))]
+     {
+         for block_number in block_numbers {
++            // SAFETY: each block number comes from the caller's validated IVF
++            // block sequence; the per-block visitor checks tuple bounds.
+             unsafe {
+                 visit_all_ivf_postings_for_block(
+                     index_relation,
+@@ -1158,6 +1180,8 @@ where
+ 
+     #[cfg(feature = "pg18")]
+     {
++        // SAFETY: the provided block sequence belongs to this live IVF relation;
++        // the PG18 read-stream helper locks buffers before exposing tuple refs.
+         unsafe {
+             visit_ivf_posting_ref_block_sequence_with_read_stream(
+                 index_relation,
+@@ -1171,6 +1195,8 @@ where
+     #[cfg(not(feature = "pg18"))]
+     {
+         for block_number in block_numbers {
++            // SAFETY: each block number comes from the caller's validated IVF
++            // block sequence; the per-block visitor checks tuple-ref bounds.
+             unsafe {
+                 visit_all_ivf_posting_refs_for_block(
+                     index_relation,
+@@ -2926,7 +2952,10 @@ mod tests {
+         assert!(!centroid_tuple_fits(1536, 64));
+         assert!(!list_directory_tuple_fits(32));
+         assert!(!posting_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
+-        assert!(!pq_codebook_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
++        assert!(!pq_codebook_tuple_fits(
++            DEFAULT_PAGE_SIZE,
++            DEFAULT_PAGE_SIZE
++        ));
+     }
+ 
+     #[test]
+@@ -2972,16 +3001,20 @@ mod tests {
+ 
+         let mut invalid_flags = encoded.clone();
+         invalid_flags[EC_IVF_POSTING_FLAGS_OFFSET] = 0b0000_0010;
+-        assert!(IvfPostingTupleRef::decode(&invalid_flags, tuple.payload.len())
+-            .unwrap_err()
+-            .contains("invalid ec_ivf posting tuple flags"));
++        assert!(
++            IvfPostingTupleRef::decode(&invalid_flags, tuple.payload.len())
++                .unwrap_err()
++                .contains("invalid ec_ivf posting tuple flags")
++        );
+ 
+         let mut invalid_count = encoded;
+         invalid_count[EC_IVF_POSTING_HEAPTID_COUNT_OFFSET] =
+             u8::try_from(HEAPTID_INLINE_CAPACITY + 1).unwrap();
+-        assert!(IvfPostingTupleRef::decode(&invalid_count, tuple.payload.len())
+-            .unwrap_err()
+-            .contains("invalid ec_ivf posting heap tid count"));
++        assert!(
++            IvfPostingTupleRef::decode(&invalid_count, tuple.payload.len())
++                .unwrap_err()
++                .contains("invalid ec_ivf posting heap tid count")
++        );
+     }
+ 
+     #[test]
+@@ -3020,7 +3053,10 @@ mod tests {
+             RerankMode::SourceColumn,
+         ] {
+             metadata.rerank = rerank;
+-            assert_eq!(MetadataPage::decode(&metadata.encode()).unwrap().rerank, rerank);
++            assert_eq!(
++                MetadataPage::decode(&metadata.encode()).unwrap().rerank,
++                rerank
++            );
+         }
+ 
+         let mut encoded = metadata.encode();
+@@ -3069,14 +3105,8 @@ mod tests {
+ 
+     #[test]
+     fn next_physical_tuple_tid_advances_within_page_and_across_blocks() {
+-        assert_eq!(
+-            next_physical_tuple_tid(tid(5, 2), 4).unwrap(),
+-            tid(5, 3)
+-        );
+-        assert_eq!(
+-            next_physical_tuple_tid(tid(5, 4), 4).unwrap(),
+-            tid(6, 1)
+-        );
++        assert_eq!(next_physical_tuple_tid(tid(5, 2), 4).unwrap(), tid(5, 3));
++        assert_eq!(next_physical_tuple_tid(tid(5, 4), 4).unwrap(), tid(6, 1));
+         assert!(next_physical_tuple_tid(tid(u32::MAX, 1), 1)
+             .unwrap_err()
+             .contains("tuple block number overflow"));
+@@ -3085,12 +3115,12 @@ mod tests {
+     #[test]
+     #[cfg(not(any(feature = "pg17", feature = "pg18")))]
+     fn page_line_pointer_count_uses_header_lower_bound() {
+-        let mut bytes = vec![0_u8; size_of::<pg_sys::PageHeaderData>()
+-            + 4 * size_of::<pg_sys::ItemIdData>()];
++        let mut bytes =
++            vec![0_u8; size_of::<pg_sys::PageHeaderData>() + 4 * size_of::<pg_sys::ItemIdData>()];
+         let header = bytes.as_mut_ptr().cast::<pg_sys::PageHeaderData>();
+         unsafe {
+-            (*header).pd_lower = (size_of::<pg_sys::PageHeaderData>()
+-                + 3 * size_of::<pg_sys::ItemIdData>()) as u16;
++            (*header).pd_lower =
++                (size_of::<pg_sys::PageHeaderData>() + 3 * size_of::<pg_sys::ItemIdData>()) as u16;
+         }
+ 
+         assert_eq!(page_line_pointer_count(bytes.as_mut_ptr()), 3);

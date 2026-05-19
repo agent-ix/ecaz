@@ -1,0 +1,126 @@
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 793a5f7f..328d8ac5 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -905,6 +905,8 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
+     tid: ItemPointer,
+     dimensions: usize,
+ ) -> Result<(IvfCentroidTuple, ItemPointer), String> {
++    // SAFETY: `index_relation` is a live IVF index relation and `tid` names a
++    // centroid tuple; `read_page_tuple` validates page/line-pointer bounds.
+     let (centroid, line_pointer_count) = unsafe {
+         read_page_tuple(index_relation, tid, "centroid", |tuple_bytes| {
+             IvfCentroidTuple::decode(tuple_bytes, dimensions)
+@@ -918,12 +920,16 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
+     index_relation: pg_sys::Relation,
+     tid: ItemPointer,
+ ) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
++    // SAFETY: `index_relation` is live and `tid` names a list-directory tuple;
++    // `read_page_tuple` validates page/line-pointer bounds before decode.
+     let (directory, line_pointer_count) = unsafe {
+         read_page_tuple(index_relation, tid, "list directory", |tuple_bytes| {
+             IvfListDirectoryTuple::decode(tuple_bytes)
+         })?
+     };
+     let physical_next = next_physical_tuple_tid(tid, line_pointer_count)?;
++    // SAFETY: `physical_next` is the next valid physical tuple slot candidate
++    // from the same page chain; the search helper validates tuple tags/bounds.
+     let next_directory = unsafe {
+         find_next_tuple_with_tag(
+             index_relation,
+@@ -941,6 +947,8 @@ pub(super) unsafe fn read_ivf_pq_codebook(
+     tid: ItemPointer,
+     centroid_count: usize,
+ ) -> Result<IvfPqCodebookTuple, String> {
++    // SAFETY: `index_relation` is live and `tid` names a PQ codebook tuple;
++    // `read_page_tuple` validates bounds before decoding `centroid_count` lanes.
+     let (codebook, _) = unsafe {
+         read_page_tuple(index_relation, tid, "pq codebook", |tuple_bytes| {
+             IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
+@@ -956,8 +964,10 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks(
+     head_block: BlockRef,
+     tail_block: BlockRef,
+     payload_len: usize,
+-) -> Result<Vec<IvfPostingTuple>, String> {
++    ) -> Result<Vec<IvfPostingTuple>, String> {
+     let mut postings = Vec::new();
++    // SAFETY: the block range was supplied from IVF list metadata; the visitor
++    // helper validates range consistency and tuple bounds while collecting.
+     unsafe {
+         visit_ivf_postings_for_list_blocks(
+             index_relation,
+@@ -1002,6 +1012,8 @@ where
+ 
+     #[cfg(feature = "pg18")]
+     {
++        // SAFETY: the validated list block range is traversed by the PG18 read
++        // stream helper, which locks each buffer before decoding postings.
+         unsafe {
+             visit_ivf_posting_blocks_with_read_stream(
+                 index_relation,
+@@ -1017,6 +1029,8 @@ where
+     #[cfg(not(feature = "pg18"))]
+     {
+         for block_number in head_block.block_number..=tail_block.block_number {
++            // SAFETY: each block number is inside the validated inclusive list
++            // range; the per-block visitor locks and validates tuple contents.
+             unsafe {
+                 visit_ivf_postings_for_list_block(
+                     index_relation,
+@@ -1038,8 +1052,10 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
+     head_block: BlockRef,
+     tail_block: BlockRef,
+     payload_len: usize,
+-) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
++    ) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
+     let mut postings = Vec::new();
++    // SAFETY: the block range was supplied from IVF list metadata; the visitor
++    // helper validates range consistency and tuple bounds while collecting TIDs.
+     unsafe {
+         visit_ivf_postings_for_list_blocks(
+             index_relation,
+@@ -1084,6 +1100,8 @@ where
+     }
+ 
+     for block_number in head_block.block_number..=tail_block.block_number {
++        // SAFETY: each block number is inside the validated inclusive list
++        // range; rewrite helper locks the block and validates posting tuples.
+         unsafe {
+             rewrite_ivf_postings_for_list_block(
+                 index_relation,
+@@ -1115,6 +1133,8 @@ where
+ 
+     #[cfg(feature = "pg18")]
+     {
++        // SAFETY: the provided block sequence belongs to this live IVF relation;
++        // the PG18 read-stream helper locks buffers before decoding postings.
+         unsafe {
+             visit_ivf_posting_block_sequence_with_read_stream(
+                 index_relation,
+@@ -1128,6 +1148,8 @@ where
+     #[cfg(not(feature = "pg18"))]
+     {
+         for block_number in block_numbers {
++            // SAFETY: each block number comes from the caller's validated IVF
++            // block sequence; the per-block visitor checks tuple bounds.
+             unsafe {
+                 visit_all_ivf_postings_for_block(
+                     index_relation,
+@@ -1158,6 +1180,8 @@ where
+ 
+     #[cfg(feature = "pg18")]
+     {
++        // SAFETY: the provided block sequence belongs to this live IVF relation;
++        // the PG18 read-stream helper locks buffers before exposing tuple refs.
+         unsafe {
+             visit_ivf_posting_ref_block_sequence_with_read_stream(
+                 index_relation,
+@@ -1171,6 +1195,8 @@ where
+     #[cfg(not(feature = "pg18"))]
+     {
+         for block_number in block_numbers {
++            // SAFETY: each block number comes from the caller's validated IVF
++            // block sequence; the per-block visitor checks tuple-ref bounds.
+             unsafe {
+                 visit_all_ivf_posting_refs_for_block(
+                     index_relation,
