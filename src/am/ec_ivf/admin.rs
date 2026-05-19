@@ -80,8 +80,12 @@ struct DirectoryDriftSummary {
 }
 
 pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
+    // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+    // diagnostic wrapper; page readers validate the metadata/directory layout.
     let metadata = unsafe { page::read_metadata_page(index_relation) };
     let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
+    // SAFETY: PostgreSQL owns the relation; querying the main fork block count
+    // is valid for the opened index relation.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -134,10 +138,14 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
 }
 
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+    // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+    // diagnostic wrapper; metadata and reloptions are read without ownership.
     let metadata = unsafe { page::read_metadata_page(index_relation) };
     let index_options = unsafe { options::relation_options(index_relation) };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
+    // SAFETY: the same live index relation is reused for the nested diagnostic
+    // snapshot, and PostgreSQL keeps relcache metadata valid for the call.
     let drift = unsafe { index_drift_snapshot(index_relation) };
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
 
@@ -176,6 +184,8 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
 pub(crate) unsafe fn index_page_ownership(
     index_relation: pg_sys::Relation,
 ) -> Vec<IndexPageOwnershipSnapshot> {
+    // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+    // diagnostic wrapper; metadata drives payload length selection.
     let metadata = unsafe { page::read_metadata_page(index_relation) };
     let quantizer = IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
@@ -183,6 +193,8 @@ pub(crate) unsafe fn index_page_ownership(
         metadata_pq_group_size(&metadata),
     )
     .unwrap_or_else(|err| pgrx::error!("{err}"));
+    // SAFETY: the page debug reader walks posting tuples for the live relation
+    // using the payload length implied by the validated metadata.
     let summaries = unsafe {
         page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
             .unwrap_or_else(|err| pgrx::error!("{err}"))
@@ -236,6 +248,8 @@ unsafe fn directory_drift_summary(
     let mut next_tid = metadata.directory_head;
     let mut summary = DirectoryDriftSummary::default();
     for expected_list_id in 0..metadata.nlists {
+        // SAFETY: `next_tid` starts at the metadata directory head and advances
+        // through decoded directory tuples in the same live index relation.
         let (directory, following_tid) =
             unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid) }
                 .unwrap_or_else(|e| pgrx::error!("{e}"));

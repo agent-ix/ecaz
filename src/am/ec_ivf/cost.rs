@@ -67,6 +67,9 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
     index_correlation: *mut f64,
     index_pages: *mut f64,
 ) {
+    // SAFETY: PostgreSQL invokes this as the IVF `amcostestimate` callback with
+    // planner-owned pointers; the body null-checks every pointer before use and
+    // `pgrx_extern_c_guard` prevents Rust unwinding across the C ABI boundary.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if path.is_null()
@@ -121,6 +124,8 @@ pub(crate) fn ivf_strategy_translation_snapshot() -> StrategyTranslationSnapshot
 
 #[cfg(feature = "pg18")]
 pub(crate) unsafe extern "C-unwind" fn ec_ivf_amgettreeheight(_rel: pg_sys::Relation) -> i32 {
+    // SAFETY: PG18 calls this AM callback from C; the implementation returns a
+    // constant and `pgrx_extern_c_guard` traps panics before they cross the ABI.
     unsafe { pgrx::pgrx_extern_c_guard(ivf_tree_height_callback_value) }
 }
 
@@ -129,6 +134,8 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatestrategy(
     strategy: pg_sys::StrategyNumber,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::CompareType::Type {
+    // SAFETY: PG18 invokes this AM strategy-translation callback from C. The
+    // closure only maps integer strategy values and is guarded against unwinding.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             match crate::am::common::cost::amtranslatestrategy_callback(i32::from(strategy)) {
@@ -157,6 +164,8 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
     compare_type: pg_sys::CompareType::Type,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::StrategyNumber {
+    // SAFETY: PG18 invokes this AM compare-type translation callback from C. The
+    // closure only maps enum values and is guarded against unwinding.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             crate::am::common::cost::amtranslatecmptype_callback(match compare_type {
