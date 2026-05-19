@@ -1,0 +1,282 @@
+Script started on 2026-05-19 03:13:26-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 224162bb..6882a312 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1267,37 +1267,6 @@[m [msrc/am/ec_spire/dml_frontdoor/tests.rs:296[m
+ src/am/ec_spire/dml_frontdoor/tests.rs:306[m
+ src/am/ec_spire/dml_frontdoor/tests.rs:347[m
+ src/am/ec_spire/dml_frontdoor/tests.rs:359[m
+[31m-src/am/ec_spire/scan/relation.rs:12[m
+[31m-src/am/ec_spire/scan/relation.rs:136[m
+[31m-src/am/ec_spire/scan/relation.rs:145[m
+[31m-src/am/ec_spire/scan/relation.rs:166[m
+[31m-src/am/ec_spire/scan/relation.rs:181[m
+[31m-src/am/ec_spire/scan/relation.rs:184[m
+[31m-src/am/ec_spire/scan/relation.rs:2[m
+[31m-src/am/ec_spire/scan/relation.rs:219[m
+[31m-src/am/ec_spire/scan/relation.rs:228[m
+[31m-src/am/ec_spire/scan/relation.rs:242[m
+[31m-src/am/ec_spire/scan/relation.rs:246[m
+[31m-src/am/ec_spire/scan/relation.rs:250[m
+[31m-src/am/ec_spire/scan/relation.rs:259[m
+[31m-src/am/ec_spire/scan/relation.rs:29[m
+[31m-src/am/ec_spire/scan/relation.rs:328[m
+[31m-src/am/ec_spire/scan/relation.rs:352[m
+[31m-src/am/ec_spire/scan/relation.rs:355[m
+[31m-src/am/ec_spire/scan/relation.rs:357[m
+[31m-src/am/ec_spire/scan/relation.rs:358[m
+[31m-src/am/ec_spire/scan/relation.rs:370[m
+[31m-src/am/ec_spire/scan/relation.rs:372[m
+[31m-src/am/ec_spire/scan/relation.rs:384[m
+[31m-src/am/ec_spire/scan/relation.rs:385[m
+[31m-src/am/ec_spire/scan/relation.rs:389[m
+[31m-src/am/ec_spire/scan/relation.rs:392[m
+[31m-src/am/ec_spire/scan/relation.rs:400[m
+[31m-src/am/ec_spire/scan/relation.rs:421[m
+[31m-src/am/ec_spire/scan/relation.rs:77[m
+[31m-src/am/ec_spire/scan/relation.rs:79[m
+[31m-src/am/ec_spire/scan/relation.rs:81[m
+[31m-src/am/ec_spire/scan/relation.rs:83[m
+ src/tests/build.rs:251[m
+ src/tests/build.rs:252[m
+ src/tests/build.rs:510[m
+[1mdiff --git a/src/am/ec_spire/scan/relation.rs b/src/am/ec_spire/scan/relation.rs[m
+[1mindex 72bd1e6c..19c98497 100644[m
+[1m--- a/src/am/ec_spire/scan/relation.rs[m
+[1m+++ b/src/am/ec_spire/scan/relation.rs[m
+[36m@@ -1,4 +1,6 @@[m
+ pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {[m
+[32m+[m[32m    // SAFETY: scan is the live IndexScanDesc for this AM callback; xs_heaptid is[m
+[32m+[m[32m    // PostgreSQL-owned scan output storage for the current tuple.[m
+     unsafe {[m
+         pgrx::itemptr::item_pointer_set_all([m
+             &mut (*scan).xs_heaptid,[m
+[36m@@ -9,6 +11,8 @@[m [mpub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPoint[m
+ }[m
+ [m
+ pub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {[m
+[32m+[m[32m    // SAFETY: scan is the live IndexScanDesc for this AM callback; orderby[m
+[32m+[m[32m    // output arrays are allocated in PostgreSQL memory before being written.[m
+     unsafe {[m
+         if (*scan).xs_orderbyvals.is_null() {[m
+             crate::fault::maybe_fail_palloc("ec_spire scan orderby values");[m
+[36m@@ -26,6 +30,8 @@[m [mpub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {[m
+ }[m
+ [m
+ pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {[m
+[32m+[m[32m    // SAFETY: scan is the live IndexScanDesc for this AM callback; when the[m
+[32m+[m[32m    // orderby null array exists, setting the first flag clears the score output.[m
+     unsafe {[m
+         if !(*scan).xs_orderbynulls.is_null() {[m
+             *(*scan).xs_orderbynulls = true;[m
+[36m@@ -73,12 +79,20 @@[m [mpub(super) unsafe fn load_relation_epoch_manifests([m
+     if root_control.active_epoch == 0 {[m
+         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());[m
+     }[m
+[32m+[m[32m    // SAFETY: root_control belongs to this open relation and stores the active[m
+[32m+[m[32m    // epoch manifest tuple id; page helper returns owned bytes.[m
+     let epoch_bytes =[m
+         unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };[m
+[32m+[m[32m    // SAFETY: root_control belongs to this open relation and stores the active[m
+[32m+[m[32m    // object manifest tuple id; page helper returns owned bytes.[m
+     let object_bytes =[m
+         unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };[m
+[32m+[m[32m    // SAFETY: root_control belongs to this open relation and stores the active[m
+[32m+[m[32m    // placement-directory tuple id; page helper returns owned bytes.[m
+     let placement_bytes =[m
+         unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };[m
+[32m+[m[32m    // SAFETY: root_control belongs to this relation and names the local store[m
+[32m+[m[32m    // config for the same active epoch manifest set.[m
+     let local_store_config =[m
+         unsafe { load_relation_local_store_config(index_relation, root_control)? };[m
+     let epoch_manifest = SpireEpochManifest::decode(&epoch_bytes)?;[m
+[36m@@ -132,6 +146,8 @@[m [mpub(super) unsafe fn load_relation_local_store_config([m
+     if root_control.active_epoch == 0 {[m
+         return Err("ec_spire cannot load local store config for empty active epoch".to_owned());[m
+     }[m
+[32m+[m[32m    // SAFETY: root_control belongs to this open relation and stores the active[m
+[32m+[m[32m    // local-store config tuple id; page helper returns owned bytes.[m
+     let bytes =[m
+         unsafe { page::read_object_tuple(index_relation, root_control.local_store_config_tid)? };[m
+     SpireLocalStoreConfig::decode(&bytes)[m
+[36m@@ -142,6 +158,8 @@[m [munsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireSc[m
+         return Err("ec_spire amrescan received null order-by scan keys".to_owned());[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: orderbys was checked non-null and points at PostgreSQL's first[m
+[32m+[m[32m    // ORDER BY ScanKey for the active rescan callback.[m
+     let orderby = unsafe { &*orderbys };[m
+     if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {[m
+         return Err("ec_spire scan query must not be NULL".to_owned());[m
+[36m@@ -163,6 +181,8 @@[m [munsafe fn prepare_single_level_relation_snapshot_scan_candidates([m
+     let heap_relation = resolve_scan_heap_relation(scan);[m
+     let heap_relation_ptr = heap_relation.as_ptr();[m
+     let snapshot_pg = resolve_scan_snapshot(scan);[m
+[32m+[m[32m    // SAFETY: scan is the live IndexScanDesc for this scan path; indexRelation[m
+[32m+[m[32m    // is read only to resolve the indexed vector attribute.[m
+     let indexed_attribute = unsafe {[m
+         source::resolve_indexed_vector_attribute([m
+             heap_relation_ptr,[m
+[36m@@ -178,18 +198,24 @@[m [munsafe fn prepare_single_level_relation_snapshot_scan_candidates([m
+         query,[m
+         options,[m
+         |candidates| {[m
+[32m+[m[32m            // SAFETY: heap_relation_ptr is held by heap_relation for the[m
+[32m+[m[32m            // duration of candidate preparation.[m
+             unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates) };[m
+             Ok(())[m
+         },[m
+[31m-        |candidate| unsafe {[m
+[31m-            exact_heap_source_inner_product([m
+[31m-                heap_relation_ptr,[m
+[31m-                snapshot_pg,[m
+[31m-                slot.as_ptr(),[m
+[31m-                indexed_attribute,[m
+[31m-                query.values(),[m
+[31m-                candidate.heap_tid,[m
+[31m-            )[m
+[32m+[m[32m        |candidate| {[m
+[32m+[m[32m            // SAFETY: heap_relation, snapshot, and slot stay live while[m
+[32m+[m[32m            // reranking this candidate's heap tuple.[m
+[32m+[m[32m            unsafe {[m
+[32m+[m[32m                exact_heap_source_inner_product([m
+[32m+[m[32m                    heap_relation_ptr,[m
+[32m+[m[32m                    snapshot_pg,[m
+[32m+[m[32m                    slot.as_ptr(),[m
+[32m+[m[32m                    indexed_attribute,[m
+[32m+[m[32m                    query.values(),[m
+[32m+[m[32m                    candidate.heap_tid,[m
+[32m+[m[32m                )[m
+[32m+[m[32m            }[m
+         },[m
+     );[m
+ [m
+[36m@@ -216,6 +242,8 @@[m [munsafe fn prefetch_heap_rerank_candidate_blocks([m
+     if block_numbers.is_empty() {[m
+         return;[m
+     }[m
+[32m+[m[32m    // SAFETY: heap_relation is open for the scan and block_numbers were derived[m
+[32m+[m[32m    // from candidate heap TIDs for this relation.[m
+     unsafe { prefetch_heap_rerank_blocks(heap_relation, &block_numbers) };[m
+ }[m
+ [m
+[36m@@ -225,6 +253,8 @@[m [munsafe fn prefetch_heap_rerank_blocks([m
+     block_numbers: &[pg_sys::BlockNumber],[m
+ ) {[m
+     let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers.to_vec());[m
+[32m+[m[32m    // SAFETY: heap_relation is open for the scan; state lives until[m
+[32m+[m[32m    // read_stream_end and is only used by the block-sequence callback.[m
+     let stream = unsafe {[m
+         pg_sys::read_stream_begin_relation([m
+             pg_sys::READ_STREAM_DEFAULT as i32,[m
+[36m@@ -239,14 +269,19 @@[m [munsafe fn prefetch_heap_rerank_blocks([m
+ [m
+     loop {[m
+         let mut per_buffer_data = ptr::null_mut();[m
+[32m+[m[32m        // SAFETY: stream was created above and remains open until read_stream_end.[m
+         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };[m
+         if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {[m
+             break;[m
+         }[m
+[32m+[m[32m        // SAFETY: read_stream_next_buffer returned a valid pinned buffer; the[m
+[32m+[m[32m        // guard unpins it at the end of this loop iteration.[m
+         let _buffer = unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }[m
+             .unwrap_or_else(|| pgrx::error!("ec_spire read stream returned an invalid buffer"));[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: stream was opened by read_stream_begin_relation and is no longer[m
+[32m+[m[32m    // used after this call.[m
+     unsafe { pg_sys::read_stream_end(stream) };[m
+ }[m
+ [m
+[36m@@ -256,6 +291,8 @@[m [munsafe fn prefetch_heap_rerank_blocks([m
+     block_numbers: &[pg_sys::BlockNumber],[m
+ ) {[m
+     for block_number in block_numbers {[m
+[32m+[m[32m        // SAFETY: heap_relation is open for the scan and block_number came from[m
+[32m+[m[32m        // candidate heap TIDs for this relation.[m
+         unsafe {[m
+             pg_sys::PrefetchBuffer([m
+                 heap_relation,[m
+[36m@@ -325,6 +362,8 @@[m [munsafe fn exact_heap_source_inner_product([m
+     query: &[f32],[m
+     heap_tid: ItemPointer,[m
+ ) -> Result<Option<f32>, String> {[m
+[32m+[m[32m    // SAFETY: heap relation/snapshot/slot are live for this rerank call and the[m
+[32m+[m[32m    // helper clears/reuses the slot before returning.[m
+     let Some(source_vector) = unsafe {[m
+         load_indexed_source_vector_from_heap_row([m
+             heap_relation,[m
+[36m@@ -349,12 +388,18 @@[m [mpub(super) unsafe fn load_indexed_source_vector_from_heap_row([m
+     heap_tid: ItemPointer,[m
+     label: &str,[m
+ ) -> Result<Option<Vec<f32>>, String> {[m
+[32m+[m[32m    // SAFETY: heap_relation, snapshot, and slot are live for this scan callback;[m
+[32m+[m[32m    // helper fetches at most the tuple version identified by heap_tid.[m
+     if !unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? } {[m
+         return Ok(None);[m
+     }[m
+[32m+[m[32m    // SAFETY: slot contains the fetched heap tuple and attnum was resolved from[m
+[32m+[m[32m    // the index definition for this relation.[m
+     let datum = unsafe { required_slot_datum(slot, indexed_attribute.attnum, label)? };[m
+[32m+[m[32m    // SAFETY: datum is the non-null vector datum read from the fetched slot.[m
+     let result =[m
+         unsafe { indexed_vector_datum_to_source_vector(datum, indexed_attribute.kind, label) };[m
+[32m+[m[32m    // SAFETY: slot belongs to this scan helper and can be cleared before reuse.[m
+     unsafe { pg_sys::ExecClearTuple(slot) };[m
+     result.map(Some)[m
+ }[m
+[36m@@ -367,7 +412,11 @@[m [munsafe fn fetch_heap_row_version([m
+ ) -> Result<bool, String> {[m
+     let mut tid = pg_sys::ItemPointerData::default();[m
+     pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);[m
+[32m+[m[32m    // SAFETY: slot belongs to this scan helper and is cleared before fetching a[m
+[32m+[m[32m    // new heap tuple version.[m
+     unsafe { pg_sys::ExecClearTuple(slot) };[m
+[32m+[m[32m    // SAFETY: heap_relation/snapshot/slot are live and tid was initialized[m
+[32m+[m[32m    // from the candidate heap TID for this fetch.[m
+     let fetched =[m
+         unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };[m
+     if !fetched {[m
+[36m@@ -381,14 +430,21 @@[m [munsafe fn required_slot_datum([m
+     attnum: i32,[m
+     label: &str,[m
+ ) -> Result<pg_sys::Datum, String> {[m
+[32m+[m[32m    // SAFETY: slot is a live TupleTableSlot and tts_nvalid is read before[m
+[32m+[m[32m    // deciding whether PostgreSQL must materialize more attributes.[m
+     if unsafe { (*slot).tts_nvalid } < attnum as i16 {[m
+[32m+[m[32m        // SAFETY: slot is live and attnum is the positive indexed vector[m
+[32m+[m[32m        // attribute number that must be available in the slot.[m
+         unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };[m
+     }[m
+     let attr_index = usize::try_from(attnum - 1)[m
+         .map_err(|_| "ec_spire heap rerank attribute number must be positive".to_owned())?;[m
+[32m+[m[32m    // SAFETY: slot_getsomeattrs_int above ensures attr_index is materialized;[m
+[32m+[m[32m    // tts_isnull is PostgreSQL-owned slot null storage.[m
+     if unsafe { *(*slot).tts_isnull.add(attr_index) } {[m
+         return Err(format!("ec_spire does not support NULL {label}"));[m
+     }[m
+[32m+[m[32m    // SAFETY: same materialized slot attribute as above; NULL was rejected.[m
+     Ok(unsafe { *(*slot).tts_values.add(attr_index) })[m
+ }[m
+ [m
+[36m@@ -397,6 +453,7 @@[m [munsafe fn indexed_vector_datum_to_source_vector([m
+     kind: source::IndexedVectorKind,[m
+     label: &str,[m
+ ) -> Result<Vec<f32>, String> {[m
+[32m+[m[32m    // SAFETY: datum is a non-null varlena vector datum read from a live slot.[m
+     let bytes = unsafe { detoasted_varlena_bytes(datum, label)? };[m
+     match kind {[m
+         source::IndexedVectorKind::Ecvector => crate::unpack_raw_f32(&bytes, label),[m
+[36m@@ -418,6 +475,8 @@[m [munsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<V[m
+     if datum.is_null() {[m
+         return Err(format!("ec_spire does not support NULL {label}"));[m
+     }[m
+[32m+[m[32m    // SAFETY: datum is a non-null varlena value borrowed from PostgreSQL; pgrx[m
+[32m+[m[32m    // detoasts/copies it into owned bytes before the slot is cleared.[m
+     unsafe { DetoastedVarlena::packed_from_datum(datum) }[m
+         .ok_or_else(|| format!("ec_spire could not detoast {label}"))[m
+         .map(|datum| datum.to_vec())[m
+
+Script done on 2026-05-19 03:13:26-07:00 [COMMAND_EXIT_CODE="0"]
