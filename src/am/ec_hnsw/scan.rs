@@ -4529,8 +4529,16 @@ fn seed_bootstrap_trace(
                 expansion,
                 trace,
                 max_candidates,
-                |node| mark_visited_element(unsafe { &mut *opaque_ptr }, node),
-                |node| mark_expanded_source(unsafe { &mut *opaque_ptr }, node),
+                |node| {
+                    // SAFETY: callback execution is synchronous while
+                    // `opaque_ptr` remains the live scan opaque.
+                    mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+                },
+                |node| {
+                    // SAFETY: callback execution is synchronous while
+                    // `opaque_ptr` remains the live scan opaque.
+                    mark_expanded_source(unsafe { &mut *opaque_ptr }, node)
+                },
             );
         },
     );
@@ -4639,6 +4647,8 @@ unsafe fn refine_grouped_frontier_head_exact(
         }
 
         let opaque_ptr = opaque as *mut TqScanOpaque;
+        // SAFETY: `candidate.node` is the current visible frontier head from
+        // this scan, and the relation/opaque pair remain live while refining.
         let (element, loaded_state) =
             unsafe { cached_graph_element(index_relation, opaque_ptr, candidate.node) };
         if element.deleted || element.heaptids.is_empty() {
@@ -4647,6 +4657,8 @@ unsafe fn refine_grouped_frontier_head_exact(
 
         let exact_score =
             match candidate_score_dispatch(opaque.scan_graph_storage, &element, loaded_state) {
+                // SAFETY: the candidate graph element was loaded for this scan
+                // and carries the exact payload state to score.
                 CandidateScoreDispatch::Exact(loaded_state) => unsafe {
                     exact_score_cached_graph_element(
                         index_relation,
@@ -4655,6 +4667,8 @@ unsafe fn refine_grouped_frontier_head_exact(
                         loaded_state,
                     )
                 },
+                // SAFETY: grouped context came from the same loaded candidate
+                // and exact scoring uses this scan's live query state.
                 CandidateScoreDispatch::Grouped(grouped) => unsafe {
                     score_grouped_candidate_context_exact(index_relation, opaque_ptr, grouped)
                 },
@@ -4687,8 +4701,12 @@ unsafe fn refill_candidate_frontier_from_source_into(
     let opaque_ptr = opaque as *mut TqScanOpaque;
     visible_frontier.refill_from_source(
         expansion,
+        // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque and
+        // is used synchronously while refilling this frontier.
         bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
         source_tid,
+        // SAFETY: successor loading uses the live relation and scan storage
+        // state while the callback scores candidates synchronously.
         |source_tid, max_successor_candidates| unsafe {
             graph::load_layer0_refill_successors_with_storage(
                 index_relation,
@@ -4706,7 +4724,11 @@ unsafe fn refill_candidate_frontier_from_source_into(
                 },
             )
         },
-        |node| mark_visited_element(unsafe { &mut *opaque_ptr }, node),
+        |node| {
+            // SAFETY: callback execution is synchronous while `opaque_ptr`
+            // remains the live scan opaque.
+            mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+        },
     );
 }
 
@@ -4720,9 +4742,15 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
     let opaque_ptr = opaque as *mut TqScanOpaque;
     visible_frontier.top_up_from_visible_seeds(
         expansion,
+        // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque and
+        // is used synchronously while topping up this frontier.
         bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
+        // SAFETY: callback execution is synchronous while `opaque_ptr`
+        // remains the live scan opaque.
         |node| expanded_contains_source(unsafe { &*opaque_ptr }, node),
         |seed_candidates, max_successor_candidates| {
+            // SAFETY: seed expansion uses the live relation and scan storage
+            // state while callbacks score candidates synchronously.
             let expansion_trace = unsafe {
                 graph::expand_layer0_visible_seeds_with_storage(
                     index_relation,
@@ -4745,8 +4773,16 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
                 expansion_trace.discovered_candidates,
             )
         },
-        |node| mark_expanded_source(unsafe { &mut *opaque_ptr }, node),
-        |node| mark_visited_element(unsafe { &mut *opaque_ptr }, node),
+        |node| {
+            // SAFETY: callback execution is synchronous while `opaque_ptr`
+            // remains the live scan opaque.
+            mark_expanded_source(unsafe { &mut *opaque_ptr }, node)
+        },
+        |node| {
+            // SAFETY: callback execution is synchronous while `opaque_ptr`
+            // remains the live scan opaque.
+            mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+        },
     );
 }
 
@@ -4758,7 +4794,11 @@ unsafe fn refill_bootstrap_frontier_after_success(
 ) {
     let opaque_ptr = opaque as *mut TqScanOpaque;
     with_visible_frontier_mut_and_bootstrap_expansion(
+        // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque and
+        // callback execution below is synchronous.
         unsafe { &mut *opaque_ptr },
+        // SAFETY: `opaque_ptr`, `visible_frontier`, and `expansion` stay live
+        // for the duration of this synchronous frontier advance.
         |visible_frontier, expansion| unsafe {
             visible_frontier.advance_after_consume(
                 expansion,
@@ -4793,6 +4833,8 @@ pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
     let consumed = consume_candidate_frontier_head(opaque)?;
+    // SAFETY: `consumed` came from this scan frontier and the relation/opaque
+    // pair remain live while refilling after the consume.
     unsafe { refill_bootstrap_frontier_after_success(index_relation, opaque, consumed) };
     Some(consumed)
 }
