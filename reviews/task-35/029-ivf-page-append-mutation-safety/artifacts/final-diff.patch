@@ -1,0 +1,245 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index 205336c2..d0157d9d 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,87 +1307,70 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/page.rs:1752
+-src/am/ec_ivf/page.rs:1762
+-src/am/ec_ivf/page.rs:1764
+-src/am/ec_ivf/page.rs:1765
+-src/am/ec_ivf/page.rs:1767
+-src/am/ec_ivf/page.rs:1772
+-src/am/ec_ivf/page.rs:1788
+-src/am/ec_ivf/page.rs:1789
+-src/am/ec_ivf/page.rs:1790
+-src/am/ec_ivf/page.rs:1802
+-src/am/ec_ivf/page.rs:1812
+-src/am/ec_ivf/page.rs:1814
+-src/am/ec_ivf/page.rs:1815
+-src/am/ec_ivf/page.rs:1817
+-src/am/ec_ivf/page.rs:1832
+-src/am/ec_ivf/page.rs:1833
+-src/am/ec_ivf/page.rs:1834
+-src/am/ec_ivf/page.rs:1848
+-src/am/ec_ivf/page.rs:1863
+-src/am/ec_ivf/page.rs:1865
+-src/am/ec_ivf/page.rs:1877
+-src/am/ec_ivf/page.rs:1900
+-src/am/ec_ivf/page.rs:1903
+-src/am/ec_ivf/page.rs:1916
+-src/am/ec_ivf/page.rs:1931
+-src/am/ec_ivf/page.rs:1933
+-src/am/ec_ivf/page.rs:1945
+-src/am/ec_ivf/page.rs:1976
+-src/am/ec_ivf/page.rs:1978
+-src/am/ec_ivf/page.rs:1981
+-src/am/ec_ivf/page.rs:1992
+-src/am/ec_ivf/page.rs:2007
+-src/am/ec_ivf/page.rs:2009
+-src/am/ec_ivf/page.rs:2021
+-src/am/ec_ivf/page.rs:2044
+-src/am/ec_ivf/page.rs:2047
+-src/am/ec_ivf/page.rs:2078
+-src/am/ec_ivf/page.rs:2084
+-src/am/ec_ivf/page.rs:2108
+-src/am/ec_ivf/page.rs:2118
+-src/am/ec_ivf/page.rs:2138
+-src/am/ec_ivf/page.rs:2161
+-src/am/ec_ivf/page.rs:2167
+-src/am/ec_ivf/page.rs:2232
+-src/am/ec_ivf/page.rs:2234
+-src/am/ec_ivf/page.rs:2243
+-src/am/ec_ivf/page.rs:2306
+-src/am/ec_ivf/page.rs:2318
+-src/am/ec_ivf/page.rs:2323
+-src/am/ec_ivf/page.rs:2325
+-src/am/ec_ivf/page.rs:2326
+-src/am/ec_ivf/page.rs:2385
+-src/am/ec_ivf/page.rs:2410
+-src/am/ec_ivf/page.rs:2423
+-src/am/ec_ivf/page.rs:2429
+-src/am/ec_ivf/page.rs:2446
+-src/am/ec_ivf/page.rs:2503
+-src/am/ec_ivf/page.rs:2528
+-src/am/ec_ivf/page.rs:2540
++src/am/ec_ivf/page.rs:1875
++src/am/ec_ivf/page.rs:1890
++src/am/ec_ivf/page.rs:1892
++src/am/ec_ivf/page.rs:1904
++src/am/ec_ivf/page.rs:1927
++src/am/ec_ivf/page.rs:1930
++src/am/ec_ivf/page.rs:1943
++src/am/ec_ivf/page.rs:1958
++src/am/ec_ivf/page.rs:1960
++src/am/ec_ivf/page.rs:1972
++src/am/ec_ivf/page.rs:2003
++src/am/ec_ivf/page.rs:2005
++src/am/ec_ivf/page.rs:2008
++src/am/ec_ivf/page.rs:2019
++src/am/ec_ivf/page.rs:2034
++src/am/ec_ivf/page.rs:2036
++src/am/ec_ivf/page.rs:2048
++src/am/ec_ivf/page.rs:2071
++src/am/ec_ivf/page.rs:2074
++src/am/ec_ivf/page.rs:2105
++src/am/ec_ivf/page.rs:2111
++src/am/ec_ivf/page.rs:2135
++src/am/ec_ivf/page.rs:2145
++src/am/ec_ivf/page.rs:2165
++src/am/ec_ivf/page.rs:2188
++src/am/ec_ivf/page.rs:2194
++src/am/ec_ivf/page.rs:2259
++src/am/ec_ivf/page.rs:2261
++src/am/ec_ivf/page.rs:2270
++src/am/ec_ivf/page.rs:2333
++src/am/ec_ivf/page.rs:2345
++src/am/ec_ivf/page.rs:2350
++src/am/ec_ivf/page.rs:2352
++src/am/ec_ivf/page.rs:2353
++src/am/ec_ivf/page.rs:2412
++src/am/ec_ivf/page.rs:2437
++src/am/ec_ivf/page.rs:2450
++src/am/ec_ivf/page.rs:2456
++src/am/ec_ivf/page.rs:2473
++src/am/ec_ivf/page.rs:2530
+ src/am/ec_ivf/page.rs:2555
+-src/am/ec_ivf/page.rs:2572
+-src/am/ec_ivf/page.rs:2601
+-src/am/ec_ivf/page.rs:2615
+-src/am/ec_ivf/page.rs:2617
+-src/am/ec_ivf/page.rs:2629
+-src/am/ec_ivf/page.rs:2631
+-src/am/ec_ivf/page.rs:2634
+-src/am/ec_ivf/page.rs:2635
+-src/am/ec_ivf/page.rs:2636
+-src/am/ec_ivf/page.rs:2640
+-src/am/ec_ivf/page.rs:2645
++src/am/ec_ivf/page.rs:2567
++src/am/ec_ivf/page.rs:2582
++src/am/ec_ivf/page.rs:2599
++src/am/ec_ivf/page.rs:2628
++src/am/ec_ivf/page.rs:2642
++src/am/ec_ivf/page.rs:2644
+ src/am/ec_ivf/page.rs:2656
+-src/am/ec_ivf/page.rs:2657
+-src/am/ec_ivf/page.rs:2669
+-src/am/ec_ivf/page.rs:2679
+-src/am/ec_ivf/page.rs:2681
+-src/am/ec_ivf/page.rs:2682
++src/am/ec_ivf/page.rs:2658
++src/am/ec_ivf/page.rs:2661
++src/am/ec_ivf/page.rs:2662
++src/am/ec_ivf/page.rs:2663
++src/am/ec_ivf/page.rs:2667
++src/am/ec_ivf/page.rs:2672
+ src/am/ec_ivf/page.rs:2683
+-src/am/ec_ivf/page.rs:2697
+-src/am/ec_ivf/page.rs:2698
+-src/am/ec_ivf/page.rs:3197
++src/am/ec_ivf/page.rs:2684
++src/am/ec_ivf/page.rs:2696
++src/am/ec_ivf/page.rs:2706
++src/am/ec_ivf/page.rs:2708
++src/am/ec_ivf/page.rs:2709
++src/am/ec_ivf/page.rs:2710
++src/am/ec_ivf/page.rs:2724
++src/am/ec_ivf/page.rs:2725
++src/am/ec_ivf/page.rs:3224
+ src/am/ec_ivf/scan.rs:1028
+ src/am/ec_ivf/scan.rs:1033
+ src/am/ec_ivf/scan.rs:1101
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index a1581c6a..ec89cce2 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1749,6 +1749,8 @@ unsafe fn try_append_ivf_posting_to_block(
+     block_number: pg_sys::BlockNumber,
+     payload: &[u8],
+ ) -> Result<Option<ItemPointer>, String> {
++    // SAFETY: `block_number` is selected by validated append-range logic, and
++    // an exclusive buffer lock is required before mutating the posting page.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1759,16 +1761,25 @@ unsafe fn try_append_ivf_posting_to_block(
+     }
+     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+ 
++    // SAFETY: starts a generic WAL transaction for the live index relation;
++    // registered buffers below remain exclusive-locked by `buffer`.
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
++    // SAFETY: the buffer is exclusive-locked and registered as a full-page
++    // image, yielding a mutable page pointer for the transaction scope.
+     let page =
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
++    // SAFETY: `page` is the registered page image returned above.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     if free_space < raw_tuple_storage_bytes(payload.len()) {
++        // SAFETY: records the measured free space for this live relation and
++        // block after the page proved too small for the encoded posting.
+         unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+         std::mem::drop(wal_txn);
+         return Ok(None);
+     }
+ 
++    // SAFETY: `page` is an exclusive registered page image and `payload`
++    // points to an encoded posting whose length was checked against the page.
+     let offset = unsafe {
+         pg_sys::PageAddItemExtended(
+             page,
+@@ -1785,8 +1796,11 @@ unsafe fn try_append_ivf_posting_to_block(
+         ));
+     }
+ 
++    // SAFETY: finishes the WAL transaction after the registered page mutation.
+     unsafe { wal_txn.finish() };
++    // SAFETY: the buffer remains held and `page` is the registered page image.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
++    // SAFETY: records the post-insert free space for the live relation block.
+     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+     Ok(Some(ItemPointer {
+         block_number,
+@@ -1799,6 +1813,8 @@ unsafe fn append_ivf_posting_to_new_block(
+     index_relation: pg_sys::Relation,
+     payload: &[u8],
+ ) -> Result<ItemPointer, String> {
++    // SAFETY: `P_NEW` with zero-and-lock allocates a new main-fork block and
++    // returns it already locked for initialization.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main_locked(
+             index_relation,
+@@ -1809,11 +1825,18 @@ unsafe fn append_ivf_posting_to_new_block(
+     .ok_or_else(|| "ec_ivf failed to allocate posting-list block".to_owned())?;
+ 
+     let page_size = buffer.page_size();
++    // SAFETY: starts a generic WAL transaction for the live index relation;
++    // the newly allocated buffer remains locked by `buffer`.
+     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
++    // SAFETY: the new buffer is locked and registered as a full-page image,
++    // yielding a mutable page pointer for initialization and insertion.
+     let page =
+         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
++    // SAFETY: `page` is a freshly allocated registered page image.
+     unsafe { pg_sys::PageInit(page, page_size, 0) };
+ 
++    // SAFETY: `page` is initialized and registered, and `payload` points to an
++    // encoded posting whose length was checked against page capacity.
+     let offset = unsafe {
+         pg_sys::PageAddItemExtended(
+             page,
+@@ -1829,8 +1852,12 @@ unsafe fn append_ivf_posting_to_new_block(
+     }
+     let block_number = buffer.block_number();
+ 
++    // SAFETY: finishes the WAL transaction after initializing and mutating the
++    // registered new page.
+     unsafe { wal_txn.finish() };
++    // SAFETY: the buffer remains held and `page` is the registered page image.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
++    // SAFETY: records the post-insert free space for the newly allocated block.
+     unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+     Ok(ItemPointer {
+         block_number,
