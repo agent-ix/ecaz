@@ -1872,6 +1872,8 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     directory: IvfListDirectoryTuple,
 ) -> Result<(), String> {
     let encoded = directory.encode();
+    // SAFETY: `directory_tid` identifies an existing directory tuple, and an
+    // exclusive buffer lock is required before rewriting its bytes in place.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1887,7 +1889,11 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
         )
     })?;
 
+    // SAFETY: starts a generic WAL transaction for the live index relation;
+    // the target buffer remains exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
+    // yielding a mutable page pointer for this transaction scope.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
@@ -1901,6 +1907,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
         ));
     }
 
+    // SAFETY: the offset was checked against the page line-pointer range.
     let item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         std::mem::drop(wal_txn);
@@ -1924,9 +1931,12 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
         ));
     }
 
+    // SAFETY: the target tuple slot is live, in-bounds, and exactly the same
+    // size as the encoded replacement directory tuple.
     unsafe {
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
+    // SAFETY: finishes the WAL transaction after the registered page rewrite.
     unsafe { wal_txn.finish() };
     Ok(())
 }
@@ -1940,6 +1950,8 @@ pub(super) unsafe fn update_ivf_list_directory<F>(
 where
     F: FnOnce(&mut IvfListDirectoryTuple) -> Result<(), String>,
 {
+    // SAFETY: `directory_tid` identifies an existing directory tuple, and an
+    // exclusive buffer lock is required before reading and rewriting it.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1955,7 +1967,11 @@ where
         )
     })?;
 
+    // SAFETY: starts a generic WAL transaction for the live index relation;
+    // the target buffer remains exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
+    // yielding a mutable page pointer for this transaction scope.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
@@ -1969,6 +1985,8 @@ where
         ));
     }
 
+    // SAFETY: the page pointer and size come from the exclusive-locked buffer;
+    // the helper validates the target slot before exposing tuple bytes.
     let mut directory = match unsafe {
         with_required_page_tuple_bytes(
             page_ptr,
@@ -2000,11 +2018,16 @@ where
     }
 
     let encoded = directory.encode();
+    // SAFETY: the helper above already validated that this offset names a live
+    // directory tuple on the registered page.
     let directory_item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
     let tuple_offset = directory_item_id.lp_off() as usize;
+    // SAFETY: directory tuples have a fixed encoded size, and the validated
+    // slot has that size; copy updates the existing tuple in place.
     unsafe {
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
+    // SAFETY: finishes the WAL transaction after the registered page rewrite.
     unsafe { wal_txn.finish() };
     Ok(directory)
 }
@@ -2016,6 +2039,8 @@ pub(super) unsafe fn rewrite_ivf_posting(
     posting: &IvfPostingTuple,
 ) -> Result<(), String> {
     let encoded = posting.encode()?;
+    // SAFETY: `posting_tid` identifies an existing posting tuple, and an
+    // exclusive buffer lock is required before rewriting its bytes in place.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -2031,7 +2056,11 @@ pub(super) unsafe fn rewrite_ivf_posting(
         )
     })?;
 
+    // SAFETY: starts a generic WAL transaction for the live index relation;
+    // the target buffer remains exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
+    // yielding a mutable page pointer for this transaction scope.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
@@ -2045,6 +2074,7 @@ pub(super) unsafe fn rewrite_ivf_posting(
         ));
     }
 
+    // SAFETY: the offset was checked against the page line-pointer range.
     let item_id = unsafe { &*page_item_id(page_ptr, posting_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         std::mem::drop(wal_txn);
@@ -2068,9 +2098,12 @@ pub(super) unsafe fn rewrite_ivf_posting(
         ));
     }
 
+    // SAFETY: the target tuple slot is live, in-bounds, and exactly the same
+    // size as the encoded replacement posting tuple.
     unsafe {
         ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
     };
+    // SAFETY: finishes the WAL transaction after the registered page rewrite.
     unsafe { wal_txn.finish() };
     Ok(())
 }
