@@ -7,6 +7,8 @@ pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteProductionExecutorStateSummaryRow {
     let result = (|| -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+        // SAFETY: forwards the live index relation and checked request fields
+        // to the libpq dispatch planner that owns relation/page reads.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -36,6 +38,8 @@ pub(crate) unsafe fn remote_search_production_degraded_skip_report_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteProductionDegradedSkipReportRow> {
     let result = (|| -> Result<Vec<SpireRemoteProductionDegradedSkipReportRow>, String> {
+        // SAFETY: forwards the live index relation and checked request fields
+        // to dispatch planning before reducing rows to degraded-skip output.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -63,6 +67,8 @@ pub(crate) unsafe fn remote_search_production_executor_session_summary_row(
     top_k: usize,
 ) -> SpireRemoteProductionExecutorSessionSummaryRow {
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    // SAFETY: forwards the live index relation and checked request fields to
+    // the executor-state summary wrapper for this backend session.
     let summary = unsafe {
         remote_search_production_executor_state_summary_row(
             index_relation,
@@ -94,6 +100,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
     let result = (|| -> Result<SpireRemoteProductionScanHandoffSummaryRow, String> {
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+        // SAFETY: reads the SPIRE root control page through the live index
+        // relation supplied by the SQL diagnostic caller.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(SpireRemoteProductionScanHandoffSummaryRow {
@@ -120,6 +128,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
             });
         }
 
+        // SAFETY: root_control came from the same live index relation and names
+        // the active epoch whose manifests are loaded for coordinator fanout.
         let (epoch_manifest, object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
@@ -128,6 +138,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens relation-backed object stores for placements from the
+        // published epoch snapshot while holding AccessShareLock.
         let object_store = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
@@ -135,6 +147,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?
         };
+        // SAFETY: reads PostgreSQL reloptions from the live index relation for
+        // scan planning only.
         let relation_options = unsafe { options::relation_options(index_relation) };
         let top_graph_plan = relation_options.top_graph_plan()?;
         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
@@ -149,6 +163,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
         let selected_pid_count = u64::try_from(selected_leaf_pids.len())
             .map_err(|_| "ec_spire production scan handoff selected PID count exceeds u64")?;
 
+        // SAFETY: forwards the live index relation and selected PIDs from the
+        // same active epoch into the execution-summary planner.
         let execution_summary = unsafe {
             remote_search_execution_summary_row(
                 index_relation,
@@ -184,6 +200,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
             });
         }
 
+        // SAFETY: forwards the live index relation and selected PIDs from the
+        // active epoch into the libpq dispatch planner.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -477,6 +495,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
         let mut metrics = SpireRemoteProductionReadMetrics::default();
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+        // SAFETY: reads the SPIRE root control page through the live index
+        // relation supplied by the production scan wrapper.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);
@@ -509,6 +529,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
             );
         }
 
+        // SAFETY: root_control came from the same live index relation and names
+        // the active epoch whose manifests are loaded for heap resolution.
         let (epoch_manifest, object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
@@ -517,6 +539,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
             &object_manifest,
             &placement_directory,
         )?;
+        // SAFETY: opens relation-backed object stores for placements from the
+        // active published epoch while holding AccessShareLock.
         let object_store = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
@@ -524,6 +548,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?
         };
+        // SAFETY: reads PostgreSQL reloptions from the live index relation for
+        // scan-plan and candidate-limit resolution only.
         let relation_options = unsafe { options::relation_options(index_relation) };
         let top_graph_plan = relation_options.top_graph_plan()?;
         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
@@ -543,6 +569,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
         )?;
         let selected_pid_count = u64::try_from(selected_leaf_pids.len())
             .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;
+        // SAFETY: forwards the live index relation and selected PIDs from the
+        // same active epoch into the execution-summary planner.
         let execution_summary = unsafe {
             remote_search_execution_summary_row(
                 index_relation,
@@ -586,6 +614,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
         }
 
         let local_heap_rows = if execution_summary.local_pid_count > 0 {
+            // SAFETY: selected_leaf_pids were planned from the live index
+            // relation and active epoch before local heap candidate reads.
             unsafe {
                 remote_search_local_heap_candidate_rows_for_result_summary(
                     index_relation,
@@ -608,6 +638,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
         .map_err(|_| "ec_spire production scan heap local candidate count exceeds u64")?;
 
         let fingerprint_start = std::time::Instant::now();
+        // SAFETY: forwards the live index relation and selected PIDs from the
+        // active epoch into libpq dispatch planning for remote reads.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -743,6 +775,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteProductionScanResultStream {
+    // SAFETY: forwards the live index relation and SQL top_k override to the
+    // shared production heap-resolution implementation.
     let result = unsafe {
         remote_search_production_scan_heap_resolution_result_stream_impl(
             index_relation,
@@ -760,6 +794,8 @@ pub(crate) unsafe fn remote_search_production_scan_tuple_payload_result_stream(
     top_k: usize,
     tuple_payload_columns: &[String],
 ) -> SpireRemoteProductionScanResultStream {
+    // SAFETY: forwards the live index relation, SQL top_k override, and
+    // caller-owned payload column names to the shared scan implementation.
     let result = unsafe {
         remote_search_production_scan_heap_resolution_result_stream_impl(
             index_relation,
@@ -778,6 +814,9 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_str
     query: Vec<f32>,
 ) -> SpireRemoteProductionScanResultStream {
     let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {
+        // SAFETY: forwards the live index relation from the AM callback into
+        // the shared heap-resolution implementation; heap_relation and snapshot
+        // are accepted by the callback contract but not dereferenced here.
         let stream = unsafe {
             remote_search_production_scan_heap_resolution_result_stream_impl(
                 index_relation,
@@ -798,6 +837,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteProductionScanHeapResolutionSummaryRow {
+    // SAFETY: forwards the live index relation and checked SQL arguments to the
+    // result-stream wrapper, then reads the Rust-owned summary field.
     unsafe {
         remote_search_production_scan_heap_resolution_result_stream(index_relation, query, top_k)
             .summary
@@ -809,6 +850,8 @@ pub(crate) unsafe fn remote_search_production_read_profile_row(
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteProductionReadProfileRow {
+    // SAFETY: forwards the live index relation and checked SQL arguments to the
+    // shared profiled scan implementation.
     let result = unsafe {
         remote_search_production_scan_heap_resolution_result_stream_impl(
             index_relation,
@@ -827,7 +870,11 @@ pub(crate) unsafe fn remote_search_operator_diagnostics_row(
     top_k: usize,
 ) -> SpireRemoteSearchOperatorDiagnosticsRow {
     let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {
+        // SAFETY: reads remote-node capability diagnostics through the live
+        // index relation supplied by the SQL diagnostic wrapper.
         let capability = unsafe { remote_node_capability_summary(index_relation) };
+        // SAFETY: reads remote-node snapshot diagnostics through the same live
+        // index relation before filtering to non-local nodes.
         let remote_snapshots = unsafe { remote_node_snapshot(index_relation) }
             .into_iter()
             .filter(|row| row.node_id != meta::SPIRE_LOCAL_NODE_ID)
@@ -853,6 +900,8 @@ pub(crate) unsafe fn remote_search_operator_diagnostics_row(
             .map_err(|_| "ec_spire operator diagnostics remote node count exceeds u64")?
             .checked_sub(ready_remote_node_count)
             .ok_or_else(|| "ec_spire operator diagnostics remote node count underflow".to_owned())?;
+        // SAFETY: forwards the live index relation and checked request fields
+        // to the scan handoff summary used by operator diagnostics.
         let summary =
             unsafe { remote_search_production_scan_handoff_summary_row(index_relation, query, top_k) };
 
