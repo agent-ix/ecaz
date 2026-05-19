@@ -27,7 +27,9 @@ mod tests {
     use tokio::time::{sleep, timeout};
     use turmoil::net::UdpSocket;
 
-    const PORT: u16 = 46_040;
+    const MERGE_PORT: u16 = 46_040;
+    const PARTITION_PORT: u16 = 46_041;
+    const STALE_PORT: u16 = 46_042;
 
     #[derive(Clone)]
     struct NodeSpec {
@@ -70,8 +72,8 @@ mod tests {
         }
     }
 
-    async fn serve_node(spec: NodeSpec) -> turmoil::Result {
-        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, PORT)).await?;
+    async fn serve_node(spec: NodeSpec, port: u16) -> turmoil::Result {
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port)).await?;
         let mut buf = [0_u8; 2048];
         let Ok(Ok((len, peer))) =
             timeout(Duration::from_millis(200), socket.recv_from(&mut buf)).await
@@ -100,6 +102,7 @@ mod tests {
         consistency: SpireRemoteTransportSimConsistency,
         requests: Vec<SpireRemoteTransportSimRequest>,
         partitioned_host: Option<&'static str>,
+        port: u16,
     ) -> SpireRemoteTransportSimState {
         let mut state =
             SpireRemoteTransportSimState::new(consistency, requests.clone()).expect("valid state");
@@ -116,7 +119,7 @@ mod tests {
             let host = format!("node-{}", request.node_id);
             let encoded =
                 encode_remote_transport_sim_request(request).expect("request should encode");
-            match socket.send_to(&encoded, (host.as_str(), PORT)).await {
+            match socket.send_to(&encoded, (host.as_str(), port)).await {
                 Ok(_) => {
                     waiting_for.insert(request.node_id);
                 }
@@ -151,9 +154,9 @@ mod tests {
         state
     }
 
-    fn add_node(sim: &mut turmoil::Sim, spec: NodeSpec) {
+    fn add_node(sim: &mut turmoil::Sim, spec: NodeSpec, port: u16) {
         let host = spec.host;
-        sim.host(host, move || serve_node(spec.clone()));
+        sim.host(host, move || serve_node(spec.clone(), port));
     }
 
     struct ScriptedAdapter {
@@ -214,6 +217,7 @@ mod tests {
                 score: 0.40,
                 dedupe_key: b"global-vec".to_vec(),
             },
+            MERGE_PORT,
         );
         add_node(
             &mut sim,
@@ -224,6 +228,7 @@ mod tests {
                 score: 0.20,
                 dedupe_key: b"global-vec".to_vec(),
             },
+            MERGE_PORT,
         );
         sim.client("client", async move {
             let state = run_client(
@@ -233,6 +238,7 @@ mod tests {
                     request(3, SpireRemoteTransportSimConsistency::Strict),
                 ],
                 None,
+                MERGE_PORT,
             )
             .await;
             let summary = state.summary(Some(1)).expect("summary should build");
@@ -259,6 +265,7 @@ mod tests {
                 score: 0.30,
                 dedupe_key: b"node-2-vec".to_vec(),
             },
+            PARTITION_PORT,
         );
         add_node(
             &mut sim,
@@ -269,6 +276,7 @@ mod tests {
                 score: 0.10,
                 dedupe_key: b"node-3-vec".to_vec(),
             },
+            PARTITION_PORT,
         );
         sim.client("client", async move {
             let state = run_client(
@@ -278,6 +286,7 @@ mod tests {
                     request(3, SpireRemoteTransportSimConsistency::Degraded),
                 ],
                 Some("node-3"),
+                PARTITION_PORT,
             )
             .await;
             let summary = state.summary(Some(1)).expect("summary should build");
@@ -303,12 +312,14 @@ mod tests {
                 score: 0.10,
                 dedupe_key: b"stale-vec".to_vec(),
             },
+            STALE_PORT,
         );
         sim.client("client", async move {
             let state = run_client(
                 SpireRemoteTransportSimConsistency::Strict,
                 vec![request(2, SpireRemoteTransportSimConsistency::Strict)],
                 None,
+                STALE_PORT,
             )
             .await;
             let summary = state.summary(Some(1)).expect("summary should build");
