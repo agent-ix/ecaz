@@ -1542,12 +1542,6 @@ src/am/ec_spire/custom_scan/tests.rs:434
 src/am/ec_spire/custom_scan/tests.rs:435
 src/am/ec_spire/custom_scan/tests.rs:436
 src/am/ec_spire/custom_scan/tests.rs:437
-src/am/ec_spire/custom_scan/tuple_payload.rs:105
-src/am/ec_spire/custom_scan/tuple_payload.rs:119
-src/am/ec_spire/custom_scan/tuple_payload.rs:149
-src/am/ec_spire/custom_scan/tuple_payload.rs:266
-src/am/ec_spire/custom_scan/tuple_payload.rs:40
-src/am/ec_spire/custom_scan/tuple_payload.rs:6
 src/am/ec_spire/dml_frontdoor/mod.rs:1001
 src/am/ec_spire/dml_frontdoor/mod.rs:1002
 src/am/ec_spire/dml_frontdoor/mod.rs:1016
