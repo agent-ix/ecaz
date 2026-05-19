@@ -1,0 +1,72 @@
+hardening/careful/src/../../../src/storage/page.rs:23:5: replace align_up -> usize with 0
+hardening/careful/src/../../../src/storage/page.rs:23:5: replace align_up -> usize with 1
+hardening/careful/src/../../../src/storage/page.rs:27:15: replace + with - in align_up
+hardening/careful/src/../../../src/storage/page.rs:44:9: replace ItemPointer::encode_into with ()
+hardening/careful/src/../../../src/storage/page.rs:49:24: replace != with == in ItemPointer::decode
+hardening/careful/src/../../../src/storage/page.rs:82:9: replace DataPage::block_number -> u32 with 0
+hardening/careful/src/../../../src/storage/page.rs:82:9: replace DataPage::block_number -> u32 with 1
+hardening/careful/src/../../../src/storage/page.rs:86:9: replace DataPage::tuple_count -> usize with 0
+hardening/careful/src/../../../src/storage/page.rs:86:9: replace DataPage::tuple_count -> usize with 1
+hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(Vec::new())
+hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![]])
+hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![0]])
+hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![1]])
+hardening/careful/src/../../../src/storage/page.rs:94:9: replace DataPage::free_bytes -> usize with 0
+hardening/careful/src/../../../src/storage/page.rs:94:9: replace DataPage::free_bytes -> usize with 1
+hardening/careful/src/../../../src/storage/page.rs:98:9: replace DataPage::can_fit_raw_tuple -> bool with true
+hardening/careful/src/../../../src/storage/page.rs:98:9: replace DataPage::can_fit_raw_tuple -> bool with false
+hardening/careful/src/../../../src/storage/page.rs:98:42: replace <= with > in DataPage::can_fit_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:102:12: delete ! in DataPage::insert_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:111:25: replace += with -= in DataPage::insert_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:111:25: replace += with *= in DataPage::insert_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(Vec::new()))
+hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![0]))
+hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![1]))
+hardening/careful/src/../../../src/storage/page.rs:120:29: replace != with == in DataPage::raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:126:30: replace == with != in DataPage::raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:130:40: replace - with + in DataPage::raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:130:40: replace - with / in DataPage::raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:138:9: replace DataPage::update_raw_tuple -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/storage/page.rs:138:29: replace != with == in DataPage::update_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:144:30: replace == with != in DataPage::update_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:148:40: replace - with + in DataPage::update_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:148:40: replace - with / in DataPage::update_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:153:26: replace != with == in DataPage::update_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:180:9: replace DataPageChain::page_size -> usize with 0
+hardening/careful/src/../../../src/storage/page.rs:180:9: replace DataPageChain::page_size -> usize with 1
+hardening/careful/src/../../../src/storage/page.rs:184:9: replace DataPageChain::pages -> &[DataPage] with Vec::leak(Vec::new())
+hardening/careful/src/../../../src/storage/page.rs:188:9: replace DataPageChain::get_page -> Option<&DataPage> with None
+hardening/careful/src/../../../src/storage/page.rs:193:9: replace DataPageChain::get_page_mut -> Option<&mut DataPage> with None
+hardening/careful/src/../../../src/storage/page.rs:198:9: replace DataPageChain::start_new_page_if_current_has_tuples with ()
+hardening/careful/src/../../../src/storage/page.rs:201:53: replace == with != in DataPageChain::start_new_page_if_current_has_tuples
+hardening/careful/src/../../../src/storage/page.rs:210:13: replace + with - in DataPageChain::start_new_page_if_current_has_tuples
+hardening/careful/src/../../../src/storage/page.rs:210:13: replace + with * in DataPageChain::start_new_page_if_current_has_tuples
+hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with None
+hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 0))
+hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 1))
+hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 0))
+hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 1))
+hardening/careful/src/../../../src/storage/page.rs:215:18: replace == with != in DataPageChain::append_empty_pages
+hardening/careful/src/../../../src/storage/page.rs:224:13: replace + with - in DataPageChain::append_empty_pages
+hardening/careful/src/../../../src/storage/page.rs:224:13: replace + with * in DataPageChain::append_empty_pages
+hardening/careful/src/../../../src/storage/page.rs:227:49: replace + with - in DataPageChain::append_empty_pages
+hardening/careful/src/../../../src/storage/page.rs:227:49: replace + with * in DataPageChain::append_empty_pages
+hardening/careful/src/../../../src/storage/page.rs:238:12: delete ! in DataPageChain::insert_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:260:13: replace + with - in DataPageChain::insert_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:260:13: replace + with * in DataPageChain::insert_raw_tuple
+hardening/careful/src/../../../src/storage/page.rs:277:5: replace usable_page_bytes -> usize with 0
+hardening/careful/src/../../../src/storage/page.rs:277:5: replace usable_page_bytes -> usize with 1
+hardening/careful/src/../../../src/storage/page.rs:281:5: replace element_or_neighbor_tuple_fits -> bool with true
+hardening/careful/src/../../../src/storage/page.rs:281:5: replace element_or_neighbor_tuple_fits -> bool with false
+hardening/careful/src/../../../src/storage/page.rs:281:38: replace <= with > in element_or_neighbor_tuple_fits
+hardening/careful/src/../../../src/storage/page.rs:285:5: replace aligned_tuple_bytes -> usize with 0
+hardening/careful/src/../../../src/storage/page.rs:285:5: replace aligned_tuple_bytes -> usize with 1
+hardening/careful/src/../../../src/storage/page.rs:285:54: replace + with - in aligned_tuple_bytes
+hardening/careful/src/../../../src/storage/page.rs:285:54: replace + with * in aligned_tuple_bytes
+hardening/careful/src/../../../src/storage/page.rs:285:40: replace + with - in aligned_tuple_bytes
+hardening/careful/src/../../../src/storage/page.rs:285:40: replace + with * in aligned_tuple_bytes
+hardening/careful/src/../../../src/storage/page.rs:286:31: replace % with / in aligned_tuple_bytes
+hardening/careful/src/../../../src/storage/page.rs:286:31: replace % with + in aligned_tuple_bytes
+hardening/careful/src/../../../src/storage/page.rs:290:19: replace + with * in aligned_tuple_bytes
+hardening/careful/src/../../../src/storage/page.rs:295:5: replace raw_tuple_storage_bytes -> usize with 0
+hardening/careful/src/../../../src/storage/page.rs:295:5: replace raw_tuple_storage_bytes -> usize with 1

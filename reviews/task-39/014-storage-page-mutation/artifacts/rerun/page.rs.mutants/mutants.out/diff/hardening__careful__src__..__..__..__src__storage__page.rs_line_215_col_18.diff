@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace == with != in DataPageChain::append_empty_pages
+@@ -207,17 +207,17 @@
+             .last()
+             .expect("page chain is non-empty")
+             .block_number
+             + 1;
+         self.pages.push(DataPage::new(next_block, self.page_size));
+     }
+ 
+     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {
+-        if count == 0 {
++        if count != /* ~ changed by cargo-mutants ~ */ 0 {
+             return None;
+         }
+ 
+         let first_block = self
+             .pages
+             .last()
+             .expect("page chain is non-empty")
+             .block_number

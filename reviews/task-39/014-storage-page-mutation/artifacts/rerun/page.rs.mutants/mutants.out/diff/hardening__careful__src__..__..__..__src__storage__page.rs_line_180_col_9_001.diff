@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPageChain::page_size -> usize with 1
+@@ -172,17 +172,17 @@
+     pub fn new(page_size: usize) -> Self {
+         Self {
+             page_size,
+             pages: vec![DataPage::new(FIRST_DATA_BLOCK_NUMBER, page_size)],
+         }
+     }
+ 
+     pub fn page_size(&self) -> usize {
+-        self.page_size
++        1 /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn pages(&self) -> &[DataPage] {
+         &self.pages
+     }
+ 
+     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
+         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;

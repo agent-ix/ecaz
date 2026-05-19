@@ -1,0 +1,44 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPage::update_raw_tuple -> Result<(), String> with Ok(())
+@@ -130,40 +130,17 @@
+         let index = (tid.offset_number - 1) as usize;
+         self.tuples
+             .get(index)
+             .map(Vec::as_slice)
+             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))
+     }
+ 
+     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {
+-        if tid.block_number != self.block_number {
+-            return Err(format!(
+-                "tuple block mismatch: got {}, page is {}",
+-                tid.block_number, self.block_number
+-            ));
+-        }
+-        if tid.offset_number == 0 {
+-            return Err("offset number must be 1-based".into());
+-        }
+-
+-        let index = (tid.offset_number - 1) as usize;
+-        let existing = self
+-            .tuples
+-            .get_mut(index)
+-            .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))?;
+-        if payload.len() != existing.len() {
+-            return Err(format!(
+-                "tuple length mismatch: got {}, expected {}",
+-                payload.len(),
+-                existing.len()
+-            ));
+-        }
+-        *existing = payload;
+-        Ok(())
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ #[derive(Debug, Clone)]
+ pub struct DataPageChain {
+     pub(crate) page_size: usize,
+     pub(crate) pages: Vec<DataPage>,
+ }

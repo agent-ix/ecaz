@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace != with == in DataPage::update_raw_tuple
+@@ -145,17 +145,17 @@
+             return Err("offset number must be 1-based".into());
+         }
+ 
+         let index = (tid.offset_number - 1) as usize;
+         let existing = self
+             .tuples
+             .get_mut(index)
+             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))?;
+-        if payload.len() != existing.len() {
++        if payload.len() == /* ~ changed by cargo-mutants ~ */ existing.len() {
+             return Err(format!(
+                 "tuple length mismatch: got {}, expected {}",
+                 payload.len(),
+                 existing.len()
+             ));
+         }
+         *existing = payload;
+         Ok(())

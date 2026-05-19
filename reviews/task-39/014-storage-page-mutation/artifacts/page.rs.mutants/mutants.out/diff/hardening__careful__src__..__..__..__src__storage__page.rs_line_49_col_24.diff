@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace != with == in ItemPointer::decode
+@@ -41,17 +41,17 @@
+     };
+ 
+     pub fn encode_into(self, out: &mut Vec<u8>) {
+         out.extend_from_slice(&self.block_number.to_le_bytes());
+         out.extend_from_slice(&self.offset_number.to_le_bytes());
+     }
+ 
+     pub fn decode(input: &[u8]) -> Result<Self, String> {
+-        if input.len() != ITEM_POINTER_BYTES {
++        if input.len() == /* ~ changed by cargo-mutants ~ */ ITEM_POINTER_BYTES {
+             return Err(format!(
+                 "item pointer length mismatch: got {}, expected {ITEM_POINTER_BYTES}",
+                 input.len()
+             ));
+         }
+ 
+         Ok(Self {
+             block_number: u32::from_le_bytes(input[..4].try_into().expect("block number bytes")),

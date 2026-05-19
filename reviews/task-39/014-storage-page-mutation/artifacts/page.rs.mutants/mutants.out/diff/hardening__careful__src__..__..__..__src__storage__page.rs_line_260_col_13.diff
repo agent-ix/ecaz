@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace + with - in DataPageChain::insert_raw_tuple
+@@ -252,17 +252,17 @@
+             return last.insert_raw_tuple(payload);
+         }
+ 
+         let next_block = self
+             .pages
+             .last()
+             .expect("page chain is non-empty")
+             .block_number
+-            + 1;
++            - /* ~ changed by cargo-mutants ~ */ 1;
+         self.pages.push(DataPage::new(next_block, self.page_size));
+         debug_assert!(
+             self.pages
+                 .iter()
+                 .enumerate()
+                 .all(|(i, page)| { page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32 }),
+             "DataPageChain pages are not contiguous"
+         );
