@@ -186,10 +186,16 @@ unsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
+    // SAFETY: index_relation is the open SPIRE index relation, and the TID was
+    // read from its root/control page for the active epoch manifest.
     let epoch_bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+    // SAFETY: index_relation is the open SPIRE index relation, and the TID was
+    // read from its root/control page for the active object manifest.
     let object_bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+    // SAFETY: index_relation is the open SPIRE index relation, and the TID was
+    // read from its root/control page for the active placement directory.
     let placement_bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
@@ -313,12 +319,18 @@ pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireBoundaryReplicaIdentitySnapshotRow> {
     let result = (|| -> Result<Vec<SpireBoundaryReplicaIdentitySnapshotRow>, String> {
+        // SAFETY: index_relation is the open SPIRE index relation inspected by
+        // this read-only diagnostic.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
+        // SAFETY: root_control was read from the same open relation and names
+        // the active coordinator fanout manifest set.
         let (_epoch_manifest, _object_manifest, placement_directory) =
             unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)? };
+        // SAFETY: placement_directory was decoded from the active relation
+        // manifests and is used to open the corresponding local object stores.
         let object_store = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
@@ -419,16 +431,22 @@ pub(crate) unsafe fn index_boundary_replica_placement_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireBoundaryReplicaPlacementDiagnosticRow> {
     let result = (|| -> Result<Vec<SpireBoundaryReplicaPlacementDiagnosticRow>, String> {
+        // SAFETY: index_relation is the open SPIRE index relation inspected by
+        // this read-only diagnostic.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
+        // SAFETY: root_control was read from the same open relation and names
+        // the active manifest set for boundary placement diagnostics.
         let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {
             load_relation_epoch_manifests_for_boundary_placement_diagnostics(
                 index_relation,
                 root_control,
             )?
         };
+        // SAFETY: placement_directory was decoded from the active relation
+        // manifests and is used to open the corresponding local object stores.
         let object_store = unsafe {
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,

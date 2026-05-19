@@ -1313,15 +1313,6 @@ src/am/ec_spire/coordinator/debug.rs:620
 src/am/ec_spire/coordinator/debug.rs:622
 src/am/ec_spire/coordinator/debug.rs:628
 src/am/ec_spire/coordinator/debug.rs:88
-src/am/ec_spire/coordinator/diagnostics.rs:190
-src/am/ec_spire/coordinator/diagnostics.rs:192
-src/am/ec_spire/coordinator/diagnostics.rs:194
-src/am/ec_spire/coordinator/diagnostics.rs:316
-src/am/ec_spire/coordinator/diagnostics.rs:321
-src/am/ec_spire/coordinator/diagnostics.rs:322
-src/am/ec_spire/coordinator/diagnostics.rs:422
-src/am/ec_spire/coordinator/diagnostics.rs:426
-src/am/ec_spire/coordinator/diagnostics.rs:432
 src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1000
 src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1012
 src/am/ec_spire/coordinator/hierarchy_snapshots.rs:1112
