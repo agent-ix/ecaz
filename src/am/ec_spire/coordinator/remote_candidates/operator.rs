@@ -6,6 +6,8 @@ pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqSecretPlanRow> {
+    // SAFETY: forwards the live index relation and caller-validated remote
+    // search planning inputs into the dispatch-plan diagnostic path.
     let dispatch_rows = unsafe {
         remote_search_libpq_dispatch_plan_rows(
             index_relation,
@@ -84,6 +86,9 @@ pub(crate) unsafe fn remote_search_libpq_secret_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqSecretSummaryRow {
+    // SAFETY: forwards the live index relation and diagnostic request fields to
+    // the secret-plan wrapper, which preserves dispatch gating before secret
+    // resolution.
     let rows = unsafe {
         remote_search_libpq_secret_plan_rows(
             index_relation,
@@ -188,6 +193,8 @@ pub(crate) unsafe fn remote_search_libpq_connection_open_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqConnectionOpenPlanRow> {
+    // SAFETY: forwards the live index relation and request fields through the
+    // secret-plan stage before deriving connection-open actions.
     let secret_rows = unsafe {
         remote_search_libpq_secret_plan_rows(
             index_relation,
@@ -252,6 +259,8 @@ pub(crate) unsafe fn remote_search_libpq_connection_open_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqConnectionOpenSummaryRow {
+    // SAFETY: forwards the live index relation and diagnostic request fields to
+    // the connection-open plan wrapper before summarizing row counts.
     let rows = unsafe {
         remote_search_libpq_connection_open_plan_rows(
             index_relation,
@@ -345,6 +354,9 @@ pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq executor readiness top_k exceeds u64")?;
+        // SAFETY: forwards the live index relation and checked request fields to
+        // the dispatch-plan diagnostic path; results are summarized before
+        // executor readiness is reported.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -773,4 +785,3 @@ pub(crate) fn remote_search_libpq_result_contract_rows(
         },
     ]
 }
-
