@@ -1,0 +1,36 @@
+Script started on 2026-05-19 01:23:01-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/build/recursive.rs b/src/am/ec_spire/build/recursive.rs[m
+[1mindex add4e552..eecf7421 100644[m
+[1m--- a/src/am/ec_spire/build/recursive.rs[m
+[1m+++ b/src/am/ec_spire/build/recursive.rs[m
+[36m@@ -1057,8 +1057,12 @@[m [mpub(super) unsafe fn publish_relation_recursive_routing_epoch_draft([m
+     next_local_vec_seq: u64,[m
+     local_store_config: SpireLocalStoreConfig,[m
+ ) -> Result<(), String> {[m
+[31m-    let placement_evidence =[m
+[31m-        unsafe { write_placement_entries_to_relation(index_relation, &draft.placement_directory)? };[m
+[32m+[m[32m    let placement_evidence = {[m
+[32m+[m[32m        // SAFETY: index_relation is the open PostgreSQL index relation for this[m
+[32m+[m[32m        // publish, and the draft placement directory was validated while building[m
+[32m+[m[32m        // the recursive epoch before being serialized into relation pages.[m
+[32m+[m[32m        unsafe { write_placement_entries_to_relation(index_relation, &draft.placement_directory) }?[m
+[32m+[m[32m    };[m
+     let object_manifest = object_manifest_from_placement_writes([m
+         draft.epoch_manifest.epoch,[m
+         &draft.placement_directory,[m
+[36m@@ -1066,8 +1070,13 @@[m [mpub(super) unsafe fn publish_relation_recursive_routing_epoch_draft([m
+     )?;[m
+     let input = draft.relation_publish_input(&object_manifest, next_local_vec_seq, local_store_config);[m
+     let manifests = encode_manifest_bundle_for_publish(input.clone())?;[m
+[32m+[m[32m    // SAFETY: manifests were encoded from the just-assembled publish input, and[m
+[32m+[m[32m    // index_relation still names the target relation that receives those[m
+[32m+[m[32m    // manifest pages.[m
+     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };[m
+     let root_control = root_control_state_for_publish(input, locators)?;[m
+[32m+[m[32m    // SAFETY: root_control references locators returned by the manifest write[m
+[32m+[m[32m    // above and is written to the root control page of the same open relation.[m
+     unsafe { page::initialize_root_control_page(index_relation, root_control) };[m
+     Ok(())[m
+ }[m
+
+Script done on 2026-05-19 01:23:01-07:00 [COMMAND_EXIT_CODE="0"]
