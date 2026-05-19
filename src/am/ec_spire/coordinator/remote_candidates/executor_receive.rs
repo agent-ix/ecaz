@@ -205,7 +205,11 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
     consistency_mode: &str,
 ) -> (u64, u64, u64, u64, String) {
     let result = (|| -> Result<(u64, u64, u64, u64, String), String> {
+        // SAFETY: test/pg_test callers pass an open SPIRE index relation; rd_id
+        // is read only to validate remote endpoint identity.
         let index_relid = unsafe { (*index_relation).rd_id };
+        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
+        // which validates the requested epoch and remote execution plan.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -416,7 +420,11 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
 ) -> Vec<SpireRemoteSearchLibpqReceiveAttemptRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqReceiveAttemptRow>, String> {
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        // SAFETY: callers pass an open SPIRE index relation; rd_id is read only
+        // to validate remote endpoint identity for dispatched requests.
         let index_relid = unsafe { (*index_relation).rd_id };
+        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
+        // which validates the requested epoch and remote execution plan.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -645,6 +653,8 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
     consistency_mode: &str,
     executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
+    // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
+    // which validates epoch, fanout, readiness, and remote request state.
     let dispatch_rows = unsafe {
         remote_search_libpq_dispatch_plan_rows(
             index_relation,
@@ -656,6 +666,8 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
         )
     };
     remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
+        // SAFETY: index_relation is the open SPIRE index relation whose relid
+        // is compared against remote endpoint identity metadata.
         unsafe { (*index_relation).rd_id },
         &dispatch_rows,
         &query,
@@ -746,6 +758,8 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
     consistency_mode: &str,
     executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+    // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
+    // which validates epoch, fanout, readiness, and remote request state.
     let dispatch_rows = unsafe {
         remote_search_libpq_dispatch_plan_rows(
             index_relation,
@@ -757,6 +771,8 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
         )
     };
     remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
+        // SAFETY: index_relation is the open SPIRE index relation whose relid
+        // is compared against remote endpoint identity metadata.
         unsafe { (*index_relation).rd_id },
         &dispatch_rows,
         &query,
@@ -798,7 +814,11 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqIdentityCacheSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchLibpqIdentityCacheSummaryRow, String> {
+        // SAFETY: callers pass an open SPIRE index relation; rd_id is read only
+        // to validate remote endpoint identity for dispatched requests.
         let index_relid = unsafe { (*index_relation).rd_id };
+        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
+        // which validates the requested epoch and remote execution plan.
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -886,6 +906,8 @@ pub(crate) unsafe fn remote_search_receive_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchReceivePlanRow> {
+    // SAFETY: arguments are forwarded unchanged to the libpq request-plan
+    // wrapper, which validates remote execution and request shape.
     let rows = unsafe {
         remote_search_libpq_request_plan_rows(
             index_relation,
@@ -926,6 +948,8 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchMergeInputSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchMergeInputSummaryRow, String> {
+        // SAFETY: arguments are forwarded unchanged to the execution-summary
+        // wrapper, which validates query, epoch, and remote execution plan rows.
         let execution_summary = unsafe {
             remote_search_execution_summary_row(
                 index_relation,
