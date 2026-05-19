@@ -1,0 +1,98 @@
+Script started on 2026-05-19 01:01:35-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 51e4e49b..fc220ab2 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1887,15 +1887,6 @@[m [msrc/am/ec_spire/storage/relation_store.rs:708[m
+ src/am/ec_spire/storage/relation_store.rs:710[m
+ src/am/ec_spire/storage/relation_store.rs:722[m
+ src/am/ec_spire/storage/relation_store.rs:836[m
+[31m-src/am/ec_spire/update/publish/relation.rs:133[m
+[31m-src/am/ec_spire/update/publish/relation.rs:144[m
+[31m-src/am/ec_spire/update/publish/relation.rs:152[m
+[31m-src/am/ec_spire/update/publish/relation.rs:153[m
+[31m-src/am/ec_spire/update/publish/relation.rs:48[m
+[31m-src/am/ec_spire/update/publish/relation.rs:64[m
+[31m-src/am/ec_spire/update/publish/relation.rs:72[m
+[31m-src/am/ec_spire/update/publish/relation.rs:73[m
+[31m-src/am/ec_spire/update/publish/relation.rs:97[m
+ src/am/ec_spire/vacuum/mod.rs:102[m
+ src/am/ec_spire/vacuum/mod.rs:103[m
+ src/am/ec_spire/vacuum/mod.rs:112[m
+[1mdiff --git a/src/am/ec_spire/update/publish/relation.rs b/src/am/ec_spire/update/publish/relation.rs[m
+[1mindex a4d49ae8..ea42a3db 100644[m
+[1m--- a/src/am/ec_spire/update/publish/relation.rs[m
+[1m+++ b/src/am/ec_spire/update/publish/relation.rs[m
+[36m@@ -44,6 +44,8 @@[m [mpub(super) unsafe fn publish_relation_scheduled_replacement_epoch([m
+         decision.affected_leaf_pids.clone(),[m
+         replacement_object_placements.clone(),[m
+     )?;[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation being published,[m
+[32m+[m[32m    // and placement_directory was derived from the validated replacement plan.[m
+     let placement_write_evidence =[m
+         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };[m
+     let draft = build_scheduled_replacement_epoch_draft_from_object_placements([m
+[36m@@ -61,6 +63,8 @@[m [mpub(super) unsafe fn publish_relation_scheduled_replacement_epoch([m
+             next_local_vec_seq: input.next_local_vec_seq,[m
+         },[m
+     )?;[m
+[32m+[m[32m    // SAFETY: index_relation is open for this publish operation; the root page[m
+[32m+[m[32m    // is read to confirm it still references the previous epoch.[m
+     let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+     if root_control.active_epoch != previous_epoch_manifest.epoch {[m
+         return Err(format!([m
+[36m@@ -68,8 +72,12 @@[m [mpub(super) unsafe fn publish_relation_scheduled_replacement_epoch([m
+             root_control.active_epoch, previous_epoch_manifest.epoch[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: root_control was read from the same open relation and identifies[m
+[32m+[m[32m    // the local-store config for the active epoch.[m
+     let local_store_config =[m
+         unsafe { load_relation_local_store_config(index_relation, root_control)? };[m
+[32m+[m[32m    // SAFETY: draft was built from validated replacement inputs and the loaded[m
+[32m+[m[32m    // local-store config belongs to the same index relation/root epoch.[m
+     unsafe {[m
+         publish_replacement_epoch_to_relation([m
+             index_relation,[m
+[36m@@ -94,6 +102,8 @@[m [mpub(super) unsafe fn publish_relation_selected_scheduled_replacement_epoch([m
+         selected,[m
+         &input,[m
+     )?;[m
+[32m+[m[32m    // SAFETY: selected contains the validated decision, PID plan, and publish[m
+[32m+[m[32m    // plan; arguments are forwarded unchanged to the relation publish helper.[m
+     unsafe {[m
+         publish_relation_scheduled_replacement_epoch([m
+             index_relation,[m
+[36m@@ -129,6 +139,8 @@[m [mpub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements([m
+         input.affected_leaf_pids,[m
+         input.replacement_object_placements,[m
+     )?;[m
+[32m+[m[32m    // SAFETY: index_relation is the open SPIRE index relation being published,[m
+[32m+[m[32m    // and placement_directory was derived from the validated replacement input.[m
+     let placement_write_evidence =[m
+         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };[m
+     let draft = build_replacement_epoch_draft(SpireReplacementEpochInput {[m
+[36m@@ -141,6 +153,8 @@[m [mpub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements([m
+         next_pid: input.next_pid,[m
+         next_local_vec_seq: input.next_local_vec_seq,[m
+     })?;[m
+[32m+[m[32m    // SAFETY: index_relation is open for this publish operation; the root page[m
+[32m+[m[32m    // is read to confirm it still references the previous epoch.[m
+     let root_control = unsafe { page::read_root_control_page(index_relation) };[m
+     if root_control.active_epoch != previous_epoch_manifest.epoch {[m
+         return Err(format!([m
+[36m@@ -148,8 +162,12 @@[m [mpub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements([m
+             root_control.active_epoch, previous_epoch_manifest.epoch[m
+         ));[m
+     }[m
+[32m+[m[32m    // SAFETY: root_control was read from the same open relation and identifies[m
+[32m+[m[32m    // the local-store config for the active epoch.[m
+     let local_store_config =[m
+         unsafe { load_relation_local_store_config(index_relation, root_control)? };[m
+[32m+[m[32m    // SAFETY: draft was built from validated replacement inputs and the loaded[m
+[32m+[m[32m    // local-store config belongs to the same index relation/root epoch.[m
+     unsafe {[m
+         publish_replacement_epoch_to_relation([m
+             index_relation,[m
+
+Script done on 2026-05-19 01:01:35-07:00 [COMMAND_EXIT_CODE="0"]
