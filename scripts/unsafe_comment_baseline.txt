@@ -1760,10 +1760,6 @@ src/am/ec_spire/page.rs:71
 src/am/ec_spire/page.rs:72
 src/am/ec_spire/page.rs:80
 src/am/ec_spire/page.rs:94
-src/am/ec_spire/scan/callbacks.rs:119
-src/am/ec_spire/scan/callbacks.rs:32
-src/am/ec_spire/scan/callbacks.rs:6
-src/am/ec_spire/scan/callbacks.rs:84
 src/am/ec_spire/scan/relation.rs:12
 src/am/ec_spire/scan/relation.rs:136
 src/am/ec_spire/scan/relation.rs:145

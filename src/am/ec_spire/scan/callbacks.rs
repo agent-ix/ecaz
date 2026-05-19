@@ -3,6 +3,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
     nkeys: std::ffi::c_int,
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
+    // SAFETY: PostgreSQL calls ambeginscan with a live index relation and scan
+    // key counts; the guarded body checks scan descriptor allocation before
+    // installing AM-owned opaque state.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
@@ -29,6 +32,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
     orderbys: pg_sys::ScanKey,
     norderbys: std::ffi::c_int,
 ) {
+    // SAFETY: PostgreSQL calls amrescan with an IndexScanDesc allocated by
+    // ambeginscan; the guarded body rejects invalid scan/orderby state before
+    // dereferencing the descriptor or opaque state.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
@@ -81,6 +87,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> bool {
+    // SAFETY: PostgreSQL calls amgettuple during scan execution with an
+    // IndexScanDesc; the guarded body checks descriptor, direction, opaque
+    // state, and rescan initialization before writing scan result fields.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
@@ -116,6 +125,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple(
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(scan: pg_sys::IndexScanDesc) {
+    // SAFETY: PostgreSQL owns the IndexScanDesc lifetime and may pass null
+    // during cleanup; non-null opaque state was allocated by ambeginscan and is
+    // dropped before freeing and clearing the descriptor pointer.
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
