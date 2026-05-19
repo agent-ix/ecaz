@@ -1,0 +1,88 @@
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 266a824d..a1581c6a 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1633,12 +1633,16 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+             ));
+         }
+ 
++        // SAFETY: callers pass a live index relation for this append; `rd_id`
++        // is stable for the relation lifetime and is used only as a hint key.
+         let relid = unsafe { (*index_relation).rd_id };
+         let mut range_walk_start = tail_block.saturating_sub(1);
+         let mut tried_tail_hint = false;
+         if let Some(hint_block) = posting_free_hint(relid, tuple.list_id) {
+             if block_in_range(hint_block, head_block, tail_block) {
+                 tried_tail_hint = hint_block == tail_block;
++                // SAFETY: `hint_block` was checked against the current list
++                // range, and `payload` is an encoded posting that fits a page.
+                 if let Some(tid) = unsafe {
+                     try_append_ivf_posting_to_block(index_relation, hint_block, &payload)?
+                 } {
+@@ -1657,6 +1661,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         }
+ 
+         if !tried_tail_hint {
++            // SAFETY: `tail_block` comes from validated list metadata and
++            // `payload` is an encoded posting that fits a page.
+             if let Some(tid) =
+                 unsafe { try_append_ivf_posting_to_block(index_relation, tail_block, &payload)? }
+             {
+@@ -1666,8 +1672,12 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         }
+ 
+         let required_space = raw_tuple_storage_bytes(payload.len());
++        // SAFETY: `index_relation` is live and `required_space` is derived
++        // from the encoded posting size; the returned FSM hint is checked.
+         let fsm_block = unsafe { pg_sys::GetPageWithFreeSpace(index_relation, required_space) };
+         if block_in_range(fsm_block, head_block, tail_block) && fsm_block != tail_block {
++            // SAFETY: `fsm_block` was checked against the current list range,
++            // and `payload` is an encoded posting that fits a page.
+             if let Some(tid) =
+                 unsafe { try_append_ivf_posting_to_block(index_relation, fsm_block, &payload)? }
+             {
+@@ -1680,6 +1690,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         // intentionally conservative: use the global index FSM as a hint, then
+         // fall back to a bounded range walk because free space is not list-keyed.
+         for block_number in (head_block..=range_walk_start).rev() {
++            // SAFETY: `block_number` is produced by the bounded validated list
++            // range walk, and `payload` is an encoded posting that fits a page.
+             if let Some(tid) =
+                 unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }
+             {
+@@ -1693,6 +1705,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         // on either side so reuse does not turn one list into a wide scan range.
+         if let Some(left_neighbor) = head_block.checked_sub(1) {
+             if left_neighbor >= FIRST_DATA_BLOCK_NUMBER {
++                // SAFETY: `left_neighbor` is a bounded adjacent data block
++                // probe, and `payload` is an encoded posting that fits a page.
+                 if let Some(tid) = unsafe {
+                     try_append_ivf_posting_to_block(index_relation, left_neighbor, &payload)?
+                 } {
+@@ -1702,6 +1716,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+             }
+         }
+ 
++        // SAFETY: `index_relation` is live; this only reads the current block
++        // count for bounding the adjacent right-neighbor probe.
+         let relation_blocks = unsafe {
+             pg_sys::RelationGetNumberOfBlocksInFork(
+                 index_relation,
+@@ -1710,6 +1726,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         };
+         if let Some(right_neighbor) = tail_block.checked_add(1) {
+             if right_neighbor < relation_blocks {
++                // SAFETY: `right_neighbor` is a bounded adjacent block probe,
++                // and `payload` is an encoded posting that fits a page.
+                 if let Some(tid) = unsafe {
+                     try_append_ivf_posting_to_block(index_relation, right_neighbor, &payload)?
+                 } {
+@@ -1720,6 +1738,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         }
+     }
+ 
++    // SAFETY: no reusable block accepted the posting, so append using the live
++    // relation and an encoded posting payload that was size-checked above.
+     unsafe { append_ivf_posting_to_new_block(index_relation, &payload) }
+ }
+ 

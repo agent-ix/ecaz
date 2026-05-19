@@ -1,0 +1,264 @@
+diff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt
+index a41e13e4..205336c2 100644
+--- a/scripts/unsafe_comment_baseline.txt
++++ b/scripts/unsafe_comment_baseline.txt
+@@ -1307,97 +1307,87 @@ src/am/ec_ivf/insert.rs:81
+ src/am/ec_ivf/insert.rs:84
+ src/am/ec_ivf/insert.rs:87
+ src/am/ec_ivf/insert.rs:98
+-src/am/ec_ivf/page.rs:1636
+-src/am/ec_ivf/page.rs:1642
+-src/am/ec_ivf/page.rs:1661
+-src/am/ec_ivf/page.rs:1669
+-src/am/ec_ivf/page.rs:1672
+-src/am/ec_ivf/page.rs:1684
+-src/am/ec_ivf/page.rs:1696
+-src/am/ec_ivf/page.rs:1705
+-src/am/ec_ivf/page.rs:1713
+-src/am/ec_ivf/page.rs:1723
+-src/am/ec_ivf/page.rs:1732
+-src/am/ec_ivf/page.rs:1742
+-src/am/ec_ivf/page.rs:1744
+-src/am/ec_ivf/page.rs:1745
+-src/am/ec_ivf/page.rs:1747
+ src/am/ec_ivf/page.rs:1752
+-src/am/ec_ivf/page.rs:1768
+-src/am/ec_ivf/page.rs:1769
+-src/am/ec_ivf/page.rs:1770
+-src/am/ec_ivf/page.rs:1782
+-src/am/ec_ivf/page.rs:1792
+-src/am/ec_ivf/page.rs:1794
+-src/am/ec_ivf/page.rs:1795
+-src/am/ec_ivf/page.rs:1797
++src/am/ec_ivf/page.rs:1762
++src/am/ec_ivf/page.rs:1764
++src/am/ec_ivf/page.rs:1765
++src/am/ec_ivf/page.rs:1767
++src/am/ec_ivf/page.rs:1772
++src/am/ec_ivf/page.rs:1788
++src/am/ec_ivf/page.rs:1789
++src/am/ec_ivf/page.rs:1790
++src/am/ec_ivf/page.rs:1802
+ src/am/ec_ivf/page.rs:1812
+-src/am/ec_ivf/page.rs:1813
+ src/am/ec_ivf/page.rs:1814
+-src/am/ec_ivf/page.rs:1828
+-src/am/ec_ivf/page.rs:1843
+-src/am/ec_ivf/page.rs:1845
+-src/am/ec_ivf/page.rs:1857
+-src/am/ec_ivf/page.rs:1880
+-src/am/ec_ivf/page.rs:1883
+-src/am/ec_ivf/page.rs:1896
+-src/am/ec_ivf/page.rs:1911
+-src/am/ec_ivf/page.rs:1913
+-src/am/ec_ivf/page.rs:1925
+-src/am/ec_ivf/page.rs:1956
+-src/am/ec_ivf/page.rs:1958
+-src/am/ec_ivf/page.rs:1961
+-src/am/ec_ivf/page.rs:1972
+-src/am/ec_ivf/page.rs:1987
+-src/am/ec_ivf/page.rs:1989
+-src/am/ec_ivf/page.rs:2001
+-src/am/ec_ivf/page.rs:2024
+-src/am/ec_ivf/page.rs:2027
+-src/am/ec_ivf/page.rs:2058
+-src/am/ec_ivf/page.rs:2064
+-src/am/ec_ivf/page.rs:2088
+-src/am/ec_ivf/page.rs:2098
++src/am/ec_ivf/page.rs:1815
++src/am/ec_ivf/page.rs:1817
++src/am/ec_ivf/page.rs:1832
++src/am/ec_ivf/page.rs:1833
++src/am/ec_ivf/page.rs:1834
++src/am/ec_ivf/page.rs:1848
++src/am/ec_ivf/page.rs:1863
++src/am/ec_ivf/page.rs:1865
++src/am/ec_ivf/page.rs:1877
++src/am/ec_ivf/page.rs:1900
++src/am/ec_ivf/page.rs:1903
++src/am/ec_ivf/page.rs:1916
++src/am/ec_ivf/page.rs:1931
++src/am/ec_ivf/page.rs:1933
++src/am/ec_ivf/page.rs:1945
++src/am/ec_ivf/page.rs:1976
++src/am/ec_ivf/page.rs:1978
++src/am/ec_ivf/page.rs:1981
++src/am/ec_ivf/page.rs:1992
++src/am/ec_ivf/page.rs:2007
++src/am/ec_ivf/page.rs:2009
++src/am/ec_ivf/page.rs:2021
++src/am/ec_ivf/page.rs:2044
++src/am/ec_ivf/page.rs:2047
++src/am/ec_ivf/page.rs:2078
++src/am/ec_ivf/page.rs:2084
++src/am/ec_ivf/page.rs:2108
+ src/am/ec_ivf/page.rs:2118
+-src/am/ec_ivf/page.rs:2141
+-src/am/ec_ivf/page.rs:2147
+-src/am/ec_ivf/page.rs:2212
+-src/am/ec_ivf/page.rs:2214
+-src/am/ec_ivf/page.rs:2223
+-src/am/ec_ivf/page.rs:2286
+-src/am/ec_ivf/page.rs:2298
+-src/am/ec_ivf/page.rs:2303
+-src/am/ec_ivf/page.rs:2305
++src/am/ec_ivf/page.rs:2138
++src/am/ec_ivf/page.rs:2161
++src/am/ec_ivf/page.rs:2167
++src/am/ec_ivf/page.rs:2232
++src/am/ec_ivf/page.rs:2234
++src/am/ec_ivf/page.rs:2243
+ src/am/ec_ivf/page.rs:2306
+-src/am/ec_ivf/page.rs:2365
+-src/am/ec_ivf/page.rs:2390
+-src/am/ec_ivf/page.rs:2403
+-src/am/ec_ivf/page.rs:2409
+-src/am/ec_ivf/page.rs:2426
+-src/am/ec_ivf/page.rs:2483
+-src/am/ec_ivf/page.rs:2508
+-src/am/ec_ivf/page.rs:2520
+-src/am/ec_ivf/page.rs:2535
+-src/am/ec_ivf/page.rs:2552
+-src/am/ec_ivf/page.rs:2581
+-src/am/ec_ivf/page.rs:2595
+-src/am/ec_ivf/page.rs:2597
+-src/am/ec_ivf/page.rs:2609
+-src/am/ec_ivf/page.rs:2611
+-src/am/ec_ivf/page.rs:2614
++src/am/ec_ivf/page.rs:2318
++src/am/ec_ivf/page.rs:2323
++src/am/ec_ivf/page.rs:2325
++src/am/ec_ivf/page.rs:2326
++src/am/ec_ivf/page.rs:2385
++src/am/ec_ivf/page.rs:2410
++src/am/ec_ivf/page.rs:2423
++src/am/ec_ivf/page.rs:2429
++src/am/ec_ivf/page.rs:2446
++src/am/ec_ivf/page.rs:2503
++src/am/ec_ivf/page.rs:2528
++src/am/ec_ivf/page.rs:2540
++src/am/ec_ivf/page.rs:2555
++src/am/ec_ivf/page.rs:2572
++src/am/ec_ivf/page.rs:2601
+ src/am/ec_ivf/page.rs:2615
+-src/am/ec_ivf/page.rs:2616
+-src/am/ec_ivf/page.rs:2620
+-src/am/ec_ivf/page.rs:2625
++src/am/ec_ivf/page.rs:2617
++src/am/ec_ivf/page.rs:2629
++src/am/ec_ivf/page.rs:2631
++src/am/ec_ivf/page.rs:2634
++src/am/ec_ivf/page.rs:2635
+ src/am/ec_ivf/page.rs:2636
+-src/am/ec_ivf/page.rs:2637
+-src/am/ec_ivf/page.rs:2649
+-src/am/ec_ivf/page.rs:2659
+-src/am/ec_ivf/page.rs:2661
+-src/am/ec_ivf/page.rs:2662
+-src/am/ec_ivf/page.rs:2663
+-src/am/ec_ivf/page.rs:2677
+-src/am/ec_ivf/page.rs:2678
+-src/am/ec_ivf/page.rs:3177
++src/am/ec_ivf/page.rs:2640
++src/am/ec_ivf/page.rs:2645
++src/am/ec_ivf/page.rs:2656
++src/am/ec_ivf/page.rs:2657
++src/am/ec_ivf/page.rs:2669
++src/am/ec_ivf/page.rs:2679
++src/am/ec_ivf/page.rs:2681
++src/am/ec_ivf/page.rs:2682
++src/am/ec_ivf/page.rs:2683
++src/am/ec_ivf/page.rs:2697
++src/am/ec_ivf/page.rs:2698
++src/am/ec_ivf/page.rs:3197
+ src/am/ec_ivf/scan.rs:1028
+ src/am/ec_ivf/scan.rs:1033
+ src/am/ec_ivf/scan.rs:1101
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 266a824d..a1581c6a 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1633,12 +1633,16 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+             ));
+         }
+ 
++        // SAFETY: callers pass a live index relation for this append; `rd_id`
++        // is stable for the relation lifetime and is used only as a hint key.
+         let relid = unsafe { (*index_relation).rd_id };
+         let mut range_walk_start = tail_block.saturating_sub(1);
+         let mut tried_tail_hint = false;
+         if let Some(hint_block) = posting_free_hint(relid, tuple.list_id) {
+             if block_in_range(hint_block, head_block, tail_block) {
+                 tried_tail_hint = hint_block == tail_block;
++                // SAFETY: `hint_block` was checked against the current list
++                // range, and `payload` is an encoded posting that fits a page.
+                 if let Some(tid) = unsafe {
+                     try_append_ivf_posting_to_block(index_relation, hint_block, &payload)?
+                 } {
+@@ -1657,6 +1661,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         }
+ 
+         if !tried_tail_hint {
++            // SAFETY: `tail_block` comes from validated list metadata and
++            // `payload` is an encoded posting that fits a page.
+             if let Some(tid) =
+                 unsafe { try_append_ivf_posting_to_block(index_relation, tail_block, &payload)? }
+             {
+@@ -1666,8 +1672,12 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         }
+ 
+         let required_space = raw_tuple_storage_bytes(payload.len());
++        // SAFETY: `index_relation` is live and `required_space` is derived
++        // from the encoded posting size; the returned FSM hint is checked.
+         let fsm_block = unsafe { pg_sys::GetPageWithFreeSpace(index_relation, required_space) };
+         if block_in_range(fsm_block, head_block, tail_block) && fsm_block != tail_block {
++            // SAFETY: `fsm_block` was checked against the current list range,
++            // and `payload` is an encoded posting that fits a page.
+             if let Some(tid) =
+                 unsafe { try_append_ivf_posting_to_block(index_relation, fsm_block, &payload)? }
+             {
+@@ -1680,6 +1690,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         // intentionally conservative: use the global index FSM as a hint, then
+         // fall back to a bounded range walk because free space is not list-keyed.
+         for block_number in (head_block..=range_walk_start).rev() {
++            // SAFETY: `block_number` is produced by the bounded validated list
++            // range walk, and `payload` is an encoded posting that fits a page.
+             if let Some(tid) =
+                 unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }
+             {
+@@ -1693,6 +1705,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         // on either side so reuse does not turn one list into a wide scan range.
+         if let Some(left_neighbor) = head_block.checked_sub(1) {
+             if left_neighbor >= FIRST_DATA_BLOCK_NUMBER {
++                // SAFETY: `left_neighbor` is a bounded adjacent data block
++                // probe, and `payload` is an encoded posting that fits a page.
+                 if let Some(tid) = unsafe {
+                     try_append_ivf_posting_to_block(index_relation, left_neighbor, &payload)?
+                 } {
+@@ -1702,6 +1716,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+             }
+         }
+ 
++        // SAFETY: `index_relation` is live; this only reads the current block
++        // count for bounding the adjacent right-neighbor probe.
+         let relation_blocks = unsafe {
+             pg_sys::RelationGetNumberOfBlocksInFork(
+                 index_relation,
+@@ -1710,6 +1726,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         };
+         if let Some(right_neighbor) = tail_block.checked_add(1) {
+             if right_neighbor < relation_blocks {
++                // SAFETY: `right_neighbor` is a bounded adjacent block probe,
++                // and `payload` is an encoded posting that fits a page.
+                 if let Some(tid) = unsafe {
+                     try_append_ivf_posting_to_block(index_relation, right_neighbor, &payload)?
+                 } {
+@@ -1720,6 +1738,8 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
+         }
+     }
+ 
++    // SAFETY: no reusable block accepted the posting, so append using the live
++    // relation and an encoded posting payload that was size-checked above.
+     unsafe { append_ivf_posting_to_new_block(index_relation, &payload) }
+ }
+ 
