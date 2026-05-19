@@ -16,6 +16,9 @@ pub mod careful_diskann_vamana;
 #[path = "../../../src/am/ec_hnsw/search.rs"]
 pub mod careful_hnsw_search;
 
+#[path = "../../../src/am/ec_hnsw/page.rs"]
+pub mod careful_hnsw_page;
+
 pub mod storage {
     pub use crate::careful_storage_page as page;
 }
@@ -34,6 +37,7 @@ pub mod am {
     }
 
     pub mod ec_hnsw {
+        pub use crate::careful_hnsw_page as page;
         pub use crate::careful_hnsw_search as search;
     }
 }

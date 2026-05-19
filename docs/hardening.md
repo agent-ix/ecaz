@@ -256,6 +256,9 @@ Baseline sources:
 - `reviews/task-39/011-diskann-page-coverage/artifacts/coverage-summary.txt`
   raises `src/am/ec_diskann/page.rs` by importing the Vamana metadata codec
   tests into the `hardening/careful` coverage harness.
+- `reviews/task-39/012-hnsw-page-coverage/artifacts/coverage-summary.txt`
+  raises `src/am/ec_hnsw/page.rs` by importing the HNSW metadata, tuple, and
+  page-chain codec tests into the `hardening/careful` coverage harness.
 
 The current local coverage lane executes `ecaz-cli` tests and
 `hardening/careful`; it does not execute extension in-module tests, so AM page
@@ -269,7 +272,8 @@ callbacks, and storage guard drops remain recorded gaps.
 | `src/quant/mod.rs` | `0.00%` |
 | `src/storage/page.rs` | `97.90%` |
 | `src/am/ec_diskann/page.rs` | `97.35%` |
-| `src/am/{ec_hnsw,ec_ivf,ec_spire}/page.rs` | `0.00%` |
+| `src/am/ec_hnsw/page.rs` | `84.76%` |
+| `src/am/{ec_ivf,ec_spire}/page.rs` | `0.00%` |
 | `src/am/ec_spire/storage/**` | `0.00%` |
 | `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
 | `src/am/ec_diskann/{routine,scan,build}.rs` | `0.00%` |
