@@ -1,0 +1,53 @@
+Script started on 2026-05-19 01:56:26-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_diskann/options.rs b/src/am/ec_diskann/options.rs[m
+[1mindex 0b19f4ca..1093d04f 100644[m
+[1m--- a/src/am/ec_diskann/options.rs[m
+[1m+++ b/src/am/ec_diskann/options.rs[m
+[36m@@ -163,6 +163,9 @@[m [mpub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions([m
+     reloptions: pg_sys::Datum,[m
+     validate: bool,[m
+ ) -> *mut pg_sys::bytea {[m
+[32m+[m[32m    // SAFETY: PostgreSQL calls amoptions with a reloptions Datum owned by the[m
+[32m+[m[32m    // backend; the guarded body registers fixed offsets for TqDiskannReloptions[m
+[32m+[m[32m    // before handing parsing back to build_local_reloptions.[m
+     unsafe {[m
+         pgrx::pgrx_extern_c_guard(|| {[m
+             let mut relopts = pg_sys::local_relopts::default();[m
+[36m@@ -259,12 +262,16 @@[m [munsafe fn read_string_reloption([m
+         return None;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: offset is a nonzero PostgreSQL reloption string offset inside[m
+[32m+[m[32m    // rd_options, which points at the varlena reloptions blob for this relation.[m
+     let value_ptr = unsafe {[m
+         rd_options[m
+             .cast::<u8>()[m
+             .add(offset as usize)[m
+             .cast::<std::ffi::c_char>()[m
+     };[m
+[32m+[m[32m    // SAFETY: PostgreSQL stores string reloptions as NUL-terminated C strings at[m
+[32m+[m[32m    // their declared offsets inside the reloptions blob.[m
+     let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }[m
+         .to_str()[m
+         .unwrap_or_else(|e| pgrx::error!("invalid ec_diskann {name} reloption: {e}"));[m
+[36m@@ -276,12 +283,18 @@[m [munsafe fn read_string_reloption([m
+ [m
+ #[allow(dead_code)][m
+ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {[m
+[32m+[m[32m    // SAFETY: index_relation is a live PostgreSQL relation while callers decode[m
+[32m+[m[32m    // relation options; rd_options may be null when defaults apply.[m
+     let rd_options = unsafe { (*index_relation).rd_options };[m
+     if rd_options.is_null() {[m
+         return TqDiskannOptions::DEFAULT;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: rd_options was built by ec_diskann_amoptions using the[m
+[32m+[m[32m    // TqDiskannReloptions layout and remains live with the relation cache entry.[m
+     let reloptions = unsafe { &*rd_options.cast::<TqDiskannReloptions>() };[m
+[32m+[m[32m    // SAFETY: storage_format_offset is read from the validated reloptions blob[m
+[32m+[m[32m    // and read_string_reloption returns None for the default zero offset.[m
+     let storage_format = match unsafe {[m
+         read_string_reloption([m
+             rd_options,[m
+
+Script done on 2026-05-19 01:56:26-07:00 [COMMAND_EXIT_CODE="0"]
