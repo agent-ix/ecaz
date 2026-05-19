@@ -23,32 +23,13 @@ pub mod storage {
         ItemPointer, DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES,
     };
 
-    #[repr(u8)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(super) enum SpirePartitionObjectKind {
-        Root = 1,
-        Internal = 2,
-        Leaf = 3,
-        Delta = 4,
-        TopGraph = 5,
-    }
-
-    impl SpirePartitionObjectKind {
-        fn decode(value: u8) -> Result<Self, String> {
-            match value {
-                1 => Ok(Self::Root),
-                2 => Ok(Self::Internal),
-                3 => Ok(Self::Leaf),
-                4 => Ok(Self::Delta),
-                5 => Ok(Self::TopGraph),
-                other => Err(format!("ec_spire invalid partition object kind: {other}")),
-            }
-        }
-    }
-
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../src/am/ec_spire/storage/vec_id.rs"
+    ));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../src/am/ec_spire/storage/relation_plan.rs"
     ));
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -91,17 +72,6 @@ pub mod storage {
         "/../../src/am/ec_spire/storage/helpers.rs"
     ));
 
-    fn spire_local_store_relation_name(
-        index_relid: u32,
-        local_store_id: u32,
-    ) -> Result<String, String> {
-        if index_relid == 0 {
-            return Err("ec_spire local store relation name needs a valid index relid".to_owned());
-        }
-
-        Ok(format!("ec_spire_store_{index_relid}_{local_store_id}"))
-    }
-
     #[cfg(test)]
     mod tests {
         use super::super::meta::{
@@ -110,12 +80,14 @@ pub mod storage {
         use super::{
             decode_leaf_v2_local_vec_id, is_delete_delta_assignment,
             is_visible_primary_assignment, is_visible_primary_assignment_ref,
-            is_visible_scored_assignment, spire_local_store_relation_name, SpireDeltaPartitionObject,
+            is_visible_scored_assignment, local_store_config_from_relation_plan,
+            plan_local_store_relations, spire_local_store_relation_name, SpireDeltaPartitionObject,
             SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
             SpireLeafPartitionObjectV2Segment, SpireLocalObjectStore, SpireLocalObjectStoreSet,
-            SpireObjectReader, SpirePartitionObjectHeader, SpirePartitionObjectKind,
-            SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireTopGraphNodeRecord,
-            SpireTopGraphPartitionObject, SpireVecId, SpireVecIdKind, LEAF_V2_LOCAL_VEC_ID_STRIDE,
+            SpireLocalStoreState, SpireObjectReader, SpirePartitionObjectHeader,
+            SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject,
+            SpireTopGraphNodeRecord, SpireTopGraphPartitionObject, SpireVecId, SpireVecIdKind,
+            LEAF_V2_LOCAL_VEC_ID_STRIDE,
             SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
             SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -180,6 +152,10 @@ pub mod storage {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../src/am/ec_spire/storage/tests/top_graph.rs"
+        ));
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../src/am/ec_spire/storage/tests/local_store_plan.rs"
         ));
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
