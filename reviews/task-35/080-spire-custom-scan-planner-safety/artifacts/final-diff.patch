@@ -1,0 +1,316 @@
+Script started on 2026-05-19 03:00:28-07:00 [<not executed on terminal>]
+[1mdiff --git a/scripts/unsafe_comment_baseline.txt b/scripts/unsafe_comment_baseline.txt[m
+[1mindex 2e91770c..d83daa8b 100644[m
+[1m--- a/scripts/unsafe_comment_baseline.txt[m
+[1m+++ b/scripts/unsafe_comment_baseline.txt[m
+[36m@@ -1251,43 +1251,6 @@[m [msrc/am/ec_hnsw/vacuum.rs:956[m
+ src/am/ec_hnsw/vacuum.rs:96[m
+ src/am/ec_hnsw/vacuum.rs:968[m
+ src/am/ec_hnsw/vacuum.rs:982[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:101[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:12[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:121[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:127[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:129[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:131[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:132[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:145[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:213[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:268[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:285[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:30[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:342[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:349[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:353[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:355[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:360[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:362[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:375[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:393[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:4[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:400[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:405[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:408[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:412[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:419[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:435[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:501[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:502[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:504[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:511[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:530[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:541[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:552[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:554[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:571[m
+[31m-src/am/ec_spire/custom_scan/planner.rs:582[m
+ src/am/ec_spire/custom_scan/tests.rs:431[m
+ src/am/ec_spire/custom_scan/tests.rs:432[m
+ src/am/ec_spire/custom_scan/tests.rs:433[m
+[1mdiff --git a/src/am/ec_spire/custom_scan/planner.rs b/src/am/ec_spire/custom_scan/planner.rs[m
+[1mindex 525fd95c..c67aaae1 100644[m
+[1m--- a/src/am/ec_spire/custom_scan/planner.rs[m
+[1m+++ b/src/am/ec_spire/custom_scan/planner.rs[m
+[36m@@ -1,6 +1,8 @@[m
+ pub(crate) unsafe fn custom_scan_index_eligibility_row([m
+     index_relation: pg_sys::Relation,[m
+ ) -> SpireCustomScanIndexEligibilityRow {[m
+[32m+[m[32m    // SAFETY: caller passes an open SPIRE index relation; the result helper[m
+[32m+[m[32m    // reads root/control and placement metadata under page/relation guards.[m
+     unsafe {[m
+         custom_scan_index_eligibility_result(index_relation).unwrap_or_else(|e| pgrx::error!("{e}"))[m
+     }[m
+[36m@@ -9,6 +11,8 @@[m [mpub(crate) unsafe fn custom_scan_index_eligibility_row([m
+ unsafe fn custom_scan_index_eligibility_result([m
+     index_relation: pg_sys::Relation,[m
+ ) -> Result<SpireCustomScanIndexEligibilityRow, String> {[m
+[32m+[m[32m    // SAFETY: index_relation is open for this backend; page helper pins and[m
+[32m+[m[32m    // validates the root/control page before decoding it.[m
+     let root_control = unsafe { super::page::read_root_control_page(index_relation) };[m
+     if root_control.active_epoch == 0 {[m
+         return Ok(SpireCustomScanIndexEligibilityRow {[m
+[36m@@ -26,6 +30,8 @@[m [munsafe fn custom_scan_index_eligibility_result([m
+         });[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: active_epoch was checked nonzero and the helper validates the[m
+[32m+[m[32m    // placement directory epoch against root/control.[m
+     let placement_directory =[m
+         unsafe { load_custom_scan_placement_directory(index_relation, root_control)? };[m
+     let active_epoch = root_control.active_epoch;[m
+[36m@@ -98,6 +104,8 @@[m [munsafe fn load_custom_scan_placement_directory([m
+     // heavier fanout loader used by executor paths, which also decodes epoch[m
+     // and object manifests; executor paths remain responsible for full[m
+     // identity and manifest validation before result-stream merge.[m
+[32m+[m[32m    // SAFETY: placement_directory_tid comes from validated root/control state;[m
+[32m+[m[32m    // page helper returns owned bytes after pinning the tuple.[m
+     let placement_bytes = unsafe {[m
+         super::page::read_object_tuple(index_relation, root_control.placement_directory_tid)?[m
+     };[m
+[36m@@ -118,17 +126,25 @@[m [munsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook([m
+     rti: pg_sys::Index,[m
+     rte: *mut pg_sys::RangeTblEntry,[m
+ ) {[m
+[32m+[m[32m    // SAFETY: PostgreSQL invokes set_rel_pathlist hooks with live planner[m
+[32m+[m[32m    // pointers; the previous hook receives the original arguments first.[m
+     unsafe {[m
+         if let Some(previous_hook) = PREVIOUS_SET_REL_PATHLIST_HOOK {[m
+             previous_hook(root, rel, rti, rte);[m
+         }[m
+     }[m
+[32m+[m[32m    // SAFETY: candidate discovery validates planner pointers and relation[m
+[32m+[m[32m    // shape before returning an index OID and owned eligibility row.[m
+     if let Some((index_oid, eligibility)) =[m
+         unsafe { custom_scan_candidate_index_oid(root, rel, rte) }[m
+     {[m
+[32m+[m[32m        // SAFETY: root/rel are still live for this planner hook invocation and[m
+[32m+[m[32m        // add_custom_scan_path allocates a PostgreSQL CustomPath node.[m
+         unsafe { add_custom_scan_path(root, rel, index_oid, eligibility) };[m
+     }[m
+[32m+[m[32m    // SAFETY: DML candidate discovery validates the same live planner pointers.[m
+     if let Some(index_oid) = unsafe { dml_pk_select_candidate_index_oid(root, rel, rte) } {[m
+[32m+[m[32m        // SAFETY: root/rel remain live while adding the DML CustomPath.[m
+         unsafe { add_dml_pk_select_custom_scan_path(root, rel, index_oid) };[m
+     }[m
+ }[m
+[36m@@ -142,6 +158,8 @@[m [munsafe extern "C-unwind" fn ec_spire_plan_custom_path([m
+     clauses: *mut pg_sys::List,[m
+     custom_plans: *mut pg_sys::List,[m
+ ) -> *mut pg_sys::Plan {[m
+[32m+[m[32m    // SAFETY: PostgreSQL calls PlanCustomPath with live planner/path/list[m
+[32m+[m[32m    // pointers; allocated plan nodes are returned to PostgreSQL ownership.[m
+     unsafe {[m
+         let mode = custom_scan_mode_from_path(best_path).unwrap_or_else(|| {[m
+             pgrx::error!("EcSpireDistributedScan CustomPath is missing plan mode")[m
+[36m@@ -210,6 +228,8 @@[m [munsafe fn plan_dml_custom_path([m
+     custom_plans: *mut pg_sys::List,[m
+     mode: SpireCustomScanPlanMode,[m
+ ) -> *mut pg_sys::Plan {[m
+[32m+[m[32m    // SAFETY: caller provides live PlanCustomPath pointers; DML handoff copies[m
+[32m+[m[32m    // expression nodes into the CustomScan before returning it to PostgreSQL.[m
+     unsafe {[m
+         let plan_expr = match super::dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)[m
+             .unwrap_or_else(|| {[m
+[36m@@ -265,6 +285,8 @@[m [munsafe fn plan_dml_custom_path([m
+ unsafe fn custom_scan_dml_custom_exprs_from_plan_expr([m
+     plan_expr: &super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,[m
+ ) -> *mut pg_sys::List {[m
+[32m+[m[32m    // SAFETY: plan_expr expression pointers come from the live planner tree;[m
+[32m+[m[32m    // copyObjectImpl duplicates them into planner memory for CustomScan.[m
+     unsafe {[m
+         let mut custom_exprs = pg_sys::lappend([m
+             std::ptr::null_mut(),[m
+[36m@@ -282,6 +304,8 @@[m [mpub(crate) unsafe fn custom_scan_dml_replacement_plan([m
+     plan_expr: super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,[m
+     fallback_plan: *mut pg_sys::Plan,[m
+ ) -> *mut pg_sys::Plan {[m
+[32m+[m[32m    // SAFETY: fallback_plan, when non-null, is a live PostgreSQL plan node; this[m
+[32m+[m[32m    // constructs a replacement CustomScan node in planner memory.[m
+     unsafe {[m
+         let mode = custom_scan_plan_mode_for_dml_mode(plan_expr.primitive_plan.mode);[m
+         let custom_exprs = custom_scan_dml_custom_exprs_from_plan_expr(&plan_expr);[m
+[36m@@ -339,6 +363,7 @@[m [munsafe fn custom_scan_candidate_index_oid([m
+     if root.is_null() || rel.is_null() || rte.is_null() {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: rel was checked non-null and is owned by the active planner hook.[m
+     let rel_ref = unsafe { rel.as_ref()? };[m
+     if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {[m
+         return None;[m
+[36m@@ -346,19 +371,26 @@[m [munsafe fn custom_scan_candidate_index_oid([m
+     if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: root was checked non-null and is owned by the active planner hook.[m
+     let root_ref = unsafe { root.as_ref()? };[m
+     if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: helper only inspects the live planner root/rel target and pathkey[m
+[32m+[m[32m    // state to confirm the query expression shape.[m
+     let _ = unsafe { custom_scan_orderby_query_expr(root, rel)? };[m
+ [m
+[32m+[m[32m    // SAFETY: static AM name is nul-terminated and missing_ok is true.[m
+     let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };[m
+     if ec_spire_am_oid == pg_sys::InvalidOid {[m
+         return None;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: rel_ref.indexlist is planner-owned and valid during this hook.[m
+     let index_list = unsafe { PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist) };[m
+     for index_info in index_list.iter_ptr() {[m
+[32m+[m[32m        // SAFETY: index-list entries may be null; as_ref handles null and the[m
+[32m+[m[32m        // IndexOptInfo is read only during this callback.[m
+         let Some(index_info) = (unsafe { index_info.as_ref() }) else {[m
+             continue;[m
+         };[m
+[36m@@ -372,6 +404,8 @@[m [munsafe fn custom_scan_candidate_index_oid([m
+         else {[m
+             continue;[m
+         };[m
+[32m+[m[32m        // SAFETY: IndexRelationGuard keeps the index relation open while the[m
+[32m+[m[32m        // eligibility helper reads SPIRE root/control metadata.[m
+         let eligibility = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) };[m
+         if let Ok(row) = eligibility {[m
+             if row.eligible_for_custom_scan {[m
+[36m@@ -390,6 +424,7 @@[m [munsafe fn dml_pk_select_candidate_index_oid([m
+     if root.is_null() || rel.is_null() || rte.is_null() {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: rel was checked non-null and is planner-owned for this hook.[m
+     let rel_ref = unsafe { rel.as_ref()? };[m
+     if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {[m
+         return None;[m
+[36m@@ -397,18 +432,24 @@[m [munsafe fn dml_pk_select_candidate_index_oid([m
+     if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: static AM name is nul-terminated and missing_ok is true.[m
+     let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };[m
+     if ec_spire_am_oid == pg_sys::InvalidOid {[m
+         return None;[m
+     }[m
+ [m
+[32m+[m[32m    // SAFETY: rel_ref.indexlist is planner-owned and valid during this hook.[m
+     let index_list = unsafe { PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist) };[m
+     let mut placement_index_oid = None;[m
+     for index_info in index_list.iter_ptr() {[m
+[32m+[m[32m        // SAFETY: index-list entries may be null; as_ref handles null and the[m
+[32m+[m[32m        // IndexOptInfo is read only during this callback.[m
+         let Some(index_info) = (unsafe { index_info.as_ref() }) else {[m
+             continue;[m
+         };[m
+         if index_info.relam == ec_spire_am_oid[m
+[32m+[m[32m            // SAFETY: helper opens SPIRE placement catalog relations under[m
+[32m+[m[32m            // guards and performs a bounded index probe for this index OID.[m
+             && unsafe { custom_scan_index_has_sql_placement(index_info.indexoid) }[m
+         {[m
+             placement_index_oid = Some(index_info.indexoid);[m
+[36m@@ -416,6 +457,8 @@[m [munsafe fn dml_pk_select_candidate_index_oid([m
+         }[m
+     }[m
+     let placement_index_oid = placement_index_oid?;[m
+[32m+[m[32m    // SAFETY: DML frontdoor helper validates planner root/rel and returns owned[m
+[32m+[m[32m    // primitive-plan data or an error.[m
+     let plan_expr = match unsafe {[m
+         super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(root, rel)?[m
+     } {[m
+[36m@@ -432,6 +475,8 @@[m [munsafe fn dml_pk_select_candidate_index_oid([m
+ }[m
+ [m
+ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {[m
+[32m+[m[32m    // SAFETY: catalog relation names are static nul-terminated C strings; all[m
+[32m+[m[32m    // opened relations/scans/snapshots are guard-managed in this block.[m
+     unsafe {[m
+         let placement_oid = pg_sys::RelnameGetRelid(EC_SPIRE_PLACEMENT_RELNAME.as_ptr());[m
+         let placement_by_index_oid =[m
+[36m@@ -498,8 +543,12 @@[m [munsafe fn add_custom_scan_path([m
+     if root.is_null() || rel.is_null() {[m
+         return;[m
+     }[m
+[32m+[m[32m    // SAFETY: root was checked non-null and remains live for this hook call.[m
+     let root_ref = unsafe { root.as_ref().expect("checked root pointer") };[m
+[32m+[m[32m    // SAFETY: rel was checked non-null and remains live for this hook call.[m
+     let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };[m
+[32m+[m[32m    // SAFETY: CustomPath is allocated as a PostgreSQL planner node and later[m
+[32m+[m[32m    // transferred to the planner via add_path.[m
+     let mut custom_path =[m
+         unsafe { PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath) };[m
+     let rows = if root_ref.limit_tuples >= 0.0 {[m
+[36m@@ -508,6 +557,8 @@[m [munsafe fn add_custom_scan_path([m
+         rel_ref.rows.max(1.0)[m
+     };[m
+     let target_width = custom_scan_target_width(rel_ref.reltarget);[m
+[32m+[m[32m    // SAFETY: cost estimator reads the owned eligibility row and scalar planner[m
+[32m+[m[32m    // estimates only.[m
+     let cost = unsafe {[m
+         estimate_custom_scan_cost(rows, rel_ref.rows.max(1.0), target_width, &eligibility)[m
+     };[m
+[36m@@ -527,6 +578,8 @@[m [munsafe fn add_custom_scan_path([m
+     custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;[m
+     custom_path.custom_paths = std::ptr::null_mut();[m
+     custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;[m
+[32m+[m[32m    // SAFETY: lappend_oid allocates a planner-owned OID list for CustomPath[m
+[32m+[m[32m    // private data.[m
+     custom_path.custom_private = unsafe {[m
+         pg_sys::lappend_oid([m
+             pg_sys::lappend_oid([m
+[36m@@ -538,6 +591,8 @@[m [munsafe fn add_custom_scan_path([m
+     };[m
+     custom_path.methods = &raw const CUSTOM_PATH_METHODS;[m
+ [m
+[32m+[m[32m    // SAFETY: custom_path is a planner node allocated above; add_path takes[m
+[32m+[m[32m    // ownership through PostgreSQL planner memory.[m
+     unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };[m
+ }[m
+ [m
+[36m@@ -549,7 +604,10 @@[m [munsafe fn add_dml_pk_select_custom_scan_path([m
+     if root.is_null() || rel.is_null() {[m
+         return;[m
+     }[m
+[32m+[m[32m    // SAFETY: rel was checked non-null and remains live for this hook call.[m
+     let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };[m
+[32m+[m[32m    // SAFETY: CustomPath is allocated as a PostgreSQL planner node and later[m
+[32m+[m[32m    // transferred to the planner via add_path.[m
+     let mut custom_path =[m
+         unsafe { PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath) };[m
+     custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;[m
+[36m@@ -568,6 +626,8 @@[m [munsafe fn add_dml_pk_select_custom_scan_path([m
+     custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;[m
+     custom_path.custom_paths = std::ptr::null_mut();[m
+     custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;[m
+[32m+[m[32m    // SAFETY: lappend_oid allocates a planner-owned OID list for DML CustomPath[m
+[32m+[m[32m    // private data.[m
+     custom_path.custom_private = unsafe {[m
+         pg_sys::lappend_oid([m
+             pg_sys::lappend_oid([m
+[36m@@ -579,5 +639,7 @@[m [munsafe fn add_dml_pk_select_custom_scan_path([m
+     };[m
+     custom_path.methods = &raw const CUSTOM_PATH_METHODS;[m
+ [m
+[32m+[m[32m    // SAFETY: custom_path is a planner node allocated above; add_path takes[m
+[32m+[m[32m    // ownership through PostgreSQL planner memory.[m
+     unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };[m
+ }[m
+
+Script done on 2026-05-19 03:00:28-07:00 [COMMAND_EXIT_CODE="0"]
