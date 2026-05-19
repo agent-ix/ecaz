@@ -1,10 +1,19 @@
 #![allow(dead_code)]
 
+#[path = "../../../src/am/ec_hnsw/concurrent_dsm_state.rs"]
+mod hnsw_concurrent_dsm_state;
 #[path = "../../../src/am/common/parallel_slot.rs"]
 mod parallel_slot;
 
 #[cfg(test)]
 mod tests {
+    use super::hnsw_concurrent_dsm_state::{
+        begin_concurrent_dsm_node_insert_state, complete_concurrent_dsm_node_insert_state,
+        wait_until_concurrent_dsm_node_ready, EcHnswConcurrentDsmInsertBegin,
+        EcHnswConcurrentDsmInsertError, EcHnswConcurrentDsmInsertStateCell,
+        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING, EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY,
+        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
+    };
     use super::parallel_slot::{
         load_worker_slot_snapshot, publish_worker_slot_runtime_snapshot, release_worker_slot,
         try_claim_worker_slot, EcParallelWorkerSlotFields, EcParallelWorkerSlotRuntimeSnapshot,
@@ -14,6 +23,25 @@ mod tests {
     use loom::sync::atomic::{AtomicU32, Ordering};
     use loom::sync::Arc;
     use loom::thread;
+
+    impl EcHnswConcurrentDsmInsertStateCell for AtomicU32 {
+        fn load_acquire(&self) -> u32 {
+            self.load(Ordering::Acquire)
+        }
+
+        fn store_release(&self, value: u32) {
+            self.store(value, Ordering::Release);
+        }
+
+        fn compare_exchange_acqrel_acquire(&self, current: u32, new: u32) -> bool {
+            self.compare_exchange(current, new, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        }
+
+        fn spin_wait(&self) {
+            thread::yield_now();
+        }
+    }
 
     impl ParallelSlotAtomic for AtomicU32 {
         fn load_acquire(&self) -> u32 {
@@ -141,7 +169,9 @@ mod tests {
 
     #[test]
     fn worker_slot_claim_count_matches_live_claimed_slots() {
-        loom::model(|| {
+        let mut builder = loom::model::Builder::new();
+        builder.max_permutations = Some(10_000);
+        builder.check(|| {
             let slots = Arc::new(vec![
                 LoomParallelWorkerSlot::new(0, EC_PARALLEL_WORKER_SLOT_FREE, 0),
                 LoomParallelWorkerSlot::new(1, EC_PARALLEL_WORKER_SLOT_FREE, 0),
@@ -149,7 +179,7 @@ mod tests {
             let claimed_count = Arc::new(AtomicU32::new(0));
             let mut workers = Vec::new();
 
-            for _ in 0..2 {
+            for _ in 0..4 {
                 let slots = Arc::clone(&slots);
                 let claimed_count = Arc::clone(&claimed_count);
                 workers.push(thread::spawn(move || {
@@ -228,6 +258,109 @@ mod tests {
                 snapshot.runtime,
                 EcParallelWorkerSlotRuntimeSnapshot::idle()
             );
+        });
+    }
+
+    #[test]
+    fn hnsw_concurrent_dsm_node_insert_is_exclusive() {
+        loom::model(|| {
+            let state = Arc::new(AtomicU32::new(
+                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
+            ));
+            let started_count = Arc::new(AtomicU32::new(0));
+            let duplicate_count = Arc::new(AtomicU32::new(0));
+
+            let left = {
+                let state = Arc::clone(&state);
+                let started_count = Arc::clone(&started_count);
+                let duplicate_count = Arc::clone(&duplicate_count);
+                thread::spawn(
+                    move || match begin_concurrent_dsm_node_insert_state(&*state, 3) {
+                        Ok(EcHnswConcurrentDsmInsertBegin::Started { level }) => {
+                            assert_eq!(level, 3);
+                            started_count.fetch_add(1, Ordering::AcqRel);
+                        }
+                        Ok(EcHnswConcurrentDsmInsertBegin::AlreadyReady) => {}
+                        Err(EcHnswConcurrentDsmInsertError::DuplicateInProgress) => {
+                            duplicate_count.fetch_add(1, Ordering::AcqRel);
+                        }
+                        Err(err) => panic!("unexpected HNSW insert-state error: {err:?}"),
+                    },
+                )
+            };
+            let right = {
+                let state = Arc::clone(&state);
+                let started_count = Arc::clone(&started_count);
+                let duplicate_count = Arc::clone(&duplicate_count);
+                thread::spawn(
+                    move || match begin_concurrent_dsm_node_insert_state(&*state, 3) {
+                        Ok(EcHnswConcurrentDsmInsertBegin::Started { level }) => {
+                            assert_eq!(level, 3);
+                            started_count.fetch_add(1, Ordering::AcqRel);
+                        }
+                        Ok(EcHnswConcurrentDsmInsertBegin::AlreadyReady) => {}
+                        Err(EcHnswConcurrentDsmInsertError::DuplicateInProgress) => {
+                            duplicate_count.fetch_add(1, Ordering::AcqRel);
+                        }
+                        Err(err) => panic!("unexpected HNSW insert-state error: {err:?}"),
+                    },
+                )
+            };
+
+            left.join().unwrap();
+            right.join().unwrap();
+
+            assert_eq!(started_count.load(Ordering::Acquire), 1);
+            assert!(duplicate_count.load(Ordering::Acquire) <= 1);
+            assert_eq!(
+                state.load(Ordering::Acquire),
+                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING
+            );
+        });
+    }
+
+    #[test]
+    fn hnsw_concurrent_dsm_ready_is_published_after_neighbor_slots() {
+        loom::model(|| {
+            let state = Arc::new(AtomicU32::new(
+                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
+            ));
+            let first_neighbor_slot = Arc::new(AtomicU32::new(u32::MAX));
+            let observed_ready = Arc::new(AtomicU32::new(0));
+
+            let writer = {
+                let state = Arc::clone(&state);
+                let first_neighbor_slot = Arc::clone(&first_neighbor_slot);
+                thread::spawn(move || {
+                    assert_eq!(
+                        begin_concurrent_dsm_node_insert_state(&*state, 1),
+                        Ok(EcHnswConcurrentDsmInsertBegin::Started { level: 1 })
+                    );
+                    first_neighbor_slot.store(42, Ordering::Release);
+                    complete_concurrent_dsm_node_insert_state(&*state).unwrap();
+                })
+            };
+            let reader = {
+                let state = Arc::clone(&state);
+                let first_neighbor_slot = Arc::clone(&first_neighbor_slot);
+                let observed_ready = Arc::clone(&observed_ready);
+                thread::spawn(move || {
+                    if wait_until_concurrent_dsm_node_ready(&*state) {
+                        observed_ready.store(1, Ordering::Release);
+                        assert_eq!(first_neighbor_slot.load(Ordering::Acquire), 42);
+                    }
+                })
+            };
+
+            writer.join().unwrap();
+            reader.join().unwrap();
+
+            assert_eq!(
+                state.load(Ordering::Acquire),
+                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY
+            );
+            assert_eq!(first_neighbor_slot.load(Ordering::Acquire), 42);
+            assert!(observed_ready.load(Ordering::Acquire) <= 1);
         });
     }
 }

@@ -9,6 +9,12 @@ use std::time::Instant;
 
 use pgrx::pg_sys;
 
+use super::concurrent_dsm_state::{
+    begin_concurrent_dsm_node_insert_state, complete_concurrent_dsm_node_insert_state,
+    wait_until_concurrent_dsm_node_ready, EcHnswConcurrentDsmInsertBegin,
+    EcHnswConcurrentDsmInsertError, EcHnswConcurrentDsmInsertStateCell,
+    EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY, EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
+};
 use super::{build, graph, insert, options, page, search, shared, source};
 use crate::storage::lock_guard::LwLockGuard;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
@@ -33,14 +39,49 @@ const BUILD_TUPLE_MESSAGE: u8 = 1;
 const BUILD_DONE_MESSAGE: u8 = 2;
 
 const EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX: u32 = u32::MAX;
-const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED: u32 = 0;
-const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING: u32 = 1;
-const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY: u32 = 2;
 const EC_HNSW_CONCURRENT_DSM_STRIPE_CHUNK_NODES: u32 = 64;
 
 static LAST_PARALLEL_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 static LAST_PARALLEL_HEAP_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 static LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
+
+#[derive(Debug, Copy, Clone)]
+struct PgLockedDsmInsertStateCell(*mut pg_sys::pg_atomic_uint32);
+
+impl EcHnswConcurrentDsmInsertStateCell for PgLockedDsmInsertStateCell {
+    fn load_acquire(&self) -> u32 {
+        unsafe { (*self.0).value }
+    }
+
+    fn store_release(&self, value: u32) {
+        unsafe {
+            (*self.0).value = value;
+        }
+    }
+
+    fn compare_exchange_acqrel_acquire(&self, current: u32, new: u32) -> bool {
+        if self.load_acquire() == current {
+            self.store_release(new);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+fn concurrent_dsm_insert_state_error(err: EcHnswConcurrentDsmInsertError) -> ! {
+    match err {
+        EcHnswConcurrentDsmInsertError::DuplicateInProgress => {
+            pgrx::error!("concurrent DSM graph insert saw a duplicate in-progress node")
+        }
+        EcHnswConcurrentDsmInsertError::UnknownState(_) => {
+            pgrx::error!("concurrent DSM graph insert saw an unknown node state")
+        }
+        EcHnswConcurrentDsmInsertError::CompleteWithoutInsert => {
+            pgrx::error!("concurrent DSM graph insert completed an unstarted node")
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum EcHnswBuildCoordinatorKind {
@@ -1304,20 +1345,15 @@ unsafe fn begin_concurrent_dsm_graph_node_insert(
     let node = unsafe { parts.nodes.add(node_idx as usize) };
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
     let _lock_guard = unsafe { locks.exclusive(lock) };
-    let state = unsafe { (*node).insert_state.value };
     let level = unsafe { (*node).level };
-    match state {
-        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY => None,
-        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED => {
-            unsafe {
-                (*node).insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING;
-            }
-            Some(level)
-        }
-        EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING => {
-            pgrx::error!("concurrent DSM graph insert saw a duplicate in-progress node");
-        }
-        _ => pgrx::error!("concurrent DSM graph insert saw an unknown node state"),
+    let state_cell = PgLockedDsmInsertStateCell(unsafe { ptr::addr_of_mut!((*node).insert_state) });
+    let begin = match begin_concurrent_dsm_node_insert_state(&state_cell, level) {
+        Ok(begin) => begin,
+        Err(err) => concurrent_dsm_insert_state_error(err),
+    };
+    match begin {
+        EcHnswConcurrentDsmInsertBegin::AlreadyReady => None,
+        EcHnswConcurrentDsmInsertBegin::Started { level } => Some(level),
     }
 }
 
@@ -1340,8 +1376,11 @@ unsafe fn complete_concurrent_dsm_graph_node_insert(
         })
     };
     unsafe {
-        (*node).insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY;
-    }
+        let state_cell = PgLockedDsmInsertStateCell(ptr::addr_of_mut!((*node).insert_state));
+        if let Err(err) = complete_concurrent_dsm_node_insert_state(&state_cell) {
+            concurrent_dsm_insert_state_error(err);
+        }
+    };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1532,9 +1571,10 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
         if neighbor_idx >= layout.node_count {
             pgrx::error!("concurrent DSM graph search saw out-of-range neighbor index");
         }
-        if unsafe { (*parts.nodes.add(neighbor_idx as usize)).insert_state.value }
-            != EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY
-        {
+        let neighbor = unsafe { parts.nodes.add(neighbor_idx as usize) };
+        let state_cell =
+            PgLockedDsmInsertStateCell(unsafe { ptr::addr_of_mut!((*neighbor).insert_state) });
+        if !wait_until_concurrent_dsm_node_ready(&state_cell) {
             continue;
         }
         let score = unsafe {
