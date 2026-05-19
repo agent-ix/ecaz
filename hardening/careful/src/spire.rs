@@ -18,9 +18,11 @@ pub mod storage {
 
     use super::meta::{
         SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState,
-        SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID,
+        SpirePlacementEntry, SpirePlacementState, SpirePlacementDirectory, SPIRE_LOCAL_NODE_ID,
         SPIRE_SINGLE_LOCAL_STORE_ID,
     };
+    use super::page;
+    use crate::careful_pg_guards::pg_sys;
     use crate::storage::page::{
         element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, usable_page_bytes, DataPageChain,
         ItemPointer, DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES,
@@ -72,6 +74,10 @@ pub mod storage {
     ));
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
+        "/../../src/am/ec_spire/storage/relation_store.rs"
+    ));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
         "/../../src/am/ec_spire/storage/helpers.rs"
     ));
 
@@ -88,9 +94,9 @@ pub mod storage {
             SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
             SpireLeafPartitionObjectV2Segment, SpireLocalObjectStore, SpireLocalObjectStoreSet,
             SpireLocalStoreState, SpireObjectReader, SpirePartitionObjectHeader,
-            SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject,
-            SpireTopGraphNodeRecord, SpireTopGraphPartitionObject, SpireVecId, SpireVecIdKind,
-            LEAF_V2_LOCAL_VEC_ID_STRIDE,
+            SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingChildEntry,
+            SpireRoutingPartitionObject, SpireTopGraphNodeRecord, SpireTopGraphPartitionObject,
+            SpireVecId, SpireVecIdKind, LEAF_V2_LOCAL_VEC_ID_STRIDE,
             SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
             SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -98,6 +104,7 @@ pub mod storage {
             SPIRE_PAYLOAD_FORMAT_NONE, SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN,
             SPIRE_PAYLOAD_FORMAT_TURBOQUANT, SPIRE_VEC_ID_MAX_BYTES,
         };
+        use crate::careful_pg_guards::pg_sys;
         use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 
         fn routing_children() -> Vec<SpireRoutingChildEntry> {
@@ -293,6 +300,94 @@ pub mod storage {
                     .pid,
                 90
             );
+        }
+
+        #[test]
+        fn relation_object_store_for_index_relation_rejects_null_and_invalid_oid() {
+            // null relation pointer.
+            let null_result = unsafe {
+                SpireRelationObjectStore::for_index_relation(std::ptr::null_mut())
+            };
+            let null_err = match null_result {
+                Err(e) => e,
+                Ok(_) => panic!("null relation must be rejected"),
+            };
+            assert!(
+                null_err.contains("needs a valid relation"),
+                "unexpected error: {null_err}"
+            );
+
+            // Non-null relation with rd_id == InvalidOid.
+            let mut relation_data = pg_sys::RelationData {
+                rd_att: std::ptr::null_mut(),
+                rd_id: pg_sys::InvalidOid,
+            };
+            let relation: pg_sys::Relation = &mut relation_data;
+            let invalid_oid_result = unsafe {
+                SpireRelationObjectStore::for_index_relation(relation)
+            };
+            let invalid_oid_err = match invalid_oid_result {
+                Err(e) => e,
+                Ok(_) => panic!("invalid oid must be rejected"),
+            };
+            assert!(
+                invalid_oid_err.contains("relid is invalid"),
+                "unexpected error: {invalid_oid_err}"
+            );
+        }
+
+        #[test]
+        fn relation_object_store_inserts_reject_epoch_zero() {
+            // for_store_relation_id is safe — it just stores the pointer/id.
+            let store = SpireRelationObjectStore::for_store_relation_id(
+                std::ptr::null_mut(),
+                0,
+                12345,
+            );
+
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            assert!(store.insert_routing_object(0, &routing).is_err());
+
+            let delta = SpireDeltaPartitionObject::new(
+                19,
+                4,
+                17,
+                vec![SpireLeafAssignmentRow {
+                    flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                    vec_id: SpireVecId::local(1),
+                    heap_tid: crate::storage::page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    },
+                    payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2],
+                }],
+            )
+            .unwrap();
+            assert!(store.insert_delta_object(0, &delta).is_err());
+
+            let top_graph = SpireTopGraphPartitionObject::new(
+                90,
+                3,
+                11,
+                2,
+                2,
+                2,
+                4,
+                1.2,
+                0,
+                vec![SpireTopGraphNodeRecord {
+                    child_pid: 21,
+                    centroid_ordinal: 0,
+                    neighbors: vec![],
+                }],
+            )
+            .unwrap();
+            assert!(store.insert_top_graph_object(0, &top_graph).is_err());
+
+            // Leaf V2 from rows: also rejects epoch == 0 before encoding.
+            assert!(store.insert_leaf_object_v2_from_rows(0, 17, 3, 5, &[]).is_err());
         }
 
         #[test]

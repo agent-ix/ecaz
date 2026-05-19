@@ -67,9 +67,49 @@ pub mod pg_sys {
 
     pub struct RelationData {
         pub rd_att: *mut TupleDescData,
+        pub rd_id: Oid,
     }
 
     pub type Relation = *mut RelationData;
+
+    pub const BLCKSZ: u32 = 8192;
+    pub const InvalidOid: Oid = 0;
+    pub const InvalidBuffer: Buffer = 0;
+    pub const READ_STREAM_DEFAULT: i32 = 0;
+
+    pub struct ReadStream;
+
+    pub unsafe fn PrefetchBuffer(
+        _relation: Relation,
+        _fork: i32,
+        _block: BlockNumber,
+    ) {
+    }
+
+    pub unsafe fn read_stream_begin_relation(
+        _flags: i32,
+        _strategy: *mut (),
+        _relation: Relation,
+        _fork: i32,
+        _callback: *mut (),
+        _callback_state: *mut std::ffi::c_void,
+        _per_buffer_data_size: usize,
+    ) -> *mut ReadStream {
+        Box::into_raw(Box::new(ReadStream))
+    }
+
+    pub unsafe fn read_stream_next_buffer(
+        _stream: *mut ReadStream,
+        _per_buffer_data: *mut *mut std::ffi::c_void,
+    ) -> Buffer {
+        InvalidBuffer
+    }
+
+    pub unsafe fn read_stream_end(stream: *mut ReadStream) {
+        if !stream.is_null() {
+            drop(unsafe { Box::from_raw(stream) });
+        }
+    }
 
     pub static LWLOCK_ACQUIRE_CALLS: AtomicUsize = AtomicUsize::new(0);
     pub static LWLOCK_RELEASE_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -164,6 +204,7 @@ pub mod pg_sys {
         }
         Box::into_raw(Box::new(RelationData {
             rd_att: ptr::dangling_mut::<TupleDescData>(),
+            rd_id: oid,
         }))
     }
 

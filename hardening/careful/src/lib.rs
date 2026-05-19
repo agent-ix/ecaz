@@ -62,6 +62,7 @@ pub mod careful_diskann_scan;
 
 pub mod storage {
     pub use crate::careful_pg_guards::buffer_guard;
+    pub use crate::careful_pg_guards::relation_guard;
     pub use crate::careful_pg_guards::wal;
     pub use crate::careful_storage_page as page;
 }
