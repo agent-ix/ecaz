@@ -35,6 +35,8 @@
         .expect("leaf snapshot query should succeed")
         .expect("leaf pid should exist");
 
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
+
         unsafe {
             am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
         }
@@ -408,6 +410,8 @@
         assert_eq!(default_source, "ec_spire.remote_search_consistency_mode");
         assert_eq!(default_mode, "strict");
 
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
+
         unsafe {
             am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
             am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
@@ -530,6 +534,8 @@
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
         assert_eq!(coord_leaf_pids.len(), 2);
+
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
         unsafe {
             am::debug_spire_rewrite_placement_node(index_oid, coord_leaf_pids[0] as u64, 2);
@@ -692,6 +698,8 @@
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
         assert_eq!(coord_leaf_pids.len(), 2);
+
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
         unsafe {
             am::debug_spire_rewrite_placement_node(index_oid, coord_leaf_pids[0] as u64, 2);

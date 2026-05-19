@@ -117,6 +117,8 @@
         .expect("leaf snapshot query should succeed")
         .expect("leaf pid should exist");
 
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
+
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
@@ -576,6 +578,8 @@
         .expect("leaf snapshot query should succeed")
         .expect("leaf pid should exist");
 
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
+
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
         let readiness_from = "FROM ec_spire_remote_node_descriptor_readiness(\
              'ec_spire_remote_node_desc_ready_sql_idx'::regclass)";
@@ -719,6 +723,8 @@
         )
         .expect("leaf snapshot query should succeed")
         .expect("leaf pid should exist");
+
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
         let plan_from = "FROM ec_spire_remote_node_capability_plan(\
@@ -1035,6 +1041,8 @@
         )
         .expect("leaf snapshot query should succeed")
         .expect("leaf pid should exist");
+
+        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
         let capability_from = "FROM ec_spire_remote_node_capability_summary(\

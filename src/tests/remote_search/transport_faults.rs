@@ -466,6 +466,8 @@
     fn test_ec_spire_prod_transport_pg_interrupt_bridge_cancel() {
         let _interrupt_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();
+        // SAFETY: This pg_test installs a scoped query-cancel flag guard and relies
+        // on the guard's Drop implementation to restore the backend flags.
         let _flags = unsafe { ScopedPgQueryCancelFlags::set_pending() }
             .expect("PostgreSQL query-cancel flags should resolve inside pg_test backend");
         let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
@@ -486,6 +488,8 @@
     fn test_ec_spire_prod_transport_pg_statement_timeout_bridge_cancel() {
         let _interrupt_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();
+        // SAFETY: This pg_test installs a scoped statement-timeout signal guard and
+        // keeps the guard alive only for the statement expected to observe it.
         let timeout_signal = unsafe { ScopedPgStatementTimeoutSignal::trigger_after_ms(1) }
             .expect("PostgreSQL timeout symbols should resolve inside pg_test backend");
         assert!(timeout_signal.statement_timeout_pending());
