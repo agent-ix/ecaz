@@ -9,7 +9,7 @@ quant/qjl.rs	100.00	Task 39 baseline raised by reviews/task-39/004-quant-careful
 quant/rabitq.rs	81.43	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/rotation.rs	98.53	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/simd.rs	94.59	Task 39 baseline raised by reviews/task-39/005-simd-mutation-triage
-storage/page.rs	76.57	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+storage/page.rs	97.90	Task 39 baseline raised by reviews/task-39/010-storage-page-coverage
 storage/buffer_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
 storage/lock_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
 storage/relation_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
@@ -17,9 +17,9 @@ storage/scan_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhau
 storage/slot_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
 storage/snapshot_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
 storage/spi_guard.rs	0.00	Task 39 guard baseline from reviews/task-39/003-exhaustive-test-coverage-plan
-am/ec_diskann/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-am/ec_hnsw/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-am/ec_ivf/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+am/ec_diskann/page.rs	97.35	Task 39 baseline raised by reviews/task-39/011-diskann-page-coverage
+am/ec_hnsw/page.rs	84.76	Task 39 baseline raised by reviews/task-39/012-hnsw-page-coverage
+am/ec_ivf/page.rs	95.86	Task 39 baseline raised by reviews/task-39/018-ivf-page-coverage
 am/ec_spire/page.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_spire/storage/assignment.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_spire/storage/header.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
@@ -38,4 +38,4 @@ am/ec_spire/coordinator/diagnostics.rs	0.00	Task 39 baseline from reviews/task-3
 am/ec_diskann/build.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_diskann/routine.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
 am/ec_diskann/scan.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
-am/common/cost.rs	0.00	Task 39 baseline from reviews/task-39/002-coverage-baseline
+am/common/cost.rs	98.98	Task 39 baseline raised by reviews/task-39/015-planner-cost-mutation

@@ -1,0 +1,182 @@
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:97:36: replace + with *
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:97:62: replace * with +
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:98:81: replace + with -
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:97:62: replace * with /
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:98:81: replace + with *
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:100:38: replace + with -
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:100:38: replace + with *
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:105:40: replace + with *
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:212:9: replace MetadataPage::encode -> [u8; METADATA_BYTES] with [1; METADATA_BYTES]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:212:9: replace MetadataPage::encode -> [u8; METADATA_BYTES] with [0; METADATA_BYTES]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:234:24: replace < with == in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:234:24: replace < with > in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:234:24: replace < with <= in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:245:18: replace != with == in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:253:27: replace != with == in MetadataPage::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:320:5: replace write_item_pointer with ()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:336:9: replace BlockRef::encode_into with ()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:340:24: replace != with == in BlockRef::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:372:24: replace != with == in IvfCentroidTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:378:21: replace != with == in IvfCentroidTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:387:29: replace != with == in IvfCentroidTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:404:9: replace IvfCentroidTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:404:9: replace IvfCentroidTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::once(0.0)
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:404:9: replace IvfCentroidTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::once(1.0)
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:404:9: replace IvfCentroidTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::once(-1.0)
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:410:9: replace IvfCentroidTupleRef<'a>::collect_centroid -> Vec<f32> with vec![]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:410:9: replace IvfCentroidTupleRef<'a>::collect_centroid -> Vec<f32> with vec![0.0]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:410:9: replace IvfCentroidTupleRef<'a>::collect_centroid -> Vec<f32> with vec![1.0]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:410:9: replace IvfCentroidTupleRef<'a>::collect_centroid -> Vec<f32> with vec![-1.0]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:416:9: replace IvfCentroidTuple::encode -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:416:9: replace IvfCentroidTuple::encode -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:416:9: replace IvfCentroidTuple::encode -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:422:45: delete ! in IvfCentroidTuple::encode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:9: replace IvfCentroidTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:9: replace IvfCentroidTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:19: replace + with - in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:19: replace + with * in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:15: replace + with - in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:15: replace + with * in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:11: replace + with * in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:32: replace * with + in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:445:32: replace * with / in IvfCentroidTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:472:9: replace IvfListDirectoryTuple::encode -> Vec<u8> with vec![]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:472:9: replace IvfListDirectoryTuple::encode -> Vec<u8> with vec![0]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:472:9: replace IvfListDirectoryTuple::encode -> Vec<u8> with vec![1]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:484:24: replace != with == in IvfListDirectoryTuple::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:491:21: replace != with == in IvfListDirectoryTuple::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:9: replace IvfListDirectoryTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:9: replace IvfListDirectoryTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:59: replace + with - in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:59: replace + with * in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:55: replace + with - in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:55: replace + with * in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:51: replace + with - in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:51: replace + with * in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:33: replace + with - in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:33: replace + with * in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:15: replace + with - in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:15: replace + with * in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:525:11: replace + with * in IvfListDirectoryTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:553:24: replace != with == in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:559:21: replace != with == in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:564:42: replace != with == in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:564:18: replace & with | in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:564:18: replace & with ^ in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:564:20: delete ! in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:568:26: replace > with == in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:568:26: replace > with < in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:568:26: replace > with >= in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:576:41: replace + with * in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:576:67: replace * with + in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:576:67: replace * with / in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:578:44: replace + with - in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:578:44: replace + with * in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:582:40: replace + with - in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:582:40: replace + with * in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:583:42: replace + with - in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:583:42: replace + with * in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:591:51: replace != with == in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:591:28: replace & with | in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:591:28: replace & with ^ in IvfPostingTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:601:9: replace IvfPostingTupleRef<'a>::heaptid_count -> usize with 0
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:601:9: replace IvfPostingTupleRef<'a>::heaptid_count -> usize with 1
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:605:9: replace IvfPostingTupleRef<'a>::heaptids -> impl Iterator<Item = ItemPointer>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:615:9: replace IvfPostingTupleRef<'a>::collect_heaptids -> Vec<ItemPointer> with vec![]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:621:9: replace IvfPostingTuple::encode -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:621:9: replace IvfPostingTuple::encode -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:621:9: replace IvfPostingTuple::encode -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:621:32: replace > with == in IvfPostingTuple::encode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:621:32: replace > with < in IvfPostingTuple::encode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:621:32: replace > with >= in IvfPostingTuple::encode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:628:12: delete ! in IvfPostingTuple::encode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:666:9: replace IvfPostingTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:666:9: replace IvfPostingTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:666:29: replace + with - in IvfPostingTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:666:29: replace + with * in IvfPostingTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:687:24: replace != with == in IvfPqCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:693:21: replace != with == in IvfPqCodebookTupleRef<'a>::decode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:712:9: replace IvfPqCodebookTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::empty()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:712:9: replace IvfPqCodebookTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::once(0.0)
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:712:9: replace IvfPqCodebookTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::once(1.0)
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:712:9: replace IvfPqCodebookTupleRef<'a>::centroid_values -> impl Iterator<Item = f32>+'_ with ::std::iter::once(-1.0)
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:718:9: replace IvfPqCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:718:9: replace IvfPqCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![0.0]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:718:9: replace IvfPqCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![1.0]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:718:9: replace IvfPqCodebookTupleRef<'a>::collect_centroids -> Vec<f32> with vec![-1.0]
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:724:9: replace IvfPqCodebookTuple::encode -> Result<Vec<u8>, String> with Ok(vec![])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:724:9: replace IvfPqCodebookTuple::encode -> Result<Vec<u8>, String> with Ok(vec![0])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:724:9: replace IvfPqCodebookTuple::encode -> Result<Vec<u8>, String> with Ok(vec![1])
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:724:46: delete ! in IvfPqCodebookTuple::encode
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:9: replace IvfPqCodebookTuple::encoded_len -> usize with 0
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:9: replace IvfPqCodebookTuple::encoded_len -> usize with 1
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:36: replace + with - in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:36: replace + with * in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:15: replace + with * in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:11: replace + with * in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:53: replace * with + in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:748:53: replace * with / in IvfPqCodebookTuple::encoded_len
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:753:5: replace centroid_tuple_fits -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:753:5: replace centroid_tuple_fits -> bool with false
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:753:68: replace <= with > in centroid_tuple_fits
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:757:5: replace list_directory_tuple_fits -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:757:5: replace list_directory_tuple_fits -> bool with false
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:757:63: replace <= with > in list_directory_tuple_fits
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:761:5: replace posting_tuple_fits -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:761:5: replace posting_tuple_fits -> bool with false
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:761:68: replace <= with > in posting_tuple_fits
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:765:5: replace pq_codebook_tuple_fits -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:765:5: replace pq_codebook_tuple_fits -> bool with false
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:766:9: replace <= with > in pq_codebook_tuple_fits
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:818:9: replace DataPage::update_ivf_pq_codebook -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:885:9: replace DataPageChain::update_ivf_pq_codebook -> Result<(), String> with Ok(())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2233:5: replace block_in_range -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2233:5: replace block_in_range -> bool with false
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2233:57: replace && with || in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2233:27: replace && with || in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2233:18: replace != with == in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2233:41: replace <= with > in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2233:73: replace <= with > in block_in_range
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2242:5: replace posting_free_hint -> Option<pg_sys::BlockNumber> with None
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2242:5: replace posting_free_hint -> Option<pg_sys::BlockNumber> with Some(Default::default())
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2251:5: replace remember_posting_free_hint with ()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2259:5: replace forget_posting_free_hint with ()
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2270:5: replace should_compact_posting_deletes -> bool with true
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2270:5: replace should_compact_posting_deletes -> bool with false
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2270:21: replace && with || in should_compact_posting_deletes
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2270:24: delete ! in should_compact_posting_deletes
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2383:26: replace < with == in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2383:26: replace < with > in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2383:26: replace < with <= in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2386:46: replace + with - in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2386:46: replace + with * in next_physical_tuple_tid
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2469:5: replace page_line_pointer_count -> u16 with 0
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2469:5: replace page_line_pointer_count -> u16 with 1
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2471:9: replace / with % in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2471:9: replace / with * in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2470:51: replace - with + in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2470:51: replace - with / in page_line_pointer_count
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2476:18: replace match guard value == StorageFormat::Auto as u8 with true in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2476:18: replace match guard value == StorageFormat::Auto as u8 with false in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2477:18: replace match guard value == StorageFormat::TurboQuant as u8 with true in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2477:18: replace match guard value == StorageFormat::TurboQuant as u8 with false in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2478:18: replace match guard value == StorageFormat::PqFastScan as u8 with true in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2478:18: replace match guard value == StorageFormat::PqFastScan as u8 with false in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2479:18: replace match guard value == StorageFormat::RaBitQ as u8 with true in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2479:18: replace match guard value == StorageFormat::RaBitQ as u8 with false in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2476:24: replace == with != in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2477:24: replace == with != in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2478:24: replace == with != in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2479:24: replace == with != in decode_storage_format
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2486:18: replace match guard value == RerankMode::Auto as u8 with true in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2486:18: replace match guard value == RerankMode::Auto as u8 with false in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2487:18: replace match guard value == RerankMode::Off as u8 with true in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2487:18: replace match guard value == RerankMode::Off as u8 with false in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2488:18: replace match guard value == RerankMode::HeapF32 as u8 with true in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2488:18: replace match guard value == RerankMode::HeapF32 as u8 with false in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2489:18: replace match guard value == RerankMode::SourceColumn as u8 with true in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2489:18: replace match guard value == RerankMode::SourceColumn as u8 with false in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2486:24: replace == with != in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2487:24: replace == with != in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2488:24: replace == with != in decode_rerank
+hardening/careful/src/../../../src/am/ec_ivf/page.rs:2489:24: replace == with != in decode_rerank

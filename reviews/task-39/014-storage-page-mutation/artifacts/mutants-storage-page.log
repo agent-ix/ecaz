@@ -1,0 +1,15 @@
+^Dbash scripts/hardening.sh mutants --file src/storage/page.rs --output-dir reviews/task-39/014-storage-page-mutation/artifacts --jobs 2
+Found 88 mutants to test
+ok       Unmutated baseline in 3s build + 1s test
+ INFO Auto-set test timeout to 20s
+MISSED   hardening/careful/src/../../../src/storage/page.rs:24:18: replace == with != in align_up in 0s build + 2s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:23:27: replace % with / in align_up in 3s build + 1s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:27:15: replace + with * in align_up in 0s build + 1s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:27:28: replace - with + in align_up in 0s build + 2s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:27:28: replace - with / in align_up in 0s build + 1s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:287:18: replace == with != in aligned_tuple_bytes in 0s build + 2s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:290:19: replace + with - in aligned_tuple_bytes in 0s build + 2s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:290:38: replace - with + in aligned_tuple_bytes in 0s build + 2s test
+MISSED   hardening/careful/src/../../../src/storage/page.rs:290:38: replace - with / in aligned_tuple_bytes in 0s build + 2s test
+88 mutants tested in 2m: 9 missed, 72 caught, 7 unviable
+make: *** [mutants] Error 2

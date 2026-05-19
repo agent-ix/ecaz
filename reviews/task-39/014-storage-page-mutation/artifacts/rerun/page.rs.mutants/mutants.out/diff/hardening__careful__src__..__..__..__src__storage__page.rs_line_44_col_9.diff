@@ -1,0 +1,22 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace ItemPointer::encode_into with ()
+@@ -36,18 +36,17 @@
+ 
+ impl ItemPointer {
+     pub const INVALID: Self = Self {
+         block_number: u32::MAX,
+         offset_number: u16::MAX,
+     };
+ 
+     pub fn encode_into(self, out: &mut Vec<u8>) {
+-        out.extend_from_slice(&self.block_number.to_le_bytes());
+-        out.extend_from_slice(&self.offset_number.to_le_bytes());
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn decode(input: &[u8]) -> Result<Self, String> {
+         if input.len() != ITEM_POINTER_BYTES {
+             return Err(format!(
+                 "item pointer length mismatch: got {}, expected {ITEM_POINTER_BYTES}",
+                 input.len()
+             ));

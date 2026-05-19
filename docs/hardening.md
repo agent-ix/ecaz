@@ -194,6 +194,9 @@ Task 39 adds measurement lanes for the quality of existing tests:
   coverage run, then cite the owning review packet in the TSV note.
 - `make coverage-baseline-check`: fails when a critical Task 39 source file is
   missing from `fixtures/quality/coverage-baseline.tsv`.
+- `make test-quality-ci-audit`: checks that CI still runs the Task 39 coverage
+  lane on PRs, mutation lane weekly/manual, and flake-hunt lane nightly/manual
+  with artifact uploads.
 - `make coverage-report`: same lane with an HTML report under
   `target/quality/coverage/html`.
 - `make mutants MUTANTS_MODULE=src/quant/prod.rs`: checks for
@@ -202,7 +205,9 @@ Task 39 adds measurement lanes for the quality of existing tests:
   39. This is weekly/manual until survivor volume is triaged.
 - `make flake-hunt`: re-runs proptest and short fuzz targets across multiple
   seeds. Override with `FLAKE_HUNT_SEEDS=N` and
-  `FLAKE_HUNT_FUZZ_SECONDS=N`.
+  `FLAKE_HUNT_FUZZ_SECONDS=N`. The lane writes `manifest.txt` and
+  `expanded-commands.txt` under `target/quality/flake-hunt` by default so
+  nightly/manual CI runs preserve the exact seed budget and expanded commands.
 
 Current interpretation:
 
@@ -215,6 +220,18 @@ Current interpretation:
 The first coverage scope intentionally avoids claiming live pgrx callback
 coverage. PG18 integration coverage is still a gap until instrumentation is
 stable for `cargo pgrx test pg18` and the resulting logs are packeted.
+
+Task 39 packet `reviews/task-39/013-pgrx-coverage-feasibility/` records the
+current PG18 instrumentation decision. A probe with
+`RUSTFLAGS="-C instrument-coverage"` can build the pgrx test profile far enough
+to emit some `.profraw` files, but it does not reach live backend tests on the
+current macOS PG18 setup: the lib test binary aborts before execution with
+`dyld` failing to resolve `_BufferBlocks`. The coverage runner also needs an
+absolute `LLVM_PROFILE_FILE` path; relative paths are resolved from child
+process working directories and produce profile-write errors. Until both issues
+are fixed and a packet shows merged backend coverage for callback-heavy files,
+the supported Task 39 coverage surface is the shim-based subset exercised by
+`make coverage`: `ecaz-cli` plus `hardening/careful`.
 
 ### Coverage Ratchet
 
@@ -245,23 +262,42 @@ Baseline sources:
   harness.
 - `reviews/task-39/005-simd-mutation-triage/artifacts/coverage/summary.txt`
   raises `src/quant/simd.rs` after adding explicit backend override tests.
+- `reviews/task-39/010-storage-page-coverage/artifacts/coverage-summary.txt`
+  raises `src/storage/page.rs` after adding page primitive error-path and
+  size-accounting tests.
+- `reviews/task-39/011-diskann-page-coverage/artifacts/coverage-summary.txt`
+  raises `src/am/ec_diskann/page.rs` by importing the Vamana metadata codec
+  tests into the `hardening/careful` coverage harness.
+- `reviews/task-39/012-hnsw-page-coverage/artifacts/coverage-summary.txt`
+  raises `src/am/ec_hnsw/page.rs` by importing the HNSW metadata, tuple, and
+  page-chain codec tests into the `hardening/careful` coverage harness.
+- `reviews/task-39/018-ivf-page-coverage/artifacts/coverage/summary.txt`
+  raises `src/am/ec_ivf/page.rs` by importing the IVF metadata, centroid,
+  directory, posting, PQ-codebook, and page-chain codec tests into the
+  `hardening/careful` coverage harness.
+- `reviews/task-39/015-planner-cost-mutation/artifacts/coverage-summary.txt`
+  raises `src/am/common/cost.rs` by importing the pure planner-cost model and
+  callback translation tests into the `hardening/careful` coverage harness.
 
 The current local coverage lane executes `ecaz-cli` tests and
 `hardening/careful`; it does not execute extension in-module tests, so AM page
-callbacks, SPIRE coordinator paths, DiskANN build/scan paths, planner-cost
-callbacks, and storage guard drops remain recorded gaps.
+callbacks, SPIRE coordinator paths, DiskANN build/scan paths, live
+planner-cost callbacks, and storage guard drops remain recorded gaps.
 
 | Critical area | Baseline line coverage |
 | --- | ---: |
 | `src/quant/{codebook,grouped_pq,hadamard,mse,prod,qjl,rabitq,rotation}.rs` | `81.43%` to `100.00%` |
 | `src/quant/simd.rs` | `94.59%` |
 | `src/quant/mod.rs` | `0.00%` |
-| `src/storage/page.rs` | `76.57%` |
-| `src/am/*/page.rs` | `0.00%` |
+| `src/storage/page.rs` | `97.90%` |
+| `src/am/ec_diskann/page.rs` | `97.35%` |
+| `src/am/ec_hnsw/page.rs` | `84.76%` |
+| `src/am/ec_ivf/page.rs` | `95.86%` |
+| `src/am/ec_spire/page.rs` | `0.00%` |
 | `src/am/ec_spire/storage/**` | `0.00%` |
 | `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
 | `src/am/ec_diskann/{routine,scan,build}.rs` | `0.00%` |
-| `src/am/common/cost.rs` | `0.00%` |
+| `src/am/common/cost.rs` | `98.98%` |
 | `src/storage/*_guard.rs` | `0.00%` |
 
 ### Mutation Triage
@@ -305,8 +341,10 @@ rather than relying on a later ARM/x86 mutation sweep to discover the gap.
 ### Flake-Hunt Seeds
 
 `make flake-hunt` defaults to 8 seeds and short fuzz runs. Nightly runs should
-record the seed count, fuzz seconds, and every expanded seed command in the
-packet log. A nondeterministic failure packet must include:
+record the seed count, fuzz seconds, and every expanded seed command in
+`target/quality/flake-hunt/manifest.txt` and
+`target/quality/flake-hunt/expanded-commands.txt`; CI uploads that directory as
+the `test-quality-flake-hunt` artifact. A nondeterministic failure packet must include:
 
 - the failing seed,
 - the lane and target name,

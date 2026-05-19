@@ -9,6 +9,8 @@ path = "src/lib.rs"
 
 [features]
 bench = []
+pg17 = []
+pg18 = []
 pg_test = []
 
 [dependencies]

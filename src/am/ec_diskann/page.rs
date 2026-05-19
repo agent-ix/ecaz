@@ -23,7 +23,7 @@ pub const INDEX_FORMAT_V3_DISKANN: u16 = 3;
 /// the `tqhnsw` V2 layout. These flags are kept compatible so that
 /// shared hot/cold page walkers can treat payload-flag bits
 /// identically across AMs.
-pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 << 0;
+pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 0b0000_0001;
 pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;
 pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;
 
@@ -251,6 +251,9 @@ mod tests {
     #[test]
     fn la_005b_empty_clears_cold_rerank_flag() {
         let metadata = VamanaMetadataPage::empty(32, 100, 1.2, 1536, 0);
+        assert_eq!(PAYLOAD_FLAG_BINARY_SIDECAR, 0b0000_0001);
+        assert_eq!(PAYLOAD_FLAG_GROUPED_SEARCH_CODE, 0b0000_0010);
+        assert_eq!(PAYLOAD_FLAG_COLD_RERANK_PAYLOAD, 0b0000_0100);
         assert_eq!(
             metadata.payload_flags & PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
             0,

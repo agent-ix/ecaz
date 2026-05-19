@@ -1,0 +1,436 @@
+^D[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/opt/homebrew/opt/postgresql@18/bin/pg_config[39m
+CARGO_TARGET_DIR="/Users/peter/dev/tqvector/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/opt/homebrew/bin/cargo" "test" "--features" "pg18 pg_test" "--no-default-features"
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.228
+   Compiling shlex v1.3.0
+   Compiling zmij v1.0.21
+   Compiling once_cell v1.21.4
+   Compiling smallvec v1.15.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling writeable v0.6.3
+   Compiling litemap v0.8.2
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.0
+   Compiling serde v1.0.228
+   Compiling icu_normalizer_data v2.2.0
+   Compiling icu_properties_data v2.2.0
+   Compiling utf8_iter v1.0.4
+   Compiling cc v1.2.61
+   Compiling eyre v0.6.12
+   Compiling thiserror v2.0.18
+   Compiling winnow v1.0.2
+   Compiling winnow v0.7.15
+   Compiling toml_writer v1.1.1+spec-1.1.0
+   Compiling indenter v0.3.4
+   Compiling getrandom v0.4.2
+   Compiling zerocopy v0.8.48
+   Compiling anyhow v1.0.102
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling serde_json v1.0.149
+   Compiling regex-syntax v0.8.10
+   Compiling rand_core v0.10.1
+   Compiling is_ci v1.2.0
+   Compiling owo-colors v4.3.0
+   Compiling anstyle v1.0.14
+   Compiling bitflags v2.11.1
+   Compiling typenum v1.20.0
+   Compiling supports-color v3.0.2
+   Compiling percent-encoding v2.3.2
+   Compiling glob v0.3.3
+   Compiling equivalent v1.0.2
+   Compiling syn v2.0.117
+   Compiling foldhash v0.1.5
+   Compiling cmov v0.5.3
+   Compiling aho-corasick v1.1.4
+   Compiling form_urlencoded v1.2.2
+   Compiling const-oid v0.10.2
+   Compiling hybrid-array v0.4.11
+   Compiling hashbrown v0.17.0
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling clang-sys v1.8.1
+   Compiling minimal-lexical v0.2.1
+   Compiling libloading v0.8.9
+   Compiling ctutils v0.4.2
+   Compiling tinyvec_macros v0.1.1
+   Compiling unicode-width v0.2.2
+   Compiling bindgen v0.72.1
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling block-buffer v0.12.0
+   Compiling crypto-common v0.2.1
+   Compiling indexmap v2.14.0
+   Compiling nom v7.1.3
+   Compiling fixedbitset v0.5.7
+   Compiling regex-automata v0.4.14
+   Compiling bytes v1.11.1
+   Compiling same-file v1.0.6
+   Compiling either v1.15.0
+   Compiling pathsearch v0.2.0
+   Compiling annotate-snippets v0.11.5
+   Compiling tinyvec v1.11.0
+   Compiling walkdir v2.5.0
+   Compiling itertools v0.13.0
+   Compiling getrandom v0.2.17
+   Compiling pin-project-lite v0.2.17
+   Compiling rustc-hash v2.1.2
+   Compiling digest v0.11.2
+   Compiling unicode-segmentation v1.13.2
+   Compiling unicode-normalization v0.1.25
+   Compiling hashbrown v0.15.5
+   Compiling cpufeatures v0.3.0
+   Compiling mio v1.2.0
+   Compiling socket2 v0.6.3
+   Compiling objc2-core-foundation v0.3.2
+   Compiling ring v0.17.14
+   Compiling chacha20 v0.10.0
+   Compiling unescape v0.1.0
+   Compiling cexpr v0.6.0
+   Compiling allocator-api2 v0.2.21
+   Compiling synstructure v0.13.2
+   Compiling convert_case v0.8.0
+   Compiling unicode-bidi v0.3.18
+   Compiling unicode-properties v0.1.4
+   Compiling futures-sink v0.3.32
+   Compiling futures-core v0.3.32
+   Compiling regex v1.12.3
+   Compiling parking_lot_core v0.9.12
+   Compiling tokio v1.52.1
+   Compiling rand v0.10.1
+   Compiling petgraph v0.8.3
+   Compiling sha2 v0.11.0
+   Compiling md-5 v0.11.0
+   Compiling stringprep v0.1.5
+   Compiling hmac v0.13.0
+   Compiling cee-scape v0.2.0
+   Compiling radium v0.7.0
+   Compiling zeroize v1.8.2
+   Compiling byteorder v1.5.0
+   Compiling scopeguard v1.2.0
+   Compiling serde_derive v1.0.228
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.5
+   Compiling thiserror-impl v2.0.18
+   Compiling zerocopy-derive v0.8.48
+   Compiling base64 v0.22.1
+   Compiling fallible-iterator v0.2.0
+   Compiling siphasher v1.0.2
+   Compiling lock_api v0.4.14
+   Compiling rustls-pki-types v1.14.1
+   Compiling futures-macro v0.3.32
+   Compiling phf_shared v0.13.1
+   Compiling objc2-system-configuration v0.3.2
+   Compiling futures-task v0.3.32
+   Compiling postgres-protocol v0.6.11
+   Compiling slab v0.4.12
+   Compiling getrandom v0.3.4
+   Compiling zerofrom v0.1.7
+   Compiling untrusted v0.9.0
+   Compiling tap v1.0.1
+   Compiling phf v0.13.1
+   Compiling whoami v2.1.2
+   Compiling parking_lot v0.12.5
+   Compiling futures-util v0.3.32
+   Compiling wyz v0.5.1
+   Compiling tokio-util v0.7.18
+   Compiling postgres-types v0.2.13
+   Compiling enum-map-derive v0.17.0
+   Compiling async-trait v0.1.89
+   Compiling futures-channel v0.3.32
+   Compiling crossbeam-utils v0.8.21
+   Compiling rustls v0.23.40
+   Compiling log v0.4.29
+   Compiling half v1.8.3
+   Compiling funty v2.0.0
+   Compiling autocfg v1.5.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36548-10281593495925733564_0.profraw": No such file or directory
+   Compiling yoke v0.8.2
+   Compiling rustls-webpki v0.103.13
+   Compiling enum-map v2.7.3
+   Compiling rand_core v0.6.4
+   Compiling uuid v1.23.1
+   Compiling seahash v4.1.0
+   Compiling num-traits v0.2.19
+   Compiling bitvec v1.0.1
+   Compiling subtle v2.6.1
+   Compiling rustix v1.1.4
+   Compiling pgrx-sql-entity-graph v0.17.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36590-10592684297331492804_0.profraw": No such file or directory
+   Compiling rand_core v0.9.5
+   Compiling errno v0.3.14
+   Compiling heck v0.5.0
+   Compiling thiserror v1.0.69
+   Compiling camino v1.2.2
+   Compiling clap_lex v1.1.0
+   Compiling clap_derive v4.6.1
+   Compiling clap_builder v4.6.0
+   Compiling webpki-roots v1.0.7
+   Compiling derive_more-impl v2.1.1
+   Compiling thiserror-impl v1.0.69
+   Compiling cargo_toml v0.22.3
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36653-15890994273569537367_0.profraw": No such file or directory
+   Compiling serde_cbor v0.11.2
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36652-15890994273569537367_0.profraw": No such file or directory
+   Compiling fastrand v2.4.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36624-7609881049464159603_0.profraw": No such file or directory
+   Compiling tokio-postgres v0.7.17
+   Compiling crossbeam-epoch v0.9.18
+   Compiling hex v0.4.3
+   Compiling ppv-lite86 v0.2.21
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36611-13775644155076100284_0.profraw": No such file or directory
+   Compiling rayon-core v1.13.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36817-15890994273569537367_0.profraw": No such file or directory
+   Compiling half v2.7.1
+   Compiling crossbeam-deque v0.8.6
+   Compiling cargo-platform v0.1.9
+   Compiling rand_chacha v0.3.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36839-13775644155076100284_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36738-10592684297331492804_0.profraw": No such file or directory
+   Compiling pgrx-macros v0.17.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36688-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36688-4338131489473117433_0.profraw": No such file or directory
+   Compiling zerovec v0.11.6
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36841-13775644155076100284_0.profraw": No such file or directory
+   Compiling zerotrie v0.2.4
+   Compiling rand_chacha v0.9.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36843-15890994273569537367_0.profraw": No such file or directory
+   Compiling rand v0.8.6
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36739-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36844-13775644155076100284_0.profraw": No such file or directory
+   Compiling clap v4.6.1
+   Compiling proc-macro-error-attr2 v2.0.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36862-13775644155076100284_0.profraw": No such file or directory
+   Compiling semver v1.0.28
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36717-3571818788254715988_0.profraw": No such file or directory
+   Compiling wait-timeout v0.2.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36859-10592684297331492804_0.profraw": No such file or directory
+   Compiling ciborium-io v0.2.2
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36863-13775644155076100284_0.profraw": No such file or directory
+   Compiling paste v1.0.15
+   Compiling plotters-backend v0.3.7
+   Compiling bit-vec v0.8.0
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling quick-error v1.2.3
+   Compiling fnv v1.0.7
+   Compiling tokio-rustls v0.26.4
+   Compiling plotters-svg v0.3.7
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36806-15890994273569537367_0.profraw": No such file or directory
+   Compiling bit-set v0.8.0
+   Compiling ciborium-ll v0.2.2
+   Compiling proc-macro-error2 v2.0.1
+   Compiling rand v0.9.4
+   Compiling itertools v0.10.5
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36982-13775644155076100284_0.profraw": No such file or directory
+   Compiling tempfile v3.27.0
+   Compiling derive_more v2.1.1
+   Compiling rand_xorshift v0.4.0
+   Compiling cast v0.3.0
+   Compiling rusty-fork v0.3.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36985-13775644155076100284_0.profraw": No such file or directory
+   Compiling iai-callgrind v0.14.2
+   Compiling unarray v0.1.4
+   Compiling ciborium v0.2.2
+   Compiling criterion-plot v0.5.0
+   Compiling plotters v0.3.7
+   Compiling proptest v1.11.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36995-13775644155076100284_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36995-15890994273569537367_0.profraw": No such file or directory
+   Compiling rayon v1.12.0
+   Compiling bincode v1.3.3
+   Compiling tinytemplate v1.2.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36860-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36860-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36860-10281593495925733564_0.profraw": No such file or directory
+   Compiling tinystr v0.8.3
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37014-15890994273569537367_0.profraw": No such file or directory
+   Compiling potential_utf v0.1.5
+   Compiling postgres v0.19.13
+   Compiling sysinfo v0.34.2
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37015-15890994273569537367_0.profraw": No such file or directory
+   Compiling is-terminal v0.4.17
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37017-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37017-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37017-10281593495925733564_0.profraw": No such file or directory
+   Compiling icu_locale_core v2.2.0
+   Compiling icu_collections v2.2.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37016-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37016-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37016-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37016-6579883110396394128_0.profraw": No such file or directory
+   Compiling anes v0.1.6
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36861-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36861-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36861-6579883110396394128_0.profraw": No such file or directory
+   Compiling oorandom v11.1.5
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36836-17157180419734889004_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36836-7609881049464159603_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36983-15890994273569537367_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36865-16992203562765559249_0.profraw": No such file or directory
+   Compiling criterion v0.5.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37022-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37022-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37022-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37022-10281593495925733564_0.profraw": No such file or directory
+   Compiling icu_provider v2.2.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37018-17157180419734889004_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37018-7609881049464159603_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37021-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37021-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37021-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37021-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37010-13775644155076100284_0.profraw": No such file or directory
+   Compiling icu_normalizer v2.2.0
+   Compiling icu_properties v2.2.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37027-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37027-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37027-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37027-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37026-15890994273569537367_0.profraw": No such file or directory
+   Compiling cargo_metadata v0.18.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36956-3315303878737932827_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37028-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37028-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37028-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37028-6579883110396394128_0.profraw": No such file or directory
+   Compiling idna_adapter v1.2.2
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37029-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37029-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37029-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37029-10281593495925733564_0.profraw": No such file or directory
+   Compiling idna v1.1.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37038-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37038-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37038-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37038-6579883110396394128_0.profraw": No such file or directory
+   Compiling clap-cargo v0.14.1
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37030-3315303878737932827_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37030-15890994273569537367_0.profraw": No such file or directory
+   Compiling url v2.5.8
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37052-3315303878737932827_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37052-15890994273569537367_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37052-16992203562765559249_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36984-13725600514901580036_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37050-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37050-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37050-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37050-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37025-13775644155076100284_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37025-16992203562765559249_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37025-15890994273569537367_0.profraw": No such file or directory
+   Compiling pgrx-pg-config v0.17.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37054-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37054-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37054-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37054-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37053-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37053-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37053-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37053-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-36988-5737521419104551554_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37011-5737521419104551554_0.profraw": No such file or directory
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling pgrx-bindgen v0.17.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37055-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37055-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37055-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37055-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37055-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37055-15890994273569537367_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37056-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37056-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37056-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37056-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37056-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37056-15890994273569537367_0.profraw": No such file or directory
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37057-15890994273569537367_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37057-13725600514901580036_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37057-5737521419104551554_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37058-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37058-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37058-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37058-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37058-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37058-15890994273569537367_0.profraw": No such file or directory
+   Compiling pgrx-pg-sys v0.17.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37085-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37085-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37085-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37085-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37085-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37085-15890994273569537367_0.profraw": No such file or directory
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37083-4746731203114145423_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37083-5737521419104551554_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37083-15890994273569537367_0.profraw": No such file or directory
+   Compiling pgrx v0.17.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37411-15890994273569537367_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37411-15093183521730039876_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37411-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37412-3571818788254715988_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37412-15890994273569537367_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37412-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37412-15093183521730039876_0.profraw": No such file or directory
+   Compiling pgrx-tests v0.17.0
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-3315303878737932827_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-16992203562765559249_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-13775644155076100284_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-17157180419734889004_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-7609881049464159603_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-16431476502950011604_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-4338131489473117433_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-10281593495925733564_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-6579883110396394128_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-3571818788254715988_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-15890994273569537367_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-10592684297331492804_0.profraw": No such file or directory
+LLVM Profile Error: Failed to write file "target/quality/pgrx-coverage-probe/profraw/ecaz-37413-15093183521730039876_0.profraw": No such file or directory
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:42:8
+   |
+42 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_neon_for_test` is never used
+  --> src/quant/hadamard.rs:56:8
+   |
+56 | pub fn fwht_in_place_neon_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz` (lib test) generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 15s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-4e024daf187443e0)
+dyld[37721]: symbol not found in flat namespace '_BufferBlocks'
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `/Users/peter/dev/tqvector/target/debug/deps/ecaz-4e024daf187443e0` (signal: 6, SIGABRT: process abort signal)

@@ -1,0 +1,25 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace strategy_translation_snapshot -> StrategyTranslationSnapshot with Default::default()
+@@ -151,21 +151,17 @@
+         | PlannerCompareType::Gt
+         | PlannerCompareType::Ne
+         | PlannerCompareType::Overlap
+         | PlannerCompareType::ContainedBy => 0,
+     }
+ }
+ 
+ pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
+-    StrategyTranslationSnapshot {
+-        ordering_strategy: 1,
+-        ordering_compare_type: amtranslatestrategy_callback(1),
+-        pg18_callback_ready: cfg!(feature = "pg18"),
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ #[cfg(feature = "pg18")]
+ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amgettreeheight(rel: pg_sys::Relation) -> i32 {
+     unsafe {
+         pgrx::pgrx_extern_c_guard(|| {
+             let metadata = shared::read_metadata_page(rel);
+             amgettreeheight_callback_value(metadata.max_level)

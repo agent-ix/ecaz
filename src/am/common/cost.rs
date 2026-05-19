@@ -1,6 +1,9 @@
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use pgrx::pg_sys;
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use crate::am::ec_hnsw::{options, page, shared};
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use crate::storage::relation_guard::IndexRelationGuard;
 
 // Ordered ec_hnsw scoring walks LUT-backed quantized codes, not full raw-f32
@@ -93,6 +96,7 @@ pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstima
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
     PlannerCostConstants {
         // SAFETY: PostgreSQL exposes these backend-local planner cost globals
@@ -260,11 +264,7 @@ pub(crate) fn estimate_planner_cost(
         // double-count the graph traversal and make ec_hnsw always look
         // costlier than a seqscan, even when the graph covers the whole
         // index (linear_pages == 0).
-        let linear_fraction = if inputs.index_pages > 0.0 {
-            linear_pages / inputs.index_pages
-        } else {
-            0.0
-        };
+        let linear_fraction = linear_pages / inputs.index_pages;
         let linear_cpu =
             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;
         let startup_cost = graph_cost + graph_cpu;
@@ -280,6 +280,7 @@ pub(crate) fn estimate_planner_cost(
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
     path: *mut pg_sys::IndexPath,
@@ -312,6 +313,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn planner_tree_height_from_index_info(
     index_info: *mut pg_sys::IndexOptInfo,
     max_level: u8,
@@ -339,6 +341,7 @@ unsafe fn planner_tree_height_from_index_info(
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn compute_amcostestimate(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexOptInfo,
@@ -417,6 +420,13 @@ mod tests {
         };
         table_pages * constants.seq_page_cost
             + tuple_estimate * constants.cpu_operator_cost * f64::from(dimensions)
+    }
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
     }
 
     #[test]
@@ -514,6 +524,75 @@ mod tests {
     }
 
     #[test]
+    fn planner_cost_model_uses_reltuples_when_stats_are_available() {
+        let constants = PlannerCostConstants {
+            random_page_cost: 4.0,
+            seq_page_cost: 2.0,
+            cpu_operator_cost: 0.5,
+        };
+        let estimate = estimate_planner_cost(
+            PlannerCostInputs {
+                index_pages: 10.0,
+                reltuples: 25.0,
+                m: 8,
+                ef_search: 4,
+                dimensions: 4,
+                tree_height: 0.0,
+            },
+            constants,
+        );
+
+        assert_eq!(estimate.startup_cost, 0.0);
+        assert_close(estimate.total_cost, 57.5);
+    }
+
+    #[test]
+    fn planner_cost_model_accounts_for_graph_and_linear_components() {
+        let constants = PlannerCostConstants {
+            random_page_cost: 4.0,
+            seq_page_cost: 2.0,
+            cpu_operator_cost: 0.5,
+        };
+        let estimate = estimate_planner_cost(
+            PlannerCostInputs {
+                index_pages: 100.0,
+                reltuples: 200.0,
+                m: 8,
+                ef_search: 7,
+                dimensions: 8,
+                tree_height: 3.0,
+            },
+            constants,
+        );
+
+        assert_close(estimate.startup_cost, 70.0);
+        assert_close(estimate.total_cost, 790.0);
+    }
+
+    #[test]
+    fn planner_cost_model_does_not_charge_linear_tail_when_graph_covers_index() {
+        let constants = PlannerCostConstants {
+            random_page_cost: 4.0,
+            seq_page_cost: 2.0,
+            cpu_operator_cost: 0.5,
+        };
+        let estimate = estimate_planner_cost(
+            PlannerCostInputs {
+                index_pages: 8.0,
+                reltuples: 200.0,
+                m: 8,
+                ef_search: 7,
+                dimensions: 8,
+                tree_height: 3.0,
+            },
+            constants,
+        );
+
+        assert_close(estimate.startup_cost, 70.0);
+        assert_close(estimate.total_cost, 70.0);
+    }
+
+    #[test]
     fn planner_cost_model_keeps_real_10k_ef200_probe_below_seqscan_sort_crossover() {
         let constants = default_constants();
         let estimate = estimate_planner_cost(
@@ -588,6 +667,7 @@ mod tests {
     fn strategy_translation_maps_ordering_strategy_to_compare_lt() {
         assert_eq!(amtranslatestrategy_callback(1), PlannerCompareType::Lt);
         assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Lt), 1);
+        assert_eq!(PlannerCompareType::Lt.as_str(), "COMPARE_LT");
     }
 
     #[test]
@@ -607,6 +687,17 @@ mod tests {
         assert_eq!(
             amtranslatecmptype_callback(PlannerCompareType::ContainedBy),
             0
+        );
+        assert_eq!(PlannerCompareType::Invalid.as_str(), "COMPARE_INVALID");
+        assert_eq!(PlannerCompareType::Le.as_str(), "COMPARE_LE");
+        assert_eq!(PlannerCompareType::Eq.as_str(), "COMPARE_EQ");
+        assert_eq!(PlannerCompareType::Ge.as_str(), "COMPARE_GE");
+        assert_eq!(PlannerCompareType::Gt.as_str(), "COMPARE_GT");
+        assert_eq!(PlannerCompareType::Ne.as_str(), "COMPARE_NE");
+        assert_eq!(PlannerCompareType::Overlap.as_str(), "COMPARE_OVERLAP");
+        assert_eq!(
+            PlannerCompareType::ContainedBy.as_str(),
+            "COMPARE_CONTAINED_BY"
         );
     }
 }

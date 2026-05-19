@@ -4,6 +4,9 @@ pub mod careful_storage_page;
 #[path = "../../../src/am/ec_diskann/tuple.rs"]
 pub mod careful_diskann_tuple;
 
+#[path = "../../../src/am/ec_diskann/page.rs"]
+pub mod careful_diskann_page;
+
 #[path = "../../../src/am/ec_diskann/vacuum.rs"]
 pub mod careful_diskann_vacuum;
 
@@ -13,19 +16,43 @@ pub mod careful_diskann_vamana;
 #[path = "../../../src/am/ec_hnsw/search.rs"]
 pub mod careful_hnsw_search;
 
+#[path = "../../../src/am/ec_hnsw/page.rs"]
+pub mod careful_hnsw_page;
+
+#[path = "../../../src/am/ec_ivf/page.rs"]
+pub mod careful_ivf_page;
+
+#[path = "../../../src/am/common/cost.rs"]
+pub mod careful_common_cost;
+
 pub mod storage {
     pub use crate::careful_storage_page as page;
 }
 
 pub mod am {
+    pub(crate) mod page {
+        pub(crate) const INDEX_FORMAT_V1_SCALAR: u16 = 1;
+        pub(crate) const INDEX_FORMAT_V2_GROUPED: u16 = 2;
+    }
+
+    pub mod common {
+        pub use crate::careful_common_cost as cost;
+    }
+
     pub mod ec_diskann {
+        pub use crate::careful_diskann_page as page;
         pub use crate::careful_diskann_tuple as tuple;
         pub use crate::careful_diskann_vacuum as vacuum;
         pub use crate::careful_diskann_vamana as vamana;
     }
 
     pub mod ec_hnsw {
+        pub use crate::careful_hnsw_page as page;
         pub use crate::careful_hnsw_search as search;
+    }
+
+    pub mod ec_ivf {
+        pub use crate::careful_ivf_page as page;
     }
 }
 
@@ -33,18 +60,14 @@ pub mod am {
 #[path = "../../../src/quant/mod.rs"]
 mod quant;
 
-mod am {
-    pub(crate) mod page {
-        pub(crate) const INDEX_FORMAT_V1_SCALAR: u16 = 1;
-        pub(crate) const INDEX_FORMAT_V2_GROUPED: u16 = 2;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::am::ec_diskann::tuple::{VamanaCodebookTuple, VamanaNodeTuple};
     use super::am::ec_diskann::vacuum::repair_neighbors;
-    use super::storage::page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER};
+    use super::storage::page::{
+        align_up, aligned_tuple_bytes, raw_tuple_storage_bytes, DataPage, DataPageChain,
+        ItemPointer, FIRST_DATA_BLOCK_NUMBER, PAGE_HEADER_BYTES,
+    };
     use std::collections::HashSet;
 
     fn tid(b: u32, o: u16) -> ItemPointer {
@@ -57,6 +80,64 @@ mod tests {
     #[test]
     fn item_pointer_decode_rejects_short_payloads() {
         assert!(ItemPointer::decode(&[0; 5]).is_err());
+    }
+
+    #[test]
+    fn item_pointer_decode_rejects_long_payloads() {
+        assert!(ItemPointer::decode(&[0; 7]).is_err());
+    }
+
+    #[test]
+    fn page_alignment_helpers_preserve_exact_and_round_up_cases() {
+        assert_eq!(align_up(16, 8), 16);
+        assert_eq!(align_up(17, 8), 24);
+        assert_eq!(aligned_tuple_bytes(8), 16);
+        assert_eq!(aligned_tuple_bytes(9), 24);
+    }
+
+    #[test]
+    fn data_page_reports_layout_and_free_space() {
+        let mut page = DataPage::new(9, 96);
+
+        assert_eq!(page.block_number(), 9);
+        assert_eq!(page.tuple_count(), 0);
+        assert_eq!(page.free_bytes(), 96 - PAGE_HEADER_BYTES);
+        assert!(page.can_fit_raw_tuple(16));
+
+        let inserted = page.insert_raw_tuple(vec![0xaa; 16]).unwrap();
+        assert_eq!(inserted, tid(9, 1));
+        assert_eq!(page.tuples(), &[vec![0xaa; 16]]);
+        assert_eq!(page.free_bytes(), 96 - PAGE_HEADER_BYTES - raw_tuple_storage_bytes(16));
+    }
+
+    #[test]
+    fn data_page_rejects_invalid_tid_lookups_and_updates() {
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, 128);
+        let inserted = page.insert_raw_tuple(vec![1, 2, 3, 4]).unwrap();
+
+        assert!(page.raw_tuple(tid(FIRST_DATA_BLOCK_NUMBER + 1, 1)).is_err());
+        assert!(page.raw_tuple(tid(FIRST_DATA_BLOCK_NUMBER, 0)).is_err());
+        assert!(page.raw_tuple(tid(FIRST_DATA_BLOCK_NUMBER, 2)).is_err());
+
+        assert!(page
+            .update_raw_tuple(tid(FIRST_DATA_BLOCK_NUMBER + 1, 1), vec![9; 4])
+            .is_err());
+        assert!(page
+            .update_raw_tuple(tid(FIRST_DATA_BLOCK_NUMBER, 0), vec![9; 4])
+            .is_err());
+        assert!(page
+            .update_raw_tuple(tid(FIRST_DATA_BLOCK_NUMBER, 2), vec![9; 4])
+            .is_err());
+        assert!(page.update_raw_tuple(inserted, vec![9; 3]).is_err());
+
+        page.update_raw_tuple(inserted, vec![9; 4]).unwrap();
+        assert_eq!(page.raw_tuple(inserted).unwrap(), &[9; 4]);
+    }
+
+    #[test]
+    fn data_page_rejects_tuple_that_does_not_fit() {
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, 48);
+        assert!(page.insert_raw_tuple(vec![0; 24]).is_err());
     }
 
     #[test]
@@ -77,6 +158,45 @@ mod tests {
                 .unwrap(),
             &[3; 32]
         );
+    }
+
+    #[test]
+    fn data_page_chain_reports_size_and_mutates_existing_page() {
+        let mut chain = DataPageChain::new(128);
+        let tid = chain.insert_raw_tuple(vec![1; 16]).unwrap();
+
+        assert_eq!(chain.page_size(), 128);
+        assert!(chain.get_page(0).is_none());
+        assert!(chain.get_page(FIRST_DATA_BLOCK_NUMBER + 1).is_none());
+
+        let page = chain.get_page_mut(tid.block_number).unwrap();
+        page.update_raw_tuple(tid, vec![2; 16]).unwrap();
+
+        assert_eq!(
+            chain
+                .get_page(tid.block_number)
+                .unwrap()
+                .raw_tuple(tid)
+                .unwrap(),
+            &[2; 16]
+        );
+    }
+
+    #[test]
+    fn data_page_chain_zero_empty_pages_is_noop() {
+        let mut chain = DataPageChain::new(128);
+
+        assert_eq!(chain.append_empty_pages(0), None);
+        assert_eq!(chain.pages().len(), 1);
+    }
+
+    #[test]
+    fn data_page_chain_rejects_tuple_larger_than_page_payload_capacity() {
+        let mut chain = DataPageChain::new(64);
+
+        assert!(chain.insert_raw_tuple(vec![0; 40]).is_err());
+        assert_eq!(chain.pages().len(), 1);
+        assert_eq!(chain.pages()[0].tuple_count(), 0);
     }
 
     #[test]

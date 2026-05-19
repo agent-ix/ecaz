@@ -1,0 +1,547 @@
+
+*** hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with 1
+
+*** mutation diff:
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace amtranslatecmptype_callback -> i32 with 1
+@@ -137,27 +137,17 @@
+ pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {
+     match strategy {
+         1 => PlannerCompareType::Lt,
+         _ => PlannerCompareType::Invalid,
+     }
+ }
+ 
+ pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {
+-    match compare_type {
+-        PlannerCompareType::Lt => 1,
+-        PlannerCompareType::Invalid
+-        | PlannerCompareType::Le
+-        | PlannerCompareType::Eq
+-        | PlannerCompareType::Ge
+-        | PlannerCompareType::Gt
+-        | PlannerCompareType::Ne
+-        | PlannerCompareType::Overlap
+-        | PlannerCompareType::ContainedBy => 0,
+-    }
++    1 /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
+     StrategyTranslationSnapshot {
+         ordering_strategy: 1,
+         ordering_compare_type: amtranslatestrategy_callback(1),
+         pg18_callback_ready: cfg!(feature = "pg18"),
+     }
+
+
+*** /opt/homebrew/bin/cargo test --no-run --verbose --package=ecaz-careful-hardening@0.1.0
+warning: failed to save last-use data
+This may prevent cargo from accurately tracking what is being used in its global cache. This information is used for automatically removing unused data in the cache.
+
+attempt to write a readonly database
+
+Caused by:
+  Error code 8: attempt to write a readonly database
+       Fresh cfg-if v1.0.4
+       Fresh allocator-api2 v0.2.21
+       Fresh equivalent v1.0.2
+       Fresh foldhash v0.1.5
+       Fresh libc v0.2.186
+       Fresh hashbrown v0.15.5
+       Fresh getrandom v0.2.17
+       Fresh zerocopy v0.8.48
+       Fresh ppv-lite86 v0.2.21
+       Fresh rand_core v0.6.4
+       Fresh rand_chacha v0.3.1
+       Fresh rand v0.8.6
+       Dirty ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/hardening/careful): the file `hardening/careful/src/../../../src/am/common/cost.rs` has changed (1779153330.097255923s, 3s after last build at 1779153327.513692719s)
+   Compiling ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/hardening/careful)
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+warning: unused variable: `compare_type`
+   --> hardening/careful/src/../../../src/am/common/cost.rs:144:43
+    |
+144 | pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {
+    |                                           ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_compare_type`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `LUT_CPU_DIMENSION_SCALE` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:15:7
+   |
+15 | const LUT_CPU_DIMENSION_SCALE: f64 = 0.75;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `PlannerCostInputs` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:18:19
+   |
+18 | pub(crate) struct PlannerCostInputs {
+   |                   ^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerCostConstants` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:31:19
+   |
+31 | pub(crate) struct PlannerCostConstants {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerCostEstimate` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:38:19
+   |
+38 | pub(crate) struct PlannerCostEstimate {
+   |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerTreeHeightInput` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:47:19
+   |
+47 | pub(crate) struct PlannerTreeHeightInput {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `PlannerCompareType` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:54:17
+   |
+54 | pub(crate) enum PlannerCompareType {
+   |                 ^^^^^^^^^^^^^^^^^^
+
+warning: method `as_str` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:67:19
+   |
+66 | impl PlannerCompareType {
+   | ----------------------- method in this implementation
+67 |     pub(crate) fn as_str(self) -> &'static str {
+   |                   ^^^^^^
+
+warning: struct `StrategyTranslationSnapshot` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:83:19
+   |
+83 | pub(crate) struct StrategyTranslationSnapshot {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `gated_planner_cost_estimate` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:89:15
+   |
+89 | pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstimate {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `metadata_fallback_tree_height` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:109:15
+    |
+109 | pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `resolved_tree_height_input` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:117:15
+    |
+117 | pub(crate) fn resolved_tree_height_input(max_level: u8) -> PlannerTreeHeightInput {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `amgettreeheight_callback_value` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:133:15
+    |
+133 | pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `amtranslatestrategy_callback` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:137:15
+    |
+137 | pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `amtranslatecmptype_callback` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:144:15
+    |
+144 | pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `strategy_translation_snapshot` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:148:15
+    |
+148 | pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `estimate_planner_cost` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:208:15
+    |
+208 | pub(crate) fn estimate_planner_cost(
+    |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz-careful-hardening` (lib) generated 17 warnings (run `cargo fix --lib -p ecaz-careful-hardening` to apply 1 suggestion)
+warning: `ecaz-careful-hardening` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.74s
+  Executable `/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7`
+
+*** result: Success
+
+*** /opt/homebrew/bin/cargo test --verbose --package=ecaz-careful-hardening@0.1.0
+warning: failed to save last-use data
+This may prevent cargo from accurately tracking what is being used in its global cache. This information is used for automatically removing unused data in the cache.
+
+attempt to write a readonly database
+
+Caused by:
+  Error code 8: attempt to write a readonly database
+       Fresh cfg-if v1.0.4
+       Fresh foldhash v0.1.5
+       Fresh equivalent v1.0.2
+       Fresh allocator-api2 v0.2.21
+       Fresh libc v0.2.186
+       Fresh hashbrown v0.15.5
+       Fresh zerocopy v0.8.48
+       Fresh getrandom v0.2.17
+       Fresh rand_core v0.6.4
+       Fresh ppv-lite86 v0.2.21
+       Fresh rand_chacha v0.3.1
+       Fresh rand v0.8.6
+warning: unused variable: `compare_type`
+   --> hardening/careful/src/../../../src/am/common/cost.rs:144:43
+    |
+144 | pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {
+    |                                           ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_compare_type`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `LUT_CPU_DIMENSION_SCALE` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:15:7
+   |
+15 | const LUT_CPU_DIMENSION_SCALE: f64 = 0.75;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `PlannerCostInputs` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:18:19
+   |
+18 | pub(crate) struct PlannerCostInputs {
+   |                   ^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerCostConstants` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:31:19
+   |
+31 | pub(crate) struct PlannerCostConstants {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerCostEstimate` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:38:19
+   |
+38 | pub(crate) struct PlannerCostEstimate {
+   |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlannerTreeHeightInput` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:47:19
+   |
+47 | pub(crate) struct PlannerTreeHeightInput {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `PlannerCompareType` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:54:17
+   |
+54 | pub(crate) enum PlannerCompareType {
+   |                 ^^^^^^^^^^^^^^^^^^
+
+warning: method `as_str` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:67:19
+   |
+66 | impl PlannerCompareType {
+   | ----------------------- method in this implementation
+67 |     pub(crate) fn as_str(self) -> &'static str {
+   |                   ^^^^^^
+
+warning: struct `StrategyTranslationSnapshot` is never constructed
+  --> hardening/careful/src/../../../src/am/common/cost.rs:83:19
+   |
+83 | pub(crate) struct StrategyTranslationSnapshot {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `gated_planner_cost_estimate` is never used
+  --> hardening/careful/src/../../../src/am/common/cost.rs:89:15
+   |
+89 | pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstimate {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `metadata_fallback_tree_height` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:109:15
+    |
+109 | pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `resolved_tree_height_input` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:117:15
+    |
+117 | pub(crate) fn resolved_tree_height_input(max_level: u8) -> PlannerTreeHeightInput {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `amgettreeheight_callback_value` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:133:15
+    |
+133 | pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `amtranslatestrategy_callback` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:137:15
+    |
+137 | pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `amtranslatecmptype_callback` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:144:15
+    |
+144 | pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `strategy_translation_snapshot` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:148:15
+    |
+148 | pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `estimate_planner_cost` is never used
+   --> hardening/careful/src/../../../src/am/common/cost.rs:208:15
+    |
+208 | pub(crate) fn estimate_planner_cost(
+    |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz-careful-hardening` (lib) generated 17 warnings (run `cargo fix --lib -p ecaz-careful-hardening` to apply 1 suggestion)
+warning: `ecaz-careful-hardening` (lib test) generated 1 warning (1 duplicate)
+       Fresh ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/hardening/careful)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running `/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-azSoNV.tmp/target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7`
+
+running 216 tests
+test careful_common_cost::tests::planner_cost_model_stays_cheaper_than_seqscan_for_large_tables ... ok
+test careful_common_cost::tests::planner_cost_model_stays_more_expensive_than_seqscan_for_small_tables ... ok
+test careful_common_cost::tests::planner_cost_model_uses_reltuples_heuristic_when_stats_are_missing ... ok
+test careful_common_cost::tests::planner_cost_model_returns_max_for_empty_index ... ok
+test careful_common_cost::tests::strategy_translation_snapshot_matches_build_target ... ok
+test careful_common_cost::tests::planner_cost_model_keeps_real_10k_ef200_probe_below_seqscan_sort_crossover ... ok
+test careful_common_cost::tests::tree_height_callback_value_returns_metadata_max_level ... ok
+test careful_common_cost::tests::planner_cost_tree_height_snapshot_matches_build_target ... ok
+test careful_common_cost::tests::strategy_translation_maps_ordering_strategy_to_compare_lt ... ok
+test careful_diskann_page::tests::la_005b_empty_clears_cold_rerank_flag ... ok
+test careful_diskann_page::tests::la_002_format_version_tag_is_three ... ok
+test careful_diskann_page::tests::la_003_encoded_length_matches_constant ... ok
+test careful_diskann_page::tests::la_006_needs_medoid_refresh_flag_roundtrips ... ok
+test careful_diskann_page::tests::la_001_fresh_metadata_roundtrip ... ok
+test careful_diskann_page::tests::la_005_alpha_f32_bit_exact ... ok
+test careful_diskann_page::tests::miri_vamana_metadata_roundtrip_with_codebook_head ... ok
+test careful_diskann_tuple::tests::la_012_encoded_len_matches_computation ... ok
+test careful_diskann_page::tests::la_004_foreign_format_tag_rejected ... ok
+test careful_diskann_tuple::tests::la_020_header_size_locked ... ok
+test careful_diskann_tuple::tests::la_022_validate_body_sizes_against_metadata ... ok
+test careful_diskann_tuple::tests::la_013_foreign_tag_rejected ... ok
+test careful_diskann_tuple::tests::la_015_validate_neighbor_count_bounded_by_r ... ok
+test careful_diskann_tuple::tests::la_014_validate_neighbor_capacity ... ok
+test careful_diskann_tuple::tests::la_021_decode_rejects_wrong_length ... ok
+test careful_diskann_tuple::tests::la_018_overflow_heaptids_flag_independent ... ok
+test careful_diskann_tuple::tests::la_017_deleted_flag_roundtrips ... ok
+test careful_diskann_tuple::tests::la_031_codebook_placeholder_patched_same_length ... ok
+test careful_diskann_tuple::tests::la_016_empty_slots_are_invalid_pointer ... ok
+test careful_diskann_tuple::tests::la_033_codebook_wrong_length_rejected ... ok
+test careful_diskann_tuple::tests::la_032_codebook_foreign_tag_rejected ... ok
+test careful_diskann_tuple::tests::la_010_empty_node_roundtrip ... ok
+test careful_diskann_vacuum::tests::miri_vc_001_mark_deleted_is_idempotent ... ok
+test careful_diskann_tuple::tests::miri_la_030_codebook_tuple_roundtrip ... ok
+test careful_diskann_tuple::tests::la_019_fixed_length_invariant ... ok
+test careful_diskann_tuple::tests::miri_la_011_filled_node_roundtrip ... ok
+test careful_diskann_vacuum::tests::miri_vc_002_mark_deleted_preserves_payload ... ok
+test careful_diskann_vacuum::tests::miri_vc_003_strip_dead_primary_heaptid_predicate ... ok
+test careful_common_cost::tests::strategy_translation_rejects_invalid_inputs ... FAILED
+test careful_diskann_vacuum::tests::miri_vc_004_strip_skips_already_invalid ... ok
+test careful_diskann_vacuum::tests::miri_vc_005_is_fully_dead_semantics ... ok
+test careful_diskann_vacuum::tests::miri_vc_010_full_deletion_state_machine ... ok
+test careful_diskann_vacuum::tests::miri_vc_006_repair_neighbors_compacts_and_pads ... ok
+test careful_diskann_vacuum::tests::miri_vc_009_repair_preserves_encoded_length ... ok
+test careful_diskann_vacuum::tests::vc_007_repair_with_empty_dead_set_noop ... ok
+test careful_diskann_vacuum::tests::vc_008_repair_is_stable ... ok
+test careful_diskann_vamana::tests::append_candidates_for_prune_deduplicates_extra_nodes ... ok
+test careful_diskann_vamana::tests::candidate_pool_includes_existing_out_neighbors ... ok
+test careful_diskann_vamana::tests::miri_robust_prune_excludes_alpha_dominated ... ok
+test careful_diskann_vamana::tests::miri_greedy_search_finds_nearest ... ok
+test careful_diskann_vamana::tests::robust_prune_respects_max_degree ... ok
+test careful_hnsw_page::tests::compressed_element_tuple_fits_on_default_page ... ok
+test careful_hnsw_page::tests::element_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::element_tuple_ref_exposes_borrowed_code_and_live_heaptids ... ok
+test careful_hnsw_page::tests::element_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::grouped_codebook_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::grouped_hot_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::grouped_hot_tuple_ref_exposes_borrowed_payloads ... ok
+test careful_hnsw_page::tests::grouped_hot_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::grouped_codebook_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::level_cap_produces_fitting_neighbor_tuple ... ok
+test careful_hnsw_page::tests::metadata_decode_page_accepts_legacy_layout ... ok
+test careful_hnsw_page::tests::metadata_graph_storage_format_distinguishes_v1_v2_and_v3 ... ok
+test careful_diskann_vamana::tests::miri_build_stats_include_pass1_extra_candidates ... ok
+test careful_hnsw_page::tests::metadata_page_roundtrip ... ok
+test careful_hnsw_page::tests::metadata_roundtrip ... ok
+test careful_diskann_vamana::tests::miri_build_small_graph_is_connected ... ok
+test careful_hnsw_page::tests::metadata_roundtrip_preserves_v3_turbo_hot_cold_layout ... ok
+test careful_hnsw_page::tests::miri_element_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_grouped_hot_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_metadata_roundtrip ... ok
+test careful_hnsw_page::tests::miri_neighbor_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_rerank_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::miri_turbo_hot_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::neighbor_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::neighbor_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_element_tuples ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_grouped_hot_tuples ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_rerank_tuples ... ok
+test careful_hnsw_page::tests::rerank_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::rerank_tuple_roundtrip ... ok
+test careful_hnsw_page::tests::turbo_hot_tuple_page_roundtrip ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_turbo_hot_tuples ... ok
+test careful_hnsw_page::tests::turbo_hot_tuple_ref_exposes_borrowed_payloads ... ok
+test careful_hnsw_page::tests::turbo_hot_tuple_roundtrip ... ok
+test careful_diskann_vamana::tests::approximate_medoid_within_10pct_of_exact ... ok
+test careful_hnsw_search::tests::beam_search_forget_queued_ignores_expanded_or_unknown_nodes ... ok
+test careful_hnsw_search::tests::beam_search_respects_expansion_budget ... ok
+test careful_hnsw_search::tests::beam_search_expands_best_first_from_seeds ... ok
+test careful_hnsw_search::tests::beam_search_seed_many_accepts_unique_candidates_only ... ok
+test careful_hnsw_search::tests::beam_search_take_best_matching_consumes_first_live_candidate ... ok
+test careful_hnsw_search::tests::beam_search_expand_one_matches_incremental_best_first_progress ... ok
+test careful_hnsw_search::tests::miri_beam_search_deduplicates_self_loops_and_parallel_edges ... ok
+test careful_hnsw_search::tests::miri_beam_search_forget_queued_removes_frontier_node_and_allows_reseed ... ok
+test careful_hnsw_page::tests::page_chain_extends_for_multiple_grouped_codebook_tuples ... ok
+test careful_hnsw_search::tests::miri_beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier ... ok
+test careful_hnsw_search::tests::miri_beam_search_peek_best_matching_skips_stale_leaders ... ok
+test careful_hnsw_search::tests::beam_search_run_matches_repeated_expand_one ... ok
+test careful_hnsw_search::tests::miri_visible_frontier_best_candidate_prefers_live_scheduler_node ... ok
+test careful_hnsw_search::tests::miri_visible_frontier_select_next_with_refill_skips_until_selected_then_advances ... ok
+test careful_hnsw_search::tests::visible_frontier_advance_after_consume_marks_refills_and_tops_up_unexpanded_source ... ok
+test careful_hnsw_search::tests::visible_frontier_advance_after_consume_skips_refill_for_expanded_source ... ok
+test careful_hnsw_search::tests::visible_frontier_best_candidate_falls_back_after_scheduler_drains ... ok
+test careful_hnsw_search::tests::visible_frontier_consume_best_prefers_live_scheduler_node ... ok
+test careful_hnsw_search::tests::visible_frontier_refill_from_source_uses_remaining_capacity_and_seeds ... ok
+test careful_hnsw_search::tests::visible_frontier_seed_bootstrap_trace_seeds_and_marks_entry_source ... ok
+test careful_hnsw_search::tests::visible_frontier_seed_discovered_marks_nodes_and_seeds_scheduler ... ok
+test careful_hnsw_search::tests::visible_frontier_top_up_from_visible_seeds_filters_marks_and_seeds ... ok
+test careful_storage_page::tests::data_page_chain_appends_empty_pages_contiguously ... ok
+test careful_storage_page::tests::data_page_chain_can_start_next_tuple_on_fresh_page ... ok
+test careful_storage_page::tests::data_page_chain_overflow_creates_new_block ... ok
+test careful_storage_page::tests::data_page_raw_round_trip ... ok
+test careful_storage_page::tests::miri_item_pointer_roundtrip ... ok
+test careful_storage_page::tests::miri_data_page_chain_preserves_tuple_lookup_across_pages ... ok
+test quant::codebook::tests::beta_pdf_out_of_range ... ok
+test quant::codebook::tests::log_gamma_known_values ... ok
+test quant::grouped_pq::tests::build_grouped_pq_lut_f32_uses_flat_codebooks_by_group ... ok
+test quant::grouped_pq::tests::encode_grouped_pq_packs_nibbles_from_shared_codebooks ... ok
+test quant::grouped_pq::tests::grouped_pq_nibble_reads_even_and_odd_groups ... ok
+test quant::grouped_pq::tests::grouped_pq_score_f32_sums_lut_rows_by_nibble ... ok
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_even_count ... ok
+test quant::grouped_pq::tests::nearest_centroid_l2_prefers_lowest_distance ... ok
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_odd_count ... ok
+test quant::hadamard::tests::fwht_preserves_norm_after_normalization ... ok
+test careful_diskann_vamana::tests::build_stats_include_pass1_extra_candidates ... ok
+test quant::hadamard::tests::miri_fwht_small ... ok
+test quant::hadamard::tests::miri_orthonormal_fwht_small ... ok
+test quant::hadamard::tests::tiled_fwht_matches_chunkwise_full_fwht ... ok
+test quant::mse::tests::nearest_centroid_index_prefers_lower_index_on_tie ... ok
+test quant::hadamard::tests::tiled_orthonormal_fwht_preserves_norm_per_tile ... ok
+test quant::prod::tests::decode_eight_3bit_aligned_matches_packer ... ok
+test quant::mse::tests::quantize_to_indices_dispatches_unrolled_for_16_centroids ... ok
+test quant::codebook::tests::lloyd_max_b1_centroids_symmetric ... ok
+test careful_diskann_vamana::tests::build_small_graph_is_connected ... ok
+test quant::mse::tests::branchless_matches_branching_over_random_inputs ... ok
+test quant::mse::tests::unrolled_16_matches_generic_branchless ... ok
+test quant::codebook::tests::beta_pdf_integrates_to_one ... ok
+test quant::prod::tests::encode_decode_has_reasonable_fidelity ... ok
+test quant::grouped_pq::tests::pq_fastscan_quantizer_trait_score_matches_direct_helpers ... ok
+test quant::hadamard::tests::orthonormal_fwht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::prod::tests::cached_quantizer_reuses_instances ... ok
+test quant::prod::tests::binary_sign_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::encode_payload_length_matches_spec ... ok
+test quant::prod::tests::miri_pack_unpack_mse ... ok
+test quant::prod::tests::miri_pack_unpack_qjl ... ok
+test quant::prod::tests::mse_pack_unpack_roundtrip_all_widths ... ok
+test quant::prod::tests::encode_is_deterministic ... ok
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::prod::tests::pack_mse_indices_fast_paths_match_generic ... ok
+test quant::prod::tests::qjl_pack_unpack_roundtrip ... ok
+test quant::prod::tests::qjl_sign_lanes_exhaustive ... ok
+test quant::prod::tests::code_to_code_score_is_symmetric_and_ignores_qjl ... ok
+test quant::prod::tests::explicit_lut_no_qjl_4bit_matches_direct_scoring ... ok
+test quant::prod::tests::int8_approx_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::binary_sign_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::quantizer_1536_4bit_disables_unused_qjl_and_lut_state ... ok
+test quant::prod::tests::explicit_lut_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::quantizer_1536_4bit_reallocates_qjl_budget_to_mse ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_binary_sign_query_prep ... ok
+test quant::prod::tests::int8_approx_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_explicit_lut_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_int8_approx_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_tiled_lut_query_prep ... ok
+test quant::prod::tests::prepared_query_score_matches_explicit_formula ... ok
+test quant::rabitq::tests::centered_api_rejects_qbit_bits ... ok
+test quant::rabitq::tests::centered_estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::centered_estimator_is_exact_on_sign_aligned_residual ... ok
+test quant::prod::tests::quantizer_1536_uses_tiled_working_dimension ... ok
+test quant::rabitq::tests::custom_rotation_plugs_into_seam ... ok
+test quant::prod::tests::miri_encode_decode_roundtrip ... ok
+test quant::rabitq::tests::estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::estimator_recovers_self_ip_on_sign_aligned_vector ... ok
+test quant::rabitq::tests::hamming_similarity_identity_equals_dim ... ok
+test quant::rabitq::tests::qbit_code_len_scales_with_bits ... ok
+test quant::rabitq::tests::qbit_encoder_reduces_error_vs_binary ... ok
+test quant::rabitq::tests::qbit_rejects_unsupported_bits ... ok
+test quant::rabitq::tests::sign_words_from_rotated_matches_manual_pack ... ok
+test quant::prod::tests::quantizer_trait_score_matches_inherent_score_ip_encoded ... ok
+test quant::prod::tests::miri_score_ip_encoded ... ok
+test quant::rotation::tests::srht_preserves_norm ... ok
+test quant::prod::tests::miri_score_ip_codes_lite ... ok
+test quant::rotation::tests::tiled_srht_roundtrip_1536 ... ok
+test quant::simd::tests::backend_name_matches_detected_backend ... ok
+test quant::simd::tests::detect_backend_honors_forced_scalar ... ok
+test quant::simd::tests::forced_backend_accepts_auto_empty_and_absent ... ok
+test quant::simd::tests::forced_backend_accepts_supported_backend_names ... ok
+test quant::simd::tests::forced_backend_rejects_unknown_name ... ok
+test quant::simd::tests::x86_backend_gate_requires_avx2_and_fma ... ok
+test tests::data_page_chain_rejects_tuple_larger_than_page_payload_capacity ... ok
+test tests::data_page_chain_reports_size_and_mutates_existing_page ... ok
+test tests::data_page_chain_zero_empty_pages_is_noop ... ok
+test tests::data_page_rejects_invalid_tid_lookups_and_updates ... ok
+test tests::data_page_rejects_tuple_that_does_not_fit ... ok
+test tests::data_page_reports_layout_and_free_space ... ok
+test tests::diskann_tuple_codebook_roundtrip ... ok
+test tests::diskann_vacuum_repair_neighbors_compacts_and_pads ... ok
+test tests::item_pointer_decode_rejects_long_payloads ... ok
+test tests::item_pointer_decode_rejects_short_payloads ... ok
+test tests::page_alignment_helpers_preserve_exact_and_round_up_cases ... ok
+test tests::page_chain_preserves_payloads_across_overflow ... ok
+test quant::prod::tests::tiled_lut_no_qjl_4bit_matches_direct_scoring ... ok
+test careful_diskann_vamana::tests::build_recall_at_10_meets_baseline ... ok
+test quant::prod::tests::quantizer_32_4bit_keeps_qjl_and_lut_state_when_active ... ok
+test quant::prod::tests::raw_code_score_matches_encoded_lite_path ... ok
+test quant::prod::tests::score_from_parts_honors_supplied_gamma ... ok
+test quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::score_from_parts_matches_encoded_payload_path ... ok
+test quant::rotation::tests::srht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::rotation::tests::srht_padded_matches_pad_input_plus_srht ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_at_production_dims ... ok
+test quant::prod::tests::cached_with_presence_reports_whether_entry_already_existed ... ok
+test quant::rabitq::tests::code_len_matches_dimension ... ok
+test quant::rabitq::tests::srht_seeded_rotation_is_deterministic_and_independent_of_prod ... ok
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_at_large_sizes ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_with_tail_dims ... ok
+test quant::rabitq::tests::encode_then_score_same_vector_is_nonnegative ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_on_random_inputs ... ok
+
+failures:
+
+---- careful_common_cost::tests::strategy_translation_rejects_invalid_inputs stdout ----
+
+thread 'careful_common_cost::tests::strategy_translation_rejects_invalid_inputs' (13981047) panicked at hardening/careful/src/../../../src/am/common/cost.rs:571:9:
+assertion `left == right` failed
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    careful_common_cost::tests::strategy_translation_rejects_invalid_inputs
+
+test result: FAILED. 215 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s
+
+error: test failed, to rerun pass `-p ecaz-careful-hardening --lib`
+
+*** result: Failure(101)

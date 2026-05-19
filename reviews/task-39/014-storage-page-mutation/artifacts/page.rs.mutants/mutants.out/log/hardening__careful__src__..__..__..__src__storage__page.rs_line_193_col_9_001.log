@@ -1,0 +1,88 @@
+
+*** hardening/careful/src/../../../src/storage/page.rs:193:9: replace DataPageChain::get_page_mut -> Option<&mut DataPage> with Some(Box::leak(Box::new(Default::default())))
+
+*** mutation diff:
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPageChain::get_page_mut -> Option<&mut DataPage> with Some(Box::leak(Box::new(Default::default())))
+@@ -185,18 +185,17 @@
+     }
+ 
+     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
+         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+         self.pages.get(index)
+     }
+ 
+     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {
+-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+-        self.pages.get_mut(index)
++        Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn start_new_page_if_current_has_tuples(&mut self) {
+         if self
+             .pages
+             .last()
+             .map_or(true, |page| page.tuple_count() == 0)
+         {
+
+
+*** /opt/homebrew/bin/cargo test --no-run --verbose --package=ecaz-careful-hardening@0.1.0
+warning: failed to save last-use data
+This may prevent cargo from accurately tracking what is being used in its global cache. This information is used for automatically removing unused data in the cache.
+
+attempt to write a readonly database
+
+Caused by:
+  Error code 8: attempt to write a readonly database
+       Fresh cfg-if v1.0.4
+       Fresh allocator-api2 v0.2.21
+       Fresh equivalent v1.0.2
+       Fresh foldhash v0.1.5
+       Fresh libc v0.2.186
+       Fresh hashbrown v0.15.5
+       Fresh getrandom v0.2.17
+       Fresh zerocopy v0.8.48
+       Fresh rand_core v0.6.4
+       Fresh ppv-lite86 v0.2.21
+       Fresh rand_chacha v0.3.1
+       Fresh rand v0.8.6
+       Dirty ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/hardening/careful): the file `hardening/careful/src/../../../src/storage/page.rs` has changed (1779152370.086200109s, 3s after last build at 1779152367.248038030s)
+   Compiling ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/hardening/careful)
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+error[E0277]: the trait bound `DataPage: Default` is not satisfied
+   --> hardening/careful/src/../../../src/storage/page.rs:193:33
+    |
+193 |         Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */
+    |                                 ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `DataPage`
+    |
+help: consider annotating `DataPage` with `#[derive(Default)]`
+    |
+ 64 + #[derive(Default)]
+ 65 | pub struct DataPage {
+    |
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `ecaz-careful-hardening` (lib) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+warning: build failed, waiting for other jobs to finish...
+error[E0277]: the trait bound `careful_storage_page::DataPage: Default` is not satisfied
+   --> hardening/careful/src/../../../src/storage/page.rs:193:33
+    |
+193 |         Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */
+    |                                 ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `careful_storage_page::DataPage`
+    |
+help: consider annotating `careful_storage_page::DataPage` with `#[derive(Default)]`
+    |
+ 64 + #[derive(Default)]
+ 65 | pub struct DataPage {
+    |
+
+error: could not compile `ecaz-careful-hardening` (lib test) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-AzmK1w.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+
+*** result: Failure(101)

@@ -1,0 +1,3748 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.403808667,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.973505708,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:68:9: replace PlannerCompareType::as_str -> &'static str with \"\"",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "PlannerCompareType::as_str",
+            "return_type": "-> &'static str",
+            "span": {
+              "start": {
+                "line": 67,
+                "column": 5
+              },
+              "end": {
+                "line": 79,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 68,
+              "column": 9
+            },
+            "end": {
+              "line": 78,
+              "column": 10
+            }
+          },
+          "replacement": "\"\"",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_68_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_68_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.82597525,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.917166208,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:68:9: replace PlannerCompareType::as_str -> &'static str with \"xyzzy\"",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "PlannerCompareType::as_str",
+            "return_type": "-> &'static str",
+            "span": {
+              "start": {
+                "line": 67,
+                "column": 5
+              },
+              "end": {
+                "line": 79,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 68,
+              "column": 9
+            },
+            "end": {
+              "line": 78,
+              "column": 10
+            }
+          },
+          "replacement": "\"xyzzy\"",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_68_col_9_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_68_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.812560208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9292709590000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:110:5: replace metadata_fallback_tree_height -> PlannerTreeHeightInput with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "metadata_fallback_tree_height",
+            "return_type": "-> PlannerTreeHeightInput",
+            "span": {
+              "start": {
+                "line": 108,
+                "column": 1
+              },
+              "end": {
+                "line": 115,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 110,
+              "column": 5
+            },
+            "end": {
+              "line": 114,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_110_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_110_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.406828791,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:90:5: replace gated_planner_cost_estimate -> PlannerCostEstimate with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "gated_planner_cost_estimate",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 89,
+                "column": 1
+              },
+              "end": {
+                "line": 97,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 90,
+              "column": 5
+            },
+            "end": {
+              "line": 96,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_90_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_90_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.49975375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:118:5: replace resolved_tree_height_input -> PlannerTreeHeightInput with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "resolved_tree_height_input",
+            "return_type": "-> PlannerTreeHeightInput",
+            "span": {
+              "start": {
+                "line": 117,
+                "column": 1
+              },
+              "end": {
+                "line": 131,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 118,
+              "column": 5
+            },
+            "end": {
+              "line": 130,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_118_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_118_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.335616541,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amgettreeheight_callback_value",
+            "return_type": "-> i32",
+            "span": {
+              "start": {
+                "line": 133,
+                "column": 1
+              },
+              "end": {
+                "line": 135,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 134,
+              "column": 5
+            },
+            "end": {
+              "line": 134,
+              "column": 25
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_134_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_134_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.776208166,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0980855,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amgettreeheight_callback_value",
+            "return_type": "-> i32",
+            "span": {
+              "start": {
+                "line": 133,
+                "column": 1
+              },
+              "end": {
+                "line": 135,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 134,
+              "column": 5
+            },
+            "end": {
+              "line": 134,
+              "column": 25
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_134_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_134_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.7737812499999999,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9160561249999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:138:5: replace amtranslatestrategy_callback -> PlannerCompareType with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amtranslatestrategy_callback",
+            "return_type": "-> PlannerCompareType",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 1
+              },
+              "end": {
+                "line": 142,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 138,
+              "column": 5
+            },
+            "end": {
+              "line": 141,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_138_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_138_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.341910959,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:134:5: replace amgettreeheight_callback_value -> i32 with -1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amgettreeheight_callback_value",
+            "return_type": "-> i32",
+            "span": {
+              "start": {
+                "line": 133,
+                "column": 1
+              },
+              "end": {
+                "line": 135,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 134,
+              "column": 5
+            },
+            "end": {
+              "line": 134,
+              "column": 25
+            }
+          },
+          "replacement": "-1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_134_col_5_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_134_col_5_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.743260917,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0183165,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:139:9: delete match arm 1 in amtranslatestrategy_callback",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amtranslatestrategy_callback",
+            "return_type": "-> PlannerCompareType",
+            "span": {
+              "start": {
+                "line": 137,
+                "column": 1
+              },
+              "end": {
+                "line": 142,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 139,
+              "column": 9
+            },
+            "end": {
+              "line": 139,
+              "column": 37
+            }
+          },
+          "replacement": "",
+          "genre": "MatchArm"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_139_col_9.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_139_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.748666625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.912034875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with 0",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amtranslatecmptype_callback",
+            "return_type": "-> i32",
+            "span": {
+              "start": {
+                "line": 144,
+                "column": 1
+              },
+              "end": {
+                "line": 156,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 145,
+              "column": 5
+            },
+            "end": {
+              "line": 155,
+              "column": 6
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_145_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_145_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.757533458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.973558708,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with 1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amtranslatecmptype_callback",
+            "return_type": "-> i32",
+            "span": {
+              "start": {
+                "line": 144,
+                "column": 1
+              },
+              "end": {
+                "line": 156,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 145,
+              "column": 5
+            },
+            "end": {
+              "line": 155,
+              "column": 6
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_145_col_5_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_145_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.761916333,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9357574579999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:159:5: replace strategy_translation_snapshot -> StrategyTranslationSnapshot with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "strategy_translation_snapshot",
+            "return_type": "-> StrategyTranslationSnapshot",
+            "span": {
+              "start": {
+                "line": 158,
+                "column": 1
+              },
+              "end": {
+                "line": 164,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 159,
+              "column": 5
+            },
+            "end": {
+              "line": 163,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_159_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_159_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.408188625,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:222:5: replace estimate_planner_cost -> PlannerCostEstimate with Default::default()",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 222,
+              "column": 5
+            },
+            "end": {
+              "line": 268,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_222_col_5.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_222_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.353101791,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:145:5: replace amtranslatecmptype_callback -> i32 with -1",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "amtranslatecmptype_callback",
+            "return_type": "-> i32",
+            "span": {
+              "start": {
+                "line": 144,
+                "column": 1
+              },
+              "end": {
+                "line": 156,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 145,
+              "column": 5
+            },
+            "end": {
+              "line": 155,
+              "column": 6
+            }
+          },
+          "replacement": "-1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_145_col_5_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_145_col_5_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.758750666,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.976809083,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:222:27: replace <= with > in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 222,
+              "column": 27
+            },
+            "end": {
+              "line": 222,
+              "column": 29
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_222_col_27.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_222_col_27.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.7428065,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.014709542,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with == in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 226,
+              "column": 46
+            },
+            "end": {
+              "line": 226,
+              "column": 47
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_226_col_46.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_226_col_46.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.866412334,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9224501250000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with < in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 226,
+              "column": 46
+            },
+            "end": {
+              "line": 226,
+              "column": 47
+            }
+          },
+          "replacement": "<",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_226_col_46_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_226_col_46_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.747751458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.990352417,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:226:46: replace > with >= in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 226,
+              "column": 46
+            },
+            "end": {
+              "line": 226,
+              "column": 47
+            }
+          },
+          "replacement": ">=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_226_col_46_002.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_226_col_46_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.860442416,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9877965,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:229:28: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 229,
+              "column": 28
+            },
+            "end": {
+              "line": 229,
+              "column": 29
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_229_col_28.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_229_col_28.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.75562475,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.96696675,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:229:28: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 229,
+              "column": 28
+            },
+            "end": {
+              "line": 229,
+              "column": 29
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_229_col_28_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_229_col_28_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.7606565,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9801720839999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:231:59: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 231,
+              "column": 59
+            },
+            "end": {
+              "line": 231,
+              "column": 60
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_231_col_59.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_231_col_59.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.764001875,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.948373792,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:231:59: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 231,
+              "column": 59
+            },
+            "end": {
+              "line": 231,
+              "column": 60
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_231_col_59_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_231_col_59_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.75471775,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.000604083,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:235:53: replace <= with > in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 235,
+              "column": 53
+            },
+            "end": {
+              "line": 235,
+              "column": 55
+            }
+          },
+          "replacement": ">",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_235_col_53.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_235_col_53.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.804053291,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9938396250000001,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:236:46: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 236,
+              "column": 46
+            },
+            "end": {
+              "line": 236,
+              "column": 47
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_236_col_46.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_236_col_46.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.765861167,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.023360959,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:236:46: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 236,
+              "column": 46
+            },
+            "end": {
+              "line": 236,
+              "column": 47
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_236_col_46_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_236_col_46_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.777418125,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.028491042,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:71: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 237,
+              "column": 71
+            },
+            "end": {
+              "line": 237,
+              "column": 72
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_71.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_71.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.761045125,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.928499375,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:71: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 237,
+              "column": 71
+            },
+            "end": {
+              "line": 237,
+              "column": 72
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_71_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_71_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.763419084,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.014951542,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:41: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 237,
+              "column": 41
+            },
+            "end": {
+              "line": 237,
+              "column": 42
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_41.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_41.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.82034625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.932841584,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:237:41: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 237,
+              "column": 41
+            },
+            "end": {
+              "line": 237,
+              "column": 42
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_41_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_237_col_41_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.753957083,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.976329083,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:238:27: replace + with - in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 238,
+              "column": 27
+            },
+            "end": {
+              "line": 238,
+              "column": 28
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_238_col_27.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_238_col_27.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.82451425,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.984963625,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:238:27: replace + with * in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 238,
+              "column": 27
+            },
+            "end": {
+              "line": 238,
+              "column": 28
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_238_col_27_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_238_col_27_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.754799458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.9702962080000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:245:39: replace + with - in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 245,
+              "column": 39
+            },
+            "end": {
+              "line": 245,
+              "column": 40
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_245_col_39.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_245_col_39.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.835264834,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.00524725,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:245:39: replace + with * in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 245,
+              "column": 39
+            },
+            "end": {
+              "line": 245,
+              "column": 40
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_245_col_39_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_245_col_39_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.76001575,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.965535791,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:246:38: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 246,
+              "column": 38
+            },
+            "end": {
+              "line": 246,
+              "column": 39
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_246_col_38.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_246_col_38.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.763683458,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0199345,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:246:38: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 246,
+              "column": 38
+            },
+            "end": {
+              "line": 246,
+              "column": 39
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_246_col_38_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_246_col_38_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.766274,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.005370333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:67: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 247,
+              "column": 67
+            },
+            "end": {
+              "line": 247,
+              "column": 68
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_67.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_67.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.760147208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.01393575,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:67: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 247,
+              "column": 67
+            },
+            "end": {
+              "line": 247,
+              "column": 68
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_67_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_67_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.764233334,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.02345275,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:37: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 247,
+              "column": 37
+            },
+            "end": {
+              "line": 247,
+              "column": 38
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_37.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_37.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.748779625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.008546042,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:247:37: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 247,
+              "column": 37
+            },
+            "end": {
+              "line": 247,
+              "column": 38
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_37_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_247_col_37_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.79816925,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.063055833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:248:48: replace - with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 248,
+              "column": 48
+            },
+            "end": {
+              "line": 248,
+              "column": 49
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_248_col_48.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_248_col_48.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.80821725,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.984101333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:248:48: replace - with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 248,
+              "column": 48
+            },
+            "end": {
+              "line": 248,
+              "column": 49
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_248_col_48_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_248_col_48_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.79498075,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.06797175,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:249:40: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 249,
+              "column": 40
+            },
+            "end": {
+              "line": 249,
+              "column": 41
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_249_col_40.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_249_col_40.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.803954209,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.973973125,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:249:40: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 249,
+              "column": 40
+            },
+            "end": {
+              "line": 249,
+              "column": 41
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_249_col_40_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_249_col_40_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.803642333,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.030578875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:255:44: replace / with % in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 255,
+              "column": 44
+            },
+            "end": {
+              "line": 255,
+              "column": 45
+            }
+          },
+          "replacement": "%",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_255_col_44.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_255_col_44.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.831463417,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.999935459,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:255:44: replace / with * in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 255,
+              "column": 44
+            },
+            "end": {
+              "line": 255,
+              "column": 45
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_255_col_44_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_255_col_44_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.793498667,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.041457584,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:79: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 257,
+              "column": 79
+            },
+            "end": {
+              "line": 257,
+              "column": 80
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_79.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_79.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.83470625,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.0242495,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:79: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 257,
+              "column": 79
+            },
+            "end": {
+              "line": 257,
+              "column": 80
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_79_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_79_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.746524208,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.035462875,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:58: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 257,
+              "column": 58
+            },
+            "end": {
+              "line": 257,
+              "column": 59
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_58.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_58.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.8117825,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.045384833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:58: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 257,
+              "column": 58
+            },
+            "end": {
+              "line": 257,
+              "column": 59
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_58_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_58_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.76020375,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.070200542,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:28: replace * with + in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 257,
+              "column": 28
+            },
+            "end": {
+              "line": 257,
+              "column": 29
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_28.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_28.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.802072792,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.007136917,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:257:28: replace * with / in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 257,
+              "column": 28
+            },
+            "end": {
+              "line": 257,
+              "column": 29
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_28_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_257_col_28_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.753321,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.041732167,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:258:39: replace + with - in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 258,
+              "column": 39
+            },
+            "end": {
+              "line": 258,
+              "column": 40
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_258_col_39.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_258_col_39.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.7958265,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.020804583,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:258:39: replace + with * in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 258,
+              "column": 39
+            },
+            "end": {
+              "line": 258,
+              "column": 40
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_258_col_39_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_258_col_39_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.766204042,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.037952333,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:51: replace + with - in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 259,
+              "column": 51
+            },
+            "end": {
+              "line": 259,
+              "column": 52
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_51.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_51.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.810021333,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.021639125,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:51: replace + with * in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 259,
+              "column": 51
+            },
+            "end": {
+              "line": 259,
+              "column": 52
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_51_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_51_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.768320959,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.050472584,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:37: replace + with - in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 259,
+              "column": 37
+            },
+            "end": {
+              "line": 259,
+              "column": 38
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_37.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_37.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.80497875,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 2.016942042,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "hardening/careful/src/../../../src/am/common/cost.rs:259:37: replace + with * in estimate_planner_cost",
+          "package": "ecaz-careful-hardening",
+          "file": "hardening/careful/src/../../../src/am/common/cost.rs",
+          "function": {
+            "function_name": "estimate_planner_cost",
+            "return_type": "-> PlannerCostEstimate",
+            "span": {
+              "start": {
+                "line": 218,
+                "column": 1
+              },
+              "end": {
+                "line": 269,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 259,
+              "column": 37
+            },
+            "end": {
+              "line": 259,
+              "column": 38
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_37_001.log",
+      "diff_path": "diff/hardening__careful__src__..__..__..__src__am__common__cost.rs_line_259_col_37_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 0.763653542,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 1.960087417,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=ecaz-careful-hardening@0.1.0"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 58,
+  "missed": 0,
+  "caught": 52,
+  "timeout": 0,
+  "unviable": 6,
+  "success": 0,
+  "start_time": "2026-05-19T01:17:23.006815Z",
+  "end_time": "2026-05-19T01:18:51.322949Z",
+  "cargo_mutants_version": "27.0.0"
+}

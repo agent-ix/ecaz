@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ delete ! in DataPage::insert_raw_tuple
+@@ -94,17 +94,17 @@
+         self.page_size.saturating_sub(self.used_bytes)
+     }
+ 
+     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {
+         aligned_tuple_bytes(payload_len) <= self.free_bytes()
+     }
+ 
+     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
+-        if !self.can_fit_raw_tuple(payload.len()) {
++        if  /* ~ changed by cargo-mutants ~ */self.can_fit_raw_tuple(payload.len()) {
+             return Err(format!(
+                 "tuple payload {} does not fit on block {} with {} bytes free",
+                 payload.len(),
+                 self.block_number,
+                 self.free_bytes()
+             ));
+         }
+ 

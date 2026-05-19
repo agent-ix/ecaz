@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace > with >= in estimate_planner_cost
+@@ -247,17 +247,17 @@
+         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;
+         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);
+         let linear_cost = linear_pages * constants.seq_page_cost;
+         // Scale per-tuple CPU work by the fraction of pages the graph phase
+         // did NOT cover. Charging the full tuple_estimate sweep here would
+         // double-count the graph traversal and make ec_hnsw always look
+         // costlier than a seqscan, even when the graph covers the whole
+         // index (linear_pages == 0).
+-        let linear_fraction = if inputs.index_pages > 0.0 {
++        let linear_fraction = if inputs.index_pages >= /* ~ changed by cargo-mutants ~ */ 0.0 {
+             linear_pages / inputs.index_pages
+         } else {
+             0.0
+         };
+         let linear_cpu =
+             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;
+         let startup_cost = graph_cost + graph_cpu;
+         (startup_cost, startup_cost + linear_cost + linear_cpu)

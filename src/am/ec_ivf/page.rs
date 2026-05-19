@@ -1,28 +1,56 @@
 //! ec_ivf page layout: metadata, centroid, directory, and posting-list codecs.
 
-use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+use std::collections::BTreeSet;
+use std::collections::HashMap;
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use pgrx::pg_sys;
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+mod pg_sys {
+    pub(super) type BlockNumber = u32;
+    pub(super) type Oid = u32;
 
+    #[repr(C)]
+    pub(super) struct PageHeaderData {
+        pub(super) pd_lower: u16,
+    }
+
+    #[repr(C)]
+    pub(super) struct ItemIdData {
+        pub(super) raw: u32,
+    }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::options::{EcIvfOptions, RerankMode, StorageFormat};
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::P_NEW;
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+const P_NEW: pg_sys::BlockNumber = u32::MAX;
 #[cfg(feature = "pg18")]
 use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
-use crate::storage::{
-    buffer_guard::LockedBufferGuard,
-    page::{
-        align_up, aligned_tuple_bytes, raw_tuple_storage_bytes, usable_page_bytes, DataPage,
-        DataPageChain, ItemPointer, ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
-        PAGE_HEADER_BYTES,
-    },
-    wal,
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+use crate::storage::{buffer_guard::LockedBufferGuard, wal};
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+use crate::storage::page::{align_up, raw_tuple_storage_bytes, ALIGNMENT_BYTES, PAGE_HEADER_BYTES};
+use crate::storage::page::{
+    aligned_tuple_bytes, usable_page_bytes, DataPage, DataPageChain, ItemPointer,
+    HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
 };
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) const METADATA_BLOCK_NUMBER: pg_sys::BlockNumber = 0;
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 1;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
@@ -83,9 +111,55 @@ const IVF_CENTROID_TAG: u8 = 0x21;
 const IVF_LIST_DIRECTORY_TAG: u8 = 0x22;
 const IVF_POSTING_TAG: u8 = 0x23;
 const IVF_PQ_CODEBOOK_TAG: u8 = 0x24;
-const POSTING_FLAG_DELETED: u8 = 1 << 0;
+const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageFormat {
+    Auto = 0,
+    TurboQuant = 1,
+    PqFastScan = 2,
+    RaBitQ = 3,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankMode {
+    Auto = 0,
+    Off = 1,
+    HeapF32 = 2,
+    SourceColumn = 3,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+impl RerankMode {
+    pub(super) fn v1_effective(self) -> Self {
+        match self {
+            Self::Auto => Self::Off,
+            other => other,
+        }
+    }
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub(super) struct EcIvfOptions {
+    pub(super) nlists: i32,
+    pub(super) nprobe: i32,
+    pub(super) rerank_width: i32,
+    pub(super) training_sample_rows: i32,
+    pub(super) seed: i32,
+    pub(super) pq_group_size: i32,
+    pub(super) posting_slack_percent: i32,
+    pub(super) storage_format: StorageFormat,
+    pub(super) rerank: RerankMode,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 enum PageTupleVisit<R> {
     Unused,
     Present(R),
@@ -825,6 +899,7 @@ impl DataPageChain {
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_ivf_centroid_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
@@ -838,6 +913,7 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
     Ok((centroid, next_physical_tuple_tid(tid, line_pointer_count)?))
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_ivf_list_directory_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
@@ -859,6 +935,7 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
     Ok((directory, next_directory))
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_ivf_pq_codebook(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
@@ -872,6 +949,7 @@ pub(super) unsafe fn read_ivf_pq_codebook(
     Ok(codebook)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_ivf_postings_for_list_blocks(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -896,6 +974,7 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks(
     Ok(postings)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn visit_ivf_postings_for_list_blocks<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -952,6 +1031,7 @@ where
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -976,6 +1056,7 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
     Ok(postings)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -1018,6 +1099,7 @@ where
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn visit_ivf_postings_for_block_sequence<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
@@ -1060,6 +1142,7 @@ where
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn visit_ivf_posting_refs_for_block_sequence<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
@@ -1260,7 +1343,7 @@ where
     Ok(())
 }
 
-#[cfg(not(feature = "pg18"))]
+#[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
 unsafe fn visit_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -1287,7 +1370,7 @@ where
     result
 }
 
-#[cfg(not(feature = "pg18"))]
+#[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
 unsafe fn visit_all_ivf_postings_for_block<F>(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
@@ -1312,7 +1395,7 @@ where
     result
 }
 
-#[cfg(not(feature = "pg18"))]
+#[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
 unsafe fn visit_all_ivf_posting_refs_for_block<F>(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
@@ -1338,6 +1421,7 @@ where
     result
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn visit_ivf_postings_from_buffer<F>(
     buffer: &LockedBufferGuard,
     list_id: u32,
@@ -1363,6 +1447,7 @@ where
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn visit_all_ivf_postings_from_buffer<F>(
     buffer: &LockedBufferGuard,
     block_number: pg_sys::BlockNumber,
@@ -1403,6 +1488,7 @@ where
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn visit_all_ivf_posting_refs_from_buffer<F>(
     buffer: &LockedBufferGuard,
     block_number: pg_sys::BlockNumber,
@@ -1443,6 +1529,7 @@ where
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn append_ivf_posting_to_list_range(
     index_relation: pg_sys::Relation,
     block_range: Option<(pg_sys::BlockNumber, pg_sys::BlockNumber)>,
@@ -1554,6 +1641,7 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
     unsafe { append_ivf_posting_to_new_block(index_relation, &payload) }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn try_append_ivf_posting_to_block(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
@@ -1604,6 +1692,7 @@ unsafe fn try_append_ivf_posting_to_block(
     }))
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn append_ivf_posting_to_new_block(
     index_relation: pg_sys::Relation,
     payload: &[u8],
@@ -1647,6 +1736,7 @@ unsafe fn append_ivf_posting_to_new_block(
     })
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn rewrite_ivf_list_directory(
     index_relation: pg_sys::Relation,
     directory_tid: ItemPointer,
@@ -1712,6 +1802,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn update_ivf_list_directory<F>(
     index_relation: pg_sys::Relation,
     directory_tid: ItemPointer,
@@ -1789,6 +1880,7 @@ where
     Ok(directory)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn rewrite_ivf_posting(
     index_relation: pg_sys::Relation,
     posting_tid: ItemPointer,
@@ -1854,6 +1946,7 @@ pub(super) unsafe fn rewrite_ivf_posting(
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum IvfPostingRewrite {
     Keep,
@@ -1861,6 +1954,7 @@ pub(super) enum IvfPostingRewrite {
     Delete,
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct IvfPostingBlockSummary {
     pub(super) block_number: pg_sys::BlockNumber,
@@ -1874,6 +1968,7 @@ pub(super) struct IvfPostingBlockSummary {
     pub(super) list_ids: Vec<u32>,
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn debug_ivf_posting_block_summaries(
     index_relation: pg_sys::Relation,
     payload_len: usize,
@@ -1896,6 +1991,7 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
     Ok(summaries)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn rewrite_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -1931,6 +2027,7 @@ where
     result
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn debug_ivf_posting_block_summary(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
@@ -2017,6 +2114,7 @@ unsafe fn debug_ivf_posting_block_summary(
     result
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
     index_relation: pg_sys::Relation,
     buffer: &LockedBufferGuard,
@@ -2172,6 +2270,7 @@ fn should_compact_posting_deletes(compact_deletes: bool, saw_non_posting_tuple: 
     compact_deletes && !saw_non_posting_tuple
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn read_page_tuple<T, DecodeFn>(
     index_relation: pg_sys::Relation,
     tuple_tid: ItemPointer,
@@ -2212,6 +2311,7 @@ where
     decoded.map(|tuple| (tuple, line_pointer_count))
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn find_next_tuple_with_tag(
     index_relation: pg_sys::Relation,
     start_tid: ItemPointer,
@@ -2296,6 +2396,7 @@ fn next_physical_tuple_tid(
     })
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
     unsafe {
         page_ptr
@@ -2304,6 +2405,7 @@ unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdD
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn with_page_line_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
@@ -2337,6 +2439,7 @@ where
     visit(tuple_bytes).map(PageTupleVisit::Present)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 unsafe fn with_required_page_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
@@ -2388,6 +2491,7 @@ fn decode_rerank(value: u8) -> Result<RerankMode, String> {
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: MetadataPage,
@@ -2434,6 +2538,7 @@ pub(super) unsafe fn initialize_metadata_page(
     unsafe { wal_txn.finish() };
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
     let buffer = unsafe {
         LockedBufferGuard::read_main(
@@ -2451,6 +2556,7 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> Met
     MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn update_metadata_page<F>(
     index_relation: pg_sys::Relation,
     update: F,
@@ -2494,7 +2600,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::am::ec_ivf::options::EcIvfOptions;
     use crate::storage::page::DEFAULT_PAGE_SIZE;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
@@ -2694,11 +2799,24 @@ mod tests {
             rerank_tid: ItemPointer::INVALID,
             payload: vec![0xaa, 0xbb],
         };
+        let codebook = IvfPqCodebookTuple {
+            group_index: 0,
+            next_tid: ItemPointer::INVALID,
+            centroids: vec![0.0, 0.5],
+        };
+        let updated_codebook = IvfPqCodebookTuple {
+            group_index: 0,
+            next_tid: tid(9, 1),
+            centroids: vec![1.0, -0.5],
+        };
 
         let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
         let centroid_tid = page.insert_ivf_centroid(&centroid).unwrap();
         let directory_tid = page.insert_ivf_list_directory(directory).unwrap();
         let posting_tid = page.insert_ivf_posting(&posting).unwrap();
+        let codebook_tid = page.insert_ivf_pq_codebook(&codebook).unwrap();
+        page.update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
 
         assert_eq!(page.read_ivf_centroid(centroid_tid, 2).unwrap(), centroid);
         assert_eq!(
@@ -2709,6 +2827,14 @@ mod tests {
             page.read_ivf_posting(posting_tid, posting.payload.len())
                 .unwrap(),
             posting
+        );
+        assert_eq!(
+            IvfPqCodebookTuple::decode(
+                page.raw_tuple(codebook_tid).unwrap(),
+                updated_codebook.centroids.len()
+            )
+            .unwrap(),
+            updated_codebook
         );
     }
 
@@ -2738,11 +2864,176 @@ mod tests {
     }
 
     #[test]
+    fn data_page_chain_ivf_tuple_roundtrips() {
+        let centroid = IvfCentroidTuple {
+            list_id: 2,
+            centroid: vec![0.25, 0.75],
+        };
+        let directory = IvfListDirectoryTuple {
+            list_id: 2,
+            head_block: block(FIRST_DATA_BLOCK_NUMBER),
+            tail_block: block(FIRST_DATA_BLOCK_NUMBER),
+            live_count: 3,
+            dead_count: 1,
+            inserted_since_build: 4,
+        };
+        let codebook = IvfPqCodebookTuple {
+            group_index: 1,
+            next_tid: ItemPointer::INVALID,
+            centroids: vec![0.0, 1.0, 2.0, 3.0],
+        };
+        let updated_codebook = IvfPqCodebookTuple {
+            group_index: 1,
+            next_tid: tid(4, 2),
+            centroids: vec![3.0, 2.0, 1.0, 0.0],
+        };
+
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let centroid_tid = chain.insert_ivf_centroid(&centroid).unwrap();
+        let directory_tid = chain.insert_ivf_list_directory(directory).unwrap();
+        let codebook_tid = chain.insert_ivf_pq_codebook(&codebook).unwrap();
+        chain
+            .update_ivf_pq_codebook(codebook_tid, &updated_codebook)
+            .unwrap();
+
+        assert_eq!(chain.read_ivf_centroid(centroid_tid, 2).unwrap(), centroid);
+        assert_eq!(
+            chain.read_ivf_list_directory(directory_tid).unwrap(),
+            directory
+        );
+        assert_eq!(
+            IvfPqCodebookTuple::decode(
+                chain
+                    .get_page(codebook_tid.block_number)
+                    .unwrap()
+                    .raw_tuple(codebook_tid)
+                    .unwrap(),
+                updated_codebook.centroids.len()
+            )
+            .unwrap(),
+            updated_codebook
+        );
+    }
+
+    #[test]
     fn layout_fit_helpers_track_page_capacity() {
+        assert_eq!(METADATA_BLOCK_NUMBER, 0);
+        assert_eq!(FIRST_DATA_BLOCK_NUMBER, 1);
         assert!(centroid_tuple_fits(1536, DEFAULT_PAGE_SIZE));
         assert!(list_directory_tuple_fits(DEFAULT_PAGE_SIZE));
         assert!(posting_tuple_fits(4096, DEFAULT_PAGE_SIZE));
+        assert!(pq_codebook_tuple_fits(256, DEFAULT_PAGE_SIZE));
+        assert!(!centroid_tuple_fits(1536, 64));
+        assert!(!list_directory_tuple_fits(32));
         assert!(!posting_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
+        assert!(!pq_codebook_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
+    }
+
+    #[test]
+    fn layout_constants_pin_tuple_offsets_and_flags() {
+        assert_eq!(
+            EC_IVF_POSTING_GAMMA_OFFSET,
+            EC_IVF_POSTING_HEAPTIDS_OFFSET + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
+        );
+        assert_eq!(
+            EC_IVF_POSTING_RERANK_TID_OFFSET,
+            EC_IVF_POSTING_GAMMA_OFFSET + size_of::<f32>()
+        );
+        assert_eq!(
+            EC_IVF_POSTING_PAYLOAD_OFFSET,
+            EC_IVF_POSTING_RERANK_TID_OFFSET + ITEM_POINTER_BYTES
+        );
+        assert_eq!(
+            EC_IVF_PQ_CODEBOOK_CENTROIDS_OFFSET,
+            EC_IVF_PQ_CODEBOOK_NEXT_TID_OFFSET + ITEM_POINTER_BYTES
+        );
+        assert_eq!(POSTING_FLAG_DELETED, 0b0000_0001);
+    }
+
+    #[test]
+    fn posting_tuple_rejects_invalid_flags_and_heap_tid_counts() {
+        let tuple = IvfPostingTuple {
+            list_id: 0,
+            deleted: false,
+            heaptids: (0..HEAPTID_INLINE_CAPACITY)
+                .map(|i| tid(i as u32, 1))
+                .collect(),
+            gamma: 1.0,
+            rerank_tid: ItemPointer::INVALID,
+            payload: vec![0],
+        };
+        let encoded = tuple.encode().unwrap();
+        assert_eq!(
+            IvfPostingTupleRef::decode(&encoded, tuple.payload.len())
+                .unwrap()
+                .heaptid_count(),
+            HEAPTID_INLINE_CAPACITY
+        );
+
+        let mut invalid_flags = encoded.clone();
+        invalid_flags[EC_IVF_POSTING_FLAGS_OFFSET] = 0b0000_0010;
+        assert!(IvfPostingTupleRef::decode(&invalid_flags, tuple.payload.len())
+            .unwrap_err()
+            .contains("invalid ec_ivf posting tuple flags"));
+
+        let mut invalid_count = encoded;
+        invalid_count[EC_IVF_POSTING_HEAPTID_COUNT_OFFSET] =
+            u8::try_from(HEAPTID_INLINE_CAPACITY + 1).unwrap();
+        assert!(IvfPostingTupleRef::decode(&invalid_count, tuple.payload.len())
+            .unwrap_err()
+            .contains("invalid ec_ivf posting heap tid count"));
+    }
+
+    #[test]
+    fn metadata_decode_accepts_known_format_codes_and_rejects_unknown_codes() {
+        let mut metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 16,
+            nprobe: 4,
+            rerank_width: 0,
+            training_sample_rows: 512,
+            seed: 1,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            storage_format: StorageFormat::Auto,
+            rerank: RerankMode::Auto,
+        });
+
+        for storage_format in [
+            StorageFormat::Auto,
+            StorageFormat::TurboQuant,
+            StorageFormat::PqFastScan,
+            StorageFormat::RaBitQ,
+        ] {
+            metadata.storage_format = storage_format;
+            assert_eq!(
+                MetadataPage::decode(&metadata.encode())
+                    .unwrap()
+                    .storage_format,
+                storage_format
+            );
+        }
+
+        for rerank in [
+            RerankMode::Auto,
+            RerankMode::Off,
+            RerankMode::HeapF32,
+            RerankMode::SourceColumn,
+        ] {
+            metadata.rerank = rerank;
+            assert_eq!(MetadataPage::decode(&metadata.encode()).unwrap().rerank, rerank);
+        }
+
+        let mut encoded = metadata.encode();
+        encoded[EC_IVF_METADATA_STORAGE_FORMAT_OFFSET] = 255;
+        assert!(MetadataPage::decode(&encoded)
+            .unwrap_err()
+            .contains("invalid ec_ivf storage format code"));
+
+        encoded = metadata.encode();
+        encoded[EC_IVF_METADATA_RERANK_OFFSET] = 255;
+        assert!(MetadataPage::decode(&encoded)
+            .unwrap_err()
+            .contains("invalid ec_ivf rerank code"));
     }
 
     #[test]
@@ -2762,7 +3053,7 @@ mod tests {
 
     #[test]
     fn posting_free_hint_roundtrip_is_keyed_by_relation_and_list() {
-        let relid = pg_sys::Oid::from(4242);
+        let relid = pg_sys::Oid::from(4242_u32);
         forget_posting_free_hint(relid, 7);
         forget_posting_free_hint(relid, 8);
 
@@ -2774,5 +3065,34 @@ mod tests {
 
         forget_posting_free_hint(relid, 7);
         assert_eq!(posting_free_hint(relid, 7), None);
+    }
+
+    #[test]
+    fn next_physical_tuple_tid_advances_within_page_and_across_blocks() {
+        assert_eq!(
+            next_physical_tuple_tid(tid(5, 2), 4).unwrap(),
+            tid(5, 3)
+        );
+        assert_eq!(
+            next_physical_tuple_tid(tid(5, 4), 4).unwrap(),
+            tid(6, 1)
+        );
+        assert!(next_physical_tuple_tid(tid(u32::MAX, 1), 1)
+            .unwrap_err()
+            .contains("tuple block number overflow"));
+    }
+
+    #[test]
+    #[cfg(not(any(feature = "pg17", feature = "pg18")))]
+    fn page_line_pointer_count_uses_header_lower_bound() {
+        let mut bytes = vec![0_u8; size_of::<pg_sys::PageHeaderData>()
+            + 4 * size_of::<pg_sys::ItemIdData>()];
+        let header = bytes.as_mut_ptr().cast::<pg_sys::PageHeaderData>();
+        unsafe {
+            (*header).pd_lower = (size_of::<pg_sys::PageHeaderData>()
+                + 3 * size_of::<pg_sys::ItemIdData>()) as u16;
+        }
+
+        assert_eq!(page_line_pointer_count(bytes.as_mut_ptr()), 3);
     }
 }

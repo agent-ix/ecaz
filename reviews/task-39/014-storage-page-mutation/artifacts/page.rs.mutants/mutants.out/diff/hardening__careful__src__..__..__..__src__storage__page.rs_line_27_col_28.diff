@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace - with + in align_up
+@@ -19,17 +19,17 @@
+ pub const METADATA_BLOCK_NUMBER: u32 = 0;
+ pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
+ 
+ pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {
+     let remainder = value % alignment;
+     if remainder == 0 {
+         value
+     } else {
+-        value + (alignment - remainder)
++        value + (alignment + /* ~ changed by cargo-mutants ~ */ remainder)
+     }
+ }
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+ pub struct ItemPointer {
+     pub block_number: u32,
+     pub offset_number: u16,
+ }

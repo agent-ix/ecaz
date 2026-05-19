@@ -1,0 +1,2818 @@
+[
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace align_up -> usize with 0\n@@ -15,22 +15,17 @@\n pub const HEAPTID_INLINE_CAPACITY: usize = 10;\n pub const ITEM_POINTER_BYTES: usize = 6;\n pub const ITEM_POINTER_BLOCK_NUMBER_OFFSET: usize = 0;\n pub const ITEM_POINTER_OFFSET_NUMBER_OFFSET: usize = 4;\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n-    let remainder = value % alignment;\n-    if remainder == 0 {\n-        value\n-    } else {\n-        value + (alignment - remainder)\n-    }\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n pub struct ItemPointer {\n     pub block_number: u32,\n     pub offset_number: u16,\n }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:23:5: replace align_up -> usize with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 28
+      },
+      "start": {
+        "column": 5,
+        "line": 23
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace align_up -> usize with 1\n@@ -15,22 +15,17 @@\n pub const HEAPTID_INLINE_CAPACITY: usize = 10;\n pub const ITEM_POINTER_BYTES: usize = 6;\n pub const ITEM_POINTER_BLOCK_NUMBER_OFFSET: usize = 0;\n pub const ITEM_POINTER_OFFSET_NUMBER_OFFSET: usize = 4;\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n-    let remainder = value % alignment;\n-    if remainder == 0 {\n-        value\n-    } else {\n-        value + (alignment - remainder)\n-    }\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n pub struct ItemPointer {\n     pub block_number: u32,\n     pub offset_number: u16,\n }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:23:5: replace align_up -> usize with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 28
+      },
+      "start": {
+        "column": 5,
+        "line": 23
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace % with / in align_up\n@@ -15,17 +15,17 @@\n pub const HEAPTID_INLINE_CAPACITY: usize = 10;\n pub const ITEM_POINTER_BYTES: usize = 6;\n pub const ITEM_POINTER_BLOCK_NUMBER_OFFSET: usize = 0;\n pub const ITEM_POINTER_OFFSET_NUMBER_OFFSET: usize = 4;\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n-    let remainder = value % alignment;\n+    let remainder = value / /* ~ changed by cargo-mutants ~ */ alignment;\n     if remainder == 0 {\n         value\n     } else {\n         value + (alignment - remainder)\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:23:27: replace % with / in align_up",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 23
+      },
+      "start": {
+        "column": 27,
+        "line": 23
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace % with + in align_up\n@@ -15,17 +15,17 @@\n pub const HEAPTID_INLINE_CAPACITY: usize = 10;\n pub const ITEM_POINTER_BYTES: usize = 6;\n pub const ITEM_POINTER_BLOCK_NUMBER_OFFSET: usize = 0;\n pub const ITEM_POINTER_OFFSET_NUMBER_OFFSET: usize = 4;\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n-    let remainder = value % alignment;\n+    let remainder = value + /* ~ changed by cargo-mutants ~ */ alignment;\n     if remainder == 0 {\n         value\n     } else {\n         value + (alignment - remainder)\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:23:27: replace % with + in align_up",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 23
+      },
+      "start": {
+        "column": 27,
+        "line": 23
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace == with != in align_up\n@@ -16,17 +16,17 @@\n pub const ITEM_POINTER_BYTES: usize = 6;\n pub const ITEM_POINTER_BLOCK_NUMBER_OFFSET: usize = 0;\n pub const ITEM_POINTER_OFFSET_NUMBER_OFFSET: usize = 4;\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n     let remainder = value % alignment;\n-    if remainder == 0 {\n+    if remainder != /* ~ changed by cargo-mutants ~ */ 0 {\n         value\n     } else {\n         value + (alignment - remainder)\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n pub struct ItemPointer {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:24:18: replace == with != in align_up",
+    "package": "ecaz-careful-hardening",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 24
+      },
+      "start": {
+        "column": 18,
+        "line": 24
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in align_up\n@@ -19,17 +19,17 @@\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n     let remainder = value % alignment;\n     if remainder == 0 {\n         value\n     } else {\n-        value + (alignment - remainder)\n+        value - /* ~ changed by cargo-mutants ~ */ (alignment - remainder)\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n pub struct ItemPointer {\n     pub block_number: u32,\n     pub offset_number: u16,\n }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:27:15: replace + with - in align_up",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 16,
+        "line": 27
+      },
+      "start": {
+        "column": 15,
+        "line": 27
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in align_up\n@@ -19,17 +19,17 @@\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n     let remainder = value % alignment;\n     if remainder == 0 {\n         value\n     } else {\n-        value + (alignment - remainder)\n+        value * /* ~ changed by cargo-mutants ~ */ (alignment - remainder)\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n pub struct ItemPointer {\n     pub block_number: u32,\n     pub offset_number: u16,\n }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:27:15: replace + with * in align_up",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 16,
+        "line": 27
+      },
+      "start": {
+        "column": 15,
+        "line": 27
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with + in align_up\n@@ -19,17 +19,17 @@\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n     let remainder = value % alignment;\n     if remainder == 0 {\n         value\n     } else {\n-        value + (alignment - remainder)\n+        value + (alignment + /* ~ changed by cargo-mutants ~ */ remainder)\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n pub struct ItemPointer {\n     pub block_number: u32,\n     pub offset_number: u16,\n }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:27:28: replace - with + in align_up",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 27
+      },
+      "start": {
+        "column": 28,
+        "line": 27
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with / in align_up\n@@ -19,17 +19,17 @@\n pub const METADATA_BLOCK_NUMBER: u32 = 0;\n pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;\n \n pub(crate) const fn align_up(value: usize, alignment: usize) -> usize {\n     let remainder = value % alignment;\n     if remainder == 0 {\n         value\n     } else {\n-        value + (alignment - remainder)\n+        value + (alignment / /* ~ changed by cargo-mutants ~ */ remainder)\n     }\n }\n \n #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n pub struct ItemPointer {\n     pub block_number: u32,\n     pub offset_number: u16,\n }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "align_up",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 29
+        },
+        "start": {
+          "column": 1,
+          "line": 22
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:27:28: replace - with / in align_up",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 27
+      },
+      "start": {
+        "column": 28,
+        "line": 27
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace ItemPointer::encode_into with ()\n@@ -36,18 +36,17 @@\n \n impl ItemPointer {\n     pub const INVALID: Self = Self {\n         block_number: u32::MAX,\n         offset_number: u16::MAX,\n     };\n \n     pub fn encode_into(self, out: &mut Vec<u8>) {\n-        out.extend_from_slice(&self.block_number.to_le_bytes());\n-        out.extend_from_slice(&self.offset_number.to_le_bytes());\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n         if input.len() != ITEM_POINTER_BYTES {\n             return Err(format!(\n                 \"item pointer length mismatch: got {}, expected {ITEM_POINTER_BYTES}\",\n                 input.len()\n             ));\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "ItemPointer::encode_into",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 46
+        },
+        "start": {
+          "column": 5,
+          "line": 43
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:44:9: replace ItemPointer::encode_into with ()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 66,
+        "line": 45
+      },
+      "start": {
+        "column": 9,
+        "line": 44
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace ItemPointer::decode -> Result<Self, String> with Ok(Default::default())\n@@ -41,27 +41,17 @@\n     };\n \n     pub fn encode_into(self, out: &mut Vec<u8>) {\n         out.extend_from_slice(&self.block_number.to_le_bytes());\n         out.extend_from_slice(&self.offset_number.to_le_bytes());\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n-        if input.len() != ITEM_POINTER_BYTES {\n-            return Err(format!(\n-                \"item pointer length mismatch: got {}, expected {ITEM_POINTER_BYTES}\",\n-                input.len()\n-            ));\n-        }\n-\n-        Ok(Self {\n-            block_number: u32::from_le_bytes(input[..4].try_into().expect(\"block number bytes\")),\n-            offset_number: u16::from_le_bytes(input[4..6].try_into().expect(\"offset bytes\")),\n-        })\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n #[derive(Debug, Clone)]\n pub struct DataPage {\n     pub(crate) block_number: u32,\n     pub(crate) page_size: usize,\n     pub(crate) used_bytes: usize,\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "ItemPointer::decode",
+      "return_type": "-> Result<Self, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 60
+        },
+        "start": {
+          "column": 5,
+          "line": 48
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:49:9: replace ItemPointer::decode -> Result<Self, String> with Ok(Default::default())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 59
+      },
+      "start": {
+        "column": 9,
+        "line": 49
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace != with == in ItemPointer::decode\n@@ -41,17 +41,17 @@\n     };\n \n     pub fn encode_into(self, out: &mut Vec<u8>) {\n         out.extend_from_slice(&self.block_number.to_le_bytes());\n         out.extend_from_slice(&self.offset_number.to_le_bytes());\n     }\n \n     pub fn decode(input: &[u8]) -> Result<Self, String> {\n-        if input.len() != ITEM_POINTER_BYTES {\n+        if input.len() == /* ~ changed by cargo-mutants ~ */ ITEM_POINTER_BYTES {\n             return Err(format!(\n                 \"item pointer length mismatch: got {}, expected {ITEM_POINTER_BYTES}\",\n                 input.len()\n             ));\n         }\n \n         Ok(Self {\n             block_number: u32::from_le_bytes(input[..4].try_into().expect(\"block number bytes\")),\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "ItemPointer::decode",
+      "return_type": "-> Result<Self, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 60
+        },
+        "start": {
+          "column": 5,
+          "line": 48
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:49:24: replace != with == in ItemPointer::decode",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 49
+      },
+      "start": {
+        "column": 24,
+        "line": 49
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::block_number -> u32 with 0\n@@ -74,17 +74,17 @@\n             block_number,\n             page_size,\n             used_bytes: PAGE_HEADER_BYTES,\n             tuples: Vec::new(),\n         }\n     }\n \n     pub fn block_number(&self) -> u32 {\n-        self.block_number\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn tuple_count(&self) -> usize {\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n         &self.tuples\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::block_number",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 83
+        },
+        "start": {
+          "column": 5,
+          "line": 81
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:82:9: replace DataPage::block_number -> u32 with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 82
+      },
+      "start": {
+        "column": 9,
+        "line": 82
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::block_number -> u32 with 1\n@@ -74,17 +74,17 @@\n             block_number,\n             page_size,\n             used_bytes: PAGE_HEADER_BYTES,\n             tuples: Vec::new(),\n         }\n     }\n \n     pub fn block_number(&self) -> u32 {\n-        self.block_number\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn tuple_count(&self) -> usize {\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n         &self.tuples\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::block_number",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 83
+        },
+        "start": {
+          "column": 5,
+          "line": 81
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:82:9: replace DataPage::block_number -> u32 with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 82
+      },
+      "start": {
+        "column": 9,
+        "line": 82
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::tuple_count -> usize with 0\n@@ -78,17 +78,17 @@\n         }\n     }\n \n     pub fn block_number(&self) -> u32 {\n         self.block_number\n     }\n \n     pub fn tuple_count(&self) -> usize {\n-        self.tuples.len()\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n         &self.tuples\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::tuple_count",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 87
+        },
+        "start": {
+          "column": 5,
+          "line": 85
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:86:9: replace DataPage::tuple_count -> usize with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 86
+      },
+      "start": {
+        "column": 9,
+        "line": 86
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::tuple_count -> usize with 1\n@@ -78,17 +78,17 @@\n         }\n     }\n \n     pub fn block_number(&self) -> u32 {\n         self.block_number\n     }\n \n     pub fn tuple_count(&self) -> usize {\n-        self.tuples.len()\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n         &self.tuples\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::tuple_count",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 87
+        },
+        "start": {
+          "column": 5,
+          "line": 85
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:86:9: replace DataPage::tuple_count -> usize with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 86
+      },
+      "start": {
+        "column": 9,
+        "line": 86
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(Vec::new())\n@@ -82,17 +82,17 @@\n         self.block_number\n     }\n \n     pub fn tuple_count(&self) -> usize {\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n-        &self.tuples\n+        Vec::leak(Vec::new()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::tuples",
+      "return_type": "-> &[Vec<u8>]",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 91
+        },
+        "start": {
+          "column": 5,
+          "line": 89
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(Vec::new())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Vec::leak(Vec::new())",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 90
+      },
+      "start": {
+        "column": 9,
+        "line": 90
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![]])\n@@ -82,17 +82,17 @@\n         self.block_number\n     }\n \n     pub fn tuple_count(&self) -> usize {\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n-        &self.tuples\n+        Vec::leak(vec![vec![]]) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::tuples",
+      "return_type": "-> &[Vec<u8>]",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 91
+        },
+        "start": {
+          "column": 5,
+          "line": 89
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![]])",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Vec::leak(vec![vec![]])",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 90
+      },
+      "start": {
+        "column": 9,
+        "line": 90
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![0]])\n@@ -82,17 +82,17 @@\n         self.block_number\n     }\n \n     pub fn tuple_count(&self) -> usize {\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n-        &self.tuples\n+        Vec::leak(vec![vec![0]]) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::tuples",
+      "return_type": "-> &[Vec<u8>]",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 91
+        },
+        "start": {
+          "column": 5,
+          "line": 89
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![0]])",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Vec::leak(vec![vec![0]])",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 90
+      },
+      "start": {
+        "column": 9,
+        "line": 90
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![1]])\n@@ -82,17 +82,17 @@\n         self.block_number\n     }\n \n     pub fn tuple_count(&self) -> usize {\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n-        &self.tuples\n+        Vec::leak(vec![vec![1]]) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::tuples",
+      "return_type": "-> &[Vec<u8>]",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 91
+        },
+        "start": {
+          "column": 5,
+          "line": 89
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:90:9: replace DataPage::tuples -> &[Vec<u8>] with Vec::leak(vec![vec![1]])",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Vec::leak(vec![vec![1]])",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 90
+      },
+      "start": {
+        "column": 9,
+        "line": 90
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::free_bytes -> usize with 0\n@@ -86,17 +86,17 @@\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n         &self.tuples\n     }\n \n     pub fn free_bytes(&self) -> usize {\n-        self.page_size.saturating_sub(self.used_bytes)\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !self.can_fit_raw_tuple(payload.len()) {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::free_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 95
+        },
+        "start": {
+          "column": 5,
+          "line": 93
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:94:9: replace DataPage::free_bytes -> usize with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 94
+      },
+      "start": {
+        "column": 9,
+        "line": 94
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::free_bytes -> usize with 1\n@@ -86,17 +86,17 @@\n         self.tuples.len()\n     }\n \n     pub fn tuples(&self) -> &[Vec<u8>] {\n         &self.tuples\n     }\n \n     pub fn free_bytes(&self) -> usize {\n-        self.page_size.saturating_sub(self.used_bytes)\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !self.can_fit_raw_tuple(payload.len()) {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::free_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 95
+        },
+        "start": {
+          "column": 5,
+          "line": 93
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:94:9: replace DataPage::free_bytes -> usize with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 94
+      },
+      "start": {
+        "column": 9,
+        "line": 94
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::can_fit_raw_tuple -> bool with true\n@@ -90,17 +90,17 @@\n         &self.tuples\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n-        aligned_tuple_bytes(payload_len) <= self.free_bytes()\n+        true /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !self.can_fit_raw_tuple(payload.len()) {\n             return Err(format!(\n                 \"tuple payload {} does not fit on block {} with {} bytes free\",\n                 payload.len(),\n                 self.block_number,\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::can_fit_raw_tuple",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 99
+        },
+        "start": {
+          "column": 5,
+          "line": 97
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:98:9: replace DataPage::can_fit_raw_tuple -> bool with true",
+    "package": "ecaz-careful-hardening",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 98
+      },
+      "start": {
+        "column": 9,
+        "line": 98
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::can_fit_raw_tuple -> bool with false\n@@ -90,17 +90,17 @@\n         &self.tuples\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n-        aligned_tuple_bytes(payload_len) <= self.free_bytes()\n+        false /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !self.can_fit_raw_tuple(payload.len()) {\n             return Err(format!(\n                 \"tuple payload {} does not fit on block {} with {} bytes free\",\n                 payload.len(),\n                 self.block_number,\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::can_fit_raw_tuple",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 99
+        },
+        "start": {
+          "column": 5,
+          "line": 97
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:98:9: replace DataPage::can_fit_raw_tuple -> bool with false",
+    "package": "ecaz-careful-hardening",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 98
+      },
+      "start": {
+        "column": 9,
+        "line": 98
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace <= with > in DataPage::can_fit_raw_tuple\n@@ -90,17 +90,17 @@\n         &self.tuples\n     }\n \n     pub fn free_bytes(&self) -> usize {\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n-        aligned_tuple_bytes(payload_len) <= self.free_bytes()\n+        aligned_tuple_bytes(payload_len) > /* ~ changed by cargo-mutants ~ */ self.free_bytes()\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !self.can_fit_raw_tuple(payload.len()) {\n             return Err(format!(\n                 \"tuple payload {} does not fit on block {} with {} bytes free\",\n                 payload.len(),\n                 self.block_number,\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::can_fit_raw_tuple",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 99
+        },
+        "start": {
+          "column": 5,
+          "line": 97
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:98:42: replace <= with > in DataPage::can_fit_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 44,
+        "line": 98
+      },
+      "start": {
+        "column": 42,
+        "line": 98
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())\n@@ -94,31 +94,17 @@\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n-        if !self.can_fit_raw_tuple(payload.len()) {\n-            return Err(format!(\n-                \"tuple payload {} does not fit on block {} with {} bytes free\",\n-                payload.len(),\n-                self.block_number,\n-                self.free_bytes()\n-            ));\n-        }\n-\n-        self.used_bytes += aligned_tuple_bytes(payload.len());\n-        self.tuples.push(payload);\n-        Ok(ItemPointer {\n-            block_number: self.block_number,\n-            offset_number: u16::try_from(self.tuples.len()).expect(\"tuple count should fit in u16\"),\n-        })\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n         if tid.block_number != self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 117
+        },
+        "start": {
+          "column": 5,
+          "line": 101
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:102:9: replace DataPage::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 116
+      },
+      "start": {
+        "column": 9,
+        "line": 102
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ delete ! in DataPage::insert_raw_tuple\n@@ -94,17 +94,17 @@\n         self.page_size.saturating_sub(self.used_bytes)\n     }\n \n     pub fn can_fit_raw_tuple(&self, payload_len: usize) -> bool {\n         aligned_tuple_bytes(payload_len) <= self.free_bytes()\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n-        if !self.can_fit_raw_tuple(payload.len()) {\n+        if  /* ~ changed by cargo-mutants ~ */self.can_fit_raw_tuple(payload.len()) {\n             return Err(format!(\n                 \"tuple payload {} does not fit on block {} with {} bytes free\",\n                 payload.len(),\n                 self.block_number,\n                 self.free_bytes()\n             ));\n         }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 117
+        },
+        "start": {
+          "column": 5,
+          "line": 101
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:102:12: delete ! in DataPage::insert_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 102
+      },
+      "start": {
+        "column": 12,
+        "line": 102
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace += with -= in DataPage::insert_raw_tuple\n@@ -103,17 +103,17 @@\n             return Err(format!(\n                 \"tuple payload {} does not fit on block {} with {} bytes free\",\n                 payload.len(),\n                 self.block_number,\n                 self.free_bytes()\n             ));\n         }\n \n-        self.used_bytes += aligned_tuple_bytes(payload.len());\n+        self.used_bytes -= /* ~ changed by cargo-mutants ~ */ aligned_tuple_bytes(payload.len());\n         self.tuples.push(payload);\n         Ok(ItemPointer {\n             block_number: self.block_number,\n             offset_number: u16::try_from(self.tuples.len()).expect(\"tuple count should fit in u16\"),\n         })\n     }\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 117
+        },
+        "start": {
+          "column": 5,
+          "line": 101
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:111:25: replace += with -= in DataPage::insert_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 27,
+        "line": 111
+      },
+      "start": {
+        "column": 25,
+        "line": 111
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace += with *= in DataPage::insert_raw_tuple\n@@ -103,17 +103,17 @@\n             return Err(format!(\n                 \"tuple payload {} does not fit on block {} with {} bytes free\",\n                 payload.len(),\n                 self.block_number,\n                 self.free_bytes()\n             ));\n         }\n \n-        self.used_bytes += aligned_tuple_bytes(payload.len());\n+        self.used_bytes *= /* ~ changed by cargo-mutants ~ */ aligned_tuple_bytes(payload.len());\n         self.tuples.push(payload);\n         Ok(ItemPointer {\n             block_number: self.block_number,\n             offset_number: u16::try_from(self.tuples.len()).expect(\"tuple count should fit in u16\"),\n         })\n     }\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 117
+        },
+        "start": {
+          "column": 5,
+          "line": 101
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:111:25: replace += with *= in DataPage::insert_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 27,
+        "line": 111
+      },
+      "start": {
+        "column": 25,
+        "line": 111
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(Vec::new()))\n@@ -112,31 +112,17 @@\n         self.tuples.push(payload);\n         Ok(ItemPointer {\n             block_number: self.block_number,\n             offset_number: u16::try_from(self.tuples.len()).expect(\"tuple count should fit in u16\"),\n         })\n     }\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n-        if tid.block_number != self.block_number {\n-            return Err(format!(\n-                \"tuple block mismatch: got {}, page is {}\",\n-                tid.block_number, self.block_number\n-            ));\n-        }\n-        if tid.offset_number == 0 {\n-            return Err(\"offset number must be 1-based\".into());\n-        }\n-\n-        let index = (tid.offset_number - 1) as usize;\n-        self.tuples\n-            .get(index)\n-            .map(Vec::as_slice)\n-            .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n+        Ok(Vec::leak(Vec::new())) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n         if tid.block_number != self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::raw_tuple",
+      "return_type": "-> Result<&[u8], String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 135
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(Vec::new()))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(Vec::leak(Vec::new()))",
+    "span": {
+      "end": {
+        "column": 87,
+        "line": 134
+      },
+      "start": {
+        "column": 9,
+        "line": 120
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![0]))\n@@ -112,31 +112,17 @@\n         self.tuples.push(payload);\n         Ok(ItemPointer {\n             block_number: self.block_number,\n             offset_number: u16::try_from(self.tuples.len()).expect(\"tuple count should fit in u16\"),\n         })\n     }\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n-        if tid.block_number != self.block_number {\n-            return Err(format!(\n-                \"tuple block mismatch: got {}, page is {}\",\n-                tid.block_number, self.block_number\n-            ));\n-        }\n-        if tid.offset_number == 0 {\n-            return Err(\"offset number must be 1-based\".into());\n-        }\n-\n-        let index = (tid.offset_number - 1) as usize;\n-        self.tuples\n-            .get(index)\n-            .map(Vec::as_slice)\n-            .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n+        Ok(Vec::leak(vec![0])) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n         if tid.block_number != self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::raw_tuple",
+      "return_type": "-> Result<&[u8], String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 135
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![0]))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(Vec::leak(vec![0]))",
+    "span": {
+      "end": {
+        "column": 87,
+        "line": 134
+      },
+      "start": {
+        "column": 9,
+        "line": 120
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![1]))\n@@ -112,31 +112,17 @@\n         self.tuples.push(payload);\n         Ok(ItemPointer {\n             block_number: self.block_number,\n             offset_number: u16::try_from(self.tuples.len()).expect(\"tuple count should fit in u16\"),\n         })\n     }\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n-        if tid.block_number != self.block_number {\n-            return Err(format!(\n-                \"tuple block mismatch: got {}, page is {}\",\n-                tid.block_number, self.block_number\n-            ));\n-        }\n-        if tid.offset_number == 0 {\n-            return Err(\"offset number must be 1-based\".into());\n-        }\n-\n-        let index = (tid.offset_number - 1) as usize;\n-        self.tuples\n-            .get(index)\n-            .map(Vec::as_slice)\n-            .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n+        Ok(Vec::leak(vec![1])) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n         if tid.block_number != self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::raw_tuple",
+      "return_type": "-> Result<&[u8], String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 135
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:120:9: replace DataPage::raw_tuple -> Result<&[u8], String> with Ok(Vec::leak(vec![1]))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(Vec::leak(vec![1]))",
+    "span": {
+      "end": {
+        "column": 87,
+        "line": 134
+      },
+      "start": {
+        "column": 9,
+        "line": 120
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace != with == in DataPage::raw_tuple\n@@ -112,17 +112,17 @@\n         self.tuples.push(payload);\n         Ok(ItemPointer {\n             block_number: self.block_number,\n             offset_number: u16::try_from(self.tuples.len()).expect(\"tuple count should fit in u16\"),\n         })\n     }\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n-        if tid.block_number != self.block_number {\n+        if tid.block_number == /* ~ changed by cargo-mutants ~ */ self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n         if tid.offset_number == 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::raw_tuple",
+      "return_type": "-> Result<&[u8], String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 135
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:120:29: replace != with == in DataPage::raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 120
+      },
+      "start": {
+        "column": 29,
+        "line": 120
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace == with != in DataPage::raw_tuple\n@@ -118,17 +118,17 @@\n \n     pub fn raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {\n         if tid.block_number != self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n-        if tid.offset_number == 0 {\n+        if tid.offset_number != /* ~ changed by cargo-mutants ~ */ 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n \n         let index = (tid.offset_number - 1) as usize;\n         self.tuples\n             .get(index)\n             .map(Vec::as_slice)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::raw_tuple",
+      "return_type": "-> Result<&[u8], String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 135
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:126:30: replace == with != in DataPage::raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 126
+      },
+      "start": {
+        "column": 30,
+        "line": 126
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with + in DataPage::raw_tuple\n@@ -122,17 +122,17 @@\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n         if tid.offset_number == 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n \n-        let index = (tid.offset_number - 1) as usize;\n+        let index = (tid.offset_number + /* ~ changed by cargo-mutants ~ */ 1) as usize;\n         self.tuples\n             .get(index)\n             .map(Vec::as_slice)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n     }\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n         if tid.block_number != self.block_number {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::raw_tuple",
+      "return_type": "-> Result<&[u8], String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 135
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:130:40: replace - with + in DataPage::raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 130
+      },
+      "start": {
+        "column": 40,
+        "line": 130
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with / in DataPage::raw_tuple\n@@ -122,17 +122,17 @@\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n         if tid.offset_number == 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n \n-        let index = (tid.offset_number - 1) as usize;\n+        let index = (tid.offset_number / /* ~ changed by cargo-mutants ~ */ 1) as usize;\n         self.tuples\n             .get(index)\n             .map(Vec::as_slice)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n     }\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n         if tid.block_number != self.block_number {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::raw_tuple",
+      "return_type": "-> Result<&[u8], String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 135
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:130:40: replace - with / in DataPage::raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 130
+      },
+      "start": {
+        "column": 40,
+        "line": 130
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPage::update_raw_tuple -> Result<(), String> with Ok(())\n@@ -130,40 +130,17 @@\n         let index = (tid.offset_number - 1) as usize;\n         self.tuples\n             .get(index)\n             .map(Vec::as_slice)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n     }\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n-        if tid.block_number != self.block_number {\n-            return Err(format!(\n-                \"tuple block mismatch: got {}, page is {}\",\n-                tid.block_number, self.block_number\n-            ));\n-        }\n-        if tid.offset_number == 0 {\n-            return Err(\"offset number must be 1-based\".into());\n-        }\n-\n-        let index = (tid.offset_number - 1) as usize;\n-        let existing = self\n-            .tuples\n-            .get_mut(index)\n-            .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))?;\n-        if payload.len() != existing.len() {\n-            return Err(format!(\n-                \"tuple length mismatch: got {}, expected {}\",\n-                payload.len(),\n-                existing.len()\n-            ));\n-        }\n-        *existing = payload;\n-        Ok(())\n+        Ok(()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n #[derive(Debug, Clone)]\n pub struct DataPageChain {\n     pub(crate) page_size: usize,\n     pub(crate) pages: Vec<DataPage>,\n }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::update_raw_tuple",
+      "return_type": "-> Result<(), String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 162
+        },
+        "start": {
+          "column": 5,
+          "line": 137
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:138:9: replace DataPage::update_raw_tuple -> Result<(), String> with Ok(())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(())",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 161
+      },
+      "start": {
+        "column": 9,
+        "line": 138
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace != with == in DataPage::update_raw_tuple\n@@ -130,17 +130,17 @@\n         let index = (tid.offset_number - 1) as usize;\n         self.tuples\n             .get(index)\n             .map(Vec::as_slice)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))\n     }\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n-        if tid.block_number != self.block_number {\n+        if tid.block_number == /* ~ changed by cargo-mutants ~ */ self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n         if tid.offset_number == 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::update_raw_tuple",
+      "return_type": "-> Result<(), String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 162
+        },
+        "start": {
+          "column": 5,
+          "line": 137
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:138:29: replace != with == in DataPage::update_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 138
+      },
+      "start": {
+        "column": 29,
+        "line": 138
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace == with != in DataPage::update_raw_tuple\n@@ -136,17 +136,17 @@\n \n     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {\n         if tid.block_number != self.block_number {\n             return Err(format!(\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n-        if tid.offset_number == 0 {\n+        if tid.offset_number != /* ~ changed by cargo-mutants ~ */ 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n \n         let index = (tid.offset_number - 1) as usize;\n         let existing = self\n             .tuples\n             .get_mut(index)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))?;\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::update_raw_tuple",
+      "return_type": "-> Result<(), String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 162
+        },
+        "start": {
+          "column": 5,
+          "line": 137
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:144:30: replace == with != in DataPage::update_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 144
+      },
+      "start": {
+        "column": 30,
+        "line": 144
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with + in DataPage::update_raw_tuple\n@@ -140,17 +140,17 @@\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n         if tid.offset_number == 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n \n-        let index = (tid.offset_number - 1) as usize;\n+        let index = (tid.offset_number + /* ~ changed by cargo-mutants ~ */ 1) as usize;\n         let existing = self\n             .tuples\n             .get_mut(index)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))?;\n         if payload.len() != existing.len() {\n             return Err(format!(\n                 \"tuple length mismatch: got {}, expected {}\",\n                 payload.len(),\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::update_raw_tuple",
+      "return_type": "-> Result<(), String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 162
+        },
+        "start": {
+          "column": 5,
+          "line": 137
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:148:40: replace - with + in DataPage::update_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 148
+      },
+      "start": {
+        "column": 40,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with / in DataPage::update_raw_tuple\n@@ -140,17 +140,17 @@\n                 \"tuple block mismatch: got {}, page is {}\",\n                 tid.block_number, self.block_number\n             ));\n         }\n         if tid.offset_number == 0 {\n             return Err(\"offset number must be 1-based\".into());\n         }\n \n-        let index = (tid.offset_number - 1) as usize;\n+        let index = (tid.offset_number / /* ~ changed by cargo-mutants ~ */ 1) as usize;\n         let existing = self\n             .tuples\n             .get_mut(index)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))?;\n         if payload.len() != existing.len() {\n             return Err(format!(\n                 \"tuple length mismatch: got {}, expected {}\",\n                 payload.len(),\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::update_raw_tuple",
+      "return_type": "-> Result<(), String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 162
+        },
+        "start": {
+          "column": 5,
+          "line": 137
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:148:40: replace - with / in DataPage::update_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 148
+      },
+      "start": {
+        "column": 40,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace != with == in DataPage::update_raw_tuple\n@@ -145,17 +145,17 @@\n             return Err(\"offset number must be 1-based\".into());\n         }\n \n         let index = (tid.offset_number - 1) as usize;\n         let existing = self\n             .tuples\n             .get_mut(index)\n             .ok_or_else(|| format!(\"tuple offset {} out of range\", tid.offset_number))?;\n-        if payload.len() != existing.len() {\n+        if payload.len() == /* ~ changed by cargo-mutants ~ */ existing.len() {\n             return Err(format!(\n                 \"tuple length mismatch: got {}, expected {}\",\n                 payload.len(),\n                 existing.len()\n             ));\n         }\n         *existing = payload;\n         Ok(())\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPage::update_raw_tuple",
+      "return_type": "-> Result<(), String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 162
+        },
+        "start": {
+          "column": 5,
+          "line": 137
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:153:26: replace != with == in DataPage::update_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 153
+      },
+      "start": {
+        "column": 26,
+        "line": 153
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::page_size -> usize with 0\n@@ -172,17 +172,17 @@\n     pub fn new(page_size: usize) -> Self {\n         Self {\n             page_size,\n             pages: vec![DataPage::new(FIRST_DATA_BLOCK_NUMBER, page_size)],\n         }\n     }\n \n     pub fn page_size(&self) -> usize {\n-        self.page_size\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn pages(&self) -> &[DataPage] {\n         &self.pages\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::page_size",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 181
+        },
+        "start": {
+          "column": 5,
+          "line": 179
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:180:9: replace DataPageChain::page_size -> usize with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 180
+      },
+      "start": {
+        "column": 9,
+        "line": 180
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::page_size -> usize with 1\n@@ -172,17 +172,17 @@\n     pub fn new(page_size: usize) -> Self {\n         Self {\n             page_size,\n             pages: vec![DataPage::new(FIRST_DATA_BLOCK_NUMBER, page_size)],\n         }\n     }\n \n     pub fn page_size(&self) -> usize {\n-        self.page_size\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn pages(&self) -> &[DataPage] {\n         &self.pages\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::page_size",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 181
+        },
+        "start": {
+          "column": 5,
+          "line": 179
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:180:9: replace DataPageChain::page_size -> usize with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 180
+      },
+      "start": {
+        "column": 9,
+        "line": 180
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::pages -> &[DataPage] with Vec::leak(Vec::new())\n@@ -176,17 +176,17 @@\n         }\n     }\n \n     pub fn page_size(&self) -> usize {\n         self.page_size\n     }\n \n     pub fn pages(&self) -> &[DataPage] {\n-        &self.pages\n+        Vec::leak(Vec::new()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get(index)\n     }\n \n     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::pages",
+      "return_type": "-> &[DataPage]",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 185
+        },
+        "start": {
+          "column": 5,
+          "line": 183
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:184:9: replace DataPageChain::pages -> &[DataPage] with Vec::leak(Vec::new())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Vec::leak(Vec::new())",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 184
+      },
+      "start": {
+        "column": 9,
+        "line": 184
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::pages -> &[DataPage] with Vec::leak(vec![Default::default()])\n@@ -176,17 +176,17 @@\n         }\n     }\n \n     pub fn page_size(&self) -> usize {\n         self.page_size\n     }\n \n     pub fn pages(&self) -> &[DataPage] {\n-        &self.pages\n+        Vec::leak(vec![Default::default()]) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get(index)\n     }\n \n     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::pages",
+      "return_type": "-> &[DataPage]",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 185
+        },
+        "start": {
+          "column": 5,
+          "line": 183
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:184:9: replace DataPageChain::pages -> &[DataPage] with Vec::leak(vec![Default::default()])",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Vec::leak(vec![Default::default()])",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 184
+      },
+      "start": {
+        "column": 9,
+        "line": 184
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::get_page -> Option<&DataPage> with None\n@@ -180,18 +180,17 @@\n         self.page_size\n     }\n \n     pub fn pages(&self) -> &[DataPage] {\n         &self.pages\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n-        self.pages.get(index)\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get_mut(index)\n     }\n \n     pub fn start_new_page_if_current_has_tuples(&mut self) {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::get_page",
+      "return_type": "-> Option<&DataPage>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 190
+        },
+        "start": {
+          "column": 5,
+          "line": 187
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:188:9: replace DataPageChain::get_page -> Option<&DataPage> with None",
+    "package": "ecaz-careful-hardening",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 189
+      },
+      "start": {
+        "column": 9,
+        "line": 188
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::get_page -> Option<&DataPage> with Some(Box::leak(Box::new(Default::default())))\n@@ -180,18 +180,17 @@\n         self.page_size\n     }\n \n     pub fn pages(&self) -> &[DataPage] {\n         &self.pages\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n-        self.pages.get(index)\n+        Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get_mut(index)\n     }\n \n     pub fn start_new_page_if_current_has_tuples(&mut self) {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::get_page",
+      "return_type": "-> Option<&DataPage>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 190
+        },
+        "start": {
+          "column": 5,
+          "line": 187
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:188:9: replace DataPageChain::get_page -> Option<&DataPage> with Some(Box::leak(Box::new(Default::default())))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Some(Box::leak(Box::new(Default::default())))",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 189
+      },
+      "start": {
+        "column": 9,
+        "line": 188
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::get_page_mut -> Option<&mut DataPage> with None\n@@ -185,18 +185,17 @@\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get(index)\n     }\n \n     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {\n-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n-        self.pages.get_mut(index)\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn start_new_page_if_current_has_tuples(&mut self) {\n         if self\n             .pages\n             .last()\n             .map_or(true, |page| page.tuple_count() == 0)\n         {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::get_page_mut",
+      "return_type": "-> Option<&mut DataPage>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 195
+        },
+        "start": {
+          "column": 5,
+          "line": 192
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:193:9: replace DataPageChain::get_page_mut -> Option<&mut DataPage> with None",
+    "package": "ecaz-careful-hardening",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 34,
+        "line": 194
+      },
+      "start": {
+        "column": 9,
+        "line": 193
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::get_page_mut -> Option<&mut DataPage> with Some(Box::leak(Box::new(Default::default())))\n@@ -185,18 +185,17 @@\n     }\n \n     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get(index)\n     }\n \n     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {\n-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n-        self.pages.get_mut(index)\n+        Some(Box::leak(Box::new(Default::default()))) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn start_new_page_if_current_has_tuples(&mut self) {\n         if self\n             .pages\n             .last()\n             .map_or(true, |page| page.tuple_count() == 0)\n         {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::get_page_mut",
+      "return_type": "-> Option<&mut DataPage>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 195
+        },
+        "start": {
+          "column": 5,
+          "line": 192
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:193:9: replace DataPageChain::get_page_mut -> Option<&mut DataPage> with Some(Box::leak(Box::new(Default::default())))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Some(Box::leak(Box::new(Default::default())))",
+    "span": {
+      "end": {
+        "column": 34,
+        "line": 194
+      },
+      "start": {
+        "column": 9,
+        "line": 193
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::start_new_page_if_current_has_tuples with ()\n@@ -190,30 +190,17 @@\n     }\n \n     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get_mut(index)\n     }\n \n     pub fn start_new_page_if_current_has_tuples(&mut self) {\n-        if self\n-            .pages\n-            .last()\n-            .map_or(true, |page| page.tuple_count() == 0)\n-        {\n-            return;\n-        }\n-        let next_block = self\n-            .pages\n-            .last()\n-            .expect(\"page chain is non-empty\")\n-            .block_number\n-            + 1;\n-        self.pages.push(DataPage::new(next_block, self.page_size));\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n         if count == 0 {\n             return None;\n         }\n \n         let first_block = self\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 212
+        },
+        "start": {
+          "column": 5,
+          "line": 197
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:198:9: replace DataPageChain::start_new_page_if_current_has_tuples with ()",
+    "package": "ecaz-careful-hardening",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 211
+      },
+      "start": {
+        "column": 9,
+        "line": 198
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace == with != in DataPageChain::start_new_page_if_current_has_tuples\n@@ -193,17 +193,17 @@\n         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;\n         self.pages.get_mut(index)\n     }\n \n     pub fn start_new_page_if_current_has_tuples(&mut self) {\n         if self\n             .pages\n             .last()\n-            .map_or(true, |page| page.tuple_count() == 0)\n+            .map_or(true, |page| page.tuple_count() != /* ~ changed by cargo-mutants ~ */ 0)\n         {\n             return;\n         }\n         let next_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 212
+        },
+        "start": {
+          "column": 5,
+          "line": 197
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:201:53: replace == with != in DataPageChain::start_new_page_if_current_has_tuples",
+    "package": "ecaz-careful-hardening",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 201
+      },
+      "start": {
+        "column": 53,
+        "line": 201
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in DataPageChain::start_new_page_if_current_has_tuples\n@@ -202,17 +202,17 @@\n         {\n             return;\n         }\n         let next_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n-            + 1;\n+            - /* ~ changed by cargo-mutants ~ */ 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n         if count == 0 {\n             return None;\n         }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 212
+        },
+        "start": {
+          "column": 5,
+          "line": 197
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:210:13: replace + with - in DataPageChain::start_new_page_if_current_has_tuples",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 210
+      },
+      "start": {
+        "column": 13,
+        "line": 210
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in DataPageChain::start_new_page_if_current_has_tuples\n@@ -202,17 +202,17 @@\n         {\n             return;\n         }\n         let next_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n-            + 1;\n+            * /* ~ changed by cargo-mutants ~ */ 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n         if count == 0 {\n             return None;\n         }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::start_new_page_if_current_has_tuples",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 212
+        },
+        "start": {
+          "column": 5,
+          "line": 197
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:210:13: replace + with * in DataPageChain::start_new_page_if_current_has_tuples",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 210
+      },
+      "start": {
+        "column": 13,
+        "line": 210
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with None\n@@ -207,36 +207,17 @@\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n-        if count == 0 {\n-            return None;\n-        }\n-\n-        let first_block = self\n-            .pages\n-            .last()\n-            .expect(\"page chain is non-empty\")\n-            .block_number\n-            + 1;\n-        for offset in 0..count {\n-            self.pages\n-                .push(DataPage::new(first_block + offset as u32, self.page_size));\n-        }\n-        let last_block = self\n-            .pages\n-            .last()\n-            .expect(\"empty pages were appended\")\n-            .block_number;\n-        Some((first_block, last_block))\n+        None /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n             return Err(format!(\n                 \"tuple payload {} exceeds maximum page capacity {}\",\n                 payload.len(),\n                 usable_page_bytes(self.page_size)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with None",
+    "package": "ecaz-careful-hardening",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 234
+      },
+      "start": {
+        "column": 9,
+        "line": 215
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 0))\n@@ -207,36 +207,17 @@\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n-        if count == 0 {\n-            return None;\n-        }\n-\n-        let first_block = self\n-            .pages\n-            .last()\n-            .expect(\"page chain is non-empty\")\n-            .block_number\n-            + 1;\n-        for offset in 0..count {\n-            self.pages\n-                .push(DataPage::new(first_block + offset as u32, self.page_size));\n-        }\n-        let last_block = self\n-            .pages\n-            .last()\n-            .expect(\"empty pages were appended\")\n-            .block_number;\n-        Some((first_block, last_block))\n+        Some((0, 0)) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n             return Err(format!(\n                 \"tuple payload {} exceeds maximum page capacity {}\",\n                 payload.len(),\n                 usable_page_bytes(self.page_size)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 0))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Some((0, 0))",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 234
+      },
+      "start": {
+        "column": 9,
+        "line": 215
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 1))\n@@ -207,36 +207,17 @@\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n-        if count == 0 {\n-            return None;\n-        }\n-\n-        let first_block = self\n-            .pages\n-            .last()\n-            .expect(\"page chain is non-empty\")\n-            .block_number\n-            + 1;\n-        for offset in 0..count {\n-            self.pages\n-                .push(DataPage::new(first_block + offset as u32, self.page_size));\n-        }\n-        let last_block = self\n-            .pages\n-            .last()\n-            .expect(\"empty pages were appended\")\n-            .block_number;\n-        Some((first_block, last_block))\n+        Some((0, 1)) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n             return Err(format!(\n                 \"tuple payload {} exceeds maximum page capacity {}\",\n                 payload.len(),\n                 usable_page_bytes(self.page_size)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((0, 1))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Some((0, 1))",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 234
+      },
+      "start": {
+        "column": 9,
+        "line": 215
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 0))\n@@ -207,36 +207,17 @@\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n-        if count == 0 {\n-            return None;\n-        }\n-\n-        let first_block = self\n-            .pages\n-            .last()\n-            .expect(\"page chain is non-empty\")\n-            .block_number\n-            + 1;\n-        for offset in 0..count {\n-            self.pages\n-                .push(DataPage::new(first_block + offset as u32, self.page_size));\n-        }\n-        let last_block = self\n-            .pages\n-            .last()\n-            .expect(\"empty pages were appended\")\n-            .block_number;\n-        Some((first_block, last_block))\n+        Some((1, 0)) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n             return Err(format!(\n                 \"tuple payload {} exceeds maximum page capacity {}\",\n                 payload.len(),\n                 usable_page_bytes(self.page_size)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 0))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Some((1, 0))",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 234
+      },
+      "start": {
+        "column": 9,
+        "line": 215
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 1))\n@@ -207,36 +207,17 @@\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n-        if count == 0 {\n-            return None;\n-        }\n-\n-        let first_block = self\n-            .pages\n-            .last()\n-            .expect(\"page chain is non-empty\")\n-            .block_number\n-            + 1;\n-        for offset in 0..count {\n-            self.pages\n-                .push(DataPage::new(first_block + offset as u32, self.page_size));\n-        }\n-        let last_block = self\n-            .pages\n-            .last()\n-            .expect(\"empty pages were appended\")\n-            .block_number;\n-        Some((first_block, last_block))\n+        Some((1, 1)) /* ~ changed by cargo-mutants ~ */\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n         if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n             return Err(format!(\n                 \"tuple payload {} exceeds maximum page capacity {}\",\n                 payload.len(),\n                 usable_page_bytes(self.page_size)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:215:9: replace DataPageChain::append_empty_pages -> Option<(u32, u32)> with Some((1, 1))",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Some((1, 1))",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 234
+      },
+      "start": {
+        "column": 9,
+        "line": 215
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace == with != in DataPageChain::append_empty_pages\n@@ -207,17 +207,17 @@\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n     }\n \n     pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {\n-        if count == 0 {\n+        if count != /* ~ changed by cargo-mutants ~ */ 0 {\n             return None;\n         }\n \n         let first_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:215:18: replace == with != in DataPageChain::append_empty_pages",
+    "package": "ecaz-careful-hardening",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 215
+      },
+      "start": {
+        "column": 18,
+        "line": 215
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in DataPageChain::append_empty_pages\n@@ -216,17 +216,17 @@\n             return None;\n         }\n \n         let first_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n-            + 1;\n+            - /* ~ changed by cargo-mutants ~ */ 1;\n         for offset in 0..count {\n             self.pages\n                 .push(DataPage::new(first_block + offset as u32, self.page_size));\n         }\n         let last_block = self\n             .pages\n             .last()\n             .expect(\"empty pages were appended\")\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:224:13: replace + with - in DataPageChain::append_empty_pages",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 224
+      },
+      "start": {
+        "column": 13,
+        "line": 224
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in DataPageChain::append_empty_pages\n@@ -216,17 +216,17 @@\n             return None;\n         }\n \n         let first_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n-            + 1;\n+            * /* ~ changed by cargo-mutants ~ */ 1;\n         for offset in 0..count {\n             self.pages\n                 .push(DataPage::new(first_block + offset as u32, self.page_size));\n         }\n         let last_block = self\n             .pages\n             .last()\n             .expect(\"empty pages were appended\")\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:224:13: replace + with * in DataPageChain::append_empty_pages",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 224
+      },
+      "start": {
+        "column": 13,
+        "line": 224
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in DataPageChain::append_empty_pages\n@@ -219,17 +219,17 @@\n         let first_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         for offset in 0..count {\n             self.pages\n-                .push(DataPage::new(first_block + offset as u32, self.page_size));\n+                .push(DataPage::new(first_block - /* ~ changed by cargo-mutants ~ */ offset as u32, self.page_size));\n         }\n         let last_block = self\n             .pages\n             .last()\n             .expect(\"empty pages were appended\")\n             .block_number;\n         Some((first_block, last_block))\n     }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:227:49: replace + with - in DataPageChain::append_empty_pages",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 50,
+        "line": 227
+      },
+      "start": {
+        "column": 49,
+        "line": 227
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in DataPageChain::append_empty_pages\n@@ -219,17 +219,17 @@\n         let first_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n             + 1;\n         for offset in 0..count {\n             self.pages\n-                .push(DataPage::new(first_block + offset as u32, self.page_size));\n+                .push(DataPage::new(first_block * /* ~ changed by cargo-mutants ~ */ offset as u32, self.page_size));\n         }\n         let last_block = self\n             .pages\n             .last()\n             .expect(\"empty pages were appended\")\n             .block_number;\n         Some((first_block, last_block))\n     }\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::append_empty_pages",
+      "return_type": "-> Option<(u32, u32)>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 235
+        },
+        "start": {
+          "column": 5,
+          "line": 214
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:227:49: replace + with * in DataPageChain::append_empty_pages",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 50,
+        "line": 227
+      },
+      "start": {
+        "column": 49,
+        "line": 227
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace DataPageChain::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())\n@@ -230,51 +230,17 @@\n             .pages\n             .last()\n             .expect(\"empty pages were appended\")\n             .block_number;\n         Some((first_block, last_block))\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n-        if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n-            return Err(format!(\n-                \"tuple payload {} exceeds maximum page capacity {}\",\n-                payload.len(),\n-                usable_page_bytes(self.page_size)\n-            ));\n-        }\n-\n-        if self\n-            .pages\n-            .last()\n-            .is_some_and(|page| page.can_fit_raw_tuple(payload.len()))\n-        {\n-            let last = self.pages.last_mut().expect(\"page chain is non-empty\");\n-            return last.insert_raw_tuple(payload);\n-        }\n-\n-        let next_block = self\n-            .pages\n-            .last()\n-            .expect(\"page chain is non-empty\")\n-            .block_number\n-            + 1;\n-        self.pages.push(DataPage::new(next_block, self.page_size));\n-        debug_assert!(\n-            self.pages\n-                .iter()\n-                .enumerate()\n-                .all(|(i, page)| { page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32 }),\n-            \"DataPageChain pages are not contiguous\"\n-        );\n-        self.pages\n-            .last_mut()\n-            .expect(\"new page was pushed\")\n-            .insert_raw_tuple(payload)\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n pub(crate) fn usable_page_bytes(page_size: usize) -> usize {\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 273
+        },
+        "start": {
+          "column": 5,
+          "line": 237
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:238:9: replace DataPageChain::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())",
+    "package": "ecaz-careful-hardening",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 39,
+        "line": 272
+      },
+      "start": {
+        "column": 9,
+        "line": 238
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ delete ! in DataPageChain::insert_raw_tuple\n@@ -230,17 +230,17 @@\n             .pages\n             .last()\n             .expect(\"empty pages were appended\")\n             .block_number;\n         Some((first_block, last_block))\n     }\n \n     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {\n-        if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n+        if  /* ~ changed by cargo-mutants ~ */element_or_neighbor_tuple_fits(payload.len(), self.page_size) {\n             return Err(format!(\n                 \"tuple payload {} exceeds maximum page capacity {}\",\n                 payload.len(),\n                 usable_page_bytes(self.page_size)\n             ));\n         }\n \n         if self\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 273
+        },
+        "start": {
+          "column": 5,
+          "line": 237
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:238:12: delete ! in DataPageChain::insert_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 238
+      },
+      "start": {
+        "column": 12,
+        "line": 238
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in DataPageChain::insert_raw_tuple\n@@ -252,17 +252,17 @@\n             return last.insert_raw_tuple(payload);\n         }\n \n         let next_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n-            + 1;\n+            - /* ~ changed by cargo-mutants ~ */ 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n         debug_assert!(\n             self.pages\n                 .iter()\n                 .enumerate()\n                 .all(|(i, page)| { page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32 }),\n             \"DataPageChain pages are not contiguous\"\n         );\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 273
+        },
+        "start": {
+          "column": 5,
+          "line": 237
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:260:13: replace + with - in DataPageChain::insert_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 260
+      },
+      "start": {
+        "column": 13,
+        "line": 260
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in DataPageChain::insert_raw_tuple\n@@ -252,17 +252,17 @@\n             return last.insert_raw_tuple(payload);\n         }\n \n         let next_block = self\n             .pages\n             .last()\n             .expect(\"page chain is non-empty\")\n             .block_number\n-            + 1;\n+            * /* ~ changed by cargo-mutants ~ */ 1;\n         self.pages.push(DataPage::new(next_block, self.page_size));\n         debug_assert!(\n             self.pages\n                 .iter()\n                 .enumerate()\n                 .all(|(i, page)| { page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32 }),\n             \"DataPageChain pages are not contiguous\"\n         );\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "DataPageChain::insert_raw_tuple",
+      "return_type": "-> Result<ItemPointer, String>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 273
+        },
+        "start": {
+          "column": 5,
+          "line": 237
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:260:13: replace + with * in DataPageChain::insert_raw_tuple",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 260
+      },
+      "start": {
+        "column": 13,
+        "line": 260
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace usable_page_bytes -> usize with 0\n@@ -269,17 +269,17 @@\n         self.pages\n             .last_mut()\n             .expect(\"new page was pushed\")\n             .insert_raw_tuple(payload)\n     }\n }\n \n pub(crate) fn usable_page_bytes(page_size: usize) -> usize {\n-    page_size.saturating_sub(PAGE_HEADER_BYTES)\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "usable_page_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 278
+        },
+        "start": {
+          "column": 1,
+          "line": 276
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:277:5: replace usable_page_bytes -> usize with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 277
+      },
+      "start": {
+        "column": 5,
+        "line": 277
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace usable_page_bytes -> usize with 1\n@@ -269,17 +269,17 @@\n         self.pages\n             .last_mut()\n             .expect(\"new page was pushed\")\n             .insert_raw_tuple(payload)\n     }\n }\n \n pub(crate) fn usable_page_bytes(page_size: usize) -> usize {\n-    page_size.saturating_sub(PAGE_HEADER_BYTES)\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "usable_page_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 278
+        },
+        "start": {
+          "column": 1,
+          "line": 276
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:277:5: replace usable_page_bytes -> usize with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 277
+      },
+      "start": {
+        "column": 5,
+        "line": 277
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace element_or_neighbor_tuple_fits -> bool with true\n@@ -273,17 +273,17 @@\n     }\n }\n \n pub(crate) fn usable_page_bytes(page_size: usize) -> usize {\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n-    aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "element_or_neighbor_tuple_fits",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 282
+        },
+        "start": {
+          "column": 1,
+          "line": 280
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:281:5: replace element_or_neighbor_tuple_fits -> bool with true",
+    "package": "ecaz-careful-hardening",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 69,
+        "line": 281
+      },
+      "start": {
+        "column": 5,
+        "line": 281
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace element_or_neighbor_tuple_fits -> bool with false\n@@ -273,17 +273,17 @@\n     }\n }\n \n pub(crate) fn usable_page_bytes(page_size: usize) -> usize {\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n-    aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "element_or_neighbor_tuple_fits",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 282
+        },
+        "start": {
+          "column": 1,
+          "line": 280
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:281:5: replace element_or_neighbor_tuple_fits -> bool with false",
+    "package": "ecaz-careful-hardening",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 69,
+        "line": 281
+      },
+      "start": {
+        "column": 5,
+        "line": 281
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace <= with > in element_or_neighbor_tuple_fits\n@@ -273,17 +273,17 @@\n     }\n }\n \n pub(crate) fn usable_page_bytes(page_size: usize) -> usize {\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n-    aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n+    aligned_tuple_bytes(payload_len) > /* ~ changed by cargo-mutants ~ */ usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "element_or_neighbor_tuple_fits",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 282
+        },
+        "start": {
+          "column": 1,
+          "line": 280
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:281:38: replace <= with > in element_or_neighbor_tuple_fits",
+    "package": "ecaz-careful-hardening",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 281
+      },
+      "start": {
+        "column": 38,
+        "line": 281
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace aligned_tuple_bytes -> usize with 0\n@@ -277,23 +277,17 @@\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n-    let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n-    let remainder = tuple_len % ALIGNMENT_BYTES;\n-    if remainder == 0 {\n-        tuple_len\n-    } else {\n-        tuple_len + (ALIGNMENT_BYTES - remainder)\n-    }\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n     aligned_tuple_bytes(payload_len)\n }\n \n #[cfg(test)]\n mod tests {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:285:5: replace aligned_tuple_bytes -> usize with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 291
+      },
+      "start": {
+        "column": 5,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace aligned_tuple_bytes -> usize with 1\n@@ -277,23 +277,17 @@\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n-    let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n-    let remainder = tuple_len % ALIGNMENT_BYTES;\n-    if remainder == 0 {\n-        tuple_len\n-    } else {\n-        tuple_len + (ALIGNMENT_BYTES - remainder)\n-    }\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n     aligned_tuple_bytes(payload_len)\n }\n \n #[cfg(test)]\n mod tests {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:285:5: replace aligned_tuple_bytes -> usize with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 291
+      },
+      "start": {
+        "column": 5,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in aligned_tuple_bytes\n@@ -277,17 +277,17 @@\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n-    let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n+    let tuple_len = TUPLE_HEADER_BYTES + payload_len - /* ~ changed by cargo-mutants ~ */ LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:285:54: replace + with - in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 285
+      },
+      "start": {
+        "column": 54,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in aligned_tuple_bytes\n@@ -277,17 +277,17 @@\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n-    let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n+    let tuple_len = TUPLE_HEADER_BYTES + payload_len * /* ~ changed by cargo-mutants ~ */ LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:285:54: replace + with * in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 285
+      },
+      "start": {
+        "column": 54,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in aligned_tuple_bytes\n@@ -277,17 +277,17 @@\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n-    let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n+    let tuple_len = TUPLE_HEADER_BYTES - /* ~ changed by cargo-mutants ~ */ payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:285:40: replace + with - in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 285
+      },
+      "start": {
+        "column": 40,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in aligned_tuple_bytes\n@@ -277,17 +277,17 @@\n     page_size.saturating_sub(PAGE_HEADER_BYTES)\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n-    let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n+    let tuple_len = TUPLE_HEADER_BYTES * /* ~ changed by cargo-mutants ~ */ payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:285:40: replace + with * in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 285
+      },
+      "start": {
+        "column": 40,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace % with / in aligned_tuple_bytes\n@@ -278,17 +278,17 @@\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n-    let remainder = tuple_len % ALIGNMENT_BYTES;\n+    let remainder = tuple_len / /* ~ changed by cargo-mutants ~ */ ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:286:31: replace % with / in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 286
+      },
+      "start": {
+        "column": 31,
+        "line": 286
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace % with + in aligned_tuple_bytes\n@@ -278,17 +278,17 @@\n }\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n-    let remainder = tuple_len % ALIGNMENT_BYTES;\n+    let remainder = tuple_len + /* ~ changed by cargo-mutants ~ */ ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:286:31: replace % with + in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 286
+      },
+      "start": {
+        "column": 31,
+        "line": 286
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace == with != in aligned_tuple_bytes\n@@ -279,17 +279,17 @@\n \n pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {\n     aligned_tuple_bytes(payload_len) <= usable_page_bytes(page_size)\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n-    if remainder == 0 {\n+    if remainder != /* ~ changed by cargo-mutants ~ */ 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n     aligned_tuple_bytes(payload_len)\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:287:18: replace == with != in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 287
+      },
+      "start": {
+        "column": 18,
+        "line": 287
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with - in aligned_tuple_bytes\n@@ -282,17 +282,17 @@\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n-        tuple_len + (ALIGNMENT_BYTES - remainder)\n+        tuple_len - /* ~ changed by cargo-mutants ~ */ (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n     aligned_tuple_bytes(payload_len)\n }\n \n #[cfg(test)]\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:290:19: replace + with - in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 290
+      },
+      "start": {
+        "column": 19,
+        "line": 290
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace + with * in aligned_tuple_bytes\n@@ -282,17 +282,17 @@\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n-        tuple_len + (ALIGNMENT_BYTES - remainder)\n+        tuple_len * /* ~ changed by cargo-mutants ~ */ (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n     aligned_tuple_bytes(payload_len)\n }\n \n #[cfg(test)]\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:290:19: replace + with * in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 290
+      },
+      "start": {
+        "column": 19,
+        "line": 290
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with + in aligned_tuple_bytes\n@@ -282,17 +282,17 @@\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n-        tuple_len + (ALIGNMENT_BYTES - remainder)\n+        tuple_len + (ALIGNMENT_BYTES + /* ~ changed by cargo-mutants ~ */ remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n     aligned_tuple_bytes(payload_len)\n }\n \n #[cfg(test)]\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:290:38: replace - with + in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 39,
+        "line": 290
+      },
+      "start": {
+        "column": 38,
+        "line": 290
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace - with / in aligned_tuple_bytes\n@@ -282,17 +282,17 @@\n }\n \n pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {\n     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;\n     let remainder = tuple_len % ALIGNMENT_BYTES;\n     if remainder == 0 {\n         tuple_len\n     } else {\n-        tuple_len + (ALIGNMENT_BYTES - remainder)\n+        tuple_len + (ALIGNMENT_BYTES / /* ~ changed by cargo-mutants ~ */ remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n     aligned_tuple_bytes(payload_len)\n }\n \n #[cfg(test)]\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "aligned_tuple_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 292
+        },
+        "start": {
+          "column": 1,
+          "line": 284
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:290:38: replace - with / in aligned_tuple_bytes",
+    "package": "ecaz-careful-hardening",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 39,
+        "line": 290
+      },
+      "start": {
+        "column": 38,
+        "line": 290
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace raw_tuple_storage_bytes -> usize with 0\n@@ -287,17 +287,17 @@\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n-    aligned_tuple_bytes(payload_len)\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     #[test]\n     fn miri_item_pointer_roundtrip() {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "raw_tuple_storage_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 296
+        },
+        "start": {
+          "column": 1,
+          "line": 294
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:295:5: replace raw_tuple_storage_bytes -> usize with 0",
+    "package": "ecaz-careful-hardening",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 37,
+        "line": 295
+      },
+      "start": {
+        "column": 5,
+        "line": 295
+      }
+    }
+  },
+  {
+    "diff": "--- hardening/careful/src/../../../src/storage/page.rs\n+++ replace raw_tuple_storage_bytes -> usize with 1\n@@ -287,17 +287,17 @@\n     if remainder == 0 {\n         tuple_len\n     } else {\n         tuple_len + (ALIGNMENT_BYTES - remainder)\n     }\n }\n \n pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {\n-    aligned_tuple_bytes(payload_len)\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     #[test]\n     fn miri_item_pointer_roundtrip() {\n",
+    "file": "hardening/careful/src/../../../src/storage/page.rs",
+    "function": {
+      "function_name": "raw_tuple_storage_bytes",
+      "return_type": "-> usize",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 296
+        },
+        "start": {
+          "column": 1,
+          "line": 294
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "hardening/careful/src/../../../src/storage/page.rs:295:5: replace raw_tuple_storage_bytes -> usize with 1",
+    "package": "ecaz-careful-hardening",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 37,
+        "line": 295
+      },
+      "start": {
+        "column": 5,
+        "line": 295
+      }
+    }
+  }
+]

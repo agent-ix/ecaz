@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace - with + in aligned_tuple_bytes
+@@ -282,17 +282,17 @@
+ }
+ 
+ pub(crate) fn aligned_tuple_bytes(payload_len: usize) -> usize {
+     let tuple_len = TUPLE_HEADER_BYTES + payload_len + LINE_POINTER_BYTES;
+     let remainder = tuple_len % ALIGNMENT_BYTES;
+     if remainder == 0 {
+         tuple_len
+     } else {
+-        tuple_len + (ALIGNMENT_BYTES - remainder)
++        tuple_len + (ALIGNMENT_BYTES + /* ~ changed by cargo-mutants ~ */ remainder)
+     }
+ }
+ 
+ pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {
+     aligned_tuple_bytes(payload_len)
+ }
+ 
+ #[cfg(test)]

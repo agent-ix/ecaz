@@ -1,0 +1,2 @@
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:26:47: replace << with >>
+hardening/careful/src/../../../src/am/ec_diskann/page.rs:28:52: replace << with >>

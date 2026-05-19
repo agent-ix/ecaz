@@ -19,7 +19,7 @@ lane flags:
   coverage --output-dir DIR [--html --report-dir DIR]
   mutants --file PATH --output-dir DIR [--jobs N]
   mutants-full --output-dir DIR [--jobs N]
-  flake-hunt --seeds N [--fuzz-seconds N]
+  flake-hunt --seeds N [--fuzz-seconds N] [--output-dir DIR]
   fuzz-all-short --seconds N
   sqlsmith-pg18 --dsn LIBPQ_DSN
   miri-many-seeds uses MIRI_MANY_SEEDS, default 0..128
@@ -120,11 +120,19 @@ EOF
 run_coverage_lane() {
   need_cmd cargo-llvm-cov "cargo install cargo-llvm-cov"
   local coverage_cargo=(cargo)
-  if [ -x "$RUSTUP_CARGO" ]; then
+  if [ -x "$RUSTUP_CARGO" ] && "$RUSTUP_CARGO" +stable --version >/dev/null 2>&1; then
     coverage_cargo=("$RUSTUP_CARGO" "+stable")
     if [ -x "$RUSTUP_BIN" ]; then
       "$RUSTUP_BIN" component add llvm-tools-preview >/dev/null
     fi
+  fi
+  if [ -z "${LLVM_COV:-}" ] && [ -x /opt/homebrew/opt/llvm/bin/llvm-cov ]; then
+    LLVM_COV=/opt/homebrew/opt/llvm/bin/llvm-cov
+    export LLVM_COV
+  fi
+  if [ -z "${LLVM_PROFDATA:-}" ] && [ -x /opt/homebrew/opt/llvm/bin/llvm-profdata ]; then
+    LLVM_PROFDATA=/opt/homebrew/opt/llvm/bin/llvm-profdata
+    export LLVM_PROFDATA
   fi
   local output_dir="target/quality/coverage"
   local report_dir=""
@@ -228,7 +236,7 @@ EOF
   local mutate_file="$file"
   local args=(mutants)
   case "$file" in
-    src/quant/*|src/storage/page.rs)
+    src/quant/*|src/storage/page.rs|src/am/common/cost.rs|src/am/ec_diskann/page.rs|src/am/ec_hnsw/page.rs|src/am/ec_ivf/page.rs)
       mutate_file="hardening/careful/src/../../../$file"
       args+=(--package ecaz-careful-hardening)
       ;;
@@ -276,6 +284,7 @@ run_mutants_full_lane() {
 run_flake_hunt_lane() {
   local seeds=8
   local fuzz_seconds=10
+  local output_dir="target/quality/flake-hunt"
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --seeds)
@@ -294,6 +303,14 @@ run_flake_hunt_lane() {
         fi
         shift 2
         ;;
+      --output-dir)
+        output_dir="${2:-}"
+        if [ -z "$output_dir" ]; then
+          echo "missing value for --output-dir" >&2
+          exit 2
+        fi
+        shift 2
+        ;;
       *)
         echo "unknown flake-hunt flag: $1" >&2
         exit 2
@@ -303,14 +320,25 @@ run_flake_hunt_lane() {
   need_nightly
   need_cmd cargo-fuzz "cargo install cargo-fuzz"
   nightly_path
+  mkdir -p "$output_dir"
+  output_dir="$(cd "$output_dir" && pwd)"
+  {
+    printf 'seeds=%s\n' "$seeds"
+    printf 'fuzz_seconds=%s\n' "$fuzz_seconds"
+    printf 'toolchain=%s\n' "${RUSTUP_TOOLCHAIN:-}"
+  } > "$output_dir/manifest.txt"
+  local commands_log="$output_dir/expanded-commands.txt"
+  : > "$commands_log"
   for seed in $(seq 1 "$seeds"); do
     echo "[flake-hunt] proptest seed=$seed"
+    printf 'PROPTEST_RNG_SEED=%s cargo test --features bench --test proptest_quant --test proptest_page -- --test-threads=1\n' "$seed" >> "$commands_log"
     PROPTEST_RNG_SEED="$seed" cargo test --features bench --test proptest_quant --test proptest_page -- --test-threads=1
     echo "[flake-hunt] fuzz seed=$seed seconds=$fuzz_seconds"
     (
       cd fuzz
       for target in fuzz_parse_text fuzz_unpack_mse fuzz_element_tuple_decode fuzz_neighbor_tuple_decode fuzz_diskann_metadata_decode fuzz_item_pointer_decode fuzz_vector_normalize
       do
+        printf '(cd fuzz && cargo fuzz run %s -- -seed=%s -max_total_time=%s)\n' "$target" "$seed" "$fuzz_seconds" >> "$commands_log"
         cargo fuzz run "$target" -- -seed="$seed" -max_total_time="$fuzz_seconds"
       done
     )

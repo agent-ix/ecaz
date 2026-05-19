@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPageChain::pages -> &[DataPage] with Vec::leak(vec![Default::default()])
+@@ -176,17 +176,17 @@
+         }
+     }
+ 
+     pub fn page_size(&self) -> usize {
+         self.page_size
+     }
+ 
+     pub fn pages(&self) -> &[DataPage] {
+-        &self.pages
++        Vec::leak(vec![Default::default()]) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
+         let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+         self.pages.get(index)
+     }
+ 
+     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {

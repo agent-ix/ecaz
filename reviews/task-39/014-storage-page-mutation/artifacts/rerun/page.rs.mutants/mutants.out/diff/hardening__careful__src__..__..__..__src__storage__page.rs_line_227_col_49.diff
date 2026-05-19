@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace + with - in DataPageChain::append_empty_pages
+@@ -219,17 +219,17 @@
+         let first_block = self
+             .pages
+             .last()
+             .expect("page chain is non-empty")
+             .block_number
+             + 1;
+         for offset in 0..count {
+             self.pages
+-                .push(DataPage::new(first_block + offset as u32, self.page_size));
++                .push(DataPage::new(first_block - /* ~ changed by cargo-mutants ~ */ offset as u32, self.page_size));
+         }
+         let last_block = self
+             .pages
+             .last()
+             .expect("empty pages were appended")
+             .block_number;
+         Some((first_block, last_block))
+     }

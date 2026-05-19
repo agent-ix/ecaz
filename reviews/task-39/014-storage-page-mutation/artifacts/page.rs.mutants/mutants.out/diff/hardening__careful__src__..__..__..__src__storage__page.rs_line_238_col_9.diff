@@ -1,0 +1,55 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ replace DataPageChain::insert_raw_tuple -> Result<ItemPointer, String> with Ok(Default::default())
+@@ -230,51 +230,17 @@
+             .pages
+             .last()
+             .expect("empty pages were appended")
+             .block_number;
+         Some((first_block, last_block))
+     }
+ 
+     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
+-        if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {
+-            return Err(format!(
+-                "tuple payload {} exceeds maximum page capacity {}",
+-                payload.len(),
+-                usable_page_bytes(self.page_size)
+-            ));
+-        }
+-
+-        if self
+-            .pages
+-            .last()
+-            .is_some_and(|page| page.can_fit_raw_tuple(payload.len()))
+-        {
+-            let last = self.pages.last_mut().expect("page chain is non-empty");
+-            return last.insert_raw_tuple(payload);
+-        }
+-
+-        let next_block = self
+-            .pages
+-            .last()
+-            .expect("page chain is non-empty")
+-            .block_number
+-            + 1;
+-        self.pages.push(DataPage::new(next_block, self.page_size));
+-        debug_assert!(
+-            self.pages
+-                .iter()
+-                .enumerate()
+-                .all(|(i, page)| { page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32 }),
+-            "DataPageChain pages are not contiguous"
+-        );
+-        self.pages
+-            .last_mut()
+-            .expect("new page was pushed")
+-            .insert_raw_tuple(payload)
++        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ pub(crate) fn usable_page_bytes(page_size: usize) -> usize {
+     page_size.saturating_sub(PAGE_HEADER_BYTES)
+ }
+ 
+ pub(crate) fn element_or_neighbor_tuple_fits(payload_len: usize, page_size: usize) -> bool {

@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/storage/page.rs
++++ delete ! in DataPageChain::insert_raw_tuple
+@@ -230,17 +230,17 @@
+             .pages
+             .last()
+             .expect("empty pages were appended")
+             .block_number;
+         Some((first_block, last_block))
+     }
+ 
+     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
+-        if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {
++        if  /* ~ changed by cargo-mutants ~ */element_or_neighbor_tuple_fits(payload.len(), self.page_size) {
+             return Err(format!(
+                 "tuple payload {} exceeds maximum page capacity {}",
+                 payload.len(),
+                 usable_page_bytes(self.page_size)
+             ));
+         }
+ 
+         if self

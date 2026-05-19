@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/am/common/cost.rs
++++ replace > with < in estimate_planner_cost
+@@ -218,17 +218,17 @@
+ pub(crate) fn estimate_planner_cost(
+     inputs: PlannerCostInputs,
+     constants: PlannerCostConstants,
+ ) -> PlannerCostEstimate {
+     if inputs.index_pages <= 0.0 {
+         return gated_planner_cost_estimate(inputs.index_pages);
+     }
+ 
+-    let tuple_estimate = if inputs.reltuples > 0.0 {
++    let tuple_estimate = if inputs.reltuples < /* ~ changed by cargo-mutants ~ */ 0.0 {
+         inputs.reltuples
+     } else {
+         inputs.index_pages * 10.0
+     };
+     let scoring_dimensions = f64::from(inputs.dimensions) * LUT_CPU_DIMENSION_SCALE;
+     let ef_search = f64::from(inputs.ef_search);
+     let tree_height = inputs.tree_height;
+ 
