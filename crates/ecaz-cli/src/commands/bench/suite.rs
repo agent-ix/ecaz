@@ -2236,6 +2236,7 @@ fn cost_snapshot_function(profile: &IndexProfile) -> Option<&'static str> {
     match profile.name {
         "ec_hnsw" => Some("ec_hnsw_index_cost_snapshot"),
         "ec_ivf" => Some("ec_ivf_index_cost_snapshot"),
+        "ec_diskann" => Some("ec_diskann_index_cost_snapshot"),
         "ec_spire" => Some("ec_spire_index_cost_snapshot"),
         _ => None,
     }
@@ -3016,5 +3017,32 @@ mod tests {
         assert!(sql.contains("'ec_spire' AS profile"));
         assert!(sql.contains("RESET ec_spire.nprobe;"));
         assert!(sql.contains("RESET ec_spire.rerank_width;"));
+    }
+
+    #[test]
+    fn explain_sql_uses_diskann_profile_guc_and_cost_snapshot() {
+        let step = ExplainStep {
+            name: "explain".into(),
+            tags: Vec::new(),
+            prefix: "diskann_pfx".into(),
+            profile: Some("ec_diskann".into()),
+            index_name: None,
+            query_table: None,
+            corpus_table: None,
+            nprobe: 200,
+            rerank_width: -1,
+            pg: None,
+            db: None,
+            socket_dir: None,
+            port: None,
+            sql_file: "explain.sql".into(),
+            log_output: "explain.log".into(),
+        };
+        let sql = explain_sql(&step, &SuiteDefaults::default());
+
+        assert!(sql.contains("SET ec_diskann.list_size = 200;"));
+        assert!(sql.contains("FROM ec_diskann_index_cost_snapshot('diskann_pfx_idx'::regclass);"));
+        assert!(sql.contains("'ec_diskann' AS profile"));
+        assert!(sql.contains("RESET ec_diskann.list_size;"));
     }
 }

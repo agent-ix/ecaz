@@ -32,6 +32,7 @@ pub use self::ec_diskann::vamana::{
     build_vamana_graph_with_stats, greedy_search, greedy_search_view, MetricSummary,
     VamanaBuildPassStats, VamanaBuildStats, VamanaGraph, VamanaGraphView,
 };
+pub(crate) use self::ec_diskann::IndexCostSnapshot as DiskannIndexCostSnapshot;
 pub use self::ec_diskann::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTupleFixture};
 #[allow(unused_imports)]
 pub(crate) use self::ec_hnsw::{
@@ -450,6 +451,12 @@ pub(crate) unsafe fn diskann_graph_summary(
     index_relation: pgrx::pg_sys::Relation,
 ) -> Result<DiskannGraphSummary, String> {
     unsafe { ec_diskann::diagnostics::graph_summary(index_relation) }
+}
+
+pub(crate) unsafe fn diskann_index_cost_snapshot(
+    index_relation: pgrx::pg_sys::Relation,
+) -> DiskannIndexCostSnapshot {
+    unsafe { ec_diskann::index_cost_snapshot(index_relation) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]

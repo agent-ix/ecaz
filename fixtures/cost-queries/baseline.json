@@ -13,6 +13,14 @@
     "reltuples"
   ],
   "rows": {
+    "diskann-small-cost": {
+      "index_pages": 10.0,
+      "modeled_correlation": 0.0,
+      "modeled_selectivity": 1.0,
+      "modeled_startup_cost": 816.06,
+      "modeled_total_cost": 816.06,
+      "reltuples": 512.0
+    },
     "hnsw-small-cost": {
       "index_pages": 23.0,
       "modeled_correlation": 0.0,

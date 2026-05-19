@@ -8,6 +8,7 @@
 mod ambuild;
 pub mod build;
 mod cost;
+pub(crate) use self::cost::{index_cost_snapshot, IndexCostSnapshot};
 pub mod diagnostics;
 mod insert;
 pub use self::insert::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTupleFixture};

@@ -1119,6 +1119,72 @@ fn ec_diskann_index_graph_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_diskann_index_cost_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(planner_gate_reason, String),
+        name!(dimensions, i32),
+        name!(graph_degree, i32),
+        name!(build_list_size, i32),
+        name!(relation_list_size, i32),
+        name!(session_list_size, Option<i32>),
+        name!(effective_list_size, i32),
+        name!(effective_list_size_source, String),
+        name!(rerank_budget, i32),
+        name!(top_k, i32),
+        name!(alpha, f64),
+        name!(storage_format, String),
+        name!(resolved_tree_height, f64),
+        name!(tree_height_source, String),
+        name!(index_pages, f64),
+        name!(reltuples, f64),
+        name!(random_page_cost, f64),
+        name!(seq_page_cost, f64),
+        name!(cpu_operator_cost, f64),
+        name!(modeled_startup_cost, f64),
+        name!(modeled_total_cost, f64),
+        name!(modeled_selectivity, f64),
+        name!(modeled_correlation, f64),
+    ),
+> {
+    let index_relation =
+        open_valid_ec_diskann_index_guard(index_oid, "ec_diskann_index_cost_snapshot");
+    let snapshot = unsafe { am::diskann_index_cost_snapshot(index_relation.as_ptr()) };
+    drop(index_relation);
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.planner_gate_reason.to_owned(),
+        i32::from(snapshot.dimensions),
+        snapshot.graph_degree,
+        snapshot.build_list_size,
+        snapshot.relation_list_size,
+        snapshot.session_list_size,
+        snapshot.effective_list_size,
+        snapshot.effective_list_size_source.to_owned(),
+        snapshot.rerank_budget,
+        snapshot.top_k,
+        snapshot.alpha,
+        snapshot.storage_format.to_owned(),
+        snapshot.resolved_tree_height,
+        snapshot.tree_height_source.to_owned(),
+        snapshot.index_pages,
+        snapshot.reltuples,
+        snapshot.random_page_cost,
+        snapshot.seq_page_cost,
+        snapshot.cpu_operator_cost,
+        snapshot.modeled_startup_cost,
+        snapshot.modeled_total_cost,
+        snapshot.modeled_selectivity,
+        snapshot.modeled_correlation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_custom_scan_status() -> TableIterator<
     'static,
     (

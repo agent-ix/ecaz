@@ -21,6 +21,14 @@
       "field": "modeled_total_cost",
       "op": "gt",
       "value": 0.0
+    },
+    {
+      "name": "diskann-modeled-total-cost-positive",
+      "step": "diskann-small-cost",
+      "metric": "planner_cost",
+      "field": "modeled_total_cost",
+      "op": "gt",
+      "value": 0.0
     }
   ],
   "steps": [
@@ -46,6 +54,17 @@
       "rerank_width": -1,
       "sql_file": "target/gates/cost-small/hnsw-real10k-cost.sql",
       "log_output": "target/gates/cost-small/hnsw-real10k-cost.log"
+    },
+    {
+      "kind": "explain",
+      "name": "diskann-small-cost",
+      "tags": ["cost", "small", "pr"],
+      "prefix": "task47_gate_diskann",
+      "profile": "ec_diskann",
+      "nprobe": 200,
+      "rerank_width": -1,
+      "sql_file": "target/gates/cost-small/diskann-real10k-cost.sql",
+      "log_output": "target/gates/cost-small/diskann-real10k-cost.log"
     }
   ]
 }
