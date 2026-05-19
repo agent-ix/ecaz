@@ -1,3 +1,11 @@
+    macro_rules! hnsw_runtime_debug {
+        ($call:expr) => {{
+            // SAFETY: These pg_test fixtures create the referenced HNSW index
+            // before invoking test-only runtime/profile debug helpers for that index.
+            unsafe { $call }
+        }};
+    }
+
     #[pg_test]
     fn test_pq_fastscan_runtime_profile_frontier_head_exact_counters() {
         let _lock = env_var_test_lock();
@@ -67,7 +75,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
 
         assert!(
             grouped_traversal_approx_score_calls > 0
@@ -108,7 +116,7 @@
             "ec_hnsw_pq_fastscan_runtime_invalid_score_mode_idx",
         );
 
-        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+        let _ = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
     }
 
     #[pg_test]
@@ -123,7 +131,7 @@
             "ec_hnsw_pq_fastscan_runtime_invalid_rerank_mode_idx",
         );
 
-        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+        let _ = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
     }
 
     #[pg_test]
@@ -320,9 +328,7 @@
             0.15_f32, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45,
             1.55, 1.65,
         ];
-        let observed = unsafe {
-            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
-        };
+        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
 
         let compared_rows = observed
             .iter()
@@ -583,9 +589,7 @@
             0.05_f32, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35,
             1.45, 1.55,
         ];
-        let observed = unsafe {
-            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
-        };
+        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
         let mut expected_exact_ranks = vec![None; observed.len()];
         let mut ordered_observed = observed
             .iter()
@@ -858,7 +862,7 @@
             0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
             1.52, 1.62,
         ];
-        let observed = unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+        let observed = hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
         let expected_emitted_result_count =
             i32::try_from(observed.len()).expect("emitted result count should fit in i32");
         let expected_grouped_result_count = expected_emitted_result_count;
@@ -1220,7 +1224,7 @@
             1.54, 1.64,
         ];
         let baseline_rows =
-            unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+            hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
         let window_size = 4_usize;
         let mut buffered_rows = Vec::with_capacity(window_size);
         let mut next_idx = 0usize;
@@ -1415,14 +1419,12 @@
         let (query, live_rows, baseline_rows) = candidate_queries
             .into_iter()
             .find_map(|query| {
-                let live_rows = unsafe {
-                    am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                let live_rows = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
                         index_oid,
                         query.clone(),
-                    )
-                };
+                    ));
                 let baseline_rows =
-                    unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+                    hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
                 let actual_live_order = live_rows
                     .iter()
                     .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
@@ -1667,9 +1669,9 @@
             1.56, 1.66,
         ];
         let baseline_rows =
-            unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+            hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
         let windowed_rows =
-            unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4) };
+            hnsw_runtime_debug!(am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4));
 
         let rank_metrics = |rows: &[(i32, Option<i32>, Option<i32>)]| {
             let mut compared_result_count = 0_i32;
@@ -2060,4 +2062,3 @@
         assert_eq!(spearman_before, 0.0);
         assert_eq!(spearman_after, 0.0);
     }
-

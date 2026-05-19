@@ -27,12 +27,16 @@
     fn test_binary_recv_rejects_trailing_bytes() {
         let mut bytes = pack(4, 4, 42, 0.5, &[0x11, 0x22, 0x33]);
         bytes.push(0x44);
+        // SAFETY: The helper leaks the byte buffer into a StringInfoData that stays
+        // valid for the receiver call; this fixture expects the receiver to reject it.
         let _ = unsafe { recv_via_string_info(&bytes) };
     }
 
     #[pg_test]
     #[should_panic(expected = "too short")]
     fn test_binary_recv_rejects_truncated_bytes() {
+        // SAFETY: The helper leaks the byte buffer into a StringInfoData that stays
+        // valid for the receiver call; this fixture expects the receiver to reject it.
         let _ = unsafe { recv_via_string_info(&[0_u8; 5]) };
     }
 
