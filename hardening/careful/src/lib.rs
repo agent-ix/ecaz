@@ -19,6 +19,9 @@ pub mod careful_hnsw_search;
 #[path = "../../../src/am/ec_hnsw/page.rs"]
 pub mod careful_hnsw_page;
 
+#[path = "../../../src/am/common/cost.rs"]
+pub mod careful_common_cost;
+
 pub mod storage {
     pub use crate::careful_storage_page as page;
 }
@@ -27,6 +30,10 @@ pub mod am {
     pub(crate) mod page {
         pub(crate) const INDEX_FORMAT_V1_SCALAR: u16 = 1;
         pub(crate) const INDEX_FORMAT_V2_GROUPED: u16 = 2;
+    }
+
+    pub mod common {
+        pub use crate::careful_common_cost as cost;
     }
 
     pub mod ec_diskann {

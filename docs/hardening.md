@@ -271,11 +271,14 @@ Baseline sources:
 - `reviews/task-39/012-hnsw-page-coverage/artifacts/coverage-summary.txt`
   raises `src/am/ec_hnsw/page.rs` by importing the HNSW metadata, tuple, and
   page-chain codec tests into the `hardening/careful` coverage harness.
+- `reviews/task-39/015-planner-cost-mutation/artifacts/coverage-summary.txt`
+  raises `src/am/common/cost.rs` by importing the pure planner-cost model and
+  callback translation tests into the `hardening/careful` coverage harness.
 
 The current local coverage lane executes `ecaz-cli` tests and
 `hardening/careful`; it does not execute extension in-module tests, so AM page
-callbacks, SPIRE coordinator paths, DiskANN build/scan paths, planner-cost
-callbacks, and storage guard drops remain recorded gaps.
+callbacks, SPIRE coordinator paths, DiskANN build/scan paths, live
+planner-cost callbacks, and storage guard drops remain recorded gaps.
 
 | Critical area | Baseline line coverage |
 | --- | ---: |
@@ -289,7 +292,7 @@ callbacks, and storage guard drops remain recorded gaps.
 | `src/am/ec_spire/storage/**` | `0.00%` |
 | `src/am/ec_spire/coordinator/**` sampled by the baseline | `0.00%` |
 | `src/am/ec_diskann/{routine,scan,build}.rs` | `0.00%` |
-| `src/am/common/cost.rs` | `0.00%` |
+| `src/am/common/cost.rs` | `98.98%` |
 | `src/storage/*_guard.rs` | `0.00%` |
 
 ### Mutation Triage
