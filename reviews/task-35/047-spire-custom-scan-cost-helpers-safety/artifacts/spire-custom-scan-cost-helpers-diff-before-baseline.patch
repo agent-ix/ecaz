@@ -1,0 +1,114 @@
+Script started on 2026-05-19 00:20:04-07:00 [<not executed on terminal>]
+[1mdiff --git a/src/am/ec_spire/custom_scan/cost_helpers.rs b/src/am/ec_spire/custom_scan/cost_helpers.rs[m
+[1mindex ac1cc84e..38561497 100644[m
+[1m--- a/src/am/ec_spire/custom_scan/cost_helpers.rs[m
+[1m+++ b/src/am/ec_spire/custom_scan/cost_helpers.rs[m
+[36m@@ -10,6 +10,8 @@[m [munsafe fn estimate_custom_scan_cost([m
+     target_width: f64,[m
+     eligibility: &SpireCustomScanIndexEligibilityRow,[m
+ ) -> SpireCustomScanCostEstimate {[m
+[32m+[m[32m    // SAFETY: planner cost constants and cpu_tuple_cost are backend-local GUC[m
+[32m+[m[32m    // reads during planner path construction.[m
+     let constants = unsafe { current_planner_cost_constants() };[m
+     let cpu_tuple_cost = unsafe { pg_sys::cpu_tuple_cost };[m
+     estimate_custom_scan_cost_with_constants([m
+[36m@@ -26,6 +28,8 @@[m [mfn custom_scan_target_width(target: *mut pg_sys::PathTarget) -> f64 {[m
+     if target.is_null() {[m
+         0.0[m
+     } else {[m
+[32m+[m[32m        // SAFETY: caller supplied a live PathTarget pointer from PostgreSQL's[m
+[32m+[m[32m        // planner; null was checked above.[m
+         f64::from(unsafe { (*target).width }.max(0))[m
+     }[m
+ }[m
+[36m@@ -69,6 +73,8 @@[m [mfn estimate_custom_scan_cost_with_constants([m
+ }[m
+ [m
+ unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {[m
+[32m+[m[32m    // SAFETY: caller supplies PostgreSQL's planner root; as_ref returns None if[m
+[32m+[m[32m    // a defensive null pointer is encountered.[m
+     let root_ref = unsafe { root.as_ref()? };[m
+     if root_ref.limit_tuples < 0.0 || !root_ref.limit_tuples.is_finite() {[m
+         return None;[m
+[36m@@ -83,25 +89,36 @@[m [munsafe fn custom_scan_orderby_query_expr([m
+     if root.is_null() || rel.is_null() {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: null checks above ensure the planner root and rel pointers can be[m
+[32m+[m[32m    // borrowed while inspecting this path candidate.[m
+     let root_ref = unsafe { root.as_ref()? };[m
+     let rel_ref = unsafe { rel.as_ref()? };[m
+[32m+[m[32m    // SAFETY: PlannerInfo owns parse during planning; as_ref handles null parse[m
+[32m+[m[32m    // defensively before sortClause/targetList are inspected.[m
+     let query = unsafe { root_ref.parse.as_ref()? };[m
+     if query.sortClause.is_null() || query.targetList.is_null() {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: sortClause is non-null and owned by the live Query node.[m
+     let sort_clauses = unsafe { PgList::<pg_sys::SortGroupClause>::from_pg(query.sortClause) };[m
+     if sort_clauses.len() != 1 {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: single-item sortClause list is live while planning this path.[m
+     let sort_clause = unsafe { sort_clauses.get_ptr(0)?.as_ref()? };[m
+[32m+[m[32m    // SAFETY: targetList is non-null and owned by the live Query node.[m
+     let target_list = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(query.targetList) };[m
+     for target_entry in target_list.iter_ptr() {[m
+[32m+[m[32m        // SAFETY: PostgreSQL target lists can be traversed as TargetEntry[m
+[32m+[m[32m        // pointers for the duration of this planner callback.[m
+         let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {[m
+             continue;[m
+         };[m
+         if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {[m
+             continue;[m
+         }[m
+[32m+[m[32m        // SAFETY: target_entry belongs to the live target list and rel_ref came[m
+[32m+[m[32m        // from the same planner relation candidate.[m
+         return unsafe { custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid) };[m
+     }[m
+     None[m
+[36m@@ -115,21 +132,29 @@[m [munsafe fn custom_scan_query_expr_from_sort_expr([m
+         return None;[m
+     }[m
+     let node = expr.cast::<pg_sys::Node>();[m
+[32m+[m[32m    // SAFETY: expr is non-null and every planner Expr begins with a NodeTag.[m
+     if unsafe { (*node).type_ } != pg_sys::NodeTag::T_OpExpr {[m
+         return None;[m
+     }[m
+[32m+[m[32m    // SAFETY: the NodeTag check above proves this Expr is an OpExpr.[m
+     let op_expr = unsafe { &*expr.cast::<pg_sys::OpExpr>() };[m
+[32m+[m[32m    // SAFETY: OpExpr args is the PostgreSQL-owned argument list for this live[m
+[32m+[m[32m    // planner expression.[m
+     let args = unsafe { PgList::<pg_sys::Expr>::from_pg(op_expr.args) };[m
+     if args.len() != 2 {[m
+         return None;[m
+     }[m
+     let left = args.get_ptr(0)?;[m
+     let right = args.get_ptr(1)?;[m
+[32m+[m[32m    // SAFETY: left/right are the two live OpExpr operands and relid identifies[m
+[32m+[m[32m    // the relation candidate being matched.[m
+     if unsafe {[m
+         custom_scan_expr_is_relation_var(left, relid) && custom_scan_expr_is_query_value(right)[m
+     } {[m
+         return Some(right);[m
+     }[m
+[32m+[m[32m    // SAFETY: same live OpExpr operands as above, checked in reverse order for[m
+[32m+[m[32m    // commutative vector-distance expressions.[m
+     if unsafe {[m
+         custom_scan_expr_is_relation_var(right, relid) && custom_scan_expr_is_query_value(left)[m
+     } {[m
+[36m@@ -143,10 +168,11 @@[m [munsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sy[m
+         return false;[m
+     }[m
+     let node = expr.cast::<pg_sys::Node>();[m
+[32m+[m[32m    // SAFETY: expr is non-null and every planner Expr begins with a NodeTag.[m
+     if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Var {[m
+         return false;[m
+     }[m
+[32m+[m[32m    // SAFETY: the NodeTag check above proves this Expr is a Var.[m
+     let var = unsafe { &*expr.cast::<pg_sys::Var>() };[m
+     u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0[m
+ }[m
+[31m-[m
+
+Script done on 2026-05-19 00:20:04-07:00 [COMMAND_EXIT_CODE="0"]
