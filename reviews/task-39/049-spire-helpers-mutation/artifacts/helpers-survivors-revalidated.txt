@@ -1,0 +1,34 @@
+helpers.rs:2:5: replace validate_vec_id_bytes -> Result<(), String> with Ok(())
+helpers.rs:39:5: replace is_visible_primary_assignment_flags -> bool with true
+helpers.rs:39:5: replace is_visible_primary_assignment_flags -> bool with false
+helpers.rs:47:5: replace is_visible_scored_assignment_flags -> bool with true
+helpers.rs:47:5: replace is_visible_scored_assignment_flags -> bool with false
+helpers.rs:55:5: replace is_visible_primary_assignment -> bool with true
+helpers.rs:55:5: replace is_visible_primary_assignment -> bool with false
+helpers.rs:59:5: replace is_visible_scored_assignment -> bool with true
+helpers.rs:59:5: replace is_visible_scored_assignment -> bool with false
+helpers.rs:65:5: replace is_visible_primary_assignment_ref -> bool with true
+helpers.rs:65:5: replace is_visible_primary_assignment_ref -> bool with false
+helpers.rs:69:5: replace is_delete_delta_assignment_flags -> bool with true
+helpers.rs:69:5: replace is_delete_delta_assignment_flags -> bool with false
+helpers.rs:73:5: replace is_delete_delta_assignment -> bool with true
+helpers.rs:73:5: replace is_delete_delta_assignment -> bool with false
+helpers.rs:80:5: replace validate_leaf_v2_header -> Result<(), String> with Ok(())
+helpers.rs:103:5: replace validate_leaf_v2_locator -> Result<(), String> with Ok(())
+helpers.rs:120:5: replace encode_leaf_v2_local_vec_id -> Result<(), String> with Ok(())
+helpers.rs:138:5: replace encode_leaf_v2_vec_id -> Result<(), String> with Ok(())
+helpers.rs:167:5: replace decode_leaf_v2_local_vec_id -> Result<u64, String> with Ok(0)
+helpers.rs:167:5: replace decode_leaf_v2_local_vec_id -> Result<u64, String> with Ok(1)
+helpers.rs:197:5: replace decode_leaf_v2_vec_id -> Result<SpireVecId, String> with Ok(Default::default())
+helpers.rs:223:5: replace leaf_v2_assignment_vec_id_layout -> Result<(SpireVecIdKind, usize), String> with Ok((Default::default(), 0))
+helpers.rs:223:5: replace leaf_v2_assignment_vec_id_layout -> Result<(SpireVecIdKind, usize), String> with Ok((Default::default(), 1))
+helpers.rs:247:5: replace leaf_v2_column_layout -> Result<SpireLeafV2ColumnLayout, String> with Ok(Default::default())
+helpers.rs:306:5: replace leaf_v2_max_segment_rows -> Result<usize, String> with Ok(0)
+helpers.rs:306:5: replace leaf_v2_max_segment_rows -> Result<usize, String> with Ok(1)
+helpers.rs:339:5: replace validate_assignment_flags -> Result<(), String> with Ok(())
+helpers.rs:349:5: replace validate_assignment_payload_format -> Result<(), String> with Ok(())
+helpers.rs:361:5: replace validate_scored_assignment_payload -> Result<(), String> with Ok(())
+helpers.rs:371:5: replace validate_delta_assignment -> Result<(), String> with Ok(())
+helpers.rs:418:5: replace validate_leaf_assignments -> Result<(), String> with Ok(())
+helpers.rs:431:5: replace validate_leaf_assignment -> Result<(), String> with Ok(())
+helpers.rs:453:5: replace validate_delta_assignments -> Result<(), String> with Ok(())
