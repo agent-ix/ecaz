@@ -1,0 +1,9 @@
+   87 callback guards
+  237 buffer/page/WAL
+   40 slot/heap tuple
+  215 datum/varlena
+  483 reloptions/C strings
+   61 read streams/prefetch
+  547 DSM/atomics/locks
+   64 raw slices/SIMD/memcpy
+  142 allocation/raw ownership
