@@ -235,6 +235,236 @@ impl<'a> PageTupleReader<'a> {
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTupleWriter {
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: pg_sys::BlockNumber,
+    line_pointer_count: u16,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl PageTupleWriter {
+    fn new(page: pg_sys::Page, page_size: usize, block_number: pg_sys::BlockNumber) -> Self {
+        let page_ptr = page.cast::<u8>();
+        Self {
+            page_ptr,
+            page_size,
+            block_number,
+            line_pointer_count: page_line_pointer_count(page_ptr),
+        }
+    }
+
+    fn line_pointer_count(&self) -> u16 {
+        self.line_pointer_count
+    }
+
+    fn visit_line<R, F>(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<PageTupleVisit<R>, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        if offset > self.line_pointer_count {
+            return Err(format!(
+                "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
+                self.block_number
+            ));
+        }
+
+        // SAFETY: this writer is constructed only from a WAL-registered page
+        // whose buffer remains locked by the caller. `offset` is checked
+        // against the cached line-pointer count before tuple bytes are exposed.
+        unsafe {
+            with_page_line_tuple_bytes(
+                self.page_ptr,
+                self.page_size,
+                self.block_number,
+                offset,
+                tuple_kind,
+                visit,
+            )
+        }
+    }
+
+    fn visit_required<R, F>(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<R, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        match self.visit_line(tid.offset_number, tuple_kind, visit)? {
+            PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
+            PageTupleVisit::Present(tuple) => Ok(tuple),
+        }
+    }
+
+    fn copy_required_exact(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        encoded: &[u8],
+    ) -> Result<(), String> {
+        let slot = self.required_slot(tid.offset_number, tuple_kind)?;
+        if slot.len != encoded.len() {
+            return Err(format!(
+                "ec_ivf {tuple_kind} tuple size changed from {} to {}",
+                slot.len,
+                encoded.len()
+            ));
+        }
+
+        // SAFETY: the slot is live, in bounds, and exactly the same length as
+        // `encoded`; the page remains WAL-registered and locked by the caller.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                encoded.as_ptr(),
+                self.page_ptr.add(slot.offset),
+                encoded.len(),
+            )
+        };
+        Ok(())
+    }
+
+    fn required_slot(&self, offset: u16, tuple_kind: &str) -> Result<PageTupleSlot, String> {
+        if offset == 0 || offset > self.line_pointer_count {
+            return Err(format!(
+                "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
+                self.block_number
+            ));
+        }
+
+        // SAFETY: offset is nonzero and bounded by this writer's cached
+        // line-pointer count.
+        let item_id = unsafe { &*page_item_id(self.page_ptr, offset) };
+        if item_id.lp_flags() == 0 {
+            return Err(format!("ec_ivf {tuple_kind} tuple slot is unused"));
+        }
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > self.page_size {
+            return Err(format!(
+                "ec_ivf {tuple_kind} tuple bounds exceed block {}",
+                self.block_number
+            ));
+        }
+        Ok(PageTupleSlot {
+            offset: tuple_offset,
+            len: tuple_len,
+        })
+    }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTupleSlot {
+    offset: usize,
+    len: usize,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct WalRegisteredPage {
+    relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+    page: pg_sys::Page,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl WalRegisteredPage {
+    fn new(
+        relation: pg_sys::Relation,
+        block_number: pg_sys::BlockNumber,
+        page: pg_sys::Page,
+    ) -> Self {
+        Self {
+            relation,
+            block_number,
+            page,
+        }
+    }
+
+    fn page(&self) -> pg_sys::Page {
+        self.page
+    }
+
+    fn init(&self, page_size: usize, special_size: usize) {
+        // SAFETY: callers construct this wrapper only around a WAL-registered
+        // page image whose buffer remains locked for initialization.
+        unsafe { pg_sys::PageInit(self.page, page_size, special_size) };
+    }
+
+    fn free_space(&self) -> usize {
+        // SAFETY: `page` is the still-registered image for the held buffer.
+        unsafe { pg_sys::PageGetFreeSpace(self.page) as usize }
+    }
+
+    fn record_free_space(&self, free_space: usize) {
+        // SAFETY: relation and block number identify the live registered page.
+        unsafe { pg_sys::RecordPageWithFreeSpace(self.relation, self.block_number, free_space) };
+    }
+
+    fn add_item(&self, payload: &[u8]) -> pg_sys::OffsetNumber {
+        // SAFETY: `page` is WAL-registered and locked; callers pass an encoded
+        // tuple payload already checked for the target page capacity.
+        unsafe {
+            pg_sys::PageAddItemExtended(
+                self.page,
+                payload.as_ptr().cast_mut().cast(),
+                payload.len(),
+                pg_sys::InvalidOffsetNumber,
+                0,
+            )
+        }
+    }
+
+    fn special_bytes(&self, len: usize) -> &[u8] {
+        // SAFETY: callers request the fixed special area size for this page
+        // type while the registered page remains locked.
+        unsafe {
+            std::slice::from_raw_parts(pg_sys::PageGetSpecialPointer(self.page).cast::<u8>(), len)
+        }
+    }
+
+    fn copy_to_special(&self, bytes: &[u8]) {
+        // SAFETY: callers provide a fixed-size special-area encoding for this
+        // registered page type.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                pg_sys::PageGetSpecialPointer(self.page).cast::<u8>(),
+                bytes.len(),
+            )
+        };
+    }
+
+    fn multi_delete(&self, offsets: &mut [u16]) -> Result<(), String> {
+        // SAFETY: offsets were collected from valid line pointers on this
+        // registered page and the count is checked before calling PostgreSQL.
+        unsafe {
+            pg_sys::PageIndexMultiDelete(
+                self.page,
+                offsets.as_mut_ptr(),
+                offsets
+                    .len()
+                    .try_into()
+                    .map_err(|_| "ec_ivf posting delete count exceeds c_int".to_owned())?,
+            )
+        };
+        Ok(())
+    }
+
+    fn delete_no_compact(&self, offset: u16) {
+        // SAFETY: offset was collected from a valid line pointer on this
+        // registered page.
+        unsafe { pg_sys::PageIndexTupleDeleteNoCompact(self.page, offset) };
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MetadataPage {
     pub format_version: u16,
@@ -975,13 +1205,10 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
     tid: ItemPointer,
     dimensions: usize,
 ) -> Result<(IvfCentroidTuple, ItemPointer), String> {
-    // SAFETY: `index_relation` is a live IVF index relation and `tid` names a
-    // centroid tuple; `read_page_tuple` validates page/line-pointer bounds.
-    let (centroid, line_pointer_count) = unsafe {
+    let (centroid, line_pointer_count) =
         read_page_tuple(index_relation, tid, "centroid", |tuple_bytes| {
             IvfCentroidTuple::decode(tuple_bytes, dimensions)
-        })?
-    };
+        })?;
     Ok((centroid, next_physical_tuple_tid(tid, line_pointer_count)?))
 }
 
@@ -990,24 +1217,17 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
 ) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
-    // SAFETY: `index_relation` is live and `tid` names a list-directory tuple;
-    // `read_page_tuple` validates page/line-pointer bounds before decode.
-    let (directory, line_pointer_count) = unsafe {
+    let (directory, line_pointer_count) =
         read_page_tuple(index_relation, tid, "list directory", |tuple_bytes| {
             IvfListDirectoryTuple::decode(tuple_bytes)
-        })?
-    };
+        })?;
     let physical_next = next_physical_tuple_tid(tid, line_pointer_count)?;
-    // SAFETY: `physical_next` is the next valid physical tuple slot candidate
-    // from the same page chain; the search helper validates tuple tags/bounds.
-    let next_directory = unsafe {
-        find_next_tuple_with_tag(
-            index_relation,
-            physical_next,
-            IVF_LIST_DIRECTORY_TAG,
-            "list directory",
-        )?
-    };
+    let next_directory = find_next_tuple_with_tag(
+        index_relation,
+        physical_next,
+        IVF_LIST_DIRECTORY_TAG,
+        "list directory",
+    )?;
     Ok((directory, next_directory))
 }
 
@@ -1017,13 +1237,9 @@ pub(super) unsafe fn read_ivf_pq_codebook(
     tid: ItemPointer,
     centroid_count: usize,
 ) -> Result<IvfPqCodebookTuple, String> {
-    // SAFETY: `index_relation` is live and `tid` names a PQ codebook tuple;
-    // `read_page_tuple` validates bounds before decoding `centroid_count` lanes.
-    let (codebook, _) = unsafe {
-        read_page_tuple(index_relation, tid, "pq codebook", |tuple_bytes| {
-            IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
-        })?
-    };
+    let (codebook, _) = read_page_tuple(index_relation, tid, "pq codebook", |tuple_bytes| {
+        IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
+    })?;
     Ok(codebook)
 }
 
@@ -1082,34 +1298,26 @@ where
 
     #[cfg(feature = "pg18")]
     {
-        // SAFETY: the validated list block range is traversed by the PG18 read
-        // stream helper, which locks each buffer before decoding postings.
-        unsafe {
-            visit_ivf_posting_blocks_with_read_stream(
-                index_relation,
-                list_id,
-                head_block.block_number,
-                tail_block.block_number,
-                payload_len,
-                &mut visitor,
-            )?
-        };
+        visit_ivf_posting_blocks_with_read_stream(
+            index_relation,
+            list_id,
+            head_block.block_number,
+            tail_block.block_number,
+            payload_len,
+            &mut visitor,
+        )?;
     }
 
     #[cfg(not(feature = "pg18"))]
     {
         for block_number in head_block.block_number..=tail_block.block_number {
-            // SAFETY: each block number is inside the validated inclusive list
-            // range; the per-block visitor locks and validates tuple contents.
-            unsafe {
-                visit_ivf_postings_for_list_block(
-                    index_relation,
-                    list_id,
-                    block_number,
-                    payload_len,
-                    &mut visitor,
-                )?
-            };
+            visit_ivf_postings_for_list_block(
+                index_relation,
+                list_id,
+                block_number,
+                payload_len,
+                &mut visitor,
+            )?;
         }
     }
     Ok(())
@@ -1170,18 +1378,14 @@ where
     }
 
     for block_number in head_block.block_number..=tail_block.block_number {
-        // SAFETY: each block number is inside the validated inclusive list
-        // range; rewrite helper locks the block and validates posting tuples.
-        unsafe {
-            rewrite_ivf_postings_for_list_block(
-                index_relation,
-                list_id,
-                block_number,
-                payload_len,
-                !no_compact_blocks.contains(&block_number),
-                &mut rewrite,
-            )?
-        };
+        rewrite_ivf_postings_for_list_block(
+            index_relation,
+            list_id,
+            block_number,
+            payload_len,
+            !no_compact_blocks.contains(&block_number),
+            &mut rewrite,
+        )?;
     }
 
     Ok(())
@@ -1203,31 +1407,23 @@ where
 
     #[cfg(feature = "pg18")]
     {
-        // SAFETY: the provided block sequence belongs to this live IVF relation;
-        // the PG18 read-stream helper locks buffers before decoding postings.
-        unsafe {
-            visit_ivf_posting_block_sequence_with_read_stream(
-                index_relation,
-                block_numbers,
-                payload_len,
-                &mut visitor,
-            )?
-        };
+        visit_ivf_posting_block_sequence_with_read_stream(
+            index_relation,
+            block_numbers,
+            payload_len,
+            &mut visitor,
+        )?;
     }
 
     #[cfg(not(feature = "pg18"))]
     {
         for block_number in block_numbers {
-            // SAFETY: each block number comes from the caller's validated IVF
-            // block sequence; the per-block visitor checks tuple bounds.
-            unsafe {
-                visit_all_ivf_postings_for_block(
-                    index_relation,
-                    *block_number,
-                    payload_len,
-                    &mut visitor,
-                )?
-            };
+            visit_all_ivf_postings_for_block(
+                index_relation,
+                *block_number,
+                payload_len,
+                &mut visitor,
+            )?;
         }
     }
 
@@ -1250,31 +1446,23 @@ where
 
     #[cfg(feature = "pg18")]
     {
-        // SAFETY: the provided block sequence belongs to this live IVF relation;
-        // the PG18 read-stream helper locks buffers before exposing tuple refs.
-        unsafe {
-            visit_ivf_posting_ref_block_sequence_with_read_stream(
-                index_relation,
-                block_numbers,
-                payload_len,
-                &mut visitor,
-            )?
-        };
+        visit_ivf_posting_ref_block_sequence_with_read_stream(
+            index_relation,
+            block_numbers,
+            payload_len,
+            &mut visitor,
+        )?;
     }
 
     #[cfg(not(feature = "pg18"))]
     {
         for block_number in block_numbers {
-            // SAFETY: each block number comes from the caller's validated IVF
-            // block sequence; the per-block visitor checks tuple-ref bounds.
-            unsafe {
-                visit_all_ivf_posting_refs_for_block(
-                    index_relation,
-                    *block_number,
-                    payload_len,
-                    &mut visitor,
-                )?
-            };
+            visit_all_ivf_posting_refs_for_block(
+                index_relation,
+                *block_number,
+                payload_len,
+                &mut visitor,
+            )?;
         }
     }
 
@@ -1282,7 +1470,7 @@ where
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn visit_ivf_posting_blocks_with_read_stream<F>(
+fn visit_ivf_posting_blocks_with_read_stream<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: pg_sys::BlockNumber,
@@ -1344,7 +1532,7 @@ where
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn visit_ivf_posting_block_sequence_with_read_stream<F>(
+fn visit_ivf_posting_block_sequence_with_read_stream<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
@@ -1404,7 +1592,7 @@ where
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn visit_ivf_posting_ref_block_sequence_with_read_stream<F>(
+fn visit_ivf_posting_ref_block_sequence_with_read_stream<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
@@ -1464,7 +1652,7 @@ where
 }
 
 #[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
-unsafe fn visit_ivf_postings_for_list_block<F>(
+fn visit_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
@@ -1492,7 +1680,7 @@ where
 }
 
 #[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
-unsafe fn visit_all_ivf_postings_for_block<F>(
+fn visit_all_ivf_postings_for_block<F>(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -1518,7 +1706,7 @@ where
 }
 
 #[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
-unsafe fn visit_all_ivf_posting_refs_for_block<F>(
+fn visit_all_ivf_posting_refs_for_block<F>(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -1785,27 +1973,15 @@ unsafe fn try_append_ivf_posting_to_block(
     // image, yielding a mutable page pointer for the transaction scope.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    // SAFETY: `page` is the registered page image returned above.
-    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    let registered = WalRegisteredPage::new(index_relation, block_number, page);
+    let free_space = registered.free_space();
     if free_space < raw_tuple_storage_bytes(payload.len()) {
-        // SAFETY: records the measured free space for this live relation and
-        // block after the page proved too small for the encoded posting.
-        unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+        registered.record_free_space(free_space);
         std::mem::drop(wal_txn);
         return Ok(None);
     }
 
-    // SAFETY: `page` is an exclusive registered page image and `payload`
-    // points to an encoded posting whose length was checked against the page.
-    let offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page,
-            payload.as_ptr().cast_mut().cast(),
-            payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
+    let offset = registered.add_item(payload);
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
         return Err(format!(
@@ -1815,10 +1991,7 @@ unsafe fn try_append_ivf_posting_to_block(
 
     // SAFETY: finishes the WAL transaction after the registered page mutation.
     unsafe { wal_txn.finish() };
-    // SAFETY: the buffer remains held and `page` is the registered page image.
-    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
-    // SAFETY: records the post-insert free space for the live relation block.
-    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+    registered.record_free_space(registered.free_space());
     Ok(Some(ItemPointer {
         block_number,
         offset_number: offset,
@@ -1849,20 +2022,10 @@ unsafe fn append_ivf_posting_to_new_block(
     // yielding a mutable page pointer for initialization and insertion.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    // SAFETY: `page` is a freshly allocated registered page image.
-    unsafe { pg_sys::PageInit(page, page_size, 0) };
+    let registered = WalRegisteredPage::new(index_relation, buffer.block_number(), page);
+    registered.init(page_size, 0);
 
-    // SAFETY: `page` is initialized and registered, and `payload` points to an
-    // encoded posting whose length was checked against page capacity.
-    let offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page,
-            payload.as_ptr().cast_mut().cast(),
-            payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
+    let offset = registered.add_item(payload);
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
         return Err("ec_ivf failed to append posting tuple to new block".to_owned());
@@ -1872,10 +2035,7 @@ unsafe fn append_ivf_posting_to_new_block(
     // SAFETY: finishes the WAL transaction after initializing and mutating the
     // registered new page.
     unsafe { wal_txn.finish() };
-    // SAFETY: the buffer remains held and `page` is the registered page image.
-    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
-    // SAFETY: records the post-insert free space for the newly allocated block.
-    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+    registered.record_free_space(registered.free_space());
     Ok(ItemPointer {
         block_number,
         offset_number: offset,
@@ -1913,46 +2073,11 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     // yielding a mutable page pointer for this transaction scope.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let page_ptr = page.cast::<u8>();
-    let page_size = buffer.page_size();
-    let line_pointer_count = page_line_pointer_count(page_ptr);
-    if directory_tid.offset_number == 0 || directory_tid.offset_number > line_pointer_count {
+    let writer = PageTupleWriter::new(page, buffer.page_size(), directory_tid.block_number);
+    if let Err(err) = writer.copy_required_exact(directory_tid, "directory", &encoded) {
         std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf directory tuple offset {} out of range on block {}",
-            directory_tid.offset_number, directory_tid.block_number
-        ));
+        return Err(err);
     }
-
-    // SAFETY: the offset was checked against the page line-pointer range.
-    let item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        std::mem::drop(wal_txn);
-        return Err("ec_ivf directory tuple slot is unused".to_owned());
-    }
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf directory tuple bounds exceed block {}",
-            directory_tid.block_number
-        ));
-    }
-    if tuple_len != encoded.len() {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf directory tuple size changed from {} to {}",
-            tuple_len,
-            encoded.len()
-        ));
-    }
-
-    // SAFETY: the target tuple slot is live, in-bounds, and exactly the same
-    // size as the encoded replacement directory tuple.
-    unsafe {
-        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
-    };
     // SAFETY: finishes the WAL transaction after the registered page rewrite.
     unsafe { wal_txn.finish() };
     Ok(())
@@ -1991,38 +2116,18 @@ where
     // yielding a mutable page pointer for this transaction scope.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let page_ptr = page.cast::<u8>();
-    let page_size = buffer.page_size();
-    let line_pointer_count = page_line_pointer_count(page_ptr);
-    if directory_tid.offset_number == 0 || directory_tid.offset_number > line_pointer_count {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf directory tuple offset {} out of range on block {}",
-            directory_tid.offset_number, directory_tid.block_number
-        ));
-    }
+    let writer = PageTupleWriter::new(page, buffer.page_size(), directory_tid.block_number);
+    let mut directory = match writer.visit_required(directory_tid, "directory", |tuple_bytes| {
+        if tuple_bytes.len() != IvfListDirectoryTuple::encoded_len() {
+            return Err(format!(
+                "ec_ivf directory tuple size changed from {} to {}",
+                tuple_bytes.len(),
+                IvfListDirectoryTuple::encoded_len()
+            ));
+        }
 
-    // SAFETY: the page pointer and size come from the exclusive-locked buffer;
-    // the helper validates the target slot before exposing tuple bytes.
-    let mut directory = match unsafe {
-        with_required_page_tuple_bytes(
-            page_ptr,
-            page_size,
-            directory_tid,
-            "directory",
-            |tuple_bytes| {
-                if tuple_bytes.len() != IvfListDirectoryTuple::encoded_len() {
-                    return Err(format!(
-                        "ec_ivf directory tuple size changed from {} to {}",
-                        tuple_bytes.len(),
-                        IvfListDirectoryTuple::encoded_len()
-                    ));
-                }
-
-                IvfListDirectoryTuple::decode(tuple_bytes)
-            },
-        )
-    } {
+        IvfListDirectoryTuple::decode(tuple_bytes)
+    }) {
         Ok(directory) => directory,
         Err(err) => {
             std::mem::drop(wal_txn);
@@ -2035,15 +2140,10 @@ where
     }
 
     let encoded = directory.encode();
-    // SAFETY: the helper above already validated that this offset names a live
-    // directory tuple on the registered page.
-    let directory_item_id = unsafe { &*page_item_id(page_ptr, directory_tid.offset_number) };
-    let tuple_offset = directory_item_id.lp_off() as usize;
-    // SAFETY: directory tuples have a fixed encoded size, and the validated
-    // slot has that size; copy updates the existing tuple in place.
-    unsafe {
-        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
-    };
+    if let Err(err) = writer.copy_required_exact(directory_tid, "directory", &encoded) {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
     // SAFETY: finishes the WAL transaction after the registered page rewrite.
     unsafe { wal_txn.finish() };
     Ok(directory)
@@ -2080,46 +2180,11 @@ pub(super) unsafe fn rewrite_ivf_posting(
     // yielding a mutable page pointer for this transaction scope.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let page_ptr = page.cast::<u8>();
-    let page_size = buffer.page_size();
-    let line_pointer_count = page_line_pointer_count(page_ptr);
-    if posting_tid.offset_number == 0 || posting_tid.offset_number > line_pointer_count {
+    let writer = PageTupleWriter::new(page, buffer.page_size(), posting_tid.block_number);
+    if let Err(err) = writer.copy_required_exact(posting_tid, "posting", &encoded) {
         std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf posting tuple offset {} out of range on block {}",
-            posting_tid.offset_number, posting_tid.block_number
-        ));
+        return Err(err);
     }
-
-    // SAFETY: the offset was checked against the page line-pointer range.
-    let item_id = unsafe { &*page_item_id(page_ptr, posting_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        std::mem::drop(wal_txn);
-        return Err("ec_ivf posting tuple slot is unused".to_owned());
-    }
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf posting tuple bounds exceed block {}",
-            posting_tid.block_number
-        ));
-    }
-    if tuple_len != encoded.len() {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_ivf posting tuple size changed from {} to {}",
-            tuple_len,
-            encoded.len()
-        ));
-    }
-
-    // SAFETY: the target tuple slot is live, in-bounds, and exactly the same
-    // size as the encoded replacement posting tuple.
-    unsafe {
-        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
-    };
     // SAFETY: finishes the WAL transaction after the registered page rewrite.
     unsafe { wal_txn.finish() };
     Ok(())
@@ -2159,10 +2224,7 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
     };
     let mut summaries = Vec::new();
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: `block_number` is within the relation block count read
-        // above, and the summary helper takes only a share lock.
-        let summary =
-            unsafe { debug_ivf_posting_block_summary(index_relation, block_number, payload_len)? };
+        let summary = debug_ivf_posting_block_summary(index_relation, block_number, payload_len)?;
         if summary.line_pointer_count > 0
             || summary.posting_tuples > 0
             || summary.non_posting_tuples > 0
@@ -2175,7 +2237,7 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn rewrite_ivf_postings_for_list_block<F>(
+fn rewrite_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
@@ -2198,23 +2260,19 @@ where
     }
     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    // SAFETY: `buffer` is exclusive-locked for `block_number`; the callee
-    // validates tuple line pointers before applying rewrite decisions.
-    unsafe {
-        rewrite_ivf_postings_from_exclusive_buffer(
-            index_relation,
-            &buffer,
-            list_id,
-            block_number,
-            payload_len,
-            compact_deletes,
-            rewrite,
-        )
-    }
+    rewrite_ivf_postings_from_exclusive_buffer(
+        index_relation,
+        &buffer,
+        list_id,
+        block_number,
+        payload_len,
+        compact_deletes,
+        rewrite,
+    )
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn debug_ivf_posting_block_summary(
+fn debug_ivf_posting_block_summary(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -2288,7 +2346,7 @@ unsafe fn debug_ivf_posting_block_summary(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
+fn rewrite_ivf_postings_from_exclusive_buffer<F>(
     index_relation: pg_sys::Relation,
     buffer: &LockedBufferGuard,
     list_id: u32,
@@ -2300,6 +2358,14 @@ unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
+    enum PostingVisit {
+        NonPosting,
+        OtherList,
+        Keep,
+        Rewrite(Vec<u8>),
+        Delete,
+    }
+
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the caller holds `buffer` with an exclusive lock for this block.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
@@ -2307,72 +2373,65 @@ where
     // yielding a mutable page pointer for rewrite/delete decisions.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let page_ptr = page.cast::<u8>();
-    let page_size = buffer.page_size();
-    let line_pointer_count = page_line_pointer_count(page_ptr);
+    let registered = WalRegisteredPage::new(index_relation, block_number, page);
+    let writer = PageTupleWriter::new(registered.page(), buffer.page_size(), block_number);
     let mut delete_offsets = Vec::new();
     let mut changed = false;
     let mut saw_non_posting_tuple = false;
 
-    for offset in 1..=line_pointer_count {
-        // SAFETY: `page_ptr` and `page_size` come from the exclusive-locked
-        // registered page; the helper validates item-id bounds before exposing
-        // tuple bytes. In-place rewrites preserve tuple length and use the
-        // validated line pointer's tuple offset.
-        // SAFETY: this unsafe block is the validated tuple visit/rewrite.
-        let tuple_visit = unsafe {
-            with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
+    for offset in 1..=writer.line_pointer_count() {
+        let tuple_visit = writer.visit_line(offset, "posting", |tuple_bytes| {
+            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                return Ok(PostingVisit::NonPosting);
+            }
+
+            let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+            if posting.list_id != list_id {
+                return Ok(PostingVisit::OtherList);
+            }
+
+            let posting_tid = ItemPointer {
                 block_number,
-                offset,
-                "posting",
-                |tuple_bytes| {
-                    if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                        return Ok(false);
+                offset_number: offset,
+            };
+            match rewrite(posting_tid, posting)? {
+                IvfPostingRewrite::Keep => Ok(PostingVisit::Keep),
+                IvfPostingRewrite::Rewrite(updated) => {
+                    let encoded = updated.encode()?;
+                    if encoded.len() != tuple_bytes.len() {
+                        return Err(format!(
+                            "ec_ivf posting tuple size changed from {} to {}",
+                            tuple_bytes.len(),
+                            encoded.len()
+                        ));
                     }
-
-                    let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
-                    if posting.list_id != list_id {
-                        return Ok(true);
-                    }
-
-                    let posting_tid = ItemPointer {
-                        block_number,
-                        offset_number: offset,
-                    };
-                    match rewrite(posting_tid, posting)? {
-                        IvfPostingRewrite::Keep => {}
-                        IvfPostingRewrite::Rewrite(updated) => {
-                            let encoded = updated.encode()?;
-                            if encoded.len() != tuple_bytes.len() {
-                                return Err(format!(
-                                    "ec_ivf posting tuple size changed from {} to {}",
-                                    tuple_bytes.len(),
-                                    encoded.len()
-                                ));
-                            }
-
-                            ptr::copy_nonoverlapping(
-                                encoded.as_ptr(),
-                                page_ptr.add((*page_item_id(page_ptr, offset)).lp_off() as usize),
-                                encoded.len(),
-                            );
-                            changed = true;
-                        }
-                        IvfPostingRewrite::Delete => {
-                            delete_offsets.push(offset);
-                            changed = true;
-                        }
-                    }
-                    Ok(true)
-                },
-            )
-        };
+                    Ok(PostingVisit::Rewrite(encoded))
+                }
+                IvfPostingRewrite::Delete => Ok(PostingVisit::Delete),
+            }
+        });
         match tuple_visit {
             Ok(PageTupleVisit::Unused) => {}
-            Ok(PageTupleVisit::Present(false)) => saw_non_posting_tuple = true,
-            Ok(PageTupleVisit::Present(true)) => {}
+            Ok(PageTupleVisit::Present(PostingVisit::NonPosting)) => saw_non_posting_tuple = true,
+            Ok(PageTupleVisit::Present(PostingVisit::OtherList | PostingVisit::Keep)) => {}
+            Ok(PageTupleVisit::Present(PostingVisit::Rewrite(encoded))) => {
+                if let Err(err) = writer.copy_required_exact(
+                    ItemPointer {
+                        block_number,
+                        offset_number: offset,
+                    },
+                    "posting",
+                    &encoded,
+                ) {
+                    std::mem::drop(wal_txn);
+                    return Err(err);
+                }
+                changed = true;
+            }
+            Ok(PageTupleVisit::Present(PostingVisit::Delete)) => {
+                delete_offsets.push(offset);
+                changed = true;
+            }
             Err(err) => {
                 std::mem::drop(wal_txn);
                 return Err(err);
@@ -2383,25 +2442,10 @@ where
     if should_compact_posting_deletes(compact_deletes, saw_non_posting_tuple)
         && !delete_offsets.is_empty()
     {
-        // SAFETY: offsets were collected from valid posting tuple line
-        // pointers on the registered page and converted to PostgreSQL's count
-        // type after checking the length fits.
-        unsafe {
-            pg_sys::PageIndexMultiDelete(
-                page,
-                delete_offsets.as_mut_ptr(),
-                delete_offsets
-                    .len()
-                    .try_into()
-                    .map_err(|_| "ec_ivf posting delete count exceeds c_int".to_owned())?,
-            )
-        };
+        registered.multi_delete(&mut delete_offsets)?;
     } else {
         for offset in delete_offsets.iter().rev() {
-            // SAFETY: each offset was collected from a valid posting tuple line
-            // pointer on this registered page; reverse order preserves the
-            // remaining offsets while deleting without compaction.
-            unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, *offset) };
+            registered.delete_no_compact(*offset);
         }
     }
 
@@ -2409,10 +2453,7 @@ where
         // SAFETY: finishes the WAL transaction after registered page changes.
         unsafe { wal_txn.finish() };
     }
-    // SAFETY: `page` is the registered page image for the still-held buffer.
-    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
-    // SAFETY: records the measured free space for the live relation block.
-    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+    registered.record_free_space(registered.free_space());
     Ok(())
 }
 
@@ -2462,7 +2503,7 @@ fn should_compact_posting_deletes(compact_deletes: bool, saw_non_posting_tuple: 
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn read_page_tuple<T, DecodeFn>(
+fn read_page_tuple<T, DecodeFn>(
     index_relation: pg_sys::Relation,
     tuple_tid: ItemPointer,
     tuple_kind: &str,
@@ -2502,7 +2543,7 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn find_next_tuple_with_tag(
+fn find_next_tuple_with_tag(
     index_relation: pg_sys::Relation,
     start_tid: ItemPointer,
     tag: u8,
@@ -2631,34 +2672,6 @@ where
     visit(tuple_bytes).map(PageTupleVisit::Present)
 }
 
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn with_required_page_tuple_bytes<R, F>(
-    page_ptr: *mut u8,
-    page_size: usize,
-    tuple_tid: ItemPointer,
-    tuple_kind: &str,
-    visit: F,
-) -> Result<R, String>
-where
-    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
-{
-    // SAFETY: forwards the caller's page pointer and required tuple TID to the
-    // line helper, which validates item-id state and tuple byte bounds.
-    match unsafe {
-        with_page_line_tuple_bytes(
-            page_ptr,
-            page_size,
-            tuple_tid.block_number,
-            tuple_tid.offset_number,
-            tuple_kind,
-            visit,
-        )?
-    } {
-        PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
-        PageTupleVisit::Present(tuple) => Ok(tuple),
-    }
-}
-
 fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
     let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
     // SAFETY: callers pass a valid PostgreSQL page pointer; `pd_lower`
@@ -2733,18 +2746,11 @@ pub(super) unsafe fn initialize_metadata_page(
     // initialization and special-area writes.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let registered = WalRegisteredPage::new(index_relation, buffer.block_number(), page);
     let metadata_bytes = metadata.encode();
     let special_size = align_up(metadata_bytes.len(), ALIGNMENT_BYTES);
-    // SAFETY: `page` is the registered metadata page image, and `special_size`
-    // reserves enough aligned special space for the encoded metadata.
-    unsafe { pg_sys::PageInit(page, page_size, special_size) };
-    // SAFETY: the page was initialized with sufficient special space above.
-    let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-    // SAFETY: `page_contents` points to the reserved special area, which is at
-    // least `metadata_bytes.len()` bytes.
-    unsafe {
-        ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), page_contents, metadata_bytes.len());
-    }
+    registered.init(page_size, special_size);
+    registered.copy_to_special(&metadata_bytes);
 
     // SAFETY: finishes the WAL transaction after initializing metadata.
     unsafe { wal_txn.finish() };
@@ -2763,12 +2769,8 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> Met
     };
     let buffer = buffer.unwrap_or_else(|| pgrx::error!("ec_ivf failed to open metadata buffer"));
 
-    let page = buffer.page();
-    // SAFETY: metadata pages reserve their encoded metadata in page special
-    // space during initialization.
-    let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-    // SAFETY: the special area contains exactly `METADATA_BYTES` encoded bytes.
-    let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
+    let page = WalRegisteredPage::new(index_relation, METADATA_BLOCK_NUMBER, buffer.page());
+    let metadata_bytes = page.special_bytes(METADATA_BYTES);
     MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -2799,11 +2801,8 @@ where
     // image for in-place special-area updates.
     let page =
         unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    // SAFETY: metadata pages reserve their encoded metadata in page special
-    // space during initialization.
-    let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-    // SAFETY: the special area contains exactly `METADATA_BYTES` encoded bytes.
-    let metadata_bytes = unsafe { std::slice::from_raw_parts(metadata_ptr, METADATA_BYTES) };
+    let registered = WalRegisteredPage::new(index_relation, METADATA_BLOCK_NUMBER, page);
+    let metadata_bytes = registered.special_bytes(METADATA_BYTES);
     let mut metadata = match MetadataPage::decode(metadata_bytes) {
         Ok(metadata) => metadata,
         Err(err) => {
@@ -2817,9 +2816,7 @@ where
     }
 
     let encoded = metadata.encode();
-    // SAFETY: `metadata_ptr` points to the fixed-size metadata special area,
-    // and encoded metadata has the same fixed length.
-    unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), metadata_ptr, encoded.len()) };
+    registered.copy_to_special(&encoded);
     // SAFETY: finishes the WAL transaction after rewriting metadata bytes.
     unsafe { wal_txn.finish() };
     Ok(metadata)
