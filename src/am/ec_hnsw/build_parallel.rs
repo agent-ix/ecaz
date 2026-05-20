@@ -245,6 +245,58 @@ pub(super) struct EcHnswConcurrentDsmGraphParts {
 }
 
 #[allow(dead_code)]
+impl EcHnswConcurrentDsmGraphParts {
+    fn header(&self) -> &EcHnswConcurrentDsmGraphHeader {
+        // SAFETY: graph parts are derived from an attached DSM graph image; the
+        // header pointer targets the initialized header for that image.
+        unsafe { &*self.header }
+    }
+
+    fn header_mut(&self) -> &mut EcHnswConcurrentDsmGraphHeader {
+        // SAFETY: graph parts are used during exclusive image initialization
+        // when mutable header access is required.
+        unsafe { &mut *self.header }
+    }
+
+    fn node_ptr(&self, node_idx: u32) -> *mut EcHnswConcurrentDsmNode {
+        // SAFETY: callers pass node indexes already checked against the layout.
+        unsafe { self.nodes.add(node_idx as usize) }
+    }
+
+    fn node(&self, node_idx: u32) -> &EcHnswConcurrentDsmNode {
+        // SAFETY: `node_ptr` returns a pointer into the initialized DSM node
+        // array for a caller-validated node index.
+        unsafe { &*self.node_ptr(node_idx) }
+    }
+
+    fn node_mut(&self, node_idx: u32) -> &mut EcHnswConcurrentDsmNode {
+        // SAFETY: callers hold or establish exclusive access to this DSM node
+        // before mutating it.
+        unsafe { &mut *self.node_ptr(node_idx) }
+    }
+
+    fn node_lock(&self, node_idx: u32) -> *mut pg_sys::LWLock {
+        ptr::addr_of_mut!(self.node_mut(node_idx).lock)
+    }
+
+    fn node_insert_state_cell(&self, node_idx: u32) -> PgLockedDsmInsertStateCell {
+        PgLockedDsmInsertStateCell(ptr::addr_of_mut!(self.node_mut(node_idx).insert_state))
+    }
+
+    fn node_level(&self, node_idx: u32) -> u8 {
+        self.node(node_idx).level
+    }
+
+    fn node_neighbor_slot_count(&self, node_idx: u32) -> usize {
+        self.node(node_idx).neighbor_slot_count as usize
+    }
+
+    fn node_insert_state_value(&self, node_idx: u32) -> u32 {
+        self.node(node_idx).insert_state.value
+    }
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 pub(super) struct EcHnswConcurrentDsmGraphAttachment {
     pub(super) parts: EcHnswConcurrentDsmGraphParts,
@@ -962,7 +1014,7 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn concurrent_dsm_graph_layout_from_image(
+pub(super) fn concurrent_dsm_graph_layout_from_image(
     base: *const c_void,
 ) -> EcHnswConcurrentDsmGraphLayout {
     if base.is_null() {
@@ -975,7 +1027,7 @@ pub(super) unsafe fn concurrent_dsm_graph_layout_from_image(
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn concurrent_dsm_insert_config_from_image(
+pub(super) fn concurrent_dsm_insert_config_from_image(
     base: *const c_void,
 ) -> Option<EcHnswConcurrentDsmInsertConfig> {
     if base.is_null() {
@@ -1011,18 +1063,18 @@ pub(super) unsafe fn concurrent_dsm_insert_config_from_image(
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn attach_concurrent_dsm_graph_image(
+pub(super) fn attach_concurrent_dsm_graph_image(
     base: *mut c_void,
 ) -> EcHnswConcurrentDsmGraphAttachment {
     // SAFETY: The caller passes the DSM graph base pointer; the layout helper
     // validates the image header and derives bounded offsets.
-    let layout = unsafe { concurrent_dsm_graph_layout_from_image(base) };
+    let layout = concurrent_dsm_graph_layout_from_image(base);
     // SAFETY: The same DSM graph header stores insert configuration for
     // non-empty images and is validated by the helper.
-    let insert_config = unsafe { concurrent_dsm_insert_config_from_image(base) };
+    let insert_config = concurrent_dsm_insert_config_from_image(base);
     // SAFETY: `layout` was derived from the image header, so offsets refer to
     // regions inside this DSM graph image.
-    let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
+    let parts = concurrent_dsm_graph_parts(base, layout);
 
     EcHnswConcurrentDsmGraphAttachment {
         parts,
@@ -1032,7 +1084,7 @@ pub(super) unsafe fn attach_concurrent_dsm_graph_image(
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn concurrent_dsm_graph_parts(
+pub(super) fn concurrent_dsm_graph_parts(
     base: *mut c_void,
     layout: EcHnswConcurrentDsmGraphLayout,
 ) -> EcHnswConcurrentDsmGraphParts {
@@ -1067,7 +1119,7 @@ pub(super) unsafe fn concurrent_dsm_graph_parts(
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
+pub(super) fn initialize_concurrent_dsm_graph_image(
     base: *mut c_void,
     plan: &EcHnswConcurrentDsmPreassemblyPlan,
     mut initialize_node_lock: impl FnMut(*mut pg_sys::LWLock),
@@ -1075,7 +1127,7 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
     let layout = plan.graph_layout;
     // SAFETY: `base` points at a DSM allocation sized from `plan.graph_layout`;
     // the helper turns its checked offsets into typed region pointers.
-    let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
+    let parts = concurrent_dsm_graph_parts(base, layout);
     let insert_config = plan
         .insert_config
         .unwrap_or(EcHnswConcurrentDsmInsertConfig {
@@ -1086,89 +1138,74 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
             ef_construction: 0,
         });
 
-    // SAFETY: `parts` points into an allocated DSM image sized by `layout`; this
-    // block writes the header, nodes, neighbor slots, and corpora exactly once
-    // during image initialization.
-    unsafe {
-        ptr::write(
-            parts.header,
-            EcHnswConcurrentDsmGraphHeader {
-                node_count: layout.node_count,
-                entry_idx: layout
-                    .entry_idx
-                    .unwrap_or(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX),
-                total_neighbor_slots: layout.total_neighbor_slots,
-                code_len: layout.code_len,
-                source_dim: layout.source_dim,
-                dimensions: checked_u32(
-                    insert_config.dimensions,
-                    "concurrent DSM graph dimensions",
-                ),
-                m: checked_u32(insert_config.m, "concurrent DSM graph m"),
-                ef_construction: checked_u32(
-                    insert_config.ef_construction,
-                    "concurrent DSM graph ef_construction",
-                ),
-                seed: insert_config.seed,
-                max_level: layout.max_level,
-                bits: insert_config.bits,
-                reserved0: [0; 2],
+    *parts.header_mut() = EcHnswConcurrentDsmGraphHeader {
+        node_count: layout.node_count,
+        entry_idx: layout
+            .entry_idx
+            .unwrap_or(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX),
+        total_neighbor_slots: layout.total_neighbor_slots,
+        code_len: layout.code_len,
+        source_dim: layout.source_dim,
+        dimensions: checked_u32(insert_config.dimensions, "concurrent DSM graph dimensions"),
+        m: checked_u32(insert_config.m, "concurrent DSM graph m"),
+        ef_construction: checked_u32(
+            insert_config.ef_construction,
+            "concurrent DSM graph ef_construction",
+        ),
+        seed: insert_config.seed,
+        max_level: layout.max_level,
+        bits: insert_config.bits,
+        reserved0: [0; 2],
+    };
+
+    for (node_idx, node_layout) in plan.node_layout.nodes.iter().copied().enumerate() {
+        let node_idx = checked_graph_u32(node_idx, "concurrent DSM initialized node index");
+        let insert_state = if Some(node_idx) == layout.entry_idx {
+            EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY
+        } else {
+            EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED
+        };
+        *parts.node_mut(node_idx) = EcHnswConcurrentDsmNode {
+            lock: pg_sys::LWLock::default(),
+            level: node_layout.level,
+            reserved0: [0; 3],
+            neighbor_slot_offset: node_layout.neighbor_slot_offset,
+            neighbor_slot_count: node_layout.neighbor_slot_count,
+            insert_state: pg_sys::pg_atomic_uint32 {
+                value: insert_state,
             },
-        );
+        };
+        initialize_node_lock(parts.node_lock(node_idx));
+    }
 
-        for (node_idx, node_layout) in plan.node_layout.nodes.iter().copied().enumerate() {
-            let node = parts.nodes.add(node_idx);
-            let node_idx = checked_graph_u32(node_idx, "concurrent DSM initialized node index");
-            let insert_state = if Some(node_idx) == layout.entry_idx {
-                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY
-            } else {
-                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED
-            };
-            ptr::write(
-                node,
-                EcHnswConcurrentDsmNode {
-                    lock: pg_sys::LWLock::default(),
-                    level: node_layout.level,
-                    reserved0: [0; 3],
-                    neighbor_slot_offset: node_layout.neighbor_slot_offset,
-                    neighbor_slot_count: node_layout.neighbor_slot_count,
-                    insert_state: pg_sys::pg_atomic_uint32 {
-                        value: insert_state,
-                    },
-                },
-            );
-            initialize_node_lock(ptr::addr_of_mut!((*node).lock));
-        }
+    with_concurrent_dsm_neighbor_slots_init(parts, layout, |slots| {
+        slots.fill(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
+    });
 
-        with_concurrent_dsm_neighbor_slots_init(parts, layout, |slots| {
-            slots.fill(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
-        });
-
-        let code_bytes = checked_mul_size(
-            layout.code_len as pg_sys::Size,
+    let code_bytes = checked_mul_size(
+        layout.code_len as pg_sys::Size,
+        layout.node_count as pg_sys::Size,
+        "concurrent DSM graph initialized code bytes",
+    );
+    with_concurrent_dsm_codes_init(parts, code_bytes, |codes| {
+        codes.copy_from_slice(&plan.code_corpus.bytes);
+    });
+    if let Some(source_corpus) = &plan.source_corpus {
+        let source_values = checked_mul_size(
+            layout.source_dim as pg_sys::Size,
             layout.node_count as pg_sys::Size,
-            "concurrent DSM graph initialized code bytes",
-        );
-        with_concurrent_dsm_codes_init(parts, code_bytes, |codes| {
-            codes.copy_from_slice(&plan.code_corpus.bytes);
+            "concurrent DSM graph initialized source values",
+        ) as usize;
+        with_concurrent_dsm_sources_init(parts, source_values, |sources| {
+            sources.copy_from_slice(&source_corpus.values);
         });
-        if let Some(source_corpus) = &plan.source_corpus {
-            let source_values = checked_mul_size(
-                layout.source_dim as pg_sys::Size,
-                layout.node_count as pg_sys::Size,
-                "concurrent DSM graph initialized source values",
-            ) as usize;
-            with_concurrent_dsm_sources_init(parts, source_values, |sources| {
-                sources.copy_from_slice(&source_corpus.values);
-            });
-        }
     }
 
     parts
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn concurrent_dsm_graph_to_build_nodes(
+pub(super) fn concurrent_dsm_graph_to_build_nodes(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     m: usize,
@@ -1215,21 +1252,18 @@ pub(super) unsafe fn concurrent_dsm_graph_to_build_nodes(
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn current_format_flush_output_from_concurrent_dsm_graph(
+pub(super) fn current_format_flush_output_from_concurrent_dsm_graph(
     state: &build::BuildState,
     attachment: EcHnswConcurrentDsmGraphAttachment,
 ) -> build::BuildFlushOutput {
     let config = attachment.require_insert_config();
-    // SAFETY: The attachment was derived from one concurrent DSM graph image,
-    // and `config.m` is the insert configuration stored in that image header.
-    let graph_nodes = unsafe {
-        concurrent_dsm_graph_to_build_nodes(attachment.parts, attachment.layout, config.m)
-    };
+    let graph_nodes =
+        concurrent_dsm_graph_to_build_nodes(attachment.parts, attachment.layout, config.m);
     build::current_format_flush_output_from_graph_nodes(state, &graph_nodes)
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn insert_concurrent_dsm_graph_node(
+pub(super) fn insert_concurrent_dsm_graph_node(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1244,28 +1278,15 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
         pgrx::error!("concurrent DSM graph insert requires m > 0");
     }
 
-    // SAFETY: `node_idx` was bounds-checked above, and the helper acquires the
-    // node lock before transitioning the DSM insert state.
-    let Some(insert_level) =
-        (unsafe { begin_concurrent_dsm_graph_node_insert(parts, node_idx, locks) })
-    else {
+    let Some(insert_level) = begin_concurrent_dsm_graph_node_insert(parts, node_idx, locks) else {
         return false;
     };
 
-    // SAFETY: `parts.header` points at the graph header for this attached DSM
-    // image and remains valid while the graph attachment is in use.
-    let entry_idx = unsafe { (*parts.header).entry_idx };
+    let entry_idx = parts.header().entry_idx;
     if entry_idx == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
-        // SAFETY: `node_idx` is in range and this metadata was written during
-        // DSM graph image initialization.
-        let selected_slot_count =
-            unsafe { (*parts.nodes.add(node_idx as usize)).neighbor_slot_count as usize };
+        let selected_slot_count = parts.node_neighbor_slot_count(node_idx);
         let selected_slots = vec![EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX; selected_slot_count];
-        // SAFETY: The selected slot vector is sized from the target node's DSM
-        // slot count and the helper publishes the completed insert under lock.
-        unsafe {
-            complete_concurrent_dsm_graph_node_insert(parts, node_idx, &selected_slots, locks)
-        };
+        complete_concurrent_dsm_graph_node_insert(parts, node_idx, &selected_slots, locks);
         return true;
     }
     if entry_idx >= layout.node_count {
@@ -1273,52 +1294,38 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
     }
 
     scratch.query_scores.begin_query();
-    // SAFETY: `node_idx` and `entry_idx` are in range; scoring helpers validate
-    // corpus offsets derived from the same graph layout.
     let entry_score =
-        unsafe { score_concurrent_dsm_code(parts, layout, config, node_idx, entry_idx, scratch) };
+        score_concurrent_dsm_code(parts, layout, config, node_idx, entry_idx, scratch);
     let entry_candidate = search::BeamCandidate::new(entry_idx, entry_score);
-    // SAFETY: `node_idx` was bounds-checked and the node slot count is
-    // initialized DSM metadata.
-    let selected_slot_count =
-        unsafe { (*parts.nodes.add(node_idx as usize)).neighbor_slot_count as usize };
+    let selected_slot_count = parts.node_neighbor_slot_count(node_idx);
     let mut selected_slots = vec![EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX; selected_slot_count];
     let mut selections = Vec::new();
 
-    // SAFETY: `entry_idx` was checked against `layout.node_count` above.
-    let entry_level = unsafe { (*parts.nodes.add(entry_idx as usize)).level };
-    // SAFETY: All graph pointers come from one attachment; the helper only
-    // reads ready nodes and writes the local selected-slots buffer.
-    let layer0_seeds = unsafe {
-        populate_concurrent_dsm_upper_layer_forward_slots(
-            parts,
-            layout,
-            config,
-            node_idx,
-            insert_level,
-            entry_candidate,
-            entry_level,
-            &mut selected_slots,
-            &mut selections,
-            scratch,
-            locks,
-        )
-    };
-    // SAFETY: The layer search uses the same attached graph and scratch space;
-    // `node_idx` is the bounded query node currently being inserted.
-    let layer0_candidates = unsafe {
-        search_concurrent_dsm_layer_result_candidates(
-            config.ef_construction,
-            layer0_seeds,
-            parts,
-            layout,
-            config,
-            node_idx,
-            0,
-            scratch,
-            locks,
-        )
-    };
+    let entry_level = parts.node_level(entry_idx);
+    let layer0_seeds = populate_concurrent_dsm_upper_layer_forward_slots(
+        parts,
+        layout,
+        config,
+        node_idx,
+        insert_level,
+        entry_candidate,
+        entry_level,
+        &mut selected_slots,
+        &mut selections,
+        scratch,
+        locks,
+    );
+    let layer0_candidates = search_concurrent_dsm_layer_result_candidates(
+        config.ef_construction,
+        layer0_seeds,
+        parts,
+        layout,
+        config,
+        node_idx,
+        0,
+        scratch,
+        locks,
+    );
     write_concurrent_dsm_layer_forward_candidates(
         &mut selected_slots,
         &mut selections,
@@ -1327,17 +1334,13 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
         layer0_candidates,
     );
 
-    // SAFETY: `selected_slots` is sized for the new node; backlink mutation
-    // validates each target index and holds target-node locks.
-    unsafe {
-        complete_concurrent_dsm_graph_node_insert(parts, node_idx, &selected_slots, locks);
-        add_concurrent_dsm_backlinks(parts, layout, config, node_idx, &selections, scratch, locks);
-    }
+    complete_concurrent_dsm_graph_node_insert(parts, node_idx, &selected_slots, locks);
+    add_concurrent_dsm_backlinks(parts, layout, config, node_idx, &selections, scratch, locks);
     true
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn insert_concurrent_dsm_graph_partition(
+pub(super) fn insert_concurrent_dsm_graph_partition(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1353,11 +1356,7 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_partition(
 
     let mut inserted = 0_u32;
     for node_idx in partition.start_node_idx..partition.end_node_idx {
-        // SAFETY: The partition was validated against `layout.node_count`; each
-        // node insert acquires the node lock before publishing state.
-        if unsafe {
-            insert_concurrent_dsm_graph_node(parts, layout, config, node_idx, scratch, locks)
-        } {
+        if insert_concurrent_dsm_graph_node(parts, layout, config, node_idx, scratch, locks) {
             inserted = inserted
                 .checked_add(1)
                 .unwrap_or_else(|| pgrx::error!("concurrent DSM inserted count overflow"));
@@ -1367,7 +1366,7 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_partition(
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn insert_concurrent_dsm_graph_participant(
+pub(super) fn insert_concurrent_dsm_graph_participant(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1387,11 +1386,8 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_participant(
     );
     let mut inserted = 0_u32;
     for partition in partitions {
-        // SAFETY: Striped partitions are derived from the graph node count, and
-        // the partition helper revalidates bounds.
-        let partition_inserted = unsafe {
-            insert_concurrent_dsm_graph_partition(parts, layout, config, partition, scratch, locks)
-        };
+        let partition_inserted =
+            insert_concurrent_dsm_graph_partition(parts, layout, config, partition, scratch, locks);
         inserted = inserted
             .checked_add(partition_inserted)
             .unwrap_or_else(|| pgrx::error!("concurrent DSM inserted count overflow"));
@@ -1399,23 +1395,16 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_participant(
     inserted
 }
 
-unsafe fn begin_concurrent_dsm_graph_node_insert(
+fn begin_concurrent_dsm_graph_node_insert(
     parts: EcHnswConcurrentDsmGraphParts,
     node_idx: u32,
     locks: EcHnswConcurrentDsmLockOps,
 ) -> Option<u8> {
-    // SAFETY: The caller bounds-checks `node_idx`; the node array belongs to
-    // the attached concurrent DSM graph image.
-    let node = unsafe { parts.nodes.add(node_idx as usize) };
-    // SAFETY: `node` points at an initialized DSM node containing an LWLock.
-    let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
+    let lock = parts.node_lock(node_idx);
     // SAFETY: `lock` is the initialized per-node lock for this DSM graph.
     let _lock_guard = unsafe { locks.exclusive(lock) };
-    // SAFETY: The exclusive node lock is held while reading insert metadata.
-    let level = unsafe { (*node).level };
-    // SAFETY: The exclusive node lock is held and the insert_state field is the
-    // PostgreSQL atomic cell for this node.
-    let state_cell = PgLockedDsmInsertStateCell(unsafe { ptr::addr_of_mut!((*node).insert_state) });
+    let level = parts.node_level(node_idx);
+    let state_cell = parts.node_insert_state_cell(node_idx);
     let begin = match begin_concurrent_dsm_node_insert_state(&state_cell, level) {
         Ok(begin) => begin,
         Err(err) => concurrent_dsm_insert_state_error(err),
@@ -1426,7 +1415,7 @@ unsafe fn begin_concurrent_dsm_graph_node_insert(
     }
 }
 
-unsafe fn complete_concurrent_dsm_graph_node_insert(
+fn complete_concurrent_dsm_graph_node_insert(
     parts: EcHnswConcurrentDsmGraphParts,
     node_idx: u32,
     selected_slots: &[u32],
@@ -1438,30 +1427,21 @@ unsafe fn complete_concurrent_dsm_graph_node_insert(
     let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
     // SAFETY: `lock` is the initialized per-node lock for this DSM graph.
     let _lock_guard = unsafe { locks.exclusive(lock) };
-    // SAFETY: The exclusive node lock is held while reading the slot count.
-    let slot_count = unsafe { (*node).neighbor_slot_count as usize };
+    let slot_count = parts.node_neighbor_slot_count(node_idx);
     if selected_slots.len() != slot_count {
         pgrx::error!("concurrent DSM graph insert selected slot count mismatch");
     }
-    // SAFETY: `selected_slots` was checked against the node slot count; the
-    // helper derives the mutable slot slice from the locked node metadata.
-    unsafe {
-        with_concurrent_dsm_node_slots_mut(parts, node, |slots| {
-            slots.copy_from_slice(selected_slots);
-        })
-    };
-    // SAFETY: The exclusive node lock is still held while marking the node
-    // ready in its PostgreSQL atomic insert-state cell.
-    unsafe {
-        let state_cell = PgLockedDsmInsertStateCell(ptr::addr_of_mut!((*node).insert_state));
-        if let Err(err) = complete_concurrent_dsm_node_insert_state(&state_cell) {
-            concurrent_dsm_insert_state_error(err);
-        }
-    };
+    with_concurrent_dsm_node_slots_mut(parts, node, |slots| {
+        slots.copy_from_slice(selected_slots);
+    });
+    let state_cell = parts.node_insert_state_cell(node_idx);
+    if let Err(err) = complete_concurrent_dsm_node_insert_state(&state_cell) {
+        concurrent_dsm_insert_state_error(err);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn populate_concurrent_dsm_upper_layer_forward_slots(
+fn populate_concurrent_dsm_upper_layer_forward_slots(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1480,21 +1460,17 @@ unsafe fn populate_concurrent_dsm_upper_layer_forward_slots(
 
     let mut seeds = vec![entry_candidate];
     for current_layer in (1..=entry_level).rev() {
-        // SAFETY: The graph attachment and query node are valid for this insert;
-        // the search helper validates neighbor indexes before scoring them.
-        seeds = unsafe {
-            search_concurrent_dsm_layer_result_candidates(
-                config.ef_construction,
-                seeds,
-                parts,
-                layout,
-                config,
-                query_idx,
-                current_layer,
-                scratch,
-                locks,
-            )
-        };
+        seeds = search_concurrent_dsm_layer_result_candidates(
+            config.ef_construction,
+            seeds,
+            parts,
+            layout,
+            config,
+            query_idx,
+            current_layer,
+            scratch,
+            locks,
+        );
         if current_layer <= insert_level {
             write_concurrent_dsm_layer_forward_candidates(
                 selected_slots,
@@ -1513,7 +1489,7 @@ unsafe fn populate_concurrent_dsm_upper_layer_forward_slots(
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn search_concurrent_dsm_layer_result_candidates(
+fn search_concurrent_dsm_layer_result_candidates(
     ef_search: usize,
     seeds: impl IntoIterator<Item = search::BeamCandidate<u32>>,
     parts: EcHnswConcurrentDsmGraphParts,
@@ -1553,22 +1529,18 @@ unsafe fn search_concurrent_dsm_layer_result_candidates(
             break;
         }
 
-        // SAFETY: The candidate node came from validated seeds/search results;
-        // the loader acquires source locks and validates successor indexes.
-        unsafe {
-            load_concurrent_dsm_successor_candidates_into(
-                parts,
-                layout,
-                config,
-                query_idx,
-                candidate.candidate.node,
-                layer,
-                &mut scratch.query_scores,
-                &mut scratch.layer_search.successors,
-                &mut scratch.layer_search.neighbor_idxs,
-                locks,
-            );
-        }
+        load_concurrent_dsm_successor_candidates_into(
+            parts,
+            layout,
+            config,
+            query_idx,
+            candidate.candidate.node,
+            layer,
+            &mut scratch.query_scores,
+            &mut scratch.layer_search.successors,
+            &mut scratch.layer_search.neighbor_idxs,
+            locks,
+        );
         for idx in 0..scratch.layer_search.successors.len() {
             let neighbor = scratch.layer_search.successors[idx];
             if !scratch.layer_search.visited.insert(neighbor.node) {
@@ -1605,7 +1577,7 @@ unsafe fn search_concurrent_dsm_layer_result_candidates(
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn load_concurrent_dsm_successor_candidates_into(
+fn load_concurrent_dsm_successor_candidates_into(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1623,34 +1595,26 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
         pgrx::error!("concurrent DSM graph search source index out of bounds");
     }
 
-    // SAFETY: `source_idx` was checked against the graph node count.
-    let source = unsafe { parts.nodes.add(source_idx as usize) };
-    // SAFETY: `source` points at an initialized DSM node containing an LWLock.
-    let source_lock = unsafe { ptr::addr_of_mut!((*source).lock) };
+    let source = parts.node_ptr(source_idx);
+    let source_lock = parts.node_lock(source_idx);
     {
         // SAFETY: `source_lock` is the initialized per-node lock for this graph.
         let _source_lock_guard = unsafe { locks.shared(source_lock) };
-        // SAFETY: The shared node lock is held while reading insert state.
-        let source_state = unsafe { (*source).insert_state.value };
+        let source_state = parts.node_insert_state_value(source_idx);
         if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
-            // SAFETY: The shared node lock is held while reading the node level.
-            let source_level = unsafe { (*source).level };
+            let source_level = parts.node_level(source_idx);
             if let Some((start, end)) = graph::layer_slot_bounds(source_level, config.m, layer) {
-                // SAFETY: The shared node lock is held and the helper derives a
-                // read-only slot slice from validated node metadata.
-                unsafe {
-                    with_concurrent_dsm_node_slots(parts, source, |raw_slots| {
-                        for neighbor_idx in raw_slots
-                            [start.min(raw_slots.len())..end.min(raw_slots.len())]
-                            .iter()
-                            .copied()
-                        {
-                            if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
-                                neighbor_idxs.push(neighbor_idx);
-                            }
+                with_concurrent_dsm_node_slots(parts, source, |raw_slots| {
+                    for neighbor_idx in raw_slots
+                        [start.min(raw_slots.len())..end.min(raw_slots.len())]
+                        .iter()
+                        .copied()
+                    {
+                        if neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
+                            neighbor_idxs.push(neighbor_idx);
                         }
-                    })
-                };
+                    }
+                });
             }
         }
     }
@@ -1659,27 +1623,18 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
         if neighbor_idx >= layout.node_count {
             pgrx::error!("concurrent DSM graph search saw out-of-range neighbor index");
         }
-        // SAFETY: `neighbor_idx` was checked against the graph node count.
-        let neighbor = unsafe { parts.nodes.add(neighbor_idx as usize) };
-        // SAFETY: The neighbor node is in range and contains the atomic
-        // insert-state cell waited on by the concurrent insert protocol.
-        let state_cell =
-            PgLockedDsmInsertStateCell(unsafe { ptr::addr_of_mut!((*neighbor).insert_state) });
+        let state_cell = parts.node_insert_state_cell(neighbor_idx);
         if !wait_until_concurrent_dsm_node_ready(&state_cell) {
             continue;
         }
-        // SAFETY: The neighbor is ready, and scoring validates the query and
-        // candidate corpus offsets against the graph layout.
-        let score = unsafe {
-            score_concurrent_dsm_code_with_cache(
-                parts,
-                layout,
-                config,
-                query_idx,
-                neighbor_idx,
-                query_scores,
-            )
-        };
+        let score = score_concurrent_dsm_code_with_cache(
+            parts,
+            layout,
+            config,
+            query_idx,
+            neighbor_idx,
+            query_scores,
+        );
         out.push(search::BeamCandidate::new(neighbor_idx, score));
     }
 }
@@ -1707,7 +1662,7 @@ fn write_concurrent_dsm_layer_forward_candidates(
     }
 }
 
-unsafe fn add_concurrent_dsm_backlinks(
+fn add_concurrent_dsm_backlinks(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1737,86 +1692,74 @@ unsafe fn add_concurrent_dsm_backlinks(
         if selection.node_idx >= layout.node_count {
             pgrx::error!("concurrent DSM backlink target index out of bounds");
         }
-        // SAFETY: `selection.node_idx` was checked against the graph node count.
-        let target = unsafe { parts.nodes.add(selection.node_idx as usize) };
-        // SAFETY: `target` points at an initialized DSM node containing an LWLock.
-        let target_lock = unsafe { ptr::addr_of_mut!((*target).lock) };
+        let target = parts.node_ptr(selection.node_idx);
+        let target_lock = parts.node_lock(selection.node_idx);
         // SAFETY: `target_lock` is the initialized per-node lock for this graph.
         let _target_lock_guard = unsafe { locks.exclusive(target_lock) };
-        // SAFETY: The exclusive target-node lock is held while reading state.
-        let target_state = unsafe { (*target).insert_state.value };
+        let target_state = parts.node_insert_state_value(selection.node_idx);
         if target_state != EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
             continue;
         }
 
         let Some((start, end)) = insert::backlink_slot_bounds(
             config.m,
-            // SAFETY: The exclusive target-node lock is held while reading the
-            // target slot count.
-            unsafe { (*target).neighbor_slot_count as usize },
+            parts.node_neighbor_slot_count(selection.node_idx),
             selection.layer,
         ) else {
             continue;
         };
-        // SAFETY: The exclusive target-node lock is held; the helper derives a
-        // mutable slot slice from validated target-node metadata.
-        unsafe {
-            with_concurrent_dsm_node_slots_mut(parts, target, |slots| {
-                let layer_slice = &mut slots[start..end];
-                if layer_slice.contains(&new_node_idx) {
-                    return;
-                }
-                if let Some(slot) = layer_slice
-                    .iter_mut()
-                    .find(|slot| **slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
-                {
-                    *slot = new_node_idx;
-                    return;
-                }
+        with_concurrent_dsm_node_slots_mut(parts, target, |slots| {
+            let layer_slice = &mut slots[start..end];
+            if layer_slice.contains(&new_node_idx) {
+                return;
+            }
+            if let Some(slot) = layer_slice
+                .iter_mut()
+                .find(|slot| **slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
+            {
+                *slot = new_node_idx;
+                return;
+            }
 
-                let mut candidates = layer_slice
-                    .iter()
-                    .copied()
-                    .filter(|neighbor_idx| *neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
-                    .map(|neighbor_idx| insert::ScoredBacklinkNode {
-                        node: neighbor_idx,
-                        score: score_concurrent_dsm_code(
-                            parts,
-                            layout,
-                            config,
-                            selection.node_idx,
-                            neighbor_idx,
-                            scratch,
-                        ),
-                        is_new: false,
-                    })
-                    .collect::<Vec<_>>();
-                candidates.push(insert::ScoredBacklinkNode {
-                    node: new_node_idx,
+            let mut candidates = layer_slice
+                .iter()
+                .copied()
+                .filter(|neighbor_idx| *neighbor_idx != EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX)
+                .map(|neighbor_idx| insert::ScoredBacklinkNode {
+                    node: neighbor_idx,
                     score: score_concurrent_dsm_code(
                         parts,
                         layout,
                         config,
                         selection.node_idx,
-                        new_node_idx,
+                        neighbor_idx,
                         scratch,
                     ),
-                    is_new: true,
-                });
-                let replacement = insert::select_best_backlink_candidates(
-                    candidates,
-                    layer_slice.len(),
-                    u32::cmp,
-                );
-                if replacement.contains(&new_node_idx) {
-                    layer_slice.copy_from_slice(&replacement);
-                }
-            })
-        };
+                    is_new: false,
+                })
+                .collect::<Vec<_>>();
+            candidates.push(insert::ScoredBacklinkNode {
+                node: new_node_idx,
+                score: score_concurrent_dsm_code(
+                    parts,
+                    layout,
+                    config,
+                    selection.node_idx,
+                    new_node_idx,
+                    scratch,
+                ),
+                is_new: true,
+            });
+            let replacement =
+                insert::select_best_backlink_candidates(candidates, layer_slice.len(), u32::cmp);
+            if replacement.contains(&new_node_idx) {
+                layer_slice.copy_from_slice(&replacement);
+            }
+        });
     }
 }
 
-unsafe fn score_concurrent_dsm_code(
+fn score_concurrent_dsm_code(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1824,8 +1767,6 @@ unsafe fn score_concurrent_dsm_code(
     candidate_idx: u32,
     scratch: &mut EcHnswConcurrentDsmInsertScratch,
 ) -> f32 {
-    // SAFETY: The caller supplies bounded query/candidate indexes or the cache
-    // helper will reject them before deriving corpus slices.
     score_concurrent_dsm_code_with_cache(
         parts,
         layout,
@@ -1836,7 +1777,7 @@ unsafe fn score_concurrent_dsm_code(
     )
 }
 
-unsafe fn score_concurrent_dsm_code_with_cache(
+fn score_concurrent_dsm_code_with_cache(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     config: EcHnswConcurrentDsmInsertConfig,
@@ -1851,42 +1792,29 @@ unsafe fn score_concurrent_dsm_code_with_cache(
         return score;
     }
     let score = if layout.source_dim > 0 {
-        // SAFETY: Both node indexes were bounds-checked above; source slices
-        // are derived from the same validated DSM graph layout.
-        unsafe {
-            with_concurrent_dsm_source_for_node(parts, layout, query_idx, |query_source| {
-                with_concurrent_dsm_source_for_node(
-                    parts,
-                    layout,
-                    candidate_idx,
-                    |candidate_source| {
-                        -score_concurrent_dsm_source_inner_product(query_source, candidate_source)
-                    },
+        with_concurrent_dsm_source_for_node(parts, layout, query_idx, |query_source| {
+            with_concurrent_dsm_source_for_node(parts, layout, candidate_idx, |candidate_source| {
+                -score_concurrent_dsm_source_inner_product(query_source, candidate_source)
+            })
+        })
+    } else {
+        with_concurrent_dsm_code_for_node(parts, layout, query_idx, |query_code| {
+            with_concurrent_dsm_code_for_node(parts, layout, candidate_idx, |candidate_code| {
+                -crate::score_code_inner_product(
+                    config.dimensions,
+                    config.bits,
+                    config.seed,
+                    query_code,
+                    candidate_code,
                 )
             })
-        }
-    } else {
-        // SAFETY: Both node indexes were bounds-checked above; code slices are
-        // derived from the same validated DSM graph layout.
-        unsafe {
-            with_concurrent_dsm_code_for_node(parts, layout, query_idx, |query_code| {
-                with_concurrent_dsm_code_for_node(parts, layout, candidate_idx, |candidate_code| {
-                    -crate::score_code_inner_product(
-                        config.dimensions,
-                        config.bits,
-                        config.seed,
-                        query_code,
-                        candidate_code,
-                    )
-                })
-            })
-        }
+        })
     };
     cache.insert(candidate_idx, score);
     score
 }
 
-unsafe fn with_concurrent_dsm_code_for_node<R>(
+fn with_concurrent_dsm_code_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
@@ -1905,7 +1833,7 @@ unsafe fn with_concurrent_dsm_code_for_node<R>(
     f(code)
 }
 
-unsafe fn with_concurrent_dsm_source_for_node<R>(
+fn with_concurrent_dsm_source_for_node<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     node_idx: u32,
@@ -1931,7 +1859,7 @@ fn score_concurrent_dsm_source_inner_product(left: &[f32], right: &[f32]) -> f32
     source::inner_product(left, right)
 }
 
-unsafe fn with_concurrent_dsm_node_slots<R>(
+fn with_concurrent_dsm_node_slots<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     node: *const EcHnswConcurrentDsmNode,
     f: impl for<'a> FnOnce(&'a [u32]) -> R,
@@ -1949,7 +1877,7 @@ unsafe fn with_concurrent_dsm_node_slots<R>(
     f(slots)
 }
 
-unsafe fn with_concurrent_dsm_node_slots_mut<R>(
+fn with_concurrent_dsm_node_slots_mut<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     node: *mut EcHnswConcurrentDsmNode,
     f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
@@ -1967,7 +1895,7 @@ unsafe fn with_concurrent_dsm_node_slots_mut<R>(
     f(slots)
 }
 
-unsafe fn with_concurrent_dsm_neighbor_slots_init<R>(
+fn with_concurrent_dsm_neighbor_slots_init<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     layout: EcHnswConcurrentDsmGraphLayout,
     f: impl for<'a> FnOnce(&'a mut [u32]) -> R,
@@ -1980,7 +1908,7 @@ unsafe fn with_concurrent_dsm_neighbor_slots_init<R>(
     f(slots)
 }
 
-unsafe fn with_concurrent_dsm_codes_init<R>(
+fn with_concurrent_dsm_codes_init<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     code_bytes: usize,
     f: impl for<'a> FnOnce(&'a mut [u8]) -> R,
@@ -1991,7 +1919,7 @@ unsafe fn with_concurrent_dsm_codes_init<R>(
     f(codes)
 }
 
-unsafe fn with_concurrent_dsm_sources_init<R>(
+fn with_concurrent_dsm_sources_init<R>(
     parts: EcHnswConcurrentDsmGraphParts,
     source_values: usize,
     f: impl for<'a> FnOnce(&'a mut [f32]) -> R,
@@ -2178,10 +2106,7 @@ pub(super) unsafe fn try_parallel_concurrent_dsm_graph_build(
     let graph_us = elapsed_us(graph_start);
 
     let stage_start = Instant::now();
-    // SAFETY: Worker completion has been observed, and the attached DSM graph
-    // can be read back into current-format build output.
-    let output =
-        unsafe { current_format_flush_output_from_concurrent_dsm_graph(state, attachment) };
+    let output = current_format_flush_output_from_concurrent_dsm_graph(state, attachment);
     let stage_us = elapsed_us(stage_start);
     // SAFETY: `leader` owns the ParallelContext and graph DSM lifetime.
     unsafe { leader.finish() };
@@ -2390,9 +2315,7 @@ impl EcHnswParallelGraphBuildLeader {
     }
 
     unsafe fn insert_leader_partitions(&mut self) -> EcHnswConcurrentDsmGraphAttachment {
-        // SAFETY: `self.graph_base` is the graph DSM allocation inserted during
-        // leader begin and remains owned by this leader.
-        let attachment = unsafe { attach_concurrent_dsm_graph_image(self.graph_base) };
+        let attachment = attach_concurrent_dsm_graph_image(self.graph_base);
         let config = attachment.require_insert_config();
         let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
             attachment.layout.node_count as usize,
@@ -2404,19 +2327,15 @@ impl EcHnswParallelGraphBuildLeader {
             "graph leader participant index",
         );
         for participant_index in first_leader_partition..self.participant_count {
-            // SAFETY: Participant indexes are bounded by participant_count, and
-            // the attached graph/config came from this leader's DSM image.
-            unsafe {
-                insert_concurrent_dsm_graph_participant(
-                    attachment.parts,
-                    attachment.layout,
-                    config,
-                    self.participant_count,
-                    participant_index,
-                    &mut scratch,
-                    EcHnswConcurrentDsmLockOps::postgres(),
-                );
-            }
+            insert_concurrent_dsm_graph_participant(
+                attachment.parts,
+                attachment.layout,
+                config,
+                self.participant_count,
+                participant_index,
+                &mut scratch,
+                EcHnswConcurrentDsmLockOps::postgres(),
+            );
         }
         attachment
     }
@@ -2969,8 +2888,7 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
     // SAFETY: The graph leader inserted the graph image base in the worker TOC.
     let graph_base =
         unsafe { pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH, false) };
-    // SAFETY: `graph_base` points at the initialized concurrent DSM graph image.
-    let attachment = unsafe { attach_concurrent_dsm_graph_image(graph_base) };
+    let attachment = attach_concurrent_dsm_graph_image(graph_base);
     let config = attachment.require_insert_config();
     let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
         attachment.layout.node_count as usize,
@@ -3731,16 +3649,7 @@ mod tests {
         state.push(build_tuple_with_code(vec![4, 5, 6]));
         let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
 
         // SAFETY: The initialized graph image points into `buffer`; the test
         // only reads offsets and initialized header/node/slot/code regions.
@@ -3819,19 +3728,9 @@ mod tests {
         state.push(build_tuple_with_code(vec![4, 5, 6]));
         let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
 
-        // SAFETY: `buffer` contains the graph image initialized immediately
-        // above, so attaching should derive the same layout and parts.
-        let attachment = unsafe { attach_concurrent_dsm_graph_image(buffer.as_mut_ptr()) };
+        let attachment = attach_concurrent_dsm_graph_image(buffer.as_mut_ptr());
 
         assert_eq!(attachment.layout, plan.graph_layout);
         assert_eq!(attachment.insert_config, plan.insert_config);
@@ -3882,9 +3781,7 @@ mod tests {
             reserved0: [0; 2],
         };
 
-        // SAFETY: `header` is a stack-allocated header used only to exercise
-        // validation of invalid insert configuration metadata.
-        let _ = unsafe { concurrent_dsm_insert_config_from_image(ptr::addr_of!(header).cast()) };
+        let _ = concurrent_dsm_insert_config_from_image(ptr::addr_of!(header).cast());
     }
 
     #[test]
@@ -3892,16 +3789,7 @@ mod tests {
         let state = build_state(None);
         let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
 
         // SAFETY: The empty graph image was initialized above, so header and
         // attachment reads stay within `buffer`.
@@ -3931,15 +3819,7 @@ mod tests {
         state.push(build_tuple_with_code(vec![7, 8, 9]));
         let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
 
         // SAFETY: The test mutates initialized node/slot regions inside the
         // graph image to create a deterministic readback fixture.
@@ -3966,10 +3846,7 @@ mod tests {
             nodes.iter().map(|node| node.level).collect::<Vec<_>>()
         };
 
-        // SAFETY: The graph image has been initialized and all fixture nodes
-        // were marked ready above.
-        let build_nodes =
-            unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, 2) };
+        let build_nodes = concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, 2);
 
         assert_eq!(build_nodes.len(), 3);
         assert_eq!(build_nodes[0].level, node_levels[0]);
@@ -3992,19 +3869,9 @@ mod tests {
         state.push(build_tuple_with_code(vec![4, 5, 6]));
         let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
 
-        // SAFETY: The initialized graph intentionally contains uninserted nodes
-        // so the readback validation path should panic.
-        let _ = unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, 2) };
+        let _ = concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, 2);
     }
 
     #[test]
@@ -4015,15 +3882,7 @@ mod tests {
         state.push(build_tuple_with_code(vec![4, 5, 6]));
         let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
 
         // SAFETY: The test mutates initialized graph slots to an out-of-range
         // neighbor index to exercise readback validation.
@@ -4056,15 +3915,7 @@ mod tests {
             ],
         );
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
         let config = test_insert_config(4);
         let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
             plan.graph_layout.node_count as usize,
@@ -4072,36 +3923,26 @@ mod tests {
             config.m,
         );
 
-        // SAFETY: The graph image/config/scratch are test-owned and initialized
-        // from the same preassembly plan.
-        let inserted_1 = unsafe {
-            insert_concurrent_dsm_graph_node(
-                parts,
-                plan.graph_layout,
-                config,
-                1,
-                &mut scratch,
-                test_lock_ops(),
-            )
-        };
-        // SAFETY: Same initialized test graph and config as above.
-        let inserted_2 = unsafe {
-            insert_concurrent_dsm_graph_node(
-                parts,
-                plan.graph_layout,
-                config,
-                2,
-                &mut scratch,
-                test_lock_ops(),
-            )
-        };
+        let inserted_1 = insert_concurrent_dsm_graph_node(
+            parts,
+            plan.graph_layout,
+            config,
+            1,
+            &mut scratch,
+            test_lock_ops(),
+        );
+        let inserted_2 = insert_concurrent_dsm_graph_node(
+            parts,
+            plan.graph_layout,
+            config,
+            2,
+            &mut scratch,
+            test_lock_ops(),
+        );
 
         assert!(inserted_1);
         assert!(inserted_2);
-        // SAFETY: The inserted test graph has all expected nodes ready for
-        // readback.
-        let build_nodes =
-            unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, config.m) };
+        let build_nodes = concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, config.m);
         assert_eq!(build_nodes.len(), 3);
         assert!(build_nodes[1].neighbor_slots.contains(&Some(0)));
         assert!(build_nodes[2].neighbor_slots.iter().any(Option::is_some));
@@ -4115,15 +3956,7 @@ mod tests {
             vec![vec![0x11, 0x11, 0x11], vec![0x22, 0x22, 0x22]],
         );
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
         let config = test_insert_config(4);
         let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
             plan.graph_layout.node_count as usize,
@@ -4131,18 +3964,14 @@ mod tests {
             config.m,
         );
 
-        // SAFETY: The graph image/config/scratch are test-owned and initialized
-        // from the same preassembly plan.
-        let inserted = unsafe {
-            insert_concurrent_dsm_graph_node(
-                parts,
-                plan.graph_layout,
-                config,
-                0,
-                &mut scratch,
-                test_lock_ops(),
-            )
-        };
+        let inserted = insert_concurrent_dsm_graph_node(
+            parts,
+            plan.graph_layout,
+            config,
+            0,
+            &mut scratch,
+            test_lock_ops(),
+        );
 
         assert!(!inserted);
         // SAFETY: Node 0 is in range for this initialized graph; the slot helper
@@ -4169,15 +3998,7 @@ mod tests {
             ],
         );
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
         let config = test_insert_config(4);
         let partitions = concurrent_dsm_node_partitions(plan.graph_layout.node_count, 2);
         let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
@@ -4186,50 +4007,35 @@ mod tests {
             config.m,
         );
 
-        // SAFETY: Partition 0 is derived from the initialized graph node count
-        // and uses the matching test graph/config/scratch.
-        let inserted_0 = unsafe {
-            insert_concurrent_dsm_graph_partition(
-                parts,
-                plan.graph_layout,
-                config,
-                partitions[0],
-                &mut scratch,
-                test_lock_ops(),
-            )
-        };
-        // SAFETY: Partition 1 is derived from the initialized graph node count
-        // and uses the matching test graph/config/scratch.
-        let inserted_1 = unsafe {
-            insert_concurrent_dsm_graph_partition(
-                parts,
-                plan.graph_layout,
-                config,
-                partitions[1],
-                &mut scratch,
-                test_lock_ops(),
-            )
-        };
-        // SAFETY: Reusing partition 0 is intentional to verify already-ready
-        // nodes are skipped.
-        let inserted_again = unsafe {
-            insert_concurrent_dsm_graph_partition(
-                parts,
-                plan.graph_layout,
-                config,
-                partitions[0],
-                &mut scratch,
-                test_lock_ops(),
-            )
-        };
+        let inserted_0 = insert_concurrent_dsm_graph_partition(
+            parts,
+            plan.graph_layout,
+            config,
+            partitions[0],
+            &mut scratch,
+            test_lock_ops(),
+        );
+        let inserted_1 = insert_concurrent_dsm_graph_partition(
+            parts,
+            plan.graph_layout,
+            config,
+            partitions[1],
+            &mut scratch,
+            test_lock_ops(),
+        );
+        let inserted_again = insert_concurrent_dsm_graph_partition(
+            parts,
+            plan.graph_layout,
+            config,
+            partitions[0],
+            &mut scratch,
+            test_lock_ops(),
+        );
 
         assert_eq!(inserted_0, 1);
         assert_eq!(inserted_1, 2);
         assert_eq!(inserted_again, 0);
-        // SAFETY: The partition insertions above made all expected nodes ready
-        // for readback.
-        let build_nodes =
-            unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, config.m) };
+        let build_nodes = concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, config.m);
         assert_eq!(build_nodes.len(), 4);
         assert!(build_nodes
             .iter()
@@ -4247,15 +4053,7 @@ mod tests {
         state.push(build_tuple_with_code(vec![0x44, 0x44, 0x44]));
         let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
         let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
-        // SAFETY: The test buffer is allocated to the graph layout's total
-        // byte size and aligned like a DSM allocation.
-        let parts = unsafe {
-            initialize_concurrent_dsm_graph_image(
-                buffer.as_mut_ptr(),
-                &plan,
-                test_initialize_node_lock,
-            )
-        };
+        let parts = initialize_test_concurrent_dsm_graph(&buffer, &plan);
         let config = EcHnswConcurrentDsmInsertConfig::for_state(&state);
         let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
             plan.graph_layout.node_count as usize,
@@ -4263,28 +4061,20 @@ mod tests {
             config.m,
         );
 
-        // SAFETY: Single participant index 0 is valid for participant_count 1,
-        // and the graph/config/scratch come from the same test preassembly.
-        let inserted = unsafe {
-            insert_concurrent_dsm_graph_participant(
-                parts,
-                plan.graph_layout,
-                config,
-                1,
-                0,
-                &mut scratch,
-                test_lock_ops(),
-            )
-        };
+        let inserted = insert_concurrent_dsm_graph_participant(
+            parts,
+            plan.graph_layout,
+            config,
+            1,
+            0,
+            &mut scratch,
+            test_lock_ops(),
+        );
         assert_eq!(inserted, plan.graph_layout.node_count.saturating_sub(1));
 
-        // SAFETY: `buffer` contains the initialized and inserted graph image.
-        let attachment = unsafe { attach_concurrent_dsm_graph_image(buffer.as_mut_ptr()) };
+        let attachment = attach_concurrent_dsm_graph_image(buffer.as_mut_ptr());
         assert_eq!(attachment.require_insert_config(), config);
-        // SAFETY: The attached graph has been populated by the single
-        // participant insert above and can be staged to current format.
-        let output =
-            unsafe { current_format_flush_output_from_concurrent_dsm_graph(&state, attachment) };
+        let output = current_format_flush_output_from_concurrent_dsm_graph(&state, attachment);
 
         assert_eq!(
             output.metadata.format_version,
@@ -4313,6 +4103,13 @@ mod tests {
         fn as_mut_ptr(&self) -> *mut c_void {
             self.ptr.cast()
         }
+    }
+
+    fn initialize_test_concurrent_dsm_graph(
+        buffer: &AlignedDsmBuffer,
+        plan: &EcHnswConcurrentDsmPreassemblyPlan,
+    ) -> EcHnswConcurrentDsmGraphParts {
+        initialize_concurrent_dsm_graph_image(buffer.as_mut_ptr(), plan, test_initialize_node_lock)
     }
 
     impl Drop for AlignedDsmBuffer {
