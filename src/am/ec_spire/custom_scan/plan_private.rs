@@ -28,9 +28,10 @@ fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option
 }
 
 unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
-    // SAFETY: executor passes a live CustomScanState whose plan pointer is the
-    // CustomScan node installed by this provider.
-    unsafe { (*node).ss.ps.plan.cast::<pg_sys::CustomScan>() }
+    let Some(state) = custom_scan_pg_ref(node) else {
+        pgrx::error!("EcSpireDistributedScan executor state is NULL");
+    };
+    state.ss.ps.plan.cast::<pg_sys::CustomScan>()
 }
 
 unsafe fn custom_scan_mode_from_path(
@@ -60,16 +61,10 @@ unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) 
 unsafe fn custom_scan_mode_from_plan(
     custom_scan: *mut pg_sys::CustomScan,
 ) -> SpireCustomScanPlanMode {
-    // SAFETY: planner/executor CustomScan pointer is checked before reading
-    // the provider-owned private mode metadata at offset 0.
-    unsafe {
-        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
-            pgrx::error!("EcSpireDistributedScan plan is missing private mode");
-        }
-        let raw = custom_scan_plan_private_u32((*custom_scan).custom_private, 0, "mode");
-        custom_scan_mode_from_u32(raw)
-            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan has unknown mode {raw}"))
-    }
+    let custom_private = custom_scan_custom_private(custom_scan, "private mode");
+    let raw = custom_scan_plan_private_u32(custom_private, 0, "mode");
+    custom_scan_mode_from_u32(raw)
+        .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan has unknown mode {raw}"))
 }
 
 fn custom_scan_mode_from_u32(raw: u32) -> Option<SpireCustomScanPlanMode> {
@@ -101,38 +96,23 @@ fn custom_scan_plan_mode_for_dml_mode(
 }
 
 unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
-    // SAFETY: planner/executor CustomScan pointer is checked before reading
-    // the provider-owned private index OID metadata at offset 1.
-    unsafe {
-        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
-            pgrx::error!("EcSpireDistributedScan plan is missing private index OID");
-        }
-        pg_sys::Oid::from(custom_scan_plan_private_u32(
-            (*custom_scan).custom_private,
-            1,
-            "index OID",
-        ))
-    }
+    let custom_private = custom_scan_custom_private(custom_scan, "private index OID");
+    pg_sys::Oid::from(custom_scan_plan_private_u32(custom_private, 1, "index OID"))
 }
 
-unsafe fn custom_scan_dml_plan_private(
+fn custom_scan_dml_plan_private(
     mode: SpireCustomScanPlanMode,
     index_oid: pg_sys::Oid,
     pk_column: &str,
     updated_columns: &[String],
     projected_columns: &[String],
 ) -> *mut pg_sys::List {
-    // SAFETY: all appended strings are copied into PostgreSQL memory and the
-    // returned List is planner-owned plan-private metadata.
-    unsafe {
-        let mut custom_private =
-            custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
-        custom_private =
-            custom_scan_lappend_string(custom_private, &index_oid.to_u32().to_string());
-        custom_private = custom_scan_lappend_counted_column_list(custom_private, updated_columns);
-        custom_private = custom_scan_lappend_counted_column_list(custom_private, projected_columns);
-        custom_scan_lappend_string(custom_private, pk_column)
-    }
+    let mut custom_private =
+        custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
+    custom_private = custom_scan_lappend_string(custom_private, &index_oid.to_u32().to_string());
+    custom_private = custom_scan_lappend_counted_column_list(custom_private, updated_columns);
+    custom_private = custom_scan_lappend_counted_column_list(custom_private, projected_columns);
+    custom_scan_lappend_string(custom_private, pk_column)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -167,7 +147,7 @@ pub(crate) unsafe fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> S
     }
 }
 
-unsafe fn custom_scan_plan_private_u32(
+fn custom_scan_plan_private_u32(
     custom_private: *mut pg_sys::List,
     offset: i32,
     label: &str,
@@ -209,7 +189,7 @@ unsafe fn custom_scan_plan_private_u32(
     }
 }
 
-unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_sys::List {
+fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_sys::List {
     // SAFETY: CString rejects interior NULs; pstrdup copies into PostgreSQL
     // memory before makeString/lappend attach it to the plan-private List.
     unsafe {
@@ -221,22 +201,18 @@ unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *m
     }
 }
 
-unsafe fn custom_scan_lappend_counted_column_list(
+fn custom_scan_lappend_counted_column_list(
     list: *mut pg_sys::List,
     columns: &[String],
 ) -> *mut pg_sys::List {
-    // SAFETY: delegates to `custom_scan_lappend_string`, which copies each
-    // count/name string into PostgreSQL memory.
-    unsafe {
-        let mut list = custom_scan_lappend_string(list, &columns.len().to_string());
-        for column in columns {
-            list = custom_scan_lappend_string(list, column);
-        }
-        list
+    let mut list = custom_scan_lappend_string(list, &columns.len().to_string());
+    for column in columns {
+        list = custom_scan_lappend_string(list, column);
     }
+    list
 }
 
-unsafe fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
+fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
     // SAFETY: node is checked for null/String tag and sval null before reading
     // the PostgreSQL-owned NUL-terminated string.
     unsafe {
@@ -261,17 +237,11 @@ unsafe fn custom_scan_dml_column_list_from_plan(
     offset: i32,
     label: &str,
 ) -> Vec<String> {
-    // SAFETY: CustomScan and custom_private are checked before delegating to
-    // the counted-column parser.
-    unsafe {
-        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
-        }
-        custom_scan_dml_column_list_from_plan_private((*custom_scan).custom_private, offset, label)
-    }
+    let custom_private = custom_scan_custom_private(custom_scan, label);
+    custom_scan_dml_column_list_from_plan_private(custom_private, offset, label)
 }
 
-unsafe fn custom_scan_dml_column_list_from_plan_private(
+fn custom_scan_dml_column_list_from_plan_private(
     custom_private: *mut pg_sys::List,
     offset: i32,
     label: &str,
@@ -292,7 +262,7 @@ unsafe fn custom_scan_dml_column_list_from_plan_private(
     }
 }
 
-unsafe fn custom_scan_dml_counted_column_list_from_plan_private(
+fn custom_scan_dml_counted_column_list_from_plan_private(
     custom_private: *mut pg_sys::List,
     count_offset: i32,
     label: &str,
@@ -344,53 +314,36 @@ unsafe fn custom_scan_dml_counted_column_list_from_plan_private(
     }
 }
 
-unsafe fn custom_scan_dml_projected_column_count_offset(custom_private: *mut pg_sys::List) -> i32 {
-    // SAFETY: caller passes plan-private metadata; the helper below validates
-    // the updated-column count entry before using it for offset arithmetic.
-    unsafe {
-        let updated_count = custom_scan_plan_private_u32(
-            custom_private,
-            DML_UPDATED_COLUMN_COUNT_OFFSET,
-            "updated column count",
-        );
-        DML_UPDATED_COLUMN_COUNT_OFFSET
-            + 1
-            + i32::try_from(updated_count).unwrap_or_else(|_| {
-                pgrx::error!("EcSpireDistributedScan DML plan updated column count is too large")
-            })
-    }
+fn custom_scan_dml_projected_column_count_offset(custom_private: *mut pg_sys::List) -> i32 {
+    let updated_count = custom_scan_plan_private_u32(
+        custom_private,
+        DML_UPDATED_COLUMN_COUNT_OFFSET,
+        "updated column count",
+    );
+    DML_UPDATED_COLUMN_COUNT_OFFSET
+        + 1
+        + i32::try_from(updated_count).unwrap_or_else(|_| {
+            pgrx::error!("EcSpireDistributedScan DML plan updated column count is too large")
+        })
 }
 
-unsafe fn custom_scan_dml_pk_column_offset(custom_private: *mut pg_sys::List) -> i32 {
-    // SAFETY: caller passes plan-private metadata; projected-column count is
-    // validated before deriving the following PK-column offset.
-    unsafe {
-        let projected_offset = custom_scan_dml_projected_column_count_offset(custom_private);
-        let projected_count = custom_scan_plan_private_u32(
-            custom_private,
-            projected_offset,
-            "projected column count",
-        );
-        projected_offset
-            + 1
-            + i32::try_from(projected_count).unwrap_or_else(|_| {
-                pgrx::error!("EcSpireDistributedScan DML plan projected column count is too large")
-            })
-    }
+fn custom_scan_dml_pk_column_offset(custom_private: *mut pg_sys::List) -> i32 {
+    let projected_offset = custom_scan_dml_projected_column_count_offset(custom_private);
+    let projected_count =
+        custom_scan_plan_private_u32(custom_private, projected_offset, "projected column count");
+    projected_offset
+        + 1
+        + i32::try_from(projected_count).unwrap_or_else(|_| {
+            pgrx::error!("EcSpireDistributedScan DML plan projected column count is too large")
+        })
 }
 
 unsafe fn custom_scan_dml_pk_column_from_plan(custom_scan: *mut pg_sys::CustomScan) -> String {
-    // SAFETY: CustomScan and custom_private are checked before delegating to
-    // the PK-column parser.
-    unsafe {
-        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML plan is missing PK column metadata");
-        }
-        custom_scan_dml_pk_column_from_plan_private((*custom_scan).custom_private)
-    }
+    let custom_private = custom_scan_custom_private(custom_scan, "PK column");
+    custom_scan_dml_pk_column_from_plan_private(custom_private)
 }
 
-unsafe fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sys::List) -> String {
+fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sys::List) -> String {
     // SAFETY: custom_private is checked before deriving and bounds-checking
     // the provider-owned PK-column metadata offset.
     unsafe {
@@ -410,4 +363,17 @@ unsafe fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sy
         }
         pk_column
     }
+}
+
+fn custom_scan_custom_private(
+    custom_scan: *mut pg_sys::CustomScan,
+    label: &str,
+) -> *mut pg_sys::List {
+    let Some(custom_scan) = custom_scan_pg_ref(custom_scan) else {
+        pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata");
+    };
+    if custom_scan.custom_private.is_null() {
+        pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata");
+    }
+    custom_scan.custom_private
 }
