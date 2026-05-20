@@ -1873,36 +1873,23 @@ pub(crate) unsafe fn index_scan_routing_snapshot(
 ) -> Vec<SpireIndexScanRoutingSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexScanRoutingSnapshotRow>, String> {
         let query = scan::SpireScanQuery::new(query_values)?;
-        // SAFETY: reads root/control state through the live index relation for
-        // scan-routing diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
+        // index relation for the duration of the scan-routing snapshot.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by scan-routing diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpirePublishedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active scan-routing snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let diagnostics = scan::collect_scan_routing_diagnostics(
             &snapshot,
             &object_store,
             &query,
-            options::relation_options(index_relation),
+            index.relation_options(),
         )?;
         let scan_plan = diagnostics.scan_plan;
         let rows = diagnostics
@@ -1910,7 +1897,7 @@ pub(crate) unsafe fn index_scan_routing_snapshot(
             .into_iter()
             .map(|level| {
                 Ok(SpireIndexScanRoutingSnapshotRow {
-                    active_epoch: epoch_manifest.epoch,
+                    active_epoch: anchor.epoch_manifest.epoch,
                     effective_nprobe: level.effective_nprobe,
                     effective_nprobe_source: if level.effective_nprobe_source == "configured" {
                         scan_plan.nprobe_source
@@ -1974,26 +1961,15 @@ pub(crate) unsafe fn index_root_routing_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexRootRoutingSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexRootRoutingSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // root-routing diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
+        // index relation for the duration of the root-routing snapshot.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by root-routing diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens the SPIRE relation object store for the live index
-        // relation before reading local root-routing objects.
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        };
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store()?;
         collect_root_routing_snapshot_rows(&snapshot, &object_store)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -2003,26 +1979,15 @@ pub(crate) unsafe fn index_routing_centroid_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexRoutingCentroidSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexRoutingCentroidSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // routing-centroid diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
+        // index relation for the duration of the routing-centroid snapshot.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by routing-centroid diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens the SPIRE relation object store for the live index
-        // relation before reading local routing centroids.
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        };
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store()?;
         collect_routing_centroid_snapshot_rows(&snapshot, &object_store)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -2039,45 +2004,16 @@ pub(crate) unsafe fn classify_centroid(
         return Err("ec_spire_classify_centroid embedding components must be finite".to_owned());
     }
 
-    // SAFETY: reads root/control state through the live index relation for
-    // centroid classification against the active routing epoch.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
-    if root_control.active_epoch == 0 {
+    // SAFETY: PostgreSQL calls this helper with a live SPIRE index relation.
+    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+    let root_control = index.root_control();
+    let Some(anchor) = index.active_epoch_anchor(root_control)? else {
         return Err(
             "ec_spire_classify_centroid requires an active ec_spire routing epoch".to_owned(),
         );
-    }
-
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active epoch manifest.
-    let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active object manifest.
-    let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active placement directory.
-    let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
-    let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
-    let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
-    let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
-    if epoch_manifest.epoch != root_control.active_epoch {
-        return Err(format!(
-            "ec_spire root/control active epoch {} does not match epoch manifest {}",
-            root_control.active_epoch, epoch_manifest.epoch
-        ));
-    }
-    let snapshot = meta::SpireValidatedEpochSnapshot::new(
-        &epoch_manifest,
-        &object_manifest,
-        &placement_directory,
-    )?;
-    // SAFETY: opens the SPIRE relation object store for the live index relation
-    // before reading local root routing objects.
-    let object_store =
-        unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+    };
+    let snapshot = anchor.validated_snapshot()?;
+    let object_store = index.object_store()?;
     let mut root = None;
     for manifest_entry in &snapshot.object_manifest().entries {
         let lookup = snapshot.require_lookup(manifest_entry.pid, "classify centroid root load")?;
