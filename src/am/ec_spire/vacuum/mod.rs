@@ -57,6 +57,13 @@ impl SpireVacuumIndexRelation {
         unsafe { page::read_root_control_page(self.relation) }
     }
 
+    fn publish_lock(self) -> super::SpireRelationLockGuard {
+        // SAFETY: this wrapper is constructed only for the live SPIRE index
+        // relation supplied to vacuum callbacks. The guard unlocks by copied
+        // relation OID.
+        unsafe { lock_publish_relation(self.relation) }
+    }
+
     fn active_epoch_manifests(
         self,
         root_control: SpireRootControlState,
@@ -185,16 +192,12 @@ unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, St
     // SAFETY: index_relation is supplied by PostgreSQL's vacuum callback and
     // remains live for this helper call.
     let index = unsafe { SpireVacuumIndexRelation::new(index_relation) };
-    // SAFETY: index_relation is the live vacuum relation; the publish lock
-    // guard serializes root/control reads and any replacement epoch publish.
-    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let _guard = index.publish_lock();
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         return Ok(0);
     }
-    // SAFETY: publish lock is still held and root_control was read from this
-    // relation before compaction considers a replacement epoch.
-    unsafe { publish_compacted_delta_epoch_if_needed(index_relation, root_control)? };
+    publish_compacted_delta_epoch_if_needed(index, root_control)?;
     collect_live_assignment_count(index_relation)
 }
 
@@ -206,9 +209,7 @@ unsafe fn run_bulkdelete(
     // SAFETY: index_relation is supplied by PostgreSQL's vacuum callback and
     // remains live for this helper call.
     let index = unsafe { SpireVacuumIndexRelation::new(index_relation) };
-    // SAFETY: index_relation is the live vacuum relation; the publish lock
-    // guard serializes delete-delta publication with other SPIRE publishers.
-    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let _guard = index.publish_lock();
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         return Ok(VacuumDeleteResult {
@@ -266,7 +267,7 @@ unsafe fn run_bulkdelete(
     }
 
     publish_delete_delta_epoch(
-        index_relation,
+        index,
         root_control,
         active_epoch_manifest,
         placement_directory,
@@ -355,12 +356,10 @@ fn collect_visible_assignments(
     Ok(visible)
 }
 
-unsafe fn publish_compacted_delta_epoch_if_needed(
-    index_relation: pg_sys::Relation,
+fn publish_compacted_delta_epoch_if_needed(
+    index: SpireVacuumIndexRelation,
     root_control: SpireRootControlState,
 ) -> Result<bool, String> {
-    // SAFETY: index_relation is live under the caller-held publish lock.
-    let index = unsafe { SpireVacuumIndexRelation::new(index_relation) };
     let (active_epoch_manifest, object_manifest, placement_directory) =
         index.active_epoch_manifests(root_control)?;
     let local_store_config = index.local_store_config(root_control)?;
@@ -577,14 +576,12 @@ fn require_base_placement(
 }
 
 fn publish_delete_delta_epoch(
-    index_relation: pg_sys::Relation,
+    index: SpireVacuumIndexRelation,
     root_control: SpireRootControlState,
     active_epoch_manifest: SpireEpochManifest,
     placement_directory: SpirePlacementDirectory,
     deletes_by_base_pid: HashMap<u64, Vec<SpireDeleteDeltaInput>>,
 ) -> Result<(), String> {
-    // SAFETY: index_relation is live under the caller-held publish lock.
-    let index = unsafe { SpireVacuumIndexRelation::new(index_relation) };
     let new_epoch = root_control
         .active_epoch
         .checked_add(1)
