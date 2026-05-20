@@ -237,9 +237,7 @@ fn bootstrap_empty_index(
 ) -> Result<(), String> {
     let options = options_from_metadata(metadata)?;
     let plan = build::stage_single_tuple_build_plan(options, tuple)?;
-    // SAFETY: caller holds the empty-bootstrap lock and passes metadata from
-    // this live index relation; the staged single-tuple plan initializes it.
-    unsafe { build::flush_build_plan(index_relation, &plan) };
+    build::flush_build_plan(index_relation, &plan);
     Ok(())
 }
 

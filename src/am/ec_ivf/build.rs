@@ -533,7 +533,7 @@ fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -
     row_count.min(DEFAULT_AUTO_TRAINING_SAMPLE_ROWS)
 }
 
-pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
+pub(super) fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
     let metadata_nlists = usize::try_from(plan.metadata.nlists).expect("u32 nlists should fit");
     debug_assert_eq!(plan.centroid_count(), metadata_nlists);
     debug_assert_eq!(plan.directory_count(), metadata_nlists);
@@ -541,15 +541,13 @@ pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &I
     debug_assert!(plan.data_page_count() > 0);
     debug_assert_eq!(plan.total_live_tuples(), plan.posting_count() as u64);
 
-    // SAFETY: caller passes the live index relation and a staged plan whose
-    // data pages were built for that relation.
-    unsafe { write_data_pages(index_relation, &plan.data_pages) };
+    write_data_pages(index_relation, &plan.data_pages);
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.
     unsafe { page::initialize_metadata_page(index_relation, plan.metadata) };
 }
 
-unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
+fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
     for staged_page in data_pages.pages() {
         // SAFETY: caller passes the live index relation; P_NEW requests a new
         // main-fork block that is returned locked and zeroed.
@@ -627,9 +625,7 @@ pub(super) unsafe fn build_index_tuple(
         pgrx::error!("ec_ivf {context} received a null indexed datum");
     }
 
-    // SAFETY: datum is non-null and points to the indexed vector varlena value
-    // for this callback.
-    let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
+    let bytes = detoasted_varlena_bytes(datum, "indexed vector column");
     match indexed_vector_kind {
         IndexedVectorKind::Ecvector => {
             build_ecvector_tuple(heap_tid, &bytes, storage_format, context)
@@ -712,7 +708,7 @@ fn build_tqvector_tuple(
     }
 }
 
-unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
+fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
     // SAFETY: caller passes a non-null varlena datum; DetoastedVarlena owns
     // any detoasted copy for the duration of conversion.
     unsafe { DetoastedVarlena::packed_from_datum(datum) }
@@ -768,12 +764,11 @@ pub(super) unsafe fn resolve_indexed_vector_kind(
     if att.attisdropped {
         pgrx::error!("ec_ivf indexed column references a dropped column");
     }
-    // SAFETY: attribute type OID comes from the copied tuple descriptor.
-    unsafe { resolve_indexed_vector_kind_from_type(att.atttypid) }
+    resolve_indexed_vector_kind_from_type(att.atttypid)
         .unwrap_or_else(|| pgrx::error!("ec_ivf indexed column must be ecvector or tqvector"))
 }
 
-unsafe fn resolve_indexed_vector_kind_from_type(
+fn resolve_indexed_vector_kind_from_type(
     type_oid: pg_sys::Oid,
 ) -> Option<IndexedVectorKind> {
     // SAFETY: PostgreSQL accepts a type OID and returns its base type OID.
