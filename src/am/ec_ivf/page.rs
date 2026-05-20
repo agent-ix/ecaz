@@ -34,8 +34,6 @@ use super::options::{EcIvfOptions, RerankMode, StorageFormat};
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
-#[cfg(feature = "pg18")]
-use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use crate::storage::page::{align_up, raw_tuple_storage_bytes, ALIGNMENT_BYTES, PAGE_HEADER_BYTES};
 use crate::storage::page::{
@@ -1481,54 +1479,15 @@ fn visit_ivf_posting_blocks_with_read_stream<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    let mut state = LinearPrefetchState::new(head_block, tail_block);
-    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
-    // PostgreSQL stores block-number-sized per-buffer data via the callback.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_SEQUENTIAL as i32,
-            ptr::null_mut(),
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::linear_prefetch_cb),
-            (&mut state as *mut LinearPrefetchState).cast(),
-            size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` was created above and remains open until the
-        // explicit `read_stream_end` on normal or error exit.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        let result = {
-            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
-            // stream; the guard converts that pin into a shared buffer lock.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
-            let block_number = if per_buffer_data.is_null() {
-                buffer.block_number()
-            } else {
-                // SAFETY: the read stream callback stores a `BlockNumber` in
-                // the per-buffer data slot when it is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
-        };
-        if let Err(err) = result {
-            // SAFETY: closes the stream created above before returning early.
-            unsafe { pg_sys::read_stream_end(stream) };
-            return Err(err);
-        }
-    }
-
-    // SAFETY: closes the stream created above after all buffers are consumed.
-    unsafe { pg_sys::read_stream_end(stream) };
-    Ok(())
+    crate::am::stream::visit_relation_linear_read_stream(
+        index_relation,
+        head_block,
+        tail_block,
+        "ec_ivf posting list",
+        |buffer, block_number| {
+            visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
+        },
+    )
 }
 
 #[cfg(feature = "pg18")]
@@ -1541,54 +1500,14 @@ fn visit_ivf_posting_block_sequence_with_read_stream<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
-    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
-    // PostgreSQL stores block-number-sized per-buffer data via the callback.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_SEQUENTIAL as i32,
-            ptr::null_mut(),
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut BlockSequencePrefetchState).cast(),
-            size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` was created above and remains open until the
-        // explicit `read_stream_end` on normal or error exit.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        let result = {
-            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
-            // stream; the guard converts that pin into a shared buffer lock.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
-            let block_number = if per_buffer_data.is_null() {
-                buffer.block_number()
-            } else {
-                // SAFETY: the read stream callback stores a `BlockNumber` in
-                // the per-buffer data slot when it is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor)
-        };
-        if let Err(err) = result {
-            // SAFETY: closes the stream created above before returning early.
-            unsafe { pg_sys::read_stream_end(stream) };
-            return Err(err);
-        }
-    }
-
-    // SAFETY: closes the stream created above after all buffers are consumed.
-    unsafe { pg_sys::read_stream_end(stream) };
-    Ok(())
+    crate::am::stream::visit_relation_block_sequence_read_stream(
+        index_relation,
+        block_numbers,
+        "ec_ivf posting block sequence",
+        |buffer, block_number| {
+            visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor)
+        },
+    )
 }
 
 #[cfg(feature = "pg18")]
@@ -1601,54 +1520,14 @@ fn visit_ivf_posting_ref_block_sequence_with_read_stream<F>(
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
-    let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
-    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
-    // PostgreSQL stores block-number-sized per-buffer data via the callback.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_SEQUENTIAL as i32,
-            ptr::null_mut(),
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut BlockSequencePrefetchState).cast(),
-            size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` was created above and remains open until the
-        // explicit `read_stream_end` on normal or error exit.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        let result = {
-            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
-            // stream; the guard converts that pin into a shared buffer lock.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
-            let block_number = if per_buffer_data.is_null() {
-                buffer.block_number()
-            } else {
-                // SAFETY: the read stream callback stores a `BlockNumber` in
-                // the per-buffer data slot when it is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
-        };
-        if let Err(err) = result {
-            // SAFETY: closes the stream created above before returning early.
-            unsafe { pg_sys::read_stream_end(stream) };
-            return Err(err);
-        }
-    }
-
-    // SAFETY: closes the stream created above after all buffers are consumed.
-    unsafe { pg_sys::read_stream_end(stream) };
-    Ok(())
+    crate::am::stream::visit_relation_block_sequence_read_stream(
+        index_relation,
+        block_numbers,
+        "ec_ivf posting ref block sequence",
+        |buffer, block_number| {
+            visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
+        },
+    )
 }
 
 #[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
