@@ -197,6 +197,17 @@ struct CachedRelationContext {
     watched_relation_oids: Vec<pg_sys::Oid>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DmlFrontdoorBackendHookState {
+    planner_hook_installed: bool,
+    relcache_callback_registered: bool,
+    classification_attempted: bool,
+    last_classification_supported: Option<bool>,
+    last_classification_kind: Option<&'static str>,
+    last_classification_status: Option<&'static str>,
+    last_hook_action: Option<&'static str>,
+}
+
 type RelcacheCallbackFunction =
     Option<unsafe extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
 
@@ -217,11 +228,11 @@ pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
             pg_sys::planner_hook = Some(ec_spire_dml_frontdoor_planner_hook);
             PLANNER_HOOK_INSTALLED = true;
         }
-        dml_frontdoor_register_relcache_callback();
     }
+    dml_frontdoor_register_relcache_callback();
 }
 
-unsafe fn dml_frontdoor_register_relcache_callback() {
+fn dml_frontdoor_register_relcache_callback() {
     // SAFETY: the relcache callback registry is backend-local; this flag keeps
     // registration idempotent for the current backend.
     unsafe {
@@ -231,6 +242,56 @@ unsafe fn dml_frontdoor_register_relcache_callback() {
                 pg_sys::Datum::from(0),
             );
             RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED = true;
+        }
+    }
+}
+
+fn dml_frontdoor_backend_hook_state() -> DmlFrontdoorBackendHookState {
+    // SAFETY: hook diagnostics are backend-local scalars updated by this
+    // backend's planner hook and relcache callback setup. Copying them into a
+    // status snapshot is sufficient for diagnostic reporting.
+    unsafe {
+        DmlFrontdoorBackendHookState {
+            planner_hook_installed: PLANNER_HOOK_INSTALLED,
+            relcache_callback_registered: RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED,
+            classification_attempted: HOOK_CLASSIFICATION_ATTEMPTED,
+            last_classification_supported: LAST_HOOK_CLASSIFICATION_SUPPORTED,
+            last_classification_kind: LAST_HOOK_CLASSIFICATION_KIND,
+            last_classification_status: LAST_HOOK_CLASSIFICATION_STATUS,
+            last_hook_action: LAST_HOOK_ACTION,
+        }
+    }
+}
+
+fn dml_frontdoor_record_hook_observation(
+    decision: &SpireDmlFrontdoorReplacementDecisionRow,
+    action: &'static str,
+) {
+    // SAFETY: hook status fields are backend-local diagnostics updated only by
+    // this backend while processing planner-hook calls.
+    unsafe {
+        HOOK_CLASSIFICATION_ATTEMPTED = true;
+        LAST_HOOK_CLASSIFICATION_SUPPORTED = Some(decision.supported);
+        LAST_HOOK_CLASSIFICATION_KIND = Some(decision.kind);
+        LAST_HOOK_CLASSIFICATION_STATUS = Some(decision.status);
+        LAST_HOOK_ACTION = Some(action);
+    }
+}
+
+fn dml_frontdoor_call_next_planner(
+    parse: *mut pg_sys::Query,
+    query_string: *const core::ffi::c_char,
+    cursor_options: core::ffi::c_int,
+    bound_params: pg_sys::ParamListInfo,
+) -> *mut pg_sys::PlannedStmt {
+    // SAFETY: PREVIOUS_PLANNER_HOOK is the backend-local hook snapshot captured
+    // at install time. When absent, standard_planner is PostgreSQL's fallback;
+    // both paths receive PostgreSQL's original planner-hook arguments.
+    unsafe {
+        if let Some(previous_hook) = PREVIOUS_PLANNER_HOOK {
+            previous_hook(parse, query_string, cursor_options, bound_params)
+        } else {
+            pg_sys::standard_planner(parse, query_string, cursor_options, bound_params)
         }
     }
 }
@@ -268,10 +329,9 @@ pub(crate) fn dml_frontdoor_relation_context_cache_row() -> SpireDmlFrontdoorRel
         .get()
         .and_then(|cache| cache.lock().ok().map(|guard| guard.len()))
         .unwrap_or(0);
-    // SAFETY: this diagnostic reads backend-local hook registration state.
-    let callback_registered = unsafe { RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED };
+    let hook_state = dml_frontdoor_backend_hook_state();
     SpireDmlFrontdoorRelationContextCacheRow {
-        relcache_callback_registered: callback_registered,
+        relcache_callback_registered: hook_state.relcache_callback_registered,
         entry_count: i64::try_from(entry_count).unwrap_or(i64::MAX),
         hit_count: i64::try_from(RELATION_CONTEXT_CACHE_HITS.load(Ordering::Relaxed))
             .unwrap_or(i64::MAX),
@@ -281,7 +341,7 @@ pub(crate) fn dml_frontdoor_relation_context_cache_row() -> SpireDmlFrontdoorRel
             RELATION_CONTEXT_CACHE_INVALIDATIONS.load(Ordering::Relaxed),
         )
         .unwrap_or(i64::MAX),
-        status: if callback_registered {
+        status: if hook_state.relcache_callback_registered {
             "relcache_invalidated_cache_ready"
         } else {
             "relcache_callback_not_registered"
@@ -290,35 +350,25 @@ pub(crate) fn dml_frontdoor_relation_context_cache_row() -> SpireDmlFrontdoorRel
 }
 
 pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow {
-    // SAFETY: hook diagnostics are backend-local scalars updated by the
-    // planner hook in this backend; copying them for a status row is atomic
-    // enough for diagnostic reporting.
-    let (installed, classifier_invoked, last_supported, last_kind, last_status, last_action) = unsafe {
-        (
-            PLANNER_HOOK_INSTALLED,
-            HOOK_CLASSIFICATION_ATTEMPTED,
-            LAST_HOOK_CLASSIFICATION_SUPPORTED,
-            LAST_HOOK_CLASSIFICATION_KIND,
-            LAST_HOOK_CLASSIFICATION_STATUS,
-            LAST_HOOK_ACTION,
-        )
-    };
+    let hook_state = dml_frontdoor_backend_hook_state();
     SpireDmlFrontdoorHookStatusRow {
         hook_name: "ec_spire_dml_frontdoor_planner_hook",
-        planner_hook_installed: installed,
+        planner_hook_installed: hook_state.planner_hook_installed,
         query_shape_classifier_enabled: true,
-        query_shape_classifier_invoked_by_hook: classifier_invoked,
+        query_shape_classifier_invoked_by_hook: hook_state.classification_attempted,
         unsupported_shape_fail_closed_enabled: true,
         // True means supported UPDATE/DELETE shapes are planned as a
         // CustomScan; per-mode executor dispatch still gates execution.
         plan_rewrite_enabled: true,
-        last_classification_supported: last_supported,
-        last_classification_kind: last_kind,
-        last_classification_status: last_status,
-        last_hook_action: last_action,
-        status: if installed && classifier_invoked {
-            last_action.unwrap_or("pass_through_classifier_observed")
-        } else if installed {
+        last_classification_supported: hook_state.last_classification_supported,
+        last_classification_kind: hook_state.last_classification_kind,
+        last_classification_status: hook_state.last_classification_status,
+        last_hook_action: hook_state.last_hook_action,
+        status: if hook_state.planner_hook_installed && hook_state.classification_attempted {
+            hook_state
+                .last_hook_action
+                .unwrap_or("pass_through_classifier_observed")
+        } else if hook_state.planner_hook_installed {
             "fail_closed_guard_ready"
         } else {
             "not_installed"
@@ -382,9 +432,7 @@ pub(crate) fn dml_frontdoor_relation_context_row(
 pub(crate) fn dml_frontdoor_relation_context_catalog_row(
     heap_relation_oid: pg_sys::Oid,
 ) -> Result<SpireDmlFrontdoorRelationContext, String> {
-    // SAFETY: relation-context catalog loading runs inside PostgreSQL backend
-    // code; callback registration is idempotent for this backend.
-    unsafe { dml_frontdoor_register_relcache_callback() };
+    dml_frontdoor_register_relcache_callback();
     if heap_relation_oid == pg_sys::InvalidOid {
         return Err(
             "ec_spire DML frontdoor catalog relation context requires a valid heap relation OID"
@@ -438,20 +486,9 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
     // distributed DML cannot be rewritten into a coordinator-heap base plan.
     let decision = dml_frontdoor_observe_planner_query(parse);
     let plan_expr = dml_frontdoor_plan_tree_replacement_expr(parse, decision.as_ref());
-    // SAFETY: PREVIOUS_PLANNER_HOOK is the backend-local hook snapshot captured
-    // at install time; if absent, standard_planner is the PostgreSQL fallback.
-    let planned_stmt = if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
-        // SAFETY: previous_hook is the planner hook captured before installing
-        // this hook and is called with PostgreSQL's original planner arguments.
-        unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
-    } else {
-        // SAFETY: standard_planner is PostgreSQL's planner entry point and is
-        // called with the original planner-hook arguments.
-        unsafe { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
-    };
-    // SAFETY: planned_stmt was returned by PostgreSQL planner code and remains
-    // live for planner-hook replacement before control returns to PostgreSQL.
-    unsafe { dml_frontdoor_maybe_replace_plan_tree(planned_stmt, plan_expr) }
+    let planned_stmt =
+        dml_frontdoor_call_next_planner(parse, query_string, cursor_options, bound_params);
+    dml_frontdoor_maybe_replace_plan_tree(planned_stmt, plan_expr)
 }
 
 fn dml_frontdoor_plan_tree_replacement_expr(
@@ -471,7 +508,7 @@ fn dml_frontdoor_plan_tree_replacement_expr(
     })
 }
 
-unsafe fn dml_frontdoor_maybe_replace_plan_tree(
+fn dml_frontdoor_maybe_replace_plan_tree(
     planned_stmt: *mut pg_sys::PlannedStmt,
     plan_expr: Option<SpireDmlFrontdoorPrimitivePlanExpr>,
 ) -> *mut pg_sys::PlannedStmt {
@@ -508,15 +545,7 @@ fn dml_frontdoor_observe_planner_query(
 ) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
     let decision = dml_frontdoor_replacement_decision_catalog_row(query)?;
     let action = dml_frontdoor_hook_action(&decision);
-    // SAFETY: hook status fields are backend-local diagnostics updated only by
-    // this backend while processing planner-hook calls.
-    unsafe {
-        HOOK_CLASSIFICATION_ATTEMPTED = true;
-        LAST_HOOK_CLASSIFICATION_SUPPORTED = Some(decision.supported);
-        LAST_HOOK_CLASSIFICATION_KIND = Some(decision.kind);
-        LAST_HOOK_CLASSIFICATION_STATUS = Some(decision.status);
-        LAST_HOOK_ACTION = Some(action);
-    }
+    dml_frontdoor_record_hook_observation(&decision, action);
     if action == "planner_error_fail_closed" {
         dml_frontdoor_raise_planner_error(&decision);
     }
@@ -1324,13 +1353,15 @@ impl SpireDmlFrontdoorTupleDesc {
             return None;
         }
         // SAFETY: the descriptor was built from an open relation; attr_index is
-        // bounds-checked against natts before reading and copying the attribute.
-        let attr = unsafe { pg_sys::TupleDescAttr(self.tuple_desc, attr_index) };
-        if attr.is_null() {
-            return None;
-        }
-        // SAFETY: attr is non-null and points into the live tuple descriptor.
-        let attr = unsafe { *attr };
+        // bounds-checked against natts before reading and copying the
+        // non-null live tuple descriptor attribute.
+        let attr = unsafe {
+            let attr = pg_sys::TupleDescAttr(self.tuple_desc, attr_index);
+            if attr.is_null() {
+                return None;
+            }
+            *attr
+        };
         (!attr.attisdropped).then_some(attr)
     }
 
@@ -1349,13 +1380,16 @@ fn dml_frontdoor_tuple_desc_for_relation(
     heap_relation: pg_sys::Relation,
 ) -> Result<SpireDmlFrontdoorTupleDesc, String> {
     // SAFETY: heap_relation is held open by the caller's relation guard while
-    // the tuple descriptor pointer and natts value are copied.
-    let tuple_desc = unsafe { (*heap_relation).rd_att };
-    if tuple_desc.is_null() {
-        return Err("ec_spire DML frontdoor catalog relation tuple descriptor is NULL".to_owned());
-    }
-    // SAFETY: tuple_desc was checked non-null and belongs to the open relation.
-    let natts = unsafe { (*tuple_desc).natts };
+    // the tuple descriptor pointer and natts value are checked and copied.
+    let (tuple_desc, natts) = unsafe {
+        let tuple_desc = (*heap_relation).rd_att;
+        if tuple_desc.is_null() {
+            return Err(
+                "ec_spire DML frontdoor catalog relation tuple descriptor is NULL".to_owned(),
+            );
+        }
+        (tuple_desc, (*tuple_desc).natts)
+    };
     Ok(SpireDmlFrontdoorTupleDesc { tuple_desc, natts })
 }
 
@@ -1454,8 +1488,12 @@ fn dml_frontdoor_catalog_index_and_pk(
         };
         // SAFETY: IndexRelationGuard holds the relation open while relcache
         // metadata pointers are read and copied into local decisions.
-        let index_form = unsafe { (*index_relation.as_ptr()).rd_index.as_ref() };
-        let class_form = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() };
+        let (index_form, class_form) = unsafe {
+            (
+                (*index_relation.as_ptr()).rd_index.as_ref(),
+                (*index_relation.as_ptr()).rd_rel.as_ref(),
+            )
+        };
         if let Some(class_form) = class_form {
             if ec_spire_am_oid != pg_sys::InvalidOid && class_form.relam == ec_spire_am_oid {
                 ec_spire_index_count += 1;
@@ -1576,21 +1614,20 @@ fn dml_frontdoor_relation_attr_name_and_form(
 
 fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
     // SAFETY: format_type_be returns a palloc'd C string for a catalog type OID
-    // or NULL; the pointer is checked before decoding and then freed.
-    let type_name = unsafe { pg_sys::format_type_be(type_oid) };
-    if type_name.is_null() {
-        return Err("ec_spire DML frontdoor catalog format_type returned NULL".to_owned());
+    // or NULL. A non-null result is copied into an owned Rust String before the
+    // PostgreSQL allocation is released.
+    unsafe {
+        let type_name = pg_sys::format_type_be(type_oid);
+        if type_name.is_null() {
+            return Err("ec_spire DML frontdoor catalog format_type returned NULL".to_owned());
+        }
+        let decoded = CStr::from_ptr(type_name)
+            .to_str()
+            .map(str::to_owned)
+            .map_err(|e| format!("ec_spire DML frontdoor catalog type name is not UTF-8: {e}"));
+        pg_sys::pfree(type_name.cast());
+        decoded
     }
-    // SAFETY: type_name was checked non-null and is copied into an owned String
-    // before pfree releases PostgreSQL memory.
-    let decoded = unsafe { CStr::from_ptr(type_name) }
-        .to_str()
-        .map(str::to_owned)
-        .map_err(|e| format!("ec_spire DML frontdoor catalog type name is not UTF-8: {e}"));
-    // SAFETY: type_name was allocated by format_type_be in the current memory
-    // context and is released after decoding.
-    unsafe { pg_sys::pfree(type_name.cast()) };
-    decoded
 }
 
 fn dml_frontdoor_ec_spire_index_oid(heap_relation_oid: pg_sys::Oid) -> Result<pg_sys::Oid, String> {
