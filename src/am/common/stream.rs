@@ -293,6 +293,115 @@ where
 }
 
 #[cfg(feature = "pg18")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanOwnedReadStreamControl {
+    Continue,
+    Stop,
+}
+
+#[cfg(feature = "pg18")]
+struct ScanOwnedReadStreamBuffer {
+    buffer: pg_sys::Buffer,
+    block_number: Option<pg_sys::BlockNumber>,
+}
+
+#[cfg(feature = "pg18")]
+fn next_scan_owned_read_stream_buffer(
+    stream: *mut pg_sys::ReadStream,
+) -> Option<ScanOwnedReadStreamBuffer> {
+    let mut per_buffer_data = std::ptr::null_mut();
+    // SAFETY: stream is a live scan-owned stream and remains owned by the
+    // caller; this helper only consumes the buffers yielded by it.
+    let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+    if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+        return None;
+    }
+    let block_number = if per_buffer_data.is_null() {
+        None
+    } else {
+        // SAFETY: registered read-stream callbacks store one BlockNumber in
+        // per-buffer data when PostgreSQL supplies the slot.
+        Some(unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() })
+    };
+    Some(ScanOwnedReadStreamBuffer {
+        buffer,
+        block_number,
+    })
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn reset_scan_owned_read_stream(
+    stream: *mut pg_sys::ReadStream,
+    context: &str,
+) -> Result<(), String> {
+    if stream.is_null() {
+        return Err(format!("{context} read stream is not initialized"));
+    }
+    // SAFETY: callers pass a scan-owned read stream opened by
+    // read_stream_begin_relation and retained by the scan opaque.
+    unsafe { pg_sys::read_stream_reset(stream) };
+    Ok(())
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn visit_scan_owned_read_stream_pinned<F>(
+    stream: *mut pg_sys::ReadStream,
+    context: &str,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(
+        crate::storage::buffer_guard::PinnedBufferGuard,
+        Option<pg_sys::BlockNumber>,
+    ) -> Result<ScanOwnedReadStreamControl, String>,
+{
+    if stream.is_null() {
+        return Err(format!("{context} read stream is not initialized"));
+    }
+    while let Some(next) = next_scan_owned_read_stream_buffer(stream) {
+        // SAFETY: PostgreSQL returned a pinned buffer from the read stream; the
+        // guard owns release of that pin after the visitor consumes it.
+        let buffer =
+            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(next.buffer) }
+                .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
+        if visitor(buffer, next.block_number)? == ScanOwnedReadStreamControl::Stop {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn visit_scan_owned_read_stream_locked<F>(
+    stream: *mut pg_sys::ReadStream,
+    lockmode: i32,
+    context: &str,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(
+        crate::storage::buffer_guard::LockedBufferGuard,
+        Option<pg_sys::BlockNumber>,
+    ) -> Result<ScanOwnedReadStreamControl, String>,
+{
+    if stream.is_null() {
+        return Err(format!("{context} read stream is not initialized"));
+    }
+    while let Some(next) = next_scan_owned_read_stream_buffer(stream) {
+        // SAFETY: PostgreSQL returned a pinned buffer from the read stream; the
+        // guard adds the requested lock and owns unlock/release.
+        let buffer = unsafe {
+            crate::storage::buffer_guard::LockedBufferGuard::lock_pinned(next.buffer, lockmode)
+        }
+        .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
+        if visitor(buffer, next.block_number)? == ScanOwnedReadStreamControl::Stop {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "pg18")]
 pub(crate) fn visit_relation_linear_read_stream<F>(
     relation: pg_sys::Relation,
     first_block: pg_sys::BlockNumber,

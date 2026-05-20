@@ -1072,8 +1072,10 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
             {
                 let graph_stream = ensure_graph_read_stream((*scan).indexRelation, opaque);
                 let linear_stream = ensure_linear_read_stream((*scan).indexRelation, opaque);
-                pg_sys::read_stream_reset(graph_stream);
-                pg_sys::read_stream_reset(linear_stream);
+                super::stream::reset_scan_owned_read_stream(graph_stream, "ec_hnsw graph prefetch")
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
+                super::stream::reset_scan_owned_read_stream(linear_stream, "ec_hnsw linear scan")
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
             }
             #[cfg(any(test, feature = "pg_test"))]
             let reset_elapsed_us = u64::try_from(reset_started.elapsed().as_micros())
@@ -3193,33 +3195,22 @@ unsafe fn prefetch_graph_buffers(
 
     reset_graph_prefetch_blocks(opaque, blocks);
     let stream = ensure_graph_read_stream(index_relation, opaque);
-    // SAFETY: `stream` is owned by the scan opaque and has just been seeded
-    // with block numbers for this scan's live index relation.
-    unsafe { pg_sys::read_stream_reset(stream) };
+    super::stream::reset_scan_owned_read_stream(stream, "ec_hnsw graph prefetch")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
 
     let mut prefetched_buffers = HashMap::new();
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: the read stream remains owned by `opaque`, and
-        // `per_buffer_data` is an out-parameter consumed before the next call.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        // SAFETY: read streams return already-pinned buffers; the guard takes
-        // responsibility for releasing the pin when the prefetch map is dropped.
-        let buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }.unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw graph prefetch read stream returned an invalid buffer")
-        });
-        let block_number = if per_buffer_data.is_null() {
-            continue;
-        } else {
-            // SAFETY: `reset_graph_prefetch_blocks` stored block-number
-            // pointers as per-buffer data for this stream immediately above.
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-        };
-        prefetched_buffers.insert(block_number, buffer);
-    }
+    super::stream::visit_scan_owned_read_stream_pinned(
+        stream,
+        "ec_hnsw graph prefetch",
+        |buffer, block_number| {
+            let Some(block_number) = block_number else {
+                return Ok(super::stream::ScanOwnedReadStreamControl::Continue);
+            };
+            prefetched_buffers.insert(block_number, buffer);
+            Ok(super::stream::ScanOwnedReadStreamControl::Continue)
+        },
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
 
     prefetched_buffers
 }
@@ -5036,41 +5027,31 @@ unsafe fn select_next_linear_scan_result(
             .linear_prefetch_state
             .reset(opaque.next_block_number, max_block);
         let stream = ensure_linear_read_stream(index_relation, opaque);
-        // SAFETY: `stream` is owned by the scan opaque and seeded from the
-        // linear prefetch state for this live index relation.
-        unsafe { pg_sys::read_stream_reset(stream) };
+        super::stream::reset_scan_owned_read_stream(stream, "ec_hnsw linear scan")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
 
-        loop {
-            let mut per_buffer_data = ptr::null_mut();
-            // SAFETY: the read stream remains owned by `opaque`, and
-            // `per_buffer_data` is consumed before the next stream call.
-            let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-                break;
-            }
-
-            let block_number = if per_buffer_data.is_null() {
-                opaque.next_block_number
-            } else {
-                // SAFETY: the linear read-stream callback stores block-number
-                // pointers as per-buffer data for this stream.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            // SAFETY: read streams return pinned buffers; this takes a share
-            // lock guard and releases it when the guard is dropped.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .unwrap_or_else(|| {
-                        pgrx::error!("ec_hnsw read stream returned an invalid buffer")
-                    });
-            // SAFETY: the buffer is share-locked for `block_number` and belongs
-            // to this scan's live relation.
-            let selected = unsafe {
-                select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
-            };
-            if selected.is_some() {
-                return selected;
-            }
+        let mut selected_result = None;
+        super::stream::visit_scan_owned_read_stream_locked(
+            stream,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+            "ec_hnsw linear scan",
+            |buffer, block_number| {
+                let block_number = block_number.unwrap_or(opaque.next_block_number);
+                // SAFETY: the buffer is share-locked for `block_number` and belongs
+                // to this scan's live relation.
+                let selected = unsafe {
+                    select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
+                };
+                if selected.is_some() {
+                    selected_result = selected;
+                    return Ok(super::stream::ScanOwnedReadStreamControl::Stop);
+                }
+                Ok(super::stream::ScanOwnedReadStreamControl::Continue)
+            },
+        )
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+        if selected_result.is_some() {
+            return selected_result;
         }
     }
 
