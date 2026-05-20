@@ -1,0 +1,5 @@
+Script started on 2026-05-20 10:27:16-07:00 [<not executed on terminal>]
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/044-ivf-scan-boxed-pointers/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 2353 current unsafe rows
+
+Script done on 2026-05-20 10:27:17-07:00 [COMMAND_EXIT_CODE="0"]
