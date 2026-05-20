@@ -3,6 +3,7 @@ use std::mem::size_of;
 use pgrx::pg_sys;
 
 use super::{options, page};
+use crate::am::common::callback::am_callback;
 use crate::am::common::cost::{
     current_planner_cost_constants, strategy_translation_snapshot, PlannerCostConstants,
     PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
@@ -124,9 +125,7 @@ pub(crate) fn ivf_strategy_translation_snapshot() -> StrategyTranslationSnapshot
 
 #[cfg(feature = "pg18")]
 pub(crate) unsafe extern "C-unwind" fn ec_ivf_amgettreeheight(_rel: pg_sys::Relation) -> i32 {
-    // SAFETY: PG18 calls this AM callback from C; the implementation returns a
-    // constant and `pgrx_extern_c_guard` traps panics before they cross the ABI.
-    unsafe { pgrx::pgrx_extern_c_guard(ivf_tree_height_callback_value) }
+    am_callback(ivf_tree_height_callback_value)
 }
 
 #[cfg(feature = "pg18")]
@@ -134,29 +133,25 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatestrategy(
     strategy: pg_sys::StrategyNumber,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::CompareType::Type {
-    // SAFETY: PG18 invokes this AM strategy-translation callback from C. The
-    // closure only maps integer strategy values and is guarded against unwinding.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            match crate::am::common::cost::amtranslatestrategy_callback(i32::from(strategy)) {
-                crate::am::common::cost::PlannerCompareType::Invalid => {
-                    pg_sys::CompareType::COMPARE_INVALID
-                }
-                crate::am::common::cost::PlannerCompareType::Lt => pg_sys::CompareType::COMPARE_LT,
-                crate::am::common::cost::PlannerCompareType::Le => pg_sys::CompareType::COMPARE_LE,
-                crate::am::common::cost::PlannerCompareType::Eq => pg_sys::CompareType::COMPARE_EQ,
-                crate::am::common::cost::PlannerCompareType::Ge => pg_sys::CompareType::COMPARE_GE,
-                crate::am::common::cost::PlannerCompareType::Gt => pg_sys::CompareType::COMPARE_GT,
-                crate::am::common::cost::PlannerCompareType::Ne => pg_sys::CompareType::COMPARE_NE,
-                crate::am::common::cost::PlannerCompareType::Overlap => {
-                    pg_sys::CompareType::COMPARE_OVERLAP
-                }
-                crate::am::common::cost::PlannerCompareType::ContainedBy => {
-                    pg_sys::CompareType::COMPARE_CONTAINED_BY
-                }
+    am_callback(|| {
+        match crate::am::common::cost::amtranslatestrategy_callback(i32::from(strategy)) {
+            crate::am::common::cost::PlannerCompareType::Invalid => {
+                pg_sys::CompareType::COMPARE_INVALID
             }
-        })
-    }
+            crate::am::common::cost::PlannerCompareType::Lt => pg_sys::CompareType::COMPARE_LT,
+            crate::am::common::cost::PlannerCompareType::Le => pg_sys::CompareType::COMPARE_LE,
+            crate::am::common::cost::PlannerCompareType::Eq => pg_sys::CompareType::COMPARE_EQ,
+            crate::am::common::cost::PlannerCompareType::Ge => pg_sys::CompareType::COMPARE_GE,
+            crate::am::common::cost::PlannerCompareType::Gt => pg_sys::CompareType::COMPARE_GT,
+            crate::am::common::cost::PlannerCompareType::Ne => pg_sys::CompareType::COMPARE_NE,
+            crate::am::common::cost::PlannerCompareType::Overlap => {
+                pg_sys::CompareType::COMPARE_OVERLAP
+            }
+            crate::am::common::cost::PlannerCompareType::ContainedBy => {
+                pg_sys::CompareType::COMPARE_CONTAINED_BY
+            }
+        }
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -164,27 +159,23 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
     compare_type: pg_sys::CompareType::Type,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::StrategyNumber {
-    // SAFETY: PG18 invokes this AM compare-type translation callback from C. The
-    // closure only maps enum values and is guarded against unwinding.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            crate::am::common::cost::amtranslatecmptype_callback(match compare_type {
-                pg_sys::CompareType::COMPARE_LT => crate::am::common::cost::PlannerCompareType::Lt,
-                pg_sys::CompareType::COMPARE_LE => crate::am::common::cost::PlannerCompareType::Le,
-                pg_sys::CompareType::COMPARE_EQ => crate::am::common::cost::PlannerCompareType::Eq,
-                pg_sys::CompareType::COMPARE_GE => crate::am::common::cost::PlannerCompareType::Ge,
-                pg_sys::CompareType::COMPARE_GT => crate::am::common::cost::PlannerCompareType::Gt,
-                pg_sys::CompareType::COMPARE_NE => crate::am::common::cost::PlannerCompareType::Ne,
-                pg_sys::CompareType::COMPARE_OVERLAP => {
-                    crate::am::common::cost::PlannerCompareType::Overlap
-                }
-                pg_sys::CompareType::COMPARE_CONTAINED_BY => {
-                    crate::am::common::cost::PlannerCompareType::ContainedBy
-                }
-                _ => crate::am::common::cost::PlannerCompareType::Invalid,
-            }) as pg_sys::StrategyNumber
-        })
-    }
+    am_callback(|| {
+        crate::am::common::cost::amtranslatecmptype_callback(match compare_type {
+            pg_sys::CompareType::COMPARE_LT => crate::am::common::cost::PlannerCompareType::Lt,
+            pg_sys::CompareType::COMPARE_LE => crate::am::common::cost::PlannerCompareType::Le,
+            pg_sys::CompareType::COMPARE_EQ => crate::am::common::cost::PlannerCompareType::Eq,
+            pg_sys::CompareType::COMPARE_GE => crate::am::common::cost::PlannerCompareType::Ge,
+            pg_sys::CompareType::COMPARE_GT => crate::am::common::cost::PlannerCompareType::Gt,
+            pg_sys::CompareType::COMPARE_NE => crate::am::common::cost::PlannerCompareType::Ne,
+            pg_sys::CompareType::COMPARE_OVERLAP => {
+                crate::am::common::cost::PlannerCompareType::Overlap
+            }
+            pg_sys::CompareType::COMPARE_CONTAINED_BY => {
+                crate::am::common::cost::PlannerCompareType::ContainedBy
+            }
+            _ => crate::am::common::cost::PlannerCompareType::Invalid,
+        }) as pg_sys::StrategyNumber
+    })
 }
 
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
