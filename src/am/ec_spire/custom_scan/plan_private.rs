@@ -27,7 +27,7 @@ fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option
     Some(values)
 }
 
-unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
+fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
     let Some(state) = custom_scan_pg_ref(node) else {
         pgrx::error!("EcSpireDistributedScan executor state is NULL");
     };
@@ -58,9 +58,7 @@ unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) 
     }
 }
 
-unsafe fn custom_scan_mode_from_plan(
-    custom_scan: *mut pg_sys::CustomScan,
-) -> SpireCustomScanPlanMode {
+fn custom_scan_mode_from_plan(custom_scan: *mut pg_sys::CustomScan) -> SpireCustomScanPlanMode {
     let custom_private = custom_scan_custom_private(custom_scan, "private mode");
     let raw = custom_scan_plan_private_u32(custom_private, 0, "mode");
     custom_scan_mode_from_u32(raw)
@@ -95,7 +93,7 @@ fn custom_scan_plan_mode_for_dml_mode(
     }
 }
 
-unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
+fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
     let custom_private = custom_scan_custom_private(custom_scan, "private index OID");
     pg_sys::Oid::from(custom_scan_plan_private_u32(custom_private, 1, "index OID"))
 }

@@ -15,11 +15,8 @@ unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
         return;
     }
 
-    // SAFETY: PostgreSQL calls this callback with a live CustomScanState whose
-    // plan-private list was constructed by our planner callback.
-    let custom_scan = unsafe { custom_scan_plan(node) };
-    // SAFETY: `custom_scan` is the plan pointer from the live callback state.
-    let index_oid = unsafe { custom_scan_index_oid_from_plan(custom_scan) };
+    let custom_scan = custom_scan_plan(node);
+    let index_oid = custom_scan_index_oid_from_plan(custom_scan);
     let context = custom_scan_explain_context(index_oid);
 
     // SAFETY: `es` is the non-null ExplainState supplied by PostgreSQL for the
