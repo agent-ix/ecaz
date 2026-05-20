@@ -1,0 +1,47 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index 6849423b..8ed0e409 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -975,11 +975,10 @@ unsafe fn dml_frontdoor_bound_param_bigint_value(
+             "ec_spire DML frontdoor PK parameter ${param_id} must not be NULL"
+         ));
+     }
+-    // SAFETY: the datum type OID is checked before extracting an integer.
+-    unsafe { dml_frontdoor_param_datum_to_bigint(param_id, param_ref.value, param_ref.ptype) }
++    dml_frontdoor_param_datum_to_bigint(param_id, param_ref.value, param_ref.ptype)
+ }
+ 
+-unsafe fn dml_frontdoor_param_datum_to_bigint(
++fn dml_frontdoor_param_datum_to_bigint(
+     param_id: i32,
+     datum: pg_sys::Datum,
+     typoid: pg_sys::Oid,
+@@ -2319,8 +2318,7 @@ fn dml_frontdoor_predicate_value_inner(
+             {
+                 SpireDmlFrontdoorPredicateValue {
+                     kind: SpireDmlFrontdoorValueKind::ConstBigint,
+-                    // SAFETY: consttype was checked to be an integer type.
+-                    const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
++                    const_bigint: dml_frontdoor_const_bigint_value(const_expr),
+                     param_id: None,
+                 }
+             } else {
+@@ -2396,8 +2394,7 @@ fn dml_frontdoor_coercible_integer_value(
+             {
+                 SpireDmlFrontdoorPredicateValue {
+                     kind: SpireDmlFrontdoorValueKind::ConstBigint,
+-                    // SAFETY: consttype was checked to be an integer type.
+-                    const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
++                    const_bigint: dml_frontdoor_const_bigint_value(const_expr),
+                     param_id: None,
+                 }
+             } else {
+@@ -2427,7 +2424,7 @@ fn dml_frontdoor_other_predicate_value() -> SpireDmlFrontdoorPredicateValue {
+     }
+ }
+ 
+-unsafe fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
++fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
+     // SAFETY: callers pass Const nodes whose consttype is one of int2/int4/int8;
+     // FromDatum copies the by-value integer Datum into Rust.
+     unsafe {
