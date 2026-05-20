@@ -128,11 +128,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
             });
         }
 
-        // SAFETY: root_control came from the same live index relation and names
-        // the active epoch whose manifests are loaded for coordinator fanout.
-        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
-        };
+        let (epoch_manifest, object_manifest, placement_directory) =
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
             &epoch_manifest,
             &object_manifest,
@@ -529,11 +526,8 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
             );
         }
 
-        // SAFETY: root_control came from the same live index relation and names
-        // the active epoch whose manifests are loaded for heap resolution.
-        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
-        };
+        let (epoch_manifest, object_manifest, placement_directory) =
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
             &epoch_manifest,
             &object_manifest,

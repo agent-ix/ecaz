@@ -53,14 +53,7 @@ impl SpireLiveIndexRelation {
             return Ok(None);
         }
         let (epoch_manifest, object_manifest, placement_directory) =
-            // SAFETY: `root_control` was read from this live relation and names
-            // the active manifest tuple IDs for this relation.
-            unsafe {
-                load_relation_epoch_manifests_for_coordinator_fanout(
-                    self.relation,
-                    root_control,
-                )?
-            };
+            load_relation_epoch_manifests_for_coordinator_fanout(self.relation, root_control)?;
         Ok(Some(SpireActiveEpochAnchor {
             root_control,
             epoch_manifest,

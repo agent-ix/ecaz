@@ -16,12 +16,8 @@ pub(crate) unsafe fn remote_search_production_consistency_policy_summary_row(
         // SAFETY: index_relation is the live PostgreSQL index relation supplied
         // by the SQL diagnostic caller for the duration of this summary read.
         let root_control = page::read_root_control_page(index_relation);
-        let (epoch_manifest, _, _) = {
-            // SAFETY: root_control was read from the same relation immediately
-            // above, so manifest locators are interpreted against their owning
-            // index relation.
-            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control) }?
-        };
+        let (epoch_manifest, _, _) =
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
         let active_consistency_mode = consistency_mode_name(epoch_manifest.consistency_mode);
 
         let (

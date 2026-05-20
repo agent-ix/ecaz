@@ -288,7 +288,7 @@ fn coordinator_metadata_read_placement(
     placement
 }
 
-unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
+fn load_relation_epoch_manifests_for_coordinator_fanout(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
 ) -> Result<
@@ -302,16 +302,10 @@ unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active epoch manifest.
     let epoch_bytes =
         page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active object manifest.
     let object_bytes =
         page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active placement directory.
     let placement_bytes =
         page::read_object_tuple(index_relation, root_control.placement_directory_tid)?;
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;

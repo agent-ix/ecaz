@@ -151,11 +151,8 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
             ));
         }
 
-        // SAFETY: index_relation is the same open relation used for the root
-        // control read, and root_control identifies the active manifest set.
-        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
-        };
+        let (epoch_manifest, object_manifest, placement_directory) =
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
         if epoch_manifest.consistency_mode != requested_consistency_mode {
             return Err(format!(
                 "ec_spire remote search fanout requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
@@ -248,11 +245,8 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
             ));
         }
 
-        // SAFETY: index_relation is the same open relation used for the root
-        // control read, and root_control identifies the active manifest set.
-        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
-        };
+        let (epoch_manifest, object_manifest, placement_directory) =
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
         if epoch_manifest.consistency_mode != requested_consistency_mode {
             return Err(format!(
                 "ec_spire remote search target plan requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",

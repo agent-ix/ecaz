@@ -22,11 +22,8 @@ unsafe fn debug_spire_manifest_bundle(
     // and names the active local-store config tuple.
     let local_store_config =
         unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
-    // SAFETY: root_control was read from the same guarded debug index relation
-    // and names the active epoch/object/placement manifest tuples.
-    let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
-    };
+    let (epoch_manifest, object_manifest, placement_directory) =
+        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
     Ok((
         local_store_config,
         epoch_manifest,
