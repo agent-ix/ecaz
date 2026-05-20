@@ -1,32 +1,21 @@
-unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
-    if expr.is_null() {
-        return false;
-    }
-
-    // SAFETY: null was checked above; planner expressions are PostgreSQL Node
-    // pointers valid for this custom path/plan inspection. NodeTag gates the
-    // read-only concrete view for Const and Param nodes.
-    unsafe {
-        match (*expr.cast::<pg_sys::Node>()).type_ {
-            pg_sys::NodeTag::T_Const => custom_scan_query_values_from_const(expr.cast()).is_some(),
-            pg_sys::NodeTag::T_Param => {
-                let param = &*expr.cast::<pg_sys::Param>();
-                param.paramtype == pg_sys::FLOAT4ARRAYOID
-            }
-            _ => false,
+fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
+    match custom_scan_expr_node_tag(expr) {
+        Some(pg_sys::NodeTag::T_Const) => {
+            custom_scan_query_values_from_const(expr.cast()).is_some()
         }
+        Some(pg_sys::NodeTag::T_Param) => custom_scan_pg_ref(expr.cast::<pg_sys::Param>())
+            .map(|param| param.paramtype == pg_sys::FLOAT4ARRAYOID)
+            .unwrap_or(false),
+        _ => false,
     }
 }
 
-unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
-    if const_expr.is_null() {
-        return None;
-    }
+fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
+    let const_ref = custom_scan_pg_ref(const_expr)?;
     // SAFETY: null was checked above and caller only passes PostgreSQL Const
     // nodes from planner expressions. Float4 array type/nullability are checked
     // before decoding the datum without taking ownership from PostgreSQL.
     let values = unsafe {
-        let const_ref = &*const_expr;
         if const_ref.constisnull || const_ref.consttype != pg_sys::FLOAT4ARRAYOID {
             return None;
         }
