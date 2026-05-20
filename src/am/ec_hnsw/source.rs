@@ -497,28 +497,6 @@ fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
     }
 }
 
-pub(crate) unsafe fn fetch_heap_row_version(
-    heap_relation: pg_sys::Relation,
-    heap_tid: page::ItemPointer,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
-    label: &str,
-) {
-    // SAFETY: caller owns the heap relation, snapshot, and tuple slot for the
-    // current scan/build/vacuum callback.
-    let fetched = unsafe {
-        heap_slot::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, "ec_hnsw")
-    }
-    .unwrap_or_else(|error| pgrx::error!("{error}"));
-    if !fetched {
-        pgrx::error!(
-            "ec_hnsw {label} could not fetch heap tuple at ({},{})",
-            heap_tid.block_number,
-            heap_tid.offset_number
-        );
-    }
-}
-
 pub(crate) fn fetch_heap_row_version_with_reader(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     heap_tid: page::ItemPointer,
@@ -741,26 +719,6 @@ pub(crate) unsafe fn with_flat_float4_source_from_datum<R>(
     f(source)
 }
 
-pub(crate) unsafe fn with_source_from_heap_row<R>(
-    heap_relation: pg_sys::Relation,
-    heap_tid: page::ItemPointer,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
-    source_attribute: SourceAttribute,
-    label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
-) -> R {
-    // SAFETY: The heap relation/snapshot/slot are caller-owned for this
-    // callback and `heap_tid` came from the index tuple being examined.
-    unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, label) };
-    // SAFETY: The slot now holds the requested row version and the source
-    // attnum was resolved from heap metadata.
-    let source_datum = unsafe { required_slot_datum(slot, source_attribute.attnum, label) };
-    // SAFETY: The source kind was resolved from heap metadata and the closure
-    // keeps the datum-backed source view scoped to this call.
-    unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
-}
-
 pub(crate) fn with_source_from_heap_row_reader<R>(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     heap_tid: page::ItemPointer,
@@ -773,21 +731,6 @@ pub(crate) fn with_source_from_heap_row_reader<R>(
     // SAFETY: The source kind was resolved from heap metadata and the closure
     // keeps the datum-backed source view scoped to this call.
     unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
-}
-
-pub(crate) unsafe fn with_indexed_ecvector_from_slot<R>(
-    slot: *mut pg_sys::TupleTableSlot,
-    attnum: i32,
-    label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4VarlenaRef<'datum>) -> R,
-) -> R {
-    // SAFETY: The slot contains a row with the indexed ecvector attribute and
-    // `attnum` was resolved from index/heap metadata.
-    let source_datum = unsafe { required_slot_datum(slot, attnum, label) };
-    // SAFETY: The indexed attribute is required to be ecvector, which is stored
-    // as a byte-backed varlena float payload.
-    let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
-    f(source)
 }
 
 pub(crate) fn with_indexed_ecvector_from_slot_reader<R>(
