@@ -2,8 +2,6 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-#[cfg(feature = "pg18")]
-use super::stream;
 use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
 use crate::storage::buffer_guard::LockedBufferGuard;
 #[cfg(any(test, feature = "pg_test"))]
@@ -179,56 +177,21 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
 
     #[cfg(feature = "pg18")]
     {
-        let mut linear_state = stream::LinearPrefetchState::new(
+        crate::am::stream::visit_relation_linear_read_stream(
+            index_relation,
             page::FIRST_DATA_BLOCK_NUMBER,
             block_count
                 .saturating_sub(1)
                 .max(page::FIRST_DATA_BLOCK_NUMBER),
-        );
-        // SAFETY: The index relation and callback state live until
-        // `read_stream_end`; the stream callback yields main-fork block numbers.
-        let stream = unsafe {
-            pg_sys::read_stream_begin_relation(
-                pg_sys::READ_STREAM_SEQUENTIAL as i32,
-                ptr::null_mut(),
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                Some(stream::linear_prefetch_cb),
-                (&mut linear_state as *mut stream::LinearPrefetchState).cast(),
-                std::mem::size_of::<pg_sys::BlockNumber>(),
-            )
-        };
-        // SAFETY: `stream` was just opened and can be reset before consumption.
-        unsafe { pg_sys::read_stream_reset(stream) };
-        loop {
-            let mut per_buffer_data = ptr::null_mut();
-            // SAFETY: `stream` remains valid until `read_stream_end` below.
-            let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-                break;
-            }
-            let block_number = if per_buffer_data.is_null() {
-                page::FIRST_DATA_BLOCK_NUMBER
-            } else {
-                // SAFETY: The stream callback stores a BlockNumber-sized payload
-                // when per-buffer data is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            // SAFETY: `read_stream_next_buffer` returns a pinned buffer that is
-            // locked here for shared tuple inspection.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_hnsw failed to open data buffer while counting live tuples"
-                        )
-                    });
-            // SAFETY: The buffer guard owns a shared lock and `storage` matches
-            // the decoded index metadata.
-            count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };
-        }
-        // SAFETY: Ends the read stream opened above after all buffers are consumed.
-        unsafe { pg_sys::read_stream_end(stream) };
+            "ec_hnsw live tuple count",
+            |buffer, block_number| {
+                // SAFETY: The buffer guard owns a shared lock and `storage`
+                // matches the decoded index metadata.
+                count += unsafe { count_live_elements_on_buffer(storage, buffer, block_number) };
+                Ok(())
+            },
+        )
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     }
 
     #[cfg(not(feature = "pg18"))]
