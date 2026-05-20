@@ -1,0 +1,61 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index a817d694..1c2af9c9 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -1105,9 +1105,7 @@ fn dml_frontdoor_query_detail_with_relation(
+     query: *mut pg_sys::Query,
+     relation: &SpireDmlFrontdoorRelationContext,
+ ) -> Option<SpireDmlFrontdoorQueryDetail> {
+-    // SAFETY: query is a live PostgreSQL Query pointer for this planner
+-    // callback; as_ref is used only for immediate tree inspection.
+-    let query_ref = unsafe { query.as_ref()? };
++    let query_ref = dml_frontdoor_query_ref(query)?;
+     let operation = dml_frontdoor_operation_for_query(query_ref)?;
+     let pk_column = relation.pk_column.as_deref().unwrap_or("");
+     let column_names = relation
+@@ -1195,9 +1193,7 @@ fn dml_frontdoor_query_detail_from_baserel(
+     target_rtindex: i32,
+     relation: &SpireDmlFrontdoorRelationContext,
+ ) -> Option<SpireDmlFrontdoorQueryDetail> {
+-    // SAFETY: query comes from PlannerInfo::parse and is live during
+-    // set_rel_pathlist processing.
+-    let query_ref = unsafe { query.as_ref()? };
++    let query_ref = dml_frontdoor_query_ref(query)?;
+     if dml_frontdoor_operation_for_query(query_ref) != Some(operation) {
+         return None;
+     }
+@@ -1890,9 +1886,7 @@ pub(crate) fn classify_dml_frontdoor_query(
+     if query.is_null() {
+         return None;
+     }
+-    // SAFETY: query was checked non-null and is owned by PostgreSQL for the
+-    // active planner callback; it is not retained beyond this function.
+-    let query_ref = unsafe { query.as_ref()? };
++    let query_ref = dml_frontdoor_query_ref(query)?;
+     let operation = dml_frontdoor_operation_for_query(query_ref)?;
+     let target_rtindex = match operation {
+         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+@@ -1946,9 +1940,7 @@ pub(crate) fn dml_frontdoor_target_relation_oid(query: *mut pg_sys::Query) -> Op
+     if query.is_null() {
+         return None;
+     }
+-    // SAFETY: query was checked non-null and is inspected only during the
+-    // PostgreSQL planner callback.
+-    let query_ref = unsafe { query.as_ref()? };
++    let query_ref = dml_frontdoor_query_ref(query)?;
+     let operation = dml_frontdoor_operation_for_query(query_ref)?;
+     let target_rtindex = match operation {
+         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+@@ -2553,6 +2545,12 @@ fn dml_frontdoor_query_jointree(query: &pg_sys::Query) -> Option<&pg_sys::FromEx
+     unsafe { query.jointree.as_ref() }
+ }
+ 
++fn dml_frontdoor_query_ref<'a>(query: *mut pg_sys::Query) -> Option<&'a pg_sys::Query> {
++    // SAFETY: DML frontdoor callers pass PostgreSQL Query pointers owned by
++    // the active planner callback and inspect them immediately.
++    unsafe { query.as_ref() }
++}
++
+ fn dml_frontdoor_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
+     // SAFETY: DML frontdoor callers pass PostgreSQL-owned planner/catalog
+     // lists and consume the resulting view immediately without retaining list
