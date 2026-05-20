@@ -193,12 +193,8 @@ pub(crate) unsafe fn index_page_ownership(
         metadata_pq_group_size(&metadata),
     )
     .unwrap_or_else(|err| pgrx::error!("{err}"));
-    // SAFETY: the page debug reader walks posting tuples for the live relation
-    // using the payload length implied by the validated metadata.
-    let summaries = unsafe {
-        page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
-            .unwrap_or_else(|err| pgrx::error!("{err}"))
-    };
+    let summaries = page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
+        .unwrap_or_else(|err| pgrx::error!("{err}"));
     summaries
         .into_iter()
         .map(|summary| {

@@ -287,19 +287,14 @@ impl<'a> PageTupleReader<'a> {
             ));
         }
 
-        // SAFETY: this reader is constructed only from a live `LockedBufferGuard`;
-        // `offset` is checked against the cached line-pointer count before the
-        // helper exposes tuple bytes for the duration of `visit`.
-        unsafe {
-            with_page_line_tuple_bytes(
-                self.page_ptr,
-                self.page_size,
-                self.block_number,
-                offset,
-                tuple_kind,
-                visit,
-            )
-        }
+        with_page_line_tuple_bytes(
+            self.page_ptr,
+            self.page_size,
+            self.block_number,
+            offset,
+            tuple_kind,
+            visit,
+        )
     }
 
     fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
@@ -353,19 +348,14 @@ impl PageTupleWriter {
             ));
         }
 
-        // SAFETY: this writer is constructed only from a WAL-registered page
-        // whose buffer remains locked by the caller. `offset` is checked
-        // against the cached line-pointer count before tuple bytes are exposed.
-        unsafe {
-            with_page_line_tuple_bytes(
-                self.page_ptr,
-                self.page_size,
-                self.block_number,
-                offset,
-                tuple_kind,
-                visit,
-            )
-        }
+        with_page_line_tuple_bytes(
+            self.page_ptr,
+            self.page_size,
+            self.block_number,
+            offset,
+            tuple_kind,
+            visit,
+        )
     }
 
     fn visit_required<R, F>(
@@ -2051,7 +2041,7 @@ pub(super) struct IvfPostingBlockSummary {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn debug_ivf_posting_block_summaries(
+pub(super) fn debug_ivf_posting_block_summaries(
     index_relation: pg_sys::Relation,
     payload_len: usize,
 ) -> Result<Vec<IvfPostingBlockSummary>, String> {
@@ -2433,25 +2423,18 @@ fn next_physical_tuple_tid(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+fn page_item_id_ref<'a>(page_ptr: *mut u8, offset: u16) -> &'a pg_sys::ItemIdData {
     // SAFETY: callers pass a page pointer and a nonzero line pointer offset
-    // that has been range-checked against `page_line_pointer_count`.
+    // already range-checked against `page_line_pointer_count`.
     unsafe {
-        page_ptr
+        &*page_ptr
             .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
             .cast::<pg_sys::ItemIdData>()
     }
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-fn page_item_id_ref<'a>(page_ptr: *mut u8, offset: u16) -> &'a pg_sys::ItemIdData {
-    // SAFETY: callers pass a page pointer and a nonzero line pointer offset
-    // already range-checked against `page_line_pointer_count`.
-    unsafe { &*page_item_id(page_ptr, offset) }
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn with_page_line_tuple_bytes<R, F>(
+fn with_page_line_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: pg_sys::BlockNumber,
