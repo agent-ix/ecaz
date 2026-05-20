@@ -931,7 +931,7 @@ pub(crate) fn dml_frontdoor_primitive_plan_const_pk_value_bytes(
     }
 }
 
-pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
+pub(crate) fn dml_frontdoor_primitive_plan_pk_value_bytes(
     plan: &SpireDmlFrontdoorPrimitivePlan,
     params: pg_sys::ParamListInfo,
 ) -> Result<[u8; 8], String> {
@@ -940,21 +940,17 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
         SpireDmlFrontdoorPkValuePlan::ParamBigint(param_id) => {
-            // SAFETY: executor parameter memory is valid for this callback and
-            // the helper copies the bigint value before returning.
-            let value = unsafe { dml_frontdoor_bound_param_bigint_value(params, param_id)? };
+            let value = dml_frontdoor_bound_param_bigint_value(params, param_id)?;
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
     }
 }
 
-pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
+pub(crate) fn dml_frontdoor_primitive_invocation_from_plan(
     plan: &SpireDmlFrontdoorPrimitivePlan,
     params: pg_sys::ParamListInfo,
 ) -> Result<SpireDmlFrontdoorPrimitiveInvocation, String> {
-    // SAFETY: params is PostgreSQL executor callback state; the helper only
-    // reads the selected parameter and returns copied bytes.
-    let pk_value = unsafe { dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)? };
+    let pk_value = dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)?;
     if plan.pk_argument.pk_column.is_empty() {
         return Err("ec_spire DML frontdoor primitive invocation requires pk_column".to_owned());
     }
@@ -969,7 +965,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
     })
 }
 
-unsafe fn dml_frontdoor_bound_param_bigint_value(
+fn dml_frontdoor_bound_param_bigint_value(
     params: pg_sys::ParamListInfo,
     param_id: i32,
 ) -> Result<i64, String> {
