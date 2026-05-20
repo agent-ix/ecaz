@@ -1,0 +1,233 @@
+Script started on 2026-05-20 13:42:34-07:00 [<not executed on terminal>]
+diff --git a/src/am/ec_spire/custom_scan/cost_helpers.rs b/src/am/ec_spire/custom_scan/cost_helpers.rs
+index 38561497..dc172927 100644
+--- a/src/am/ec_spire/custom_scan/cost_helpers.rs
++++ b/src/am/ec_spire/custom_scan/cost_helpers.rs
+@@ -12,8 +12,8 @@ unsafe fn estimate_custom_scan_cost(
+ ) -> SpireCustomScanCostEstimate {
+     // SAFETY: planner cost constants and cpu_tuple_cost are backend-local GUC
+     // reads during planner path construction.
+-    let constants = unsafe { current_planner_cost_constants() };
+-    let cpu_tuple_cost = unsafe { pg_sys::cpu_tuple_cost };
++    let (constants, cpu_tuple_cost) =
++        unsafe { (current_planner_cost_constants(), pg_sys::cpu_tuple_cost) };
+     estimate_custom_scan_cost_with_constants(
+         output_rows,
+         rel_rows,
+@@ -25,13 +25,9 @@ unsafe fn estimate_custom_scan_cost(
+ }
+ 
+ fn custom_scan_target_width(target: *mut pg_sys::PathTarget) -> f64 {
+-    if target.is_null() {
+-        0.0
+-    } else {
+-        // SAFETY: caller supplied a live PathTarget pointer from PostgreSQL's
+-        // planner; null was checked above.
+-        f64::from(unsafe { (*target).width }.max(0))
+-    }
++    custom_scan_pg_ref(target)
++        .map(|target| f64::from(target.width.max(0)))
++        .unwrap_or(0.0)
+ }
+ 
+ fn estimate_custom_scan_cost_with_constants(
+@@ -73,9 +69,7 @@ fn estimate_custom_scan_cost_with_constants(
+ }
+ 
+ unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
+-    // SAFETY: caller supplies PostgreSQL's planner root; as_ref returns None if
+-    // a defensive null pointer is encountered.
+-    let root_ref = unsafe { root.as_ref()? };
++    let root_ref = custom_scan_pg_ref(root)?;
+     if root_ref.limit_tuples < 0.0 || !root_ref.limit_tuples.is_finite() {
+         return None;
+     }
+@@ -86,93 +80,83 @@ unsafe fn custom_scan_orderby_query_expr(
+     root: *mut pg_sys::PlannerInfo,
+     rel: *mut pg_sys::RelOptInfo,
+ ) -> Option<*mut pg_sys::Expr> {
+-    if root.is_null() || rel.is_null() {
+-        return None;
+-    }
+-    // SAFETY: null checks above ensure the planner root and rel pointers can be
+-    // borrowed while inspecting this path candidate.
+-    let root_ref = unsafe { root.as_ref()? };
+-    let rel_ref = unsafe { rel.as_ref()? };
+-    // SAFETY: PlannerInfo owns parse during planning; as_ref handles null parse
+-    // defensively before sortClause/targetList are inspected.
+-    let query = unsafe { root_ref.parse.as_ref()? };
++    let root_ref = custom_scan_pg_ref(root)?;
++    let rel_ref = custom_scan_pg_ref(rel)?;
++    let query = custom_scan_pg_ref(root_ref.parse)?;
+     if query.sortClause.is_null() || query.targetList.is_null() {
+         return None;
+     }
+-    // SAFETY: sortClause is non-null and owned by the live Query node.
+-    let sort_clauses = unsafe { PgList::<pg_sys::SortGroupClause>::from_pg(query.sortClause) };
++    let sort_clauses = custom_scan_pg_list::<pg_sys::SortGroupClause>(query.sortClause);
+     if sort_clauses.len() != 1 {
+         return None;
+     }
+-    // SAFETY: single-item sortClause list is live while planning this path.
+-    let sort_clause = unsafe { sort_clauses.get_ptr(0)?.as_ref()? };
+-    // SAFETY: targetList is non-null and owned by the live Query node.
+-    let target_list = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(query.targetList) };
++    let sort_clause = custom_scan_pg_ref(sort_clauses.get_ptr(0)?)?;
++    let target_list = custom_scan_pg_list::<pg_sys::TargetEntry>(query.targetList);
+     for target_entry in target_list.iter_ptr() {
+-        // SAFETY: PostgreSQL target lists can be traversed as TargetEntry
+-        // pointers for the duration of this planner callback.
+-        let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {
++        let Some(target_entry) = custom_scan_pg_ref(target_entry) else {
+             continue;
+         };
+         if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {
+             continue;
+         }
+-        // SAFETY: target_entry belongs to the live target list and rel_ref came
+-        // from the same planner relation candidate.
+-        return unsafe { custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid) };
++        return custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid);
+     }
+     None
+ }
+ 
+-unsafe fn custom_scan_query_expr_from_sort_expr(
++fn custom_scan_query_expr_from_sort_expr(
+     expr: *mut pg_sys::Expr,
+     relid: pg_sys::Index,
+ ) -> Option<*mut pg_sys::Expr> {
+-    if expr.is_null() {
+-        return None;
+-    }
+-    let node = expr.cast::<pg_sys::Node>();
+-    // SAFETY: expr is non-null and every planner Expr begins with a NodeTag.
+-    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_OpExpr {
+-        return None;
+-    }
+-    // SAFETY: the NodeTag check above proves this Expr is an OpExpr.
+-    let op_expr = unsafe { &*expr.cast::<pg_sys::OpExpr>() };
+-    // SAFETY: OpExpr args is the PostgreSQL-owned argument list for this live
+-    // planner expression.
+-    let args = unsafe { PgList::<pg_sys::Expr>::from_pg(op_expr.args) };
++    let op_expr = custom_scan_op_expr(expr)?;
++    let args = custom_scan_pg_list::<pg_sys::Expr>(op_expr.args);
+     if args.len() != 2 {
+         return None;
+     }
+     let left = args.get_ptr(0)?;
+     let right = args.get_ptr(1)?;
+-    // SAFETY: left/right are the two live OpExpr operands and relid identifies
+-    // the relation candidate being matched.
+-    if unsafe {
+-        custom_scan_expr_is_relation_var(left, relid) && custom_scan_expr_is_query_value(right)
+-    } {
++    if custom_scan_expr_is_relation_var(left, relid) && custom_scan_expr_is_query_value(right) {
+         return Some(right);
+     }
+-    // SAFETY: same live OpExpr operands as above, checked in reverse order for
+-    // commutative vector-distance expressions.
+-    if unsafe {
+-        custom_scan_expr_is_relation_var(right, relid) && custom_scan_expr_is_query_value(left)
+-    } {
++    if custom_scan_expr_is_relation_var(right, relid) && custom_scan_expr_is_query_value(left) {
+         return Some(left);
+     }
+     None
+ }
+ 
+-unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
+-    if expr.is_null() {
+-        return false;
++fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
++    custom_scan_var_expr(expr)
++        .map(|var| u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0)
++        .unwrap_or(false)
++}
++
++fn custom_scan_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
++    // SAFETY: callers pass PostgreSQL-owned planner lists and consume the view
++    // immediately during the current planner callback.
++    unsafe { PgList::<T>::from_pg(list) }
++}
++
++fn custom_scan_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
++    // SAFETY: callers pass PostgreSQL planner pointers that are live for the
++    // current callback and copy or inspect the referenced fields immediately.
++    unsafe { ptr.as_ref() }
++}
++
++fn custom_scan_op_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::OpExpr> {
++    if custom_scan_expr_node_tag(expr)? != pg_sys::NodeTag::T_OpExpr {
++        return None;
+     }
+-    let node = expr.cast::<pg_sys::Node>();
+-    // SAFETY: expr is non-null and every planner Expr begins with a NodeTag.
+-    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Var {
+-        return false;
++    custom_scan_pg_ref(expr.cast::<pg_sys::OpExpr>())
++}
++
++fn custom_scan_var_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::Var> {
++    if custom_scan_expr_node_tag(expr)? != pg_sys::NodeTag::T_Var {
++        return None;
+     }
+-    // SAFETY: the NodeTag check above proves this Expr is a Var.
+-    let var = unsafe { &*expr.cast::<pg_sys::Var>() };
+-    u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0
++    custom_scan_pg_ref(expr.cast::<pg_sys::Var>())
++}
++
++fn custom_scan_expr_node_tag(expr: *mut pg_sys::Expr) -> Option<pg_sys::NodeTag> {
++    let node = custom_scan_pg_ref(expr.cast::<pg_sys::Node>())?;
++    Some(node.type_)
+ }
+diff --git a/src/am/ec_spire/custom_scan/plan_private.rs b/src/am/ec_spire/custom_scan/plan_private.rs
+index ebfc5af4..889d62a5 100644
+--- a/src/am/ec_spire/custom_scan/plan_private.rs
++++ b/src/am/ec_spire/custom_scan/plan_private.rs
+@@ -1,32 +1,21 @@
+-unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
+-    if expr.is_null() {
+-        return false;
+-    }
+-
+-    // SAFETY: null was checked above; planner expressions are PostgreSQL Node
+-    // pointers valid for this custom path/plan inspection. NodeTag gates the
+-    // read-only concrete view for Const and Param nodes.
+-    unsafe {
+-        match (*expr.cast::<pg_sys::Node>()).type_ {
+-            pg_sys::NodeTag::T_Const => custom_scan_query_values_from_const(expr.cast()).is_some(),
+-            pg_sys::NodeTag::T_Param => {
+-                let param = &*expr.cast::<pg_sys::Param>();
+-                param.paramtype == pg_sys::FLOAT4ARRAYOID
+-            }
+-            _ => false,
++fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
++    match custom_scan_expr_node_tag(expr) {
++        Some(pg_sys::NodeTag::T_Const) => {
++            custom_scan_query_values_from_const(expr.cast()).is_some()
+         }
++        Some(pg_sys::NodeTag::T_Param) => custom_scan_pg_ref(expr.cast::<pg_sys::Param>())
++            .map(|param| param.paramtype == pg_sys::FLOAT4ARRAYOID)
++            .unwrap_or(false),
++        _ => false,
+     }
+ }
+ 
+-unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
+-    if const_expr.is_null() {
+-        return None;
+-    }
++fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
++    let const_ref = custom_scan_pg_ref(const_expr)?;
+     // SAFETY: null was checked above and caller only passes PostgreSQL Const
+     // nodes from planner expressions. Float4 array type/nullability are checked
+     // before decoding the datum without taking ownership from PostgreSQL.
+     let values = unsafe {
+-        let const_ref = &*const_expr;
+         if const_ref.constisnull || const_ref.consttype != pg_sys::FLOAT4ARRAYOID {
+             return None;
+         }
+
+Script done on 2026-05-20 13:42:34-07:00 [COMMAND_EXIT_CODE="0"]
