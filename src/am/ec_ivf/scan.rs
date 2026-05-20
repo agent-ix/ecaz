@@ -802,13 +802,9 @@ unsafe fn configure_heap_rerank_state(
         return;
     }
 
-    // SAFETY: `scan` is the live PostgreSQL scan descriptor from the AM
-    // callback path; resolver returns a borrowed or owned heap relation guard.
-    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
+    let heap_relation = resolve_scan_heap_relation(scan);
     let heap_relation_ptr = heap_relation.as_ptr();
-    // SAFETY: `scan` is live; resolver returns a borrowed scan snapshot or an
-    // owned registered snapshot guard.
-    let snapshot = unsafe { resolve_scan_snapshot(scan) };
+    let snapshot = resolve_scan_snapshot(scan);
     // SAFETY: heap and index relations are live; resolver validates the indexed
     // ecvector source attribute for heap_f32 rerank.
     let source_attribute = unsafe {
@@ -976,10 +972,7 @@ unsafe fn materialize_probe_candidates(
         metadata_pq_group_size(metadata),
     )?;
     let payload_len = quantizer.payload_len();
-    // SAFETY: `index_relation` and metadata describe the live IVF index; the
-    // selected list ids come from validated centroid scores.
-    let probe_plan =
-        unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
+    let probe_plan = build_selected_probe_plan(index_relation, metadata, selected_lists)?;
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
     let mut running_top = quantizer
         .uses_score_bound_pruning()
@@ -1224,7 +1217,7 @@ fn prefetch_heap_rerank_blocks(
     crate::am::stream::prefetch_relation_blocks(heap_relation, block_numbers, "ec_ivf heap rerank");
 }
 
-unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
+fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
     // SAFETY: `scan` is a live PostgreSQL scan descriptor; `heapRelation` may
     // already be supplied by the executor.
     if !unsafe { (*scan).heapRelation }.is_null() {
@@ -1244,7 +1237,7 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvf
     ResolvedIvfScanHeapRelation::owned(heap_relation)
 }
 
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
+fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
     // SAFETY: `scan` is a live PostgreSQL scan descriptor; `xs_snapshot` may
     // already be supplied by the executor.
     if !unsafe { (*scan).xs_snapshot }.is_null() {
@@ -1331,7 +1324,7 @@ fn metadata_pq_group_size(metadata: &super::page::MetadataPage) -> Option<usize>
     }
 }
 
-unsafe fn build_selected_probe_plan(
+fn build_selected_probe_plan(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
     selected_lists: &[u32],
@@ -1352,9 +1345,7 @@ unsafe fn build_selected_probe_plan(
         return Err("ec_ivf metadata has lists but no directory head".to_owned());
     }
 
-    // SAFETY: caller passes the live IVF index relation; metadata was read
-    // from that relation and its directory head is validated above.
-    let directories = unsafe { load_directory_entries(index_relation, metadata)? };
+    let directories = load_directory_entries(index_relation, metadata)?;
     let mut ordered_selected_lists = Vec::with_capacity(selected_lists.len());
     let mut selected_list_mask = vec![false; metadata.nlists as usize];
     let mut remaining_live_tids_by_list = vec![0_u64; metadata.nlists as usize];
@@ -1427,7 +1418,7 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
     unsafe { (*opaque.cast::<EcIvfScanOpaque>()).explain_counters }
 }
 
-unsafe fn load_directory_entries(
+fn load_directory_entries(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
 ) -> Result<Vec<super::page::IvfListDirectoryTuple>, String> {
@@ -1927,9 +1918,7 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
         "ec_ivf debug directory entry",
     );
     let metadata = debug_read_metadata_page(index_relation.as_ptr());
-    // SAFETY: metadata was read from the same live index relation and
-    // `load_directory_entries` validates the directory chain ordering.
-    let directories = unsafe { load_directory_entries(index_relation.as_ptr(), &metadata) }
+    let directories = load_directory_entries(index_relation.as_ptr(), &metadata)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let directory = directories
         .get(list_id as usize)
