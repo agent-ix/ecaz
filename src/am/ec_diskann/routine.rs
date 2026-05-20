@@ -2015,9 +2015,7 @@ mod tests {
         );
         let index_relation_ptr = index_relation.as_ptr();
 
-        // SAFETY: The guard keeps the index relation open while relation
-        // options are read for test scan-state construction.
-        let relation_options = unsafe { super::options::relation_options(index_relation_ptr) };
+        let relation_options = super::options::relation_options(index_relation_ptr);
         // SAFETY: The guard keeps the index relation open while the persisted
         // chain is materialized for test scan-state construction.
         let (metadata, chain) =

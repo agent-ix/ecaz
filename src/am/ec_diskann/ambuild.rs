@@ -102,9 +102,7 @@ struct BuildPassTimingSummary {
 
 impl BuildState {
     unsafe fn new(index_relation: pg_sys::Relation) -> Self {
-        // SAFETY: The index relation is live while ambuild reads its reloptions
-        // for this build state.
-        let options = unsafe { options::relation_options(index_relation) };
+        let options = options::relation_options(index_relation);
         Self {
             options,
             page_size: pg_sys::BLCKSZ as usize,

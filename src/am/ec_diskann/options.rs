@@ -282,7 +282,10 @@ unsafe fn read_string_reloption(
 }
 
 #[allow(dead_code)]
-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {
+pub(super) fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {
+    if index_relation.is_null() {
+        pgrx::error!("ec_diskann relation options need a valid index relation");
+    }
     // SAFETY: index_relation is a live PostgreSQL relation while callers decode
     // relation options; rd_options may be null when defaults apply.
     let rd_options = unsafe { (*index_relation).rd_options };

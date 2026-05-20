@@ -90,9 +90,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
 }
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
-    // SAFETY: `index_relation` is a live relation pointer owned by the planner
-    // callback guard for the duration of this computation.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
@@ -125,9 +123,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
 }
 
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
-    // SAFETY: `index_relation` is a live relation pointer supplied by a SQL
-    // diagnostic wrapper.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);

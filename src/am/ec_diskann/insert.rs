@@ -1270,9 +1270,7 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
         search_code: training::derive_grouped_pq4_code(source_vector, &model),
     }];
 
-    // SAFETY: `index_relation` is live during empty-index bootstrap and its
-    // reloptions are read without mutating relation state.
-    let relopts = unsafe { options::relation_options(index_relation) };
+    let relopts = options::relation_options(index_relation);
     let params = BuildParams {
         graph_degree_r: u16::try_from(relopts.graph_degree)
             .map_err(|_| "graph_degree does not fit in u16".to_owned())?,
