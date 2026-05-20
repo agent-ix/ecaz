@@ -1142,18 +1142,15 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
             query_ref.resultRelation
         }
-        // SAFETY: single_range_table_ref only reads the live Query jointree.
-        SpireDmlFrontdoorOperation::PkSelect => unsafe {
+        SpireDmlFrontdoorOperation::PkSelect => {
             single_range_table_ref(query_ref).unwrap_or_default()
-        },
+        }
     };
     // SAFETY: predicate and target-list helpers only inspect planner-owned
     // nodes while the Query remains live for this callback.
-    let predicate =
-        unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context) };
+    let predicate = dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context);
     let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
-        // SAFETY: targetList belongs to the live Query tree for this callback.
-        unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
+        dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context)
     } else {
         Vec::new()
     };
@@ -1166,8 +1163,7 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
         .map(|(_column, expr)| *expr)
         .collect::<Vec<_>>();
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
-        // SAFETY: targetList belongs to the live Query tree for this callback.
-        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+        dml_frontdoor_target_columns(query_ref.targetList, &query_context)
     } else {
         Vec::new()
     };
@@ -1235,19 +1231,14 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
     };
     // set_rel_pathlist_hook sees planner-normalized RestrictInfo clauses;
     // diagnostic SQL helpers operate on a freshly analyzed Query jointree.
-    // SAFETY: baserestrictinfo and Query jointree are planner-owned structures
-    // valid during this hook; helpers copy only the decision facts they need.
-    let predicate = unsafe {
-        dml_frontdoor_pk_predicate_from_baserestrictinfo(
-            rel.baserestrictinfo,
-            target_rtindex,
-            &query_context,
-        )
-        .unwrap_or_else(|| dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context))
-    };
+    let predicate = dml_frontdoor_pk_predicate_from_baserestrictinfo(
+        rel.baserestrictinfo,
+        target_rtindex,
+        &query_context,
+    )
+    .unwrap_or_else(|| dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context));
     let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
-        // SAFETY: targetList belongs to the live Query tree for this callback.
-        unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
+        dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context)
     } else {
         Vec::new()
     };
@@ -1260,8 +1251,7 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
         .map(|(_column, expr)| *expr)
         .collect::<Vec<_>>();
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
-        // SAFETY: targetList belongs to the live Query tree for this callback.
-        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+        dml_frontdoor_target_columns(query_ref.targetList, &query_context)
     } else {
         Vec::new()
     };
@@ -1273,8 +1263,7 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
-    // SAFETY: join-shape inspection only walks the live Query jointree.
-    let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
+    let has_join = dml_frontdoor_query_has_join_shape(query_ref, operation);
     let shape = classify_dml_frontdoor_shape(SpireDmlFrontdoorShapeInput {
         operation,
         ec_spire_distributed_table: query_context.ec_spire_distributed_table,
@@ -1931,25 +1920,18 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         SpireDmlFrontdoorOperation::PkSelect => {
             // Keep unsupported SELECT shapes flowing into the shared classifier
             // so diagnostics report the same fail-closed status/kind matrix.
-            // SAFETY: single_range_table_ref only reads the live Query jointree.
-            unsafe { single_range_table_ref(query_ref) }.unwrap_or_default()
+            single_range_table_ref(query_ref).unwrap_or_default()
         }
     };
-    // SAFETY: these helpers only read the live Query jointree/targetlist and
-    // copy names and classification facts into owned Rust values.
-    let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
-    // SAFETY: predicate extraction walks the live Query expression tree and
-    // copies the predicate facts it returns.
-    let predicate = unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
+    let has_join = dml_frontdoor_query_has_join_shape(query_ref, operation);
+    let predicate = dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context);
     let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
-        // SAFETY: targetList belongs to the live Query tree for this callback.
-        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+        dml_frontdoor_target_columns(query_ref.targetList, &context)
     } else {
         Vec::new()
     };
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
-        // SAFETY: targetList belongs to the live Query tree for this callback.
-        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+        dml_frontdoor_target_columns(query_ref.targetList, &context)
     } else {
         Vec::new()
     };
@@ -1993,12 +1975,9 @@ pub(crate) unsafe fn dml_frontdoor_target_relation_oid(
         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
             query_ref.resultRelation
         }
-        // SAFETY: single_range_table_ref only reads the Query jointree.
-        SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query_ref)? },
+        SpireDmlFrontdoorOperation::PkSelect => single_range_table_ref(query_ref)?,
     };
-    // SAFETY: rtable lookup reads the live Query range table and returns an OID
-    // by value.
-    unsafe { dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex) }
+    dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex)
 }
 
 fn dml_frontdoor_operation_for_query(query: &pg_sys::Query) -> Option<SpireDmlFrontdoorOperation> {
@@ -2010,7 +1989,7 @@ fn dml_frontdoor_operation_for_query(query: &pg_sys::Query) -> Option<SpireDmlFr
     }
 }
 
-unsafe fn dml_frontdoor_query_has_join_shape(
+fn dml_frontdoor_query_has_join_shape(
     query: &pg_sys::Query,
     operation: SpireDmlFrontdoorOperation,
 ) -> bool {
@@ -2018,16 +1997,14 @@ unsafe fn dml_frontdoor_query_has_join_shape(
     // only the result relation in the jointree; FROM/USING relations make the
     // shape a join even though baserel handoff skips those non-target rels.
     match operation {
-        // SAFETY: single_range_table_ref only reads the Query jointree.
-        SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query).is_none() },
-        // SAFETY: DML join-shape inspection only reads the Query jointree.
-        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => unsafe {
+        SpireDmlFrontdoorOperation::PkSelect => single_range_table_ref(query).is_none(),
+        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
             dml_frontdoor_dml_has_extra_from_shape(query)
-        },
+        }
     }
 }
 
-unsafe fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
+fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
     // SAFETY: query is a live planner Query; jointree may be null and is
     // checked before dereferencing.
     let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
@@ -2064,7 +2041,7 @@ fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
         || !query.setOperations.is_null()
 }
 
-unsafe fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
     // SAFETY: query is live and jointree is checked for null by as_ref.
     let jointree = unsafe { query.jointree.as_ref()? };
     if jointree.fromlist.is_null() {
@@ -2082,7 +2059,7 @@ unsafe fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
         .map(|range_table_ref| range_table_ref.rtindex)
 }
 
-unsafe fn dml_frontdoor_relation_oid_from_rtable(
+fn dml_frontdoor_relation_oid_from_rtable(
     query: &pg_sys::Query,
     rtindex: i32,
 ) -> Option<pg_sys::Oid> {
@@ -2102,7 +2079,7 @@ unsafe fn dml_frontdoor_relation_oid_from_rtable(
     Some(rte.relid)
 }
 
-unsafe fn dml_frontdoor_pk_predicate(
+fn dml_frontdoor_pk_predicate(
     query: &pg_sys::Query,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
@@ -2113,13 +2090,11 @@ unsafe fn dml_frontdoor_pk_predicate(
         return dml_frontdoor_empty_pk_predicate();
     };
     let qual = jointree.quals;
-    // SAFETY: quals is a planner expression pointer, allowed to be null and
-    // validated by the clause walker.
-    unsafe { dml_frontdoor_pk_predicate_from_clause(qual.cast(), target_rtindex, context) }
+    dml_frontdoor_pk_predicate_from_clause(qual.cast(), target_rtindex, context)
         .unwrap_or_else(dml_frontdoor_empty_pk_predicate)
 }
 
-unsafe fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
+fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
     baserestrictinfo: *mut pg_sys::List,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
@@ -2136,17 +2111,16 @@ unsafe fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
         let Some(restrict_info) = (unsafe { restrict_info.as_ref() }) else {
             continue;
         };
-        // SAFETY: RestrictInfo::clause belongs to the live planner tree.
-        if let Some(predicate) = unsafe {
+        if let Some(predicate) =
             dml_frontdoor_pk_predicate_from_clause(restrict_info.clause, target_rtindex, context)
-        } {
+        {
             return Some(predicate);
         }
     }
     None
 }
 
-unsafe fn dml_frontdoor_pk_predicate_from_clause(
+fn dml_frontdoor_pk_predicate_from_clause(
     clause: *mut pg_sys::Expr,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
@@ -2156,11 +2130,8 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     let Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) =
         (unsafe { dml_frontdoor_expr_node(clause) })
     else {
-        // SAFETY: expression walker validates node tags before recursing into
-        // supported PostgreSQL expression shapes.
-        if unsafe {
-            dml_frontdoor_expr_references_column(clause, target_rtindex, context, context.pk_column)
-        } {
+        if dml_frontdoor_expr_references_column(clause, target_rtindex, context, context.pk_column)
+        {
             return Some(SpireDmlFrontdoorPkPredicate {
                 column: Some(context.pk_column.to_owned()),
                 operator: Some("other"),
@@ -2192,30 +2163,21 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     let right = args.get_ptr(1);
     match (left, right) {
         (Some(left), Some(right)) => {
-            // SAFETY: left/right are expression pointers from OpExpr::args and
-            // the helpers check tags/nulls before reading fields.
-            if let Some(column) =
-                unsafe { dml_frontdoor_predicate_var_column(left, target_rtindex, context) }
+            if let Some(column) = dml_frontdoor_predicate_var_column(left, target_rtindex, context)
             {
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
-                    // SAFETY: right is the opposite expression argument from
-                    // the validated OpExpr argument list.
-                    value: unsafe { dml_frontdoor_predicate_value(right) },
+                    value: dml_frontdoor_predicate_value(right),
                     value_expr: Some(right),
                 });
             }
-            // SAFETY: same as above, checking the mirrored var/value position.
-            if let Some(column) =
-                unsafe { dml_frontdoor_predicate_var_column(right, target_rtindex, context) }
+            if let Some(column) = dml_frontdoor_predicate_var_column(right, target_rtindex, context)
             {
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
-                    // SAFETY: left is the opposite expression argument from
-                    // the validated OpExpr argument list.
-                    value: unsafe { dml_frontdoor_predicate_value(left) },
+                    value: dml_frontdoor_predicate_value(left),
                     value_expr: Some(left),
                 });
             }
@@ -2235,41 +2197,33 @@ unsafe fn dml_frontdoor_pk_predicate_from_clause(
     }
 }
 
-unsafe fn dml_frontdoor_predicate_var_column(
+fn dml_frontdoor_predicate_var_column(
     expr: *mut pg_sys::Expr,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<String> {
     // SAFETY: var-column helper validates null and NodeTag before reading Var
     // fields, and returns an owned column name.
-    if let Some(column) = unsafe { dml_frontdoor_var_column(expr, target_rtindex, context) } {
+    if let Some(column) = dml_frontdoor_var_column(expr, target_rtindex, context) {
         return Some(column);
     }
     // SAFETY: expr belongs to the live planner tree and is only inspected for
     // wrapper shapes that may contain a Var.
     match unsafe { dml_frontdoor_expr_node(expr) } {
         Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
-            // SAFETY: RelabelType::arg is another planner expression pointer
-            // validated by recursive descent.
-            unsafe { dml_frontdoor_predicate_var_column(relabel.arg, target_rtindex, context) }
+            dml_frontdoor_predicate_var_column(relabel.arg, target_rtindex, context)
         }
         Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
-            // SAFETY: CoerceViaIO::arg is validated by the recursive predicate
-            // walker.
-            unsafe { dml_frontdoor_predicate_var_column(coerce.arg, target_rtindex, context) }
+            dml_frontdoor_predicate_var_column(coerce.arg, target_rtindex, context)
         }
         Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
-            // SAFETY: FuncExpr::args is a planner List consumed immediately by
-            // the single-arg helper.
-            unsafe {
-                dml_frontdoor_single_predicate_var_column(func_expr.args, target_rtindex, context)
-            }
+            dml_frontdoor_single_predicate_var_column(func_expr.args, target_rtindex, context)
         }
         _ => None,
     }
 }
 
-unsafe fn dml_frontdoor_single_predicate_var_column(
+fn dml_frontdoor_single_predicate_var_column(
     exprs: *mut pg_sys::List,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
@@ -2284,11 +2238,10 @@ unsafe fn dml_frontdoor_single_predicate_var_column(
         return None;
     }
     let expr = exprs.get_ptr(0)?;
-    // SAFETY: expr comes from the validated one-element PostgreSQL List.
-    unsafe { dml_frontdoor_predicate_var_column(expr, target_rtindex, context) }
+    dml_frontdoor_predicate_var_column(expr, target_rtindex, context)
 }
 
-unsafe fn dml_frontdoor_expr_references_column(
+fn dml_frontdoor_expr_references_column(
     expr: *mut pg_sys::Expr,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
@@ -2297,82 +2250,52 @@ unsafe fn dml_frontdoor_expr_references_column(
     // SAFETY: expr belongs to the live planner tree and is only inspected while
     // walking the current predicate expression.
     match unsafe { dml_frontdoor_expr_node(expr) } {
-        Some(SpireDmlFrontdoorExprNode::Var(_)) => unsafe {
+        Some(SpireDmlFrontdoorExprNode::Var(_)) => {
             dml_frontdoor_var_column(expr, target_rtindex, context).as_deref() == Some(column_name)
-        },
+        }
         Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
-            // SAFETY: OpExpr::args is walked immediately.
-            unsafe {
-                dml_frontdoor_expr_list_references_column(
-                    op_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
+            dml_frontdoor_expr_list_references_column(
+                op_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
         }
         Some(SpireDmlFrontdoorExprNode::ScalarArrayOpExpr(array_expr)) => {
-            // SAFETY: ScalarArrayOpExpr::args is walked immediately and no
-            // pointers escape.
-            unsafe {
-                dml_frontdoor_expr_list_references_column(
-                    array_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
+            dml_frontdoor_expr_list_references_column(
+                array_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
         }
         Some(SpireDmlFrontdoorExprNode::BoolExpr(bool_expr)) => {
-            // SAFETY: BoolExpr::args is walked immediately.
-            unsafe {
-                dml_frontdoor_expr_list_references_column(
-                    bool_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
+            dml_frontdoor_expr_list_references_column(
+                bool_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
         }
         Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
-            // SAFETY: FuncExpr::args is walked immediately.
-            unsafe {
-                dml_frontdoor_expr_list_references_column(
-                    func_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
+            dml_frontdoor_expr_list_references_column(
+                func_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
         }
         Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
-            // SAFETY: RelabelType::arg is another expression pointer validated
-            // by recursive descent.
-            unsafe {
-                dml_frontdoor_expr_references_column(
-                    relabel.arg,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
+            dml_frontdoor_expr_references_column(relabel.arg, target_rtindex, context, column_name)
         }
         Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
-            // SAFETY: CoerceViaIO::arg is validated by recursive descent.
-            unsafe {
-                dml_frontdoor_expr_references_column(
-                    coerce.arg,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
+            dml_frontdoor_expr_references_column(coerce.arg, target_rtindex, context, column_name)
         }
         _ => false,
     }
 }
 
-unsafe fn dml_frontdoor_expr_list_references_column(
+fn dml_frontdoor_expr_list_references_column(
     exprs: *mut pg_sys::List,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
@@ -2384,8 +2307,7 @@ unsafe fn dml_frontdoor_expr_list_references_column(
     // SAFETY: exprs is a PostgreSQL expression List valid for the current
     // planner callback and consumed immediately.
     let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
-    // SAFETY: each expression pointer is validated by the recursive walker.
-    let references_column = exprs.iter_ptr().any(|expr| unsafe {
+    let references_column = exprs.iter_ptr().any(|expr| {
         dml_frontdoor_expr_references_column(expr, target_rtindex, context, column_name)
     });
     references_column
@@ -2407,7 +2329,7 @@ fn dml_frontdoor_empty_pk_predicate() -> SpireDmlFrontdoorPkPredicate {
     }
 }
 
-unsafe fn dml_frontdoor_var_column(
+fn dml_frontdoor_var_column(
     expr: *mut pg_sys::Expr,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
@@ -2427,19 +2349,15 @@ unsafe fn dml_frontdoor_var_column(
         .find_map(|(attno, name)| (*attno == var.varattno).then(|| (*name).to_owned()))
 }
 
-unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
-    // SAFETY: predicate value decoding handles nulls and unsupported node tags.
-    unsafe { dml_frontdoor_predicate_value(expr).kind }
+fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+    dml_frontdoor_predicate_value(expr).kind
 }
 
-unsafe fn dml_frontdoor_predicate_value(
-    expr: *mut pg_sys::Expr,
-) -> SpireDmlFrontdoorPredicateValue {
-    // SAFETY: predicate value decoding handles nulls and unsupported node tags.
-    unsafe { dml_frontdoor_predicate_value_inner(expr, 0) }
+fn dml_frontdoor_predicate_value(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorPredicateValue {
+    dml_frontdoor_predicate_value_inner(expr, 0)
 }
 
-unsafe fn dml_frontdoor_predicate_value_inner(
+fn dml_frontdoor_predicate_value_inner(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
@@ -2478,44 +2396,35 @@ unsafe fn dml_frontdoor_predicate_value_inner(
             if func_expr.funcresulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
-            // SAFETY: FuncExpr result type is bigint and the helper validates a
-            // single coercion argument before recursive decoding.
-            unsafe { dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth) }
+            dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth)
         }
         Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
             if relabel.resulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
-            // SAFETY: RelabelType result type is bigint and recursive decoding
-            // is bounded by wrapper_depth.
-            unsafe { dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth) }
+            dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth)
         }
         Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
             if coerce.resulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
-            // SAFETY: CoerceViaIO result type is bigint and recursive decoding
-            // is bounded by wrapper_depth.
-            unsafe { dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth) }
+            dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth)
         }
         _ => dml_frontdoor_other_predicate_value(),
     }
 }
 
-unsafe fn dml_frontdoor_single_coerced_arg_value(
+fn dml_frontdoor_single_coerced_arg_value(
     args: *mut pg_sys::List,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
-    // SAFETY: args is validated as a single-expression PostgreSQL List before
-    // the expression pointer is recursively decoded.
-    let Some(arg) = (unsafe { dml_frontdoor_single_list_expr_arg(args) }) else {
+    let Some(arg) = dml_frontdoor_single_list_expr_arg(args) else {
         return dml_frontdoor_other_predicate_value();
     };
-    // SAFETY: arg came from the validated one-element expression list.
-    unsafe { dml_frontdoor_coercible_integer_value(arg, wrapper_depth) }
+    dml_frontdoor_coercible_integer_value(arg, wrapper_depth)
 }
 
-unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
     // SAFETY: args may be null; as_ref handles that before any List fields are
     // inspected.
     let args = unsafe { args.as_ref()? };
@@ -2528,7 +2437,7 @@ unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<
     Some(unsafe { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
 }
 
-unsafe fn dml_frontdoor_coercible_integer_value(
+fn dml_frontdoor_coercible_integer_value(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
@@ -2560,9 +2469,7 @@ unsafe fn dml_frontdoor_coercible_integer_value(
                 dml_frontdoor_other_predicate_value()
             }
         }
-        // SAFETY: recursive decoding is bounded by
-        // DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH.
-        _ => unsafe { dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1) },
+        _ => dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1),
     }
 }
 
@@ -2681,21 +2588,17 @@ unsafe fn dml_frontdoor_range_table_ref_node<'a>(
     }
 }
 
-unsafe fn dml_frontdoor_target_columns(
+fn dml_frontdoor_target_columns(
     target_list: *mut pg_sys::List,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Vec<String> {
-    // SAFETY: target-list expression extraction validates the PostgreSQL List
-    // and copies column names; only names are retained here.
-    unsafe {
-        dml_frontdoor_target_column_exprs(target_list, context)
-            .into_iter()
-            .map(|(column, _expr)| column)
-            .collect()
-    }
+    dml_frontdoor_target_column_exprs(target_list, context)
+        .into_iter()
+        .map(|(column, _expr)| column)
+        .collect()
 }
 
-unsafe fn dml_frontdoor_target_column_exprs(
+fn dml_frontdoor_target_column_exprs(
     target_list: *mut pg_sys::List,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Vec<(String, *mut pg_sys::Expr)> {
