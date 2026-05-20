@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/032-heap-slot-contract-seed/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/032-heap-slot-contract-seed src
+wrote 2445 unsafe ledger rows to reviews/task-50/032-heap-slot-contract-seed/artifacts/unsafe-ledger-after.jsonl

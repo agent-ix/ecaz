@@ -1,0 +1,2 @@
+exit_code=1
+reason=cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings failed on existing repository-wide clippy debt; see cargo-clippy-pg18.log
