@@ -11,6 +11,118 @@ const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 const PQ_FASTSCAN_CODEBOOK_METADATA_UNAVAILABLE: &str =
     "ec_hnsw PqFastScan metadata is missing persisted grouped codebooks";
 
+struct InsertPageWrite {
+    buffer: LockedBufferGuard,
+    wal_txn: Option<wal::GenericXLogTxn>,
+    page_ptr: pg_sys::Page,
+    page_size: usize,
+}
+
+impl InsertPageWrite {
+    unsafe fn open_tail(
+        index_relation: pg_sys::Relation,
+        target_block: pg_sys::BlockNumber,
+        error_context: &str,
+    ) -> Self {
+        let read_mode = if target_block == P_NEW {
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
+        } else {
+            pg_sys::ReadBufferMode::RBM_NORMAL
+        };
+        // SAFETY: The caller supplies a live index relation for this insert.
+        // The target is either P_NEW, which returns an already-locked buffer,
+        // or an existing tail block that is explicitly locked for append.
+        let buffer = unsafe {
+            if target_block == P_NEW {
+                LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
+            } else {
+                LockedBufferGuard::read_main(
+                    index_relation,
+                    target_block,
+                    read_mode,
+                    pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+                )
+            }
+        }
+        .unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw failed to allocate {error_context} data buffer for aminsert")
+        });
+
+        let mut writer = unsafe { Self::from_locked_buffer(index_relation, buffer) };
+        if target_block == P_NEW {
+            writer.init_zeroed_page();
+        }
+        writer
+    }
+
+    unsafe fn open_new(index_relation: pg_sys::Relation, error_context: &str) -> Self {
+        // SAFETY: Delegates to `open_tail` with P_NEW to allocate and
+        // initialize a fresh zeroed page.
+        unsafe { Self::open_tail(index_relation, P_NEW, error_context) }
+    }
+
+    unsafe fn from_locked_buffer(
+        index_relation: pg_sys::Relation,
+        buffer: LockedBufferGuard,
+    ) -> Self {
+        let page_size = buffer.page_size();
+        // SAFETY: The caller guarantees `index_relation` is live and `buffer`
+        // belongs to that relation for this GenericXLog transaction.
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        // SAFETY: The locked buffer remains pinned for this writer's lifetime.
+        let page_ptr = unsafe {
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
+        };
+        Self {
+            buffer,
+            wal_txn: Some(wal_txn),
+            page_ptr,
+            page_size,
+        }
+    }
+
+    fn block_number(&self) -> pg_sys::BlockNumber {
+        self.buffer.block_number()
+    }
+
+    fn free_space(&self) -> usize {
+        // SAFETY: `page_ptr` is the registered locked page owned by this writer.
+        unsafe { pg_sys::PageGetFreeSpace(self.page_ptr) as usize }
+    }
+
+    fn init_zeroed_page(&mut self) {
+        // SAFETY: This writer is used for a freshly allocated zeroed page.
+        unsafe { pg_sys::PageInit(self.page_ptr, self.page_size, 0) };
+    }
+
+    fn add_item(&mut self, payload: &[u8], label: &str) -> pg_sys::OffsetNumber {
+        // SAFETY: `page_ptr` is a registered writable page, and PostgreSQL
+        // copies the payload bytes during `PageAddItemExtended`.
+        let offset = unsafe {
+            pg_sys::PageAddItemExtended(
+                self.page_ptr,
+                payload.as_ptr().cast_mut().cast(),
+                payload.len(),
+                pg_sys::InvalidOffsetNumber,
+                0,
+            )
+        };
+        if offset == pg_sys::InvalidOffsetNumber {
+            pgrx::error!("ec_hnsw failed to write {label} tuple during aminsert");
+        }
+        offset
+    }
+
+    fn finish(mut self) {
+        let wal_txn = self
+            .wal_txn
+            .take()
+            .expect("insert page writer WAL transaction should be present");
+        // SAFETY: The writer's page bytes contain their final intended state.
+        unsafe { wal_txn.finish() };
+    }
+}
+
 #[derive(Debug)]
 enum InsertSearchMetric {
     Code,
@@ -281,11 +393,11 @@ impl InsertFormatAdapter {
         tuple: &build::BuildTuple,
         code_len: usize,
     ) -> Option<page::ItemPointer> {
-        match self {
-            // SAFETY: The adapter matches the current metadata/storage format,
-            // and `tuple.code` is the encoded insert payload.
-            Self::TurboQuant { .. } => unsafe {
-                find_duplicate_element_tid(
+        // SAFETY: The adapter variant was resolved from the current metadata
+        // and therefore selects the duplicate scanner matching this tuple code.
+        unsafe {
+            match self {
+                Self::TurboQuant { .. } => find_duplicate_element_tid(
                     index_relation,
                     heap_relation,
                     metadata.dimensions,
@@ -293,23 +405,20 @@ impl InsertFormatAdapter {
                     tuple.gamma,
                     code_len,
                     &tuple.code,
-                )
-            },
-            // SAFETY: `layout` was resolved from the current index storage
-            // descriptor and matches the tuple's rerank code format.
-            Self::TurboQuantHotCold(layout) => unsafe {
-                find_duplicate_turbo_hot_element_tid(
+                ),
+                Self::TurboQuantHotCold(layout) => find_duplicate_turbo_hot_element_tid(
                     index_relation,
                     tuple.gamma,
                     &tuple.code,
                     layout,
-                )
-            },
-            // SAFETY: `layout` was resolved from the current grouped index
-            // metadata and matches the tuple's grouped code format.
-            Self::PqFastScan(layout) => unsafe {
-                find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
-            },
+                ),
+                Self::PqFastScan(layout) => find_duplicate_grouped_element_tid(
+                    index_relation,
+                    tuple.gamma,
+                    &tuple.code,
+                    layout,
+                ),
+            }
         }
     }
 
@@ -345,29 +454,25 @@ impl InsertFormatAdapter {
         level: u8,
         neighbor_tids: &[page::ItemPointer],
     ) -> page::ItemPointer {
-        match self {
-            // SAFETY: The adapter matches the append format and `neighbor_tids`
-            // is sized for the chosen insert level.
-            Self::TurboQuant { .. } => unsafe {
-                append_heap_tuple(index_relation, tuple, level, neighbor_tids)
-            },
-            // SAFETY: `layout` was resolved from metadata and describes the
-            // hot/cold append encoding for this tuple.
-            Self::TurboQuantHotCold(layout) => unsafe {
-                append_turbo_hot_cold_tuple(index_relation, tuple, level, neighbor_tids, layout)
-            },
-            // SAFETY: `layout` was resolved from grouped metadata and describes
-            // the append encoding for this tuple.
-            Self::PqFastScan(layout) => unsafe {
-                append_pq_fastscan_tuple(
+        // SAFETY: The adapter matches the append format and `neighbor_tids` is
+        // sized for the chosen insert level.
+        unsafe {
+            match self {
+                Self::TurboQuant { .. } => {
+                    append_heap_tuple(index_relation, tuple, level, neighbor_tids)
+                }
+                Self::TurboQuantHotCold(layout) => {
+                    append_turbo_hot_cold_tuple(index_relation, tuple, level, neighbor_tids, layout)
+                }
+                Self::PqFastScan(layout) => append_pq_fastscan_tuple(
                     index_relation,
                     metadata,
                     tuple,
                     level,
                     neighbor_tids,
                     layout,
-                )
-            },
+                ),
+            }
         }
     }
 
@@ -377,22 +482,26 @@ impl InsertFormatAdapter {
         element_tid: page::ItemPointer,
         heap_tid: page::ItemPointer,
     ) {
-        match self {
-            // SAFETY: `element_tid` came from a duplicate scan for this format;
-            // appending the heap TID preserves that element layout.
-            Self::TurboQuant { code_len } => unsafe {
-                coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid)
-            },
-            // SAFETY: `element_tid` came from a hot/cold duplicate scan using
-            // the same layout.
-            Self::TurboQuantHotCold(layout) => unsafe {
-                coalesce_duplicate_turbo_hot_heap_tid(index_relation, element_tid, layout, heap_tid)
-            },
-            // SAFETY: `element_tid` came from a grouped duplicate scan using
-            // the same layout.
-            Self::PqFastScan(layout) => unsafe {
-                coalesce_duplicate_grouped_heap_tid(index_relation, element_tid, layout, heap_tid)
-            },
+        // SAFETY: `element_tid` came from a duplicate scan using this adapter,
+        // so appending the heap TID through the matching layout preserves shape.
+        unsafe {
+            match self {
+                Self::TurboQuant { code_len } => {
+                    coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid)
+                }
+                Self::TurboQuantHotCold(layout) => coalesce_duplicate_turbo_hot_heap_tid(
+                    index_relation,
+                    element_tid,
+                    layout,
+                    heap_tid,
+                ),
+                Self::PqFastScan(layout) => coalesce_duplicate_grouped_heap_tid(
+                    index_relation,
+                    element_tid,
+                    layout,
+                    heap_tid,
+                ),
+            }
         }
     }
 
@@ -1548,70 +1657,21 @@ unsafe fn append_heap_tuple(
     } else {
         P_NEW
     };
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
-    } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    // SAFETY: We either allocate a new zeroed page or lock the current tail
-    // block exclusively before appending index tuples.
-    let buffer = unsafe {
-        if target_block == P_NEW {
-            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
-        } else {
-            LockedBufferGuard::read_main(
-                index_relation,
-                target_block,
-                read_mode,
-                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-            )
-        }
-    };
-    let buffer = buffer.unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw failed to allocate data buffer for aminsert");
-    });
-
-    let page_size = buffer.page_size();
-    // SAFETY: The relation is live for aminsert and the buffer is held locked
-    // while its page is registered with generic WAL.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer remains valid for the duration of this WAL
-    // transaction and is rewritten through the returned page pointer.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    if target_block == P_NEW {
-        // SAFETY: A freshly allocated zeroed page must be initialized before
-        // `PageAddItemExtended` receives tuple payloads.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-    } else {
-        // SAFETY: `page_ptr` points to the locked existing tail page.
-        let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
-        if free_space < required_bytes {
-            std::mem::drop(wal_txn);
-            std::mem::drop(buffer);
-            // SAFETY: The current tail page cannot fit this insert, so retry
-            // on a newly allocated page using the already encoded neighbor.
-            return unsafe {
-                append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
-            };
-        }
+    // SAFETY: The index relation is live for aminsert; the writer owns the
+    // target page lock and GenericXLog registration for this append.
+    let mut page_writer =
+        unsafe { InsertPageWrite::open_tail(index_relation, target_block, "scalar") };
+    if target_block != P_NEW && page_writer.free_space() < required_bytes {
+        std::mem::drop(page_writer);
+        // SAFETY: The current tail page cannot fit this insert, so retry on a
+        // newly allocated page using the already encoded neighbor.
+        return unsafe {
+            append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
+        };
     }
 
-    let block_number = buffer.block_number();
-    // SAFETY: `page_ptr` is a registered writable page and the payload slice is
-    // stable for the duration of the PostgreSQL page insertion call.
-    let neighbor_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            neighbor_payload.as_ptr().cast_mut().cast(),
-            neighbor_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if neighbor_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write neighbor tuple during aminsert");
-    }
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(&neighbor_payload, "neighbor");
 
     let element_payload = page::TqElementTuple {
         level,
@@ -1627,23 +1687,8 @@ unsafe fn append_heap_tuple(
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode element tuple: {e}"));
-    // SAFETY: The element payload is inserted into the same registered page and
-    // references the neighbor tuple offset just written above.
-    let element_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            element_payload.as_ptr().cast_mut().cast(),
-            element_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if element_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write element tuple during aminsert");
-    }
-
-    // SAFETY: Both tuple insertions are complete on the registered page.
-    unsafe { wal_txn.finish() };
+    let element_offset = page_writer.add_item(&element_payload, "element");
+    page_writer.finish();
     page::ItemPointer {
         block_number,
         offset_number: element_offset,
@@ -1656,43 +1701,11 @@ unsafe fn append_heap_tuple_to_new_page(
     level: u8,
     neighbor_payload: &[u8],
 ) -> page::ItemPointer {
-    // SAFETY: This fallback always appends a fresh zeroed data page.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main_locked(
-            index_relation,
-            P_NEW,
-            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-        )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw failed to allocate fallback data buffer for aminsert");
-    });
+    // SAFETY: This fallback allocates a fresh page for the live index relation.
+    let mut page_writer = unsafe { InsertPageWrite::open_new(index_relation, "fallback") };
 
-    let page_size = buffer.page_size();
-    // SAFETY: The relation is live and the newly allocated buffer is locked.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered before page initialization and
-    // tuple insertion.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    // SAFETY: The freshly allocated zeroed page must be initialized before use.
-    unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-
-    let block_number = buffer.block_number();
-    // SAFETY: The neighbor payload points to encoded bytes and is copied into
-    // the registered page by PostgreSQL.
-    let neighbor_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            neighbor_payload.as_ptr().cast_mut().cast(),
-            neighbor_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if neighbor_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write fallback neighbor tuple during aminsert");
-    }
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(neighbor_payload, "fallback neighbor");
 
     let element_payload = page::TqElementTuple {
         level,
@@ -1708,23 +1721,8 @@ unsafe fn append_heap_tuple_to_new_page(
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode fallback element tuple: {e}"));
-    // SAFETY: The element payload references the neighbor offset just written
-    // and is copied into the same registered page.
-    let element_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            element_payload.as_ptr().cast_mut().cast(),
-            element_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if element_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write fallback element tuple during aminsert");
-    }
-
-    // SAFETY: Page initialization and tuple insertions are complete.
-    unsafe { wal_txn.finish() };
+    let element_offset = page_writer.add_item(&element_payload, "fallback element");
+    page_writer.finish();
     page::ItemPointer {
         block_number,
         offset_number: element_offset,
@@ -1805,89 +1803,29 @@ unsafe fn append_turbo_hot_cold_tuple(
     } else {
         P_NEW
     };
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
-    } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    // SAFETY: We either allocate a new zeroed page or lock the current tail
-    // block exclusively before writing the three-part hot/cold payload.
-    let buffer = unsafe {
-        if target_block == P_NEW {
-            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
-        } else {
-            LockedBufferGuard::read_main(
+    // SAFETY: The index relation is live for aminsert; the writer owns the
+    // target page lock and GenericXLog registration for this append.
+    let mut page_writer =
+        unsafe { InsertPageWrite::open_tail(index_relation, target_block, "TurboQuant V3") };
+    if target_block != P_NEW && page_writer.free_space() < required_bytes {
+        std::mem::drop(page_writer);
+        // SAFETY: The tail page cannot fit all hot/cold payload pieces, so
+        // append them to a freshly allocated page.
+        return unsafe {
+            append_turbo_hot_cold_tuple_to_new_page(
                 index_relation,
-                target_block,
-                read_mode,
-                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+                tuple,
+                level,
+                &neighbor_payload,
+                &rerank_payload,
+                layout,
             )
-        }
-    };
-    let buffer = buffer.unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw failed to allocate TurboQuant V3 data buffer for aminsert");
-    });
-
-    let page_size = buffer.page_size();
-    // SAFETY: The relation is live for aminsert and the locked buffer belongs
-    // to the relation being modified.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered for generic WAL before any page
-    // bytes are initialized or appended.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    if target_block == P_NEW {
-        // SAFETY: A newly allocated zeroed page must be initialized first.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-    } else {
-        // SAFETY: `page_ptr` names the locked existing tail page.
-        let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
-        if free_space < required_bytes {
-            std::mem::drop(wal_txn);
-            std::mem::drop(buffer);
-            // SAFETY: The tail page cannot fit all hot/cold payload pieces, so
-            // append them to a freshly allocated page.
-            return unsafe {
-                append_turbo_hot_cold_tuple_to_new_page(
-                    index_relation,
-                    tuple,
-                    level,
-                    &neighbor_payload,
-                    &rerank_payload,
-                    layout,
-                )
-            };
-        }
+        };
     }
 
-    let block_number = buffer.block_number();
-    // SAFETY: The neighbor payload is copied into the registered writable page.
-    let neighbor_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            neighbor_payload.as_ptr().cast_mut().cast(),
-            neighbor_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if neighbor_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write TurboQuant V3 neighbor tuple during aminsert");
-    }
-    // SAFETY: The rerank payload is copied into the same registered page before
-    // the hot tuple stores its back-reference.
-    let rerank_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            rerank_payload.as_ptr().cast_mut().cast(),
-            rerank_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if rerank_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write TurboQuant V3 rerank tuple during aminsert");
-    }
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(&neighbor_payload, "TurboQuant V3 neighbor");
+    let rerank_offset = page_writer.add_item(&rerank_payload, "TurboQuant V3 rerank");
 
     let hot_payload = build::stage_v3_turbo_hot_build_payload(
         tuple,
@@ -1905,23 +1843,8 @@ unsafe fn append_turbo_hot_cold_tuple(
     .hot
     .encode()
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode TurboQuant V3 hot tuple: {e}"));
-    // SAFETY: The hot payload references offsets already written on this page
-    // and is copied into the registered writable page.
-    let hot_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            hot_payload.as_ptr().cast_mut().cast(),
-            hot_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if hot_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write TurboQuant V3 hot tuple during aminsert");
-    }
-
-    // SAFETY: All hot/cold payload pieces have been inserted on the page.
-    unsafe { wal_txn.finish() };
+    let hot_offset = page_writer.add_item(&hot_payload, "TurboQuant V3 hot");
+    page_writer.finish();
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -1936,58 +1859,13 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
     rerank_payload: &[u8],
     layout: graph::TurboQuantHotColdLayout,
 ) -> page::ItemPointer {
-    // SAFETY: This fallback always appends a fresh zeroed data page.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main_locked(
-            index_relation,
-            P_NEW,
-            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-        )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw failed to allocate fallback TurboQuant V3 data buffer for aminsert");
-    });
+    // SAFETY: This fallback allocates a fresh page for the live index relation.
+    let mut page_writer =
+        unsafe { InsertPageWrite::open_new(index_relation, "fallback TurboQuant V3") };
 
-    let page_size = buffer.page_size();
-    // SAFETY: The relation is live and the newly allocated buffer is locked.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered before page initialization and
-    // tuple insertion.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    // SAFETY: A freshly allocated zeroed page must be initialized before use.
-    unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-
-    let block_number = buffer.block_number();
-    // SAFETY: The neighbor payload is copied into the registered page.
-    let neighbor_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            neighbor_payload.as_ptr().cast_mut().cast(),
-            neighbor_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if neighbor_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!(
-            "ec_hnsw failed to write fallback TurboQuant V3 neighbor tuple during aminsert"
-        );
-    }
-    // SAFETY: The rerank payload is copied into the same registered page and is
-    // referenced by the hot tuple written below.
-    let rerank_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            rerank_payload.as_ptr().cast_mut().cast(),
-            rerank_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if rerank_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write fallback TurboQuant V3 rerank tuple during aminsert");
-    }
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(neighbor_payload, "fallback TurboQuant V3 neighbor");
+    let rerank_offset = page_writer.add_item(rerank_payload, "fallback TurboQuant V3 rerank");
 
     let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
         tuple.dimensions as usize,
@@ -2019,23 +1897,8 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
             page::TqTurboHotTuple::encoded_len(layout.binary_word_count)
         );
     }
-    // SAFETY: The hot payload references offsets already written on this page
-    // and is copied into the registered writable page.
-    let hot_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            hot_payload.as_ptr().cast_mut().cast(),
-            hot_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if hot_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write fallback TurboQuant V3 hot tuple during aminsert");
-    }
-
-    // SAFETY: Page initialization and all tuple insertions are complete.
-    unsafe { wal_txn.finish() };
+    let hot_offset = page_writer.add_item(&hot_payload, "fallback TurboQuant V3 hot");
+    page_writer.finish();
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -2174,89 +2037,29 @@ unsafe fn append_pq_fastscan_tuple(
     } else {
         P_NEW
     };
-    let read_mode = if target_block == P_NEW {
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
-    } else {
-        pg_sys::ReadBufferMode::RBM_NORMAL
-    };
-    // SAFETY: We either allocate a new zeroed page or lock the current tail
-    // block exclusively before writing the grouped payload.
-    let buffer = unsafe {
-        if target_block == P_NEW {
-            LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
-        } else {
-            LockedBufferGuard::read_main(
+    // SAFETY: The index relation is live for aminsert; the writer owns the
+    // target page lock and GenericXLog registration for this append.
+    let mut page_writer =
+        unsafe { InsertPageWrite::open_tail(index_relation, target_block, "PqFastScan") };
+    if target_block != P_NEW && page_writer.free_space() < required_bytes {
+        std::mem::drop(page_writer);
+        // SAFETY: The tail page cannot fit all grouped payload pieces, so
+        // append them to a freshly allocated page.
+        return unsafe {
+            append_pq_fastscan_tuple_to_new_page(
                 index_relation,
-                target_block,
-                read_mode,
-                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+                tuple,
+                level,
+                &neighbor_payload,
+                &rerank_payload,
+                search_code,
             )
-        }
-    };
-    let buffer = buffer.unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw failed to allocate PqFastScan data buffer for aminsert");
-    });
-
-    let page_size = buffer.page_size();
-    // SAFETY: The relation is live for aminsert and the locked buffer belongs
-    // to the relation being modified.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered for generic WAL before any page
-    // bytes are initialized or appended.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    if target_block == P_NEW {
-        // SAFETY: A newly allocated zeroed page must be initialized first.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-    } else {
-        // SAFETY: `page_ptr` names the locked existing tail page.
-        let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
-        if free_space < required_bytes {
-            std::mem::drop(wal_txn);
-            std::mem::drop(buffer);
-            // SAFETY: The tail page cannot fit all grouped payload pieces, so
-            // append them to a freshly allocated page.
-            return unsafe {
-                append_pq_fastscan_tuple_to_new_page(
-                    index_relation,
-                    tuple,
-                    level,
-                    &neighbor_payload,
-                    &rerank_payload,
-                    search_code,
-                )
-            };
-        }
+        };
     }
 
-    let block_number = buffer.block_number();
-    // SAFETY: The neighbor payload is copied into the registered writable page.
-    let neighbor_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            neighbor_payload.as_ptr().cast_mut().cast(),
-            neighbor_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if neighbor_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write PqFastScan neighbor tuple during aminsert");
-    }
-    // SAFETY: The rerank payload is copied into the same registered page before
-    // the grouped hot tuple stores its back-reference.
-    let rerank_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            rerank_payload.as_ptr().cast_mut().cast(),
-            rerank_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if rerank_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write PqFastScan rerank tuple during aminsert");
-    }
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(&neighbor_payload, "PqFastScan neighbor");
+    let rerank_offset = page_writer.add_item(&rerank_payload, "PqFastScan rerank");
 
     let payload = build::stage_v2_grouped_build_payload(
         tuple,
@@ -2276,23 +2079,8 @@ unsafe fn append_pq_fastscan_tuple(
         .hot
         .encode()
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode PqFastScan hot tuple: {e}"));
-    // SAFETY: The grouped hot payload references offsets already written on
-    // this page and is copied into the registered writable page.
-    let hot_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            hot_payload.as_ptr().cast_mut().cast(),
-            hot_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if hot_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write PqFastScan hot tuple during aminsert");
-    }
-
-    // SAFETY: All grouped payload pieces have been inserted on the page.
-    unsafe { wal_txn.finish() };
+    let hot_offset = page_writer.add_item(&hot_payload, "PqFastScan hot");
+    page_writer.finish();
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
@@ -2307,56 +2095,13 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     rerank_payload: &[u8],
     search_code: Vec<u8>,
 ) -> page::ItemPointer {
-    // SAFETY: This fallback always appends a fresh zeroed data page.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main_locked(
-            index_relation,
-            P_NEW,
-            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-        )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw failed to allocate fallback PqFastScan data buffer for aminsert");
-    });
+    // SAFETY: This fallback allocates a fresh page for the live index relation.
+    let mut page_writer =
+        unsafe { InsertPageWrite::open_new(index_relation, "fallback PqFastScan") };
 
-    let page_size = buffer.page_size();
-    // SAFETY: The relation is live and the newly allocated buffer is locked.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered before page initialization and
-    // tuple insertion.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    // SAFETY: A freshly allocated zeroed page must be initialized before use.
-    unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-
-    let block_number = buffer.block_number();
-    // SAFETY: The neighbor payload is copied into the registered page.
-    let neighbor_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            neighbor_payload.as_ptr().cast_mut().cast(),
-            neighbor_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if neighbor_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write fallback PqFastScan neighbor tuple during aminsert");
-    }
-    // SAFETY: The rerank payload is copied into the same registered page and is
-    // referenced by the grouped hot tuple written below.
-    let rerank_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            rerank_payload.as_ptr().cast_mut().cast(),
-            rerank_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if rerank_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write fallback PqFastScan rerank tuple during aminsert");
-    }
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(neighbor_payload, "fallback PqFastScan neighbor");
+    let rerank_offset = page_writer.add_item(rerank_payload, "fallback PqFastScan rerank");
 
     let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
         tuple.dimensions as usize,
@@ -2382,23 +2127,8 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     .unwrap_or_else(|e| {
         pgrx::error!("ec_hnsw failed to encode fallback PqFastScan hot tuple: {e}")
     });
-    // SAFETY: The grouped hot payload references offsets already written on
-    // this page and is copied into the registered writable page.
-    let hot_offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page_ptr,
-            hot_payload.as_ptr().cast_mut().cast(),
-            hot_payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
-    if hot_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!("ec_hnsw failed to write fallback PqFastScan hot tuple during aminsert");
-    }
-
-    // SAFETY: Page initialization and all tuple insertions are complete.
-    unsafe { wal_txn.finish() };
+    let hot_offset = page_writer.add_item(&hot_payload, "fallback PqFastScan hot");
+    page_writer.finish();
     page::ItemPointer {
         block_number,
         offset_number: hot_offset,
