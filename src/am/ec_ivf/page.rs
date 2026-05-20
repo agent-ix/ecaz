@@ -174,7 +174,7 @@ struct IvfPageRelation<'a> {
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 impl<'a> IvfPageRelation<'a> {
-    unsafe fn new(relation: pg_sys::Relation) -> Self {
+    fn new(relation: pg_sys::Relation) -> Self {
         Self {
             relation,
             _relation: PhantomData,
@@ -1767,7 +1767,7 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
     tuple: &IvfPostingTuple,
 ) -> Result<ItemPointer, String> {
     // SAFETY: caller supplies a live IVF index relation for the append path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(index_relation);
     if !posting_tuple_fits(tuple.payload.len(), pg_sys::BLCKSZ as usize) {
         return Err(format!(
             "ec_ivf posting payload {} does not fit on a page",
@@ -1936,7 +1936,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     directory: IvfListDirectoryTuple,
 ) -> Result<(), String> {
     // SAFETY: caller supplies a live IVF index relation for the rewrite path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(index_relation);
     let encoded = directory.encode();
     let buffer = index
         .read_main(
@@ -1972,7 +1972,7 @@ where
     F: FnOnce(&mut IvfListDirectoryTuple) -> Result<(), String>,
 {
     // SAFETY: caller supplies a live IVF index relation for the update path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(index_relation);
     let buffer = index
         .read_main(
             directory_tid.block_number,
@@ -2027,7 +2027,7 @@ pub(super) unsafe fn rewrite_ivf_posting(
     posting: &IvfPostingTuple,
 ) -> Result<(), String> {
     // SAFETY: caller supplies a live IVF index relation for the rewrite path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(index_relation);
     let encoded = posting.encode()?;
     let buffer = index
         .read_main(
@@ -2565,7 +2565,7 @@ pub(super) unsafe fn initialize_metadata_page(
     metadata: MetadataPage,
 ) {
     // SAFETY: caller supplies a live IVF index relation for metadata init.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(index_relation);
     let existing_blocks = index.number_of_blocks();
     let target_block = if existing_blocks == 0 {
         P_NEW
@@ -2603,7 +2603,7 @@ pub(super) unsafe fn initialize_metadata_page(
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
     // SAFETY: caller supplies a live IVF index relation for metadata read.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(index_relation);
     let buffer = index.read_main(
         METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -2625,7 +2625,7 @@ where
     F: FnOnce(&mut MetadataPage) -> Result<(), String>,
 {
     // SAFETY: caller supplies a live IVF index relation for metadata update.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(index_relation);
     let buffer = index.read_main(
         METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
