@@ -395,7 +395,10 @@ unsafe fn read_string_reloption(
     Some(value.to_owned())
 }
 
-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
+pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
+    if index_relation.is_null() {
+        pgrx::error!("ec_ivf relation options need a valid index relation");
+    }
     // SAFETY: callers pass a live PostgreSQL relation; reading `rd_options` does
     // not take ownership and PostgreSQL keeps the relcache entry valid here.
     let rd_options = unsafe { (*index_relation).rd_options };
