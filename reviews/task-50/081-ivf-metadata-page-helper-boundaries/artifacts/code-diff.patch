@@ -1,0 +1,173 @@
+diff --git a/src/am/ec_ivf/admin.rs b/src/am/ec_ivf/admin.rs
+index 45a77552..20976959 100644
+--- a/src/am/ec_ivf/admin.rs
++++ b/src/am/ec_ivf/admin.rs
+@@ -82,7 +82,7 @@ struct DirectoryDriftSummary {
+ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
+     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+     // diagnostic wrapper; page readers validate the metadata/directory layout.
+-    let metadata = unsafe { page::read_metadata_page(index_relation) };
++    let metadata = page::read_metadata_page(index_relation);
+     let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
+     // SAFETY: PostgreSQL owns the relation; querying the main fork block count
+     // is valid for the opened index relation.
+@@ -140,7 +140,7 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
+ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+     // diagnostic wrapper; metadata and reloptions are read without ownership.
+-    let metadata = unsafe { page::read_metadata_page(index_relation) };
++    let metadata = page::read_metadata_page(index_relation);
+     let index_options = unsafe { options::relation_options(index_relation) };
+     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
+@@ -186,7 +186,7 @@ pub(crate) unsafe fn index_page_ownership(
+ ) -> Vec<IndexPageOwnershipSnapshot> {
+     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+     // diagnostic wrapper; metadata drives payload length selection.
+-    let metadata = unsafe { page::read_metadata_page(index_relation) };
++    let metadata = page::read_metadata_page(index_relation);
+     let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+         metadata.storage_format,
+         usize::from(metadata.dimensions),
+diff --git a/src/am/ec_ivf/build.rs b/src/am/ec_ivf/build.rs
+index acf866b4..f4531dac 100644
+--- a/src/am/ec_ivf/build.rs
++++ b/src/am/ec_ivf/build.rs
+@@ -544,7 +544,7 @@ pub(super) fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuild
+     write_data_pages(index_relation, &plan.data_pages);
+     // SAFETY: same live relation; metadata belongs to the staged plan just
+     // flushed to disk.
+-    unsafe { page::initialize_metadata_page(index_relation, plan.metadata) };
++    page::initialize_metadata_page(index_relation, plan.metadata);
+ }
+ 
+ fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
+diff --git a/src/am/ec_ivf/cost.rs b/src/am/ec_ivf/cost.rs
+index 5dc62e7f..6b0c7a23 100644
+--- a/src/am/ec_ivf/cost.rs
++++ b/src/am/ec_ivf/cost.rs
+@@ -176,7 +176,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
+ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+     // SAFETY: `index_relation` is a live PostgreSQL index relation supplied by
+     // a SQL diagnostic wrapper.
+-    let metadata = unsafe { page::read_metadata_page(index_relation) };
++    let metadata = page::read_metadata_page(index_relation);
+     // SAFETY: `index_relation` is live for the duration of the snapshot read.
+     let block_count = unsafe {
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+@@ -231,7 +231,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
+ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+     // SAFETY: `index_relation` is a live relation pointer owned by the planner
+     // callback guard for the duration of this computation.
+-    let metadata = unsafe { page::read_metadata_page(index_relation) };
++    let metadata = page::read_metadata_page(index_relation);
+     // SAFETY: `index_relation` is live while the planner callback computes cost.
+     let block_count = unsafe {
+         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+diff --git a/src/am/ec_ivf/insert.rs b/src/am/ec_ivf/insert.rs
+index e32e3c92..37c6182e 100644
+--- a/src/am/ec_ivf/insert.rs
++++ b/src/am/ec_ivf/insert.rs
+@@ -83,7 +83,7 @@ unsafe fn insert_with_empty_bootstrap_lock(
+ ) -> Result<(), String> {
+     let guard = lock_empty_bootstrap_relation(index_relation);
+     // SAFETY: same live index relation, reread under the bootstrap lock.
+-    let metadata = unsafe { page::read_metadata_page(index_relation) };
++    let metadata = page::read_metadata_page(index_relation);
+     validate_metadata_runtime_options(&metadata)?;
+     if metadata.dimensions == 0 {
+         return bootstrap_empty_index(index_relation, &metadata, tuple);
+@@ -167,7 +167,7 @@ fn insert_into_trained_index(
+     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
+     // SAFETY: relation is live and the callback only increments metadata
+     // insert counters.
+-    unsafe { page::update_metadata_page(index_relation, apply_metadata_insert_stats) }
++    page::update_metadata_page(index_relation, apply_metadata_insert_stats)
+         .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
+ 
+     Ok(())
+@@ -466,7 +466,7 @@ pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
+         "debug_ec_ivf_validate_no_duplicate_heap_tid",
+     );
+     // SAFETY: the guarded index relation is live for this metadata read.
+-    let metadata = unsafe { page::read_metadata_page(index_relation.as_ptr()) };
++    let metadata = page::read_metadata_page(index_relation.as_ptr());
+     let heap_tid = ItemPointer {
+         block_number,
+         offset_number,
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index d7392421..9d2e2609 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -2560,7 +2560,7 @@ fn decode_rerank(value: u8) -> Result<RerankMode, String> {
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(super) unsafe fn initialize_metadata_page(
++pub(super) fn initialize_metadata_page(
+     index_relation: pg_sys::Relation,
+     metadata: MetadataPage,
+ ) {
+@@ -2601,7 +2601,7 @@ pub(super) unsafe fn initialize_metadata_page(
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
++pub(super) fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
+     // SAFETY: caller supplies a live IVF index relation for metadata read.
+     let index = IvfPageRelation::new(index_relation);
+     let buffer = index.read_main(
+@@ -2617,7 +2617,7 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> Met
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(super) unsafe fn update_metadata_page<F>(
++pub(super) fn update_metadata_page<F>(
+     index_relation: pg_sys::Relation,
+     update: F,
+ ) -> Result<MetadataPage, String>
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index 0852f6a3..fb4bfec4 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -1560,8 +1560,7 @@ fn debug_prepared_query_sq_len(opaque: &EcIvfScanOpaque) -> usize {
+ 
+ #[cfg(any(test, feature = "pg_test"))]
+ fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> super::page::MetadataPage {
+-    // SAFETY: Debug callers hold the index relation open for this metadata read.
+-    unsafe { super::page::read_metadata_page(index_relation) }
++    super::page::read_metadata_page(index_relation)
+ }
+ 
+ #[cfg(any(test, feature = "pg_test"))]
+diff --git a/src/am/ec_ivf/vacuum.rs b/src/am/ec_ivf/vacuum.rs
+index 21168929..4939bbdb 100644
+--- a/src/am/ec_ivf/vacuum.rs
++++ b/src/am/ec_ivf/vacuum.rs
+@@ -64,7 +64,7 @@ unsafe fn noop_vacuum_stats(
+     stats: *mut pg_sys::IndexBulkDeleteResult,
+ ) -> *mut pg_sys::IndexBulkDeleteResult {
+     // SAFETY: caller passes the live IVF index relation being vacuumed.
+-    let metadata = unsafe { page::read_metadata_page(index_relation) };
++    let metadata = page::read_metadata_page(index_relation);
+     finish_vacuum_stats(index_relation, stats, &metadata)
+ }
+ 
+@@ -83,7 +83,7 @@ unsafe fn run_bulkdelete(
+         stats
+     };
+     // SAFETY: `index_relation` is the live IVF index relation being vacuumed.
+-    let mut metadata = unsafe { page::read_metadata_page(index_relation) };
++    let mut metadata = page::read_metadata_page(index_relation);
+ 
+     if metadata.directory_head == ItemPointer::INVALID {
+         if metadata.total_live_tuples != 0 {
+@@ -162,7 +162,7 @@ unsafe fn run_bulkdelete(
+             .unwrap_or_else(|| pgrx::error!("ec_ivf metadata dead count overflow during vacuum"));
+         // SAFETY: `index_relation` is the live IVF index relation and the
+         // updated metadata preserves the same on-disk format fields.
+-        unsafe { page::initialize_metadata_page(index_relation, metadata) };
++        page::initialize_metadata_page(index_relation, metadata);
+         // SAFETY: `stats` is non-null after allocation/selection above and is
+         // owned by PostgreSQL for this vacuum cycle.
+         unsafe {
