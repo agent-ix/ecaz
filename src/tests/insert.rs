@@ -464,15 +464,12 @@
             index_oid,
             "test_ec_spire_insert_remote_prepare_local_cancel",
         );
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let result = unsafe {
-            am::spire_coordinator_insert_prepare_remote_sql(
-                index_relation.as_ptr(),
-                21,
-                5,
-                &remote_sql,
-            )
-        };
+        let result = am::spire_coordinator_insert_prepare_remote_sql(
+            index_relation.as_ptr(),
+            21,
+            5,
+            &remote_sql,
+        );
         drop(index_relation);
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
         unsafe { ScopedPgQueryCancelFlags::clear_pending_for_test() };

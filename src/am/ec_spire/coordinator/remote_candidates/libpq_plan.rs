@@ -602,7 +602,7 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
         .collect()
 }
 
-pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
+pub(crate) fn coordinator_insert_dispatch_plan_row(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,

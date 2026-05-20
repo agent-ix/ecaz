@@ -152,12 +152,11 @@ fn coordinator_insert_remote_descriptor_metadata(
             "ec_spire coordinator insert remote descriptor profile_fingerprint decode failed"
                 .to_owned()
         })?;
-    let remote_index_identity = remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)?;
-    let extension_version = row
-        .try_get::<_, String>("extension_version")
-        .map_err(|_| {
-            "ec_spire coordinator insert remote descriptor extension_version decode failed".to_owned()
-        })?;
+    let remote_index_identity =
+        remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)?;
+    let extension_version = row.try_get::<_, String>("extension_version").map_err(|_| {
+        "ec_spire coordinator insert remote descriptor extension_version decode failed".to_owned()
+    })?;
     if extension_version.is_empty() {
         return Err(
             "ec_spire coordinator insert remote descriptor extension_version is empty".to_owned(),
@@ -206,11 +205,9 @@ async fn coordinator_insert_remote_descriptor_metadata_async(
         })?;
     let remote_index_identity =
         remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)?;
-    let extension_version = row
-        .try_get::<_, String>("extension_version")
-        .map_err(|_| {
-            "ec_spire coordinator insert remote descriptor extension_version decode failed".to_owned()
-        })?;
+    let extension_version = row.try_get::<_, String>("extension_version").map_err(|_| {
+        "ec_spire coordinator insert remote descriptor extension_version decode failed".to_owned()
+    })?;
     if extension_version.is_empty() {
         return Err(
             "ec_spire coordinator insert remote descriptor extension_version is empty".to_owned(),
@@ -236,10 +233,7 @@ const SPIRE_PREPARED_TRANSACTION_CAPACITY_HINT: &str =
      concurrent coordinator-routed SPIRE writes plus any non-SPIRE prepared \
      transactions";
 
-fn postgres_prepare_transaction_capacity_failure(
-    sqlstate: Option<&str>,
-    message: &str,
-) -> bool {
+fn postgres_prepare_transaction_capacity_failure(sqlstate: Option<&str>, message: &str) -> bool {
     if sqlstate == Some("55000") {
         return true;
     }
@@ -308,7 +302,11 @@ fn postgres_error_message_with_detail(error: &postgres::Error) -> String {
     let Some(db_error) = error.as_db_error() else {
         return error.to_string();
     };
-    let mut message = format!("{} (SQLSTATE {})", db_error.message(), db_error.code().code());
+    let mut message = format!(
+        "{} (SQLSTATE {})",
+        db_error.message(),
+        db_error.code().code()
+    );
     if let Some(detail) = db_error.detail() {
         if !detail.is_empty() {
             message.push_str("; DETAIL: ");
@@ -413,7 +411,8 @@ fn validate_remote_write_shape_fingerprint(
     coordinator_fingerprint: &str,
     descriptor_remote_fingerprint: &str,
 ) -> Result<(), String> {
-    if descriptor_remote_fingerprint == SPIRE_REMOTE_NONE || descriptor_remote_fingerprint == "unset"
+    if descriptor_remote_fingerprint == SPIRE_REMOTE_NONE
+        || descriptor_remote_fingerprint == "unset"
     {
         return Err(format!(
             "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: schema drift guard is missing remote descriptor fingerprint for node_id {node_id}; hint: refresh the remote node descriptor after verifying coordinator and remote DDL match"
@@ -450,7 +449,8 @@ pub(crate) fn validate_read_shape_fingerprints_before_remote_dispatch(
             "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: schema drift guard is missing coordinator descriptor fingerprint; hint: refresh remote node descriptors before coordinator-routed reads"
         ));
     }
-    if descriptor_remote_fingerprint == SPIRE_REMOTE_NONE || descriptor_remote_fingerprint == "unset"
+    if descriptor_remote_fingerprint == SPIRE_REMOTE_NONE
+        || descriptor_remote_fingerprint == "unset"
     {
         return Err(format!(
             "ec_spire coordinator {operation} status {SPIRE_REMOTE_STATUS_SCHEMA_DRIFT}: schema drift guard is missing remote descriptor fingerprint for node_id {node_id}; hint: refresh the remote node descriptor after verifying coordinator and remote DDL match"
@@ -460,8 +460,7 @@ pub(crate) fn validate_read_shape_fingerprints_before_remote_dispatch(
     let current_coordinator_fingerprint = coordinator_write_current_shape_fingerprint(index_oid)?;
     let current_remote_fingerprint =
         remote_write_current_shape_fingerprint(conninfo, node_id, remote_index_regclass)?;
-    let coordinator_drifted =
-        current_coordinator_fingerprint != descriptor_coordinator_fingerprint;
+    let coordinator_drifted = current_coordinator_fingerprint != descriptor_coordinator_fingerprint;
     let remote_drifted = current_remote_fingerprint != descriptor_remote_fingerprint;
 
     if coordinator_drifted && remote_drifted {
@@ -530,17 +529,14 @@ fn coordinator_insert_prepare_row_from_async_result(
     }
 }
 
-pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
+pub(crate) fn coordinator_insert_prepare_remote_sql_batch(
     index_relation: pg_sys::Relation,
     requests: Vec<(u32, u64, String)>,
 ) -> Result<Vec<SpireCoordinatorInsertRemotePrepareRow>, String> {
     let mut dispatches = Vec::with_capacity(requests.len());
     let mut prepare_requests = Vec::with_capacity(requests.len());
     for (node_id, served_epoch, remote_sql) in requests {
-        // SAFETY: index_relation is the open SPIRE index relation; the dispatch
-        // planner validates node/epoch readiness for the requested remote write.
-        let dispatch =
-            unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+        let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
         if dispatch.status != SPIRE_REMOTE_STATUS_READY {
             return Err(format!(
                 "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
@@ -590,8 +586,7 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
             ));
         }
         rows.push(coordinator_insert_prepare_row_from_async_result(
-            dispatch,
-            result,
+            dispatch, result,
         ));
         coordinator_prepared_xact_intent_mark(
             &result.prepared_gid,
@@ -615,43 +610,41 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql_batch(
             coordinator_insert_resolve_remote_prepared(commit_conninfo, node_id, commit_gid, true);
         });
         pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
-            coordinator_insert_resolve_remote_prepared(rollback_conninfo, node_id, rollback_gid, false);
+            coordinator_insert_resolve_remote_prepared(
+                rollback_conninfo,
+                node_id,
+                rollback_gid,
+                false,
+            );
         });
     }
 
     Ok(rows)
 }
 
-pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
+pub(crate) fn coordinator_insert_prepare_remote_sql(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,
     remote_sql: &str,
 ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
-    // SAFETY: arguments are forwarded unchanged to the batch prepare helper,
-    // which validates dispatch readiness and records prepared-xact intent.
-    unsafe {
-        coordinator_insert_prepare_remote_sql_batch(
-            index_relation,
-            vec![(node_id, served_epoch, remote_sql.to_owned())],
-        )
-    }?
+    coordinator_insert_prepare_remote_sql_batch(
+        index_relation,
+        vec![(node_id, served_epoch, remote_sql.to_owned())],
+    )?
     .into_iter()
     .next()
     .ok_or_else(|| "ec_spire coordinator insert remote prepare returned no row".to_owned())
 }
 
-pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
+pub(crate) fn coordinator_insert_prepare_remote_tuple_payload(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,
     row_payload_json: &str,
     requested_columns: &[String],
 ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
-    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
-    // planner validates node/epoch readiness for this insert payload.
-    let dispatch =
-        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
@@ -663,24 +656,17 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
         row_payload_json,
         requested_columns,
     )?;
-    // SAFETY: remote_sql was built from validated payload inputs and dispatch
-    // metadata; the helper revalidates dispatch before remote prepare.
-    unsafe {
-        coordinator_insert_prepare_remote_sql(index_relation, node_id, served_epoch, &remote_sql)
-    }
+    coordinator_insert_prepare_remote_sql(index_relation, node_id, served_epoch, &remote_sql)
 }
 
-pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch(
+pub(crate) fn coordinator_insert_prepare_remote_tuple_payload_batch(
     index_relation: pg_sys::Relation,
     rows: Vec<(u32, u64, String)>,
     requested_columns: &[String],
 ) -> Result<Vec<SpireCoordinatorInsertRemotePrepareRow>, String> {
     let mut requests = Vec::with_capacity(rows.len());
     for (node_id, served_epoch, row_payload_json) in rows {
-        // SAFETY: index_relation is the open SPIRE index relation; the dispatch
-        // planner validates node/epoch readiness for this insert payload.
-        let dispatch =
-            unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+        let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
         if dispatch.status != SPIRE_REMOTE_STATUS_READY {
             return Err(format!(
                 "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
@@ -694,12 +680,10 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload_batch(
         )?;
         requests.push((node_id, served_epoch, remote_sql));
     }
-    // SAFETY: each request was built from validated dispatch metadata above;
-    // the batch helper performs the final dispatch check and prepare handling.
-    unsafe { coordinator_insert_prepare_remote_sql_batch(index_relation, requests) }
+    coordinator_insert_prepare_remote_sql_batch(index_relation, requests)
 }
 
-pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
+pub(crate) fn coordinator_update_remote_tuple_payload(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,
@@ -708,10 +692,7 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
     row_payload_json: &str,
     updated_columns: &[String],
 ) -> Result<SpireCoordinatorUpdateRemoteRow, String> {
-    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
-    // planner validates node/epoch readiness for this update payload.
-    let dispatch =
-        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator update remote dispatch for node_id {} is blocked with status {}",
@@ -738,15 +719,18 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
         node_id,
         "coordinator update remote dispatch",
     )?;
-    let row = client.query_one(remote_sql.as_str(), &[]).map_err(|error| {
-        format!("ec_spire coordinator update remote SQL failed for node_id {node_id}: {error}")
-    })?;
+    let row = client
+        .query_one(remote_sql.as_str(), &[])
+        .map_err(|error| {
+            format!("ec_spire coordinator update remote SQL failed for node_id {node_id}: {error}")
+        })?;
     let remote_updated_count = row
         .try_get::<_, i64>("updated_count")
         .map_err(|_| "ec_spire coordinator update remote updated_count decode failed".to_owned())
         .and_then(|value| {
-            u64::try_from(value)
-                .map_err(|_| "ec_spire coordinator update remote updated_count is negative".to_owned())
+            u64::try_from(value).map_err(|_| {
+                "ec_spire coordinator update remote updated_count is negative".to_owned()
+            })
         })?;
 
     Ok(SpireCoordinatorUpdateRemoteRow {
@@ -758,25 +742,25 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
     })
 }
 
-pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
+pub(crate) fn coordinator_delete_prepare_remote_tuple_payload(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,
     pk_column: &str,
     pk_value: &[u8],
 ) -> Result<SpireCoordinatorDeleteRemotePrepareRow, String> {
-    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
-    // planner validates node/epoch readiness for this delete payload.
-    let dispatch =
-        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator delete remote dispatch for node_id {} is blocked with status {}",
             node_id, dispatch.status
         ));
     }
-    let remote_sql =
-        coordinator_delete_remote_tuple_payload_sql(&dispatch.remote_index_regclass, pk_column, pk_value)?;
+    let remote_sql = coordinator_delete_remote_tuple_payload_sql(
+        &dispatch.remote_index_regclass,
+        pk_column,
+        pk_value,
+    )?;
 
     let _governance_permit = remote_search_libpq_executor_governance_permit_for_node(node_id)?;
     let conninfo = remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
@@ -815,17 +799,16 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
         .try_get::<_, i64>("deleted_count")
         .map_err(|_| "ec_spire coordinator delete remote deleted_count decode failed".to_owned())
         .and_then(|value| {
-            u64::try_from(value)
-                .map_err(|_| "ec_spire coordinator delete remote deleted_count is negative".to_owned())
+            u64::try_from(value).map_err(|_| {
+                "ec_spire coordinator delete remote deleted_count is negative".to_owned()
+            })
         })?;
     client
         .batch_execute(&format!(
             "PREPARE TRANSACTION {}",
             quote_sql_literal(&prepared_gid)
         ))
-        .map_err(|error| {
-            spire_remote_prepare_transaction_error("delete", node_id, &error)
-        })?;
+        .map_err(|error| spire_remote_prepare_transaction_error("delete", node_id, &error))?;
     coordinator_prepared_xact_intent_mark(
         &prepared_gid,
         SPIRE_PREPARED_XACT_INTENT_PREPARE_ACKED,
@@ -858,7 +841,7 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
     })
 }
 
-pub(crate) unsafe fn coordinator_select_remote_tuple_payload(
+pub(crate) fn coordinator_select_remote_tuple_payload(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,
@@ -866,10 +849,7 @@ pub(crate) unsafe fn coordinator_select_remote_tuple_payload(
     pk_value: &[u8],
     requested_columns: &[String],
 ) -> Result<SpireCoordinatorSelectRemoteRow, String> {
-    // SAFETY: index_relation is the open SPIRE index relation; the dispatch
-    // planner validates node/epoch readiness for this select payload.
-    let dispatch =
-        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator select remote dispatch for node_id {} is blocked with status {}",
@@ -902,9 +882,11 @@ pub(crate) unsafe fn coordinator_select_remote_tuple_payload(
         node_id,
         "coordinator select remote dispatch",
     )?;
-    let row = client.query_one(remote_sql.as_str(), &[]).map_err(|error| {
-        format!("ec_spire coordinator select remote SQL failed for node_id {node_id}: {error}")
-    })?;
+    let row = client
+        .query_one(remote_sql.as_str(), &[])
+        .map_err(|error| {
+            format!("ec_spire coordinator select remote SQL failed for node_id {node_id}: {error}")
+        })?;
     let remote_selected_count = row
         .try_get::<_, i64>("selected_count")
         .map_err(|_| "ec_spire coordinator select remote selected_count decode failed".to_owned())
