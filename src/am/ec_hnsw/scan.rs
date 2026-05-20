@@ -1520,9 +1520,7 @@ pub(crate) unsafe fn resolve_pq_fastscan_rerank_mode_decision(
         };
     }
 
-    // SAFETY: callers pass the live index relation whose reloptions determine
-    // the scan-time grouped rerank mode.
-    let index_options = unsafe { super::options::relation_options(index_relation) };
+    let index_options = super::options::relation_options(index_relation);
     resolve_grouped_rerank_mode_decision(index_relation, &index_options)
 }
 

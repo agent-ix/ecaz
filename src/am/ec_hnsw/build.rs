@@ -325,9 +325,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuildempty(index_relation: pg_s
 
 impl BuildState {
     pub(super) fn new(index_relation: pg_sys::Relation) -> Self {
-        // SAFETY: BuildState is constructed from a live PostgreSQL index
-        // relation during build/empty-build setup.
-        let options = unsafe { options::relation_options(index_relation) };
+        let options = options::relation_options(index_relation);
         // SAFETY: `index_relation` is live and its `rd_id` can be resolved to
         // the heap relation OID, or InvalidOid for test-only detached state.
         let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };

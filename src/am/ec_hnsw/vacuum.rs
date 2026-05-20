@@ -242,10 +242,7 @@ impl VacuumSearchMetric {
             pgrx::error!("ec_hnsw vacuum requires a heap relation for source-backed indexes");
         }
 
-        // SAFETY: Both relations are live for the vacuum callback; this block
-        // reads relation options and resolves any heap source attribute needed
-        // for repair scoring.
-        let index_options = unsafe { options::relation_options(index_relation) };
+        let index_options = options::relation_options(index_relation);
         match index_options.build_source_column.as_deref() {
             Some(source_column) => {
                 // SAFETY: The heap relation is live and the configured source

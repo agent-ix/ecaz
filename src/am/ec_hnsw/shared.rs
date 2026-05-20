@@ -665,9 +665,7 @@ pub(crate) struct PlannerIntegrationSnapshot {
 }
 
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
-    // SAFETY: The index relation is live while its reloptions are decoded for
-    // admin diagnostics.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     let tuning = options::resolve_scan_tuning(&relation_options);
     // SAFETY: The index relation is live and metadata is read under a shared
     // buffer lock.
@@ -731,9 +729,7 @@ pub(crate) unsafe fn index_explain_snapshot(
 }
 
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
-    // SAFETY: The index relation is live while its reloptions are decoded for
-    // cost diagnostics.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     let tuning = options::resolve_scan_tuning(&relation_options);
     // SAFETY: The index relation is live and metadata is read under a shared
     // buffer lock.
@@ -949,9 +945,7 @@ pub(crate) unsafe fn debug_index_metadata(
     index_oid: pg_sys::Oid,
 ) -> (u32, i32, i32, page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_metadata");
-    // SAFETY: The index relation guard keeps the relation open while reloptions
-    // are decoded.
-    let options = unsafe { super::options::relation_options(index_relation.as_ptr()) };
+    let options = super::options::relation_options(index_relation.as_ptr());
     let block_count = hnsw_main_block_count(index_relation.as_ptr());
     // SAFETY: The index relation guard keeps the metadata page readable.
     let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };

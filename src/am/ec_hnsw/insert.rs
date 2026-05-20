@@ -1928,9 +1928,7 @@ unsafe fn bootstrap_empty_pq_fastscan_flush_output(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
 ) -> build::BuildFlushOutput {
-    // SAFETY: The index relation is live for aminsert and relation options are
-    // read-only metadata.
-    let options = unsafe { options::relation_options(index_relation) };
+    let options = options::relation_options(index_relation);
     let state = build::BuildState {
         options,
         indexed_vector_kind: source::IndexedVectorKind::Ecvector,

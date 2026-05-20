@@ -377,8 +377,7 @@ unsafe fn compute_amcostestimate(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexOptInfo,
 ) -> PlannerCostEstimate {
-    // SAFETY: caller passes a live index relation for this planner callback.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     let tuning = options::resolve_scan_tuning(&relation_options);
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
