@@ -47,7 +47,7 @@ struct SpireVacuumIndexRelation {
 }
 
 impl SpireVacuumIndexRelation {
-    unsafe fn new(relation: pg_sys::Relation) -> Self {
+    fn from_vacuum_callback(relation: pg_sys::Relation) -> Self {
         Self { relation }
     }
 
@@ -189,9 +189,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
 }
 
 unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, String> {
-    // SAFETY: index_relation is supplied by PostgreSQL's vacuum callback and
-    // remains live for this helper call.
-    let index = unsafe { SpireVacuumIndexRelation::new(index_relation) };
+    let index = SpireVacuumIndexRelation::from_vacuum_callback(index_relation);
     let _guard = index.publish_lock();
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
@@ -206,9 +204,7 @@ unsafe fn run_bulkdelete(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<VacuumDeleteResult, String> {
-    // SAFETY: index_relation is supplied by PostgreSQL's vacuum callback and
-    // remains live for this helper call.
-    let index = unsafe { SpireVacuumIndexRelation::new(index_relation) };
+    let index = SpireVacuumIndexRelation::from_vacuum_callback(index_relation);
     let _guard = index.publish_lock();
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
@@ -232,9 +228,7 @@ unsafe fn run_bulkdelete(
     let visible = collect_visible_assignments(&active_snapshot, &store)?;
     let mut deletes_by_base_pid: HashMap<u64, Vec<SpireDeleteDeltaInput>> = HashMap::new();
     for assignment in &visible {
-        // SAFETY: callback is PostgreSQL's live bulk-delete callback and
-        // callback_state is the state pointer passed to ambulkdelete.
-        if unsafe { heap_tid_is_dead(assignment.assignment.heap_tid, callback, callback_state) } {
+        if heap_tid_is_dead(assignment.assignment.heap_tid, callback, callback_state) {
             deletes_by_base_pid
                 .entry(assignment.base_pid)
                 .or_default()
@@ -280,9 +274,7 @@ unsafe fn run_bulkdelete(
 }
 
 fn collect_live_assignment_count(index_relation: pg_sys::Relation) -> Result<u64, String> {
-    // SAFETY: caller passes an open SPIRE index relation for the duration of
-    // this live-assignment count.
-    let index = unsafe { SpireVacuumIndexRelation::new(index_relation) };
+    let index = SpireVacuumIndexRelation::from_vacuum_callback(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         return Ok(0);
@@ -676,7 +668,7 @@ unsafe fn finish_vacuum_stats(
     }
 }
 
-unsafe fn heap_tid_is_dead(
+fn heap_tid_is_dead(
     heap_tid: ItemPointer,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
