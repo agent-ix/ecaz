@@ -313,26 +313,6 @@ pub(super) unsafe fn resolve_scan_snapshot(
         .ok_or_else(|| "ec_diskann scan could not resolve an active snapshot".into())
 }
 
-pub(super) unsafe fn fetch_heap_row_version(
-    heap_relation: pg_sys::Relation,
-    heap_tid: ItemPointer,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
-) -> Result<(), String> {
-    // SAFETY: caller owns the heap relation, snapshot, and tuple slot for this
-    // scan callback; the common helper owns slot clearing and TID fetch.
-    let fetched = unsafe {
-        heap_slot::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, "ec_diskann")?
-    };
-    if !fetched {
-        return Err(format!(
-            "ec_diskann scan could not fetch heap tuple at ({},{})",
-            heap_tid.block_number, heap_tid.offset_number
-        ));
-    }
-    Ok(())
-}
-
 pub(super) fn fetch_heap_row_version_with_reader(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     heap_tid: ItemPointer,
@@ -344,16 +324,6 @@ pub(super) fn fetch_heap_row_version_with_reader(
         ));
     }
     Ok(())
-}
-
-pub(super) unsafe fn required_slot_datum(
-    slot: *mut pg_sys::TupleTableSlot,
-    attnum: i32,
-    label: &str,
-) -> Result<pg_sys::Datum, String> {
-    // SAFETY: caller owns a live TupleTableSlot and attnum was resolved from
-    // relation metadata for the heap source column.
-    unsafe { heap_slot::required_slot_datum(slot, attnum, "ec_diskann", label) }
 }
 
 pub(super) fn required_slot_datum_with_reader(

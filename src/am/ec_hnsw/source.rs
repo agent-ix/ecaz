@@ -514,17 +514,6 @@ pub(crate) fn fetch_heap_row_version_with_reader(
     }
 }
 
-pub(crate) unsafe fn required_slot_datum(
-    slot: *mut pg_sys::TupleTableSlot,
-    attnum: i32,
-    label: &str,
-) -> pg_sys::Datum {
-    // SAFETY: caller owns a live TupleTableSlot and attnum was resolved from
-    // relation metadata for the source column.
-    unsafe { heap_slot::required_slot_datum(slot, attnum, "ec_hnsw", label) }
-        .unwrap_or_else(|error| pgrx::error!("{error}"))
-}
-
 pub(crate) fn required_slot_datum_with_reader(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     attnum: i32,

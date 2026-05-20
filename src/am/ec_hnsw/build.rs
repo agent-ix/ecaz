@@ -12,6 +12,7 @@ use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
 use crate::am::common::{
     detoast::DetoastedVarlena,
+    heap_slot::TupleSlotReader,
     training::{self, GroupedPq4Model},
 };
 use crate::storage::{
@@ -742,6 +743,10 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
     .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to begin heap scan"));
 
     let mut scanned_tuples = 0.0_f64;
+    // SAFETY: `slot_ptr` is the heap-scan slot allocated for this build and is
+    // populated by PostgreSQL on each successful `heap_getnextslot` iteration.
+    let mut slot_reader = unsafe { TupleSlotReader::from_raw_slot(slot_ptr, "ec_hnsw") }
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     // SAFETY: The heap scan and slot remain live for the loop, and PostgreSQL
     // fills `slot_ptr` when `heap_getnextslot` returns true.
     while unsafe {
@@ -755,20 +760,12 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         // SAFETY: `slot_ptr` contains the current tuple after heap_getnextslot
         // returned true.
         let heap_tid = unsafe { decode_slot_tid(slot_ptr) };
-        // SAFETY: The current slot is populated, and the resolver returned a
-        // valid indexed attribute number for this relation.
-        let vector_datum = unsafe {
-            source::required_slot_datum(slot_ptr, indexed_attribute.attnum, "indexed column")
-        };
-        // SAFETY: The current slot is populated, and the resolver returned a
-        // valid build-source attribute number for this relation.
-        let source_datum = unsafe {
-            source::required_slot_datum(
-                slot_ptr,
-                source_attribute.attnum,
-                "ec_hnsw build_source_column",
-            )
-        };
+        let vector_datum = slot_reader
+            .required_datum(indexed_attribute.attnum, "indexed column")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        let source_datum = slot_reader
+            .required_datum(source_attribute.attnum, "ec_hnsw build_source_column")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
         // SAFETY: `source_datum` comes from the validated source attribute; the
         // helper validates the flat float4 source representation.
         let source_vector = unsafe {
