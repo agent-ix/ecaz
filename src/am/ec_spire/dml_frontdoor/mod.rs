@@ -406,28 +406,24 @@ pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
         return Err("ec_spire DML frontdoor catalog relation open returned NULL".to_owned());
     };
 
-    // SAFETY: HeapRelationGuard keeps the relation open while catalog fields
-    // are inspected and copied into owned Rust values.
-    let result = unsafe {
-        dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation.as_ptr()).map(
-            |(context, watched_relation_oids)| {
-                RELATION_CONTEXT_CACHE
-                    .get_or_init(|| Mutex::new(HashMap::new()))
-                    .lock()
-                    .map(|mut guard| {
-                        guard.insert(
-                            cache_key,
-                            CachedRelationContext {
-                                context: context.clone(),
-                                watched_relation_oids,
-                            },
-                        );
-                    })
-                    .ok();
-                context
-            },
-        )
-    };
+    let result = dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation.as_ptr()).map(
+        |(context, watched_relation_oids)| {
+            RELATION_CONTEXT_CACHE
+                .get_or_init(|| Mutex::new(HashMap::new()))
+                .lock()
+                .map(|mut guard| {
+                    guard.insert(
+                        cache_key,
+                        CachedRelationContext {
+                            context: context.clone(),
+                            watched_relation_oids,
+                        },
+                    );
+                })
+                .ok();
+            context
+        },
+    );
     result
 }
 
@@ -1384,7 +1380,7 @@ impl SpireDmlFrontdoorTupleDesc {
     }
 }
 
-unsafe fn dml_frontdoor_tuple_desc_for_relation(
+fn dml_frontdoor_tuple_desc_for_relation(
     heap_relation: pg_sys::Relation,
 ) -> Result<SpireDmlFrontdoorTupleDesc, String> {
     // SAFETY: heap_relation is held open by the caller's relation guard while
@@ -1407,26 +1403,20 @@ fn dml_frontdoor_attr_name(attr: &pg_sys::FormData_pg_attribute) -> Result<Strin
         .map_err(|e| format!("ec_spire DML frontdoor catalog attribute name is not UTF-8: {e}"))
 }
 
-unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
+fn dml_frontdoor_relation_context_catalog_for_open_heap(
     heap_relation: pg_sys::Relation,
 ) -> Result<(SpireDmlFrontdoorRelationContext, Vec<pg_sys::Oid>), String> {
     // SAFETY: heap_relation is held open by HeapRelationGuard in the caller;
     // rd_id and descriptor fields are copied while that guard is live.
     let heap_relation_oid = unsafe { (*heap_relation).rd_id };
-    // SAFETY: heap_relation remains open while tuple descriptor attributes are
-    // copied into owned column-name pairs.
-    let column_names = unsafe { dml_frontdoor_relation_column_names_from_rel(heap_relation)? };
-    // SAFETY: heap_relation remains open while index metadata and PK shape are
-    // copied from guarded index relations.
+    let column_names = dml_frontdoor_relation_column_names_from_rel(heap_relation)?;
     let (index_oid, pk, mut watched_relation_oids) =
-        unsafe { dml_frontdoor_catalog_index_and_pk(heap_relation)? };
+        dml_frontdoor_catalog_index_and_pk(heap_relation)?;
     watched_relation_oids.push(heap_relation_oid);
     let embedding_columns = if index_oid == pg_sys::InvalidOid {
         Vec::new()
     } else {
-        // SAFETY: heap_relation remains open while index key attnums are mapped
-        // back to copied heap attribute names.
-        unsafe { dml_frontdoor_index_key_column_names_from_rel(index_oid, heap_relation)? }
+        dml_frontdoor_index_key_column_names_from_rel(index_oid, heap_relation)?
     };
 
     let (status, next_step, ec_spire_distributed_table) = if index_oid == pg_sys::InvalidOid {
@@ -1468,7 +1458,7 @@ unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
     ))
 }
 
-unsafe fn dml_frontdoor_catalog_index_and_pk(
+fn dml_frontdoor_catalog_index_and_pk(
     heap_relation: pg_sys::Relation,
 ) -> Result<
     (
@@ -1513,11 +1503,8 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
         }
         if primary_key.is_none() {
             if let Some(index_form) = index_form {
-                // SAFETY: heap relation and current index metadata are both
-                // guard-protected during primary-key attribute extraction.
-                primary_key = unsafe {
-                    dml_frontdoor_primary_key_column_from_index(heap_relation, index_form)?
-                };
+                primary_key =
+                    dml_frontdoor_primary_key_column_from_index(heap_relation, index_form)?;
             }
         }
     }
@@ -1531,7 +1518,7 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
     Ok((ec_spire_index_oid, primary_key, watched_index_oids))
 }
 
-unsafe fn dml_frontdoor_primary_key_column_from_index(
+fn dml_frontdoor_primary_key_column_from_index(
     heap_relation: pg_sys::Relation,
     index_form: &pg_sys::FormData_pg_index,
 ) -> Result<Option<SpireDmlFrontdoorPrimaryKeyColumn>, String> {
@@ -1544,8 +1531,7 @@ unsafe fn dml_frontdoor_primary_key_column_from_index(
         return Ok(None);
     }
     let Some((column_name, attr)) =
-        // SAFETY: heap_relation is open while the attribute name/form is copied.
-        (unsafe { dml_frontdoor_relation_attr_name_and_form(heap_relation, attnum)? })
+        dml_frontdoor_relation_attr_name_and_form(heap_relation, attnum)?
     else {
         return Ok(None);
     };
@@ -1554,17 +1540,14 @@ unsafe fn dml_frontdoor_primary_key_column_from_index(
     }
     Ok(Some(SpireDmlFrontdoorPrimaryKeyColumn {
         column_name,
-        // SAFETY: atttypid came from a copied FormData_pg_attribute.
-        column_type: unsafe { dml_frontdoor_format_type_name(attr.atttypid)? },
+        column_type: dml_frontdoor_format_type_name(attr.atttypid)?,
     }))
 }
 
-unsafe fn dml_frontdoor_relation_column_names_from_rel(
+fn dml_frontdoor_relation_column_names_from_rel(
     heap_relation: pg_sys::Relation,
 ) -> Result<Vec<(pg_sys::AttrNumber, String)>, String> {
-    // SAFETY: heap_relation is open under HeapRelationGuard while rd_att is
-    // read and attribute names are copied into owned Strings.
-    let tuple_desc = unsafe { dml_frontdoor_tuple_desc_for_relation(heap_relation)? };
+    let tuple_desc = dml_frontdoor_tuple_desc_for_relation(heap_relation)?;
     let mut columns = Vec::with_capacity(usize::try_from(tuple_desc.natts).unwrap_or(0));
     for attr_index in 0..tuple_desc.natts {
         let Some(attr) = tuple_desc.attr_copy_at_index(attr_index) else {
@@ -1580,7 +1563,7 @@ unsafe fn dml_frontdoor_relation_column_names_from_rel(
     Ok(columns)
 }
 
-unsafe fn dml_frontdoor_index_key_column_names_from_rel(
+fn dml_frontdoor_index_key_column_names_from_rel(
     index_oid: pg_sys::Oid,
     heap_relation: pg_sys::Relation,
 ) -> Result<Vec<String>, String> {
@@ -1615,19 +1598,18 @@ unsafe fn dml_frontdoor_index_key_column_names_from_rel(
     result
 }
 
-unsafe fn dml_frontdoor_relation_attr_name_and_form(
+fn dml_frontdoor_relation_attr_name_and_form(
     heap_relation: pg_sys::Relation,
     attnum: pg_sys::AttrNumber,
 ) -> Result<Option<(String, pg_sys::FormData_pg_attribute)>, String> {
-    // SAFETY: heap_relation is open while its tuple descriptor is read.
-    let tuple_desc = unsafe { dml_frontdoor_tuple_desc_for_relation(heap_relation)? };
+    let tuple_desc = dml_frontdoor_tuple_desc_for_relation(heap_relation)?;
     let Some(attr) = tuple_desc.attr_copy_by_attnum(attnum) else {
         return Ok(None);
     };
     Ok(Some((dml_frontdoor_attr_name(&attr)?, attr)))
 }
 
-unsafe fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
+fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
     // SAFETY: format_type_be returns a palloc'd C string for a catalog type OID
     // or NULL; the pointer is checked before decoding and then freed.
     let type_name = unsafe { pg_sys::format_type_be(type_oid) };
