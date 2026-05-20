@@ -744,9 +744,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     // PostgreSQL's relation catalog tuple for the relation lifetime.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
-    // SAFETY: Planner cost constants are read from PostgreSQL GUC state for this
-    // backend without retaining raw pointers.
-    let constants = unsafe { super::cost::current_planner_cost_constants() };
+    let constants = super::cost::current_planner_cost_constants();
     // Block 0 is always the metadata page; an empty index has block_count == 1.
     // FR-020's "Empty index (0 data pages)" gate must trip on
     // `block_count <= FIRST_DATA_BLOCK_NUMBER`, not on `index_pages <= 0`.

@@ -97,7 +97,7 @@ pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstima
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
+pub(crate) fn current_planner_cost_constants() -> PlannerCostConstants {
     PlannerCostConstants {
         // SAFETY: PostgreSQL exposes these backend-local planner cost globals
         // for read-only access during planner callback execution.
@@ -109,6 +109,13 @@ pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
         // callback execution.
         cpu_operator_cost: unsafe { pg_sys::cpu_operator_cost },
     }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(crate) fn current_cpu_tuple_cost() -> f64 {
+    // SAFETY: PostgreSQL exposes this backend-local planner cost global for
+    // read-only access during planner callback execution.
+    unsafe { pg_sys::cpu_tuple_cost }
 }
 
 #[cfg_attr(feature = "pg18", allow(dead_code))]
@@ -372,9 +379,7 @@ unsafe fn compute_amcostestimate(
     // index relation.
     let tree_height =
         unsafe { planner_tree_height_from_index_info(index_info, metadata.max_level) };
-    // SAFETY: planner cost constants are backend-local globals read during
-    // planner callback execution.
-    let constants = unsafe { current_planner_cost_constants() };
+    let constants = current_planner_cost_constants();
 
     estimate_planner_cost(
         PlannerCostInputs {

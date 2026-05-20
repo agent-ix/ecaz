@@ -10,10 +10,8 @@ unsafe fn estimate_custom_scan_cost(
     target_width: f64,
     eligibility: &SpireCustomScanIndexEligibilityRow,
 ) -> SpireCustomScanCostEstimate {
-    // SAFETY: planner cost constants and cpu_tuple_cost are backend-local GUC
-    // reads during planner path construction.
-    let (constants, cpu_tuple_cost) =
-        unsafe { (current_planner_cost_constants(), pg_sys::cpu_tuple_cost) };
+    let constants = current_planner_cost_constants();
+    let cpu_tuple_cost = current_cpu_tuple_cost();
     estimate_custom_scan_cost_with_constants(
         output_rows,
         rel_rows,

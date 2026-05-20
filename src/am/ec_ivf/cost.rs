@@ -184,8 +184,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let index_pages = f64::from(block_count);
     // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
-    let constants = unsafe { current_planner_cost_constants() };
+    let constants = current_planner_cost_constants();
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let tree_height = resolved_ivf_tree_height_input();
     let translation = ivf_strategy_translation_snapshot();
@@ -239,8 +238,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     let index_pages = f64::from(block_count);
     // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
-    let constants = unsafe { current_planner_cost_constants() };
+    let constants = current_planner_cost_constants();
 
     estimate_ivf_cost(&metadata, index_pages, reltuples, constants)
 }

@@ -98,8 +98,7 @@ pub(crate) unsafe fn index_cost_snapshot(
     let index_pages = f64::from(block_count);
     // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: reads planner cost GUCs for the current backend.
-    let constants = unsafe { current_planner_cost_constants() };
+    let constants = current_planner_cost_constants();
     let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
@@ -209,8 +208,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     let index_pages = f64::from(block_count);
     // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: reads planner cost GUCs for the current backend.
-    let constants = unsafe { current_planner_cost_constants() };
+    let constants = current_planner_cost_constants();
     let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };

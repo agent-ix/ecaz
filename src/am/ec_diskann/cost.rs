@@ -112,8 +112,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     // planner callback guard.
     let metadata = unsafe { insert::read_metadata_page(index_relation) }
         .unwrap_or_else(|e| pgrx::error!("ec_diskann planner could not read metadata: {e}"));
-    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
-    let constants = unsafe { current_planner_cost_constants() };
+    let constants = current_planner_cost_constants();
 
     estimate_planner_cost(
         PlannerCostInputs {
@@ -140,8 +139,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let index_pages = f64::from(block_count);
     // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
-    let constants = unsafe { current_planner_cost_constants() };
+    let constants = current_planner_cost_constants();
 
     let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) =
         if block_count <= FIRST_DATA_BLOCK_NUMBER {
