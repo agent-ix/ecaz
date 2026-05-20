@@ -21,6 +21,81 @@ enum SpireObjectTupleVisit<R> {
     Present(R),
 }
 
+struct SpireRegisteredPage {
+    relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+    page: pg_sys::Page,
+}
+
+impl SpireRegisteredPage {
+    fn new(
+        relation: pg_sys::Relation,
+        block_number: pg_sys::BlockNumber,
+        page: pg_sys::Page,
+    ) -> Self {
+        Self {
+            relation,
+            block_number,
+            page,
+        }
+    }
+
+    fn page(&self) -> pg_sys::Page {
+        self.page
+    }
+
+    fn init(&self, page_size: usize, special_size: usize) {
+        // SAFETY: this wrapper is only constructed for a WAL-registered page
+        // whose locked buffer is still live.
+        unsafe { pg_sys::PageInit(self.page, page_size, special_size) };
+    }
+
+    fn copy_to_special(&self, bytes: &[u8]) {
+        // SAFETY: callers initialize this page with a special area sized for
+        // `bytes`, and the source slice does not overlap PostgreSQL page memory.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                pg_sys::PageGetSpecialPointer(self.page).cast::<u8>(),
+                bytes.len(),
+            )
+        };
+    }
+
+    fn free_space(&self) -> usize {
+        // SAFETY: this wrapper owns the WAL-registered page while the buffer is locked.
+        unsafe { pg_sys::PageGetFreeSpace(self.page) as usize }
+    }
+
+    fn record_free_space(&self, free_space: usize) {
+        // SAFETY: relation/block identify the same registered page.
+        unsafe { pg_sys::RecordPageWithFreeSpace(self.relation, self.block_number, free_space) };
+    }
+
+    fn add_item(&self, payload: &[u8]) -> pg_sys::OffsetNumber {
+        // SAFETY: payload bytes are copied into the registered page by PostgreSQL.
+        unsafe {
+            pg_sys::PageAddItemExtended(
+                self.page,
+                payload.as_ptr().cast_mut().cast(),
+                payload.len(),
+                pg_sys::InvalidOffsetNumber,
+                0,
+            )
+        }
+    }
+
+    fn max_offset(&self) -> pg_sys::OffsetNumber {
+        // SAFETY: this wrapper owns the WAL-registered page while the buffer is locked.
+        unsafe { pg_sys::PageGetMaxOffsetNumber(self.page) }
+    }
+
+    fn delete_no_compact(&self, offset: pg_sys::OffsetNumber) {
+        // SAFETY: callers validate the offset against this page before delete.
+        unsafe { pg_sys::PageIndexTupleDeleteNoCompact(self.page, offset) };
+    }
+}
+
 pub(super) unsafe fn initialize_root_control_page(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -70,25 +145,13 @@ unsafe fn initialize_spire_metadata_block_zero(
     // be registered for full-image metadata initialization.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = SpireRegisteredPage::new(index_relation, buffer.block_number(), page);
     let root_control_bytes = root_control
         .encode()
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let special_size = align_up(root_control_bytes.len(), ALIGNMENT_BYTES);
-    // SAFETY: page is the registered locked buffer page, page_size came from
-    // the buffer, and special_size is aligned for the encoded root/control.
-    unsafe { pg_sys::PageInit(page, page_size, special_size) };
-    // SAFETY: PageInit allocated the special area of at least special_size; the
-    // encoded root/control bytes fit inside that area.
-    let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-    // SAFETY: page_contents points to the initialized special area and
-    // root_control_bytes is a non-overlapping Rust slice.
-    unsafe {
-        ptr::copy_nonoverlapping(
-            root_control_bytes.as_ptr(),
-            page_contents,
-            root_control_bytes.len(),
-        );
-    }
+    registered.init(page_size, special_size);
+    registered.copy_to_special(&root_control_bytes);
 
     wal_txn.finish();
 }
@@ -359,9 +422,9 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
         // locked page that will be modified.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
         let page = wal_txn.register_locked_buffer_full_image(&buffer);
+        let registered = SpireRegisteredPage::new(index_relation, block_number, page);
         let page_size = buffer.page_size();
-        // SAFETY: page is locked and pinned while reading the max item offset.
-        let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
+        let max_offset = registered.max_offset();
         let mut changed = false;
         for offset in offsets.into_iter().rev() {
             if offset == pg_sys::InvalidOffsetNumber || offset > max_offset {
@@ -393,9 +456,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
                     "ec_spire object tuple delete ({block_number},{offset}) has invalid bounds"
                 ));
             }
-            // SAFETY: offset is valid for this locked page; deletion is WAL
-            // protected by the active generic WAL transaction.
-            unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, offset) };
+            registered.delete_no_compact(offset);
             removed_tuple_count = removed_tuple_count
                 .checked_add(1)
                 .ok_or_else(|| "ec_spire removed tuple count overflow".to_owned())?;
@@ -410,11 +471,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
         if changed {
             wal_txn.finish();
         }
-        // SAFETY: page remains valid while the buffer guard is live; free-space
-        // state is recorded after any deletion changes.
-        let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
-        // SAFETY: block_number identifies the same relation page just measured.
-        unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+        registered.record_free_space(registered.free_space());
     }
     Ok((removed_tuple_count, removed_tuple_bytes))
 }
@@ -435,6 +492,7 @@ unsafe fn try_append_object_tuple_to_block(
     // buffer lock.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = SpireRegisteredPage::new(index_relation, block_number, page);
     let page_size = buffer.page_size();
     if raw_tuple_storage_bytes(payload.len()) > page_size {
         std::mem::drop(wal_txn);
@@ -444,26 +502,14 @@ unsafe fn try_append_object_tuple_to_block(
         ));
     }
 
-    // SAFETY: page is locked/pinned while reading free space.
-    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    let free_space = registered.free_space();
     if free_space < raw_tuple_storage_bytes(payload.len()) {
-        // SAFETY: block_number identifies the same locked page just measured.
-        unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+        registered.record_free_space(free_space);
         std::mem::drop(wal_txn);
         return Ok(None);
     }
 
-    // SAFETY: free space was checked against payload storage requirements and
-    // payload bytes are copied by PostgreSQL into the locked page.
-    let offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page,
-            payload.as_ptr().cast_mut().cast(),
-            payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
+    let offset = registered.add_item(payload);
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
         return Err(format!(
@@ -472,10 +518,7 @@ unsafe fn try_append_object_tuple_to_block(
     }
 
     wal_txn.finish();
-    // SAFETY: page remains pinned while reading and recording free space.
-    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
-    // SAFETY: block_number identifies the same relation page just appended to.
-    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+    registered.record_free_space(registered.free_space());
     Ok(Some(crate::storage::page::ItemPointer {
         block_number,
         offset_number: offset,
@@ -507,12 +550,9 @@ unsafe fn append_object_tuple_to_new_block(
     // SAFETY: WAL transaction is for the same relation as the new locked page.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
-    // SAFETY: page is the new locked buffer page and page_size comes from the
-    // buffer guard.
-    unsafe { pg_sys::PageInit(page, page_size, 0) };
-    // SAFETY: page was initialized and remains locked/pinned for free-space
-    // capacity check.
-    if unsafe { pg_sys::PageGetFreeSpace(page) as usize } < raw_tuple_storage_bytes(payload.len()) {
+    let registered = SpireRegisteredPage::new(index_relation, buffer.block_number(), page);
+    registered.init(page_size, 0);
+    if registered.free_space() < raw_tuple_storage_bytes(payload.len()) {
         std::mem::drop(wal_txn);
         return Err(format!(
             "ec_spire object tuple payload {} exceeds page capacity",
@@ -520,17 +560,7 @@ unsafe fn append_object_tuple_to_new_block(
         ));
     }
 
-    // SAFETY: initialized page has enough free space and PostgreSQL copies the
-    // payload bytes into page storage.
-    let offset = unsafe {
-        pg_sys::PageAddItemExtended(
-            page,
-            payload.as_ptr().cast_mut().cast(),
-            payload.len(),
-            pg_sys::InvalidOffsetNumber,
-            0,
-        )
-    };
+    let offset = registered.add_item(payload);
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
         return Err("ec_spire failed to append object tuple to new block".to_owned());
@@ -538,10 +568,7 @@ unsafe fn append_object_tuple_to_new_block(
     let block_number = buffer.block_number();
 
     wal_txn.finish();
-    // SAFETY: page remains pinned while reading and recording free space.
-    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
-    // SAFETY: block_number is the block assigned to the same buffer.
-    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
+    registered.record_free_space(registered.free_space());
     Ok(crate::storage::page::ItemPointer {
         block_number,
         offset_number: offset,
