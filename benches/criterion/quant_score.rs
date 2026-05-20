@@ -147,7 +147,10 @@ fn bench_decode_approximate(c: &mut Criterion) {
 /// and the dominant kernel for the pq_fastscan storage format.
 fn bench_score_ip_from_parts_lut_no_qjl_4bit(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_from_parts_lut_no_qjl_4bit");
-    for &dim in &[256usize, 768, 1536, 3072] {
+    // The no-QJL 4-bit lane is gated on `rotation::tile_dim(dim).is_some()`,
+    // which today is only true for dim==1536 (the TILED_FWHT_COMPAT_DIM).
+    // Other dims would hit the `prepare_ip_query_lut_no_qjl_4bit` assert.
+    for &dim in &[1536usize] {
         let bits = 4u8; // lut_no_qjl_4bit is 4-bit only by construction
         let quantizer = ProdQuantizer::new(dim, bits, 42);
         let prepared =
@@ -178,7 +181,9 @@ fn bench_score_ip_from_parts_lut_no_qjl_4bit(c: &mut Criterion) {
 fn bench_score_ip_from_parts_tiled_lut_no_qjl_4bit(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_from_parts_tiled_lut_no_qjl_4bit");
     let tile_size = 512;
-    for &dim in &[1536usize, 3072] {
+    // See bench_score_ip_from_parts_lut_no_qjl_4bit: tile_dim() is only
+    // Some for dim==1536, so the no-QJL 4-bit lane only accepts that dim.
+    for &dim in &[1536usize] {
         let bits = 4u8;
         let quantizer = ProdQuantizer::new(dim, bits, 42);
         let prepared = quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(
@@ -213,7 +218,9 @@ fn bench_score_ip_from_parts_tiled_lut_no_qjl_4bit(c: &mut Criterion) {
 /// LUT to int8 for further throughput at marginal recall cost.
 fn bench_score_ip_from_parts_int8_approx_no_qjl_4bit(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_from_parts_int8_approx_no_qjl_4bit");
-    for &dim in &[256usize, 768, 1536, 3072] {
+    // See bench_score_ip_from_parts_lut_no_qjl_4bit: tile_dim() is only
+    // Some for dim==1536, so the no-QJL 4-bit lane only accepts that dim.
+    for &dim in &[1536usize] {
         let bits = 4u8;
         let quantizer = ProdQuantizer::new(dim, bits, 42);
         let prepared = quantizer

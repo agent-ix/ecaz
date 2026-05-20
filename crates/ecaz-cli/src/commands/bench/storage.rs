@@ -31,11 +31,39 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     let corpus_table = format!("{}_corpus", args.prefix);
 
-    let client = psql::connect(conn).await?;
+    let mut client = psql::connect(conn).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
         return Err(eyre!("no corpus table {:?} in this database", corpus_table));
     }
-    let rows = psql::row_count(&client, &corpus_table).await? as u64;
+    // Storage stats want an exact row count without invoking the table's
+    // access method. ec_ivf in particular rejects non-ORDER-BY scans, so a
+    // bare `SELECT count(*)` can fail once the planner picks the ec_ivf
+    // index. Disable index/index-only scans for this count so PostgreSQL
+    // takes the seq scan path regardless of which AMs are attached.
+    let rows = {
+        let tx = client
+            .build_transaction()
+            .start()
+            .await
+            .wrap_err("starting storage row-count transaction")?;
+        tx.batch_execute(
+            "SET LOCAL enable_indexscan = off; \
+             SET LOCAL enable_indexonlyscan = off; \
+             SET LOCAL enable_bitmapscan = off;",
+        )
+        .await
+        .wrap_err("disabling index scans for row count")?;
+        let r = tx
+            .query_one(
+                &format!("SELECT count(*) FROM {corpus_table}"),
+                &[],
+            )
+            .await
+            .wrap_err_with(|| format!("counting rows in {corpus_table:?}"))?
+            .get::<_, i64>(0);
+        tx.commit().await.ok();
+        r as u64
+    };
 
     // Table-level accounting. `pg_table_size` includes heap + toast +
     // visibility map + free-space map. `pg_indexes_size` is the sum of
