@@ -38,10 +38,7 @@ impl SpirePageRelation {
     fn number_of_blocks(self) -> pg_sys::BlockNumber {
         // SAFETY: this view is constructed only for an open SPIRE relation.
         unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(
-                self.relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            )
+            pg_sys::RelationGetNumberOfBlocksInFork(self.relation, pg_sys::ForkNumber::MAIN_FORKNUM)
         }
     }
 
@@ -220,20 +217,17 @@ pub(super) unsafe fn read_root_control_page(
     )
     .unwrap_or_else(|| pgrx::error!("ec_spire failed to open root/control buffer"));
     let page = buffer.page();
-    // SAFETY: buffer is share-locked and pinned; page points at a valid
-    // PostgreSQL page while LockedBufferGuard is live.
-    let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };
-    if special_size < SpireRootControlState::encoded_len() {
-        pgrx::error!(
-            "ec_spire root/control special area too small: got {special_size}, expected at least {}",
-            SpireRootControlState::encoded_len()
-        );
-    }
-    // SAFETY: special_size was checked to hold the encoded root/control state.
-    let root_control_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-    // SAFETY: root_control_ptr points into the page special area and the slice
-    // length is bounded by the encoded root/control length checked above.
+    // SAFETY: buffer is share-locked and pinned; special size is checked before
+    // exposing the encoded root/control bytes from PostgreSQL page memory.
     let root_control_bytes = unsafe {
+        let special_size = pg_sys::PageGetSpecialSize(page) as usize;
+        if special_size < SpireRootControlState::encoded_len() {
+            pgrx::error!(
+                "ec_spire root/control special area too small: got {special_size}, expected at least {}",
+                SpireRootControlState::encoded_len()
+            );
+        }
+        let root_control_ptr = pg_sys::PageGetSpecialPointer(page).cast::<u8>();
         std::slice::from_raw_parts(root_control_ptr, SpireRootControlState::encoded_len())
     };
     let root_control =
@@ -344,15 +338,13 @@ where
         .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
         let page = buffer.page();
         let page_size = buffer.page_size();
+        let mut result: Result<(), String> = Ok(());
         // SAFETY: buffer is share-locked/pinned while reading the page's max
-        // offset number.
-        let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
-        let mut result = Ok(());
-        for offset_number in 1..=max_offset {
-            // SAFETY: offset_number is within PageGetMaxOffsetNumber bounds and
-            // helper validates item id and tuple bounds before visiting.
-            result = unsafe {
-                visit_object_tuple_from_locked_page(
+        // offset and visiting each item within those bounds.
+        unsafe {
+            let max_offset = pg_sys::PageGetMaxOffsetNumber(page);
+            for offset_number in 1..=max_offset {
+                result = visit_object_tuple_from_locked_page(
                     page,
                     page_size,
                     crate::storage::page::ItemPointer {
@@ -369,10 +361,10 @@ where
                         )
                     },
                 )
-            }
-            .map(|_| ());
-            if result.is_err() {
-                break;
+                .map(|_| ());
+                if result.is_err() {
+                    break;
+                }
             }
         }
         result?;
@@ -473,17 +465,18 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
                     offset, block_number
                 ));
             }
-            // SAFETY: offset was checked in range for this locked page.
-            let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };
-            if item_id.is_null() {
-                std::mem::drop(wal_txn);
-                return Err(format!(
-                    "ec_spire object tuple delete ({block_number},{offset}) returned a null item id"
-                ));
-            }
-            // SAFETY: item_id was checked non-null and is valid while the page
-            // remains locked/pinned.
-            let item_id_ref = unsafe { &*item_id };
+            // SAFETY: offset was checked in range for this locked page; item id
+            // is checked non-null before reading line pointer fields.
+            let item_id_ref = unsafe {
+                let item_id = pg_sys::PageGetItemId(page, offset);
+                if item_id.is_null() {
+                    std::mem::drop(wal_txn);
+                    return Err(format!(
+                        "ec_spire object tuple delete ({block_number},{offset}) returned a null item id"
+                    ));
+                }
+                &*item_id
+            };
             if item_id_ref.lp_flags() == 0 {
                 continue;
             }
@@ -526,7 +519,7 @@ fn try_append_object_tuple_to_block(
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
+        .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
     let mut wal_txn = relation.start_wal();
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = SpireRegisteredPage::new(relation.raw(), block_number, page);
@@ -575,7 +568,7 @@ fn append_object_tuple_to_new_block(
 
     let buffer = relation
         .read_main_locked(P_NEW, pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK)
-    .ok_or_else(|| "ec_spire failed to allocate object block".to_owned())?;
+        .ok_or_else(|| "ec_spire failed to allocate object block".to_owned())?;
     let page_size = buffer.page_size();
     let mut wal_txn = relation.start_wal();
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
@@ -614,23 +607,23 @@ where
     F: FnOnce(&[u8]) -> Result<R, String>,
 {
     // SAFETY: caller holds the page lock/pin; max offset is read before
-    // validating the requested TID offset.
-    let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
-    if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
-        return Err(format!(
-            "ec_spire object tuple offset {} out of range on block {}",
-            tid.offset_number, tid.block_number
-        ));
-    }
+    // validating the requested TID offset and visiting the locked-page tuple.
+    unsafe {
+        let max_offset = pg_sys::PageGetMaxOffsetNumber(page);
+        if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
+            return Err(format!(
+                "ec_spire object tuple offset {} out of range on block {}",
+                tid.offset_number, tid.block_number
+            ));
+        }
 
-    // SAFETY: helper validates item id, tuple bounds, and visitor lifetime
-    // against the locked page.
-    match unsafe { visit_object_tuple_from_locked_page(page, page_size, tid, f)? } {
-        SpireObjectTupleVisit::Unused => Err(format!(
-            "ec_spire object tuple ({},{}) points at an unused slot",
-            tid.block_number, tid.offset_number
-        )),
-        SpireObjectTupleVisit::Present(result) => Ok(result),
+        match visit_object_tuple_from_locked_page(page, page_size, tid, f)? {
+            SpireObjectTupleVisit::Unused => Err(format!(
+                "ec_spire object tuple ({},{}) points at an unused slot",
+                tid.block_number, tid.offset_number
+            )),
+            SpireObjectTupleVisit::Present(result) => Ok(result),
+        }
     }
 }
 
@@ -644,40 +637,39 @@ where
     F: FnOnce(&[u8]) -> Result<R, String>,
 {
     // SAFETY: caller holds the page lock/pin and TID offset has been range
-    // checked by callers scanning or reading the page.
-    let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
-    if item_id.is_null() {
-        return Err(format!(
-            "ec_spire object tuple ({},{}) returned a null item id",
-            tid.block_number, tid.offset_number
-        ));
-    }
-    // SAFETY: item_id was checked non-null and points into the locked page.
-    let item_id_ref = unsafe { &*item_id };
-    if item_id_ref.lp_flags() == 0 {
-        return Ok(SpireObjectTupleVisit::Unused);
-    }
+    // checked by callers scanning or reading the page. Item pointer, tuple
+    // bounds, and tuple pointer are checked before exposing the borrowed slice
+    // to the visitor for the duration of this call only.
+    unsafe {
+        let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
+        if item_id.is_null() {
+            return Err(format!(
+                "ec_spire object tuple ({},{}) returned a null item id",
+                tid.block_number, tid.offset_number
+            ));
+        }
+        let item_id_ref = &*item_id;
+        if item_id_ref.lp_flags() == 0 {
+            return Ok(SpireObjectTupleVisit::Unused);
+        }
 
-    let tuple_offset = item_id_ref.lp_off() as usize;
-    let tuple_len = item_id_ref.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_spire object tuple ({},{}) has invalid bounds",
-            tid.block_number, tid.offset_number
-        ));
-    }
+        let tuple_offset = item_id_ref.lp_off() as usize;
+        let tuple_len = item_id_ref.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            return Err(format!(
+                "ec_spire object tuple ({},{}) has invalid bounds",
+                tid.block_number, tid.offset_number
+            ));
+        }
 
-    // SAFETY: item_id bounds were validated against page_size before fetching
-    // the tuple pointer.
-    let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
-    if tuple_ptr.is_null() {
-        return Err(format!(
-            "ec_spire object tuple ({},{}) returned a null tuple pointer",
-            tid.block_number, tid.offset_number
-        ));
+        let tuple_ptr = pg_sys::PageGetItem(page, item_id).cast::<u8>();
+        if tuple_ptr.is_null() {
+            return Err(format!(
+                "ec_spire object tuple ({},{}) returned a null tuple pointer",
+                tid.block_number, tid.offset_number
+            ));
+        }
+        let tuple = std::slice::from_raw_parts(tuple_ptr, tuple_len);
+        visit(tuple).map(SpireObjectTupleVisit::Present)
     }
-    // SAFETY: tuple_ptr is non-null and tuple_len bounds were checked within
-    // the locked page; slice does not outlive the visitor call.
-    let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
-    visit(tuple).map(SpireObjectTupleVisit::Present)
 }
