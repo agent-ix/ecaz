@@ -1608,7 +1608,10 @@ unsafe fn read_string_reloption(
     Some(value.to_owned())
 }
 
-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
+pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
+    if index_relation.is_null() {
+        pgrx::error!("ec_spire relation options need a valid index relation");
+    }
     // SAFETY: index_relation is live for the relcache callback and rd_options is
     // read from its relation descriptor.
     let rd_options = unsafe { (*index_relation).rd_options };

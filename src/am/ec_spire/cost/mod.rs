@@ -100,8 +100,7 @@ pub(crate) unsafe fn index_cost_snapshot(
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     // SAFETY: reads planner cost GUCs for the current backend.
     let constants = unsafe { current_planner_cost_constants() };
-    // SAFETY: relation options are read from the live index relation.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
     // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
@@ -167,8 +166,7 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
     let index_pages = f64::from(block_count);
     // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: relation options are read from the live index relation.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
     // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
@@ -213,8 +211,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     // SAFETY: reads planner cost GUCs for the current backend.
     let constants = unsafe { current_planner_cost_constants() };
-    // SAFETY: relation options are read from the live index relation.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
     // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.

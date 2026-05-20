@@ -433,9 +433,7 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteSearchEndpointIdentityRow {
     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
-        // SAFETY: index_relation is the live PostgreSQL index relation supplied
-        // by the endpoint identity SQL wrapper for this summary read.
-        let relation_options = unsafe { options::relation_options(index_relation) };
+        let relation_options = options::relation_options(index_relation);
         // SAFETY: rd_id is stable while the relation is open for this diagnostic
         // read and is used only as an OID input to identity helpers.
         let index_oid = unsafe { (*index_relation).rd_id };

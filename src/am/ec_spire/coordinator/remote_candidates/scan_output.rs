@@ -141,9 +141,7 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
-        // scan planning only.
-        let relation_options = unsafe { options::relation_options(index_relation) };
+        let relation_options = options::relation_options(index_relation);
         let top_graph_plan = relation_options.top_graph_plan()?;
         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
         let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
@@ -536,9 +534,7 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
-        // scan-plan and candidate-limit resolution only.
-        let relation_options = unsafe { options::relation_options(index_relation) };
+        let relation_options = options::relation_options(index_relation);
         let top_graph_plan = relation_options.top_graph_plan()?;
         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
         let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;

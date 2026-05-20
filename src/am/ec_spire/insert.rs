@@ -62,8 +62,7 @@ unsafe fn publish_insert_delta_epoch(
     let _guard = unsafe { lock_publish_relation(index_relation) };
     // SAFETY: the locked SPIRE index relation has a root/control page.
     let root_control = page::read_root_control_page(index_relation);
-    // SAFETY: relation options are read from the live index relation.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = options::relation_options(index_relation);
     // SAFETY: heap_relation and IndexInfo come from PostgreSQL's aminsert
     // callback and remain valid while deriving the indexed tuple layout.
     let tuple_layout = unsafe {

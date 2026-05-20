@@ -15,9 +15,7 @@ impl SpireLiveIndexRelation {
     }
 
     fn relation_options(self) -> options::EcSpireOptions {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation whose reloptions can be read for diagnostics/planning.
-        unsafe { options::relation_options(self.relation) }
+        options::relation_options(self.relation)
     }
 
     fn relid(self) -> u32 {
