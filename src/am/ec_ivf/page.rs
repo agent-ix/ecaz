@@ -3,6 +3,8 @@
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use std::collections::BTreeSet;
 use std::collections::HashMap;
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+use std::marker::PhantomData;
 use std::mem::size_of;
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use std::ptr;
@@ -163,6 +165,74 @@ pub(super) struct EcIvfOptions {
 enum PageTupleVisit<R> {
     Unused,
     Present(R),
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTupleReader<'a> {
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: pg_sys::BlockNumber,
+    line_pointer_count: u16,
+    _buffer: PhantomData<&'a LockedBufferGuard>,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl<'a> PageTupleReader<'a> {
+    fn new(buffer: &'a LockedBufferGuard, block_number: pg_sys::BlockNumber) -> Self {
+        let page_ptr = buffer.page().cast::<u8>();
+        Self {
+            page_ptr,
+            page_size: buffer.page_size(),
+            block_number,
+            line_pointer_count: page_line_pointer_count(page_ptr),
+            _buffer: PhantomData,
+        }
+    }
+
+    fn line_pointer_count(&self) -> u16 {
+        self.line_pointer_count
+    }
+
+    fn visit_line<R, F>(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<PageTupleVisit<R>, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        if offset > self.line_pointer_count {
+            return Err(format!(
+                "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
+                self.block_number
+            ));
+        }
+
+        // SAFETY: this reader is constructed only from a live `LockedBufferGuard`;
+        // `offset` is checked against the cached line-pointer count before the
+        // helper exposes tuple bytes for the duration of `visit`.
+        unsafe {
+            with_page_line_tuple_bytes(
+                self.page_ptr,
+                self.page_size,
+                self.block_number,
+                offset,
+                tuple_kind,
+                visit,
+            )
+        }
+    }
+
+    fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        match self.visit_line(offset, tuple_kind, visit)? {
+            PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
+            PageTupleVisit::Present(tuple) => Ok(tuple),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1259,11 +1329,7 @@ where
                 // the per-buffer data slot when it is non-null.
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
-            // SAFETY: the buffer is share-locked and `block_number` identifies
-            // the locked page; the visitor helper validates posting tuples.
-            unsafe {
-                visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
-            }
+            visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
         };
         if let Err(err) = result {
             // SAFETY: closes the stream created above before returning early.
@@ -1323,11 +1389,7 @@ where
                 // the per-buffer data slot when it is non-null.
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
-            // SAFETY: the buffer is share-locked and `block_number` identifies
-            // the locked page; the visitor helper validates posting tuples.
-            unsafe {
-                visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor)
-            }
+            visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor)
         };
         if let Err(err) = result {
             // SAFETY: closes the stream created above before returning early.
@@ -1387,11 +1449,7 @@ where
                 // the per-buffer data slot when it is non-null.
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
-            // SAFETY: the buffer is share-locked and `block_number` identifies
-            // the locked page; the visitor helper validates posting tuple refs.
-            unsafe {
-                visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
-            }
+            visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
         };
         if let Err(err) = result {
             // SAFETY: closes the stream created above before returning early.
@@ -1428,11 +1486,8 @@ where
     }
     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
-    // visitor helper validates tuple line pointers before decoding postings.
-    let result = unsafe {
-        visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
-    };
+    let result =
+        visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor);
     result
 }
 
@@ -1458,10 +1513,7 @@ where
     }
     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
-    // visitor helper validates tuple line pointers before decoding postings.
-    let result =
-        unsafe { visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor) };
+    let result = visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor);
     result
 }
 
@@ -1487,16 +1539,13 @@ where
     }
     .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    // SAFETY: `buffer` is share-locked for `block_number`, and the shared
-    // visitor helper validates tuple line pointers before borrowing postings.
-    let result = unsafe {
-        visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
-    };
+    let result =
+        visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor);
     result
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn visit_ivf_postings_from_buffer<F>(
+fn visit_ivf_postings_from_buffer<F>(
     buffer: &LockedBufferGuard,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
@@ -1506,25 +1555,21 @@ unsafe fn visit_ivf_postings_from_buffer<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    // SAFETY: forwards the same share-locked page to the all-postings visitor;
-    // the closure only filters decoded postings by list id.
-    unsafe {
-        visit_all_ivf_postings_from_buffer(
-            buffer,
-            block_number,
-            payload_len,
-            &mut |posting_tid, posting| {
-                if posting.list_id == list_id {
-                    visitor(posting_tid, posting)?;
-                }
-                Ok(())
-            },
-        )
-    }
+    visit_all_ivf_postings_from_buffer(
+        buffer,
+        block_number,
+        payload_len,
+        &mut |posting_tid, posting| {
+            if posting.list_id == list_id {
+                visitor(posting_tid, posting)?;
+            }
+            Ok(())
+        },
+    )
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn visit_all_ivf_postings_from_buffer<F>(
+fn visit_all_ivf_postings_from_buffer<F>(
     buffer: &LockedBufferGuard,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -1533,42 +1578,28 @@ unsafe fn visit_all_ivf_postings_from_buffer<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    let page_ptr = buffer.page().cast::<u8>();
-    let page_size = buffer.page_size();
-    let line_pointer_count = page_line_pointer_count(page_ptr);
-    for offset in 1..=line_pointer_count {
-        // SAFETY: `page_ptr` and `page_size` come from a share-locked buffer,
-        // and `offset` is within the current line-pointer range; the helper
-        // checks item-id bounds before exposing tuple bytes to the decoder.
-        unsafe {
-            with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "posting",
-                |tuple_bytes| {
-                    if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                        return Ok(());
-                    }
+    let page = PageTupleReader::new(buffer, block_number);
+    for offset in 1..=page.line_pointer_count() {
+        page.visit_line(offset, "posting", |tuple_bytes| {
+            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                return Ok(());
+            }
 
-                    let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
-                    visitor(
-                        ItemPointer {
-                            block_number,
-                            offset_number: offset,
-                        },
-                        posting,
-                    )
+            let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+            visitor(
+                ItemPointer {
+                    block_number,
+                    offset_number: offset,
                 },
-            )?
-        };
+                posting,
+            )
+        })?;
     }
     Ok(())
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn visit_all_ivf_posting_refs_from_buffer<F>(
+fn visit_all_ivf_posting_refs_from_buffer<F>(
     buffer: &LockedBufferGuard,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -1577,36 +1608,22 @@ unsafe fn visit_all_ivf_posting_refs_from_buffer<F>(
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
-    let page_ptr = buffer.page().cast::<u8>();
-    let page_size = buffer.page_size();
-    let line_pointer_count = page_line_pointer_count(page_ptr);
-    for offset in 1..=line_pointer_count {
-        // SAFETY: `page_ptr` and `page_size` come from a share-locked buffer,
-        // and `offset` is within the current line-pointer range; the helper
-        // checks item-id bounds before exposing tuple bytes to the decoder.
-        unsafe {
-            with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "posting",
-                |tuple_bytes| {
-                    if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                        return Ok(());
-                    }
+    let page = PageTupleReader::new(buffer, block_number);
+    for offset in 1..=page.line_pointer_count() {
+        page.visit_line(offset, "posting", |tuple_bytes| {
+            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                return Ok(());
+            }
 
-                    let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
-                    visitor(
-                        ItemPointer {
-                            block_number,
-                            offset_number: offset,
-                        },
-                        posting,
-                    )
+            let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
+            visitor(
+                ItemPointer {
+                    block_number,
+                    offset_number: offset,
                 },
-            )?
-        };
+                posting,
+            )
+        })?;
     }
     Ok(())
 }
@@ -2183,7 +2200,7 @@ where
 
     // SAFETY: `buffer` is exclusive-locked for `block_number`; the callee
     // validates tuple line pointers before applying rewrite decisions.
-    let result = unsafe {
+    unsafe {
         rewrite_ivf_postings_from_exclusive_buffer(
             index_relation,
             &buffer,
@@ -2193,8 +2210,7 @@ where
             compact_deletes,
             rewrite,
         )
-    };
-    result
+    }
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -2216,9 +2232,8 @@ unsafe fn debug_ivf_posting_block_summary(
     .ok_or_else(|| format!("ec_ivf failed to open block {block_number}"))?;
 
     let result = (|| -> Result<IvfPostingBlockSummary, String> {
-        let page_ptr = buffer.page().cast::<u8>();
-        let page_size = buffer.page_size();
-        let line_pointer_count = page_line_pointer_count(page_ptr);
+        let page = PageTupleReader::new(&buffer, block_number);
+        let line_pointer_count = page.line_pointer_count();
         let mut unused_line_pointers = 0_u16;
         let mut non_posting_tuples = 0_u16;
         let mut posting_tuples = 0_u16;
@@ -2228,45 +2243,28 @@ unsafe fn debug_ivf_posting_block_summary(
         let mut list_ids = BTreeSet::new();
 
         for offset in 1..=line_pointer_count {
-            // SAFETY: `offset` is within the page line-pointer range.
-            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                unused_line_pointers = unused_line_pointers.saturating_add(1);
-                continue;
-            }
+            match page.visit_line(offset, "posting", |tuple_bytes| {
+                if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                    return Ok(false);
+                }
 
-            // SAFETY: `page_ptr` and `page_size` come from the share-locked
-            // buffer, and the helper validates item-id bounds before decoding.
-            match unsafe {
-                with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    block_number,
-                    offset,
-                    "posting",
-                    |tuple_bytes| {
-                        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                            return Ok(false);
-                        }
-
-                        let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
-                        posting_tuples = posting_tuples.saturating_add(1);
-                        if posting.deleted {
-                            deleted_posting_tuples = deleted_posting_tuples.saturating_add(1);
-                        } else {
-                            live_posting_tuples = live_posting_tuples.saturating_add(1);
-                        }
-                        heap_tid_refs = heap_tid_refs.saturating_add(
-                            u32::try_from(posting.heaptid_count()).map_err(|_| {
-                                "ec_ivf posting heap tid count exceeds u32".to_owned()
-                            })?,
-                        );
-                        list_ids.insert(posting.list_id);
-                        Ok(true)
-                    },
-                )?
-            } {
-                PageTupleVisit::Unused => unreachable!("unused line pointers are skipped above"),
+                let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
+                posting_tuples = posting_tuples.saturating_add(1);
+                if posting.deleted {
+                    deleted_posting_tuples = deleted_posting_tuples.saturating_add(1);
+                } else {
+                    live_posting_tuples = live_posting_tuples.saturating_add(1);
+                }
+                heap_tid_refs = heap_tid_refs.saturating_add(
+                    u32::try_from(posting.heaptid_count())
+                        .map_err(|_| "ec_ivf posting heap tid count exceeds u32".to_owned())?,
+                );
+                list_ids.insert(posting.list_id);
+                Ok(true)
+            })? {
+                PageTupleVisit::Unused => {
+                    unused_line_pointers = unused_line_pointers.saturating_add(1);
+                }
                 PageTupleVisit::Present(false) => {
                     non_posting_tuples = non_posting_tuples.saturating_add(1);
                 }
@@ -2490,9 +2488,8 @@ where
         )
     })?;
 
-    let page_ptr = buffer.page().cast::<u8>();
-    let page_size = buffer.page_size();
-    let line_pointer_count = page_line_pointer_count(page_ptr);
+    let page = PageTupleReader::new(&buffer, tuple_tid.block_number);
+    let line_pointer_count = page.line_pointer_count();
     if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
         return Err(format!(
             "ec_ivf {tuple_kind} tuple offset {} out of range on block {}",
@@ -2500,11 +2497,7 @@ where
         ));
     }
 
-    // SAFETY: `page_ptr` and `page_size` come from the share-locked buffer;
-    // the helper validates the required tuple slot before decoding.
-    let decoded = unsafe {
-        with_required_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
-    };
+    let decoded = page.visit_required(tuple_tid.offset_number, tuple_kind, decode);
     decoded.map(|tuple| (tuple, line_pointer_count))
 }
 
@@ -2537,24 +2530,13 @@ unsafe fn find_next_tuple_with_tag(
             format!("ec_ivf failed to open block {block_number} while locating next {tuple_kind}")
         })?;
 
-        let page_ptr = buffer.page().cast::<u8>();
-        let page_size = buffer.page_size();
-        let line_pointer_count = page_line_pointer_count(page_ptr);
+        let page = PageTupleReader::new(&buffer, block_number);
+        let line_pointer_count = page.line_pointer_count();
         let result = (|| -> Result<Option<ItemPointer>, String> {
             for offset in offset_number..=line_pointer_count {
-                // SAFETY: `page_ptr` and `page_size` come from the share-locked
-                // buffer, and the helper validates item-id bounds before tag
-                // inspection.
-                let visit = unsafe {
-                    with_page_line_tuple_bytes(
-                        page_ptr,
-                        page_size,
-                        block_number,
-                        offset,
-                        tuple_kind,
-                        |tuple_bytes| Ok(tuple_bytes.first().copied() == Some(tag)),
-                    )?
-                };
+                let visit = page.visit_line(offset, tuple_kind, |tuple_bytes| {
+                    Ok(tuple_bytes.first().copied() == Some(tag))
+                })?;
                 if matches!(visit, PageTupleVisit::Present(true)) {
                     return Ok(Some(ItemPointer {
                         block_number,
