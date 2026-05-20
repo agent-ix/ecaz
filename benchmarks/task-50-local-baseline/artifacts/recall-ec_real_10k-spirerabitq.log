@@ -1,0 +1,17 @@
+[recall] no --sweep provided; using profile default nprobe values [8, 16, 24, 32]
+[recall] fetching queries from ec_real_10k_spirerabitq_queries ...
+[recall] fetching corpus from ec_real_10k_spirerabitq_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 84.61ms
+┌────────┬──────────┬────────┬─────────────┐
+│ nprobe ┆ recall@k ┆ ndcg@k ┆ mean q-time │
+╞════════╪══════════╪════════╪═════════════╡
+│ 8      ┆ 0.9920   ┆ 0.9996 ┆ 44.19 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 0.9985   ┆ 0.9999 ┆ 74.29 ms    │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1.0000   ┆ 1.0000 ┆ 102.80 ms   │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1.0000   ┆ 1.0000 ┆ 131.77 ms   │
+└────────┴──────────┴────────┴─────────────┘
+__ecaz_exit__=0

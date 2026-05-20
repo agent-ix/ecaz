@@ -1,0 +1,39 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "ec_real_100k_hnsw")
+[loader] copied corpus table ec_real_100k_hnsw_corpus in 44.68s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_100k_hnsw_corpus in 13.62s
+[loader] copied queries table ec_real_100k_hnsw_queries in 469.94ms
+[loader] building ec_real_100k_hnsw_m8_idx using ec_hnsw (reloptions=[m=8, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_100k_hnsw_m8_idx in 75.55s
+[loader] building ec_real_100k_hnsw_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_100k_hnsw_m16_idx in 94.92s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_100k_hnsw_corpus (100000 rows)                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_100k_hnsw_queries (1000 rows)                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_100k_hnsw_m8_idx [m=8, ef_construction=128, build_source_column=source]   │
+│         ┆ ec_real_100k_hnsw_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_100k_hnsw in 240.12s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_100k_hnsw_corpus (100000 rows)                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_100k_hnsw_queries (1000 rows)                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_100k_hnsw_m8_idx [m=8, ef_construction=128, build_source_column=source]   │
+│         ┆ ec_real_100k_hnsw_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_100k_hnsw in 240.12s
+__ecaz_exit__=0

@@ -1,0 +1,39 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "ec_real_ann_benchmarks_anchor_hnsw")
+[loader] copied corpus table ec_real_ann_benchmarks_anchor_hnsw_corpus in 440.55s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_ann_benchmarks_anchor_hnsw_corpus in 147.11s
+[loader] copied queries table ec_real_ann_benchmarks_anchor_hnsw_queries in 4.43s
+[loader] building ec_real_ann_benchmarks_anchor_hnsw_m8_idx using ec_hnsw (reloptions=[m=8, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_ann_benchmarks_anchor_hnsw_m8_idx in 1234.30s
+[loader] building ec_real_ann_benchmarks_anchor_hnsw_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_ann_benchmarks_anchor_hnsw_m16_idx in 1678.25s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_ann_benchmarks_anchor_hnsw_corpus (990000 rows)                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_ann_benchmarks_anchor_hnsw_queries (10000 rows)                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_ann_benchmarks_anchor_hnsw_m8_idx [m=8, ef_construction=128, build_source_column=source]   │
+│         ┆ ec_real_ann_benchmarks_anchor_hnsw_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_ann_benchmarks_anchor_hnsw in 3713.55s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_ann_benchmarks_anchor_hnsw_corpus (990000 rows)                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_ann_benchmarks_anchor_hnsw_queries (10000 rows)                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_ann_benchmarks_anchor_hnsw_m8_idx [m=8, ef_construction=128, build_source_column=source]   │
+│         ┆ ec_real_ann_benchmarks_anchor_hnsw_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_ann_benchmarks_anchor_hnsw in 3713.55s
+__ecaz_exit__=0

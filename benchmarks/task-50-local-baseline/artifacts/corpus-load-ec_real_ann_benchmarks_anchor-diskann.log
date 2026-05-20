@@ -1,0 +1,12 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "ec_real_ann_benchmarks_anchor_diskann")
+[loader] copied corpus table ec_real_ann_benchmarks_anchor_diskann_corpus in 430.91s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_ann_benchmarks_anchor_diskann_corpus in 142.66s
+[loader] copied queries table ec_real_ann_benchmarks_anchor_diskann_queries in 4.26s
+[loader] building ec_real_ann_benchmarks_anchor_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+eal_ann_benchmarks_anchor_diskann_corpus in 142.66s
+[loader] copied queries table ec_real_ann_benchmarks_anchor_diskann_queries in 4.26s
+[loader] building ec_real_ann_benchmarks_anchor_diskann_idx using ec_diskann (reloptions=[<none>]) ...

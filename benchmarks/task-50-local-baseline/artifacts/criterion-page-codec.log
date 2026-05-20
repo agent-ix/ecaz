@@ -1,0 +1,346 @@
+warning: unused import: `EC_PARALLEL_WORKER_SLOT_CLAIMED`
+  --> src/am/common/parallel.rs:16:5
+   |
+16 |     EC_PARALLEL_WORKER_SLOT_CLAIMED, EC_PARALLEL_WORKER_SLOT_FREE,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `SpireDmlFrontdoorCustomScanMode`, `SpireDmlFrontdoorPkValuePlan`, `coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql`, `dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes`, `dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision`, `dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan`, `dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row`, and `dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes`
+   --> src/am/mod.rs:90:5
+    |
+ 90 |     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 97 |     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 98 |     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+ 99 |     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+100 |     dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+101 |     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
+102 |     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+103 |     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
+104 |     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+224 |     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz` (lib) generated 2 warnings (run `cargo fix --lib -p ecaz` to apply 2 suggestions)
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 1m 08s
+     Running benches/criterion/page_codec.rs (target/release/deps/page_codec-e3da4bf135de7d92)
+Gnuplot not found, using plotters backend
+Benchmarking page/element_encode/192
+Benchmarking page/element_encode/192: Warming up for 3.0000 s
+Benchmarking page/element_encode/192: Collecting 100 samples in estimated 5.0001 s (115M iterations)
+Benchmarking page/element_encode/192: Analyzing
+page/element_encode/192 time:   [42.592 ns 42.884 ns 43.201 ns]
+                        thrpt:  [5.7344 GiB/s 5.7768 GiB/s 5.8164 GiB/s]
+                 change:
+                        time:   [-11.414% -8.7144% -6.1213%] (p = 0.00 < 0.05)
+                        thrpt:  [+6.5204% +9.5463% +12.884%]
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+Benchmarking page/element_encode/768
+Benchmarking page/element_encode/768: Warming up for 3.0000 s
+Benchmarking page/element_encode/768: Collecting 100 samples in estimated 5.0002 s (98M iterations)
+Benchmarking page/element_encode/768: Analyzing
+page/element_encode/768 time:   [50.886 ns 51.302 ns 51.733 ns]
+                        thrpt:  [15.158 GiB/s 15.285 GiB/s 15.410 GiB/s]
+                 change:
+                        time:   [+11.672% +19.435% +28.235%] (p = 0.00 < 0.05)
+                        thrpt:  [-22.018% -16.272% -10.452%]
+                        Performance has regressed.
+Found 5 outliers among 100 measurements (5.00%)
+  5 (5.00%) high mild
+Benchmarking page/element_encode/1536
+Benchmarking page/element_encode/1536: Warming up for 3.0000 s
+Benchmarking page/element_encode/1536: Collecting 100 samples in estimated 5.0001 s (56M iterations)
+Benchmarking page/element_encode/1536: Analyzing
+page/element_encode/1536
+                        time:   [87.286 ns 87.813 ns 88.359 ns]
+                        thrpt:  [16.970 GiB/s 17.075 GiB/s 17.178 GiB/s]
+                 change:
+                        time:   [-29.534% -23.762% -17.290%] (p = 0.00 < 0.05)
+                        thrpt:  [+20.905% +31.168% +41.912%]
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking page/element_decode/192
+Benchmarking page/element_decode/192: Warming up for 3.0000 s
+Benchmarking page/element_decode/192: Collecting 100 samples in estimated 5.0000 s (106M iterations)
+Benchmarking page/element_decode/192: Analyzing
+page/element_decode/192 time:   [47.085 ns 47.341 ns 47.645 ns]
+                        thrpt:  [5.1995 GiB/s 5.2329 GiB/s 5.2613 GiB/s]
+                 change:
+                        time:   [+54.263% +56.548% +58.650%] (p = 0.00 < 0.05)
+                        thrpt:  [-36.968% -36.122% -35.176%]
+                        Performance has regressed.
+Found 9 outliers among 100 measurements (9.00%)
+  5 (5.00%) high mild
+  4 (4.00%) high severe
+Benchmarking page/element_decode/768
+Benchmarking page/element_decode/768: Warming up for 3.0000 s
+Benchmarking page/element_decode/768: Collecting 100 samples in estimated 5.0001 s (93M iterations)
+Benchmarking page/element_decode/768: Analyzing
+page/element_decode/768 time:   [53.493 ns 54.020 ns 54.630 ns]
+                        thrpt:  [14.354 GiB/s 14.516 GiB/s 14.659 GiB/s]
+                 change:
+                        time:   [+51.414% +52.548% +53.866%] (p = 0.00 < 0.05)
+                        thrpt:  [-35.009% -34.447% -33.956%]
+                        Performance has regressed.
+Found 11 outliers among 100 measurements (11.00%)
+  6 (6.00%) high mild
+  5 (5.00%) high severe
+Benchmarking page/element_decode/1536
+Benchmarking page/element_decode/1536: Warming up for 3.0000 s
+Benchmarking page/element_decode/1536: Collecting 100 samples in estimated 5.0000 s (52M iterations)
+Benchmarking page/element_decode/1536: Analyzing
+page/element_decode/1536
+                        time:   [96.868 ns 97.699 ns 98.708 ns]
+                        thrpt:  [15.191 GiB/s 15.347 GiB/s 15.479 GiB/s]
+                 change:
+                        time:   [-55.563% -54.174% -52.690%] (p = 0.00 < 0.05)
+                        thrpt:  [+111.37% +118.22% +125.04%]
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+
+Benchmarking page/neighbor_encode/8
+Benchmarking page/neighbor_encode/8: Warming up for 3.0000 s
+Benchmarking page/neighbor_encode/8: Collecting 100 samples in estimated 5.0000 s (267M iterations)
+Benchmarking page/neighbor_encode/8: Analyzing
+page/neighbor_encode/8  time:   [18.150 ns 18.271 ns 18.416 ns]
+                        thrpt:  [434.40 Melem/s 437.85 Melem/s 440.77 Melem/s]
+                 change:
+                        time:   [-60.532% -59.707% -58.827%] (p = 0.00 < 0.05)
+                        thrpt:  [+142.88% +148.18% +153.37%]
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  7 (7.00%) high severe
+Benchmarking page/neighbor_encode/16
+Benchmarking page/neighbor_encode/16: Warming up for 3.0000 s
+Benchmarking page/neighbor_encode/16: Collecting 100 samples in estimated 5.0001 s (189M iterations)
+Benchmarking page/neighbor_encode/16: Analyzing
+page/neighbor_encode/16 time:   [25.779 ns 25.941 ns 26.124 ns]
+                        thrpt:  [612.47 Melem/s 616.79 Melem/s 620.66 Melem/s]
+                 change:
+                        time:   [-58.512% -58.131% -57.617%] (p = 0.00 < 0.05)
+                        thrpt:  [+135.94% +138.84% +141.03%]
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  3 (3.00%) high mild
+  3 (3.00%) high severe
+Benchmarking page/neighbor_encode/32
+Benchmarking page/neighbor_encode/32: Warming up for 3.0000 s
+Benchmarking page/neighbor_encode/32: Collecting 100 samples in estimated 5.0001 s (106M iterations)
+Benchmarking page/neighbor_encode/32: Analyzing
+page/neighbor_encode/32 time:   [46.392 ns 46.868 ns 47.468 ns]
+                        thrpt:  [674.14 Melem/s 682.76 Melem/s 689.78 Melem/s]
+                 change:
+                        time:   [-45.904% -44.736% -43.541%] (p = 0.00 < 0.05)
+                        thrpt:  [+77.119% +80.948% +84.856%]
+                        Performance has improved.
+Found 9 outliers among 100 measurements (9.00%)
+  4 (4.00%) high mild
+  5 (5.00%) high severe
+Benchmarking page/neighbor_encode/64
+Benchmarking page/neighbor_encode/64: Warming up for 3.0000 s
+Benchmarking page/neighbor_encode/64: Collecting 100 samples in estimated 5.0004 s (63M iterations)
+Benchmarking page/neighbor_encode/64: Analyzing
+page/neighbor_encode/64 time:   [77.949 ns 78.605 ns 79.503 ns]
+                        thrpt:  [805.00 Melem/s 814.19 Melem/s 821.04 Melem/s]
+                 change:
+                        time:   [-30.897% -27.013% -22.683%] (p = 0.00 < 0.05)
+                        thrpt:  [+29.337% +37.010% +44.711%]
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  5 (5.00%) high severe
+
+Benchmarking page/neighbor_decode/8
+Benchmarking page/neighbor_decode/8: Warming up for 3.0000 s
+Benchmarking page/neighbor_decode/8: Collecting 100 samples in estimated 5.0003 s (79M iterations)
+Benchmarking page/neighbor_decode/8: Analyzing
+page/neighbor_decode/8  time:   [63.706 ns 63.976 ns 64.275 ns]
+                        thrpt:  [124.46 Melem/s 125.05 Melem/s 125.58 Melem/s]
+                 change:
+                        time:   [-52.776% -52.630% -52.463%] (p = 0.00 < 0.05)
+                        thrpt:  [+110.36% +111.11% +111.76%]
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  5 (5.00%) high mild
+  1 (1.00%) high severe
+Benchmarking page/neighbor_decode/16
+Benchmarking page/neighbor_decode/16: Warming up for 3.0000 s
+Benchmarking page/neighbor_decode/16: Collecting 100 samples in estimated 5.0005 s (43M iterations)
+Benchmarking page/neighbor_decode/16: Analyzing
+page/neighbor_decode/16 time:   [115.72 ns 116.52 ns 117.53 ns]
+                        thrpt:  [136.14 Melem/s 137.31 Melem/s 138.26 Melem/s]
+                 change:
+                        time:   [-51.281% -50.345% -49.365%] (p = 0.00 < 0.05)
+                        thrpt:  [+97.493% +101.39% +105.26%]
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  5 (5.00%) high mild
+  2 (2.00%) high severe
+Benchmarking page/neighbor_decode/32
+Benchmarking page/neighbor_decode/32: Warming up for 3.0000 s
+Benchmarking page/neighbor_decode/32: Collecting 100 samples in estimated 5.0000 s (29M iterations)
+Benchmarking page/neighbor_decode/32: Analyzing
+page/neighbor_decode/32 time:   [169.44 ns 170.57 ns 171.81 ns]
+                        thrpt:  [186.25 Melem/s 187.61 Melem/s 188.86 Melem/s]
+                 change:
+                        time:   [-57.423% -55.156% -52.685%] (p = 0.00 < 0.05)
+                        thrpt:  [+111.35% +123.00% +134.87%]
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  5 (5.00%) high mild
+  3 (3.00%) high severe
+Benchmarking page/neighbor_decode/64
+Benchmarking page/neighbor_decode/64: Warming up for 3.0000 s
+Benchmarking page/neighbor_decode/64: Collecting 100 samples in estimated 5.0007 s (22M iterations)
+Benchmarking page/neighbor_decode/64: Analyzing
+page/neighbor_decode/64 time:   [226.65 ns 227.43 ns 228.31 ns]
+                        thrpt:  [280.32 Melem/s 281.40 Melem/s 282.37 Melem/s]
+                 change:
+                        time:   [-63.188% -62.051% -60.781%] (p = 0.00 < 0.05)
+                        thrpt:  [+154.98% +163.51% +171.65%]
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  7 (7.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking page/metadata_decode
+Benchmarking page/metadata_decode: Warming up for 3.0000 s
+Benchmarking page/metadata_decode: Collecting 100 samples in estimated 5.0000 s (413M iterations)
+Benchmarking page/metadata_decode: Analyzing
+page/metadata_decode    time:   [12.155 ns 12.236 ns 12.334 ns]
+                        change: [+63.231% +67.650% +72.398%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking page/insert_read_element/insert/code192
+Benchmarking page/insert_read_element/insert/code192: Warming up for 3.0000 s
+Benchmarking page/insert_read_element/insert/code192: Collecting 100 samples in estimated 5.0003 s (53M iterations)
+Benchmarking page/insert_read_element/insert/code192: Analyzing
+page/insert_read_element/insert/code192
+                        time:   [69.000 ns 69.848 ns 70.759 ns]
+                        thrpt:  [14.132 Melem/s 14.317 Melem/s 14.493 Melem/s]
+                 change:
+                        time:   [-63.523% -61.585% -59.414%] (p = 0.00 < 0.05)
+                        thrpt:  [+146.39% +160.31% +174.14%]
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+Benchmarking page/insert_read_element/read/code192
+Benchmarking page/insert_read_element/read/code192: Warming up for 3.0000 s
+Benchmarking page/insert_read_element/read/code192: Collecting 100 samples in estimated 5.0001 s (101M iterations)
+Benchmarking page/insert_read_element/read/code192: Analyzing
+page/insert_read_element/read/code192
+                        time:   [49.524 ns 49.983 ns 50.526 ns]
+                        thrpt:  [19.792 Melem/s 20.007 Melem/s 20.192 Melem/s]
+                 change:
+                        time:   [-46.168% -45.502% -44.801%] (p = 0.00 < 0.05)
+                        thrpt:  [+81.164% +83.493% +85.764%]
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  2 (2.00%) high mild
+  3 (3.00%) high severe
+Benchmarking page/insert_read_element/insert/code768
+Benchmarking page/insert_read_element/insert/code768: Warming up for 3.0000 s
+Benchmarking page/insert_read_element/insert/code768: Collecting 100 samples in estimated 5.0003 s (50M iterations)
+Benchmarking page/insert_read_element/insert/code768: Analyzing
+page/insert_read_element/insert/code768
+                        time:   [74.614 ns 75.123 ns 75.667 ns]
+                        thrpt:  [13.216 Melem/s 13.311 Melem/s 13.402 Melem/s]
+                 change:
+                        time:   [-51.027% -47.688% -43.892%] (p = 0.00 < 0.05)
+                        thrpt:  [+78.227% +91.162% +104.20%]
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) high mild
+  3 (3.00%) high severe
+Benchmarking page/insert_read_element/read/code768
+Benchmarking page/insert_read_element/read/code768: Warming up for 3.0000 s
+Benchmarking page/insert_read_element/read/code768: Collecting 100 samples in estimated 5.0002 s (89M iterations)
+Benchmarking page/insert_read_element/read/code768: Analyzing
+page/insert_read_element/read/code768
+                        time:   [55.490 ns 56.008 ns 56.582 ns]
+                        thrpt:  [17.673 Melem/s 17.855 Melem/s 18.021 Melem/s]
+                 change:
+                        time:   [+11.717% +14.723% +17.888%] (p = 0.00 < 0.05)
+                        thrpt:  [-15.174% -12.834% -10.488%]
+                        Performance has regressed.
+Found 8 outliers among 100 measurements (8.00%)
+  1 (1.00%) high mild
+  7 (7.00%) high severe
+
+Benchmarking page/insert_read_neighbor/insert/count16
+Benchmarking page/insert_read_neighbor/insert/count16: Warming up for 3.0000 s
+Benchmarking page/insert_read_neighbor/insert/count16: Collecting 100 samples in estimated 5.0002 s (59M iterations)
+Benchmarking page/insert_read_neighbor/insert/count16: Analyzing
+page/insert_read_neighbor/insert/count16
+                        time:   [56.344 ns 57.020 ns 57.939 ns]
+                        thrpt:  [17.260 Melem/s 17.538 Melem/s 17.748 Melem/s]
+                 change:
+                        time:   [-24.151% -22.409% -20.483%] (p = 0.00 < 0.05)
+                        thrpt:  [+25.759% +28.880% +31.841%]
+                        Performance has improved.
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) high mild
+  2 (2.00%) high severe
+Benchmarking page/insert_read_neighbor/read/count16
+Benchmarking page/insert_read_neighbor/read/count16: Warming up for 3.0000 s
+Benchmarking page/insert_read_neighbor/read/count16: Collecting 100 samples in estimated 5.0005 s (43M iterations)
+Benchmarking page/insert_read_neighbor/read/count16: Analyzing
+page/insert_read_neighbor/read/count16
+                        time:   [117.84 ns 118.61 ns 119.51 ns]
+                        thrpt:  [8.3677 Melem/s 8.4308 Melem/s 8.4862 Melem/s]
+                 change:
+                        time:   [-20.776% -18.736% -16.515%] (p = 0.01 < 0.05)
+                        thrpt:  [+19.782% +23.056% +26.224%]
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  4 (4.00%) high mild
+  1 (1.00%) high severe
+Benchmarking page/insert_read_neighbor/insert/count32
+Benchmarking page/insert_read_neighbor/insert/count32: Warming up for 3.0000 s
+Benchmarking page/insert_read_neighbor/insert/count32: Collecting 100 samples in estimated 5.0001 s (50M iterations)
+Benchmarking page/insert_read_neighbor/insert/count32: Analyzing
+page/insert_read_neighbor/insert/count32
+                        time:   [75.018 ns 75.619 ns 76.392 ns]
+                        thrpt:  [13.090 Melem/s 13.224 Melem/s 13.330 Melem/s]
+                 change:
+                        time:   [-30.363% -29.630% -28.850%] (p = 0.00 < 0.05)
+                        thrpt:  [+40.549% +42.106% +43.601%]
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+Benchmarking page/insert_read_neighbor/read/count32
+Benchmarking page/insert_read_neighbor/read/count32: Warming up for 3.0000 s
+Benchmarking page/insert_read_neighbor/read/count32: Collecting 100 samples in estimated 5.0009 s (28M iterations)
+Benchmarking page/insert_read_neighbor/read/count32: Analyzing
+page/insert_read_neighbor/read/count32
+                        time:   [173.40 ns 175.22 ns 177.39 ns]
+                        thrpt:  [5.6373 Melem/s 5.7071 Melem/s 5.7670 Melem/s]
+                 change:
+                        time:   [-25.893% -24.047% -21.986%] (p = 0.00 < 0.05)
+                        thrpt:  [+28.182% +31.660% +34.940%]
+                        Performance has improved.
+Found 10 outliers among 100 measurements (10.00%)
+  5 (5.00%) high mild
+  5 (5.00%) high severe
+

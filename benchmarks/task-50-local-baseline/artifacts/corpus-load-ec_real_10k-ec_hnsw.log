@@ -1,0 +1,25 @@
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_10k_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_10k_manifest.json: prefix="ec_real_10k" (expected "ec_real_10k_hnsw")
+[loader] copied corpus table ec_real_10k_hnsw_corpus in 4.66s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_10k_hnsw_corpus in 1.36s
+[loader] copied queries table ec_real_10k_hnsw_queries in 101.25ms
+[loader] building ec_real_10k_hnsw_m8_idx using ec_hnsw (reloptions=[m=8, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_10k_hnsw_m8_idx in 4.15s
+[loader] building ec_real_10k_hnsw_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_10k_hnsw_m16_idx in 5.03s
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_10k_hnsw_corpus (10000 rows)                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_10k_hnsw_queries (200 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_10k_hnsw_m8_idx [m=8, ef_construction=128, build_source_column=source]   │
+│         ┆ ec_real_10k_hnsw_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_10k_hnsw in 16.83s
