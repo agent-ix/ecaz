@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report ffi-audit ffi-lint ffi-dylint ffi-dylint-self-test cargo-geiger mirai build install clean
+.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report unsafe-block-count ffi-audit ffi-lint ffi-dylint ffi-dylint-self-test cargo-geiger mirai build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded miri-tree miri-many-seeds miri-full careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: loom-real shuttle-real sim-spire-remote sim-spire-remote-deep kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
@@ -100,6 +100,9 @@ audit-unsafe:
 
 unsafe-baseline-report:
 	bash scripts/unsafe_baseline_report.sh
+
+unsafe-block-count:
+	@bash scripts/unsafe_block_count.sh $(PATHS)
 
 ffi-audit:
 	python3 scripts/ffi_audit.py --check
