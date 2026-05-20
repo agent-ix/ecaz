@@ -1,0 +1,27 @@
+Script started on 2026-05-19 23:30:34-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:46:8
+   |
+46 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:51:8
+   |
+51 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz` (lib test) generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 31s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-995e07a89122e985)
+/home/peter/dev/ecaz/target/debug/deps/ecaz-995e07a89122e985: symbol lookup error: /home/peter/dev/ecaz/target/debug/deps/ecaz-995e07a89122e985: undefined symbol: CacheRegisterRelcacheCallback
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `/home/peter/dev/ecaz/target/debug/deps/ecaz-995e07a89122e985 dml_frontdoor` (exit status: 127)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+
+Script done on 2026-05-19 23:32:00-07:00 [COMMAND_EXIT_CODE="127"]
