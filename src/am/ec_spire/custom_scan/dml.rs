@@ -454,10 +454,9 @@ unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::O
     }
 }
 
-unsafe fn custom_scan_execute_dml_delete(state: *mut SpireCustomScanExecState) -> u64 {
-    let state_ref = custom_scan_exec_state_mut(state, "DML DELETE");
+fn custom_scan_execute_dml_delete(state: &SpireCustomScanExecState) -> u64 {
     let invocation =
-        custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+        custom_scan_dml_primitive_invocation(state).unwrap_or_else(|e| pgrx::error!("{e}"));
     if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload {
         pgrx::error!("EcSpireDistributedScan DML DELETE got non-delete primitive mode");
     }
@@ -501,17 +500,16 @@ unsafe fn custom_scan_execute_dml_delete(state: *mut SpireCustomScanExecState) -
     })
 }
 
-unsafe fn custom_scan_execute_dml_update(
-    state: *mut SpireCustomScanExecState,
+fn custom_scan_execute_dml_update(
+    state: &SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> u64 {
-    let state_ref = custom_scan_exec_state_mut(state, "DML UPDATE");
     let invocation =
-        custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+        custom_scan_dml_primitive_invocation(state).unwrap_or_else(|e| pgrx::error!("{e}"));
     if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload {
         pgrx::error!("EcSpireDistributedScan DML UPDATE got non-update primitive mode");
     }
-    if state_ref.dml_update_value_exprs.len() != invocation.updated_columns.len() {
+    if state.dml_update_value_exprs.len() != invocation.updated_columns.len() {
         pgrx::error!(
             "EcSpireDistributedScan DML UPDATE value expression count does not match updated columns"
         );
@@ -519,7 +517,7 @@ unsafe fn custom_scan_execute_dml_update(
     let row_payload_json = custom_scan_dml_update_row_payload_json(
         scan_state.cast::<pg_sys::CustomScanState>(),
         &invocation.updated_columns,
-        &state_ref.dml_update_value_exprs,
+        &state.dml_update_value_exprs,
     );
     let updated_column_refs = invocation
         .updated_columns
@@ -661,18 +659,17 @@ unsafe fn custom_scan_dml_update_datum_json_value(
     }
 }
 
-unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanExecState) {
-    let state_ref = custom_scan_exec_state_mut(state, "DML PK SELECT");
-    if state_ref.dml_payload_loaded {
+fn custom_scan_ensure_dml_pk_select_payload(state: &mut SpireCustomScanExecState) {
+    if state.dml_payload_loaded {
         return;
     }
     let invocation =
-        custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+        custom_scan_dml_primitive_invocation(state).unwrap_or_else(|e| pgrx::error!("{e}"));
     if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload {
         pgrx::error!("EcSpireDistributedScan DML PK SELECT got non-select primitive mode");
     }
     let requested_columns =
-        custom_scan_dml_pk_select_requested_columns(&invocation, &state_ref.tuple_payload_columns);
+        custom_scan_dml_pk_select_requested_columns(&invocation, &state.tuple_payload_columns);
     let requested_column_refs = requested_columns
         .iter()
         .map(String::as_str)
@@ -717,8 +714,8 @@ unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanEx
             })?
     })
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-    state_ref.dml_tuple_payload_json = tuple_payload_json;
-    state_ref.dml_payload_loaded = true;
+    state.dml_tuple_payload_json = tuple_payload_json;
+    state.dml_payload_loaded = true;
 }
 
 fn custom_scan_dml_pk_select_requested_columns(
@@ -736,25 +733,28 @@ fn custom_scan_dml_pk_select_requested_columns(
     columns
 }
 
-unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
-    let state_ref = custom_scan_exec_state_mut(state, "output loading");
-    if state_ref.loaded_outputs {
+fn custom_scan_ensure_outputs(state: &mut SpireCustomScanExecState) {
+    if state.loaded_outputs {
         return;
     }
-    let index_oid = state_ref.index_oid;
-    let query = state_ref.query.clone();
-    let top_k = state_ref.top_k;
-    let tuple_payload_columns = state_ref.tuple_payload_columns.clone();
+    let index_oid = state.index_oid;
+    let query = state.query.clone();
+    let top_k = state.top_k;
+    let tuple_payload_columns = state.tuple_payload_columns.clone();
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "EcSpireDistributedScan production executor",
     );
-    let stream = super::remote_search_production_scan_tuple_payload_result_stream(
-        index_relation.as_ptr(),
-        query,
-        top_k,
-        &tuple_payload_columns,
-    );
+    // SAFETY: the index relation guard keeps the relation open while the
+    // production scan result stream decodes remote tuple-payload rows.
+    let stream = unsafe {
+        super::remote_search_production_scan_tuple_payload_result_stream(
+            index_relation.as_ptr(),
+            query,
+            top_k,
+            &tuple_payload_columns,
+        )
+    };
     if stream.summary.next_blocker != super::SPIRE_REMOTE_NONE {
         pgrx::error!(
             "EcSpireDistributedScan production executor blocked: status {}, next_blocker {}, recommendation {}",
@@ -763,6 +763,6 @@ unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
             stream.summary.recommendation
         );
     }
-    state_ref.outputs = stream.outputs;
-    state_ref.loaded_outputs = true;
+    state.outputs = stream.outputs;
+    state.loaded_outputs = true;
 }
