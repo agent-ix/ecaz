@@ -252,7 +252,7 @@ impl EcHnswConcurrentDsmGraphParts {
         unsafe { &*self.header }
     }
 
-    fn header_mut(&self) -> &mut EcHnswConcurrentDsmGraphHeader {
+    fn header_mut(&mut self) -> &mut EcHnswConcurrentDsmGraphHeader {
         // SAFETY: graph parts are used during exclusive image initialization
         // when mutable header access is required.
         unsafe { &mut *self.header }
@@ -269,18 +269,24 @@ impl EcHnswConcurrentDsmGraphParts {
         unsafe { &*self.node_ptr(node_idx) }
     }
 
-    fn node_mut(&self, node_idx: u32) -> &mut EcHnswConcurrentDsmNode {
+    fn node_mut(&mut self, node_idx: u32) -> &mut EcHnswConcurrentDsmNode {
         // SAFETY: callers hold or establish exclusive access to this DSM node
         // before mutating it.
         unsafe { &mut *self.node_ptr(node_idx) }
     }
 
     fn node_lock(&self, node_idx: u32) -> *mut pg_sys::LWLock {
-        ptr::addr_of_mut!(self.node_mut(node_idx).lock)
+        // SAFETY: `node_ptr` returns a pointer into the initialized DSM node
+        // array for a caller-validated node index.
+        unsafe { ptr::addr_of_mut!((*self.node_ptr(node_idx)).lock) }
     }
 
     fn node_insert_state_cell(&self, node_idx: u32) -> PgLockedDsmInsertStateCell {
-        PgLockedDsmInsertStateCell(ptr::addr_of_mut!(self.node_mut(node_idx).insert_state))
+        // SAFETY: `node_ptr` returns a pointer into the initialized DSM node
+        // array for a caller-validated node index.
+        unsafe {
+            PgLockedDsmInsertStateCell(ptr::addr_of_mut!((*self.node_ptr(node_idx)).insert_state))
+        }
     }
 
     fn node_level(&self, node_idx: u32) -> u8 {
@@ -1127,7 +1133,7 @@ pub(super) fn initialize_concurrent_dsm_graph_image(
     let layout = plan.graph_layout;
     // SAFETY: `base` points at a DSM allocation sized from `plan.graph_layout`;
     // the helper turns its checked offsets into typed region pointers.
-    let parts = concurrent_dsm_graph_parts(base, layout);
+    let mut parts = concurrent_dsm_graph_parts(base, layout);
     let insert_config = plan
         .insert_config
         .unwrap_or(EcHnswConcurrentDsmInsertConfig {
