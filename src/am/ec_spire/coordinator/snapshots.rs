@@ -593,9 +593,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
             for placement in &anchor.placement_directory.entries {
-                // SAFETY: placement belongs to the active placement directory
-                // and object_store was opened for that directory.
-                for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
+                for tid in object_store.active_object_tuple_locators(placement)? {
                     active_tids.insert((placement.store_relid, tid));
                 }
             }
@@ -847,9 +845,7 @@ fn collect_physical_cleanup_candidates(
             index.object_store_set(directory, pg_sys::AccessShareLock as pg_sys::LOCKMODE)?;
         for placement in &directory.entries {
             protect_tuple(&mut protected, placement.store_relid, placement.object_tid);
-            // SAFETY: placement belongs to the protected directory and the
-            // object_store was opened for that directory.
-            for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
+            for tid in object_store.active_object_tuple_locators(placement)? {
                 protect_tuple(&mut protected, placement.store_relid, tid);
             }
         }

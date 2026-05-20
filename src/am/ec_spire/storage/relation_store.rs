@@ -268,7 +268,7 @@ impl SpireRelationObjectStore {
         Ok(placement)
     }
 
-    pub(super) unsafe fn read_routing_object(
+    pub(super) fn read_routing_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireRoutingPartitionObject, String> {
@@ -281,18 +281,12 @@ impl SpireRelationObjectStore {
             })?
         };
         let object = if let Some(meta) = meta {
-            // SAFETY: chain metadata came from the placement tuple and the chain
-            // reader validates each segment locator and total byte length.
-            let raw = unsafe { self.read_large_partition_object_bytes(placement, &meta)? };
+            let raw = self.read_large_partition_object_bytes(placement, &meta)?;
             SpireRoutingPartitionObject::decode(&raw)?
         } else {
-            // SAFETY: single-tuple helper validates placement length while the
-            // page tuple is pinned for decoding.
-            unsafe {
-                self.with_single_tuple_object_bytes(placement, |raw| {
-                    SpireRoutingPartitionObject::decode(raw)
-                })?
-            }
+            self.with_single_tuple_object_bytes(placement, |raw| {
+                SpireRoutingPartitionObject::decode(raw)
+            })?
         };
         if object.header.pid != placement.pid {
             return Err(format!(
@@ -317,7 +311,7 @@ impl SpireRelationObjectStore {
         Ok(object)
     }
 
-    pub(super) unsafe fn read_leaf_object_v2(
+    pub(super) fn read_leaf_object_v2(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObjectV2, String> {
@@ -380,7 +374,7 @@ impl SpireRelationObjectStore {
         SpireLeafPartitionObjectV2::new(meta, segments)
     }
 
-    pub(super) unsafe fn read_object_header(
+    pub(super) fn read_object_header(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpirePartitionObjectHeader, String> {
@@ -468,14 +462,12 @@ impl SpireRelationObjectStore {
         Ok(header)
     }
 
-    pub(super) unsafe fn active_object_tuple_locators(
+    pub(super) fn active_object_tuple_locators(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<Vec<ItemPointer>, String> {
         self.validate_local_available_placement(placement)?;
-        // SAFETY: placement is validated before reading the header through this
-        // store's relation-backed object reader.
-        let header = unsafe { self.read_object_header(placement)? };
+        let header = self.read_object_header(placement)?;
         let mut locators = vec![placement.object_tid];
         if relation_object_chain_kind_supported(header.kind)
             && header.flags & PARTITION_OBJECT_V2_CHAIN_META_FLAG != 0
@@ -591,75 +583,67 @@ impl SpireRelationObjectStore {
         Ok(())
     }
 
-    pub(super) unsafe fn read_leaf_object(
+    pub(super) fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObject, String> {
-        // SAFETY: helper validates placement length and pins the tuple only for
-        // immediate leaf object decode.
-        unsafe {
-            self.with_single_tuple_object_bytes(placement, |raw| {
-                let object = SpireLeafPartitionObject::decode(raw)?;
-                if object.header.pid != placement.pid {
-                    return Err(format!(
-                        "ec_spire placement pid {} does not match object pid {}",
-                        placement.pid, object.header.pid
-                    ));
-                }
-                if object.header.object_version != placement.object_version {
-                    return Err(format!(
-                        "ec_spire placement object_version {} does not match object version {}",
-                        placement.object_version, object.header.object_version
-                    ));
-                }
-                if object.header.published_epoch_backref == 0
-                    || object.header.published_epoch_backref > placement.epoch
-                {
-                    return Err(format!(
-                        "ec_spire object published epoch backref {} is not valid for placement epoch {}",
-                        object.header.published_epoch_backref, placement.epoch
-                    ));
-                }
-                Ok(object)
-            })
-        }
+        self.with_single_tuple_object_bytes(placement, |raw| {
+            let object = SpireLeafPartitionObject::decode(raw)?;
+            if object.header.pid != placement.pid {
+                return Err(format!(
+                    "ec_spire placement pid {} does not match object pid {}",
+                    placement.pid, object.header.pid
+                ));
+            }
+            if object.header.object_version != placement.object_version {
+                return Err(format!(
+                    "ec_spire placement object_version {} does not match object version {}",
+                    placement.object_version, object.header.object_version
+                ));
+            }
+            if object.header.published_epoch_backref == 0
+                || object.header.published_epoch_backref > placement.epoch
+            {
+                return Err(format!(
+                    "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                    object.header.published_epoch_backref, placement.epoch
+                ));
+            }
+            Ok(object)
+        })
     }
 
-    pub(super) unsafe fn read_delta_object(
+    pub(super) fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
-        // SAFETY: helper validates placement length and pins the tuple only for
-        // immediate delta object decode.
-        unsafe {
-            self.with_single_tuple_object_bytes(placement, |raw| {
-                let object = SpireDeltaPartitionObject::decode(raw)?;
-                if object.header.pid != placement.pid {
-                    return Err(format!(
-                        "ec_spire placement pid {} does not match object pid {}",
-                        placement.pid, object.header.pid
-                    ));
-                }
-                if object.header.object_version != placement.object_version {
-                    return Err(format!(
-                        "ec_spire placement object_version {} does not match object version {}",
-                        placement.object_version, object.header.object_version
-                    ));
-                }
-                if object.header.published_epoch_backref == 0
-                    || object.header.published_epoch_backref > placement.epoch
-                {
-                    return Err(format!(
-                        "ec_spire object published epoch backref {} is not valid for placement epoch {}",
-                        object.header.published_epoch_backref, placement.epoch
-                    ));
-                }
-                Ok(object)
-            })
-        }
+        self.with_single_tuple_object_bytes(placement, |raw| {
+            let object = SpireDeltaPartitionObject::decode(raw)?;
+            if object.header.pid != placement.pid {
+                return Err(format!(
+                    "ec_spire placement pid {} does not match object pid {}",
+                    placement.pid, object.header.pid
+                ));
+            }
+            if object.header.object_version != placement.object_version {
+                return Err(format!(
+                    "ec_spire placement object_version {} does not match object version {}",
+                    placement.object_version, object.header.object_version
+                ));
+            }
+            if object.header.published_epoch_backref == 0
+                || object.header.published_epoch_backref > placement.epoch
+            {
+                return Err(format!(
+                    "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                    object.header.published_epoch_backref, placement.epoch
+                ));
+            }
+            Ok(object)
+        })
     }
 
-    pub(super) unsafe fn read_top_graph_object(
+    pub(super) fn read_top_graph_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireTopGraphPartitionObject, String> {
@@ -672,18 +656,12 @@ impl SpireRelationObjectStore {
             })?
         };
         let object = if let Some(meta) = meta {
-            // SAFETY: chain reader validates segment chain and object byte total
-            // before returning owned bytes.
-            let raw = unsafe { self.read_large_partition_object_bytes(placement, &meta)? };
+            let raw = self.read_large_partition_object_bytes(placement, &meta)?;
             SpireTopGraphPartitionObject::decode(&raw)?
         } else {
-            // SAFETY: single-tuple helper validates placement length while tuple
-            // bytes are pinned for immediate decode.
-            unsafe {
-                self.with_single_tuple_object_bytes(placement, |raw| {
-                    SpireTopGraphPartitionObject::decode(raw)
-                })?
-            }
+            self.with_single_tuple_object_bytes(placement, |raw| {
+                SpireTopGraphPartitionObject::decode(raw)
+            })?
         };
         if object.header.pid != placement.pid {
             return Err(format!(
@@ -708,7 +686,7 @@ impl SpireRelationObjectStore {
         Ok(object)
     }
 
-    pub(super) unsafe fn read_object_bytes(
+    pub(super) fn read_object_bytes(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<Vec<u8>, String> {
@@ -721,15 +699,12 @@ impl SpireRelationObjectStore {
             })?
         };
         if let Some(meta) = meta {
-            // SAFETY: chain reader validates segment locators and total bytes.
-            return unsafe { self.read_large_partition_object_bytes(placement, &meta) };
+            return self.read_large_partition_object_bytes(placement, &meta);
         }
-        // SAFETY: single-tuple helper validates object byte length and copies to
-        // an owned Vec before returning.
-        unsafe { self.with_single_tuple_object_bytes(placement, |raw| Ok(raw.to_vec())) }
+        self.with_single_tuple_object_bytes(placement, |raw| Ok(raw.to_vec()))
     }
 
-    unsafe fn with_single_tuple_object_bytes<F, R>(
+    fn with_single_tuple_object_bytes<F, R>(
         &self,
         placement: &SpirePlacementEntry,
         f: F,
@@ -832,7 +807,7 @@ impl SpireRelationObjectStore {
         self.append_object_tuple(&encoded_meta)
     }
 
-    unsafe fn read_large_partition_object_bytes(
+    fn read_large_partition_object_bytes(
         &self,
         placement: &SpirePlacementEntry,
         meta: &RelationObjectChainMeta,
@@ -1188,48 +1163,42 @@ impl SpireObjectReader for SpireRelationObjectStore {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpirePartitionObjectHeader, String> {
-        // SAFETY: reader method validates placement before pinning/decode.
-        unsafe { SpireRelationObjectStore::read_object_header(self, placement) }
+        SpireRelationObjectStore::read_object_header(self, placement)
     }
 
     fn read_routing_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireRoutingPartitionObject, String> {
-        // SAFETY: reader method validates placement before pinning/decode.
-        unsafe { SpireRelationObjectStore::read_routing_object(self, placement) }
+        SpireRelationObjectStore::read_routing_object(self, placement)
     }
 
     fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObject, String> {
-        // SAFETY: reader method validates placement before pinning/decode.
-        unsafe { SpireRelationObjectStore::read_leaf_object(self, placement) }
+        SpireRelationObjectStore::read_leaf_object(self, placement)
     }
 
     fn read_leaf_object_v2(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObjectV2, String> {
-        // SAFETY: reader method validates placement before pinning/decode.
-        unsafe { SpireRelationObjectStore::read_leaf_object_v2(self, placement) }
+        SpireRelationObjectStore::read_leaf_object_v2(self, placement)
     }
 
     fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
-        // SAFETY: reader method validates placement before pinning/decode.
-        unsafe { SpireRelationObjectStore::read_delta_object(self, placement) }
+        SpireRelationObjectStore::read_delta_object(self, placement)
     }
 
     fn read_top_graph_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireTopGraphPartitionObject, String> {
-        // SAFETY: reader method validates placement before pinning/decode.
-        unsafe { SpireRelationObjectStore::read_top_graph_object(self, placement) }
+        SpireRelationObjectStore::read_top_graph_object(self, placement)
     }
 }
 
@@ -1451,16 +1420,12 @@ impl SpireRelationObjectStoreSet {
             .insert_delta_object(epoch, object)
     }
 
-    pub(super) unsafe fn active_object_tuple_locators(
+    pub(super) fn active_object_tuple_locators(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<Vec<ItemPointer>, String> {
-        // SAFETY: store_for_placement validates the placement's store key before
-        // delegating to the relation-specific reader.
-        unsafe {
-            self.store_for_placement(placement)?
-                .active_object_tuple_locators(placement)
-        }
+        self.store_for_placement(placement)?
+            .active_object_tuple_locators(placement)
     }
 
     pub(super) fn prefetch_object(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
@@ -1589,71 +1554,47 @@ impl SpireObjectReader for SpireRelationObjectStoreSet {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpirePartitionObjectHeader, String> {
-        // SAFETY: store lookup validates placement store key before relation
-        // reader pins and decodes the object header.
-        unsafe {
-            self.store_for_placement(placement)?
-                .read_object_header(placement)
-        }
+        self.store_for_placement(placement)?
+            .read_object_header(placement)
     }
 
     fn read_routing_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireRoutingPartitionObject, String> {
-        // SAFETY: store lookup validates placement store key before relation
-        // reader pins and decodes the routing object.
-        unsafe {
-            self.store_for_placement(placement)?
-                .read_routing_object(placement)
-        }
+        self.store_for_placement(placement)?
+            .read_routing_object(placement)
     }
 
     fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObject, String> {
-        // SAFETY: store lookup validates placement store key before relation
-        // reader pins and decodes the leaf object.
-        unsafe {
-            self.store_for_placement(placement)?
-                .read_leaf_object(placement)
-        }
+        self.store_for_placement(placement)?
+            .read_leaf_object(placement)
     }
 
     fn read_leaf_object_v2(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObjectV2, String> {
-        // SAFETY: store lookup validates placement store key before relation
-        // reader pins and decodes the leaf V2 object.
-        unsafe {
-            self.store_for_placement(placement)?
-                .read_leaf_object_v2(placement)
-        }
+        self.store_for_placement(placement)?
+            .read_leaf_object_v2(placement)
     }
 
     fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
-        // SAFETY: store lookup validates placement store key before relation
-        // reader pins and decodes the delta object.
-        unsafe {
-            self.store_for_placement(placement)?
-                .read_delta_object(placement)
-        }
+        self.store_for_placement(placement)?
+            .read_delta_object(placement)
     }
 
     fn read_top_graph_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireTopGraphPartitionObject, String> {
-        // SAFETY: store lookup validates placement store key before relation
-        // reader pins and decodes the top graph object.
-        unsafe {
-            self.store_for_placement(placement)?
-                .read_top_graph_object(placement)
-        }
+        self.store_for_placement(placement)?
+            .read_top_graph_object(placement)
     }
 }

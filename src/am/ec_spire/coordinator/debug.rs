@@ -32,9 +32,7 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
         // SAFETY: reads root/control state through the guarded debug index
         // relation after inserting the routing object.
         let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
-        // SAFETY: placement was just inserted through this object store and is
-        // read back before the relation guard is dropped.
-        let decoded = unsafe { store.read_routing_object(&placement)? };
+        let decoded = store.read_routing_object(&placement)?;
         let child = decoded
             .children()
             .next()
@@ -93,9 +91,7 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
 
         let placement =
             store.insert_leaf_object_v2_from_rows(1, 20, 1, 10, &assignments)?;
-        // SAFETY: placement was just inserted through this object store and is
-        // read back before the relation guard is dropped.
-        let leaf = unsafe { store.read_leaf_object_v2(&placement)? };
+        let leaf = store.read_leaf_object_v2(&placement)?;
         let rows = leaf.assignment_rows()?;
         let first_row = rows
             .first()

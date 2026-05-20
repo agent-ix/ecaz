@@ -1359,10 +1359,8 @@ pub(crate) unsafe fn index_top_graph_snapshot(
         let top_graph_count = u64::try_from(top_graphs.len())
             .map_err(|_| "ec_spire top graph snapshot count exceeds u64".to_owned())?;
         let (placement, top_graph) = &top_graphs[0];
-        // SAFETY: placement belongs to the active top-graph snapshot and the
-        // object store was opened for the same relation and placement set.
         let object_tuple_count =
-            u64::try_from(unsafe { object_store.active_object_tuple_locators(placement)? }.len())
+            u64::try_from(object_store.active_object_tuple_locators(placement)?.len())
                 .map_err(|_| "ec_spire top graph object tuple count exceeds u64".to_owned())?;
         let object_meta_tuple_count = u64::from(object_tuple_count > 0);
         let object_segment_count = object_tuple_count.saturating_sub(object_meta_tuple_count);
