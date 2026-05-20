@@ -80,6 +80,18 @@ impl SpireLiveIndexRelation {
     }
 }
 
+fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
+    // SAFETY: callers are PostgreSQL AM/SQL diagnostic entry points that keep
+    // the SPIRE index relation live for the duration of the helper call.
+    unsafe { SpireLiveIndexRelation::new(index_relation) }
+}
+
+fn live_index_relid(index_relation: pg_sys::Relation) -> u32 {
+    // SAFETY: callers pass a live SPIRE index relation; rd_id is copied and no
+    // ownership is taken.
+    unsafe { (*index_relation).rd_id }.into()
+}
+
 struct SpireActiveEpochAnchor {
     root_control: meta::SpireRootControlState,
     epoch_manifest: meta::SpireEpochManifest,
@@ -109,9 +121,7 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> SpireActiveSnapshotDiagnostics {
     let result = (|| -> Result<SpireActiveSnapshotDiagnostics, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));
@@ -181,8 +191,7 @@ fn open_storage_relation_or_index(
 }
 
 pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
-    // SAFETY: PostgreSQL calls this helper with a live SPIRE index relation.
-    unsafe { SpireLiveIndexRelation::new(index_relation) }
+    live_index_relation(index_relation)
         .root_control()
         .active_epoch
 }
@@ -192,9 +201,7 @@ pub(crate) unsafe fn index_allocator_snapshot(
     warn_within: u64,
 ) -> SpireIndexAllocatorSnapshot {
     let result = (|| -> Result<SpireIndexAllocatorSnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let diagnostics = diagnostics::collect_allocator_diagnostics(&root_control, warn_within)?;
         Ok(SpireIndexAllocatorSnapshot {
@@ -215,9 +222,7 @@ pub(crate) unsafe fn index_options_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexOptionsSnapshot {
     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let index = live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = index.root_control();
@@ -332,9 +337,7 @@ pub(crate) unsafe fn index_options_snapshot(
 pub(crate) unsafe fn index_writer_identity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexWriterIdentitySnapshot {
-    // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-    // index relation for the duration of the call.
-    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+    let index = live_index_relation(index_relation);
     let relation_options = index.relation_options();
     let root_control = index.root_control();
     let (writer_identity_status, writer_identity_recommendation) = writer_identity_snapshot_status(
@@ -379,9 +382,7 @@ pub(crate) unsafe fn index_level_parameter_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLevelParameterSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let index = live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
@@ -484,9 +485,7 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexScanSanitySnapshot {
     let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let index = live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = index.root_control();
@@ -544,9 +543,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexRelationStorageSnapshot {
     let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {
-        // SAFETY: rd_id is stable while index_relation is open; it is copied as
-        // the index OID for storage relation accounting.
-        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        let index_relid = live_index_relid(index_relation);
         // SAFETY: reads root/control state through the live index relation for
         // relation-storage diagnostics.
         let root_control = unsafe { page::read_root_control_page(index_relation) };
@@ -773,9 +770,9 @@ fn collect_physical_cleanup_candidates(
     root_control: meta::SpireRootControlState,
     now_micros: i64,
 ) -> Result<SpirePhysicalCleanupCandidates, String> {
-    // SAFETY: rd_id is stable while index_relation is open; it is copied as the
-    // index OID for cleanup protection/candidate accounting.
-    let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+    // rd_id is stable while index_relation is open; it is copied as the index
+    // OID for cleanup protection/candidate accounting.
+    let index_relid = live_index_relid(index_relation);
     let manifests = collect_epoch_manifests_for_cleanup(index_relation)?;
     let latest_manifests = latest_epoch_manifests(&manifests);
     let cleanup_epochs: HashSet<u64> =
@@ -930,9 +927,9 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
             });
         }
 
-        // SAFETY: rd_id is stable while index_relation is open and locked; it
-        // is copied as the index OID for cleanup deletion accounting.
-        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        // rd_id is stable while index_relation is open and locked; it is copied
+        // as the index OID for cleanup deletion accounting.
+        let index_relid = live_index_relid(index_relation);
         let mut removed_tuple_count = 0_u64;
         let mut removed_tuple_bytes = 0_u64;
         for (storage_relid, tids) in candidates_by_relid {
@@ -979,9 +976,7 @@ pub(crate) unsafe fn index_placement_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexPlacementSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1027,9 +1022,7 @@ pub(crate) unsafe fn remote_node_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeSnapshotRow> {
     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1098,10 +1091,12 @@ pub(crate) unsafe fn remote_node_snapshot(
             .copied()
             .filter(|node_id| *node_id != meta::SPIRE_LOCAL_NODE_ID)
             .collect::<Vec<_>>();
-        // SAFETY: rd_id is stable while index_relation is open; it is copied as
-        // the coordinator index OID for descriptor lookup.
-        let descriptors =
-            load_remote_node_descriptor_rows(unsafe { (*index_relation).rd_id }, &remote_node_ids)?;
+        // rd_id is stable while index_relation is open; it is copied as the
+        // coordinator index OID for descriptor lookup.
+        let descriptors = load_remote_node_descriptor_rows(
+            live_index_relid(index_relation).into(),
+            &remote_node_ids,
+        )?;
         for descriptor in descriptors {
             if let Some(row) = rows_by_node.get_mut(&descriptor.node_id) {
                 apply_remote_node_descriptor(row, descriptor);
