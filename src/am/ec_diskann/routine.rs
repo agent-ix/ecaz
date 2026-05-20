@@ -777,26 +777,26 @@ unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {
 
 unsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
     // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
-    // metadata for this relation.
-    let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
-    if index_info.is_null() {
-        return Err("ec_diskann scan could not build index metadata".into());
-    }
-    // SAFETY: `index_info` was checked non-null and remains valid until pfree.
-    let info = unsafe { &*index_info };
-    let result = if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {
-        Err("ec_diskann scan currently supports single-column indexes only".into())
-    } else {
-        let attnum = i32::from(info.ii_IndexAttrNumbers[0]);
-        if attnum <= 0 {
-            Err("ec_diskann scan requires a base heap column index key".into())
-        } else {
-            Ok(attnum)
+    // metadata that remains valid until it is released at the end of this block.
+    unsafe {
+        let index_info = pg_sys::BuildIndexInfo(index_relation);
+        if index_info.is_null() {
+            return Err("ec_diskann scan could not build index metadata".into());
         }
-    };
-    // SAFETY: `index_info` was allocated by PostgreSQL BuildIndexInfo above.
-    unsafe { pg_sys::pfree(index_info.cast()) };
-    result
+        let info = &*index_info;
+        let result = if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {
+            Err("ec_diskann scan currently supports single-column indexes only".into())
+        } else {
+            let attnum = i32::from(info.ii_IndexAttrNumbers[0]);
+            if attnum <= 0 {
+                Err("ec_diskann scan requires a base heap column index key".into())
+            } else {
+                Ok(attnum)
+            }
+        };
+        pg_sys::pfree(index_info.cast());
+        result
+    }
 }
 
 unsafe fn install_backlinks_with_replan(
@@ -1621,59 +1621,47 @@ unsafe fn apply_tuple_rewrites(
         .ok_or_else(|| {
             format!("ec_diskann vacuum rewrite could not open data block {block_number}")
         })?;
-        let page_result = (|| -> Result<VacuumRewriteApplyOutcome, String> {
+        // SAFETY: The target page is locked exclusively for this rewrite group;
+        // expected bytes are validated before the registered page is mutated.
+        let page_result: Result<VacuumRewriteApplyOutcome, String> = unsafe {
             let page = buffer.page();
             let page_size = buffer.page_size();
             for rewrite in block_rewrites {
-                // SAFETY: The page is pinned/locked and the helper validates the
-                // tuple location before exposing immutable bytes.
-                let matches_expected = unsafe {
+                let matches_expected =
                     with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |current_raw| {
                         Ok(current_raw == rewrite.expected_raw.as_slice())
-                    })
-                }?;
+                    })?;
                 if !matches_expected {
                     return Ok(VacuumRewriteApplyOutcome::RetryReplan);
                 }
             }
 
-            // SAFETY: The relation is live and the exclusive buffer belongs to
-            // the target rewrite block.
-            let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-            // SAFETY: The locked buffer is registered before any tuple bytes are
-            // rewritten.
-            let writable_page = unsafe {
-                wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-            };
+            let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
+            let writable_page =
+                wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
             for rewrite in block_rewrites {
-                // SAFETY: Expected bytes were verified above and the replacement
-                // preserves the raw tuple length.
-                unsafe {
-                    with_vacuum_page_tuple_bytes_mut(
-                        writable_page,
-                        page_size,
-                        rewrite.tid,
-                        |tuple_bytes| {
-                            if tuple_bytes.len() != rewrite.replacement_raw.len() {
-                                return Err(format!(
+                with_vacuum_page_tuple_bytes_mut(
+                    writable_page,
+                    page_size,
+                    rewrite.tid,
+                    |tuple_bytes| {
+                        if tuple_bytes.len() != rewrite.replacement_raw.len() {
+                            return Err(format!(
                                     "ec_diskann vacuum rewrite length mismatch at ({},{}): got {}, expected {}",
                                     rewrite.tid.block_number,
                                     rewrite.tid.offset_number,
                                     rewrite.replacement_raw.len(),
                                     tuple_bytes.len()
                                 ));
-                            }
-                            tuple_bytes.copy_from_slice(&rewrite.replacement_raw);
-                            Ok(())
-                        },
-                    )
-                }?;
+                        }
+                        tuple_bytes.copy_from_slice(&rewrite.replacement_raw);
+                        Ok(())
+                    },
+                )?;
             }
-            // SAFETY: All planned rewrites for this block have been applied to
-            // the registered page.
-            unsafe { wal_txn.finish() };
+            wal_txn.finish();
             Ok(VacuumRewriteApplyOutcome::Applied)
-        })();
+        };
         match page_result? {
             VacuumRewriteApplyOutcome::Applied => {}
             VacuumRewriteApplyOutcome::RetryReplan => {
@@ -1707,36 +1695,29 @@ unsafe fn write_raw_tuple_bytes(
         )
     })?;
 
-    let page_result = (|| -> Result<(), String> {
+    // SAFETY: The target page is locked exclusively, the tuple location helper
+    // validates bounds, and the replacement length is checked before copying.
+    let page_result: Result<(), String> = unsafe {
         let page_size = buffer.page_size();
-        // SAFETY: The relation is live and the exclusive buffer belongs to it.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The locked buffer is registered before tuple bytes are
-        // overwritten by the test helper.
-        let writable_page = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
-        // SAFETY: The helper validates the tuple location and `replacement_raw`
-        // must match the existing tuple length.
-        unsafe {
-            with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
-                if tuple_bytes.len() != replacement_raw.len() {
-                    return Err(format!(
+        let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
+        let writable_page =
+            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
+        with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
+            if tuple_bytes.len() != replacement_raw.len() {
+                return Err(format!(
                             "ec_diskann vacuum test rewrite length mismatch at ({},{}): got {}, expected {}",
                             tid.block_number,
                             tid.offset_number,
                             replacement_raw.len(),
                             tuple_bytes.len()
                         ));
-                }
-                tuple_bytes.copy_from_slice(replacement_raw);
-                Ok(())
-            })
-        }?;
-        // SAFETY: The test rewrite has been applied to the registered page.
-        unsafe { wal_txn.finish() };
+            }
+            tuple_bytes.copy_from_slice(replacement_raw);
+            Ok(())
+        })?;
+        wal_txn.finish();
         Ok(())
-    })();
+    };
     page_result
 }
 
@@ -1774,16 +1755,16 @@ unsafe fn vacuum_page_tuple_location(
     }
 
     // SAFETY: `tid.offset_number` was checked against the page max offset.
-    let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
-    if item_id.is_null() {
-        return Err(format!(
-            "ec_diskann vacuum target ({},{}) returned a null item id",
-            tid.block_number, tid.offset_number
-        ));
-    }
-    // SAFETY: `item_id` was checked non-null and points into the page line
-    // pointer array.
-    let item_id_ref = unsafe { &*item_id };
+    let item_id_ref = unsafe {
+        let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
+        if item_id.is_null() {
+            return Err(format!(
+                "ec_diskann vacuum target ({},{}) returned a null item id",
+                tid.block_number, tid.offset_number
+            ));
+        }
+        &*item_id
+    };
     if item_id_ref.lp_flags() == 0 {
         return Err(format!(
             "ec_diskann vacuum target ({},{}) points at an unused slot",
@@ -1814,12 +1795,12 @@ unsafe fn with_vacuum_page_tuple_bytes<R, F>(
 where
     F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
 {
-    // SAFETY: The caller owns the page pin/lock and tuple bounds are validated
-    // by `vacuum_page_tuple_location`.
-    let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };
-    // SAFETY: The tuple byte range was validated and is immutable for this
-    // visitor.
-    let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+    // SAFETY: The caller owns the page pin/lock; tuple bounds are validated
+    // before constructing the immutable byte slice.
+    let tuple_bytes = unsafe {
+        let (tuple_ptr, tuple_len) = vacuum_page_tuple_location(page, page_size, tid)?;
+        slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len)
+    };
     visit(tuple_bytes)
 }
 
@@ -1832,12 +1813,12 @@ unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
 where
     F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
 {
-    // SAFETY: The caller owns an exclusive page lock and tuple bounds are
-    // validated by `vacuum_page_tuple_location`.
-    let (tuple_ptr, tuple_len) = unsafe { vacuum_page_tuple_location(page, page_size, tid)? };
-    // SAFETY: The tuple byte range was validated and the exclusive page lock
-    // permits mutable access for this visitor.
-    let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
+    // SAFETY: The caller owns an exclusive page lock; tuple bounds are
+    // validated before constructing the mutable byte slice.
+    let tuple_bytes = unsafe {
+        let (tuple_ptr, tuple_len) = vacuum_page_tuple_location(page, page_size, tid)?;
+        slice::from_raw_parts_mut(tuple_ptr, tuple_len)
+    };
     visit(tuple_bytes)
 }
 
@@ -1849,9 +1830,9 @@ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids
     let block_numbers = heap_tids.iter().map(|tid| tid.block_number).collect();
     let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
     // SAFETY: The heap relation is live and the callback state lives until
-    // `read_stream_end`.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
+    // `read_stream_end`; each returned buffer pin is adopted and released by a guard.
+    unsafe {
+        let stream = pg_sys::read_stream_begin_relation(
             pg_sys::READ_STREAM_DEFAULT as i32,
             ptr::null_mut(),
             heap_relation,
@@ -1859,22 +1840,18 @@ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids
             Some(crate::am::stream::block_sequence_prefetch_cb),
             (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
             std::mem::size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` is valid until `read_stream_end` below.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
+        );
+        loop {
+            let mut per_buffer_data = ptr::null_mut();
+            let buffer = pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data);
+            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+                break;
+            }
+            let _buffer = PinnedBufferGuard::from_pinned(buffer)
+                .unwrap_or_else(|| pgrx::error!("ec_diskann prefetch returned invalid buffer"));
         }
-        // SAFETY: read_stream_next_buffer returns a pinned buffer that the guard
-        // takes ownership of for this loop iteration.
-        let _buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
-            .unwrap_or_else(|| pgrx::error!("ec_diskann prefetch returned invalid buffer"));
+        pg_sys::read_stream_end(stream);
     }
-    // SAFETY: Ends the stream opened above after all buffers have been consumed.
-    unsafe { pg_sys::read_stream_end(stream) };
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -1934,18 +1911,15 @@ unsafe fn with_heap_source_vector<T>(
     f: impl for<'a> FnOnce(&'a [f32]) -> Result<T, String>,
 ) -> Result<T, String> {
     // SAFETY: The heap relation/snapshot/slot are caller-owned and valid for
-    // this row-version fetch.
-    unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
-    // SAFETY: The slot now contains the fetched row version and the attribute
-    // number was resolved from the heap/index metadata.
-    let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };
-    // SAFETY: The datum is an ecvector value from the required source attribute
-    // and the slice is only borrowed for the visitor call.
-    let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };
-    // SAFETY: The slot is caller-owned and can be cleared after copying or using
-    // the source vector.
-    unsafe { pg_sys::ExecClearTuple(slot) };
-    result
+    // this row-version fetch. The required datum is read from the fetched row
+    // and the slot is cleared after the visitor finishes.
+    unsafe {
+        scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)?;
+        let datum = scan_state::required_slot_datum(slot, source_attnum, context)?;
+        let result = ambuild::with_ecvector_datum_slice(datum, f);
+        pg_sys::ExecClearTuple(slot);
+        result
+    }
 }
 
 unsafe fn fetch_heap_source_vector(
@@ -2534,27 +2508,23 @@ mod tests {
         }
     }
 
-    unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+    fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
         let index_relation = IndexRelationGuard::access_share(index_oid, "debug_vacuum_stats");
-        let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
-        info.index = index_relation.as_ptr();
-        let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
         // SAFETY: The test constructs callback-duration vacuum info and invokes
-        // the AM bulkdelete entry with no delete callback for stats.
-        let stats = unsafe {
-            super::ec_diskann_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
-        };
-        // SAFETY: The same vacuum info and stats pointer are valid for cleanup.
-        let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };
-        // SAFETY: The AM returned a valid stats pointer; copy it before guards
-        // leave scope.
-        let result = unsafe { *stats };
-
-        result
+        // the AM bulkdelete/cleanup entries with no delete callback for stats.
+        unsafe {
+            let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+            info.index = index_relation.as_ptr();
+            let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
+            let stats =
+                super::ec_diskann_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut());
+            let stats = super::ec_diskann_amvacuumcleanup(info_ptr, stats);
+            *stats
+        }
     }
 
-    unsafe fn debug_vacuum_remove_heap_tids(
+    fn debug_vacuum_remove_heap_tids(
         index_oid: pg_sys::Oid,
         dead_tids: &[ItemPointer],
     ) -> pg_sys::IndexBulkDeleteResult {
@@ -2572,33 +2542,28 @@ mod tests {
         } else {
             HeapRelationGuard::try_access_share(heap_oid)
         };
-        let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
-        info.index = index_relation_ptr;
-        info.heaprel = heap_relation
-            .as_ref()
-            .map_or(ptr::null_mut(), HeapRelationGuard::as_ptr);
-        let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
         let mut callback_state = DebugVacuumCallbackState {
             dead_tids: dead_tids.iter().copied().collect(),
         };
 
         // SAFETY: The test constructs callback-duration vacuum info and callback
-        // state and invokes the AM bulkdelete entry directly.
-        let stats = unsafe {
-            super::ec_diskann_ambulkdelete(
+        // state and invokes the AM bulkdelete/cleanup entries directly.
+        unsafe {
+            let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+            info.index = index_relation_ptr;
+            info.heaprel = heap_relation
+                .as_ref()
+                .map_or(ptr::null_mut(), HeapRelationGuard::as_ptr);
+            let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
+            let stats = super::ec_diskann_ambulkdelete(
                 info_ptr,
                 ptr::null_mut(),
                 Some(debug_vacuum_dead_tid_callback),
                 (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
-            )
-        };
-        // SAFETY: The same vacuum info and stats pointer are valid for cleanup.
-        let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };
-        // SAFETY: The AM returned a valid stats pointer; copy it before guards
-        // leave scope.
-        let result = unsafe { *stats };
-
-        result
+            );
+            let stats = super::ec_diskann_amvacuumcleanup(info_ptr, stats);
+            *stats
+        }
     }
 
     #[pg_test]
@@ -3584,9 +3549,7 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        // SAFETY: Test helper opens the index and invokes vacuum callbacks with
-        // no delete callback to inspect noop stats.
-        let stats = unsafe { debug_vacuum_stats(index_oid("ec_diskann_vacuum_noop_empty_idx")) };
+        let stats = debug_vacuum_stats(index_oid("ec_diskann_vacuum_noop_empty_idx"));
         assert_eq!(stats.num_index_tuples, 0.0);
         assert_eq!(stats.tuples_removed, 0.0);
         assert!(!stats.estimated_count);
@@ -3619,14 +3582,10 @@ mod tests {
         Spi::run("DELETE FROM ec_diskann_vacuum_duplicate_promote WHERE id = 1")
             .expect("delete should succeed");
 
-        // SAFETY: Test helper invokes vacuum callbacks with a callback state
-        // that marks only `row1_heap_tid` dead.
-        let stats = unsafe {
-            debug_vacuum_remove_heap_tids(
-                index_oid("ec_diskann_vacuum_duplicate_promote_idx"),
-                &[row1_heap_tid],
-            )
-        };
+        let stats = debug_vacuum_remove_heap_tids(
+            index_oid("ec_diskann_vacuum_duplicate_promote_idx"),
+            &[row1_heap_tid],
+        );
         assert_eq!(stats.tuples_removed, 1.0);
         assert_eq!(stats.num_index_tuples, 1.0);
 
@@ -3739,14 +3698,10 @@ mod tests {
 
         Spi::run("DELETE FROM ec_diskann_vacuum_unlink_dead WHERE id = 2")
             .expect("delete should succeed");
-        // SAFETY: Test helper invokes vacuum callbacks with a callback state
-        // that marks only `row2_heap_tid` dead.
-        let stats = unsafe {
-            debug_vacuum_remove_heap_tids(
-                index_oid("ec_diskann_vacuum_unlink_dead_idx"),
-                &[row2_heap_tid],
-            )
-        };
+        let stats = debug_vacuum_remove_heap_tids(
+            index_oid("ec_diskann_vacuum_unlink_dead_idx"),
+            &[row2_heap_tid],
+        );
         assert_eq!(stats.tuples_removed, 1.0);
         assert_eq!(stats.num_index_tuples, 1.0);
 
@@ -3898,14 +3853,10 @@ mod tests {
             "DELETE FROM ec_diskann_vacuum_refill_slot WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        // SAFETY: Test helper invokes vacuum callbacks with a callback state
-        // that marks only `deleted_heap_tid` dead.
-        let stats = unsafe {
-            debug_vacuum_remove_heap_tids(
-                index_oid("ec_diskann_vacuum_refill_slot_idx"),
-                &[deleted_heap_tid],
-            )
-        };
+        let stats = debug_vacuum_remove_heap_tids(
+            index_oid("ec_diskann_vacuum_refill_slot_idx"),
+            &[deleted_heap_tid],
+        );
         assert_eq!(stats.tuples_removed, 1.0);
         assert_eq!(stats.num_index_tuples, 5.0);
 
@@ -4061,14 +4012,10 @@ mod tests {
             "DELETE FROM ec_diskann_vacuum_retry_replan WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        // SAFETY: Test helper invokes vacuum callbacks with a callback state
-        // that marks only `deleted_heap_tid` dead.
-        let stats = unsafe {
-            debug_vacuum_remove_heap_tids(
-                index_oid("ec_diskann_vacuum_retry_replan_idx"),
-                &[deleted_heap_tid],
-            )
-        };
+        let stats = debug_vacuum_remove_heap_tids(
+            index_oid("ec_diskann_vacuum_retry_replan_idx"),
+            &[deleted_heap_tid],
+        );
         assert_eq!(stats.tuples_removed, 1.0);
         assert_eq!(stats.num_index_tuples, 5.0);
         assert_eq!(
@@ -4123,14 +4070,10 @@ mod tests {
         let row1_heap_tid = heap_tid_for_row("ec_diskann_vacuum_medoid_refresh", 1);
         Spi::run("DELETE FROM ec_diskann_vacuum_medoid_refresh WHERE id = 1")
             .expect("delete should succeed");
-        // SAFETY: Test helper invokes vacuum callbacks with a callback state
-        // that marks only `row1_heap_tid` dead.
-        let stats = unsafe {
-            debug_vacuum_remove_heap_tids(
-                index_oid("ec_diskann_vacuum_medoid_refresh_idx"),
-                &[row1_heap_tid],
-            )
-        };
+        let stats = debug_vacuum_remove_heap_tids(
+            index_oid("ec_diskann_vacuum_medoid_refresh_idx"),
+            &[row1_heap_tid],
+        );
         assert_eq!(stats.tuples_removed, 1.0);
         assert_eq!(stats.num_index_tuples, 0.0);
 
