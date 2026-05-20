@@ -1,40 +1,133 @@
+#[derive(Clone, Copy)]
+struct SpireLiveIndexRelation {
+    relation: pg_sys::Relation,
+}
+
+impl SpireLiveIndexRelation {
+    unsafe fn new(relation: pg_sys::Relation) -> Self {
+        Self { relation }
+    }
+
+    fn root_control(self) -> meta::SpireRootControlState {
+        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        // relation at PostgreSQL AM/SQL diagnostic entry points.
+        unsafe { page::read_root_control_page(self.relation) }
+    }
+
+    fn relation_options(self) -> options::EcSpireOptions {
+        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        // relation whose reloptions can be read for diagnostics/planning.
+        unsafe { options::relation_options(self.relation) }
+    }
+
+    fn active_epoch_anchor(
+        self,
+        root_control: meta::SpireRootControlState,
+    ) -> Result<Option<SpireActiveEpochAnchor>, String> {
+        if root_control.active_epoch == 0 {
+            return Ok(None);
+        }
+        let (epoch_manifest, object_manifest, placement_directory) =
+            // SAFETY: `root_control` was read from this live relation and names
+            // the active manifest tuple IDs and local-store config for it.
+            unsafe { scan::load_relation_epoch_manifests(self.relation, root_control)? };
+        Ok(Some(SpireActiveEpochAnchor {
+            root_control,
+            epoch_manifest,
+            object_manifest,
+            placement_directory,
+        }))
+    }
+
+    fn coordinator_fanout_anchor(
+        self,
+        root_control: meta::SpireRootControlState,
+    ) -> Result<Option<SpireActiveEpochAnchor>, String> {
+        if root_control.active_epoch == 0 {
+            return Ok(None);
+        }
+        let (epoch_manifest, object_manifest, placement_directory) =
+            // SAFETY: `root_control` was read from this live relation and names
+            // the active manifest tuple IDs for this relation.
+            unsafe {
+                load_relation_epoch_manifests_for_coordinator_fanout(
+                    self.relation,
+                    root_control,
+                )?
+            };
+        Ok(Some(SpireActiveEpochAnchor {
+            root_control,
+            epoch_manifest,
+            object_manifest,
+            placement_directory,
+        }))
+    }
+
+    fn object_store_set(
+        self,
+        placement_directory: &meta::SpirePlacementDirectory,
+        lockmode: pg_sys::LOCKMODE,
+    ) -> Result<storage::SpireRelationObjectStoreSet, String> {
+        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        // relation; placements come from the active epoch loaded from it.
+        unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                self.relation,
+                placement_directory,
+                lockmode,
+            )
+        }
+    }
+}
+
+struct SpireActiveEpochAnchor {
+    root_control: meta::SpireRootControlState,
+    epoch_manifest: meta::SpireEpochManifest,
+    object_manifest: meta::SpireObjectManifest,
+    placement_directory: meta::SpirePlacementDirectory,
+}
+
+impl SpireActiveEpochAnchor {
+    fn snapshot(&self) -> Result<meta::SpirePublishedEpochSnapshot<'_>, String> {
+        meta::SpirePublishedEpochSnapshot::new(
+            &self.epoch_manifest,
+            &self.object_manifest,
+            &self.placement_directory,
+        )
+    }
+
+    fn validated_snapshot(&self) -> Result<meta::SpireValidatedEpochSnapshot<'_>, String> {
+        meta::SpireValidatedEpochSnapshot::new(
+            &self.epoch_manifest,
+            &self.object_manifest,
+            &self.placement_directory,
+        )
+    }
+}
+
 pub(crate) unsafe fn active_snapshot_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> SpireActiveSnapshotDiagnostics {
     let result = (|| -> Result<SpireActiveSnapshotDiagnostics, String> {
-        // SAFETY: reads root/control state through the live SPIRE index
-        // relation supplied by the SQL diagnostic wrapper.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by snapshot diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
-        let snapshot = meta::SpirePublishedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active snapshot while holding AccessShareLock.
-        let object_store =
-            unsafe {
-                storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                    index_relation,
-                    &placement_directory,
-                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                )?
-            };
         let diagnostics = diagnostics::collect_snapshot_diagnostics(&snapshot, &object_store)?;
 
         Ok(SpireActiveSnapshotDiagnostics {
-            active_epoch: root_control.active_epoch,
-            next_pid: root_control.next_pid,
-            next_local_vec_seq: root_control.next_local_vec_seq,
+            active_epoch: anchor.root_control.active_epoch,
+            next_pid: anchor.root_control.next_pid,
+            next_local_vec_seq: anchor.root_control.next_local_vec_seq,
             consistency_mode: consistency_mode_name(diagnostics.consistency_mode),
             object_count: diagnostics.object_count as u64,
             placement_count: diagnostics.placement_count as u64,
@@ -88,9 +181,10 @@ fn open_storage_relation_or_index(
 }
 
 pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
-    // SAFETY: reads root/control state through the live index relation and
-    // returns only the copied active epoch value.
-    unsafe { page::read_root_control_page(index_relation).active_epoch }
+    // SAFETY: PostgreSQL calls this helper with a live SPIRE index relation.
+    unsafe { SpireLiveIndexRelation::new(index_relation) }
+        .root_control()
+        .active_epoch
 }
 
 pub(crate) unsafe fn index_allocator_snapshot(
@@ -98,9 +192,10 @@ pub(crate) unsafe fn index_allocator_snapshot(
     warn_within: u64,
 ) -> SpireIndexAllocatorSnapshot {
     let result = (|| -> Result<SpireIndexAllocatorSnapshot, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // allocator diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
         let diagnostics = diagnostics::collect_allocator_diagnostics(&root_control, warn_within)?;
         Ok(SpireIndexAllocatorSnapshot {
             active_epoch: root_control.active_epoch,
@@ -120,35 +215,19 @@ pub(crate) unsafe fn index_options_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexOptionsSnapshot {
     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
-        // options diagnostics only.
-        let relation_options = unsafe { options::relation_options(index_relation) };
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
-        // SAFETY: reads root/control state through the live index relation for
-        // active options diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = index.root_control();
         let mut recursive_level_parameters = Vec::new();
-        let active_leaf_count = if root_control.active_epoch == 0 {
-            0
-        } else {
-            // SAFETY: root_control came from the same live index relation and
-            // names the active manifests used by options diagnostics.
-            let (epoch_manifest, object_manifest, placement_directory) =
-                unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-            let snapshot = meta::SpirePublishedEpochSnapshot::new(
-                &epoch_manifest,
-                &object_manifest,
-                &placement_directory,
+        let active_leaf_count = if let Some(anchor) = index.active_epoch_anchor(root_control)? {
+            let snapshot = anchor.snapshot()?;
+            let object_store = index.object_store_set(
+                &anchor.placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
-            // SAFETY: opens relation-backed object stores for placements in the
-            // active options snapshot while holding AccessShareLock.
-            let object_store = unsafe {
-                storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                    index_relation,
-                    &placement_directory,
-                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                )?
-            };
             let active_leaf_count = count_snapshot_options_leaf_pids(
                 &snapshot,
                 &object_store,
@@ -164,6 +243,8 @@ pub(crate) unsafe fn index_options_snapshot(
                 )?;
             }
             active_leaf_count
+        } else {
+            0
         };
         let relation_nprobe = u32::try_from(relation_options.nprobe)
             .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
@@ -251,14 +332,15 @@ pub(crate) unsafe fn index_options_snapshot(
 pub(crate) unsafe fn index_writer_identity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexWriterIdentitySnapshot {
-    // SAFETY: reads PostgreSQL reloptions from the live index relation for
-    // writer identity diagnostics only.
-    let relation_options = unsafe { options::relation_options(index_relation) };
-    // SAFETY: reads root/control state through the live index relation for the
-    // active writer identity status.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
-    let (writer_identity_status, writer_identity_recommendation) =
-        writer_identity_snapshot_status(relation_options.source_identity, root_control.active_epoch);
+    // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+    // index relation for the duration of the call.
+    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+    let relation_options = index.relation_options();
+    let root_control = index.root_control();
+    let (writer_identity_status, writer_identity_recommendation) = writer_identity_snapshot_status(
+        relation_options.source_identity,
+        root_control.active_epoch,
+    );
     SpireIndexWriterIdentitySnapshot {
         source_identity_provider: relation_options.source_identity.reloption_name(),
         writer_identity_status,
@@ -297,34 +379,20 @@ pub(crate) unsafe fn index_level_parameter_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLevelParameterSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
-        // level-parameter diagnostics only.
-        let relation_options = unsafe { options::relation_options(index_relation) };
-        // SAFETY: reads root/control state through the live index relation for
-        // the active level-parameter snapshot epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let relation_options = index.relation_options();
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by level-parameter diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active level-parameter snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         collect_level_parameter_snapshot_rows(&snapshot, &object_store, &relation_options)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -416,35 +484,21 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexScanSanitySnapshot {
     let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {
-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
-        // scan-sanity diagnostics only.
-        let relation_options = unsafe { options::relation_options(index_relation) };
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
-        // SAFETY: reads root/control state through the live index relation for
-        // active scan-sanity diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        let active_leaf_count = if root_control.active_epoch == 0 {
-            0
-        } else {
-            // SAFETY: root_control came from the same live index relation and
-            // names the active manifests used by scan-sanity diagnostics.
-            let (epoch_manifest, object_manifest, placement_directory) =
-                unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-            let snapshot = meta::SpirePublishedEpochSnapshot::new(
-                &epoch_manifest,
-                &object_manifest,
-                &placement_directory,
+        let root_control = index.root_control();
+        let active_leaf_count = if let Some(anchor) = index.active_epoch_anchor(root_control)? {
+            let snapshot = anchor.snapshot()?;
+            let object_store = index.object_store_set(
+                &anchor.placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
-            // SAFETY: opens relation-backed object stores for placements in the
-            // active scan-sanity snapshot while holding AccessShareLock.
-            let object_store = unsafe {
-                storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                    index_relation,
-                    &placement_directory,
-                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                )?
-            };
             count_snapshot_options_leaf_pids(&snapshot, &object_store, recursive_build_enabled)?
+        } else {
+            0
         };
         let relation_nprobe = u32::try_from(relation_options.nprobe)
             .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
@@ -562,29 +616,35 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
 
             // SAFETY: storage_relation is open for object tuple scanning; the
             // callback only records tuple sizes and active-reference matches.
-            let scan_result = unsafe { page::scan_object_tuples(storage_relation, |tid, tuple| {
-                relation_object_tuple_count = relation_object_tuple_count
-                    .checked_add(1)
-                    .ok_or_else(|| "ec_spire relation object tuple count overflow".to_owned())?;
-                let tuple_bytes = u64::try_from(tuple.len())
-                    .map_err(|_| "ec_spire relation object tuple bytes exceed u64".to_owned())?;
-                relation_object_tuple_bytes = relation_object_tuple_bytes
-                    .checked_add(tuple_bytes)
-                    .ok_or_else(|| "ec_spire relation object tuple bytes overflow".to_owned())?;
-                if active_tids.contains(&(storage_relid, tid)) {
-                    active_referenced_tuple_count = active_referenced_tuple_count
-                        .checked_add(1)
-                        .ok_or_else(|| {
-                            "ec_spire active referenced tuple count overflow".to_owned()
+            let scan_result = unsafe {
+                page::scan_object_tuples(storage_relation, |tid, tuple| {
+                    relation_object_tuple_count =
+                        relation_object_tuple_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire relation object tuple count overflow".to_owned()
                         })?;
-                    active_referenced_tuple_bytes = active_referenced_tuple_bytes
+                    let tuple_bytes = u64::try_from(tuple.len()).map_err(|_| {
+                        "ec_spire relation object tuple bytes exceed u64".to_owned()
+                    })?;
+                    relation_object_tuple_bytes = relation_object_tuple_bytes
                         .checked_add(tuple_bytes)
                         .ok_or_else(|| {
-                            "ec_spire active referenced tuple bytes overflow".to_owned()
+                            "ec_spire relation object tuple bytes overflow".to_owned()
                         })?;
-                }
-                Ok(())
-            }) };
+                    if active_tids.contains(&(storage_relid, tid)) {
+                        active_referenced_tuple_count = active_referenced_tuple_count
+                            .checked_add(1)
+                            .ok_or_else(|| {
+                                "ec_spire active referenced tuple count overflow".to_owned()
+                            })?;
+                        active_referenced_tuple_bytes = active_referenced_tuple_bytes
+                            .checked_add(tuple_bytes)
+                            .ok_or_else(|| {
+                                "ec_spire active referenced tuple bytes overflow".to_owned()
+                            })?;
+                    }
+                    Ok(())
+                })
+            };
             scan_result?;
         }
 
@@ -690,8 +750,16 @@ fn latest_epoch_manifests(
         .collect()
 }
 
+type SpireStorageTupleRef = (u32, crate::storage::page::ItemPointer);
+type SpireCleanupCandidatesByRelid = BTreeMap<u32, Vec<crate::storage::page::ItemPointer>>;
+type SpirePhysicalCleanupCandidates = (
+    HashSet<u64>,
+    HashSet<SpireStorageTupleRef>,
+    SpireCleanupCandidatesByRelid,
+);
+
 fn protect_tuple(
-    protected: &mut HashSet<(u32, crate::storage::page::ItemPointer)>,
+    protected: &mut HashSet<SpireStorageTupleRef>,
     relid: u32,
     tid: crate::storage::page::ItemPointer,
 ) {
@@ -704,11 +772,7 @@ fn collect_physical_cleanup_candidates(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
     now_micros: i64,
-) -> Result<(
-    HashSet<u64>,
-    HashSet<(u32, crate::storage::page::ItemPointer)>,
-    BTreeMap<u32, Vec<crate::storage::page::ItemPointer>>,
-), String> {
+) -> Result<SpirePhysicalCleanupCandidates, String> {
     // SAFETY: rd_id is stable while index_relation is open; it is copied as the
     // index OID for cleanup protection/candidate accounting.
     let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
@@ -720,11 +784,15 @@ fn collect_physical_cleanup_candidates(
             .into_iter()
             .collect();
 
-    let mut protected = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
+    let mut protected = HashSet::<SpireStorageTupleRef>::new();
     let mut storage_relids = HashSet::from([index_relid]);
     let mut protected_directories = Vec::new();
     protect_tuple(&mut protected, index_relid, root_control.epoch_manifest_tid);
-    protect_tuple(&mut protected, index_relid, root_control.object_manifest_tid);
+    protect_tuple(
+        &mut protected,
+        index_relid,
+        root_control.object_manifest_tid,
+    );
     protect_tuple(
         &mut protected,
         index_relid,
@@ -789,7 +857,7 @@ fn collect_physical_cleanup_candidates(
         }
     }
 
-    let mut candidates_by_relid = BTreeMap::<u32, Vec<crate::storage::page::ItemPointer>>::new();
+    let mut candidates_by_relid = SpireCleanupCandidatesByRelid::new();
     let mut sorted_storage_relids = storage_relids.into_iter().collect::<Vec<_>>();
     sorted_storage_relids.sort_unstable();
     for storage_relid in sorted_storage_relids {
@@ -857,7 +925,8 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
                 removed_tuple_count: 0,
                 removed_tuple_bytes: 0,
                 physical_cleanup_status: "blocked_by_retention",
-                cleanup_message: "no epochs are cleanup-eligible after retention and active-query checks",
+                cleanup_message:
+                    "no epochs are cleanup-eligible after retention and active-query checks",
             });
         }
 
@@ -899,7 +968,8 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
             removed_tuple_count,
             removed_tuple_bytes,
             physical_cleanup_status,
-            cleanup_message: "removed unprotected object tuples with no-compaction line-pointer deletion",
+            cleanup_message:
+                "removed unprotected object tuples with no-compaction line-pointer deletion",
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -909,31 +979,19 @@ pub(crate) unsafe fn index_placement_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexPlacementSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // placement diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by placement diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpirePublishedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active placement snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let rows = diagnostics::collect_store_placement_diagnostics(&snapshot, &object_store)?
             .into_iter()
             .map(|row| SpireIndexPlacementSnapshotRow {
@@ -969,35 +1027,29 @@ pub(crate) unsafe fn remote_node_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeSnapshotRow> {
     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // remote-node diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active placement directory used by remote-node diagnostics.
-        let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
         };
+
         let mut rows_by_node = BTreeMap::<u32, SpireRemoteNodeSnapshotRow>::new();
         let mut local_stores_by_node = BTreeMap::<u32, HashSet<u32>>::new();
-        for placement in &placement_directory.entries {
-            let row =
-                rows_by_node
-                    .entry(placement.node_id)
-                    .or_insert_with(|| remote_node_snapshot_empty_row(
-                        root_control.active_epoch,
-                        placement.node_id,
-                    ));
+        for placement in &anchor.placement_directory.entries {
+            let row = rows_by_node.entry(placement.node_id).or_insert_with(|| {
+                remote_node_snapshot_empty_row(root_control.active_epoch, placement.node_id)
+            });
             row.placement_count = row.placement_count.checked_add(1).ok_or_else(|| {
                 "ec_spire remote node snapshot placement count overflow".to_owned()
             })?;
             match placement.state {
                 meta::SpirePlacementState::Available => {
-                    row.available_placement_count =
-                        row.available_placement_count.checked_add(1).ok_or_else(|| {
+                    row.available_placement_count = row
+                        .available_placement_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
                             "ec_spire remote node snapshot available placement count overflow"
                                 .to_owned()
                         })?;
@@ -1010,13 +1062,13 @@ pub(crate) unsafe fn remote_node_snapshot(
                         })?;
                 }
                 meta::SpirePlacementState::Unavailable => {
-                    row.unavailable_placement_count =
-                        row.unavailable_placement_count
-                            .checked_add(1)
-                            .ok_or_else(|| {
-                                "ec_spire remote node snapshot unavailable placement count overflow"
-                                    .to_owned()
-                            })?;
+                    row.unavailable_placement_count = row
+                        .unavailable_placement_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            "ec_spire remote node snapshot unavailable placement count overflow"
+                                .to_owned()
+                        })?;
                 }
                 meta::SpirePlacementState::Skipped => {
                     row.skipped_placement_count =
@@ -1109,54 +1161,85 @@ fn load_remote_node_descriptor_rows(
             .map(|row| {
                 let node_id = row["node_id"]
                     .value::<i32>()
-                    .map_err(|e| format!("ec_spire remote node descriptor node_id decode failed: {e}"))?
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor node_id decode failed: {e}")
+                    })?
                     .ok_or_else(|| "ec_spire remote node descriptor node_id is null".to_owned())
                     .and_then(|value| {
-                        u32::try_from(value)
-                            .map_err(|_| "ec_spire remote node descriptor node_id is negative".to_owned())
+                        u32::try_from(value).map_err(|_| {
+                            "ec_spire remote node descriptor node_id is negative".to_owned()
+                        })
                     })?;
                 let descriptor_generation = row["descriptor_generation"]
                     .value::<i64>()
-                    .map_err(|e| format!("ec_spire remote node descriptor generation decode failed: {e}"))?
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor generation decode failed: {e}")
+                    })?
                     .ok_or_else(|| "ec_spire remote node descriptor generation is null".to_owned())
                     .and_then(|value| {
-                        u64::try_from(value)
-                            .map_err(|_| "ec_spire remote node descriptor generation is negative".to_owned())
+                        u64::try_from(value).map_err(|_| {
+                            "ec_spire remote node descriptor generation is negative".to_owned()
+                        })
                     })?;
                 let descriptor_state_value = row["descriptor_state"]
                     .value::<String>()
-                    .map_err(|e| format!("ec_spire remote node descriptor state decode failed: {e}"))?
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor state decode failed: {e}")
+                    })?
                     .ok_or_else(|| "ec_spire remote node descriptor state is null".to_owned())?;
-                let descriptor_state =
-                    remote_node_descriptor_state_name(&descriptor_state_value)?;
+                let descriptor_state = remote_node_descriptor_state_name(&descriptor_state_value)?;
                 let last_seen_at_micros = row["last_seen_at_micros"]
                     .value::<i64>()
-                    .map_err(|e| format!("ec_spire remote node descriptor last_seen_at decode failed: {e}"))?
-                    .ok_or_else(|| "ec_spire remote node descriptor last_seen_at is null".to_owned())?;
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor last_seen_at decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire remote node descriptor last_seen_at is null".to_owned()
+                    })?;
                 let last_served_epoch = row["last_served_epoch"]
                     .value::<i64>()
-                    .map_err(|e| format!("ec_spire remote node descriptor served epoch decode failed: {e}"))?
-                    .ok_or_else(|| "ec_spire remote node descriptor served epoch is null".to_owned())
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor served epoch decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire remote node descriptor served epoch is null".to_owned()
+                    })
                     .and_then(|value| {
-                        u64::try_from(value)
-                            .map_err(|_| "ec_spire remote node descriptor served epoch is negative".to_owned())
+                        u64::try_from(value).map_err(|_| {
+                            "ec_spire remote node descriptor served epoch is negative".to_owned()
+                        })
                     })?;
                 let min_retained_epoch = row["min_retained_epoch"]
                     .value::<i64>()
-                    .map_err(|e| format!("ec_spire remote node descriptor retained epoch decode failed: {e}"))?
-                    .ok_or_else(|| "ec_spire remote node descriptor retained epoch is null".to_owned())
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor retained epoch decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire remote node descriptor retained epoch is null".to_owned()
+                    })
                     .and_then(|value| {
-                        u64::try_from(value)
-                            .map_err(|_| "ec_spire remote node descriptor retained epoch is negative".to_owned())
+                        u64::try_from(value).map_err(|_| {
+                            "ec_spire remote node descriptor retained epoch is negative".to_owned()
+                        })
                     })?;
                 let extension_version = row["extension_version"]
                     .value::<String>()
-                    .map_err(|e| format!("ec_spire remote node descriptor extension version decode failed: {e}"))?
-                    .ok_or_else(|| "ec_spire remote node descriptor extension version is null".to_owned())?;
+                    .map_err(|e| {
+                        format!(
+                            "ec_spire remote node descriptor extension version decode failed: {e}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire remote node descriptor extension version is null".to_owned()
+                    })?;
                 let last_error = row["last_error"]
                     .value::<String>()
-                    .map_err(|e| format!("ec_spire remote node descriptor last_error decode failed: {e}"))?
-                    .ok_or_else(|| "ec_spire remote node descriptor last_error is null".to_owned())?;
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor last_error decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire remote node descriptor last_error is null".to_owned()
+                    })?;
 
                 Ok(SpireRemoteNodeDescriptorRow {
                     node_id,
@@ -1201,9 +1284,7 @@ fn apply_remote_node_descriptor(
     row.recommendation = recommendation;
 }
 
-fn remote_node_descriptor_status(
-    descriptor_state: &'static str,
-) -> (&'static str, &'static str) {
+fn remote_node_descriptor_status(descriptor_state: &'static str) -> (&'static str, &'static str) {
     match descriptor_state {
         SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE | SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING => {
             (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
@@ -1223,8 +1304,7 @@ fn remote_node_descriptor_status(
     }
 }
 
-pub(crate) fn remote_node_descriptor_contract_rows(
-) -> Vec<SpireRemoteNodeDescriptorContractRow> {
+pub(crate) fn remote_node_descriptor_contract_rows() -> Vec<SpireRemoteNodeDescriptorContractRow> {
     vec![
         SpireRemoteNodeDescriptorContractRow {
             field_ordinal: 1,
@@ -1367,7 +1447,8 @@ pub(crate) fn remote_node_descriptor_state_contract_rows(
             state_source: "catalog",
             read_eligible: false,
             snapshot_status: "disabled_remote_node",
-            recommendation: "enable or replace remote node descriptor before libpq fanout execution",
+            recommendation:
+                "enable or replace remote node descriptor before libpq fanout execution",
         },
         SpireRemoteNodeDescriptorStateContractRow {
             state_ordinal: 4,
@@ -1611,8 +1692,10 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
                     pgrx::error!("ec_spire remote node descriptor readiness ready count overflow")
                 });
         } else if row.required {
-            summary.blocked_field_count =
-                summary.blocked_field_count.checked_add(1).unwrap_or_else(|| {
+            summary.blocked_field_count = summary
+                .blocked_field_count
+                .checked_add(1)
+                .unwrap_or_else(|| {
                     pgrx::error!("ec_spire remote node descriptor readiness blocked count overflow")
                 });
             if row.status == SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR {
@@ -1703,24 +1786,26 @@ pub(crate) unsafe fn remote_node_capability_summary(
                 });
         } else {
             summary.blocked_node_count =
-                summary.blocked_node_count.checked_add(1).unwrap_or_else(|| {
-                    pgrx::error!(
-                        "ec_spire remote node capability summary blocked node count overflow"
-                    )
-                });
+                summary
+                    .blocked_node_count
+                    .checked_add(1)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_spire remote node capability summary blocked node count overflow"
+                        )
+                    });
         }
         if row.descriptor_state == SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING
             || row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         {
-            summary.missing_descriptor_node_count =
-                summary
-                    .missing_descriptor_node_count
-                    .checked_add(1)
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_spire remote node capability summary missing descriptor count overflow"
-                        )
-                    });
+            summary.missing_descriptor_node_count = summary
+                .missing_descriptor_node_count
+                .checked_add(1)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote node capability summary missing descriptor count overflow"
+                    )
+                });
         }
     }
 
@@ -1772,10 +1857,9 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
     // SAFETY: forwards the live index relation to publish-plan diagnostics
     // before reducing remote rows into readiness counters.
     for row in unsafe { remote_epoch_publish_plan(index_relation) } {
-        summary.remote_node_count =
-            summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
-                pgrx::error!("ec_spire remote epoch publish readiness node count overflow")
-            });
+        summary.remote_node_count = summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
+            pgrx::error!("ec_spire remote epoch publish readiness node count overflow")
+        });
         summary.remote_placement_count = summary
             .remote_placement_count
             .checked_add(row.placement_count)
@@ -1807,38 +1891,35 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
                 )
             });
         if row.status == SPIRE_REMOTE_STATUS_READY {
-            summary.ready_remote_node_count =
-                summary
-                    .ready_remote_node_count
-                    .checked_add(1)
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_spire remote epoch publish readiness ready node count overflow"
-                        )
-                    });
+            summary.ready_remote_node_count = summary
+                .ready_remote_node_count
+                .checked_add(1)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote epoch publish readiness ready node count overflow"
+                    )
+                });
         } else {
-            summary.blocked_remote_node_count =
-                summary
-                    .blocked_remote_node_count
-                    .checked_add(1)
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_spire remote epoch publish readiness blocked node count overflow"
-                        )
-                    });
+            summary.blocked_remote_node_count = summary
+                .blocked_remote_node_count
+                .checked_add(1)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote epoch publish readiness blocked node count overflow"
+                    )
+                });
         }
         if row.descriptor_state == SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING
             || row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         {
-            summary.missing_descriptor_node_count =
-                summary
-                    .missing_descriptor_node_count
-                    .checked_add(1)
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_spire remote epoch publish readiness missing descriptor count overflow"
-                        )
-                    });
+            summary.missing_descriptor_node_count = summary
+                .missing_descriptor_node_count
+                .checked_add(1)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote epoch publish readiness missing descriptor count overflow"
+                    )
+                });
         }
     }
 
@@ -2344,9 +2425,7 @@ fn collect_leaf_snapshot_rows(
                 }
                 let role_count = base_primary_count
                     .checked_add(base_boundary_replica_count)
-                    .ok_or_else(|| {
-                        "ec_spire leaf snapshot base role count overflow".to_owned()
-                    })?;
+                    .ok_or_else(|| "ec_spire leaf snapshot base role count overflow".to_owned())?;
                 if role_count != header_assignment_count {
                     return Err(format!(
                         "ec_spire leaf snapshot base role count {role_count} does not match header assignment_count {header_assignment_count} for leaf pid {}",
@@ -2495,9 +2574,9 @@ fn count_leaf_snapshot_base_assignment_roles(
     let mut boundary_replica_count = 0_u64;
     for assignment in assignments {
         if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
-            primary_count = primary_count.checked_add(1).ok_or_else(|| {
-                "ec_spire leaf snapshot base primary count overflow".to_owned()
-            })?;
+            primary_count = primary_count
+                .checked_add(1)
+                .ok_or_else(|| "ec_spire leaf snapshot base primary count overflow".to_owned())?;
         }
         if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
             boundary_replica_count = boundary_replica_count.checked_add(1).ok_or_else(|| {
