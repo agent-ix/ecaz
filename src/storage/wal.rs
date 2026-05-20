@@ -74,10 +74,10 @@ impl GenericXLogTxn {
 
     /// Finish the GenericXLog transaction and return the written WAL pointer.
     ///
-    /// # Safety
-    ///
-    /// All registered pages must already contain their final intended contents.
-    pub unsafe fn finish(mut self) -> pg_sys::XLogRecPtr {
+    /// `GenericXLogTxn` owns the PostgreSQL WAL state and prevents double
+    /// finish through `self` ownership. Callers are still responsible for
+    /// writing final page contents before calling this method.
+    pub fn finish(mut self) -> pg_sys::XLogRecPtr {
         self.finished = true;
         // SAFETY: `self.state` came from `GenericXLogStart` and has not yet been finished/aborted.
         unsafe { pg_sys::GenericXLogFinish(self.state) }

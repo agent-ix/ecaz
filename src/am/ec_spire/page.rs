@@ -93,8 +93,7 @@ unsafe fn initialize_spire_metadata_block_zero(
         );
     }
 
-    // SAFETY: all registered page mutations are complete before finishing WAL.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 pub(super) unsafe fn read_root_control_page(
@@ -321,11 +320,10 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
         })
     };
     match result {
-        // SAFETY: mutation is complete and the registered page can be finished.
-        Ok(()) => unsafe {
+        Ok(()) => {
             wal_txn.finish();
             Ok(())
-        },
+        }
         Err(error) => {
             std::mem::drop(wal_txn);
             Err(error)
@@ -420,8 +418,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
             changed = true;
         }
         if changed {
-            // SAFETY: all page deletions for this registered page are complete.
-            unsafe { wal_txn.finish() };
+            wal_txn.finish();
         }
         // SAFETY: page remains valid while the buffer guard is live; free-space
         // state is recorded after any deletion changes.
@@ -486,8 +483,7 @@ unsafe fn try_append_object_tuple_to_block(
         ));
     }
 
-    // SAFETY: append mutation is complete for the registered page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     // SAFETY: page remains pinned while reading and recording free space.
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     // SAFETY: block_number identifies the same relation page just appended to.
@@ -555,8 +551,7 @@ unsafe fn append_object_tuple_to_new_block(
     }
     let block_number = buffer.block_number();
 
-    // SAFETY: append mutation is complete for the registered new page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     // SAFETY: page remains pinned while reading and recording free space.
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     // SAFETY: block_number is the block assigned to the same buffer.

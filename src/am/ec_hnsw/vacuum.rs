@@ -97,8 +97,7 @@ impl VacuumPageRewrite {
             .wal_txn
             .take()
             .expect("vacuum page rewrite WAL transaction should be present");
-        // SAFETY: The registered page contains its final intended bytes.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 

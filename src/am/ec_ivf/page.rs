@@ -1868,8 +1868,7 @@ unsafe fn try_append_ivf_posting_to_block(
         ));
     }
 
-    // SAFETY: finishes the WAL transaction after the registered page mutation.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     registered.record_free_space(registered.free_space());
     Ok(Some(ItemPointer {
         block_number,
@@ -1911,9 +1910,7 @@ unsafe fn append_ivf_posting_to_new_block(
     }
     let block_number = buffer.block_number();
 
-    // SAFETY: finishes the WAL transaction after initializing and mutating the
-    // registered new page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     registered.record_free_space(registered.free_space());
     Ok(ItemPointer {
         block_number,
@@ -1957,8 +1954,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
         std::mem::drop(wal_txn);
         return Err(err);
     }
-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(())
 }
 
@@ -2023,8 +2019,7 @@ where
         std::mem::drop(wal_txn);
         return Err(err);
     }
-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(directory)
 }
 
@@ -2064,8 +2059,7 @@ pub(super) unsafe fn rewrite_ivf_posting(
         std::mem::drop(wal_txn);
         return Err(err);
     }
-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(())
 }
 
@@ -2329,8 +2323,7 @@ where
     }
 
     if changed {
-        // SAFETY: finishes the WAL transaction after registered page changes.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
     registered.record_free_space(registered.free_space());
     Ok(())
@@ -2631,8 +2624,7 @@ pub(super) unsafe fn initialize_metadata_page(
     registered.init(page_size, special_size);
     registered.copy_to_special(&metadata_bytes);
 
-    // SAFETY: finishes the WAL transaction after initializing metadata.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -2696,8 +2688,7 @@ where
 
     let encoded = metadata.encode();
     registered.copy_to_special(&encoded);
-    // SAFETY: finishes the WAL transaction after rewriting metadata bytes.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(metadata)
 }
 

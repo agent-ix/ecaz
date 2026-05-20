@@ -2452,9 +2452,7 @@ pub(super) unsafe fn write_data_pages(
             }
         }
 
-        // SAFETY: All page mutations for this registered buffer are complete
-        // and can be committed through the generic WAL transaction.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 

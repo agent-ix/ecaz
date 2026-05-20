@@ -599,9 +599,7 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPa
             }
         }
 
-        // SAFETY: commits the generic WAL transaction started above after all
-        // staged tuples have been copied into the registered page.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 

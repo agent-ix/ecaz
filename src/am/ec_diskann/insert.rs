@@ -816,9 +816,7 @@ unsafe fn apply_duplicate_bind_patches(
         match page_result {
             Ok(()) => {
                 if page_changed {
-                    // SAFETY: The registered page was mutated and must be
-                    // committed through the active generic WAL transaction.
-                    unsafe { wal_txn.finish() };
+                    wal_txn.finish();
                 } else {
                     std::mem::drop(wal_txn);
                 }
@@ -1229,8 +1227,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     // SAFETY: `dst` points at the initialized special area, and source/dest do
     // not overlap because `encoded` is owned Rust memory.
     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len()) };
-    // SAFETY: All metadata page mutations are complete and can be committed.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(result)
 }
 
@@ -1451,9 +1448,7 @@ unsafe fn append_raw_tuple_payload(
         return Err("ec_diskann failed to append live node tuple".into());
     }
 
-    // SAFETY: The page mutation is complete and can be committed through the
-    // active generic WAL transaction.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(ItemPointer {
         block_number,
         offset_number,
@@ -1557,9 +1552,7 @@ pub(super) unsafe fn add_backlinks_if_free(
         match page_result {
             Ok(page_changes) => {
                 if page_changed {
-                    // SAFETY: The registered page was mutated and must be
-                    // committed through the active generic WAL transaction.
-                    unsafe { wal_txn.finish() };
+                    wal_txn.finish();
                     changed += page_changes;
                 } else {
                     std::mem::drop(wal_txn);
@@ -1680,9 +1673,7 @@ pub(super) unsafe fn apply_backlink_mutations(
         match page_result {
             Ok(()) => {
                 if page_changed {
-                    // SAFETY: The registered page was mutated and must be
-                    // committed through the active generic WAL transaction.
-                    unsafe { wal_txn.finish() };
+                    wal_txn.finish();
                 } else {
                     std::mem::drop(wal_txn);
                 }

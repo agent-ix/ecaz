@@ -119,8 +119,7 @@ impl InsertPageWrite {
             .wal_txn
             .take()
             .expect("insert page writer WAL transaction should be present");
-        // SAFETY: The writer's page bytes contain their final intended state.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 
@@ -1396,9 +1395,7 @@ unsafe fn add_backlinks_on_page(
     }
 
     if changed {
-        // SAFETY: The generic WAL transaction owns the registered page image
-        // and must be finished after at least one tuple mutation.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     } else {
         std::mem::drop(wal_txn);
     }
@@ -2449,15 +2446,11 @@ unsafe fn coalesce_duplicate_heap_tid(
         )
     };
     if !tuple_changed {
-        // SAFETY: Finishing a registered transaction without byte changes is
-        // harmless and releases the generic WAL transaction.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
         return;
     }
 
-    // SAFETY: The duplicate tuple bytes were updated in-place on the registered
-    // page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
@@ -2533,15 +2526,11 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
         )
     };
     if !tuple_changed {
-        // SAFETY: Finishing a registered transaction without byte changes is
-        // harmless and releases the generic WAL transaction.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
         return;
     }
 
-    // SAFETY: The duplicate hot tuple bytes were updated in-place on the
-    // registered page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 unsafe fn coalesce_duplicate_grouped_heap_tid(
@@ -2618,15 +2607,11 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
         )
     };
     if !tuple_changed {
-        // SAFETY: Finishing a registered transaction without byte changes is
-        // harmless and releases the generic WAL transaction.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
         return;
     }
 
-    // SAFETY: The duplicate grouped tuple bytes were updated in-place on the
-    // registered page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 #[cfg(test)]

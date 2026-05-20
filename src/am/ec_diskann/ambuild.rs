@@ -789,8 +789,7 @@ fn write_metadata_to_buffer(
     unsafe {
         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), dst, metadata_bytes.len());
     }
-    // SAFETY: All metadata page writes were made through the registered page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
@@ -838,8 +837,7 @@ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &
             }
         }
 
-        // SAFETY: All data page writes were made through the registered page.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 
