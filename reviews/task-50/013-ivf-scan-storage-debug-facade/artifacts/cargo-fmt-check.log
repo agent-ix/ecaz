@@ -1,0 +1,845 @@
+Script started on 2026-05-20 00:00:12-07:00 [<not executed on terminal>]
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /home/peter/dev/ecaz/crates/ecaz-cli/src/commands/bench/storage.rs:54:
+         .await
+         .wrap_err("disabling index scans for row count")?;
+         let r = tx
+[31m-            .query_one(
+[m[31m-                &format!("SELECT count(*) FROM {corpus_table}"),
+[m[31m-                &[],
+[m[31m-            )
+[m[32m+            .query_one(&format!("SELECT count(*) FROM {corpus_table}"), &[])
+[m             .await
+             .wrap_err_with(|| format!("counting rows in {corpus_table:?}"))?
+             .get::<_, i64>(0);
+Diff in /home/peter/dev/ecaz/crates/ecaz-cli/src/commands/bench/suite.rs:2629:
+         };
+         let args = expand_load(&step, &defaults);
+         assert!(args.contains(&"--chunked".into()));
+[31m-        assert!(args
+[m[31m-            .windows(2)
+[m[31m-            .any(|w| w == ["--storage-format", "rabitq"]));
+[m[32m+        assert!(args.windows(2).any(|w| w == ["--storage-format", "rabitq"]));
+[m         assert!(args
+             .windows(2)
+             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /home/peter/dev/ecaz/hardening/careful/src/../../../src/quant/simd.rs:99:
+     fn forced_backend_accepts_auto_empty_and_absent() {
+         with_simd_env(None, || assert_eq!(forced_backend_from_env(), None));
+         with_simd_env(Some(""), || assert_eq!(forced_backend_from_env(), None));
+[31m-        with_simd_env(Some(" auto "), || assert_eq!(forced_backend_from_env(), None));
+[m[32m+        with_simd_env(Some(" auto "), || {
+[m[32m+            assert_eq!(forced_backend_from_env(), None)
+[m[32m+        });
+[m     }
+ 
+     #[test]
+Diff in /home/peter/dev/ecaz/hardening/careful/src/diskann_routine_helpers.rs:73:
+                 tid(5, 2),
+             ];
+             sort_and_dedup_item_pointers(&mut tids);
+[31m-            assert_eq!(
+[m[31m-                tids,
+[m[31m-                vec![tid(5, 1), tid(5, 2), tid(10, 1), tid(10, 3)],
+[m[31m-            );
+[m[32m+            assert_eq!(tids, vec![tid(5, 1), tid(5, 2), tid(10, 1), tid(10, 3)],);
+[m         }
+ 
+         #[test]
+Diff in /home/peter/dev/ecaz/hardening/careful/src/diskann_routine_helpers.rs:169:
+             let (mut chain, gr, bw, sc) = build_chain_with_nodes(&nodes, &[]);
+             let phantom = tid(999, 1);
+             let tuple = VamanaNodeTuple::placeholder(gr, 0, 0);
+[31m-            let err =
+[m[31m-                write_chain_node(&mut chain, gr, bw, sc, phantom, &tuple).expect_err(
+[m[31m-                    "writing to a phantom block must surface an error",
+[m[31m-                );
+[m[31m-            assert!(err.contains("could not find page"), "unexpected error: {err}");
+[m[32m+            let err = write_chain_node(&mut chain, gr, bw, sc, phantom, &tuple)
+[m[32m+                .expect_err("writing to a phantom block must surface an error");
+[m[32m+            assert!(
+[m[32m+                err.contains("could not find page"),
+[m[32m+                "unexpected error: {err}"
+[m[32m+            );
+[m         }
+ 
+         // ---------------- collect_tuple_rewrites tests --------------
+Diff in /home/peter/dev/ecaz/hardening/careful/src/diskann_routine_helpers.rs:218:
+             assert!(two_pages.pages().len() > one_page.pages().len());
+             let err = collect_tuple_rewrites(&one_page, &two_pages)
+                 .expect_err("page-count mismatch must be rejected");
+[31m-            assert!(err.contains("page-count mismatch"), "unexpected error: {err}");
+[m[32m+            assert!(
+[m[32m+                err.contains("page-count mismatch"),
+[m[32m+                "unexpected error: {err}"
+[m[32m+            );
+[m         }
+ 
+         #[test]
+Diff in /home/peter/dev/ecaz/hardening/careful/src/lib.rs:164:
+         let inserted = page.insert_raw_tuple(vec![0xaa; 16]).unwrap();
+         assert_eq!(inserted, tid(9, 1));
+         assert_eq!(page.tuples(), &[vec![0xaa; 16]]);
+[31m-        assert_eq!(page.free_bytes(), 96 - PAGE_HEADER_BYTES - raw_tuple_storage_bytes(16));
+[m[32m+        assert_eq!(
+[m[32m+            page.free_bytes(),
+[m[32m+            96 - PAGE_HEADER_BYTES - raw_tuple_storage_bytes(16)
+[m[32m+        );
+[m     }
+ 
+     #[test]
+Diff in /home/peter/dev/ecaz/hardening/careful/src/lib.rs:288:
+ 
+     #[test]
+     fn quant_family_default_and_names_are_stable() {
+[31m-        assert_eq!(super::quant::Family::DEFAULT, super::quant::Family::TurboQuant);
+[m[32m+        assert_eq!(
+[m[32m+            super::quant::Family::DEFAULT,
+[m[32m+            super::quant::Family::TurboQuant
+[m[32m+        );
+[m         assert_eq!(super::quant::Family::TurboQuant.as_str(), "turboquant");
+         assert_eq!(super::quant::Family::PqFastScan.as_str(), "pq_fastscan");
+     }
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:79:
+ 
+     pub struct ReadStream;
+ 
+[31m-    pub unsafe fn PrefetchBuffer(
+[m[31m-        _relation: Relation,
+[m[31m-        _fork: i32,
+[m[31m-        _block: BlockNumber,
+[m[31m-    ) {
+[m[31m-    }
+[m[32m+    pub unsafe fn PrefetchBuffer(_relation: Relation, _fork: i32, _block: BlockNumber) {}
+[m 
+     pub unsafe fn read_stream_begin_relation(
+         _flags: i32,
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:282:
+         unsafe { close_relation(relation) };
+     }
+ 
+[31m-    pub unsafe fn table_slot_create(
+[m[31m-        _relation: Relation,
+[m[31m-        _estate: *mut (),
+[m[31m-    ) -> *mut TupleTableSlot {
+[m[32m+    pub unsafe fn table_slot_create(_relation: Relation, _estate: *mut ()) -> *mut TupleTableSlot {
+[m         Box::into_raw(Box::new(TupleTableSlot))
+     }
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:381:
+     /// Sources the block count from the emulator's buffer registry. Returns 0
+     /// when the relation is null (legacy pg_guards tests rely on this) or when
+     /// no block has been allocated for the relation's OID yet.
+[31m-    pub unsafe fn RelationGetNumberOfBlocksInFork(
+[m[31m-        relation: Relation,
+[m[31m-        _fork: i32,
+[m[31m-    ) -> BlockNumber {
+[m[32m+    pub unsafe fn RelationGetNumberOfBlocksInFork(relation: Relation, _fork: i32) -> BlockNumber {
+[m         if relation.is_null() {
+             return 0;
+         }
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:393:
+         BUFFER_REGISTRY.with(|r| r.borrow().relation_block_count(rd_id).unwrap_or(0))
+     }
+ 
+[31m-    pub unsafe fn GetPageWithFreeSpace(
+[m[31m-        _relation: Relation,
+[m[31m-        _required_space: usize,
+[m[31m-    ) -> BlockNumber {
+[m[32m+    pub unsafe fn GetPageWithFreeSpace(_relation: Relation, _required_space: usize) -> BlockNumber {
+[m         BlockNumber::MAX
+     }
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:534:
+                 return;
+             }
+             if let Some(item) = self.line_pointers.get_mut((offset - 1) as usize) {
+[31m-                let aligned = emulator_align_up(
+[m[31m-                    item.lp_len_value as usize,
+[m[31m-                    EMULATOR_ALIGNMENT_BYTES,
+[m[31m-                );
+[m[32m+                let aligned =
+[m[32m+                    emulator_align_up(item.lp_len_value as usize, EMULATOR_ALIGNMENT_BYTES);
+[m                 self.bytes_consumed = self.bytes_consumed.saturating_sub(aligned);
+                 item.lp_flags_value = 0;
+                 item.lp_len_value = 0;
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:574:
+         fn allocate_block(&mut self, rd_id: Oid) -> BlockNumber {
+             let count = self.relation_block_counts.entry(rd_id).or_insert(0);
+             let block_number = *count;
+[31m-            *count = count
+[m[31m-                .checked_add(1)
+[m[31m-                .expect("emulator block count overflow");
+[m[32m+            *count = count.checked_add(1).expect("emulator block count overflow");
+[m             let mut backing = Box::new(BackingPage::new());
+             let bytes_ptr = backing.page_ptr();
+             let raw = &mut *backing as *mut BackingPage;
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:854:
+             let _guard = unsafe { LwLockGuard::acquire_exclusive(&mut lock) };
+         }
+         {
+[31m-            let _guard =
+[m[31m-                unsafe { LwLockGuard::from_acquired_with_release(&mut lock, custom_lwlock_release) };
+[m[32m+            let _guard = unsafe {
+[m[32m+                LwLockGuard::from_acquired_with_release(&mut lock, custom_lwlock_release)
+[m[32m+            };
+[m         }
+ 
+         assert_eq!(pg_sys::LWLOCK_ACQUIRE_CALLS.load(Ordering::SeqCst), 2);
+Diff in /home/peter/dev/ecaz/hardening/careful/src/pg_guards.rs:1064:
+             assert!(!snapshot.as_ptr().is_null());
+         }
+ 
+[31m-        assert_eq!(
+[m[31m-            pg_sys::UNREGISTER_SNAPSHOT_CALLS.load(Ordering::SeqCst),
+[m[31m-            3
+[m[31m-        );
+[m[31m-        assert_eq!(
+[m[31m-            pg_sys::PUSH_ACTIVE_SNAPSHOT_CALLS.load(Ordering::SeqCst),
+[m[31m-            1
+[m[31m-        );
+[m[32m+        assert_eq!(pg_sys::UNREGISTER_SNAPSHOT_CALLS.load(Ordering::SeqCst), 3);
+[m[32m+        assert_eq!(pg_sys::PUSH_ACTIVE_SNAPSHOT_CALLS.load(Ordering::SeqCst), 1);
+[m         assert_eq!(pg_sys::POP_ACTIVE_SNAPSHOT_CALLS.load(Ordering::SeqCst), 1);
+     }
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:18:
+ 
+     use super::meta::{
+         SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState,
+[31m-        SpirePlacementEntry, SpirePlacementState, SpirePlacementDirectory, SPIRE_LOCAL_NODE_ID,
+[m[32m+        SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID,
+[m         SPIRE_SINGLE_LOCAL_STORE_ID,
+     };
+     use super::page;
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:87:
+             SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpirePlacementState,
+         };
+         use super::{
+[31m-            decode_leaf_v2_local_vec_id, is_delete_delta_assignment,
+[m[31m-            is_visible_primary_assignment, is_visible_primary_assignment_ref,
+[m[31m-            is_visible_scored_assignment, local_store_config_from_relation_plan,
+[m[31m-            plan_local_store_relations, spire_local_store_relation_name, SpireDeltaPartitionObject,
+[m[31m-            SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
+[m[32m+            decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
+[m[32m+            is_visible_primary_assignment_ref, is_visible_scored_assignment,
+[m[32m+            local_store_config_from_relation_plan, plan_local_store_relations,
+[m[32m+            spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
+[m[32m+            SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
+[m             SpireLeafPartitionObjectV2Segment, SpireLocalObjectStore, SpireLocalObjectStoreSet,
+             SpireLocalStoreState, SpireObjectReader, SpirePartitionObjectHeader,
+             SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingChildEntry,
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:226:
+             let mut store_set = SpireLocalObjectStoreSet::from_config(config, 1024).unwrap();
+ 
+             // Routing.
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let routing_placement = store_set.insert_routing_object(7, &routing).unwrap();
+             assert_eq!(
+                 store_set
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:305:
+         #[test]
+         fn relation_object_store_for_index_relation_rejects_null_and_invalid_oid() {
+             // null relation pointer.
+[31m-            let null_result = unsafe {
+[m[31m-                SpireRelationObjectStore::for_index_relation(std::ptr::null_mut())
+[m[31m-            };
+[m[32m+            let null_result =
+[m[32m+                unsafe { SpireRelationObjectStore::for_index_relation(std::ptr::null_mut()) };
+[m             let null_err = match null_result {
+                 Err(e) => e,
+                 Ok(_) => panic!("null relation must be rejected"),
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:323:
+                 rd_id: pg_sys::InvalidOid,
+             };
+             let relation: pg_sys::Relation = &mut relation_data;
+[31m-            let invalid_oid_result = unsafe {
+[m[31m-                SpireRelationObjectStore::for_index_relation(relation)
+[m[31m-            };
+[m[32m+            let invalid_oid_result =
+[m[32m+                unsafe { SpireRelationObjectStore::for_index_relation(relation) };
+[m             let invalid_oid_err = match invalid_oid_result {
+                 Err(e) => e,
+                 Ok(_) => panic!("invalid oid must be rejected"),
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:339:
+         #[test]
+         fn relation_object_store_inserts_reject_epoch_zero() {
+             // for_store_relation_id is safe — it just stores the pointer/id.
+[31m-            let store = SpireRelationObjectStore::for_store_relation_id(
+[m[31m-                std::ptr::null_mut(),
+[m[31m-                0,
+[m[31m-                12345,
+[m[31m-            );
+[m[32m+            let store =
+[m[32m+                SpireRelationObjectStore::for_store_relation_id(std::ptr::null_mut(), 0, 12345);
+[m 
+             let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+             assert!(store.insert_routing_object(0, &routing).is_err());
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:387:
+             assert!(store.insert_top_graph_object(0, &top_graph).is_err());
+ 
+             // Leaf V2 from rows: also rejects epoch == 0 before encoding.
+[31m-            assert!(store.insert_leaf_object_v2_from_rows(0, 17, 3, 5, &[]).is_err());
+[m[32m+            assert!(store
+[m[32m+                .insert_leaf_object_v2_from_rows(0, 17, 3, 5, &[])
+[m[32m+                .is_err());
+[m         }
+ 
+         #[test]
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:443:
+             let mut rel = synth_relation(45001);
+             let store = make_store(&mut rel);
+ 
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement = store.insert_routing_object(7, &routing).unwrap();
+             assert_eq!(placement.epoch, 7);
+             assert_eq!(placement.pid, 11);
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:578:
+         // segment chain decoder reassembles them byte-for-byte.
+         // ----------------------------------------------------------------
+ 
+[31m-        fn chain_sized_routing_children(child_count: usize, dimensions: usize)
+[m[31m-            -> Vec<SpireRoutingChildEntry>
+[m[31m-        {
+[m[32m+        fn chain_sized_routing_children(
+[m[32m+            child_count: usize,
+[m[32m+            dimensions: usize,
+[m[32m+        ) -> Vec<SpireRoutingChildEntry> {
+[m             (0..child_count)
+                 .map(|i| SpireRoutingChildEntry {
+                     centroid_index: i as u32,
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:587:
+                     child_pid: 100 + i as u64,
+[31m-                    centroid: (0..dimensions).map(|d| (i * 13 + d) as f32 * 0.001).collect(),
+[m[32m+                    centroid: (0..dimensions)
+[m[32m+                        .map(|d| (i * 13 + d) as f32 * 0.001)
+[m[32m+                        .collect(),
+[m                 })
+                 .collect()
+         }
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:649:
+             // Args: pid, object_version, root_pid, root_level,
+             // dimensions, graph_degree (>= max neighbors per node),
+             // build_list_size, alpha, entry_node, nodes.
+[31m-            let top_graph = SpireTopGraphPartitionObject::new(
+[m[31m-                500, 6, 11, 2, 2, NODE_COUNT, 120, 1.2, 0, nodes,
+[m[31m-            )
+[m[31m-            .unwrap();
+[m[32m+            let top_graph =
+[m[32m+                SpireTopGraphPartitionObject::new(500, 6, 11, 2, 2, NODE_COUNT, 120, 1.2, 0, nodes)
+[m[32m+                    .unwrap();
+[m             let encoded_len = top_graph.encode().unwrap().len();
+             assert!(
+                 encoded_len > 7000,
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:721:
+             pg_sys::reset_counters();
+             let mut rel = synth_relation(46005);
+             let store = make_store(&mut rel);
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement = store.insert_routing_object(7, &routing).unwrap();
+             // V1 reader should reject a placement that points at a V2
+             // chain meta (which is what the relation store writes).
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:737:
+             pg_sys::reset_counters();
+             let mut rel = synth_relation(46006);
+             let store = make_store(&mut rel);
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement = store.insert_routing_object(7, &routing).unwrap();
+ 
+             // Wrong node_id.
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:769:
+             pg_sys::reset_counters();
+             let mut rel = synth_relation(46007);
+             let store = make_store(&mut rel);
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let routing_placement = store.insert_routing_object(7, &routing).unwrap();
+             let leaf_v2_placement = store
+                 .insert_leaf_object_v2_from_rows(
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:800:
+             .unwrap();
+             let delta_placement = store.insert_delta_object(7, &delta).unwrap();
+             let top_graph = SpireTopGraphPartitionObject::new(
+[31m-                90, 3, 11, 2, 2, 2, 4, 1.2, 0,
+[m[32m+                90,
+[m[32m+                3,
+[m[32m+                11,
+[m[32m+                2,
+[m[32m+                2,
+[m[32m+                2,
+[m[32m+                4,
+[m[32m+                1.2,
+[m[32m+                0,
+[m                 vec![SpireTopGraphNodeRecord {
+                     child_pid: 21,
+                     centroid_ordinal: 0,
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:836:
+                 17,
+             );
+             assert_eq!(
+[31m-                reader.read_delta_object(&delta_placement).unwrap().header.pid,
+[m[32m+                reader
+[m[32m+                    .read_delta_object(&delta_placement)
+[m[32m+                    .unwrap()
+[m[32m+                    .header
+[m[32m+                    .pid,
+[m                 19,
+             );
+             assert_eq!(
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:843:
+[31m-                reader.read_top_graph_object(&top_placement).unwrap().header.pid,
+[m[32m+                reader
+[m[32m+                    .read_top_graph_object(&top_placement)
+[m[32m+                    .unwrap()
+[m[32m+                    .header
+[m[32m+                    .pid,
+[m                 90,
+             );
+         }
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:905:
+             pg_sys::reset_counters();
+             let mut rel = synth_relation(46009);
+             let store = make_store(&mut rel);
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement_a = store.insert_routing_object(7, &routing).unwrap();
+             let routing_b =
+                 SpireRoutingPartitionObject::root(12, 1, 2, routing_children()).unwrap();
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:914:
+ 
+             // SAFETY: emulator-backed PrefetchBuffer/read-stream are no-ops.
+             unsafe { store.prefetch_object_tuple(&placement_a) }.unwrap();
+[31m-            unsafe {
+[m[31m-                store.prefetch_object_tuples(&[placement_a, placement_b])
+[m[31m-            }
+[m[31m-            .unwrap();
+[m[32m+            unsafe { store.prefetch_object_tuples(&[placement_a, placement_b]) }.unwrap();
+[m 
+             let reader: &dyn SpireObjectReader = &store;
+             reader.prefetch_object(&placement_a).unwrap();
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:948:
+             };
+ 
+             // Happy path: encode → decode round-trip.
+[31m-            let encoded = super::encode_relation_object_chain_meta(
+[m[31m-                valid_header,
+[m[31m-                256,
+[m[31m-                3,
+[m[31m-                valid_locator,
+[m[31m-                1024,
+[m[31m-            )
+[m[31m-            .unwrap();
+[m[31m-            let decoded =
+[m[31m-                super::decode_relation_object_chain_meta(&encoded).unwrap().unwrap();
+[m[32m+            let encoded =
+[m[32m+                super::encode_relation_object_chain_meta(valid_header, 256, 3, valid_locator, 1024)
+[m[32m+                    .unwrap();
+[m[32m+            let decoded = super::decode_relation_object_chain_meta(&encoded)
+[m[32m+                .unwrap()
+[m[32m+                .unwrap();
+[m             assert_eq!(decoded.dimensions, 256);
+             assert_eq!(decoded.segment_count, 3);
+             assert_eq!(decoded.first_segment_locator, valid_locator);
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:967:
+             let mut bad_kind = valid_header;
+             bad_kind.kind = SpirePartitionObjectKind::Leaf;
+             assert!(super::encode_relation_object_chain_meta(
+[31m-                bad_kind, 256, 3, valid_locator, 1024,
+[m[32m+                bad_kind,
+[m[32m+                256,
+[m[32m+                3,
+[m[32m+                valid_locator,
+[m[32m+                1024,
+[m             )
+             .is_err());
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:974:
+             // Encode rejects dimensions=0, segment_count=0, INVALID first segment.
+             assert!(super::encode_relation_object_chain_meta(
+[31m-                valid_header, 0, 3, valid_locator, 1024,
+[m[32m+                valid_header,
+[m[32m+                0,
+[m[32m+                3,
+[m[32m+                valid_locator,
+[m[32m+                1024,
+[m             )
+             .is_err());
+             assert!(super::encode_relation_object_chain_meta(
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:980:
+[31m-                valid_header, 256, 0, valid_locator, 1024,
+[m[32m+                valid_header,
+[m[32m+                256,
+[m[32m+                0,
+[m[32m+                valid_locator,
+[m[32m+                1024,
+[m             )
+             .is_err());
+             assert!(super::encode_relation_object_chain_meta(
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1026:
+             };
+ 
+             // Round-trip happy path: encode segment + decode against meta.
+[31m-            let encoded_meta = super::encode_relation_object_chain_meta(
+[m[31m-                meta_header,
+[m[31m-                256,
+[m[31m-                2,
+[m[31m-                valid_locator,
+[m[31m-                256,
+[m[31m-            )
+[m[31m-            .unwrap();
+[m[32m+            let encoded_meta =
+[m[32m+                super::encode_relation_object_chain_meta(meta_header, 256, 2, valid_locator, 256)
+[m[32m+                    .unwrap();
+[m             let meta = super::decode_relation_object_chain_meta(&encoded_meta)
+                 .unwrap()
+                 .unwrap();
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1057:
+             let mut bad_kind = meta_header;
+             bad_kind.kind = SpirePartitionObjectKind::Leaf;
+             assert!(super::encode_relation_object_chain_segment(
+[31m-                bad_kind, 0, 0, valid_locator, &payload,
+[m[32m+                bad_kind,
+[m[32m+                0,
+[m[32m+                0,
+[m[32m+                valid_locator,
+[m[32m+                &payload,
+[m             )
+             .is_err());
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1064:
+             // Encode rejects empty payload.
+             assert!(super::encode_relation_object_chain_segment(
+[31m-                meta_header, 0, 0, valid_locator, &[],
+[m[32m+                meta_header,
+[m[32m+                0,
+[m[32m+                0,
+[m[32m+                valid_locator,
+[m[32m+                &[],
+[m             )
+             .is_err());
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1079:
+             )
+             .unwrap();
+             assert!(
+[31m-                super::decode_relation_object_chain_segment(&encoded_mismatched, &meta)
+[m[31m-                    .is_err()
+[m[32m+                super::decode_relation_object_chain_segment(&encoded_mismatched, &meta).is_err()
+[m             );
+         }
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1095:
+             let mut rel = synth_relation(46010);
+             let store = make_store(&mut rel);
+ 
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement = store.insert_routing_object(7, &routing).unwrap();
+ 
+             let mut wrong_bytes = placement;
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1120:
+             pg_sys::reset_counters();
+             let mut rel = synth_relation(46011);
+             let store = make_store(&mut rel);
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement = store.insert_routing_object(7, &routing).unwrap();
+ 
+             let mut non_local = placement;
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1255:
+             pg_sys::reset_counters();
+             let mut rel = synth_relation(47002);
+             let store = make_store(&mut rel);
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement_a = store.insert_routing_object(7, &routing).unwrap();
+             let routing_b =
+                 SpireRoutingPartitionObject::root(12, 1, 2, routing_children()).unwrap();
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1271:
+ 
+             // SAFETY: prefetch_object_tuples groups placements by store
+             // key and invokes the inner read-stream loop.
+[31m-            unsafe {
+[m[31m-                store.prefetch_object_tuples(&[placement_a, placement_b])
+[m[31m-            }
+[m[31m-            .unwrap();
+[m[32m+            unsafe { store.prefetch_object_tuples(&[placement_a, placement_b]) }.unwrap();
+[m         }
+ 
+         #[test]
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1283:
+             // max_relation_object_tuple_payload_bytes happy paths so the
+             // capacity helpers report sane values used by the chain inserter.
+             let max_tuple =
+[31m-                super::max_relation_object_tuple_payload_bytes(pg_sys::BLCKSZ as usize)
+[m[31m-                    .unwrap();
+[m[32m+                super::max_relation_object_tuple_payload_bytes(pg_sys::BLCKSZ as usize).unwrap();
+[m             assert!(max_tuple > 0);
+[31m-            assert!(max_tuple <= 7_000, "should be capped to 7000-byte tuple ceiling");
+[m[32m+            assert!(
+[m[32m+                max_tuple <= 7_000,
+[m[32m+                "should be capped to 7000-byte tuple ceiling"
+[m[32m+            );
+[m 
+[31m-            let max_segment =
+[m[31m-                super::max_partition_object_chain_segment_payload_bytes().unwrap();
+[m[32m+            let max_segment = super::max_partition_object_chain_segment_payload_bytes().unwrap();
+[m             assert!(max_segment > 0);
+             assert!(max_segment < max_tuple);
+         }
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1304:
+             let mut rel = synth_relation(46003);
+             let store = make_store(&mut rel);
+ 
+[31m-            let routing =
+[m[31m-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m[32m+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+[m             let placement = store.insert_routing_object(7, &routing).unwrap();
+             let mut expected = routing.clone();
+             expected.header.published_epoch_backref = 7;
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire.rs:1549:
+         }
+ 
+         // SAFETY: delete the second tuple; first remains readable.
+[31m-        let (count, bytes) =
+[m[31m-            unsafe { page::delete_object_tuples_no_compact(relation, &tids[1..]) }
+[m[31m-                .expect("delete should succeed");
+[m[32m+        let (count, bytes) = unsafe { page::delete_object_tuples_no_compact(relation, &tids[1..]) }
+[m[32m+            .expect("delete should succeed");
+[m         assert_eq!(count, 1);
+         assert_eq!(bytes, payloads[1].len() as u64);
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire_diagnostics_helpers.rs:156:
+ 
+         #[test]
+         fn miri_assignment_payload_scannability_reports_status_per_variant() {
+[31m-            let (scannable, status, _rec) =
+[m[31m-                assignment_payload_scannability(quantizer::SpireAssignmentPayloadFormat::TurboQuant);
+[m[32m+            let (scannable, status, _rec) = assignment_payload_scannability(
+[m[32m+                quantizer::SpireAssignmentPayloadFormat::TurboQuant,
+[m[32m+            );
+[m             assert!(scannable);
+             assert_eq!(status, "supported");
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire_diagnostics_helpers.rs:166:
+             assert!(scannable);
+             assert_eq!(status, "supported");
+ 
+[31m-            let (scannable, status, rec) =
+[m[31m-                assignment_payload_scannability(quantizer::SpireAssignmentPayloadFormat::PqFastScan);
+[m[32m+            let (scannable, status, rec) = assignment_payload_scannability(
+[m[32m+                quantizer::SpireAssignmentPayloadFormat::PqFastScan,
+[m[32m+            );
+[m             assert!(!scannable);
+             assert_eq!(status, "deferred_model_metadata");
+             assert!(rec.contains("grouped-PQ"));
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire_diagnostics_helpers.rs:176:
+         #[test]
+         fn miri_boundary_replica_identity_scope_distinguishes_global_local_invalid() {
+             assert_eq!(
+[31m-                boundary_replica_identity_scope(&[storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, 9, 9]),
+[m[32m+                boundary_replica_identity_scope(&[
+[m[32m+                    storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR,
+[m[32m+                    9,
+[m[32m+                    9
+[m[32m+                ]),
+[m                 "global",
+             );
+             assert_eq!(
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire_diagnostics_helpers.rs:183:
+[31m-                boundary_replica_identity_scope(&[storage::SPIRE_LOCAL_VEC_ID_DISCRIMINATOR, 1, 0, 0, 0, 0, 0, 0, 0]),
+[m[32m+                boundary_replica_identity_scope(&[
+[m[32m+                    storage::SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
+[m[32m+                    1,
+[m[32m+                    0,
+[m[32m+                    0,
+[m[32m+                    0,
+[m[32m+                    0,
+[m[32m+                    0,
+[m[32m+                    0,
+[m[32m+                    0
+[m[32m+                ]),
+[m                 "node_local",
+             );
+             assert_eq!(boundary_replica_identity_scope(&[0xff, 1, 2]), "invalid");
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire_diagnostics_helpers.rs:252:
+ 
+         #[test]
+         fn miri_meta_name_helpers_cover_every_enum_variant() {
+[31m-            assert_eq!(consistency_mode_name(meta::SpireConsistencyMode::Strict), "strict");
+[m[31m-            assert_eq!(consistency_mode_name(meta::SpireConsistencyMode::Degraded), "degraded");
+[m[32m+            assert_eq!(
+[m[32m+                consistency_mode_name(meta::SpireConsistencyMode::Strict),
+[m[32m+                "strict"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                consistency_mode_name(meta::SpireConsistencyMode::Degraded),
+[m[32m+                "degraded"
+[m[32m+            );
+[m 
+[31m-            assert_eq!(epoch_state_name(meta::SpireEpochState::Building), "building");
+[m[31m-            assert_eq!(epoch_state_name(meta::SpireEpochState::Published), "published");
+[m[32m+            assert_eq!(
+[m[32m+                epoch_state_name(meta::SpireEpochState::Building),
+[m[32m+                "building"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                epoch_state_name(meta::SpireEpochState::Published),
+[m[32m+                "published"
+[m[32m+            );
+[m             assert_eq!(epoch_state_name(meta::SpireEpochState::Retired), "retired");
+             assert_eq!(epoch_state_name(meta::SpireEpochState::Failed), "failed");
+ 
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire_diagnostics_helpers.rs:263:
+[31m-            assert_eq!(placement_state_name(meta::SpirePlacementState::Available), "available");
+[m[31m-            assert_eq!(placement_state_name(meta::SpirePlacementState::Stale), "stale");
+[m[31m-            assert_eq!(placement_state_name(meta::SpirePlacementState::Unavailable), "unavailable");
+[m[31m-            assert_eq!(placement_state_name(meta::SpirePlacementState::Skipped), "skipped");
+[m[32m+            assert_eq!(
+[m[32m+                placement_state_name(meta::SpirePlacementState::Available),
+[m[32m+                "available"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                placement_state_name(meta::SpirePlacementState::Stale),
+[m[32m+                "stale"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                placement_state_name(meta::SpirePlacementState::Unavailable),
+[m[32m+                "unavailable"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                placement_state_name(meta::SpirePlacementState::Skipped),
+[m[32m+                "skipped"
+[m[32m+            );
+[m 
+[31m-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Root), "root");
+[m[31m-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Internal), "internal");
+[m[31m-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Leaf), "leaf");
+[m[31m-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Delta), "delta");
+[m[31m-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::TopGraph), "top_graph");
+[m[32m+            assert_eq!(
+[m[32m+                partition_object_kind_name(storage::SpirePartitionObjectKind::Root),
+[m[32m+                "root"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                partition_object_kind_name(storage::SpirePartitionObjectKind::Internal),
+[m[32m+                "internal"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                partition_object_kind_name(storage::SpirePartitionObjectKind::Leaf),
+[m[32m+                "leaf"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                partition_object_kind_name(storage::SpirePartitionObjectKind::Delta),
+[m[32m+                "delta"
+[m[32m+            );
+[m[32m+            assert_eq!(
+[m[32m+                partition_object_kind_name(storage::SpirePartitionObjectKind::TopGraph),
+[m[32m+                "top_graph"
+[m[32m+            );
+[m         }
+ 
+         fn empty_diagnostics() -> SpireActiveSnapshotDiagnostics {
+Diff in /home/peter/dev/ecaz/hardening/careful/src/spire_diagnostics_helpers.rs:447:
+             assert_eq!(action, "split_candidate");
+ 
+             // Below merge: merge_recommended.
+[31m-            let (split_rec, merge_rec, action, _reason) =
+[m[31m-                leaf_maintenance_labels(10, split, merge);
+[m[32m+            let (split_rec, merge_rec, action, _reason) = leaf_maintenance_labels(10, split, merge);
+[m             assert!(!split_rec);
+             assert!(merge_rec);
+             assert_eq!(action, "merge_candidate");
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /home/peter/dev/ecaz/src/quant/simd.rs:99:
+     fn forced_backend_accepts_auto_empty_and_absent() {
+         with_simd_env(None, || assert_eq!(forced_backend_from_env(), None));
+         with_simd_env(Some(""), || assert_eq!(forced_backend_from_env(), None));
+[31m-        with_simd_env(Some(" auto "), || assert_eq!(forced_backend_from_env(), None));
+[m[32m+        with_simd_env(Some(" auto "), || {
+[m[32m+            assert_eq!(forced_backend_from_env(), None)
+[m[32m+        });
+[m     }
+ 
+     #[test]
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+
+Script done on 2026-05-20 00:00:13-07:00 [COMMAND_EXIT_CODE="1"]
