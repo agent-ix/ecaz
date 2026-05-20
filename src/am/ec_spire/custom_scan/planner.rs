@@ -1,14 +1,10 @@
 pub(crate) unsafe fn custom_scan_index_eligibility_row(
     index_relation: pg_sys::Relation,
 ) -> SpireCustomScanIndexEligibilityRow {
-    // SAFETY: caller passes an open SPIRE index relation; the result helper
-    // reads root/control and placement metadata under page/relation guards.
-    unsafe {
-        custom_scan_index_eligibility_result(index_relation).unwrap_or_else(|e| pgrx::error!("{e}"))
-    }
+    custom_scan_index_eligibility_result(index_relation).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn custom_scan_index_eligibility_result(
+fn custom_scan_index_eligibility_result(
     index_relation: pg_sys::Relation,
 ) -> Result<SpireCustomScanIndexEligibilityRow, String> {
     // SAFETY: index_relation is open for this backend; page helper pins and
@@ -30,10 +26,7 @@ unsafe fn custom_scan_index_eligibility_result(
         });
     }
 
-    // SAFETY: active_epoch was checked nonzero and the helper validates the
-    // placement directory epoch against root/control.
-    let placement_directory =
-        unsafe { load_custom_scan_placement_directory(index_relation, root_control)? };
+    let placement_directory = load_custom_scan_placement_directory(index_relation, root_control)?;
     let active_epoch = root_control.active_epoch;
     let mut local_placement_count = 0_u64;
     let mut remote_placement_count = 0_u64;
@@ -89,7 +82,7 @@ unsafe fn custom_scan_index_eligibility_result(
     })
 }
 
-unsafe fn load_custom_scan_placement_directory(
+fn load_custom_scan_placement_directory(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
 ) -> Result<meta::SpirePlacementDirectory, String> {
@@ -133,19 +126,11 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
             previous_hook(root, rel, rti, rte);
         }
     }
-    // SAFETY: candidate discovery validates planner pointers and relation
-    // shape before returning an index OID and owned eligibility row.
-    if let Some((index_oid, eligibility)) =
-        unsafe { custom_scan_candidate_index_oid(root, rel, rte) }
-    {
-        // SAFETY: root/rel are still live for this planner hook invocation and
-        // add_custom_scan_path allocates a PostgreSQL CustomPath node.
-        unsafe { add_custom_scan_path(root, rel, index_oid, eligibility) };
+    if let Some((index_oid, eligibility)) = custom_scan_candidate_index_oid(root, rel, rte) {
+        add_custom_scan_path(root, rel, index_oid, eligibility);
     }
-    // SAFETY: DML candidate discovery validates the same live planner pointers.
-    if let Some(index_oid) = unsafe { dml_pk_select_candidate_index_oid(root, rel, rte) } {
-        // SAFETY: root/rel remain live while adding the DML CustomPath.
-        unsafe { add_dml_pk_select_custom_scan_path(root, rel, index_oid) };
+    if let Some(index_oid) = dml_pk_select_candidate_index_oid(root, rel, rte) {
+        add_dml_pk_select_custom_scan_path(root, rel, index_oid);
     }
 }
 
@@ -355,102 +340,83 @@ pub(crate) unsafe fn custom_scan_dml_replacement_plan(
     }
 }
 
-unsafe fn custom_scan_candidate_index_oid(
+fn custom_scan_candidate_index_oid(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     rte: *mut pg_sys::RangeTblEntry,
 ) -> Option<(pg_sys::Oid, SpireCustomScanIndexEligibilityRow)> {
-    if root.is_null() || rel.is_null() || rte.is_null() {
+    let root_ref = custom_scan_pg_ref(root)?;
+    let rel_ref = custom_scan_pg_ref(rel)?;
+    if custom_scan_pg_ref(rte).is_none() {
         return None;
     }
+    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
+        return None;
+    }
+    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
+        return None;
+    }
+    if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
+        return None;
+    }
+    let _ = custom_scan_orderby_query_expr(root, rel)?;
 
-    // SAFETY: PostgreSQL calls the set_rel_pathlist hook with live planner
-    // root/rel/RTE pointers. All list and index metadata reads stay within this
-    // hook invocation; opened index relations are guard-managed.
-    unsafe {
-        let rel_ref = rel.as_ref()?;
-        if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
-            return None;
+    let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
+    let index_list = custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist);
+    for index_info in index_list.iter_ptr() {
+        let Some(index_info) = custom_scan_pg_ref(index_info) else {
+            continue;
+        };
+        if index_info.relam != ec_spire_am_oid {
+            continue;
         }
-        if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
-            return None;
-        }
-        let root_ref = root.as_ref()?;
-        if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
-            return None;
-        }
-        let _ = custom_scan_orderby_query_expr(root, rel)?;
-
-        let ec_spire_am_oid = pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true);
-        if ec_spire_am_oid == pg_sys::InvalidOid {
-            return None;
-        }
-
-        let index_list = PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist);
-        for index_info in index_list.iter_ptr() {
-            let Some(index_info) = index_info.as_ref() else {
-                continue;
-            };
-            if index_info.relam != ec_spire_am_oid {
-                continue;
-            }
-            let Some(index_relation) =
-                crate::storage::relation_guard::IndexRelationGuard::try_access_share(
-                    index_info.indexoid,
-                )
-            else {
-                continue;
-            };
-            if let Ok(row) = custom_scan_index_eligibility_result(index_relation.as_ptr()) {
-                if row.eligible_for_custom_scan {
-                    return Some((index_info.indexoid, row));
-                }
+        let Some(index_relation) =
+            crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                index_info.indexoid,
+            )
+        else {
+            continue;
+        };
+        if let Ok(row) = custom_scan_index_eligibility_result(index_relation.as_ptr()) {
+            if row.eligible_for_custom_scan {
+                return Some((index_info.indexoid, row));
             }
         }
     }
     None
 }
 
-unsafe fn dml_pk_select_candidate_index_oid(
+fn dml_pk_select_candidate_index_oid(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     rte: *mut pg_sys::RangeTblEntry,
 ) -> Option<pg_sys::Oid> {
-    if root.is_null() || rel.is_null() || rte.is_null() {
+    let rel_ref = custom_scan_pg_ref(rel)?;
+    if custom_scan_pg_ref(root).is_none() || custom_scan_pg_ref(rte).is_none() {
         return None;
     }
+    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
+        return None;
+    }
+    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
+        return None;
+    }
+    let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
 
-    // SAFETY: PostgreSQL calls the set_rel_pathlist hook with live planner
-    // pointers. This discovery path only inspects planner-owned baserel index
-    // metadata and invokes guard-managed catalog placement lookup.
-    let placement_index_oid = unsafe {
-        let rel_ref = rel.as_ref()?;
-        if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
-            return None;
+    let index_list = custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist);
+    let mut placement_index_oid = None;
+    for index_info in index_list.iter_ptr() {
+        let Some(index_info) = custom_scan_pg_ref(index_info) else {
+            continue;
+        };
+        if index_info.relam == ec_spire_am_oid
+            && custom_scan_index_has_sql_placement(index_info.indexoid)
+        {
+            placement_index_oid = Some(index_info.indexoid);
+            break;
         }
-        if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
-            return None;
-        }
-        let ec_spire_am_oid = pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true);
-        if ec_spire_am_oid == pg_sys::InvalidOid {
-            return None;
-        }
-
-        let index_list = PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist);
-        let mut placement_index_oid = None;
-        for index_info in index_list.iter_ptr() {
-            let Some(index_info) = index_info.as_ref() else {
-                continue;
-            };
-            if index_info.relam == ec_spire_am_oid
-                && custom_scan_index_has_sql_placement(index_info.indexoid)
-            {
-                placement_index_oid = Some(index_info.indexoid);
-                break;
-            }
-        }
-        placement_index_oid?
-    };
+    }
+    let placement_index_oid = placement_index_oid?;
     // SAFETY: DML frontdoor helper validates planner root/rel and returns owned
     // primitive-plan data or an error.
     let plan_expr = match unsafe {
@@ -468,7 +434,14 @@ unsafe fn dml_pk_select_candidate_index_oid(
         .then_some(plan_expr.primitive_plan.index_oid)
 }
 
-unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
+fn custom_scan_ec_spire_am_oid() -> Option<pg_sys::Oid> {
+    // SAFETY: get_index_am_oid reads PostgreSQL syscache by static C string;
+    // missing AM is represented by InvalidOid because missing_ok is true.
+    let am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    (am_oid != pg_sys::InvalidOid).then_some(am_oid)
+}
+
+fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
     // SAFETY: catalog relation names are static nul-terminated C strings; all
     // opened relations/scans/snapshots are guard-managed in this block.
     unsafe {
@@ -528,22 +501,23 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
     }
 }
 
-unsafe fn add_custom_scan_path(
+fn add_custom_scan_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     index_oid: pg_sys::Oid,
     eligibility: SpireCustomScanIndexEligibilityRow,
 ) {
-    if root.is_null() || rel.is_null() {
+    let Some(root_ref) = custom_scan_pg_ref(root) else {
         return;
-    }
+    };
+    let Some(rel_ref) = custom_scan_pg_ref(rel) else {
+        return;
+    };
 
-    // SAFETY: root/rel were checked non-null and remain live for this planner
-    // hook call. The CustomPath node and private OID list are allocated in
-    // PostgreSQL planner memory and transferred with add_path.
+    // SAFETY: root/rel were supplied by the current planner hook call. The
+    // CustomPath node and private OID list are allocated in PostgreSQL planner
+    // memory and transferred with add_path.
     unsafe {
-        let root_ref = root.as_ref().expect("checked root pointer");
-        let rel_ref = rel.as_ref().expect("checked rel pointer");
         let mut custom_path =
             PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
         let rows = if root_ref.limit_tuples >= 0.0 {
@@ -583,20 +557,22 @@ unsafe fn add_custom_scan_path(
     }
 }
 
-unsafe fn add_dml_pk_select_custom_scan_path(
+fn add_dml_pk_select_custom_scan_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     index_oid: pg_sys::Oid,
 ) {
-    if root.is_null() || rel.is_null() {
+    if custom_scan_pg_ref(root).is_none() {
         return;
     }
+    let Some(rel_ref) = custom_scan_pg_ref(rel) else {
+        return;
+    };
 
-    // SAFETY: rel was checked non-null and remains live for this planner hook
-    // call. The CustomPath node and private OID list are allocated in
+    // SAFETY: rel was supplied by the current planner hook call. The CustomPath
+    // node and private OID list are allocated in
     // PostgreSQL planner memory and transferred with add_path.
     unsafe {
-        let rel_ref = rel.as_ref().expect("checked rel pointer");
         let mut custom_path =
             PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
         custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;

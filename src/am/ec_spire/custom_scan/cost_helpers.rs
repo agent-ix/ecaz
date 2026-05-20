@@ -68,7 +68,7 @@ fn estimate_custom_scan_cost_with_constants(
     }
 }
 
-unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
+fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
     let root_ref = custom_scan_pg_ref(root)?;
     if root_ref.limit_tuples < 0.0 || !root_ref.limit_tuples.is_finite() {
         return None;
@@ -76,7 +76,7 @@ unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
     Some(root_ref.limit_tuples.max(0.0).ceil() as usize)
 }
 
-unsafe fn custom_scan_orderby_query_expr(
+fn custom_scan_orderby_query_expr(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<*mut pg_sys::Expr> {
