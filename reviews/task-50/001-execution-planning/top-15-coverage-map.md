@@ -2,8 +2,9 @@
 
 Task 50's exit criterion requires the densest residual modules to be processed
 at least once and, where structurally possible, reduced by at least 30% from
-the post-Task-35 direct unsafe-block count. Product priority still puts
-SPIRE/IVF/RaBitQ first, but HNSW and DiskANN are not optional: they need named
+the post-Task-35 direct unsafe-block count. Product priority puts
+RaBitQ-enabling shared kernels first, then IVF/RaBitQ, then SPIRE as the
+ultimate production target; HNSW and DiskANN are not optional and need named
 later slices or explicit ceiling explanations.
 
 The projections below are planning targets. Each implementation packet must

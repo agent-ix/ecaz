@@ -5,10 +5,12 @@
 Task 50 should prepare the surfaces needed for optimization profiling. The
 priority order is:
 
-1. SPIRE production read path.
+1. Shared RaBitQ/quant kernels used by IVF and SPIRE.
 2. IVF with RaBitQ storage/scoring enabled.
-3. Shared RaBitQ/quant kernels used by IVF and SPIRE.
-4. Cross-AM helper rollout to HNSW and DiskANN.
+3. SPIRE production read path, the ultimate production target, after it can
+   consume already-validated RaBitQ/IVF helpers.
+4. Cross-AM helper rollout to HNSW and DiskANN, then anything else in the
+   top-15.
 
 HNSW and DiskANN are still part of the top-15 unsafe-density requirement, but
 they should not consume the earliest slices unless they prove a helper needed
