@@ -2,21 +2,19 @@ unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
     if expr.is_null() {
         return false;
     }
-    let node = expr.cast::<pg_sys::Node>();
+
     // SAFETY: null was checked above; planner expressions are PostgreSQL Node
-    // pointers valid for this custom path/plan inspection.
-    match unsafe { (*node).type_ } {
-        // SAFETY: NodeTag confirmed this expression is a Const before casting.
-        pg_sys::NodeTag::T_Const => unsafe {
-            custom_scan_query_values_from_const(expr.cast()).is_some()
-        },
-        // SAFETY: NodeTag confirmed this expression is a Param before
-        // reading Param fields.
-        pg_sys::NodeTag::T_Param => unsafe {
-            let param = &*expr.cast::<pg_sys::Param>();
-            param.paramtype == pg_sys::FLOAT4ARRAYOID
-        },
-        _ => false,
+    // pointers valid for this custom path/plan inspection. NodeTag gates the
+    // read-only concrete view for Const and Param nodes.
+    unsafe {
+        match (*expr.cast::<pg_sys::Node>()).type_ {
+            pg_sys::NodeTag::T_Const => custom_scan_query_values_from_const(expr.cast()).is_some(),
+            pg_sys::NodeTag::T_Param => {
+                let param = &*expr.cast::<pg_sys::Param>();
+                param.paramtype == pg_sys::FLOAT4ARRAYOID
+            }
+            _ => false,
+        }
     }
 }
 
@@ -25,14 +23,13 @@ unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) ->
         return None;
     }
     // SAFETY: null was checked above and caller only passes PostgreSQL Const
-    // nodes from planner expressions.
-    let const_ref = unsafe { &*const_expr };
-    if const_ref.constisnull || const_ref.consttype != pg_sys::FLOAT4ARRAYOID {
-        return None;
-    }
-    // SAFETY: const type/nullability were checked above; pgrx decodes the
-    // float4[] datum without taking ownership from PostgreSQL.
+    // nodes from planner expressions. Float4 array type/nullability are checked
+    // before decoding the datum without taking ownership from PostgreSQL.
     let values = unsafe {
+        let const_ref = &*const_expr;
+        if const_ref.constisnull || const_ref.consttype != pg_sys::FLOAT4ARRAYOID {
+            return None;
+        }
         Vec::<f32>::from_polymorphic_datum(const_ref.constvalue, false, pg_sys::FLOAT4ARRAYOID)?
     };
     if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
