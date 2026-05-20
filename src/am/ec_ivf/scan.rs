@@ -847,11 +847,8 @@ unsafe fn load_centroid_scores(
     let mut next_tid = metadata.centroid_head;
     let mut scores = Vec::with_capacity(metadata.nlists as usize);
     for expected_list_id in 0..metadata.nlists {
-        // SAFETY: `index_relation` is live and `next_tid` follows the centroid
-        // chain from IVF metadata; page helper validates tuple layout.
-        let (centroid, following_tid) = unsafe {
-            super::page::read_ivf_centroid_and_next(index_relation, next_tid, dimensions)?
-        };
+        let (centroid, following_tid) =
+            super::page::read_ivf_centroid_and_next(index_relation, next_tid, dimensions)?;
         if centroid.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf centroid order mismatch: got list {}, expected {}",
@@ -1433,9 +1430,7 @@ fn load_directory_entries(
     let mut directories = Vec::with_capacity(metadata.nlists as usize);
     for expected_list_id in 0..metadata.nlists {
         let (directory, following_tid) =
-            // SAFETY: `index_relation` is the live IVF index relation and
-            // `next_tid` follows the metadata directory chain.
-            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
+            super::page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",
@@ -1876,12 +1871,9 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
     let mut dead_sum = 0_u64;
     let mut inserted_sum = 0_u64;
     for expected_list_id in 0..metadata.nlists {
-        let (directory, following_tid) = unsafe {
-            // SAFETY: `index_relation_ptr` is live for the loop and `next_tid`
-            // follows the directory chain read from metadata.
+        let (directory, following_tid) =
             super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid)
-                .unwrap_or_else(|e| pgrx::error!("{e}"))
-        };
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
         if directory.list_id != expected_list_id {
             pgrx::error!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",

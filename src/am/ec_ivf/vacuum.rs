@@ -99,9 +99,7 @@ unsafe fn run_bulkdelete(
     for expected_list_id in 0..metadata.nlists {
         let directory_tid = next_tid;
         let (mut directory, following_tid) =
-            // SAFETY: `index_relation` is live and `next_tid` follows the
-            // metadata directory chain.
-            unsafe { page::read_ivf_list_directory_and_next(index_relation, directory_tid) }
+            page::read_ivf_list_directory_and_next(index_relation, directory_tid)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
         if directory.list_id != expected_list_id {
             pgrx::error!(

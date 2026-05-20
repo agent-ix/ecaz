@@ -191,9 +191,7 @@ fn ensure_heap_tid_absent(
     let mut next_tid = metadata.directory_head;
     for expected_list_id in 0..metadata.nlists {
         let (directory, following_tid) =
-            // SAFETY: relation is live and `next_tid` follows the metadata
-            // directory chain.
-            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
+            page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",
@@ -324,13 +322,11 @@ fn load_centroid_model(
     for expected_list_id in 0..metadata.nlists {
         // SAFETY: relation is live, `next_tid` follows the centroid chain, and
         // metadata dimensions define the centroid payload width.
-        let (centroid, following_tid) = unsafe {
-            page::read_ivf_centroid_and_next(
-                index_relation,
-                next_tid,
-                usize::from(metadata.dimensions),
-            )?
-        };
+        let (centroid, following_tid) = page::read_ivf_centroid_and_next(
+            index_relation,
+            next_tid,
+            usize::from(metadata.dimensions),
+        )?;
         if centroid.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf centroid order mismatch: got list {}, expected {}",
@@ -360,9 +356,7 @@ fn load_directory_entry(
     for expected_list_id in 0..metadata.nlists {
         let current_tid = next_tid;
         let (directory, following_tid) =
-            // SAFETY: relation is live and `current_tid` follows the metadata
-            // directory chain.
-            unsafe { page::read_ivf_list_directory_and_next(index_relation, current_tid)? };
+            page::read_ivf_list_directory_and_next(index_relation, current_tid)?;
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",

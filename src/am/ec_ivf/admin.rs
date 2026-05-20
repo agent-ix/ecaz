@@ -250,9 +250,11 @@ unsafe fn directory_drift_summary(
     for expected_list_id in 0..metadata.nlists {
         // SAFETY: `next_tid` starts at the metadata directory head and advances
         // through decoded directory tuples in the same live index relation.
-        let (directory, following_tid) =
-            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid) }
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let (directory, following_tid) = page::read_ivf_list_directory_and_next(
+            index_relation,
+            next_tid,
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
         if directory.list_id != expected_list_id {
             pgrx::error!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",

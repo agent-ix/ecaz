@@ -1263,7 +1263,7 @@ impl DataPageChain {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_centroid_and_next(
+pub(super) fn read_ivf_centroid_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
     dimensions: usize,
@@ -1276,7 +1276,7 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_list_directory_and_next(
+pub(super) fn read_ivf_list_directory_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
 ) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
@@ -1295,7 +1295,7 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_pq_codebook(
+pub(super) fn read_ivf_pq_codebook(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
     centroid_count: usize,
