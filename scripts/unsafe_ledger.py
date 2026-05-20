@@ -145,6 +145,79 @@ def categorize(path: str, excerpt: str, item: str) -> tuple[str, str]:
         return "buffer-page-wal", "P3"
     if "pg_sys::" in haystack or "(*" in haystack:
         return "postgres-handle-view", "P2"
+
+    if path.startswith("src/am/ec_hnsw/build_parallel.rs") or path.startswith(
+        "src/am/common/parallel"
+    ):
+        return "dsm-atomic-lock", "P8"
+    if path.startswith("src/am/ec_hnsw/") and any(
+        name in path for name in ("shared.rs", "graph.rs", "insert.rs", "vacuum.rs")
+    ):
+        return "page-tuple-line-pointer", "P4"
+    if path.startswith("src/am/ec_hnsw/") and any(
+        name in path for name in ("scan.rs", "scan_debug.rs", "build.rs", "source.rs")
+    ):
+        return "postgres-handle-view", "P2"
+    if path.startswith("src/am/ec_ivf/page.rs"):
+        return "page-tuple-line-pointer", "P4"
+    if path.startswith("src/am/ec_ivf/") and any(
+        name in path for name in ("scan.rs", "build.rs", "insert.rs", "vacuum.rs")
+    ):
+        return "heap-slot-source-scorer", "P5"
+    if path.startswith("src/am/ec_spire/page.rs") or path.startswith(
+        "src/am/ec_spire/storage/"
+    ):
+        return "buffer-page-wal", "P3"
+    if path.startswith("src/am/ec_spire/custom_scan/") or path.startswith(
+        "src/am/ec_spire/dml_frontdoor/"
+    ):
+        return "planner-node-list-view", "P11"
+    if path.startswith("src/am/ec_spire/coordinator/remote_candidates/"):
+        return "planner-node-list-view", "P11"
+    if path.startswith("src/am/ec_spire/coordinator/") or path.startswith(
+        "src/am/ec_spire/scan/"
+    ):
+        return "postgres-handle-view", "P2"
+    if path.startswith("src/am/ec_spire/build/") or path.startswith(
+        "src/am/ec_spire/update/"
+    ):
+        return "buffer-page-wal", "P3"
+    if path.startswith("src/am/ec_spire/vacuum/") or path.startswith(
+        "src/am/ec_spire/insert.rs"
+    ):
+        return "postgres-handle-view", "P2"
+    if path.startswith("src/am/ec_spire/cost/"):
+        return "postgres-handle-view", "P2"
+    if path.startswith("src/am/ec_spire/options/"):
+        return "reloptions-c-string", "P7"
+    if path.startswith("src/am/ec_diskann/") and any(
+        name in path for name in ("insert.rs", "ambuild.rs")
+    ):
+        return "datum-varlena-vector", "P6"
+    if path.startswith("src/am/ec_diskann/routine.rs") or path.startswith(
+        "src/am/ec_diskann/scan_state.rs"
+    ):
+        return "scan-opaque-raw-ownership", "P10"
+    if path.startswith("src/am/ec_diskann/options.rs"):
+        return "reloptions-c-string", "P7"
+    if path.startswith("src/am/ec_diskann/"):
+        return "postgres-handle-view", "P2"
+    if path.startswith("src/am/ec_ivf/options.rs"):
+        return "reloptions-c-string", "P7"
+    if path.startswith("src/am/ec_ivf/quantizer.rs"):
+        return "datum-varlena-vector", "P6"
+    if path.startswith("src/am/ec_ivf/"):
+        return "postgres-handle-view", "P2"
+    if path.startswith("src/am/ec_hnsw/options.rs"):
+        return "reloptions-c-string", "P7"
+    if path.startswith("src/am/ec_hnsw/"):
+        return "postgres-handle-view", "P2"
+    if path.startswith("src/storage/"):
+        return "buffer-page-wal", "P3"
+    if path.startswith("src/am/common/"):
+        return "postgres-handle-view", "P2"
+    if path in {"src/lib.rs", "src/am/mod.rs", "src/pg18_pgstat_shim.rs"}:
+        return "ffi-callback-boundary", "P1"
     return "unclassified-direct-unsafe", "P0"
 
 
