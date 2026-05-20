@@ -1,0 +1,268 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index add471a1..5d26d3fa 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -1985,28 +1985,23 @@ fn dml_frontdoor_query_has_join_shape(
+ }
+ 
+ fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
+-    // SAFETY: query is a live planner Query; jointree/fromlist nodes are only
+-    // inspected while determining whether the DML shape has extra FROM/USING
+-    // relations.
+-    let Some(range_table_ref) = (unsafe {
+-        let Some(jointree) = query.jointree.as_ref() else {
+-            return false;
+-        };
+-        if jointree.fromlist.is_null() {
+-            return false;
+-        }
+-        let fromlist = PgList::<pg_sys::Node>::from_pg(jointree.fromlist);
+-        if fromlist.is_empty() {
+-            return false;
+-        }
+-        if fromlist.len() != 1 {
+-            return true;
+-        }
+-        let Some(from_node) = fromlist.get_ptr(0) else {
+-            return false;
+-        };
+-        dml_frontdoor_range_table_ref_node(from_node)
+-    }) else {
++    let Some(jointree) = dml_frontdoor_query_jointree(query) else {
++        return false;
++    };
++    if jointree.fromlist.is_null() {
++        return false;
++    }
++    let fromlist = dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist);
++    if fromlist.is_empty() {
++        return false;
++    }
++    if fromlist.len() != 1 {
++        return true;
++    }
++    let Some(from_node) = fromlist.get_ptr(0) else {
++        return false;
++    };
++    let Some(range_table_ref) = dml_frontdoor_range_table_ref_node(from_node) else {
+         return true;
+     };
+     range_table_ref.rtindex != query.resultRelation
+@@ -2021,20 +2016,16 @@ fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
+ }
+ 
+ fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+-    // SAFETY: query is live; jointree/fromlist nodes are checked and inspected
+-    // immediately while extracting the single range-table ref index.
+-    unsafe {
+-        let jointree = query.jointree.as_ref()?;
+-        if jointree.fromlist.is_null() {
+-            return None;
+-        }
+-        let fromlist = PgList::<pg_sys::Node>::from_pg(jointree.fromlist);
+-        if fromlist.len() != 1 {
+-            return None;
+-        }
+-        let from_node = fromlist.get_ptr(0)?;
+-        dml_frontdoor_range_table_ref_node(from_node).map(|range_table_ref| range_table_ref.rtindex)
++    let jointree = dml_frontdoor_query_jointree(query)?;
++    if jointree.fromlist.is_null() {
++        return None;
++    }
++    let fromlist = dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist);
++    if fromlist.len() != 1 {
++        return None;
+     }
++    let from_node = fromlist.get_ptr(0)?;
++    dml_frontdoor_range_table_ref_node(from_node).map(|range_table_ref| range_table_ref.rtindex)
+ }
+ 
+ fn dml_frontdoor_relation_oid_from_rtable(
+@@ -2063,9 +2054,7 @@ fn dml_frontdoor_pk_predicate(
+     target_rtindex: i32,
+     context: &SpireDmlFrontdoorQueryContext<'_>,
+ ) -> SpireDmlFrontdoorPkPredicate {
+-    // SAFETY: query is a live planner Query; jointree may be absent and is
+-    // checked before reading quals.
+-    let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
++    let Some(jointree) = dml_frontdoor_query_jointree(query) else {
+         return dml_frontdoor_empty_pk_predicate();
+     };
+     let qual = jointree.quals;
+@@ -2119,30 +2108,25 @@ fn dml_frontdoor_pk_predicate_from_clause(
+         },
+     }
+ 
+-    // SAFETY: clause belongs to the live planner tree. NodeTag gates the OpExpr
+-    // read, then opcode and args are inspected immediately.
+-    let clause_read = unsafe {
+-        match dml_frontdoor_expr_node(clause) {
+-            Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
+-                let operator =
+-                    if dml_frontdoor_bigint_equality_opcode(pg_sys::get_opcode(op_expr.opno)) {
+-                        Some("=")
+-                    } else {
+-                        Some("other")
+-                    };
+-                let args = PgList::<pg_sys::Expr>::from_pg(op_expr.args);
+-                if args.len() == 2 {
+-                    ClauseRead::Binary {
+-                        operator,
+-                        left: args.get_ptr(0),
+-                        right: args.get_ptr(1),
+-                    }
+-                } else {
+-                    ClauseRead::NonBinary { operator }
++    let clause_read = match dml_frontdoor_expr_node(clause) {
++        Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
++            let operator = if dml_frontdoor_bigint_equality_operator(op_expr.opno) {
++                Some("=")
++            } else {
++                Some("other")
++            };
++            let args = dml_frontdoor_pg_list::<pg_sys::Expr>(op_expr.args);
++            if args.len() == 2 {
++                ClauseRead::Binary {
++                    operator,
++                    left: args.get_ptr(0),
++                    right: args.get_ptr(1),
+                 }
++            } else {
++                ClauseRead::NonBinary { operator }
+             }
+-            _ => ClauseRead::NonOp,
+         }
++        _ => ClauseRead::NonOp,
+     };
+     let (operator, left, right) = match clause_read {
+         ClauseRead::NonOp => {
+@@ -2216,14 +2200,10 @@ fn dml_frontdoor_predicate_var_column(
+     target_rtindex: i32,
+     context: &SpireDmlFrontdoorQueryContext<'_>,
+ ) -> Option<String> {
+-    // SAFETY: var-column helper validates null and NodeTag before reading Var
+-    // fields, and returns an owned column name.
+     if let Some(column) = dml_frontdoor_var_column(expr, target_rtindex, context) {
+         return Some(column);
+     }
+-    // SAFETY: expr belongs to the live planner tree and is only inspected for
+-    // wrapper shapes that may contain a Var.
+-    match unsafe { dml_frontdoor_expr_node(expr) } {
++    match dml_frontdoor_expr_node(expr) {
+         Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
+             dml_frontdoor_predicate_var_column(relabel.arg, target_rtindex, context)
+         }
+@@ -2245,9 +2225,7 @@ fn dml_frontdoor_single_predicate_var_column(
+     if exprs.is_null() {
+         return None;
+     }
+-    // SAFETY: exprs is a PostgreSQL List pointer owned by the live planner
+-    // expression and is inspected immediately.
+-    let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
++    let exprs = dml_frontdoor_pg_list::<pg_sys::Expr>(exprs);
+     if exprs.len() != 1 {
+         return None;
+     }
+@@ -2261,9 +2239,7 @@ fn dml_frontdoor_expr_references_column(
+     context: &SpireDmlFrontdoorQueryContext<'_>,
+     column_name: &str,
+ ) -> bool {
+-    // SAFETY: expr belongs to the live planner tree and is only inspected while
+-    // walking the current predicate expression.
+-    match unsafe { dml_frontdoor_expr_node(expr) } {
++    match dml_frontdoor_expr_node(expr) {
+         Some(SpireDmlFrontdoorExprNode::Var(_)) => {
+             dml_frontdoor_var_column(expr, target_rtindex, context).as_deref() == Some(column_name)
+         }
+@@ -2318,9 +2294,7 @@ fn dml_frontdoor_expr_list_references_column(
+     if exprs.is_null() {
+         return false;
+     }
+-    // SAFETY: exprs is a PostgreSQL expression List valid for the current
+-    // planner callback and consumed immediately.
+-    let exprs = unsafe { PgList::<pg_sys::Expr>::from_pg(exprs) };
++    let exprs = dml_frontdoor_pg_list::<pg_sys::Expr>(exprs);
+     let references_column = exprs.iter_ptr().any(|expr| {
+         dml_frontdoor_expr_references_column(expr, target_rtindex, context, column_name)
+     });
+@@ -2348,10 +2322,7 @@ fn dml_frontdoor_var_column(
+     target_rtindex: i32,
+     context: &SpireDmlFrontdoorQueryContext<'_>,
+ ) -> Option<String> {
+-    // SAFETY: expr belongs to the live planner tree and is only inspected while
+-    // extracting an owned column name.
+-    let Some(SpireDmlFrontdoorExprNode::Var(var)) = (unsafe { dml_frontdoor_expr_node(expr) })
+-    else {
++    let Some(SpireDmlFrontdoorExprNode::Var(var)) = dml_frontdoor_expr_node(expr) else {
+         return None;
+     };
+     if var.varno != target_rtindex || var.varlevelsup != 0 || var.varattno <= 0 {
+@@ -2378,9 +2349,7 @@ fn dml_frontdoor_predicate_value_inner(
+     if wrapper_depth > DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH {
+         return dml_frontdoor_other_predicate_value();
+     }
+-    // SAFETY: expr belongs to the live planner tree and is only inspected while
+-    // decoding the value into owned Rust data.
+-    match unsafe { dml_frontdoor_expr_node(expr) } {
++    match dml_frontdoor_expr_node(expr) {
+         Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
+             if !const_expr.constisnull
+                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
+@@ -2455,9 +2424,7 @@ fn dml_frontdoor_coercible_integer_value(
+     expr: *mut pg_sys::Expr,
+     wrapper_depth: usize,
+ ) -> SpireDmlFrontdoorPredicateValue {
+-    // SAFETY: expr belongs to the live planner tree and is only inspected while
+-    // decoding the value into owned Rust data.
+-    match unsafe { dml_frontdoor_expr_node(expr) } {
++    match dml_frontdoor_expr_node(expr) {
+         Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
+             if !const_expr.constisnull
+                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
+@@ -2533,6 +2500,12 @@ fn dml_frontdoor_bigint_equality_opcode(opcode: pg_sys::Oid) -> bool {
+         || opcode == pg_sys::Oid::from(pg_sys::F_INT28EQ)
+ }
+ 
++fn dml_frontdoor_bigint_equality_operator(opno: pg_sys::Oid) -> bool {
++    // SAFETY: opno is copied from a live planner OpExpr; PostgreSQL resolves
++    // the operator's underlying function OID for the equality family check.
++    unsafe { dml_frontdoor_bigint_equality_opcode(pg_sys::get_opcode(opno)) }
++}
++
+ enum SpireDmlFrontdoorExprNode<'a> {
+     Var(&'a pg_sys::Var),
+     Const(&'a pg_sys::Const),
+@@ -2546,9 +2519,7 @@ enum SpireDmlFrontdoorExprNode<'a> {
+     Other,
+ }
+ 
+-unsafe fn dml_frontdoor_expr_node<'a>(
+-    expr: *mut pg_sys::Expr,
+-) -> Option<SpireDmlFrontdoorExprNode<'a>> {
++fn dml_frontdoor_expr_node<'a>(expr: *mut pg_sys::Expr) -> Option<SpireDmlFrontdoorExprNode<'a>> {
+     if expr.is_null() {
+         return None;
+     }
+@@ -2587,7 +2558,21 @@ unsafe fn dml_frontdoor_expr_node<'a>(
+     Some(node)
+ }
+ 
+-unsafe fn dml_frontdoor_range_table_ref_node<'a>(
++fn dml_frontdoor_query_jointree(query: &pg_sys::Query) -> Option<&pg_sys::FromExpr> {
++    // SAFETY: all callers pass PostgreSQL Query objects owned by the active
++    // planner callback and use the borrowed jointree only for immediate
++    // read-only classification.
++    unsafe { query.jointree.as_ref() }
++}
++
++fn dml_frontdoor_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
++    // SAFETY: DML frontdoor callers pass PostgreSQL-owned planner/catalog
++    // lists and consume the resulting view immediately without retaining list
++    // cells across callbacks.
++    unsafe { PgList::<T>::from_pg(list) }
++}
++
++fn dml_frontdoor_range_table_ref_node<'a>(
+     node: *mut pg_sys::Node,
+ ) -> Option<&'a pg_sys::RangeTblRef> {
+     if node.is_null() {
