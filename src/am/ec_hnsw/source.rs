@@ -157,17 +157,18 @@ unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     while offset + 32 <= left.len() {
         // SAFETY: The loop guard leaves at least 32 f32 lanes available from
         // `offset`; unaligned AVX loads accept any valid f32 address.
-        let l0 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset)) };
-        let r0 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset)) };
-        // SAFETY: The 32-lane loop guard covers the +8 lane window.
-        let l1 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 8)) };
-        let r1 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 8)) };
-        // SAFETY: The 32-lane loop guard covers the +16 lane window.
-        let l2 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 16)) };
-        let r2 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 16)) };
-        // SAFETY: The 32-lane loop guard covers the +24 lane window.
-        let l3 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 24)) };
-        let r3 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 24)) };
+        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+            (
+                _mm256_loadu_ps(left.as_ptr().add(offset)),
+                _mm256_loadu_ps(right.as_ptr().add(offset)),
+                _mm256_loadu_ps(left.as_ptr().add(offset + 8)),
+                _mm256_loadu_ps(right.as_ptr().add(offset + 8)),
+                _mm256_loadu_ps(left.as_ptr().add(offset + 16)),
+                _mm256_loadu_ps(right.as_ptr().add(offset + 16)),
+                _mm256_loadu_ps(left.as_ptr().add(offset + 24)),
+                _mm256_loadu_ps(right.as_ptr().add(offset + 24)),
+            )
+        };
         acc0 = _mm256_fmadd_ps(l0, r0, acc0);
         acc1 = _mm256_fmadd_ps(l1, r1, acc1);
         acc2 = _mm256_fmadd_ps(l2, r2, acc2);
@@ -177,8 +178,12 @@ unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     while offset + 8 <= left.len() {
         // SAFETY: The tail loop guard leaves at least 8 f32 lanes available
         // from `offset`; unaligned AVX loads accept any valid f32 address.
-        let l = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset)) };
-        let r = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset)) };
+        let (l, r) = unsafe {
+            (
+                _mm256_loadu_ps(left.as_ptr().add(offset)),
+                _mm256_loadu_ps(right.as_ptr().add(offset)),
+            )
+        };
         acc0 = _mm256_fmadd_ps(l, r, acc0);
         offset += 8;
     }
@@ -210,17 +215,18 @@ unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     while offset + 16 <= left.len() {
         // SAFETY: The loop guard leaves at least 16 f32 lanes available from
         // `offset`, and NEON support is guaranteed by the caller.
-        let l0 = unsafe { vld1q_f32(left.as_ptr().add(offset)) };
-        let r0 = unsafe { vld1q_f32(right.as_ptr().add(offset)) };
-        // SAFETY: The 16-lane loop guard covers the +4 lane window.
-        let l1 = unsafe { vld1q_f32(left.as_ptr().add(offset + 4)) };
-        let r1 = unsafe { vld1q_f32(right.as_ptr().add(offset + 4)) };
-        // SAFETY: The 16-lane loop guard covers the +8 lane window.
-        let l2 = unsafe { vld1q_f32(left.as_ptr().add(offset + 8)) };
-        let r2 = unsafe { vld1q_f32(right.as_ptr().add(offset + 8)) };
-        // SAFETY: The 16-lane loop guard covers the +12 lane window.
-        let l3 = unsafe { vld1q_f32(left.as_ptr().add(offset + 12)) };
-        let r3 = unsafe { vld1q_f32(right.as_ptr().add(offset + 12)) };
+        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+            (
+                vld1q_f32(left.as_ptr().add(offset)),
+                vld1q_f32(right.as_ptr().add(offset)),
+                vld1q_f32(left.as_ptr().add(offset + 4)),
+                vld1q_f32(right.as_ptr().add(offset + 4)),
+                vld1q_f32(left.as_ptr().add(offset + 8)),
+                vld1q_f32(right.as_ptr().add(offset + 8)),
+                vld1q_f32(left.as_ptr().add(offset + 12)),
+                vld1q_f32(right.as_ptr().add(offset + 12)),
+            )
+        };
         acc0 = vfmaq_f32(acc0, l0, r0);
         acc1 = vfmaq_f32(acc1, l1, r1);
         acc2 = vfmaq_f32(acc2, l2, r2);
@@ -231,8 +237,12 @@ unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     while offset + 4 <= left.len() {
         // SAFETY: The tail loop guard leaves at least 4 f32 lanes available
         // from `offset`, and NEON support is guaranteed by the caller.
-        let l = unsafe { vld1q_f32(left.as_ptr().add(offset)) };
-        let r = unsafe { vld1q_f32(right.as_ptr().add(offset)) };
+        let (l, r) = unsafe {
+            (
+                vld1q_f32(left.as_ptr().add(offset)),
+                vld1q_f32(right.as_ptr().add(offset)),
+            )
+        };
         acc0 = vfmaq_f32(acc0, l, r);
         offset += 4;
     }
@@ -446,19 +456,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute(
 }
 
 unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
-    // SAFETY: PostgreSQL accepts any type OID here and returns the base type.
-    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
-    // SAFETY: `base_type_oid` is the normalized type OID returned by PostgreSQL.
-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
-    if formatted.is_null() {
-        return None;
-    }
-    // SAFETY: `format_type_be` returned a non-null NUL-terminated C string.
-    let name = unsafe { CStr::from_ptr(formatted) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: The formatted type name was palloc'd by PostgreSQL.
-    unsafe { pg_sys::pfree(formatted.cast()) };
+    let name = formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(IndexedVectorKind::Ecvector),
@@ -472,22 +470,7 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
         pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),
         pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),
         _ => {
-            // SAFETY: PostgreSQL accepts any type OID here and returns the base
-            // type, including domain unwrapping.
-            let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
-            // SAFETY: `base_type_oid` is the normalized type OID returned by
-            // PostgreSQL.
-            let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
-            if formatted.is_null() {
-                return None;
-            }
-            // SAFETY: `format_type_be` returned a non-null NUL-terminated C
-            // string.
-            let name = unsafe { CStr::from_ptr(formatted) }
-                .to_string_lossy()
-                .into_owned();
-            // SAFETY: The formatted type name was palloc'd by PostgreSQL.
-            unsafe { pg_sys::pfree(formatted.cast()) };
+            let name = formatted_base_type_name(type_oid)?;
             let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
             if type_name == "ecvector" {
                 Some(SourceDatumKind::Ecvector)
@@ -495,6 +478,22 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
                 None
             }
         }
+    }
+}
+
+fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
+    // SAFETY: PostgreSQL accepts any type OID here, `format_type_be` returns a
+    // palloc'd NUL-terminated string for known type OIDs, and that allocation
+    // is released before the copied Rust string is returned.
+    unsafe {
+        let base_type_oid = pg_sys::getBaseType(type_oid);
+        let formatted = pg_sys::format_type_be(base_type_oid);
+        if formatted.is_null() {
+            return None;
+        }
+        let name = CStr::from_ptr(formatted).to_string_lossy().into_owned();
+        pg_sys::pfree(formatted.cast());
+        Some(name)
     }
 }
 
@@ -529,19 +528,18 @@ pub(crate) unsafe fn required_slot_datum(
     label: &str,
 ) -> pg_sys::Datum {
     // SAFETY: `slot` is caller-owned and valid, and `attnum` was resolved from
-    // the tuple descriptor before this helper was called.
-    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
-        // SAFETY: `attnum` is a positive descriptor-backed attribute number.
-        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
-    }
+    // the tuple descriptor before this helper was called. Materialization and
+    // value/null-array reads all use the same descriptor-backed attribute.
     let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
-    // SAFETY: `slot_getsomeattrs_int` above ensures the requested attribute is
-    // materialized; `attr_index` maps the validated 1-based attnum to 0-based.
-    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
-        pgrx::error!("ec_hnsw does not support NULL {label}");
+    unsafe {
+        if (*slot).tts_nvalid < attnum as i16 {
+            pg_sys::slot_getsomeattrs_int(slot, attnum);
+        }
+        if *(*slot).tts_isnull.add(attr_index) {
+            pgrx::error!("ec_hnsw does not support NULL {label}");
+        }
+        *(*slot).tts_values.add(attr_index)
     }
-    // SAFETY: The attribute was materialized and checked non-null above.
-    unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
 struct DetoastedFloat4Datum {
