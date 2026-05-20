@@ -97,7 +97,8 @@ fn active_root_top_frontier_summary(
 ) -> Result<Option<(u64, u16, u64)>, String> {
     let mut root = None;
     for manifest_entry in &snapshot.object_manifest().entries {
-        let lookup = snapshot.require_lookup(manifest_entry.pid, "top graph root frontier summary")?;
+        let lookup =
+            snapshot.require_lookup(manifest_entry.pid, "top graph root frontier summary")?;
         if lookup.placement.state != meta::SpirePlacementState::Available {
             continue;
         }
@@ -106,7 +107,9 @@ fn active_root_top_frontier_summary(
             continue;
         }
         if root.is_some() {
-            return Err("ec_spire top graph snapshot found multiple available root objects".to_owned());
+            return Err(
+                "ec_spire top graph snapshot found multiple available root objects".to_owned(),
+            );
         }
         let root_object = object_store.read_routing_object(lookup.placement)?;
         let child_count = u64::try_from(root_object.child_count())
@@ -148,10 +151,7 @@ fn decode_remote_search_local_heap_locator(
     })
 }
 
-fn remote_search_exact_heap_score(
-    query: &[f32],
-    source_vector: &[f32],
-) -> Result<f32, String> {
+fn remote_search_exact_heap_score(query: &[f32], source_vector: &[f32]) -> Result<f32, String> {
     if query.len() != source_vector.len() {
         return Err(format!(
             "ec_spire remote heap resolution dimension mismatch: query dim {}, heap dim {}",
@@ -207,12 +207,11 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
             "ec_spire remote heap resolution indexed column",
         )
     };
-    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(
-        heap_relation.as_ptr(),
-    )
-    .ok_or_else(|| {
-        "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
-    })?;
+    let slot =
+        crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
+            .ok_or_else(|| {
+                "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
+            })?;
 
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let mut rows = Vec::with_capacity(candidates.len());
@@ -372,9 +371,10 @@ unsafe fn remote_search_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: reads root/control state through the live index relation for the
-    // requested remote-search epoch check.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
+    // relation for the duration of the candidate request.
+    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+    let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
             "ec_spire remote search requested epoch {requested_epoch} does not match active epoch {}",
@@ -382,33 +382,21 @@ unsafe fn remote_search_candidates_result(
         ));
     }
 
-    // SAFETY: root_control came from the same live index relation and names the
-    // active manifests used for candidate collection.
-    let (epoch_manifest, object_manifest, placement_directory) =
-        unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-    if epoch_manifest.consistency_mode != requested_consistency_mode {
+    let Some(anchor) = index.active_epoch_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    };
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
         return Err(format!(
             "ec_spire remote search requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
-            consistency_mode_name(epoch_manifest.consistency_mode)
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
         ));
     }
-    let snapshot = meta::SpirePublishedEpochSnapshot::new(
-        &epoch_manifest,
-        &object_manifest,
-        &placement_directory,
+    let snapshot = anchor.snapshot()?;
+    let object_store = index.object_store_set(
+        &anchor.placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
     )?;
-    // SAFETY: opens relation-backed object stores for placements in the active
-    // published epoch while holding AccessShareLock.
-    let object_store = unsafe {
-        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            index_relation,
-            &placement_directory,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )?
-    };
-    // SAFETY: reads PostgreSQL reloptions from the live index relation for
-    // candidate collection configuration only.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let relation_options = index.relation_options();
     let candidates = scan::collect_quantized_selected_leaf_candidates(
         &snapshot,
         &object_store,
@@ -481,9 +469,10 @@ unsafe fn remote_search_coordinator_local_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: reads root/control state through the live index relation for the
-    // requested coordinator-local epoch check.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
+    // relation for the duration of the local-candidate request.
+    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+    let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
             "ec_spire remote search coordinator requested epoch {requested_epoch} does not match active epoch {}",
@@ -491,22 +480,16 @@ unsafe fn remote_search_coordinator_local_candidates_result(
         ));
     }
 
-    // SAFETY: root_control came from the same live index relation and names the
-    // active manifests used for coordinator fanout planning.
-    let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     };
-    if epoch_manifest.consistency_mode != requested_consistency_mode {
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
         return Err(format!(
             "ec_spire remote search coordinator requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
-            consistency_mode_name(epoch_manifest.consistency_mode)
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
         ));
     }
-    let snapshot = meta::SpirePublishedEpochSnapshot::new(
-        &epoch_manifest,
-        &object_manifest,
-        &placement_directory,
-    )?;
+    let snapshot = anchor.snapshot()?;
     let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
     if !plan.remote_targets.is_empty() {
         return Err(format!(
@@ -515,18 +498,11 @@ unsafe fn remote_search_coordinator_local_candidates_result(
         ));
     }
 
-    // SAFETY: opens relation-backed object stores for placements in the active
-    // coordinator-local epoch while holding AccessShareLock.
-    let object_store = unsafe {
-        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            index_relation,
-            &placement_directory,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )?
-    };
-    // SAFETY: reads PostgreSQL reloptions from the live index relation for
-    // local candidate collection configuration only.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let object_store = index.object_store_set(
+        &anchor.placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
     // The local collector caps one batch; the merge cap remains load-bearing
     // once remote batches compete in the same coordinator result set.
     let candidates = scan::collect_quantized_selected_leaf_candidates(
@@ -587,9 +563,10 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: reads root/control state through the live index relation for the
-    // requested result-summary epoch check.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
+    // relation for the duration of the local-result summary request.
+    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+    let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
             "ec_spire remote search coordinator requested epoch {requested_epoch} does not match active epoch {}",
@@ -597,22 +574,16 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
         ));
     }
 
-    // SAFETY: root_control came from the same live index relation and names the
-    // active manifests used to build the local-only fanout snapshot.
-    let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     };
-    if epoch_manifest.consistency_mode != requested_consistency_mode {
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
         return Err(format!(
             "ec_spire remote search coordinator requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
-            consistency_mode_name(epoch_manifest.consistency_mode)
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
         ));
     }
-    let snapshot = meta::SpirePublishedEpochSnapshot::new(
-        &epoch_manifest,
-        &object_manifest,
-        &placement_directory,
-    )?;
+    let snapshot = anchor.snapshot()?;
     let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
     if plan.local_selected_pids.is_empty() {
         return Ok(Vec::new());
@@ -621,15 +592,17 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
     // Keep the local-only snapshot broad enough to include leaf-derived delta
     // objects. The scan collector still receives only the selected leaf PIDs,
     // then attaches visible deltas whose parent leaf was selected.
-    let local_pid_set = placement_directory
+    let local_pid_set = anchor
+        .placement_directory
         .entries
         .iter()
         .filter(|entry| entry.node_id == meta::SPIRE_LOCAL_NODE_ID)
         .map(|entry| entry.pid)
         .collect::<HashSet<_>>();
     let local_placement_directory = meta::SpirePlacementDirectory::from_entries(
-        placement_directory.epoch,
-        placement_directory
+        anchor.placement_directory.epoch,
+        anchor
+            .placement_directory
             .entries
             .iter()
             .filter(|entry| entry.node_id == meta::SPIRE_LOCAL_NODE_ID)
@@ -637,8 +610,9 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
             .collect(),
     )?;
     let local_object_manifest = meta::SpireObjectManifest::from_entries(
-        object_manifest.epoch,
-        object_manifest
+        anchor.object_manifest.epoch,
+        anchor
+            .object_manifest
             .entries
             .iter()
             .filter(|entry| local_pid_set.contains(&entry.pid))
@@ -646,22 +620,15 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
             .collect(),
     )?;
     let local_snapshot = meta::SpirePublishedEpochSnapshot::new(
-        &epoch_manifest,
+        &anchor.epoch_manifest,
         &local_object_manifest,
         &local_placement_directory,
     )?;
-    // SAFETY: opens relation-backed object stores for local placements in the
-    // active epoch while holding AccessShareLock.
-    let object_store = unsafe {
-        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            index_relation,
-            &local_placement_directory,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )?
-    };
-    // SAFETY: reads PostgreSQL reloptions from the live index relation for
-    // local-only candidate collection configuration only.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let object_store = index.object_store_set(
+        &local_placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
     let candidates = scan::collect_quantized_selected_leaf_candidates(
         &local_snapshot,
         &object_store,
@@ -1179,9 +1146,10 @@ unsafe fn remote_search_coordinator_local_summary_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: reads root/control state through the live index relation for the
-    // requested local-summary epoch check.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
+    // relation for the duration of the local summary request.
+    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+    let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
             "ec_spire remote search coordinator requested epoch {requested_epoch} does not match active epoch {}",
@@ -1189,22 +1157,16 @@ unsafe fn remote_search_coordinator_local_summary_result(
         ));
     }
 
-    // SAFETY: root_control came from the same live index relation and names the
-    // active manifests used by coordinator-local summary planning.
-    let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     };
-    if epoch_manifest.consistency_mode != requested_consistency_mode {
+    if anchor.epoch_manifest.consistency_mode != requested_consistency_mode {
         return Err(format!(
             "ec_spire remote search coordinator requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
-            consistency_mode_name(epoch_manifest.consistency_mode)
+            consistency_mode_name(anchor.epoch_manifest.consistency_mode)
         ));
     }
-    let snapshot = meta::SpirePublishedEpochSnapshot::new(
-        &epoch_manifest,
-        &object_manifest,
-        &placement_directory,
-    )?;
+    let snapshot = anchor.snapshot()?;
     // Unlike the candidate path, the summary still plans empty top-k probes so
     // operators can inspect fanout and transport readiness without fetching rows.
     let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
@@ -1247,18 +1209,11 @@ unsafe fn remote_search_coordinator_local_summary_result(
         });
     }
 
-    // SAFETY: opens relation-backed object stores for placements in the active
-    // coordinator-local epoch while holding AccessShareLock.
-    let object_store = unsafe {
-        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            index_relation,
-            &placement_directory,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )?
-    };
-    // SAFETY: reads PostgreSQL reloptions from the live index relation for
-    // local summary candidate collection configuration only.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+    let object_store = index.object_store_set(
+        &anchor.placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
     let candidates = scan::collect_quantized_selected_leaf_candidates(
         &snapshot,
         &object_store,
@@ -1314,47 +1269,29 @@ pub(crate) unsafe fn index_top_graph_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexTopGraphSnapshot {
     let result = (|| -> Result<SpireIndexTopGraphSnapshot, String> {
-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
-        // top-graph diagnostic planning only.
-        let relation_options = unsafe { options::relation_options(index_relation) };
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let relation_options = index.relation_options();
         let top_graph_plan = relation_options.top_graph_plan()?;
-        // SAFETY: reads root/control state through the live index relation for
-        // the active top-graph snapshot epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = index.root_control();
 
-        if root_control.active_epoch == 0 {
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(empty_top_graph_snapshot(
                 root_control.active_epoch,
                 top_graph_plan,
                 "empty",
                 "populate the index before expecting a published SPIRE top graph",
             ));
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by the top-graph snapshot.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let active_leaf_count = count_snapshot_options_leaf_pids(
-            &meta::SpirePublishedEpochSnapshot::new(
-                &epoch_manifest,
-                &object_manifest,
-                &placement_directory,
-            )?,
+            &anchor.snapshot()?,
             &object_store,
             relation_options.recursive_fanout().is_some(),
         )?;
@@ -1511,10 +1448,11 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexHierarchySnapshot {
     let result = (|| -> Result<SpireIndexHierarchySnapshot, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // the active hierarchy snapshot epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0, true, false);
             return Ok(SpireIndexHierarchySnapshot {
                 active_epoch: 0,
@@ -1535,27 +1473,13 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
                 status,
                 recommendation,
             });
-        }
+        };
 
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by hierarchy diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
-        };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active hierarchy snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
-        };
 
         let mut root_pid = 0_u64;
         let mut root_level = 0_u16;
@@ -1686,31 +1610,19 @@ pub(crate) unsafe fn index_object_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexObjectSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexObjectSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // the active object snapshot epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by object diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active object snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let mut rows = Vec::with_capacity(snapshot.object_manifest().entries.len());
 
         for manifest_entry in &snapshot.object_manifest().entries {
@@ -1758,31 +1670,18 @@ pub(crate) unsafe fn index_delta_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexDeltaSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexDeltaSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // the active delta snapshot epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by delta diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active delta snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let mut rows = Vec::new();
 
         for manifest_entry in &snapshot.object_manifest().entries {
@@ -1813,7 +1712,7 @@ pub(crate) unsafe fn index_delta_snapshot(
                 }
             }
             rows.push(SpireIndexDeltaSnapshotRow {
-                active_epoch: root_control.active_epoch,
+                active_epoch: anchor.root_control.active_epoch,
                 delta_pid: header.pid,
                 parent_leaf_pid: header.parent_pid,
                 object_version: header.object_version,
@@ -1841,36 +1740,23 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
 ) -> Vec<SpireIndexScanPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexScanPlacementSnapshotRow>, String> {
         let query = scan::SpireScanQuery::new(query_values)?;
-        // SAFETY: reads root/control state through the live index relation for
-        // scan-placement diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
+        // index relation for the duration of the call.
+        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by scan-placement diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpirePublishedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active scan-placement snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let diagnostics = scan::collect_single_level_scan_placement_diagnostics(
             &snapshot,
             &object_store,
             &query,
-            options::relation_options(index_relation),
+            index.relation_options(),
         )?;
         let rows = diagnostics
             .stores
@@ -2044,8 +1930,7 @@ pub(crate) unsafe fn index_scan_routing_snapshot(
                         scan_plan.recursive_route_budget.max_routing_expansions,
                     )
                     .map_err(|_| {
-                        "ec_spire routing diagnostics max routing expansions exceeds u64"
-                            .to_owned()
+                        "ec_spire routing diagnostics max routing expansions exceeds u64".to_owned()
                     })?,
                     routing_level: level.level,
                     input_frontier_width: u64::try_from(level.input_frontier_width).map_err(
@@ -2154,7 +2039,9 @@ pub(crate) unsafe fn classify_centroid(
     // centroid classification against the active routing epoch.
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
-        return Err("ec_spire_classify_centroid requires an active ec_spire routing epoch".to_owned());
+        return Err(
+            "ec_spire_classify_centroid requires an active ec_spire routing epoch".to_owned(),
+        );
     }
 
     // SAFETY: root_control came from this live index relation and contains the
@@ -2198,7 +2085,9 @@ pub(crate) unsafe fn classify_centroid(
             continue;
         }
         if root.is_some() {
-            return Err("ec_spire_classify_centroid found multiple local root routing objects".to_owned());
+            return Err(
+                "ec_spire_classify_centroid found multiple local root routing objects".to_owned(),
+            );
         }
         root = Some(object_store.read_routing_object(lookup.placement)?);
     }
@@ -2278,7 +2167,11 @@ fn classify_best_routing_child(
                 child.centroid.len()
             ));
         }
-        if child.centroid.iter().any(|component| !component.is_finite()) {
+        if child
+            .centroid
+            .iter()
+            .any(|component| !component.is_finite())
+        {
             return Err(format!(
                 "ec_spire_classify_centroid centroid {} components must be finite",
                 child.centroid_index
