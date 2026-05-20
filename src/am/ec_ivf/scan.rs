@@ -4,7 +4,7 @@ use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
-use crate::am::common::explain::IvfExplainCounters;
+use crate::am::common::{callback::pg_am_callback, explain::IvfExplainCounters};
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
 #[cfg(feature = "pg18")]
@@ -314,21 +314,17 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambeginscan(
     nkeys: std::ffi::c_int,
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    // SAFETY: PostgreSQL invokes this AM callback with a live index relation;
-    // `pgrx_extern_c_guard` prevents Rust unwinds from crossing the C ABI.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
-            if scan.is_null() {
-                pgrx::error!("ec_ivf failed to allocate scan descriptor");
-            }
+    pg_am_callback!({
+        let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
+        if scan.is_null() {
+            pgrx::error!("ec_ivf failed to allocate scan descriptor");
+        }
 
-            (*scan).parallel_scan = ptr::null_mut();
-            crate::fault::maybe_fail_palloc("ec_ivf ambeginscan opaque");
-            (*scan).opaque = PgBox::<EcIvfScanOpaque>::alloc0().into_pg().cast();
-            scan
-        })
-    }
+        (*scan).parallel_scan = ptr::null_mut();
+        crate::fault::maybe_fail_palloc("ec_ivf ambeginscan opaque");
+        (*scan).opaque = PgBox::<EcIvfScanOpaque>::alloc0().into_pg().cast();
+        scan
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
@@ -338,189 +334,173 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
     orderbys: pg_sys::ScanKey,
     norderbys: std::ffi::c_int,
 ) {
-    // SAFETY: PostgreSQL invokes this AM callback with a scan descriptor and
-    // scan keys; the guard prevents Rust unwinds from crossing the C ABI.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_ivf amrescan received a null scan descriptor");
-            }
-            if nkeys != 0 {
-                pgrx::error!("ec_ivf scan does not support index quals yet");
-            }
-            if norderbys != 1 {
-                pgrx::error!("ec_ivf scan currently requires exactly one ORDER BY query");
-            }
-            if orderbys.is_null() {
-                pgrx::error!("ec_ivf amrescan received null order-by scan keys");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_ivf amrescan received a null scan descriptor");
+        }
+        if nkeys != 0 {
+            pgrx::error!("ec_ivf scan does not support index quals yet");
+        }
+        if norderbys != 1 {
+            pgrx::error!("ec_ivf scan currently requires exactly one ORDER BY query");
+        }
+        if orderbys.is_null() {
+            pgrx::error!("ec_ivf amrescan received null order-by scan keys");
+        }
 
-            let orderby = &*orderbys;
-            if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
-                pgrx::error!("ec_ivf scan query must not be NULL");
-            }
+        let orderby = &*orderbys;
+        if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
+            pgrx::error!("ec_ivf scan query must not be NULL");
+        }
 
-            let query = Vec::<f32>::from_polymorphic_datum(
-                orderby.sk_argument,
-                false,
-                pg_sys::FLOAT4ARRAYOID,
+        let query =
+            Vec::<f32>::from_polymorphic_datum(orderby.sk_argument, false, pg_sys::FLOAT4ARRAYOID)
+                .unwrap_or_else(|| pgrx::error!("ec_ivf scan requires a real[] ORDER BY query"));
+        if query.is_empty() {
+            pgrx::error!("ec_ivf scan query must not be empty");
+        }
+        if query.len() > u16::MAX as usize {
+            pgrx::error!(
+                "ec_ivf scan query dimension {} exceeds maximum {}",
+                query.len(),
+                u16::MAX
+            );
+        }
+
+        let metadata = super::page::read_metadata_page((*scan).indexRelation);
+        let index_options = super::options::relation_options((*scan).indexRelation);
+        metadata
+            .storage_format
+            .validate_v1_supported()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        metadata
+            .rerank
+            .validate_v1_supported()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        index_options
+            .rerank
+            .validate_v1_supported()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
+            pgrx::error!(
+                "ec_ivf scan query dimension mismatch: index dim {}, query dim {}",
+                metadata.dimensions,
+                query.len()
+            );
+        }
+
+        (*scan).xs_recheck = false;
+        (*scan).xs_recheckorderby = false;
+        (*scan).xs_orderbyvals = ptr::null_mut();
+        (*scan).xs_orderbynulls = ptr::null_mut();
+
+        let opaque_ptr = (*scan).opaque.cast::<EcIvfScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_ivf amrescan missing scan opaque state");
+        }
+        let opaque = &mut *opaque_ptr;
+        if opaque.rescan_called {
+            flush_scan_stats(opaque);
+        }
+        free_scan_query_prep(opaque);
+        opaque.explain_counters.reset();
+        opaque.stats_delta.reset();
+        opaque.rescan_called = true;
+        stats::record_scan_started();
+        opaque.stats_delta.record_scan_started();
+        opaque.scan_dimensions = metadata.dimensions;
+        opaque.scan_nlists = metadata.nlists;
+        opaque.scan_nprobe = if metadata.dimensions == 0 {
+            0
+        } else {
+            resolve_effective_nprobe(&metadata)
+        };
+        store_scan_query(opaque, &query);
+        store_scan_prepared_query(opaque, (*scan).indexRelation, &query, &metadata);
+        configure_heap_rerank_state(scan, opaque, &index_options);
+
+        if metadata.dimensions != 0 {
+            let centroid_scores = load_centroid_scores((*scan).indexRelation, &metadata, &query)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let selected_lists = select_probe_lists(&centroid_scores, opaque.scan_nprobe);
+            opaque
+                .explain_counters
+                .record_centroid_scores(centroid_scores.len());
+            record_distance_calcs(opaque, centroid_scores.len());
+            opaque
+                .explain_counters
+                .record_selected_lists(selected_lists.len());
+            let posting_candidates = materialize_probe_candidates(
+                scan,
+                (*scan).indexRelation,
+                &metadata,
+                &index_options,
+                opaque,
+                &selected_lists,
             )
-            .unwrap_or_else(|| pgrx::error!("ec_ivf scan requires a real[] ORDER BY query"));
-            if query.is_empty() {
-                pgrx::error!("ec_ivf scan query must not be empty");
-            }
-            if query.len() > u16::MAX as usize {
-                pgrx::error!(
-                    "ec_ivf scan query dimension {} exceeds maximum {}",
-                    query.len(),
-                    u16::MAX
-                );
-            }
-
-            let metadata = super::page::read_metadata_page((*scan).indexRelation);
-            let index_options = super::options::relation_options((*scan).indexRelation);
-            metadata
-                .storage_format
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            metadata
-                .rerank
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            index_options
-                .rerank
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
-                pgrx::error!(
-                    "ec_ivf scan query dimension mismatch: index dim {}, query dim {}",
-                    metadata.dimensions,
-                    query.len()
-                );
-            }
-
-            (*scan).xs_recheck = false;
-            (*scan).xs_recheckorderby = false;
-            (*scan).xs_orderbyvals = ptr::null_mut();
-            (*scan).xs_orderbynulls = ptr::null_mut();
-
-            let opaque_ptr = (*scan).opaque.cast::<EcIvfScanOpaque>();
-            if opaque_ptr.is_null() {
-                pgrx::error!("ec_ivf amrescan missing scan opaque state");
-            }
-            let opaque = &mut *opaque_ptr;
-            if opaque.rescan_called {
-                flush_scan_stats(opaque);
-            }
-            free_scan_query_prep(opaque);
-            opaque.explain_counters.reset();
-            opaque.stats_delta.reset();
-            opaque.rescan_called = true;
-            stats::record_scan_started();
-            opaque.stats_delta.record_scan_started();
-            opaque.scan_dimensions = metadata.dimensions;
-            opaque.scan_nlists = metadata.nlists;
-            opaque.scan_nprobe = if metadata.dimensions == 0 {
-                0
-            } else {
-                resolve_effective_nprobe(&metadata)
-            };
-            store_scan_query(opaque, &query);
-            store_scan_prepared_query(opaque, (*scan).indexRelation, &query, &metadata);
-            configure_heap_rerank_state(scan, opaque, &index_options);
-
-            if metadata.dimensions != 0 {
-                let centroid_scores =
-                    load_centroid_scores((*scan).indexRelation, &metadata, &query)
-                        .unwrap_or_else(|e| pgrx::error!("{e}"));
-                let selected_lists = select_probe_lists(&centroid_scores, opaque.scan_nprobe);
-                opaque
-                    .explain_counters
-                    .record_centroid_scores(centroid_scores.len());
-                record_distance_calcs(opaque, centroid_scores.len());
-                opaque
-                    .explain_counters
-                    .record_selected_lists(selected_lists.len());
-                let posting_candidates = materialize_probe_candidates(
-                    scan,
-                    (*scan).indexRelation,
-                    &metadata,
-                    &index_options,
-                    opaque,
-                    &selected_lists,
-                )
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-                store_centroid_scores(opaque, &centroid_scores);
-                store_selected_lists(opaque, &selected_lists);
-                store_posting_candidates(opaque, &posting_candidates);
-            };
-        })
-    }
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+            store_centroid_scores(opaque, &centroid_scores);
+            store_selected_lists(opaque, &selected_lists);
+            store_posting_candidates(opaque, &posting_candidates);
+        };
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    // SAFETY: PostgreSQL invokes this AM callback with a scan descriptor; the
-    // guard prevents Rust unwinds from crossing the C ABI.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_ivf amgettuple received a null scan descriptor");
-            }
-            if direction != pg_sys::ScanDirection::ForwardScanDirection {
-                pgrx::error!("ec_ivf amgettuple only supports forward scan direction");
-            }
-            let opaque_ptr = (*scan).opaque.cast::<EcIvfScanOpaque>();
-            if opaque_ptr.is_null() {
-                pgrx::error!("ec_ivf amgettuple missing scan opaque state");
-            }
-            if !(*opaque_ptr).rescan_called {
-                pgrx::error!("ec_ivf amgettuple requires amrescan before scan execution");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_ivf amgettuple received a null scan descriptor");
+        }
+        if direction != pg_sys::ScanDirection::ForwardScanDirection {
+            pgrx::error!("ec_ivf amgettuple only supports forward scan direction");
+        }
+        let opaque_ptr = (*scan).opaque.cast::<EcIvfScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_ivf amgettuple missing scan opaque state");
+        }
+        if !(*opaque_ptr).rescan_called {
+            pgrx::error!("ec_ivf amgettuple requires amrescan before scan execution");
+        }
 
-            let opaque = &mut *opaque_ptr;
-            if opaque.scan_dimensions == 0 {
+        let opaque = &mut *opaque_ptr;
+        if opaque.scan_dimensions == 0 {
+            clear_scan_orderby_output(scan);
+            return false;
+        }
+        match opaque.next_posting_candidate() {
+            Some(candidate) => {
+                set_scan_heap_tid(scan, candidate.heap_tid);
+                set_scan_orderby_score(scan, candidate.score);
+                true
+            }
+            None => {
                 clear_scan_orderby_output(scan);
-                return false;
+                false
             }
-            match opaque.next_posting_candidate() {
-                Some(candidate) => {
-                    set_scan_heap_tid(scan, candidate.heap_tid);
-                    set_scan_orderby_score(scan, candidate.score);
-                    true
-                }
-                None => {
-                    clear_scan_orderby_output(scan);
-                    false
-                }
-            }
-        })
-    }
+        }
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanDesc) {
-    // SAFETY: PostgreSQL invokes this AM callback with a scan descriptor to
-    // release scan-local allocations; the guard contains Rust unwinds.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                return;
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            return;
+        }
 
-            let opaque_ptr = (*scan).opaque;
-            if !opaque_ptr.is_null() {
-                let opaque = &mut *opaque_ptr.cast::<EcIvfScanOpaque>();
-                flush_scan_stats(opaque);
-                free_scan_query_prep(opaque);
-                free_pq_fastscan_model(opaque);
-                free_candidate_dedup(opaque);
-                pg_sys::pfree(opaque_ptr);
-                (*scan).opaque = ptr::null_mut();
-            }
-        })
-    }
+        let opaque_ptr = (*scan).opaque;
+        if !opaque_ptr.is_null() {
+            let opaque = &mut *opaque_ptr.cast::<EcIvfScanOpaque>();
+            flush_scan_stats(opaque);
+            free_scan_query_prep(opaque);
+            free_pq_fastscan_model(opaque);
+            free_candidate_dedup(opaque);
+            pg_sys::pfree(opaque_ptr);
+            (*scan).opaque = ptr::null_mut();
+        }
+    })
 }
 
 fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
@@ -1977,15 +1957,13 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
     let directory = directories
         .get(list_id as usize)
         .unwrap_or_else(|| pgrx::error!("ec_ivf directory list {list_id} is out of range"));
-    let result = (
+    (
         directory.head_block.block_number,
         directory.tail_block.block_number,
         directory.live_count,
         directory.dead_count,
         directory.inserted_since_build,
-    );
-
-    result
+    )
 }
 
 #[cfg(test)]
@@ -2063,7 +2041,7 @@ mod tests {
 
     #[test]
     fn candidate_heap_tid_cmp_orders_by_heap_location_before_score() {
-        let mut candidates = vec![
+        let mut candidates = [
             candidate(8, 3, 0.5),
             candidate(7, 9, 9.0),
             candidate(8, 1, 0.1),

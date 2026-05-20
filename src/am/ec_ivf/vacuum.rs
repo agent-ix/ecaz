@@ -3,6 +3,7 @@ use std::ffi::c_void;
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
 use super::page;
+use crate::am::common::callback::pg_am_callback;
 use crate::storage::page::ItemPointer;
 
 type BulkDeleteCallback =
@@ -33,37 +34,29 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes this AM callback with vacuum info, optional
-    // stats, and callback pointers that remain valid for the guarded call.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if info.is_null() {
-                pgrx::error!("ec_ivf ambulkdelete requires vacuum info")
-            }
-            let Some(callback) = callback else {
-                return noop_vacuum_stats((*info).index, stats);
-            };
+    pg_am_callback!({
+        if info.is_null() {
+            pgrx::error!("ec_ivf ambulkdelete requires vacuum info")
+        }
+        let Some(callback) = callback else {
+            return noop_vacuum_stats((*info).index, stats);
+        };
 
-            run_bulkdelete((*info).index, stats, callback, callback_state)
-        })
-    }
+        run_bulkdelete((*info).index, stats, callback, callback_state)
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes this AM callback with vacuum info and
-    // optional stats that remain valid for the guarded call.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if info.is_null() {
-                pgrx::error!("ec_ivf amvacuumcleanup requires vacuum info")
-            }
+    pg_am_callback!({
+        if info.is_null() {
+            pgrx::error!("ec_ivf amvacuumcleanup requires vacuum info")
+        }
 
-            noop_vacuum_stats((*info).index, stats)
-        })
-    }
+        noop_vacuum_stats((*info).index, stats)
+    })
 }
 
 unsafe fn noop_vacuum_stats(
@@ -338,16 +331,12 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
 ) -> bool {
-    // SAFETY: PostgreSQL invokes this callback through the bulkdelete path
-    // with the state pointer supplied by the debug helper below.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &*(state.cast::<DebugVacuumCallbackState>());
-            state
-                .dead_tids
-                .contains(&super::build::decode_heap_tid(itemptr, "debug vacuum"))
-        })
-    }
+    pg_am_callback!({
+        let state = &*(state.cast::<DebugVacuumCallbackState>());
+        state
+            .dead_tids
+            .contains(&super::build::decode_heap_tid(itemptr, "debug vacuum"))
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -371,9 +360,7 @@ pub(crate) unsafe fn debug_ec_ivf_vacuum_stats(
     let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };
     // SAFETY: vacuum cleanup returns a valid stats pointer for this debug
     // helper; the result is copied out before guards are dropped.
-    let result = unsafe { *stats };
-
-    result
+    unsafe { *stats }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -408,7 +395,5 @@ pub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids(
     let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };
     // SAFETY: vacuum cleanup returns a valid stats pointer for this debug
     // helper; the result is copied out before guards are dropped.
-    let result = unsafe { *stats };
-
-    result
+    unsafe { *stats }
 }

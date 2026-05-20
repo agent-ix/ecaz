@@ -3,7 +3,7 @@ use std::mem::size_of;
 use pgrx::pg_sys;
 
 use super::{options, page};
-use crate::am::common::callback::am_callback;
+use crate::am::common::callback::{am_callback, pg_am_callback};
 use crate::am::common::cost::{
     current_planner_cost_constants, strategy_translation_snapshot, PlannerCostConstants,
     PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
@@ -68,39 +68,34 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
     index_correlation: *mut f64,
     index_pages: *mut f64,
 ) {
-    // SAFETY: PostgreSQL invokes this as the IVF `amcostestimate` callback with
-    // planner-owned pointers; the body null-checks every pointer before use and
-    // `pgrx_extern_c_guard` prevents Rust unwinding across the C ABI boundary.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if path.is_null()
-                || index_startup_cost.is_null()
-                || index_total_cost.is_null()
-                || index_selectivity.is_null()
-                || index_correlation.is_null()
-                || index_pages.is_null()
-            {
-                pgrx::error!("ec_ivf planner callback received null arguments");
-            }
-            let index_info = (*path).indexinfo;
-            if index_info.is_null() {
-                pgrx::error!("ec_ivf planner callback received null index info");
-            }
-            let index_oid = (*index_info).indexoid;
-            let index_relation = IndexRelationGuard::open(
-                index_oid,
-                pg_sys::NoLock as pg_sys::LOCKMODE,
-                "ec_ivf planner",
-            );
-            let estimate = compute_amcostestimate(index_relation.as_ptr());
+    pg_am_callback!({
+        if path.is_null()
+            || index_startup_cost.is_null()
+            || index_total_cost.is_null()
+            || index_selectivity.is_null()
+            || index_correlation.is_null()
+            || index_pages.is_null()
+        {
+            pgrx::error!("ec_ivf planner callback received null arguments");
+        }
+        let index_info = (*path).indexinfo;
+        if index_info.is_null() {
+            pgrx::error!("ec_ivf planner callback received null index info");
+        }
+        let index_oid = (*index_info).indexoid;
+        let index_relation = IndexRelationGuard::open(
+            index_oid,
+            pg_sys::NoLock as pg_sys::LOCKMODE,
+            "ec_ivf planner",
+        );
+        let estimate = compute_amcostestimate(index_relation.as_ptr());
 
-            *index_startup_cost = estimate.startup_cost;
-            *index_total_cost = estimate.total_cost;
-            *index_selectivity = estimate.selectivity;
-            *index_correlation = estimate.correlation;
-            *index_pages = estimate.index_pages;
-        })
-    }
+        *index_startup_cost = estimate.startup_cost;
+        *index_total_cost = estimate.total_cost;
+        *index_selectivity = estimate.selectivity;
+        *index_correlation = estimate.correlation;
+        *index_pages = estimate.index_pages;
+    })
 }
 
 pub(crate) fn ivf_tree_height_callback_value() -> i32 {
