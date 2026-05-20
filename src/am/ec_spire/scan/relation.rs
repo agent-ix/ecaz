@@ -125,7 +125,8 @@ fn ensure_local_heap_placement_directory_is_deliverable(
     let Some(first_remote) = placement_directory
         .entries
         .iter()
-        .find(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID) else {
+        .find(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID)
+    else {
         return Err(
             "ec_spire local heap tuple delivery remote placement count disagrees with placement directory"
                 .to_owned(),
@@ -276,8 +277,9 @@ unsafe fn prefetch_heap_rerank_blocks(
         }
         // SAFETY: read_stream_next_buffer returned a valid pinned buffer; the
         // guard unpins it at the end of this loop iteration.
-        let _buffer = unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
-            .unwrap_or_else(|| pgrx::error!("ec_spire read stream returned an invalid buffer"));
+        let _buffer =
+            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
+                .unwrap_or_else(|| pgrx::error!("ec_spire read stream returned an invalid buffer"));
     }
 
     // SAFETY: stream was opened by read_stream_begin_relation and is no longer
@@ -390,62 +392,33 @@ pub(super) unsafe fn load_indexed_source_vector_from_heap_row(
 ) -> Result<Option<Vec<f32>>, String> {
     // SAFETY: heap_relation, snapshot, and slot are live for this scan callback;
     // helper fetches at most the tuple version identified by heap_tid.
-    if !unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? } {
+    if !unsafe {
+        crate::am::common::heap_slot::fetch_heap_row_version(
+            heap_relation,
+            heap_tid,
+            snapshot,
+            slot,
+            "ec_spire",
+        )?
+    } {
         return Ok(None);
     }
     // SAFETY: slot contains the fetched heap tuple and attnum was resolved from
     // the index definition for this relation.
-    let datum = unsafe { required_slot_datum(slot, indexed_attribute.attnum, label)? };
+    let datum = unsafe {
+        crate::am::common::heap_slot::required_slot_datum(
+            slot,
+            indexed_attribute.attnum,
+            "ec_spire",
+            label,
+        )?
+    };
     // SAFETY: datum is the non-null vector datum read from the fetched slot.
     let result =
         unsafe { indexed_vector_datum_to_source_vector(datum, indexed_attribute.kind, label) };
     // SAFETY: slot belongs to this scan helper and can be cleared before reuse.
-    unsafe { pg_sys::ExecClearTuple(slot) };
+    unsafe { crate::am::common::heap_slot::clear_tuple_slot(slot) };
     result.map(Some)
-}
-
-unsafe fn fetch_heap_row_version(
-    heap_relation: pg_sys::Relation,
-    heap_tid: ItemPointer,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
-) -> Result<bool, String> {
-    let mut tid = pg_sys::ItemPointerData::default();
-    pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
-    // SAFETY: slot belongs to this scan helper and is cleared before fetching a
-    // new heap tuple version.
-    unsafe { pg_sys::ExecClearTuple(slot) };
-    // SAFETY: heap_relation/snapshot/slot are live and tid was initialized
-    // from the candidate heap TID for this fetch.
-    let fetched =
-        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
-    if !fetched {
-        return Ok(false);
-    }
-    Ok(true)
-}
-
-unsafe fn required_slot_datum(
-    slot: *mut pg_sys::TupleTableSlot,
-    attnum: i32,
-    label: &str,
-) -> Result<pg_sys::Datum, String> {
-    // SAFETY: slot is a live TupleTableSlot and tts_nvalid is read before
-    // deciding whether PostgreSQL must materialize more attributes.
-    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
-        // SAFETY: slot is live and attnum is the positive indexed vector
-        // attribute number that must be available in the slot.
-        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
-    }
-    let attr_index = usize::try_from(attnum - 1)
-        .map_err(|_| "ec_spire heap rerank attribute number must be positive".to_owned())?;
-    // SAFETY: slot_getsomeattrs_int above ensures attr_index is materialized;
-    // tts_isnull is PostgreSQL-owned slot null storage.
-    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
-        return Err(format!("ec_spire does not support NULL {label}"));
-    }
-    // SAFETY: same materialized slot attribute as above; NULL was rejected.
-    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
 }
 
 unsafe fn indexed_vector_datum_to_source_vector(

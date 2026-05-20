@@ -2,6 +2,7 @@ use std::slice;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys};
 
+use crate::am::common::heap_slot;
 use crate::storage::{
     buffer_guard::LockedBufferGuard,
     page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
@@ -318,21 +319,11 @@ pub(super) unsafe fn fetch_heap_row_version(
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
 ) -> Result<(), String> {
-    let mut tid = pg_sys::ItemPointerData::default();
-    // SAFETY: `tid` is local storage initialized with a valid heap TID, and the
-    // caller provided a live tuple slot that may be cleared before fetch.
-    unsafe {
-        pgrx::itemptr::item_pointer_set_all(
-            &mut tid,
-            heap_tid.block_number,
-            heap_tid.offset_number,
-        );
-        pg_sys::ExecClearTuple(slot);
-    }
-    // SAFETY: `heap_relation`, `snapshot`, and `slot` are live for the scan, and
-    // `tid` was initialized to the requested heap item pointer above.
-    let fetched =
-        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
+    // SAFETY: caller owns the heap relation, snapshot, and tuple slot for this
+    // scan callback; the common helper owns slot clearing and TID fetch.
+    let fetched = unsafe {
+        heap_slot::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, "ec_diskann")?
+    };
     if !fetched {
         return Err(format!(
             "ec_diskann scan could not fetch heap tuple at ({},{})",
@@ -347,22 +338,9 @@ pub(super) unsafe fn required_slot_datum(
     attnum: i32,
     label: &str,
 ) -> Result<pg_sys::Datum, String> {
-    // SAFETY: `slot` is a live TupleTableSlot and `tts_nvalid` may be inspected
-    // to decide whether PostgreSQL must materialize more attributes.
-    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
-        // SAFETY: `attnum` names the requested one-based attribute and the live
-        // slot can materialize attributes through that number.
-        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
-    }
-    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
-    // SAFETY: The slot has materialized at least `attnum` attributes, so the
-    // null bitmap contains `attr_index`.
-    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
-        return Err(format!("ec_diskann does not support NULL {label}"));
-    }
-    // SAFETY: The attribute is non-null and materialized, so the Datum value at
-    // `attr_index` can be read from the slot values array.
-    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
+    // SAFETY: caller owns a live TupleTableSlot and attnum was resolved from
+    // relation metadata for the heap source column.
+    unsafe { heap_slot::required_slot_datum(slot, attnum, "ec_diskann", label) }
 }
 
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPointer, String> {

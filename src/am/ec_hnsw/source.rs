@@ -3,9 +3,9 @@ use std::{
     marker::PhantomData,
 };
 
-use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgTupleDesc};
+use pgrx::{pg_sys, PgTupleDesc};
 
-use crate::am::common::detoast::DetoastedVarlena;
+use crate::am::common::{detoast::DetoastedVarlena, heap_slot};
 
 use super::page;
 
@@ -504,15 +504,12 @@ pub(crate) unsafe fn fetch_heap_row_version(
     slot: *mut pg_sys::TupleTableSlot,
     label: &str,
 ) {
-    let mut tid = pg_sys::ItemPointerData::default();
-    item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
-    // SAFETY: `slot` is caller-owned and valid for reuse within the current
-    // scan/build/vacuum callback.
-    unsafe { pg_sys::ExecClearTuple(slot) };
-    // SAFETY: The heap relation, snapshot, and slot are caller-owned for this
-    // callback; `tid` is a stack ItemPointer initialized from the index tuple.
-    let fetched =
-        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
+    // SAFETY: caller owns the heap relation, snapshot, and tuple slot for the
+    // current scan/build/vacuum callback.
+    let fetched = unsafe {
+        heap_slot::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, "ec_hnsw")
+    }
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
     if !fetched {
         pgrx::error!(
             "ec_hnsw {label} could not fetch heap tuple at ({},{})",
@@ -527,19 +524,10 @@ pub(crate) unsafe fn required_slot_datum(
     attnum: i32,
     label: &str,
 ) -> pg_sys::Datum {
-    // SAFETY: `slot` is caller-owned and valid, and `attnum` was resolved from
-    // the tuple descriptor before this helper was called. Materialization and
-    // value/null-array reads all use the same descriptor-backed attribute.
-    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
-    unsafe {
-        if (*slot).tts_nvalid < attnum as i16 {
-            pg_sys::slot_getsomeattrs_int(slot, attnum);
-        }
-        if *(*slot).tts_isnull.add(attr_index) {
-            pgrx::error!("ec_hnsw does not support NULL {label}");
-        }
-        *(*slot).tts_values.add(attr_index)
-    }
+    // SAFETY: caller owns a live TupleTableSlot and attnum was resolved from
+    // relation metadata for the source column.
+    unsafe { heap_slot::required_slot_datum(slot, attnum, "ec_hnsw", label) }
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
 struct DetoastedFloat4Datum {
