@@ -31,18 +31,14 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq dispatch summary top_k exceeds u64")?;
-        // SAFETY: forwards the live index relation and checked request fields
-        // into the libpq dispatch planner, which owns relation/page reads.
-        let rows = unsafe {
-            remote_search_libpq_dispatch_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         remote_search_libpq_dispatch_summary_from_plan_rows(
             requested_epoch,
             &rows,
@@ -61,60 +57,63 @@ fn remote_search_libpq_dispatch_summary_from_plan_rows(
     top_k_for_empty_plan: u64,
     consistency_mode: &str,
 ) -> Result<SpireRemoteSearchLibpqDispatchSummaryRow, String> {
-        let mut rollup = SpireRemoteCountRollup::default();
-        let mut pipeline_dispatch_count = 0_u64;
-        let mut missing_descriptor_dispatch_count = 0_u64;
-        let mut query_dimension = 0_u64;
-        let mut top_k = 0_u64;
-        let mut parsed_consistency_mode = "";
+    let mut rollup = SpireRemoteCountRollup::default();
+    let mut pipeline_dispatch_count = 0_u64;
+    let mut missing_descriptor_dispatch_count = 0_u64;
+    let mut query_dimension = 0_u64;
+    let mut top_k = 0_u64;
+    let mut parsed_consistency_mode = "";
 
-        for row in rows {
-            query_dimension = row.query_dimension;
-            top_k = row.top_k;
-            parsed_consistency_mode = row.consistency_mode;
-            rollup.record_remote_target(row.pid_count, "remote search libpq dispatch summary")?;
-            rollup.record_status(row.status, row.pid_count, "remote search libpq dispatch summary")?;
-            if row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
-                pipeline_dispatch_count = pipeline_dispatch_count.checked_add(1).ok_or_else(|| {
-                    "ec_spire remote search libpq dispatch summary pipeline count overflow".to_owned()
-                })?;
-            }
-            if row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
-                missing_descriptor_dispatch_count =
+    for row in rows {
+        query_dimension = row.query_dimension;
+        top_k = row.top_k;
+        parsed_consistency_mode = row.consistency_mode;
+        rollup.record_remote_target(row.pid_count, "remote search libpq dispatch summary")?;
+        rollup.record_status(
+            row.status,
+            row.pid_count,
+            "remote search libpq dispatch summary",
+        )?;
+        if row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+            pipeline_dispatch_count = pipeline_dispatch_count.checked_add(1).ok_or_else(|| {
+                "ec_spire remote search libpq dispatch summary pipeline count overflow".to_owned()
+            })?;
+        }
+        if row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
+            missing_descriptor_dispatch_count =
                     missing_descriptor_dispatch_count.checked_add(1).ok_or_else(|| {
                         "ec_spire remote search libpq dispatch summary missing descriptor count overflow"
                             .to_owned()
                     })?;
-            }
         }
+    }
 
-        if rows.is_empty() {
-            let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
-            query_dimension = u64::try_from(query.values().len()).map_err(|_| {
-                "ec_spire remote search libpq dispatch summary query dimension exceeds u64"
-            })?;
-            top_k = top_k_for_empty_plan;
-            parsed_consistency_mode =
-                consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
-        }
-
-        let dispatch_count = u64::try_from(rows.len()).map_err(|_| {
-            "ec_spire remote search libpq dispatch summary dispatch count exceeds u64"
+    if rows.is_empty() {
+        let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
+        query_dimension = u64::try_from(query.values().len()).map_err(|_| {
+            "ec_spire remote search libpq dispatch summary query dimension exceeds u64"
         })?;
-        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::LibpqRequest);
+        top_k = top_k_for_empty_plan;
+        parsed_consistency_mode =
+            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+    }
 
-        Ok(SpireRemoteSearchLibpqDispatchSummaryRow {
-            requested_epoch,
-            dispatch_count,
-            pipeline_dispatch_count,
-            missing_descriptor_dispatch_count,
-            remote_pid_count: rollup.remote_pid_count,
-            blocked_pid_count: rollup.blocked_pid_count,
-            query_dimension,
-            top_k,
-            consistency_mode: parsed_consistency_mode,
-            status,
-        })
+    let dispatch_count = u64::try_from(rows.len())
+        .map_err(|_| "ec_spire remote search libpq dispatch summary dispatch count exceeds u64")?;
+    let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::LibpqRequest);
+
+    Ok(SpireRemoteSearchLibpqDispatchSummaryRow {
+        requested_epoch,
+        dispatch_count,
+        pipeline_dispatch_count,
+        missing_descriptor_dispatch_count,
+        remote_pid_count: rollup.remote_pid_count,
+        blocked_pid_count: rollup.blocked_pid_count,
+        query_dimension,
+        top_k,
+        consistency_mode: parsed_consistency_mode,
+        status,
+    })
 }
 
 pub(crate) unsafe fn remote_search_libpq_executor_budget_summary_row(
@@ -126,18 +125,14 @@ pub(crate) unsafe fn remote_search_libpq_executor_budget_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchLibpqExecutorBudgetSummaryRow, String> {
-        // SAFETY: forwards the live index relation and checked request fields
-        // into the dispatch planner before reducing rows to budget counters.
-        let rows = unsafe {
-            remote_search_libpq_dispatch_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         remote_search_libpq_executor_budget_summary_from_dispatch_rows(requested_epoch, &rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -201,7 +196,11 @@ fn remote_search_libpq_executor_budget_summary_from_dispatch_rows(
             ),
         )
     } else {
-        (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+        (
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_STATUS_READY,
+            SPIRE_REMOTE_NONE,
+        )
     };
 
     Ok(SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
@@ -439,12 +438,8 @@ impl SpireRemoteProductionTransportAdapter {
         runtime.block_on(async move {
             let batch_start = std::time::Instant::now();
             let futures = requests.into_iter().map(|request| async move {
-                Self::run_one_candidate_receive_request(
-                    request,
-                    batch_start,
-                    local_cancel_source,
-                )
-                .await
+                Self::run_one_candidate_receive_request(request, batch_start, local_cancel_source)
+                    .await
             });
             Ok(futures_util::future::join_all(futures).await)
         })
@@ -485,10 +480,8 @@ impl SpireRemoteProductionTransportAdapter {
                 metrics.add_transport_metrics(&result.metrics);
             }
 
-            let allow_heap = Self::candidate_results_allow_heap(
-                &candidate_results,
-                consistency_mode.as_str(),
-            )?;
+            let allow_heap =
+                Self::candidate_results_allow_heap(&candidate_results, consistency_mode.as_str())?;
             let mut heap_results = Vec::new();
             if allow_heap {
                 let futures = session_results
@@ -701,9 +694,10 @@ impl SpireRemoteProductionTransportAdapter {
         results: &[SpireRemoteProductionCandidateReceiveResult],
         consistency_mode: &str,
     ) -> Result<bool, String> {
-        if results.iter().any(|result| {
-            is_local_cancellation_failure_category(result.failure_category)
-        }) {
+        if results
+            .iter()
+            .any(|result| is_local_cancellation_failure_category(result.failure_category))
+        {
             return Ok(false);
         }
         let ready_count = results
@@ -717,8 +711,8 @@ impl SpireRemoteProductionTransportAdapter {
             .iter()
             .filter(|result| result.status != SPIRE_REMOTE_STATUS_READY)
             .count();
-        let degraded =
-            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        let degraded = parse_remote_search_consistency_mode(consistency_mode)?
+            == meta::SpireConsistencyMode::Degraded;
         Ok(degraded || failed_count == 0)
     }
 
@@ -909,7 +903,12 @@ impl SpireRemoteProductionTransportAdapter {
                     candidate_start,
                 );
 
-                Ok((result_rows, remote_index_oid, endpoint_identity, query_metrics))
+                Ok((
+                    result_rows,
+                    remote_index_oid,
+                    endpoint_identity,
+                    query_metrics,
+                ))
             },
             local_cancel_source,
         )
@@ -1088,22 +1087,20 @@ impl SpireRemoteProductionTransportAdapter {
                             .await
                             .map_err(|error| production_remote_query_failure_category(&error))
                     }
-                    None => {
-                        client
-                            .query(
-                                SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
-                                &[
-                                    &remote_index_oid,
-                                    &requested_epoch,
-                                    &request.query,
-                                    &selected_pids,
-                                    &top_k,
-                                    &request.consistency_mode,
-                                ],
-                            )
-                            .await
-                            .map_err(|error| production_remote_query_failure_category(&error))
-                    }
+                    None => client
+                        .query(
+                            SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
+                            &[
+                                &remote_index_oid,
+                                &requested_epoch,
+                                &request.query,
+                                &selected_pids,
+                                &top_k,
+                                &request.consistency_mode,
+                            ],
+                        )
+                        .await
+                        .map_err(|error| production_remote_query_failure_category(&error)),
                 }?;
                 add_profile_elapsed(&mut query_metrics.heap_receive_elapsed_ms, heap_start);
                 Ok((result, query_metrics))
@@ -1186,9 +1183,7 @@ impl SpireRemoteProductionTransportAdapter {
                     .iter()
                     .map(Vec::len)
                     .try_fold(0_u64, |acc, len| {
-                        u64::try_from(len)
-                            .ok()
-                            .and_then(|len| acc.checked_add(len))
+                        u64::try_from(len).ok().and_then(|len| acc.checked_add(len))
                     })
                     .unwrap_or(u64::MAX);
                 add_profile_count(&mut metrics.payload_decode_bytes, row_bytes);
@@ -1765,10 +1760,8 @@ impl SpireRemoteProductionTransportAdapter {
             request.node_id,
             "coordinator insert remote prepare",
         )
-            .await
-            .map_err(|error| {
-                format!("{}: {}", error.category, error.message)
-            })?;
+        .await
+        .map_err(|error| format!("{}: {}", error.category, error.message))?;
         let cancel_token = client.cancel_token();
 
         let result = async {
@@ -1915,10 +1908,12 @@ impl SpireRemoteProductionTransportAdapter {
         F: std::future::Future<Output = Result<T, String>>,
     {
         if local_cancel_source == SpireRemoteLocalCancelSource::None {
-            return query_future.await.map(|value| SpireCoordinatorInsertAsyncStep {
-                value,
-                local_cancel_observed: false,
-            });
+            return query_future
+                .await
+                .map(|value| SpireCoordinatorInsertAsyncStep {
+                    value,
+                    local_cancel_observed: false,
+                });
         }
         let mut query_future = Box::pin(query_future);
         let mut cancel_signal = Box::pin(Self::local_cancel_signal(local_cancel_source));
@@ -2012,13 +2007,17 @@ fn postgres_query_cancel_pending() -> bool {
 
 const POSTGRES_STATEMENT_TIMEOUT_ID: std::ffi::c_int = 3;
 
-type PostgresGetTimeoutIndicator =
-    unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;
+type PostgresGetTimeoutIndicator = unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;
 
 fn postgres_statement_timeout_pending() -> bool {
     // SAFETY: the symbol name is static and NUL-terminated, and dlsym only
     // returns a raw address that is checked for null before use.
-    let ptr = unsafe { dlsym(std::ptr::null_mut(), b"get_timeout_indicator\0".as_ptr().cast()) };
+    let ptr = unsafe {
+        dlsym(
+            std::ptr::null_mut(),
+            b"get_timeout_indicator\0".as_ptr().cast(),
+        )
+    };
     if ptr.is_null() {
         return false;
     }

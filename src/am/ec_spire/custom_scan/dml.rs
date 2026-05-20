@@ -745,16 +745,12 @@ fn custom_scan_ensure_outputs(state: &mut SpireCustomScanExecState) {
         index_oid,
         "EcSpireDistributedScan production executor",
     );
-    // SAFETY: the index relation guard keeps the relation open while the
-    // production scan result stream decodes remote tuple-payload rows.
-    let stream = unsafe {
-        super::remote_search_production_scan_tuple_payload_result_stream(
-            index_relation.as_ptr(),
-            query,
-            top_k,
-            &tuple_payload_columns,
-        )
-    };
+    let stream = super::remote_search_production_scan_tuple_payload_result_stream(
+        index_relation.as_ptr(),
+        query,
+        top_k,
+        &tuple_payload_columns,
+    );
     if stream.summary.next_blocker != super::SPIRE_REMOTE_NONE {
         pgrx::error!(
             "EcSpireDistributedScan production executor blocked: status {}, next_blocker {}, recommendation {}",

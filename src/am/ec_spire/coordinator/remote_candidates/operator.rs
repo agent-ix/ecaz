@@ -6,18 +6,14 @@ pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqSecretPlanRow> {
-    // SAFETY: forwards the live index relation and caller-validated remote
-    // search planning inputs into the dispatch-plan diagnostic path.
-    let dispatch_rows = unsafe {
-        remote_search_libpq_dispatch_plan_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
 
     remote_search_libpq_secret_plan_rows_from_dispatch(&dispatch_rows)
 }
@@ -30,8 +26,7 @@ fn remote_search_libpq_secret_plan_rows_from_dispatch(
         .map(|row| {
             if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
                 let next_executor_step = remote_search_pre_dispatch_blocker_step(row.status);
-                let recommendation =
-                    remote_search_pre_dispatch_blocker_recommendation(row.status);
+                let recommendation = remote_search_pre_dispatch_blocker_recommendation(row.status);
                 return SpireRemoteSearchLibpqSecretPlanRow {
                     requested_epoch: row.requested_epoch,
                     node_id: row.node_id,
@@ -52,7 +47,10 @@ fn remote_search_libpq_secret_plan_rows_from_dispatch(
                 remote_conninfo_secret_resolution_status_row(&row.conninfo_secret_name);
             let (secret_resolution_action, next_executor_step) =
                 if secret_status.status == SPIRE_REMOTE_CONNINFO_RESOLVED {
-                    ("resolved_conninfo_secret_reference", "open_libpq_connection")
+                    (
+                        "resolved_conninfo_secret_reference",
+                        "open_libpq_connection",
+                    )
                 } else {
                     (
                         "resolve_conninfo_secret_reference",
@@ -158,12 +156,15 @@ fn remote_search_libpq_secret_summary_from_plan_rows(
         }
     }
 
-    let secret_count = u64::try_from(rows.len())
-        .map_err(|_| "remote search libpq secret count exceeds u64")?;
+    let secret_count =
+        u64::try_from(rows.len()).map_err(|_| "remote search libpq secret count exceeds u64")?;
     let (next_executor_step, status) = if secret_count == 0 {
         (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY)
     } else if pre_secret_blocked_count > 0 {
-        (first_pre_secret_blocked_step, first_pre_secret_blocked_status)
+        (
+            first_pre_secret_blocked_step,
+            first_pre_secret_blocked_status,
+        )
     } else if blocked_secret_count > 0 {
         (
             SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
@@ -354,19 +355,14 @@ pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq executor readiness top_k exceeds u64")?;
-        // SAFETY: forwards the live index relation and checked request fields to
-        // the dispatch-plan diagnostic path; results are summarized before
-        // executor readiness is reported.
-        let dispatch_rows = unsafe {
-            remote_search_libpq_dispatch_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let dispatch_summary = remote_search_libpq_dispatch_summary_from_plan_rows(
             requested_epoch,
             &dispatch_rows,
@@ -617,7 +613,8 @@ pub(crate) fn remote_search_libpq_parameter_contract_rows(
             parameter_name: "selected_pids",
             pg_type: "bigint[]",
             semantic_role: "selected_leaf_pid_set",
-            validator: "must_be_nonempty_positive_unique_remote_leaf_pids_delta_rows_are_leaf_derived",
+            validator:
+                "must_be_nonempty_positive_unique_remote_leaf_pids_delta_rows_are_leaf_derived",
         },
         SpireRemoteSearchLibpqParameterContractRow {
             parameter_ordinal: 5,

@@ -16,21 +16,17 @@ impl SpireCoordinatorPipeline {
         top_k: usize,
         consistency_mode: &str,
     ) -> Result<Self, String> {
-        let top_k_for_empty_plan = u64::try_from(top_k)
-            .map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;
+        let top_k_for_empty_plan =
+            u64::try_from(top_k).map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;
         let query_for_summary_fallback = query.clone();
-        // SAFETY: forwards the live index relation and checked request fields
-        // into the readiness planner that owns relation page/catalog reads.
-        let readiness_rows = unsafe {
-            remote_search_request_readiness_rows(
-                index_relation,
-                requested_epoch,
-                query.clone(),
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let readiness_rows = remote_search_request_readiness_rows(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let execution_rows = readiness_rows
             .into_iter()
             .map(remote_search_execution_plan_row_from_readiness)
@@ -46,11 +42,10 @@ impl SpireCoordinatorPipeline {
         // SAFETY: rd_id is stable while the relation is open for this pipeline
         // read and is only used as the local index OID for connection planning.
         let index_oid = unsafe { (*index_relation).rd_id };
-        let connection_rows = remote_search_libpq_connection_plan_rows_from_requests(
-            index_oid,
-            &request_rows,
-        )?;
-        let dispatch_rows = remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);
+        let connection_rows =
+            remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)?;
+        let dispatch_rows =
+            remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);
         let dispatch_summary = remote_search_libpq_dispatch_summary_from_plan_rows(
             requested_epoch,
             &dispatch_rows,
@@ -159,7 +154,11 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
                 SPIRE_REMOTE_NONE,
             )
         } else {
-            (SPIRE_REMOTE_NONE, finalization_summary.status, SPIRE_REMOTE_NONE)
+            (
+                SPIRE_REMOTE_NONE,
+                finalization_summary.status,
+                SPIRE_REMOTE_NONE,
+            )
         };
 
     SpireRemoteSearchCoordinatorGateSummaryRow {
@@ -232,7 +231,8 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
         SPIRE_REMOTE_NONE
     } else if gate.status == SPIRE_REMOTE_STATUS_EMPTY_TOP_K {
         SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-    } else if gate.remote_plan_count == 0 && remote_search_status_allows_local_heap_rows(gate.status)
+    } else if gate.remote_plan_count == 0
+        && remote_search_status_allows_local_heap_rows(gate.status)
     {
         SPIRE_REMOTE_STATUS_READY
     } else {

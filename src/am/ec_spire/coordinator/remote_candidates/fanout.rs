@@ -392,7 +392,7 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_request_plan_rows(
+pub(crate) fn remote_search_request_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -407,8 +407,8 @@ pub(crate) unsafe fn remote_search_request_plan_rows(
         let top_k = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request plan top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        // SAFETY: arguments are forwarded unchanged to the target-plan wrapper,
-        // which validates epoch and placement state before returning rows.
+        // SAFETY: the target-plan wrapper owns relation/page reads for this
+        // live index relation and validates epoch plus placement state.
         let rows = unsafe {
             remote_search_target_plan_rows(
                 index_relation,
@@ -440,7 +440,7 @@ pub(crate) unsafe fn remote_search_request_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_request_readiness_rows(
+pub(crate) fn remote_search_request_readiness_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -455,8 +455,8 @@ pub(crate) unsafe fn remote_search_request_readiness_rows(
         let top_k = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request readiness top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        // SAFETY: arguments are forwarded unchanged to the readiness wrapper,
-        // which derives node/capability status from the open index relation.
+        // SAFETY: the readiness wrapper owns relation/page reads for this live
+        // index relation while deriving node and capability status.
         let rows = unsafe {
             remote_search_target_readiness_rows(
                 index_relation,
@@ -503,18 +503,14 @@ pub(crate) unsafe fn remote_search_request_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request summary top_k exceeds u64")?;
-        // SAFETY: arguments are forwarded unchanged to the request-plan wrapper,
-        // which validates query, epoch, and target fanout state.
-        let rows = unsafe {
-            remote_search_request_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_request_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
@@ -524,7 +520,11 @@ pub(crate) unsafe fn remote_search_request_summary_row(
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
-            rollup.record_target(row.target_kind, row.pid_count, "remote search request summary")?;
+            rollup.record_target(
+                row.target_kind,
+                row.pid_count,
+                "remote search request summary",
+            )?;
         }
 
         if rows.is_empty() {
@@ -573,18 +573,14 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search readiness summary top_k exceeds u64")?;
-        // SAFETY: arguments are forwarded unchanged to the request-readiness
-        // wrapper, which validates query, epoch, and target readiness state.
-        let rows = unsafe {
-            remote_search_request_readiness_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_request_readiness_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
@@ -594,7 +590,11 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
-            rollup.record_target(row.target_kind, row.pid_count, "remote search readiness summary")?;
+            rollup.record_target(
+                row.target_kind,
+                row.pid_count,
+                "remote search readiness summary",
+            )?;
             rollup.record_status(row.status, row.pid_count, "remote search readiness summary")?;
         }
 
@@ -637,7 +637,7 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_execution_plan_rows(
+pub(crate) fn remote_search_execution_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -645,22 +645,16 @@ pub(crate) unsafe fn remote_search_execution_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchExecutionPlanRow> {
-    // SAFETY: arguments are forwarded unchanged to the request-readiness wrapper,
-    // which validates query, epoch, and remote target readiness.
-    let rows = unsafe {
-        remote_search_request_readiness_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let rows = remote_search_request_readiness_rows(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     rows.into_iter()
-        .map(|row| {
-            remote_search_execution_plan_row_from_readiness(row)
-        })
+        .map(|row| remote_search_execution_plan_row_from_readiness(row))
         .collect()
 }
 
@@ -707,7 +701,7 @@ fn remote_search_execution_plan_row_from_readiness(
     }
 }
 
-pub(crate) unsafe fn remote_search_execution_summary_row(
+pub(crate) fn remote_search_execution_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -719,18 +713,14 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search execution summary top_k exceeds u64")?;
-        // SAFETY: arguments are forwarded unchanged to the execution-plan wrapper,
-        // which derives rows from validated request readiness.
-        let rows = unsafe {
-            remote_search_execution_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_execution_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         remote_search_execution_summary_from_plan_rows(
             requested_epoch,
             &rows,
@@ -749,49 +739,52 @@ fn remote_search_execution_summary_from_plan_rows(
     top_k_for_empty_plan: u64,
     consistency_mode: &str,
 ) -> Result<SpireRemoteSearchExecutionSummaryRow, String> {
-        let mut rollup = SpireRemoteCountRollup::default();
-        let mut query_dimension = 0_u64;
-        let mut top_k = 0_u64;
-        let mut parsed_consistency_mode = "";
+    let mut rollup = SpireRemoteCountRollup::default();
+    let mut query_dimension = 0_u64;
+    let mut top_k = 0_u64;
+    let mut parsed_consistency_mode = "";
 
-        for row in rows {
-            query_dimension = row.query_dimension;
-            top_k = row.top_k;
-            parsed_consistency_mode = row.consistency_mode;
-            rollup.record_target(row.target_kind, row.pid_count, "remote search execution summary")?;
-            rollup.record_status(row.status, row.pid_count, "remote search execution summary")?;
-        }
+    for row in rows {
+        query_dimension = row.query_dimension;
+        top_k = row.top_k;
+        parsed_consistency_mode = row.consistency_mode;
+        rollup.record_target(
+            row.target_kind,
+            row.pid_count,
+            "remote search execution summary",
+        )?;
+        rollup.record_status(row.status, row.pid_count, "remote search execution summary")?;
+    }
 
-        if rows.is_empty() {
-            let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
-            query_dimension = u64::try_from(query.values().len()).map_err(|_| {
-                "ec_spire remote search execution summary query dimension exceeds u64"
-            })?;
-            top_k = top_k_for_empty_plan;
-            parsed_consistency_mode =
-                consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
-        }
+    if rows.is_empty() {
+        let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
+        query_dimension = u64::try_from(query.values().len())
+            .map_err(|_| "ec_spire remote search execution summary query dimension exceeds u64")?;
+        top_k = top_k_for_empty_plan;
+        parsed_consistency_mode =
+            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+    }
 
-        let plan_count = u64::try_from(rows.len())
-            .map_err(|_| "ec_spire remote search execution summary plan count exceeds u64")?;
-        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::Execution);
+    let plan_count = u64::try_from(rows.len())
+        .map_err(|_| "ec_spire remote search execution summary plan count exceeds u64")?;
+    let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::Execution);
 
-        Ok(SpireRemoteSearchExecutionSummaryRow {
-            requested_epoch,
-            plan_count,
-            local_plan_count: rollup.local_count,
-            remote_plan_count: rollup.remote_count,
-            skipped_plan_count: rollup.skipped_count,
-            ready_plan_count: rollup.ready_count,
-            blocked_plan_count: rollup.blocked_count,
-            degraded_skipped_plan_count: rollup.degraded_skipped_count,
-            local_pid_count: rollup.local_pid_count,
-            remote_pid_count: rollup.remote_pid_count,
-            skipped_pid_count: rollup.skipped_pid_count,
-            blocked_pid_count: rollup.blocked_pid_count,
-            query_dimension,
-            top_k,
-            consistency_mode: parsed_consistency_mode,
-            status,
-        })
+    Ok(SpireRemoteSearchExecutionSummaryRow {
+        requested_epoch,
+        plan_count,
+        local_plan_count: rollup.local_count,
+        remote_plan_count: rollup.remote_count,
+        skipped_plan_count: rollup.skipped_count,
+        ready_plan_count: rollup.ready_count,
+        blocked_plan_count: rollup.blocked_count,
+        degraded_skipped_plan_count: rollup.degraded_skipped_count,
+        local_pid_count: rollup.local_pid_count,
+        remote_pid_count: rollup.remote_pid_count,
+        skipped_pid_count: rollup.skipped_pid_count,
+        blocked_pid_count: rollup.blocked_pid_count,
+        query_dimension,
+        top_k,
+        consistency_mode: parsed_consistency_mode,
+        status,
+    })
 }

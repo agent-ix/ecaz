@@ -302,10 +302,8 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
-    let epoch_bytes =
-        page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
-    let object_bytes =
-        page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
+    let epoch_bytes = page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
+    let object_bytes = page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
     let placement_bytes =
         page::read_object_tuple(index_relation, root_control.placement_directory_tid)?;
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
@@ -770,7 +768,7 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
+fn remote_search_local_heap_candidate_rows_for_result_summary(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -1025,18 +1023,14 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
         && (remote_search_status_allows_local_heap_rows(gate.status)
             || gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED)
     {
-        // SAFETY: gate permits local heap resolution for the same live index
-        // relation and request fields used by the result summary.
-        heap_candidates.extend(unsafe {
-            remote_search_local_heap_candidate_rows_for_result_summary(
-                index_relation,
-                requested_epoch,
-                query.clone(),
-                selected_pids.clone(),
-                top_k,
-                consistency_mode,
-            )
-        });
+        heap_candidates.extend(remote_search_local_heap_candidate_rows_for_result_summary(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        ));
     }
     if gate.remote_plan_count > 0 && gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED {
         // SAFETY: gate requires remote executor heap rows for the same live
