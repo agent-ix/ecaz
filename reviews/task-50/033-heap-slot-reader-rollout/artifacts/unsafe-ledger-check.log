@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/033-heap-slot-reader-rollout/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 2442 current unsafe rows
