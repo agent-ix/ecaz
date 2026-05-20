@@ -67,15 +67,11 @@ impl SpireLiveIndexRelation {
         placement_directory: &meta::SpirePlacementDirectory,
         lockmode: pg_sys::LOCKMODE,
     ) -> Result<storage::SpireRelationObjectStoreSet, String> {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation; placements come from the active epoch loaded from it.
-        unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                self.relation,
-                placement_directory,
-                lockmode,
-            )
-        }
+        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+            self.relation,
+            placement_directory,
+            lockmode,
+        )
     }
 
     fn object_store(self) -> Result<storage::SpireRelationObjectStore, String> {

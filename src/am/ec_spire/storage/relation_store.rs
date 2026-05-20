@@ -1305,7 +1305,7 @@ impl SpireRelationObjectStoreSet {
         })
     }
 
-    pub(super) unsafe fn for_index_relation_and_placements(
+    pub(super) fn for_index_relation_and_placements(
         index_relation: pg_sys::Relation,
         placement_directory: &SpirePlacementDirectory,
         lockmode: pg_sys::LOCKMODE,

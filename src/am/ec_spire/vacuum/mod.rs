@@ -94,15 +94,11 @@ impl SpireVacuumIndexRelation {
         placement_directory: &SpirePlacementDirectory,
         lockmode: pg_sys::LOCKMODE,
     ) -> Result<SpireRelationObjectStoreSet, String> {
-        // SAFETY: placements were loaded from the active epoch for this live
-        // relation; store guards own opened relation-backed objects.
-        unsafe {
-            SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                self.relation,
-                placement_directory,
-                lockmode,
-            )
-        }
+        SpireRelationObjectStoreSet::for_index_relation_and_placements(
+            self.relation,
+            placement_directory,
+            lockmode,
+        )
     }
 
     fn object_store_set_for_config(

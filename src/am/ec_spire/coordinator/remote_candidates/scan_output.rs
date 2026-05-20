@@ -135,15 +135,12 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
             &object_manifest,
             &placement_directory,
         )?;
-        // SAFETY: opens relation-backed object stores for placements from the
-        // published epoch snapshot while holding AccessShareLock.
-        let object_store = unsafe {
+        let object_store =
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
-        };
+            )?;
         // SAFETY: reads PostgreSQL reloptions from the live index relation for
         // scan planning only.
         let relation_options = unsafe { options::relation_options(index_relation) };
@@ -533,15 +530,12 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
             &object_manifest,
             &placement_directory,
         )?;
-        // SAFETY: opens relation-backed object stores for placements from the
-        // active published epoch while holding AccessShareLock.
-        let object_store = unsafe {
+        let object_store =
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
-        };
+            )?;
         // SAFETY: reads PostgreSQL reloptions from the live index relation for
         // scan-plan and candidate-limit resolution only.
         let relation_options = unsafe { options::relation_options(index_relation) };

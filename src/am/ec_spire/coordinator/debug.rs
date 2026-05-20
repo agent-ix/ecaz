@@ -370,15 +370,12 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
             &object_manifest,
             &placement_directory,
         )?;
-        // SAFETY: opens relation-backed object stores for the debug placement
-        // directory while the root relation guard remains live.
-        let relation_store_set = unsafe {
+        let relation_store_set =
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 root_relation.as_ptr(),
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
-        };
+            )?;
         let candidates = scan::collect_quantized_routed_probe_candidates(
             &snapshot,
             &relation_store_set,

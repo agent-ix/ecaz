@@ -137,15 +137,12 @@ pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
         }
         let (_epoch_manifest, _object_manifest, placement_directory) =
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
-        // SAFETY: placement_directory was decoded from the active relation
-        // manifests and is used to open the corresponding local object stores.
-        let object_store = unsafe {
+        let object_store =
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
-        };
+            )?;
         let mut groups = BTreeMap::<Vec<u8>, BoundaryReplicaIdentityAccumulator>::new();
 
         for placement in &placement_directory.entries {
@@ -250,15 +247,12 @@ pub(crate) unsafe fn index_boundary_replica_placement_diagnostics(
                 index_relation,
                 root_control,
             )?;
-        // SAFETY: placement_directory was decoded from the active relation
-        // manifests and is used to open the corresponding local object stores.
-        let object_store = unsafe {
+        let object_store =
             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
                 index_relation,
                 &placement_directory,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
-        };
+            )?;
         let mut groups = BTreeMap::<Vec<u8>, BoundaryReplicaPlacementAccumulator>::new();
 
         for placement in &placement_directory.entries {
