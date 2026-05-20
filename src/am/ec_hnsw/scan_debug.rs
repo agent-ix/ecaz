@@ -533,35 +533,35 @@ fn debug_index_scan_end(scan: pg_sys::IndexScanDesc) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a TqScanOpaque {
+unsafe fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a TqScanOpaque {
     // SAFETY: Debug callers inspect the HNSW opaque while the scan descriptor is
     // live and after begin/rescan initialized the opaque pointer.
     unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut TqScanOpaque {
+unsafe fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut TqScanOpaque {
     // SAFETY: Debug callers take exclusive mutable access to the scan opaque
     // while the live scan descriptor is not otherwise borrowed.
     unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_has_opaque(scan: pg_sys::IndexScanDesc) -> bool {
+unsafe fn debug_scan_has_opaque(scan: pg_sys::IndexScanDesc) -> bool {
     // SAFETY: Debug callers pass a live scan descriptor and only read the
     // descriptor's opaque pointer.
     unsafe { !(*scan).opaque.is_null() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
+unsafe fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
     // SAFETY: Debug callers pass a live scan descriptor and only read the
     // descriptor's opaque pointer.
     unsafe { (*scan).opaque.is_null() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
+unsafe fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
     // SAFETY: Debug callers read xs_heaptid immediately after a successful
     // gettuple call on the same live scan descriptor.
     pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid })
@@ -674,7 +674,7 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
 
     // SAFETY: `ec_hnsw_amrescan` initializes the HNSW scan opaque on the live
     // scan descriptor.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
@@ -735,7 +735,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
 
     // SAFETY: The second AM rescan leaves the HNSW scan opaque initialized on
     // the live descriptor for debug inspection.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
@@ -822,7 +822,7 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
     debug_am_rescan(scan, unused_keys, 0, &mut orderby, 1);
 
     // SAFETY: AM rescan initializes the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
@@ -3075,7 +3075,7 @@ fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
 fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
     // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
     // initialized by AM rescan.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     opaque
         .last_emitted_comparison_score_valid
         .then_some(opaque.last_emitted_comparison_score)
@@ -3085,7 +3085,7 @@ fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<
 fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
     // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
     // initialized by AM rescan.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     opaque
         .last_emitted_approx_score_valid
         .then_some(opaque.last_emitted_approx_score)
@@ -3095,7 +3095,7 @@ fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32>
 fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> {
     // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
     // initialized by AM rescan.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     opaque
         .last_emitted_approx_rank_valid
         .then_some(opaque.last_emitted_approx_rank)

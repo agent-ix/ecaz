@@ -66,7 +66,7 @@ const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
 
 type PrefetchedGraphBuffers = HashMap<u32, PinnedBufferGuard>;
 
-fn scan_opaque_ref<'a>(opaque: *mut TqScanOpaque) -> &'a TqScanOpaque {
+unsafe fn scan_opaque_ref<'a>(opaque: *mut TqScanOpaque) -> &'a TqScanOpaque {
     assert!(
         !opaque.is_null(),
         "ec_hnsw scan opaque pointer must be live"
@@ -76,7 +76,7 @@ fn scan_opaque_ref<'a>(opaque: *mut TqScanOpaque) -> &'a TqScanOpaque {
     unsafe { &*opaque }
 }
 
-fn scan_opaque_mut<'a>(opaque: *mut TqScanOpaque) -> &'a mut TqScanOpaque {
+unsafe fn scan_opaque_mut<'a>(opaque: *mut TqScanOpaque) -> &'a mut TqScanOpaque {
     assert!(
         !opaque.is_null(),
         "ec_hnsw scan opaque pointer must be live"
@@ -86,7 +86,7 @@ fn scan_opaque_mut<'a>(opaque: *mut TqScanOpaque) -> &'a mut TqScanOpaque {
     unsafe { &mut *opaque }
 }
 
-fn scan_box_ref<'a, T>(ptr: *const T) -> Option<&'a T> {
+fn scan_box_ref<'a, T>(ptr: *const T, _opaque: &'a TqScanOpaque) -> Option<&'a T> {
     if ptr.is_null() {
         None
     } else {
@@ -96,7 +96,7 @@ fn scan_box_ref<'a, T>(ptr: *const T) -> Option<&'a T> {
     }
 }
 
-fn scan_box_mut<'a, T>(ptr: *mut T) -> Option<&'a mut T> {
+fn scan_box_mut<'a, T>(ptr: *mut T, _opaque: &'a mut TqScanOpaque) -> Option<&'a mut T> {
     if ptr.is_null() {
         None
     } else {
@@ -1148,19 +1148,19 @@ fn parallel_scan_worker_phase(phase: ScanExecutionPhase) -> u32 {
 }
 
 fn bootstrap_expansion_frontier_len(opaque: &TqScanOpaque) -> usize {
-    scan_box_ref(opaque.bootstrap_expansion)
+    scan_box_ref(opaque.bootstrap_expansion, opaque)
         .map(search::BeamSearch::frontier_len)
         .unwrap_or(0)
 }
 
 fn visited_tid_count(opaque: &TqScanOpaque) -> usize {
-    scan_box_ref(opaque.visited_tids)
+    scan_box_ref(opaque.visited_tids, opaque)
         .map(HashSet::len)
         .unwrap_or(0)
 }
 
 fn emitted_result_tid_count(opaque: &TqScanOpaque) -> usize {
-    scan_box_ref(opaque.emitted_result_tids)
+    scan_box_ref(opaque.emitted_result_tids, opaque)
         .map(HashSet::len)
         .unwrap_or(0)
 }
@@ -1363,7 +1363,7 @@ fn turboquant_non_default_exact_score_enabled(opaque: &TqScanOpaque) -> bool {
 }
 
 fn cached_quantizer_ref(opaque: &TqScanOpaque) -> Option<&ProdQuantizer> {
-    scan_box_ref(opaque.cached_quantizer)
+    scan_box_ref(opaque.cached_quantizer, opaque)
 }
 
 pub(super) fn turboquant_exact_score_mode_name(opaque: &TqScanOpaque) -> &'static str {
@@ -2200,7 +2200,7 @@ unsafe fn store_grouped_scan_query(
             "ec_hnsw PqFastScan scan cannot prepare PqFastScan query state without a query"
         );
     }
-    let prepared_query = scan_box_ref(opaque.prepared_query)
+    let prepared_query = scan_box_ref(opaque.prepared_query, opaque)
         .expect("prepared query should be live for grouped scan query build");
     // SAFETY: `index_relation` and `metadata` describe the live PqFastScan
     // index relation currently being rescanned.
@@ -2210,7 +2210,7 @@ unsafe fn store_grouped_scan_query(
 }
 
 fn grouped_scan_query(opaque: &TqScanOpaque) -> Option<&PreparedGroupedScanQuery> {
-    scan_box_ref(opaque.grouped_query)
+    scan_box_ref(opaque.grouped_query, opaque)
 }
 
 fn reset_scan_position(opaque: &mut TqScanOpaque) {
@@ -2272,7 +2272,7 @@ fn graph_element_cache_mut(
         opaque.graph_element_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
-    scan_box_mut(opaque.graph_element_cache).expect("graph element cache should be live")
+    scan_box_mut(opaque.graph_element_cache, opaque).expect("graph element cache should be live")
 }
 
 fn graph_neighbor_cache_mut(
@@ -2282,7 +2282,7 @@ fn graph_neighbor_cache_mut(
         opaque.graph_neighbor_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
-    scan_box_mut(opaque.graph_neighbor_cache).expect("graph neighbor cache should be live")
+    scan_box_mut(opaque.graph_neighbor_cache, opaque).expect("graph neighbor cache should be live")
 }
 
 fn score_cache_mut(opaque: &mut TqScanOpaque) -> &mut HashMap<page::ItemPointer, f32> {
@@ -2290,7 +2290,7 @@ fn score_cache_mut(opaque: &mut TqScanOpaque) -> &mut HashMap<page::ItemPointer,
         opaque.score_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
-    scan_box_mut(opaque.score_cache).expect("score cache should be live")
+    scan_box_mut(opaque.score_cache, opaque).expect("score cache should be live")
 }
 
 fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> Option<f32> {
@@ -2298,7 +2298,7 @@ fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPoint
         return None;
     }
 
-    scan_box_ref(opaque.score_cache)
+    scan_box_ref(opaque.score_cache, opaque)
         .expect("score cache should be live")
         .get(&element_tid)
         .copied()
@@ -2328,7 +2328,7 @@ unsafe fn live_loaded_state_from_exact_payload(
 }
 
 fn binary_sign_query(opaque: &TqScanOpaque) -> Option<&BinarySignNoQjl4BitQuery> {
-    scan_box_ref(opaque.binary_sign_query)
+    scan_box_ref(opaque.binary_sign_query, opaque)
 }
 
 fn binary_prefilter_survivor_budget(candidate_count: usize) -> usize {
@@ -2680,8 +2680,8 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
     }
     // SAFETY: non-null `prepared_query` is Box-owned by this scan opaque until
     // `free_scan_prepared_query` runs.
-    let prepared_query =
-        scan_box_ref(opaque.prepared_query).expect("prepared query should be live for rerank");
+    let prepared_query = scan_box_ref(opaque.prepared_query, opaque)
+        .expect("prepared query should be live for rerank");
     let quantizer = cached_quantizer_ref(opaque)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
     score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
@@ -4107,8 +4107,8 @@ fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) 
     if opaque.bootstrap_expansion.is_null() {
         opaque.bootstrap_expansion = Box::into_raw(Box::new(search::BeamSearch::new(ef_search)));
     } else {
-        *scan_box_mut(opaque.bootstrap_expansion).expect("bootstrap expansion should be live") =
-            search::BeamSearch::new(ef_search);
+        *scan_box_mut(opaque.bootstrap_expansion, opaque)
+            .expect("bootstrap expansion should be live") = search::BeamSearch::new(ef_search);
     }
 }
 
@@ -4132,7 +4132,7 @@ fn reset_graph_prefetch_state(opaque: &mut TqScanOpaque) {
     if opaque.graph_prefetch_state.is_null() {
         opaque.graph_prefetch_state = Box::into_raw(Box::new(GraphPrefetchState::new(Vec::new())));
     } else {
-        scan_box_mut(opaque.graph_prefetch_state)
+        scan_box_mut(opaque.graph_prefetch_state, opaque)
             .expect("graph prefetch state should be live")
             .reset(Vec::new());
     }
@@ -4143,7 +4143,7 @@ fn reset_graph_prefetch_blocks(opaque: &mut TqScanOpaque, blocks: Vec<u32>) {
     if opaque.graph_prefetch_state.is_null() {
         opaque.graph_prefetch_state = Box::into_raw(Box::new(GraphPrefetchState::new(blocks)));
     } else {
-        scan_box_mut(opaque.graph_prefetch_state)
+        scan_box_mut(opaque.graph_prefetch_state, opaque)
             .expect("graph prefetch state should be live")
             .reset(blocks);
     }
@@ -4243,7 +4243,7 @@ fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState
     if opaque.candidate_frontier.is_null() {
         &EMPTY_VISIBLE_FRONTIER_STATE
     } else {
-        scan_box_ref(opaque.candidate_frontier).expect("candidate frontier should be live")
+        scan_box_ref(opaque.candidate_frontier, opaque).expect("candidate frontier should be live")
     }
 }
 
@@ -4252,7 +4252,7 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
         opaque.candidate_frontier =
             Box::into_raw(Box::new(VisibleCandidateFrontierState::default()));
     }
-    scan_box_mut(opaque.candidate_frontier).expect("candidate frontier should be live")
+    scan_box_mut(opaque.candidate_frontier, opaque).expect("candidate frontier should be live")
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -4317,39 +4317,56 @@ fn bootstrap_expansion_mut(
     if opaque.bootstrap_expansion.is_null() {
         reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     }
-    scan_box_mut(opaque.bootstrap_expansion).expect("bootstrap expansion should be live")
+    scan_box_mut(opaque.bootstrap_expansion, opaque).expect("bootstrap expansion should be live")
 }
 
-fn reset_scan_tid_set(slot: &mut *mut HashSet<page::ItemPointer>) {
-    if (*slot).is_null() {
-        *slot = Box::into_raw(Box::new(HashSet::new()));
-    } else {
-        scan_box_mut(*slot)
-            .expect("scan TID set should be live")
-            .clear();
-    }
+fn reset_scan_tid_set(
+    opaque: &mut TqScanOpaque,
+    slot: impl FnOnce(&mut TqScanOpaque) -> &mut *mut HashSet<page::ItemPointer>,
+) {
+    let ptr = {
+        let slot = slot(opaque);
+        if (*slot).is_null() {
+            *slot = Box::into_raw(Box::new(HashSet::new()));
+            return;
+        }
+        *slot
+    };
+    scan_box_mut(ptr, opaque)
+        .expect("scan TID set should be live")
+        .clear();
 }
 
-fn scan_tid_set_insert(slot: *mut HashSet<page::ItemPointer>, tid: page::ItemPointer) {
-    if slot.is_null() || tid == page::ItemPointer::INVALID {
+fn scan_tid_set_insert(
+    opaque: &mut TqScanOpaque,
+    slot: impl FnOnce(&mut TqScanOpaque) -> &mut *mut HashSet<page::ItemPointer>,
+    tid: page::ItemPointer,
+) {
+    let ptr = *slot(opaque);
+    if ptr.is_null() || tid == page::ItemPointer::INVALID {
         return;
     }
-    if let Some(set) = scan_box_mut(slot) {
+    if let Some(set) = scan_box_mut(ptr, opaque) {
         set.insert(tid);
     }
 }
 
-fn scan_tid_set_contains(slot: *const HashSet<page::ItemPointer>, tid: page::ItemPointer) -> bool {
-    if slot.is_null() || tid == page::ItemPointer::INVALID {
+fn scan_tid_set_contains(
+    opaque: &TqScanOpaque,
+    slot: impl FnOnce(&TqScanOpaque) -> *const HashSet<page::ItemPointer>,
+    tid: page::ItemPointer,
+) -> bool {
+    let ptr = slot(opaque);
+    if ptr.is_null() || tid == page::ItemPointer::INVALID {
         return false;
     }
-    scan_box_ref(slot)
+    scan_box_ref(ptr, opaque)
         .map(|set: &HashSet<page::ItemPointer>| set.contains(&tid))
         .unwrap_or(false)
 }
 
 fn reset_scan_visited_state(opaque: &mut TqScanOpaque) {
-    reset_scan_tid_set(&mut opaque.visited_tids);
+    reset_scan_tid_set(opaque, |opaque| &mut opaque.visited_tids);
 }
 
 fn free_scan_visited_set(opaque: &mut TqScanOpaque) {
@@ -4357,15 +4374,15 @@ fn free_scan_visited_set(opaque: &mut TqScanOpaque) {
 }
 
 fn mark_visited_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer) {
-    scan_tid_set_insert(opaque.visited_tids, element_tid);
+    scan_tid_set_insert(opaque, |opaque| &mut opaque.visited_tids, element_tid);
 }
 
 fn visited_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> bool {
-    scan_tid_set_contains(opaque.visited_tids, element_tid)
+    scan_tid_set_contains(opaque, |opaque| opaque.visited_tids, element_tid)
 }
 
 fn reset_scan_expanded_state(opaque: &mut TqScanOpaque) {
-    reset_scan_tid_set(&mut opaque.expanded_source_tids);
+    reset_scan_tid_set(opaque, |opaque| &mut opaque.expanded_source_tids);
 }
 
 fn free_scan_expanded_set(opaque: &mut TqScanOpaque) {
@@ -4373,15 +4390,19 @@ fn free_scan_expanded_set(opaque: &mut TqScanOpaque) {
 }
 
 fn mark_expanded_source(opaque: &mut TqScanOpaque, source_tid: page::ItemPointer) {
-    scan_tid_set_insert(opaque.expanded_source_tids, source_tid);
+    scan_tid_set_insert(
+        opaque,
+        |opaque| &mut opaque.expanded_source_tids,
+        source_tid,
+    );
 }
 
 fn expanded_contains_source(opaque: &TqScanOpaque, source_tid: page::ItemPointer) -> bool {
-    scan_tid_set_contains(opaque.expanded_source_tids, source_tid)
+    scan_tid_set_contains(opaque, |opaque| opaque.expanded_source_tids, source_tid)
 }
 
 fn reset_scan_emitted_state(opaque: &mut TqScanOpaque) {
-    reset_scan_tid_set(&mut opaque.emitted_result_tids);
+    reset_scan_tid_set(opaque, |opaque| &mut opaque.emitted_result_tids);
 }
 
 fn free_scan_emitted_set(opaque: &mut TqScanOpaque) {
@@ -4389,11 +4410,15 @@ fn free_scan_emitted_set(opaque: &mut TqScanOpaque) {
 }
 
 fn mark_emitted_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer) {
-    scan_tid_set_insert(opaque.emitted_result_tids, element_tid);
+    scan_tid_set_insert(
+        opaque,
+        |opaque| &mut opaque.emitted_result_tids,
+        element_tid,
+    );
 }
 
 fn emitted_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> bool {
-    scan_tid_set_contains(opaque.emitted_result_tids, element_tid)
+    scan_tid_set_contains(opaque, |opaque| opaque.emitted_result_tids, element_tid)
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -4518,28 +4543,22 @@ fn seed_bootstrap_trace(
     reset_bootstrap_expansion_state(opaque, max_candidates);
     reset_scan_expanded_state(opaque);
     let opaque_ptr = opaque as *mut TqScanOpaque;
-    with_visible_frontier_mut_and_bootstrap_expansion(
-        // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
-        // callbacks can mark visited/expanded sets while the frontier mutates.
-        scan_opaque_mut(opaque_ptr),
-        |visible_frontier, expansion| {
-            visible_frontier.seed_bootstrap_trace(
-                expansion,
-                trace,
-                max_candidates,
-                |node| {
-                    // SAFETY: callback execution is synchronous while
-                    // `opaque_ptr` remains the live scan opaque.
-                    mark_visited_element(scan_opaque_mut(opaque_ptr), node)
-                },
-                |node| {
-                    // SAFETY: callback execution is synchronous while
-                    // `opaque_ptr` remains the live scan opaque.
-                    mark_expanded_source(scan_opaque_mut(opaque_ptr), node)
-                },
-            );
-        },
-    );
+    // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
+    // callbacks can mark visited/expanded sets while the frontier mutates.
+    unsafe {
+        with_visible_frontier_mut_and_bootstrap_expansion(
+            scan_opaque_mut(opaque_ptr),
+            |visible_frontier, expansion| {
+                visible_frontier.seed_bootstrap_trace(
+                    expansion,
+                    trace,
+                    max_candidates,
+                    |node| mark_visited_element(scan_opaque_mut(opaque_ptr), node),
+                    |node| mark_expanded_source(scan_opaque_mut(opaque_ptr), node),
+                );
+            },
+        );
+    }
 }
 
 fn seed_discovered_candidates(
@@ -4552,18 +4571,18 @@ fn seed_discovered_candidates(
     }
 
     let opaque_ptr = opaque as *mut TqScanOpaque;
-    with_visible_frontier_mut_and_bootstrap_expansion(
-        // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
-        // callbacks can mark visited sets while the frontier mutates.
-        scan_opaque_mut(opaque_ptr),
-        |visible_frontier, expansion| {
-            visible_frontier.seed_discovered(expansion, candidates, |node| {
-                // SAFETY: callback execution is synchronous while `opaque_ptr`
-                // remains the live scan opaque.
-                mark_visited_element(scan_opaque_mut(opaque_ptr), node)
-            });
-        },
-    );
+    // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
+    // callbacks can mark visited sets while the frontier mutates.
+    unsafe {
+        with_visible_frontier_mut_and_bootstrap_expansion(
+            scan_opaque_mut(opaque_ptr),
+            |visible_frontier, expansion| {
+                visible_frontier.seed_discovered(expansion, candidates, |node| {
+                    mark_visited_element(scan_opaque_mut(opaque_ptr), node)
+                });
+            },
+        );
+    }
 }
 
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
@@ -5221,7 +5240,7 @@ unsafe fn score_scan_element_result(
                     "ec_hnsw TurboQuant full_lut exact-score mode requires a prepared LUT query"
                 );
             }
-            let prepared = scan_box_ref(opaque.turboquant_lut_query)
+            let prepared = scan_box_ref(opaque.turboquant_lut_query, opaque)
                 .expect("TurboQuant LUT query should be live");
             return -quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, code_bytes);
         }
@@ -5231,7 +5250,7 @@ unsafe fn score_scan_element_result(
                     "ec_hnsw TurboQuant tiled_lut exact-score mode requires a prepared tiled LUT query"
                 );
             }
-            let prepared = scan_box_ref(opaque.turboquant_tiled_lut_query)
+            let prepared = scan_box_ref(opaque.turboquant_tiled_lut_query, opaque)
                 .expect("TurboQuant tiled LUT query should be live");
             return -quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, code_bytes);
         }
@@ -5241,7 +5260,7 @@ unsafe fn score_scan_element_result(
                     "ec_hnsw TurboQuant int8 exact-score mode requires a prepared int8 query"
                 );
             }
-            let prepared = scan_box_ref(opaque.turboquant_int8_query)
+            let prepared = scan_box_ref(opaque.turboquant_int8_query, opaque)
                 .expect("TurboQuant int8 query should be live");
             return -quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, code_bytes);
         }
@@ -5249,7 +5268,7 @@ unsafe fn score_scan_element_result(
     if opaque.prepared_query.is_null() {
         pgrx::error!("ec_hnsw scan scoring requires a prepared query");
     }
-    let prepared_query = scan_box_ref(opaque.prepared_query)
+    let prepared_query = scan_box_ref(opaque.prepared_query, opaque)
         .expect("prepared query should be live for scan scoring");
     -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
 }
@@ -5705,10 +5724,7 @@ impl TqScanOpaque {
         if self.query_values.is_null() || self.query_dimensions == 0 {
             pgrx::error!("ec_hnsw scan state is missing raw query values");
         }
-
-        // SAFETY: non-null `query_values` points to `query_dimensions` f32
-        // values copied into scan-owned PostgreSQL memory by `store_scan_query`.
-        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+        scan_query_values_slice(self)
     }
 
     #[cfg(any(test, feature = "pg_test"))]
@@ -5716,11 +5732,14 @@ impl TqScanOpaque {
         if self.query_values.is_null() || self.query_dimensions == 0 {
             return &[];
         }
-
-        // SAFETY: non-null `query_values` points to `query_dimensions` f32
-        // values copied into scan-owned PostgreSQL memory by `store_scan_query`.
-        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+        scan_query_values_slice(self)
     }
+}
+
+fn scan_query_values_slice(opaque: &TqScanOpaque) -> &[f32] {
+    // SAFETY: non-null `query_values` points to `query_dimensions` f32 values
+    // copied into scan-owned PostgreSQL memory by `store_scan_query`.
+    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
 }
 
 impl Default for TqScanOpaque {
@@ -6290,19 +6309,19 @@ mod tests {
         reset_scan_position(&mut opaque);
 
         assert!(
-            scan_box_ref(opaque.graph_element_cache)
+            scan_box_ref(opaque.graph_element_cache, &opaque)
                 .expect("graph element cache should be live")
                 .is_empty(),
             "amrescan/reset should drop cached graph elements before reseeding the ordered scan"
         );
         assert!(
-            scan_box_ref(opaque.graph_neighbor_cache)
+            scan_box_ref(opaque.graph_neighbor_cache, &opaque)
                 .expect("graph neighbor cache should be live")
                 .is_empty(),
             "amrescan/reset should drop cached graph neighbors before reseeding the ordered scan"
         );
         assert!(
-            scan_box_ref(opaque.score_cache)
+            scan_box_ref(opaque.score_cache, &opaque)
                 .expect("score cache should be live")
                 .is_empty(),
             "amrescan/reset should drop cached element scores before reseeding the ordered scan"

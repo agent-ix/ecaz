@@ -80,13 +80,13 @@ impl SpireLiveIndexRelation {
     }
 }
 
-fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
+unsafe fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
     // SAFETY: callers are PostgreSQL AM/SQL diagnostic entry points that keep
     // the SPIRE index relation live for the duration of the helper call.
     unsafe { SpireLiveIndexRelation::new(index_relation) }
 }
 
-fn live_index_relid(index_relation: pg_sys::Relation) -> u32 {
+unsafe fn live_index_relid(index_relation: pg_sys::Relation) -> u32 {
     // SAFETY: callers pass a live SPIRE index relation; rd_id is copied and no
     // ownership is taken.
     unsafe { (*index_relation).rd_id }.into()
@@ -772,7 +772,7 @@ fn collect_physical_cleanup_candidates(
 ) -> Result<SpirePhysicalCleanupCandidates, String> {
     // rd_id is stable while index_relation is open; it is copied as the index
     // OID for cleanup protection/candidate accounting.
-    let index_relid = live_index_relid(index_relation);
+    let index_relid = unsafe { live_index_relid(index_relation) };
     let manifests = collect_epoch_manifests_for_cleanup(index_relation)?;
     let latest_manifests = latest_epoch_manifests(&manifests);
     let cleanup_epochs: HashSet<u64> =

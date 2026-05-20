@@ -581,10 +581,17 @@ fn palloc_copy_slice<T: Copy>(values: &[T], context: &str) -> *mut T {
     ptr
 }
 
-fn pfree_scan_slice<T>(ptr: *mut T) {
-    // SAFETY: callers pass a pointer allocated by `palloc_copy_slice` and owned
-    // by the current scan opaque.
-    unsafe { pg_sys::pfree(ptr.cast()) };
+fn pfree_scan_slice<T>(
+    opaque: &mut EcIvfScanOpaque,
+    slot: impl FnOnce(&mut EcIvfScanOpaque) -> &mut *mut T,
+) {
+    let ptr = slot(opaque);
+    if !(*ptr).is_null() {
+        // SAFETY: the selected slot is scan-opaque owned and only populated by
+        // `palloc_copy_slice` before this helper clears it.
+        unsafe { pg_sys::pfree((*ptr).cast()) };
+        *ptr = ptr::null_mut();
+    }
 }
 
 fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
@@ -596,10 +603,7 @@ fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
 }
 
 fn free_scan_query(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.query_values.is_null() {
-        pfree_scan_slice(opaque.query_values);
-        opaque.query_values = ptr::null_mut();
-    }
+    pfree_scan_slice(opaque, |opaque| &mut opaque.query_values);
     opaque.query_dimensions = 0;
 }
 
@@ -681,10 +685,7 @@ fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCentroidSc
 }
 
 fn free_centroid_scores(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.centroid_scores.is_null() {
-        pfree_scan_slice(opaque.centroid_scores);
-        opaque.centroid_scores = ptr::null_mut();
-    }
+    pfree_scan_slice(opaque, |opaque| &mut opaque.centroid_scores);
     opaque.centroid_score_count = 0;
 }
 
@@ -704,10 +705,7 @@ fn store_selected_lists(opaque: &mut EcIvfScanOpaque, selected_lists: &[u32]) {
 }
 
 fn free_selected_lists(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.selected_lists.is_null() {
-        pfree_scan_slice(opaque.selected_lists);
-        opaque.selected_lists = ptr::null_mut();
-    }
+    pfree_scan_slice(opaque, |opaque| &mut opaque.selected_lists);
     opaque.selected_list_count = 0;
 }
 
@@ -728,10 +726,7 @@ fn store_posting_candidates(opaque: &mut EcIvfScanOpaque, candidates: &[EcIvfSco
 }
 
 fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.posting_candidates.is_null() {
-        pfree_scan_slice(opaque.posting_candidates);
-        opaque.posting_candidates = ptr::null_mut();
-    }
+    pfree_scan_slice(opaque, |opaque| &mut opaque.posting_candidates);
     opaque.posting_candidate_count = 0;
     opaque.next_candidate_index = 0;
 }
@@ -1595,14 +1590,14 @@ fn debug_index_getnext_tid(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a EcIvfScanOpaque {
+unsafe fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a EcIvfScanOpaque {
     // SAFETY: Debug callers inspect the IVF opaque while the scan descriptor is
     // live and after begin/rescan initialized the opaque pointer.
     unsafe { &*(*scan).opaque.cast::<EcIvfScanOpaque>() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque_option<'a>(scan: pg_sys::IndexScanDesc) -> Option<&'a EcIvfScanOpaque> {
+unsafe fn debug_scan_opaque_option<'a>(scan: pg_sys::IndexScanDesc) -> Option<&'a EcIvfScanOpaque> {
     // SAFETY: `as_ref` converts a null IVF opaque pointer to None for debug
     // probes that intentionally inspect optional cache state.
     unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() }
@@ -1642,7 +1637,7 @@ fn debug_index_heap_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> (u32, u16) {
+unsafe fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> (u32, u16) {
     // SAFETY: Debug callers read xs_heaptid immediately after a successful
     // gettuple call on the same live scan descriptor.
     pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid })
