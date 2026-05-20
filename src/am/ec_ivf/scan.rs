@@ -52,9 +52,12 @@ impl EcIvfScanOpaque {
         if self.query_values.is_null() || self.query_dimensions == 0 {
             pgrx::error!("ec_ivf scan query state is missing");
         }
-        // SAFETY: `store_scan_query` allocates `query_dimensions` contiguous
-        // f32 values and this method rejects null or zero-length state above.
-        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+        scan_owned_slice(
+            self,
+            self.query_values,
+            self.query_dimensions as usize,
+            "ec_ivf scan query values",
+        )
     }
 
     fn next_posting_candidate(&mut self) -> Option<EcIvfScoredCandidate> {
@@ -64,13 +67,14 @@ impl EcIvfScanOpaque {
             return None;
         }
 
-        // SAFETY: `posting_candidates` points to `posting_candidate_count`
-        // contiguous candidates and the index bound is checked above.
-        let candidate = unsafe {
-            *self
-                .posting_candidates
-                .add(self.next_candidate_index as usize)
-        };
+        let candidate = scan_owned_slice(
+            self,
+            self.posting_candidates,
+            self.posting_candidate_count as usize,
+            "ec_ivf posting candidates",
+        )
+        .get(self.next_candidate_index as usize)
+        .copied()?;
         self.next_candidate_index += 1;
         Some(candidate)
     }
@@ -80,9 +84,12 @@ impl EcIvfScanOpaque {
         if self.query_values.is_null() || self.query_dimensions == 0 {
             return &[];
         }
-        // SAFETY: test-only accessor mirrors `query_values`; non-null storage
-        // contains `query_dimensions` contiguous f32 values.
-        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
+        scan_owned_slice(
+            self,
+            self.query_values,
+            self.query_dimensions as usize,
+            "ec_ivf scan query values",
+        )
     }
 
     #[cfg(any(test, feature = "pg_test"))]
@@ -90,12 +97,27 @@ impl EcIvfScanOpaque {
         if self.selected_lists.is_null() || self.selected_list_count == 0 {
             return &[];
         }
-        // SAFETY: `store_selected_lists` allocates `selected_list_count`
-        // contiguous u32 list ids and this accessor rejects null/empty state.
-        unsafe {
-            std::slice::from_raw_parts(self.selected_lists, self.selected_list_count as usize)
-        }
+        scan_owned_slice(
+            self,
+            self.selected_lists,
+            self.selected_list_count as usize,
+            "ec_ivf selected lists",
+        )
     }
+}
+
+fn scan_owned_slice<'a, T>(
+    _opaque: &'a EcIvfScanOpaque,
+    ptr: *const T,
+    len: usize,
+    context: &str,
+) -> &'a [T] {
+    if ptr.is_null() {
+        pgrx::error!("{context} pointer is null");
+    }
+    // SAFETY: scan-owned arrays are allocated with at least `len` contiguous
+    // elements and retained by `EcIvfScanOpaque` for the returned borrow.
+    unsafe { std::slice::from_raw_parts(ptr, len) }
 }
 
 struct ResolvedIvfScanHeapRelation {
