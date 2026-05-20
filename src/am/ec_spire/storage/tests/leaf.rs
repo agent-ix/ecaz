@@ -908,3 +908,195 @@ fn miri_leaf_v2_assignment_rows_round_trips_segments_back_to_rows() {
     assert_eq!(decoded_rows[0].heap_tid, rows_input[0].heap_tid);
     assert_eq!(decoded_rows[1].gamma, rows_input[1].gamma);
 }
+
+// ----------------------------------------------------------------
+// Additional mutation-killing tests for leaf_v2_parts.rs surfaced by
+// the packet 047 manual cargo-mutants verification campaign. Each
+// test below targets one or more specific operator-swap mutations
+// that the earlier round of leaf_v2_parts coverage left undetected.
+// ----------------------------------------------------------------
+
+#[test]
+fn miri_leaf_v2_meta_rejects_empty_meta_with_nonzero_segment_count() {
+    // Targets leaf_v2_parts.rs:146:35 (`!=` -> `==`) inside the
+    // assignment_count == 0 branch of Meta::validate. The original
+    // guard fires when an empty meta declares a non-zero segment
+    // count; the mutant `==` skips the guard, letting the invalid
+    // shape pass.
+    let meta = SpireLeafPartitionObjectV2Meta::new(
+        17,
+        3,
+        5,
+        0,
+        SPIRE_PAYLOAD_FORMAT_NONE,
+        0,
+        SpireVecIdKind::LocalU64,
+        super::SPIRE_LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+        2,
+        ItemPointer::INVALID,
+        54,
+        7,
+    );
+    let err = meta.expect_err("empty meta with non-zero segment_count must be rejected");
+    assert!(
+        err.contains("cannot reference segments"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn miri_leaf_v2_segment_decode_distinguishes_prefix_boundary_via_error_message() {
+    // Targets leaf_v2_parts.rs:305:23 (`<` -> `==`, `<` -> `<=`).
+    // Crafting an input that has exactly LEAF_V2_SEGMENT_PREFIX_BYTES
+    // tail bytes lets us distinguish:
+    //   - Original code: `tail.len() < 18` is false, parse continues,
+    //     row_count == 0, validate_against_meta errors "row count 0 is
+    //     invalid".
+    //   - `< -> ==` mutant: errors "segment too short" at line 305
+    //     instead.
+    //   - `< -> <=` mutant: same as `==` (errors at line 305).
+    // Asserting the exact error text distinguishes original vs both
+    // mutants.
+    let meta = leaf_v2_test_meta(1, 1);
+    let header = SpirePartitionObjectHeader {
+        kind: SpirePartitionObjectKind::Leaf,
+        pid: meta.header.pid,
+        object_version: meta.header.object_version,
+        published_epoch_backref: meta.header.published_epoch_backref,
+        level: meta.header.level,
+        parent_pid: meta.header.parent_pid,
+        child_count: 0,
+        assignment_count: 0,
+        flags: super::SPIRE_LEAF_V2_SEGMENT_FLAG,
+    };
+    let mut input = header
+        .encode_after_validation(super::SPIRE_PARTITION_OBJECT_FORMAT_VERSION_V2);
+    // Build an 18-byte tail: segment_no(4) + row_base(4) + row_count(4)
+    // + locator(6) — all zeros + ItemPointer::INVALID.
+    input.extend_from_slice(&0u32.to_le_bytes());
+    input.extend_from_slice(&0u32.to_le_bytes());
+    input.extend_from_slice(&0u32.to_le_bytes());
+    ItemPointer::INVALID.encode_into(&mut input);
+    let err = SpireLeafPartitionObjectV2Segment::decode(&input, &meta)
+        .expect_err("zero-row segment must be rejected somewhere");
+    // The original code reaches validate_against_meta with row_count==0
+    // and surfaces a row-count error; mutants `==`/`<=` short-circuit
+    // at line 305 with "segment too short".
+    assert!(
+        !err.contains("segment too short"),
+        "boundary mutation surfaced 'segment too short' instead of the row_count error: {err}",
+    );
+    assert!(
+        err.contains("row count 0") || err.contains("0 is invalid"),
+        "expected row_count==0 error, got: {err}",
+    );
+}
+
+fn leaf_v2_segment_with_mismatched_header(
+    meta: &SpireLeafPartitionObjectV2Meta,
+    pid_override: Option<u64>,
+    version_override: Option<u64>,
+    parent_pid_override: Option<u64>,
+) -> SpireLeafPartitionObjectV2Segment {
+    let mut segment = leaf_v2_test_segment(
+        meta,
+        0,
+        0,
+        &[leaf_v2_assignment(1, 4)],
+        ItemPointer::INVALID,
+    );
+    if let Some(p) = pid_override {
+        segment.header.pid = p;
+    }
+    if let Some(v) = version_override {
+        segment.header.object_version = v;
+    }
+    if let Some(pp) = parent_pid_override {
+        segment.header.parent_pid = pp;
+    }
+    segment
+}
+
+#[test]
+fn miri_leaf_v2_segment_validate_rejects_pid_mismatch_only() {
+    // Targets leaf_v2_parts.rs:399:13 (`||` -> `&&` in the segment
+    // header-against-meta guard). With ONLY pid mismatched, the
+    // original `||` chain fires immediately; the mutant turns
+    // `A || B || C` into `(A && B) || C`, so `A=true, B=false,
+    // C=false` evaluates false and the guard misses.
+    let mut meta = leaf_v2_test_meta(1, 1);
+    meta.header.assignment_count = 1;
+    let segment =
+        leaf_v2_segment_with_mismatched_header(&meta, Some(999), None, None);
+    let object = super::SpireLeafPartitionObjectV2 {
+        meta,
+        segments: vec![segment],
+    };
+    let err = object
+        .column_segments()
+        .err()
+        .expect("pid-only header mismatch must be rejected");
+    assert!(
+        err.contains("segment header does not match meta"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn miri_leaf_v2_segment_validate_rejects_object_version_mismatch_only() {
+    // Targets leaf_v2_parts.rs:400:13 (`||` -> `&&` further into the
+    // chain). With ONLY object_version mismatched, the same
+    // priority-of-evaluation defect surfaces — the mutant misses the
+    // bad header where the original errors immediately.
+    let mut meta = leaf_v2_test_meta(1, 1);
+    meta.header.assignment_count = 1;
+    let segment =
+        leaf_v2_segment_with_mismatched_header(&meta, None, Some(99), None);
+    let object = super::SpireLeafPartitionObjectV2 {
+        meta,
+        segments: vec![segment],
+    };
+    let err = object
+        .column_segments()
+        .err()
+        .expect("version-only header mismatch must be rejected");
+    assert!(
+        err.contains("segment header does not match meta"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn miri_leaf_v2_segment_validate_rejects_row_with_delta_insert_flag() {
+    // Targets leaf_v2_parts.rs:418:60 (`|` -> `&` in the
+    // DELTA_INSERT | DELTA_DELETE flag mask). With a single row
+    // setting DELTA_INSERT alone, the original mask
+    // (0x0008 | 0x0010 = 0x0018) catches it; the `&` mutant collapses
+    // the mask to 0x0008 & 0x0010 = 0 and the guard silently passes.
+    // The `^` mutant (0x0008 ^ 0x0010 = 0x0018) is mathematically
+    // equivalent for these non-overlapping bits — see triage.md for
+    // the equivalent-mutant rationale.
+    let mut meta = leaf_v2_test_meta(1, 1);
+    meta.header.assignment_count = 1;
+    let mut bad_row = leaf_v2_assignment(1, 4);
+    bad_row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT;
+    let segment = leaf_v2_test_segment(
+        &meta,
+        0,
+        0,
+        &[bad_row],
+        ItemPointer::INVALID,
+    );
+    let object = super::SpireLeafPartitionObjectV2 {
+        meta,
+        segments: vec![segment],
+    };
+    let err = object
+        .column_segments()
+        .err()
+        .expect("delta-insert flag on segment row must be rejected");
+    assert!(
+        err.contains("cannot set delta flags"),
+        "unexpected error: {err}"
+    );
+}
