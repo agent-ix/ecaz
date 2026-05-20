@@ -66,6 +66,46 @@ const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
 
 type PrefetchedGraphBuffers = HashMap<u32, PinnedBufferGuard>;
 
+fn scan_opaque_ref<'a>(opaque: *mut TqScanOpaque) -> &'a TqScanOpaque {
+    assert!(
+        !opaque.is_null(),
+        "ec_hnsw scan opaque pointer must be live"
+    );
+    // SAFETY: callers pass scan-local opaque pointers allocated for the active
+    // PostgreSQL scan and keep them live for the duration of the borrow.
+    unsafe { &*opaque }
+}
+
+fn scan_opaque_mut<'a>(opaque: *mut TqScanOpaque) -> &'a mut TqScanOpaque {
+    assert!(
+        !opaque.is_null(),
+        "ec_hnsw scan opaque pointer must be live"
+    );
+    // SAFETY: callers pass the active scan-local opaque pointer and uphold
+    // exclusive access while mutating scan state.
+    unsafe { &mut *opaque }
+}
+
+fn scan_box_ref<'a, T>(ptr: *const T) -> Option<&'a T> {
+    if ptr.is_null() {
+        None
+    } else {
+        // SAFETY: scan-owned raw pointers passed here come from Box/Arc raw
+        // storage retained by the scan opaque for the duration of the borrow.
+        Some(unsafe { &*ptr })
+    }
+}
+
+fn scan_box_mut<'a, T>(ptr: *mut T) -> Option<&'a mut T> {
+    if ptr.is_null() {
+        None
+    } else {
+        // SAFETY: scan-owned raw pointers passed here come from Box raw storage
+        // retained by the scan opaque, and callers uphold exclusive access.
+        Some(unsafe { &mut *ptr })
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BootstrapExpandPolicy {
@@ -1108,33 +1148,21 @@ fn parallel_scan_worker_phase(phase: ScanExecutionPhase) -> u32 {
 }
 
 fn bootstrap_expansion_frontier_len(opaque: &TqScanOpaque) -> usize {
-    if opaque.bootstrap_expansion.is_null() {
-        0
-    } else {
-        // SAFETY: non-null `bootstrap_expansion` is Box-owned by this scan
-        // opaque until `free_bootstrap_expansion` runs at scan teardown.
-        unsafe { &*opaque.bootstrap_expansion }.frontier_len()
-    }
+    scan_box_ref(opaque.bootstrap_expansion)
+        .map(search::BeamSearch::frontier_len)
+        .unwrap_or(0)
 }
 
 fn visited_tid_count(opaque: &TqScanOpaque) -> usize {
-    if opaque.visited_tids.is_null() {
-        0
-    } else {
-        // SAFETY: non-null `visited_tids` is Box-owned by this scan opaque
-        // until `free_scan_visited_set` runs at scan teardown.
-        unsafe { &*opaque.visited_tids }.len()
-    }
+    scan_box_ref(opaque.visited_tids)
+        .map(HashSet::len)
+        .unwrap_or(0)
 }
 
 fn emitted_result_tid_count(opaque: &TqScanOpaque) -> usize {
-    if opaque.emitted_result_tids.is_null() {
-        0
-    } else {
-        // SAFETY: non-null `emitted_result_tids` is Box-owned by this scan
-        // opaque until `free_scan_emitted_set` runs at scan teardown.
-        unsafe { &*opaque.emitted_result_tids }.len()
-    }
+    scan_box_ref(opaque.emitted_result_tids)
+        .map(HashSet::len)
+        .unwrap_or(0)
 }
 
 fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
@@ -1335,13 +1363,7 @@ fn turboquant_non_default_exact_score_enabled(opaque: &TqScanOpaque) -> bool {
 }
 
 fn cached_quantizer_ref(opaque: &TqScanOpaque) -> Option<&ProdQuantizer> {
-    if opaque.cached_quantizer.is_null() {
-        None
-    } else {
-        // SAFETY: non-null `cached_quantizer` is an Arc raw pointer retained by
-        // this scan opaque until `free_scan_prepared_query` reconstructs it.
-        Some(unsafe { &*opaque.cached_quantizer })
-    }
+    scan_box_ref(opaque.cached_quantizer)
 }
 
 pub(super) fn turboquant_exact_score_mode_name(opaque: &TqScanOpaque) -> &'static str {
@@ -2178,9 +2200,8 @@ unsafe fn store_grouped_scan_query(
             "ec_hnsw PqFastScan scan cannot prepare PqFastScan query state without a query"
         );
     }
-    // SAFETY: `prepared_query` is allocated with `Box::into_raw` by
-    // `store_scan_prepared_query` and remains owned by this scan opaque.
-    let prepared_query = unsafe { &*opaque.prepared_query };
+    let prepared_query = scan_box_ref(opaque.prepared_query)
+        .expect("prepared query should be live for grouped scan query build");
     // SAFETY: `index_relation` and `metadata` describe the live PqFastScan
     // index relation currently being rescanned.
     let grouped_prepared =
@@ -2189,13 +2210,7 @@ unsafe fn store_grouped_scan_query(
 }
 
 fn grouped_scan_query(opaque: &TqScanOpaque) -> Option<&PreparedGroupedScanQuery> {
-    if opaque.grouped_query.is_null() {
-        None
-    } else {
-        // SAFETY: non-null `grouped_query` is Box-owned by the scan opaque
-        // until `free_scan_prepared_query` runs.
-        Some(unsafe { &*opaque.grouped_query })
-    }
+    scan_box_ref(opaque.grouped_query)
 }
 
 fn reset_scan_position(opaque: &mut TqScanOpaque) {
@@ -2257,9 +2272,7 @@ fn graph_element_cache_mut(
         opaque.graph_element_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
-    // SAFETY: non-null `graph_element_cache` is Box-owned by the scan opaque
-    // until `free_scan_graph_cache` runs.
-    unsafe { &mut *opaque.graph_element_cache }
+    scan_box_mut(opaque.graph_element_cache).expect("graph element cache should be live")
 }
 
 fn graph_neighbor_cache_mut(
@@ -2269,9 +2282,7 @@ fn graph_neighbor_cache_mut(
         opaque.graph_neighbor_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
-    // SAFETY: non-null `graph_neighbor_cache` is Box-owned by the scan opaque
-    // until `free_scan_graph_cache` runs.
-    unsafe { &mut *opaque.graph_neighbor_cache }
+    scan_box_mut(opaque.graph_neighbor_cache).expect("graph neighbor cache should be live")
 }
 
 fn score_cache_mut(opaque: &mut TqScanOpaque) -> &mut HashMap<page::ItemPointer, f32> {
@@ -2279,9 +2290,7 @@ fn score_cache_mut(opaque: &mut TqScanOpaque) -> &mut HashMap<page::ItemPointer,
         opaque.score_cache = Box::into_raw(Box::new(HashMap::new()));
     }
 
-    // SAFETY: non-null `score_cache` is Box-owned by the scan opaque until
-    // `free_scan_score_cache` runs.
-    unsafe { &mut *opaque.score_cache }
+    scan_box_mut(opaque.score_cache).expect("score cache should be live")
 }
 
 fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> Option<f32> {
@@ -2289,9 +2298,10 @@ fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPoint
         return None;
     }
 
-    // SAFETY: non-null `score_cache` is Box-owned by the scan opaque until
-    // `free_scan_score_cache` runs.
-    unsafe { &*opaque.score_cache }.get(&element_tid).copied()
+    scan_box_ref(opaque.score_cache)
+        .expect("score cache should be live")
+        .get(&element_tid)
+        .copied()
 }
 
 unsafe fn live_loaded_state_from_exact_payload(
@@ -2318,13 +2328,7 @@ unsafe fn live_loaded_state_from_exact_payload(
 }
 
 fn binary_sign_query(opaque: &TqScanOpaque) -> Option<&BinarySignNoQjl4BitQuery> {
-    if opaque.binary_sign_query.is_null() {
-        None
-    } else {
-        // SAFETY: non-null `binary_sign_query` is Box-owned by the scan opaque
-        // until `free_scan_prepared_query` runs.
-        Some(unsafe { &*opaque.binary_sign_query })
-    }
+    scan_box_ref(opaque.binary_sign_query)
 }
 
 fn binary_prefilter_survivor_budget(candidate_count: usize) -> usize {
@@ -2414,7 +2418,7 @@ unsafe fn cached_graph_element(
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
     // SAFETY: callers pass the current scan opaque pointer; it remains live for
     // the duration of candidate scoring and graph tuple loading.
-    let opaque_ref = unsafe { &mut *opaque };
+    let opaque_ref = scan_opaque_mut(opaque);
     if !opaque_ref.graph_element_cache.is_null() {
         if let Some(element) = graph_element_cache_mut(opaque_ref)
             .get(&element_tid)
@@ -2466,7 +2470,7 @@ unsafe fn cached_graph_element_from_buffer(
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
     // SAFETY: callers pass the current scan opaque pointer; it remains live for
     // the duration of buffered graph tuple loading.
-    let opaque_ref = unsafe { &mut *opaque };
+    let opaque_ref = scan_opaque_mut(opaque);
     if !opaque_ref.graph_element_cache.is_null() {
         if let Some(element) = graph_element_cache_mut(opaque_ref)
             .get(&element_tid)
@@ -2507,7 +2511,7 @@ unsafe fn score_cached_graph_element_from_storage(
 ) -> f32 {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while loading and scoring the graph element.
-    let opaque_ref = unsafe { &mut *opaque };
+    let opaque_ref = scan_opaque_mut(opaque);
     // SAFETY: `index_relation` is live for this scan and `element_tid` came
     // from HNSW graph traversal or fallback scan state.
     let element = unsafe {
@@ -2534,7 +2538,7 @@ unsafe fn exact_score_cached_graph_element(
         LoadedElementState::ExactPayload(loaded) => {
             // SAFETY: callers pass the current scan opaque pointer; it remains
             // live while exact payload scoring checks and updates score cache.
-            let opaque_ref = unsafe { &mut *opaque };
+            let opaque_ref = scan_opaque_mut(opaque);
             if let Some(score) = cached_scan_element_score(opaque_ref, element_tid) {
                 record_score_cache_hit(opaque_ref);
                 score
@@ -2553,7 +2557,7 @@ unsafe fn exact_score_cached_graph_element(
         LoadedElementState::None => {
             // SAFETY: callers pass the current scan opaque pointer; it remains
             // live while exact scoring checks and updates score cache.
-            let opaque_ref = unsafe { &mut *opaque };
+            let opaque_ref = scan_opaque_mut(opaque);
             if let Some(score) = cached_scan_element_score(opaque_ref, element_tid) {
                 record_score_cache_hit(opaque_ref);
                 score
@@ -2667,7 +2671,7 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
 ) -> f32 {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while scoring the grouped rerank payload.
-    let opaque = unsafe { &*opaque };
+    let opaque = scan_opaque_ref(opaque);
     if opaque.prepared_query.is_null() {
         pgrx::error!("ec_hnsw scan state is missing prepared query");
     }
@@ -2676,7 +2680,8 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
     }
     // SAFETY: non-null `prepared_query` is Box-owned by this scan opaque until
     // `free_scan_prepared_query` runs.
-    let prepared_query = unsafe { &*opaque.prepared_query };
+    let prepared_query =
+        scan_box_ref(opaque.prepared_query).expect("prepared query should be live for rerank");
     let quantizer = cached_quantizer_ref(opaque)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
     score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
@@ -2766,7 +2771,7 @@ unsafe fn score_grouped_candidate_heap_rerank(
 ) -> Option<f32> {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while scoring heap rerank candidates.
-    let opaque = unsafe { &mut *opaque };
+    let opaque = scan_opaque_mut(opaque);
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
     let mut best_score: Option<f32> = None;
@@ -2797,7 +2802,7 @@ unsafe fn exact_score_grouped_candidate_context(
 ) -> f32 {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while exact grouped scoring checks and updates score cache.
-    let opaque_ref = unsafe { &mut *opaque };
+    let opaque_ref = scan_opaque_mut(opaque);
     if let Some(score) = cached_scan_element_score(opaque_ref, grouped.element_tid) {
         record_score_cache_hit(opaque_ref);
         return score;
@@ -2836,7 +2841,7 @@ unsafe fn score_grouped_candidate_context_exact(
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
     // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
-    record_grouped_traversal_exact_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    record_grouped_traversal_exact_score_elapsed(scan_opaque_mut(opaque), elapsed_us);
     score
 }
 
@@ -2857,7 +2862,7 @@ unsafe fn score_grouped_search_code_from_scan_state(
 ) -> f32 {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while approximate grouped scoring reads prepared query state.
-    let opaque = unsafe { &*opaque };
+    let opaque = scan_opaque_ref(opaque);
     let prepared_query = grouped_scan_query(opaque).unwrap_or_else(|| {
         pgrx::error!("ec_hnsw PqFastScan scan is missing PqFastScan query state")
     });
@@ -2871,13 +2876,13 @@ unsafe fn grouped_candidate_rerank_comparison_score(
 ) -> Option<f32> {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while choosing heap, TurboQuant, or grouped rerank scoring.
-    if grouped_heap_rerank_enabled(unsafe { &*opaque }) {
+    if grouped_heap_rerank_enabled(scan_opaque_ref(opaque)) {
         // SAFETY: the same live scan opaque owns the grouped heap rerank state.
         return unsafe { score_grouped_candidate_heap_rerank(opaque, element) };
     }
 
     // SAFETY: `opaque` is the live scan opaque pointer used for this candidate.
-    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    let scan_graph_storage = scan_opaque_ref(opaque).scan_graph_storage;
     if matches!(
         scan_graph_storage,
         graph::GraphStorageDescriptor::TurboQuant { .. }
@@ -2901,7 +2906,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
         #[cfg(not(any(test, feature = "pg_test")))]
         let elapsed_us = 0;
         // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
-        record_grouped_rerank_quantized_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+        record_grouped_rerank_quantized_score_elapsed(scan_opaque_mut(opaque), elapsed_us);
         return Some(score);
     }
 
@@ -2917,7 +2922,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
     // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
-    record_grouped_rerank_quantized_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    record_grouped_rerank_quantized_score_elapsed(scan_opaque_mut(opaque), elapsed_us);
     Some(score)
 }
 
@@ -2970,7 +2975,7 @@ unsafe fn score_grouped_candidate_context_approx(
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
     // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
-    record_grouped_traversal_approx_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    record_grouped_traversal_approx_score_elapsed(scan_opaque_mut(opaque), elapsed_us);
     score
 }
 
@@ -2985,7 +2990,7 @@ unsafe fn score_grouped_candidate_context_binary(
     );
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while binary grouped scoring reads prepared query state.
-    let opaque = unsafe { &*opaque };
+    let opaque = scan_opaque_ref(opaque);
     let binary_query = binary_sign_query(opaque).unwrap_or_else(|| {
         pgrx::error!("ec_hnsw PqFastScan binary traversal scoring requires a prepared binary query")
     });
@@ -3003,7 +3008,7 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
 ) -> Vec<search::BeamCandidate<page::ItemPointer>> {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // throughout budgeted grouped traversal scoring.
-    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    let scan_graph_storage = scan_opaque_ref(opaque).scan_graph_storage;
     let mut final_scores = candidates
         .iter()
         .map(|candidate| candidate.approx_score)
@@ -3012,7 +3017,7 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
     let exact_indices = grouped_exact_traversal_candidate_indices(&candidates, budget);
     // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
     record_grouped_traversal_budget(
-        unsafe { &mut *opaque },
+        scan_opaque_mut(opaque),
         candidates.len(),
         exact_indices.len(),
     );
@@ -3048,7 +3053,7 @@ unsafe fn score_grouped_candidate_context(
 ) -> f32 {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while dispatching grouped traversal scoring.
-    let opaque_ref = unsafe { &*opaque };
+    let opaque_ref = scan_opaque_ref(opaque);
     if grouped_exact_traversal_full_candidate_scoring_for_layer(opaque_ref, traversal_layer) {
         // SAFETY: exact grouped scoring uses the same live scan relation,
         // opaque pointer, and grouped context.
@@ -3076,7 +3081,7 @@ unsafe fn score_cached_graph_element_dispatch(
 ) -> f32 {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while selecting exact or grouped scoring for this cached element.
-    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    let scan_graph_storage = scan_opaque_ref(opaque).scan_graph_storage;
     match candidate_score_dispatch(scan_graph_storage, element, loaded_state) {
         // SAFETY: exact scoring uses the live index relation and scan opaque
         // pointer for the cached element.
@@ -3125,7 +3130,7 @@ unsafe fn cached_graph_neighbors(
 ) -> Arc<graph::GraphNeighbors> {
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while loading or returning cached graph neighbors.
-    let opaque_ref = unsafe { &mut *opaque };
+    let opaque_ref = scan_opaque_mut(opaque);
     if !opaque_ref.graph_neighbor_cache.is_null() {
         if let Some(neighbors) = graph_neighbor_cache_mut(opaque_ref)
             .get(&neighbor_tid)
@@ -3273,7 +3278,7 @@ where
         unsafe { cached_graph_adjacency(index_relation, opaque, source_tid) };
     // SAFETY: callers pass the current scan opaque pointer; immutable reads
     // here only copy traversal configuration for this layer.
-    let opaque_ref = unsafe { &*opaque };
+    let opaque_ref = scan_opaque_ref(opaque);
     let scan_graph_storage = opaque_ref.scan_graph_storage;
     let exact_budget = grouped_exact_traversal_candidate_budget_for_layer(opaque_ref, layer);
     let scan_m = usize::from(opaque_ref.scan_m);
@@ -3296,7 +3301,7 @@ where
 
     // SAFETY: non-null `binary_sign_query` is Box-owned by the scan opaque
     // until `free_scan_prepared_query` runs.
-    let binary_query = unsafe { (*opaque).binary_sign_query.as_ref() };
+    let binary_query = binary_sign_query(scan_opaque_ref(opaque));
     if binary_query.is_none() {
         let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(capacity));
         for neighbor_tid in neighbor_tids.iter().copied() {
@@ -3387,7 +3392,7 @@ where
     let binary_query = binary_query.expect("binary query should remain available during scan");
     // SAFETY: the scan opaque is live for the traversal step; the cached
     // quantizer is Box-owned by it until scan cleanup.
-    let opaque_ref = unsafe { &*opaque };
+    let opaque_ref = scan_opaque_ref(opaque);
     let quantizer = cached_quantizer_ref(opaque_ref)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
     let mut approx_candidates = Vec::with_capacity(capacity);
@@ -3410,9 +3415,9 @@ where
 
             // SAFETY: the scan opaque remains live while checking the score
             // cache for this loaded neighbor.
-            if let Some(score) = cached_scan_element_score(unsafe { &*opaque }, neighbor.tid) {
+            if let Some(score) = cached_scan_element_score(scan_opaque_ref(opaque), neighbor.tid) {
                 // SAFETY: same live scan opaque; this mutates only cache stats.
-                record_score_cache_hit(unsafe { &mut *opaque });
+                record_score_cache_hit(scan_opaque_mut(opaque));
                 candidates.push(search::BeamCandidate::with_source(
                     neighbor.tid,
                     score,
@@ -3433,7 +3438,7 @@ where
             #[cfg(not(any(test, feature = "pg_test")))]
             let binary_elapsed_us = 0;
             // SAFETY: same live scan opaque; this mutates only timing stats.
-            record_binary_prefilter_score_elapsed(unsafe { &mut *opaque }, binary_elapsed_us);
+            record_binary_prefilter_score_elapsed(scan_opaque_mut(opaque), binary_elapsed_us);
             approx_candidates.push(BinaryPrefilterCandidate {
                 ordinal: approx_candidates.len(),
                 element: neighbor,
@@ -3450,7 +3455,7 @@ where
         approx_candidates.sort_by_key(|candidate| candidate.ordinal);
     }
     // SAFETY: same live scan opaque; this records the current survivor count.
-    record_binary_prefilter_survivors(unsafe { &mut *opaque }, approx_candidates.len());
+    record_binary_prefilter_survivors(scan_opaque_mut(opaque), approx_candidates.len());
 
     let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(approx_candidates.len()));
     for candidate in approx_candidates {
@@ -3462,7 +3467,7 @@ where
             CandidateScoreDispatch::Exact(loaded_state) => {
                 // SAFETY: same live scan opaque; this reads only the binary
                 // live-rerank mode flag.
-                let score = if turboquant_binary_live_rerank_enabled(unsafe { &*opaque }) {
+                let score = if turboquant_binary_live_rerank_enabled(scan_opaque_ref(opaque)) {
                     candidate.approx_score
                 } else {
                     // SAFETY: the candidate was loaded from this scan's graph
@@ -3487,7 +3492,7 @@ where
                     let approx_score =
                         // SAFETY: same live scan opaque; this reads only the
                         // grouped binary traversal mode flag.
-                        if grouped_binary_traversal_score_enabled(unsafe { &*opaque }) {
+                        if grouped_binary_traversal_score_enabled(scan_opaque_ref(opaque)) {
                             candidate.approx_score
                         } else {
                             // SAFETY: `grouped` belongs to this candidate and
@@ -3502,11 +3507,11 @@ where
                 } else {
                     // SAFETY: same live scan opaque; this reads only grouped
                     // traversal configuration for this layer.
-                    let score = if grouped_binary_traversal_score_enabled(unsafe { &*opaque })
+                    let score = if grouped_binary_traversal_score_enabled(scan_opaque_ref(opaque))
                         && !grouped_exact_traversal_full_candidate_scoring_for_layer(
                             // SAFETY: same live scan opaque; this reads only
                             // grouped exact traversal configuration.
-                            unsafe { &*opaque },
+                            scan_opaque_ref(opaque),
                             layer,
                         ) {
                         candidate.approx_score
@@ -3658,7 +3663,7 @@ impl<'a> GraphTraversalCursor<'a> {
         opaque: *mut TqScanOpaque,
     ) -> bool {
         // SAFETY: callers pass the live scan opaque for this cursor.
-        let opaque = unsafe { &mut *opaque };
+        let opaque = scan_opaque_mut(opaque);
         if !opaque.execution_phase.is_graph_traversal() {
             return false;
         }
@@ -4102,9 +4107,8 @@ fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) 
     if opaque.bootstrap_expansion.is_null() {
         opaque.bootstrap_expansion = Box::into_raw(Box::new(search::BeamSearch::new(ef_search)));
     } else {
-        // SAFETY: non-null `bootstrap_expansion` is Box-owned by this scan
-        // opaque until `free_bootstrap_expansion` runs.
-        *unsafe { &mut *opaque.bootstrap_expansion } = search::BeamSearch::new(ef_search);
+        *scan_box_mut(opaque.bootstrap_expansion).expect("bootstrap expansion should be live") =
+            search::BeamSearch::new(ef_search);
     }
 }
 
@@ -4128,9 +4132,9 @@ fn reset_graph_prefetch_state(opaque: &mut TqScanOpaque) {
     if opaque.graph_prefetch_state.is_null() {
         opaque.graph_prefetch_state = Box::into_raw(Box::new(GraphPrefetchState::new(Vec::new())));
     } else {
-        // SAFETY: non-null `graph_prefetch_state` is Box-owned by this scan
-        // opaque until `free_graph_prefetch_state` runs.
-        unsafe { &mut *opaque.graph_prefetch_state }.reset(Vec::new());
+        scan_box_mut(opaque.graph_prefetch_state)
+            .expect("graph prefetch state should be live")
+            .reset(Vec::new());
     }
 }
 
@@ -4139,9 +4143,9 @@ fn reset_graph_prefetch_blocks(opaque: &mut TqScanOpaque, blocks: Vec<u32>) {
     if opaque.graph_prefetch_state.is_null() {
         opaque.graph_prefetch_state = Box::into_raw(Box::new(GraphPrefetchState::new(blocks)));
     } else {
-        // SAFETY: non-null `graph_prefetch_state` is Box-owned by this scan
-        // opaque until `free_graph_prefetch_state` runs.
-        unsafe { &mut *opaque.graph_prefetch_state }.reset(blocks);
+        scan_box_mut(opaque.graph_prefetch_state)
+            .expect("graph prefetch state should be live")
+            .reset(blocks);
     }
 }
 
@@ -4239,9 +4243,7 @@ fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState
     if opaque.candidate_frontier.is_null() {
         &EMPTY_VISIBLE_FRONTIER_STATE
     } else {
-        // SAFETY: non-null `candidate_frontier` is Box-owned by this scan
-        // opaque until `free_scan_candidate_frontier` runs.
-        unsafe { &*opaque.candidate_frontier }
+        scan_box_ref(opaque.candidate_frontier).expect("candidate frontier should be live")
     }
 }
 
@@ -4250,9 +4252,7 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
         opaque.candidate_frontier =
             Box::into_raw(Box::new(VisibleCandidateFrontierState::default()));
     }
-    // SAFETY: non-null `candidate_frontier` is Box-owned by this scan opaque
-    // until `free_scan_candidate_frontier` runs.
-    unsafe { &mut *opaque.candidate_frontier }
+    scan_box_mut(opaque.candidate_frontier).expect("candidate frontier should be live")
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -4317,18 +4317,16 @@ fn bootstrap_expansion_mut(
     if opaque.bootstrap_expansion.is_null() {
         reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     }
-    // SAFETY: non-null `bootstrap_expansion` is Box-owned by this scan opaque
-    // until `free_bootstrap_expansion` runs.
-    unsafe { &mut *opaque.bootstrap_expansion }
+    scan_box_mut(opaque.bootstrap_expansion).expect("bootstrap expansion should be live")
 }
 
 fn reset_scan_tid_set(slot: &mut *mut HashSet<page::ItemPointer>) {
     if (*slot).is_null() {
         *slot = Box::into_raw(Box::new(HashSet::new()));
     } else {
-        // SAFETY: scan TID-set slots are populated with `Box::into_raw` and
-        // remain Box-owned by the scan opaque until freed.
-        unsafe { &mut **slot }.clear();
+        scan_box_mut(*slot)
+            .expect("scan TID set should be live")
+            .clear();
     }
 }
 
@@ -4336,18 +4334,18 @@ fn scan_tid_set_insert(slot: *mut HashSet<page::ItemPointer>, tid: page::ItemPoi
     if slot.is_null() || tid == page::ItemPointer::INVALID {
         return;
     }
-    // SAFETY: non-null scan TID-set slots are Box-owned by the scan opaque
-    // until their corresponding free helper runs.
-    unsafe { &mut *slot }.insert(tid);
+    if let Some(set) = scan_box_mut(slot) {
+        set.insert(tid);
+    }
 }
 
 fn scan_tid_set_contains(slot: *const HashSet<page::ItemPointer>, tid: page::ItemPointer) -> bool {
     if slot.is_null() || tid == page::ItemPointer::INVALID {
         return false;
     }
-    // SAFETY: non-null scan TID-set slots are Box-owned by the scan opaque
-    // until their corresponding free helper runs.
-    unsafe { &*slot }.contains(&tid)
+    scan_box_ref(slot)
+        .map(|set: &HashSet<page::ItemPointer>| set.contains(&tid))
+        .unwrap_or(false)
 }
 
 fn reset_scan_visited_state(opaque: &mut TqScanOpaque) {
@@ -4523,7 +4521,7 @@ fn seed_bootstrap_trace(
     with_visible_frontier_mut_and_bootstrap_expansion(
         // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
         // callbacks can mark visited/expanded sets while the frontier mutates.
-        unsafe { &mut *opaque_ptr },
+        scan_opaque_mut(opaque_ptr),
         |visible_frontier, expansion| {
             visible_frontier.seed_bootstrap_trace(
                 expansion,
@@ -4532,12 +4530,12 @@ fn seed_bootstrap_trace(
                 |node| {
                     // SAFETY: callback execution is synchronous while
                     // `opaque_ptr` remains the live scan opaque.
-                    mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+                    mark_visited_element(scan_opaque_mut(opaque_ptr), node)
                 },
                 |node| {
                     // SAFETY: callback execution is synchronous while
                     // `opaque_ptr` remains the live scan opaque.
-                    mark_expanded_source(unsafe { &mut *opaque_ptr }, node)
+                    mark_expanded_source(scan_opaque_mut(opaque_ptr), node)
                 },
             );
         },
@@ -4557,12 +4555,12 @@ fn seed_discovered_candidates(
     with_visible_frontier_mut_and_bootstrap_expansion(
         // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque so
         // callbacks can mark visited sets while the frontier mutates.
-        unsafe { &mut *opaque_ptr },
+        scan_opaque_mut(opaque_ptr),
         |visible_frontier, expansion| {
             visible_frontier.seed_discovered(expansion, candidates, |node| {
                 // SAFETY: callback execution is synchronous while `opaque_ptr`
                 // remains the live scan opaque.
-                mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+                mark_visited_element(scan_opaque_mut(opaque_ptr), node)
             });
         },
     );
@@ -4703,7 +4701,7 @@ unsafe fn refill_candidate_frontier_from_source_into(
         expansion,
         // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque and
         // is used synchronously while refilling this frontier.
-        bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
+        bootstrap_frontier_limit(scan_opaque_ref(opaque_ptr)),
         source_tid,
         // SAFETY: successor loading uses the live relation and scan storage
         // state while the callback scores candidates synchronously.
@@ -4727,7 +4725,7 @@ unsafe fn refill_candidate_frontier_from_source_into(
         |node| {
             // SAFETY: callback execution is synchronous while `opaque_ptr`
             // remains the live scan opaque.
-            mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+            mark_visited_element(scan_opaque_mut(opaque_ptr), node)
         },
     );
 }
@@ -4744,10 +4742,10 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
         expansion,
         // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque and
         // is used synchronously while topping up this frontier.
-        bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
+        bootstrap_frontier_limit(scan_opaque_ref(opaque_ptr)),
         // SAFETY: callback execution is synchronous while `opaque_ptr`
         // remains the live scan opaque.
-        |node| expanded_contains_source(unsafe { &*opaque_ptr }, node),
+        |node| expanded_contains_source(scan_opaque_ref(opaque_ptr), node),
         |seed_candidates, max_successor_candidates| {
             // SAFETY: seed expansion uses the live relation and scan storage
             // state while callbacks score candidates synchronously.
@@ -4776,12 +4774,12 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
         |node| {
             // SAFETY: callback execution is synchronous while `opaque_ptr`
             // remains the live scan opaque.
-            mark_expanded_source(unsafe { &mut *opaque_ptr }, node)
+            mark_expanded_source(scan_opaque_mut(opaque_ptr), node)
         },
         |node| {
             // SAFETY: callback execution is synchronous while `opaque_ptr`
             // remains the live scan opaque.
-            mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+            mark_visited_element(scan_opaque_mut(opaque_ptr), node)
         },
     );
 }
@@ -4796,7 +4794,7 @@ unsafe fn refill_bootstrap_frontier_after_success(
     with_visible_frontier_mut_and_bootstrap_expansion(
         // SAFETY: `opaque_ptr` is derived from the live mutable scan opaque and
         // callback execution below is synchronous.
-        unsafe { &mut *opaque_ptr },
+        scan_opaque_mut(opaque_ptr),
         // SAFETY: `opaque_ptr`, `visible_frontier`, and `expansion` stay live
         // for the duration of this synchronous frontier advance.
         |visible_frontier, expansion| unsafe {
@@ -5223,9 +5221,8 @@ unsafe fn score_scan_element_result(
                     "ec_hnsw TurboQuant full_lut exact-score mode requires a prepared LUT query"
                 );
             }
-            // SAFETY: non-null `turboquant_lut_query` is Box-owned by this scan
-            // opaque until scan prepared-query cleanup.
-            let prepared = unsafe { &*opaque.turboquant_lut_query };
+            let prepared = scan_box_ref(opaque.turboquant_lut_query)
+                .expect("TurboQuant LUT query should be live");
             return -quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, code_bytes);
         }
         TurboQuantExactScoreMode::TiledLut => {
@@ -5234,9 +5231,8 @@ unsafe fn score_scan_element_result(
                     "ec_hnsw TurboQuant tiled_lut exact-score mode requires a prepared tiled LUT query"
                 );
             }
-            // SAFETY: non-null `turboquant_tiled_lut_query` is Box-owned by
-            // this scan opaque until scan prepared-query cleanup.
-            let prepared = unsafe { &*opaque.turboquant_tiled_lut_query };
+            let prepared = scan_box_ref(opaque.turboquant_tiled_lut_query)
+                .expect("TurboQuant tiled LUT query should be live");
             return -quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, code_bytes);
         }
         TurboQuantExactScoreMode::Int8Approx => {
@@ -5245,18 +5241,16 @@ unsafe fn score_scan_element_result(
                     "ec_hnsw TurboQuant int8 exact-score mode requires a prepared int8 query"
                 );
             }
-            // SAFETY: non-null `turboquant_int8_query` is Box-owned by this
-            // scan opaque until scan prepared-query cleanup.
-            let prepared = unsafe { &*opaque.turboquant_int8_query };
+            let prepared = scan_box_ref(opaque.turboquant_int8_query)
+                .expect("TurboQuant int8 query should be live");
             return -quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, code_bytes);
         }
     }
     if opaque.prepared_query.is_null() {
         pgrx::error!("ec_hnsw scan scoring requires a prepared query");
     }
-    // SAFETY: non-null `prepared_query` is Box-owned by this scan opaque until
-    // scan prepared-query cleanup.
-    let prepared_query = unsafe { &*opaque.prepared_query };
+    let prepared_query = scan_box_ref(opaque.prepared_query)
+        .expect("prepared query should be live for scan scoring");
     -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
 }
 
@@ -6296,21 +6290,21 @@ mod tests {
         reset_scan_position(&mut opaque);
 
         assert!(
-            // SAFETY: reset keeps the graph element cache allocated but clears
-            // its scan-local contents.
-            unsafe { &*opaque.graph_element_cache }.is_empty(),
+            scan_box_ref(opaque.graph_element_cache)
+                .expect("graph element cache should be live")
+                .is_empty(),
             "amrescan/reset should drop cached graph elements before reseeding the ordered scan"
         );
         assert!(
-            // SAFETY: reset keeps the graph neighbor cache allocated but clears
-            // its scan-local contents.
-            unsafe { &*opaque.graph_neighbor_cache }.is_empty(),
+            scan_box_ref(opaque.graph_neighbor_cache)
+                .expect("graph neighbor cache should be live")
+                .is_empty(),
             "amrescan/reset should drop cached graph neighbors before reseeding the ordered scan"
         );
         assert!(
-            // SAFETY: reset keeps the score cache allocated but clears its
-            // scan-local contents.
-            unsafe { &*opaque.score_cache }.is_empty(),
+            scan_box_ref(opaque.score_cache)
+                .expect("score cache should be live")
+                .is_empty(),
             "amrescan/reset should drop cached element scores before reseeding the ordered scan"
         );
 
