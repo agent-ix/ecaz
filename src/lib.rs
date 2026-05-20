@@ -1346,9 +1346,7 @@ fn ec_spire_dml_frontdoor_relation_context_catalog(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: this SQL wrapper passes a heap relation OID supplied by
-    // PostgreSQL into the DML frontdoor catalog resolver for read-only lookup.
-    let row = unsafe { am::spire_dml_frontdoor_relation_context_catalog_row(heap_relation_oid) }
+    let row = am::spire_dml_frontdoor_relation_context_catalog_row(heap_relation_oid)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     TableIterator::once((
         row.heap_relation_oid,
@@ -1411,10 +1409,7 @@ fn ec_spire_dml_frontdoor_classify_sql(
         analyze_single_dml_frontdoor_query(sql)
             .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
     };
-    // SAFETY: `query` is the analyzed Query pointer returned above and remains
-    // live for this SQL function call.
-    let Some(target_relation_oid) = (unsafe { am::spire_dml_frontdoor_target_relation_oid(query) })
-    else {
+    let Some(target_relation_oid) = am::spire_dml_frontdoor_target_relation_oid(query) else {
         return TableIterator::once((
             None,
             None,
@@ -1446,10 +1441,7 @@ fn ec_spire_dml_frontdoor_classify_sql(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
-    // SAFETY: `query_context` borrows local vectors that live through this
-    // immediate classifier call; `query` remains live from analysis above.
-    let Some(shape) = (unsafe { am::spire_classify_dml_frontdoor_query(query, query_context) })
-    else {
+    let Some(shape) = am::spire_classify_dml_frontdoor_query(query, query_context) else {
         return TableIterator::once((
             Some(target_relation_oid),
             Some(relation.status),
@@ -1512,11 +1504,7 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         analyze_single_dml_frontdoor_query(sql)
             .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
     };
-    // SAFETY: `query` remains live for the duration of this immediate
-    // replacement-decision catalog lookup.
-    let Some(decision) =
-        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
-    else {
+    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query) else {
         return TableIterator::once((
             None,
             None,
@@ -1593,11 +1581,7 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         analyze_single_dml_frontdoor_query(sql)
             .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
     };
-    // SAFETY: `query` remains live for the duration of this immediate
-    // replacement-decision catalog lookup.
-    let Some(decision) =
-        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
-    else {
+    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query) else {
         return TableIterator::once((
             None,
             None,

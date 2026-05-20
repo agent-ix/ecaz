@@ -254,7 +254,7 @@
         ] {
             let query = dml_frontdoor_checked!(analyzed_query(sql));
             assert_eq!(
-                dml_frontdoor_checked!(am::spire_dml_frontdoor_target_relation_oid(query)),
+                am::spire_dml_frontdoor_target_relation_oid(query),
                 Some(relation_oid),
                 "{sql}"
             );
@@ -266,7 +266,7 @@
                    JOIN ec_spire_dml_target_oid_sql AS r ON l.id = r.id",
             ));
         assert_eq!(
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_target_relation_oid(join_query)),
+            am::spire_dml_frontdoor_target_relation_oid(join_query),
             None
         );
     }
@@ -295,7 +295,7 @@
         let coerced_const_query =
             dml_frontdoor_checked!(analyzed_query("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5"));
         let coerced_const_shape =
-            dml_frontdoor_checked!(am::spire_classify_dml_frontdoor_query(coerced_const_query, context))
+            am::spire_classify_dml_frontdoor_query(coerced_const_query, context)
                 .expect("coerced const query should classify");
         assert!(
             coerced_const_shape.supported,
@@ -308,7 +308,7 @@
                 "WITH marker AS (SELECT 1) \
                  SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5",
             ));
-        let cte_shape = dml_frontdoor_checked!(am::spire_classify_dml_frontdoor_query(cte_query, context))
+        let cte_shape = am::spire_classify_dml_frontdoor_query(cte_query, context)
             .expect("CTE-prefixed query should classify");
         assert!(!cte_shape.supported);
         assert_eq!(cte_shape.kind, "unsupported_subquery_shape");
@@ -1034,7 +1034,7 @@
         let select_query =
             dml_frontdoor_checked!(analyzed_query("SELECT id FROM ec_spire_dml_pk_argument_sql WHERE id = 5"));
         let select_decision =
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query))
+            am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query)
                 .expect("PK SELECT replacement decision should exist");
         let select_pk_argument =
             am::spire_dml_frontdoor_pk_argument_from_replacement_decision(&select_decision)
@@ -1050,7 +1050,7 @@
                     SET embedding = '[1,2,3]'::ecvector \
                   WHERE id = 5",
             ));
-        let embedding_update_decision = dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query))
+        let embedding_update_decision = am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query)
         .expect("embedding UPDATE replacement decision should exist");
         let error = am::spire_dml_frontdoor_pk_argument_from_replacement_decision(
             &embedding_update_decision,
@@ -1079,7 +1079,7 @@
                   WHERE id = 5",
             ));
         let update_decision =
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(update_query))
+            am::spire_dml_frontdoor_replacement_decision_catalog_row(update_query)
                 .expect("UPDATE primitive plan decision should exist");
         let update_plan =
             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&update_decision)
@@ -1096,7 +1096,7 @@
         assert_eq!(update_plan.updated_columns, vec!["title".to_owned()]);
         assert!(update_plan.projected_columns.is_empty());
         let update_plan_expr =
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(update_query))
+            am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(update_query)
                 .expect("UPDATE primitive plan expression handoff should classify")
                 .expect("UPDATE primitive plan expression handoff should be buildable");
         assert_eq!(
@@ -1114,7 +1114,7 @@
         let delete_query =
             dml_frontdoor_checked!(analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5"));
         let delete_decision =
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(delete_query))
+            am::spire_dml_frontdoor_replacement_decision_catalog_row(delete_query)
                 .expect("DELETE primitive plan decision should exist");
         let delete_plan =
             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&delete_decision)
@@ -1130,7 +1130,7 @@
         assert!(delete_plan.updated_columns.is_empty());
         assert!(delete_plan.projected_columns.is_empty());
         let delete_plan_expr =
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(delete_query))
+            am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(delete_query)
                 .expect("DELETE primitive plan expression handoff should classify")
                 .expect("DELETE primitive plan expression handoff should be buildable");
         assert_eq!(
@@ -1147,7 +1147,7 @@
 
         let select_query = dml_frontdoor_checked!(analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5"));
         let select_decision =
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query))
+            am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query)
                 .expect("PK SELECT primitive plan decision should exist");
         let select_plan =
             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&select_decision)
@@ -1166,7 +1166,7 @@
             vec!["id".to_owned(), "title".to_owned()]
         );
         let select_plan_expr =
-            dml_frontdoor_checked!(am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(select_query))
+            am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(select_query)
                 .expect("PK SELECT primitive plan expression handoff should classify")
                 .expect("PK SELECT primitive plan expression handoff should be buildable");
         assert_eq!(
@@ -1301,7 +1301,7 @@
                     SET embedding = '[1,2,3]'::ecvector \
                   WHERE id = 5",
             ));
-        let embedding_update_decision = dml_frontdoor_checked!(am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query))
+        let embedding_update_decision = am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query)
         .expect("embedding UPDATE primitive plan decision should exist");
         let unsupported_error = am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(
             &embedding_update_decision,
