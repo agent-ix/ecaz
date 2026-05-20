@@ -106,6 +106,22 @@ packet by path when one exists. See
 `spec/non-functional/NFR-007-benchmark-provenance.md` for the normative
 storage rule.
 
+### Benchmark Runner: `ecaz bench suite` Only
+
+**All benchmark matrices, sweeps, and multi-step measurement runs MUST be
+driven by `ecaz bench suite` (FR-038) with a JSON `SuiteConfig` checked
+into the owning packet.** Do not write new bash sweepers, per-packet
+`run-matrix.sh`, or one-off shell glue around `ecaz corpus load` /
+`ecaz bench {recall,latency,storage}`.
+
+- The canonical runner lives in `crates/ecaz-cli/src/commands/bench/suite.rs`
+  and supports dry-run, resume, audit, status, report, thresholds, and a
+  structured `suite-manifest.json` + `results.jsonl`.
+- If `ecaz bench suite` is missing a step type, profile, or option you
+  need, extend the suite runner in `ecaz-cli` instead of forking the
+  workflow into a script. Land that extension as its own commit before
+  using it in a packet.
+
 ### Push and Visibility
 
 - Push committed checkpoints, packet updates, and feedback files to the remote

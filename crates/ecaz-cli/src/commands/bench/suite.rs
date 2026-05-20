@@ -265,6 +265,8 @@ struct LoadStep {
     #[serde(default)]
     ef_construction: Option<i32>,
     #[serde(default)]
+    storage_format: Option<String>,
+    #[serde(default)]
     reloptions: Vec<String>,
     #[serde(default)]
     log_file: Option<PathBuf>,
@@ -1826,6 +1828,9 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(ef_construction) = step.ef_construction {
         push_arg(&mut args, "--ef-construction", &ef_construction.to_string());
     }
+    if let Some(storage_format) = step.storage_format.as_deref() {
+        push_arg(&mut args, "--storage-format", storage_format);
+    }
     for reloption in &step.reloptions {
         push_arg(&mut args, "--reloption", reloption);
     }
@@ -2618,11 +2623,15 @@ mod tests {
             seed: None,
             m: Vec::new(),
             ef_construction: None,
+            storage_format: Some("rabitq".into()),
             reloptions: vec!["nlists=1024".into()],
             log_file: Some("load.log".into()),
         };
         let args = expand_load(&step, &defaults);
         assert!(args.contains(&"--chunked".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--storage-format", "rabitq"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
