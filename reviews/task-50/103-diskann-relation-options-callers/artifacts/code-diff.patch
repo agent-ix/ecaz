@@ -1,0 +1,105 @@
+Script started on 2026-05-20 16:21:20-07:00 [<not executed on terminal>]
+commit fe633d4760de5642c004ece43846d9fea63c24dd (HEAD -> task-50-unsafe-closeout, origin/task-50-unsafe-closeout)
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 16:20:56 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 16:20:56 2026 -0700
+
+    Make DiskANN relation options safe to call
+---
+ src/am/ec_diskann/ambuild.rs | 4 +---
+ src/am/ec_diskann/cost.rs    | 8 ++------
+ src/am/ec_diskann/insert.rs  | 4 +---
+ src/am/ec_diskann/options.rs | 5 ++++-
+ src/am/ec_diskann/routine.rs | 4 +---
+ 5 files changed, 9 insertions(+), 16 deletions(-)
+
+diff --git a/src/am/ec_diskann/ambuild.rs b/src/am/ec_diskann/ambuild.rs
+index 227bb94d..bb8ed01d 100644
+--- a/src/am/ec_diskann/ambuild.rs
++++ b/src/am/ec_diskann/ambuild.rs
+@@ -102,9 +102,7 @@ struct BuildPassTimingSummary {
+ 
+ impl BuildState {
+     unsafe fn new(index_relation: pg_sys::Relation) -> Self {
+-        // SAFETY: The index relation is live while ambuild reads its reloptions
+-        // for this build state.
+-        let options = unsafe { options::relation_options(index_relation) };
++        let options = options::relation_options(index_relation);
+         Self {
+             options,
+             page_size: pg_sys::BLCKSZ as usize,
+diff --git a/src/am/ec_diskann/cost.rs b/src/am/ec_diskann/cost.rs
+index b0df5cb6..3339dc58 100644
+--- a/src/am/ec_diskann/cost.rs
++++ b/src/am/ec_diskann/cost.rs
+@@ -90,9 +90,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
+ }
+ 
+ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+-    // SAFETY: `index_relation` is a live relation pointer owned by the planner
+-    // callback guard for the duration of this computation.
+-    let relation_options = unsafe { options::relation_options(index_relation) };
++    let relation_options = options::relation_options(index_relation);
+     let scan_tuning = options::resolve_scan_tuning(&relation_options);
+     let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+@@ -125,9 +123,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
+ }
+ 
+ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+-    // SAFETY: `index_relation` is a live relation pointer supplied by a SQL
+-    // diagnostic wrapper.
+-    let relation_options = unsafe { options::relation_options(index_relation) };
++    let relation_options = options::relation_options(index_relation);
+     let scan_tuning = options::resolve_scan_tuning(&relation_options);
+     let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+diff --git a/src/am/ec_diskann/insert.rs b/src/am/ec_diskann/insert.rs
+index 9ef3243f..b3d5e4c8 100644
+--- a/src/am/ec_diskann/insert.rs
++++ b/src/am/ec_diskann/insert.rs
+@@ -1270,9 +1270,7 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
+         search_code: training::derive_grouped_pq4_code(source_vector, &model),
+     }];
+ 
+-    // SAFETY: `index_relation` is live during empty-index bootstrap and its
+-    // reloptions are read without mutating relation state.
+-    let relopts = unsafe { options::relation_options(index_relation) };
++    let relopts = options::relation_options(index_relation);
+     let params = BuildParams {
+         graph_degree_r: u16::try_from(relopts.graph_degree)
+             .map_err(|_| "graph_degree does not fit in u16".to_owned())?,
+diff --git a/src/am/ec_diskann/options.rs b/src/am/ec_diskann/options.rs
+index 1093d04f..5fe498a1 100644
+--- a/src/am/ec_diskann/options.rs
++++ b/src/am/ec_diskann/options.rs
+@@ -282,7 +282,10 @@ unsafe fn read_string_reloption(
+ }
+ 
+ #[allow(dead_code)]
+-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {
++pub(super) fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {
++    if index_relation.is_null() {
++        pgrx::error!("ec_diskann relation options need a valid index relation");
++    }
+     // SAFETY: index_relation is a live PostgreSQL relation while callers decode
+     // relation options; rd_options may be null when defaults apply.
+     let rd_options = unsafe { (*index_relation).rd_options };
+diff --git a/src/am/ec_diskann/routine.rs b/src/am/ec_diskann/routine.rs
+index d7d89cf9..ada1b157 100644
+--- a/src/am/ec_diskann/routine.rs
++++ b/src/am/ec_diskann/routine.rs
+@@ -2015,9 +2015,7 @@ mod tests {
+         );
+         let index_relation_ptr = index_relation.as_ptr();
+ 
+-        // SAFETY: The guard keeps the index relation open while relation
+-        // options are read for test scan-state construction.
+-        let relation_options = unsafe { super::options::relation_options(index_relation_ptr) };
++        let relation_options = super::options::relation_options(index_relation_ptr);
+         // SAFETY: The guard keeps the index relation open while the persisted
+         // chain is materialized for test scan-state construction.
+         let (metadata, chain) =
+
+Script done on 2026-05-20 16:21:20-07:00 [COMMAND_EXIT_CODE="0"]
