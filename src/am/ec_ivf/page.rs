@@ -2560,7 +2560,7 @@ fn decode_rerank(value: u8) -> Result<RerankMode, String> {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn initialize_metadata_page(
+pub(super) fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: MetadataPage,
 ) {
@@ -2601,7 +2601,7 @@ pub(super) unsafe fn initialize_metadata_page(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
+pub(super) fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
     // SAFETY: caller supplies a live IVF index relation for metadata read.
     let index = IvfPageRelation::new(index_relation);
     let buffer = index.read_main(
@@ -2617,7 +2617,7 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> Met
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn update_metadata_page<F>(
+pub(super) fn update_metadata_page<F>(
     index_relation: pg_sys::Relation,
     update: F,
 ) -> Result<MetadataPage, String>

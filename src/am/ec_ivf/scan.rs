@@ -1560,8 +1560,7 @@ fn debug_prepared_query_sq_len(opaque: &EcIvfScanOpaque) -> usize {
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> super::page::MetadataPage {
-    // SAFETY: Debug callers hold the index relation open for this metadata read.
-    unsafe { super::page::read_metadata_page(index_relation) }
+    super::page::read_metadata_page(index_relation)
 }
 
 #[cfg(any(test, feature = "pg_test"))]

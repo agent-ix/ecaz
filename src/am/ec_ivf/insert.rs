@@ -83,7 +83,7 @@ unsafe fn insert_with_empty_bootstrap_lock(
 ) -> Result<(), String> {
     let guard = lock_empty_bootstrap_relation(index_relation);
     // SAFETY: same live index relation, reread under the bootstrap lock.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     validate_metadata_runtime_options(&metadata)?;
     if metadata.dimensions == 0 {
         return bootstrap_empty_index(index_relation, &metadata, tuple);
@@ -167,7 +167,7 @@ fn insert_into_trained_index(
     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
     // SAFETY: relation is live and the callback only increments metadata
     // insert counters.
-    unsafe { page::update_metadata_page(index_relation, apply_metadata_insert_stats) }
+    page::update_metadata_page(index_relation, apply_metadata_insert_stats)
         .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
 
     Ok(())
@@ -466,7 +466,7 @@ pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
         "debug_ec_ivf_validate_no_duplicate_heap_tid",
     );
     // SAFETY: the guarded index relation is live for this metadata read.
-    let metadata = unsafe { page::read_metadata_page(index_relation.as_ptr()) };
+    let metadata = page::read_metadata_page(index_relation.as_ptr());
     let heap_tid = ItemPointer {
         block_number,
         offset_number,

@@ -64,7 +64,7 @@ unsafe fn noop_vacuum_stats(
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     // SAFETY: caller passes the live IVF index relation being vacuumed.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     finish_vacuum_stats(index_relation, stats, &metadata)
 }
 
@@ -83,7 +83,7 @@ unsafe fn run_bulkdelete(
         stats
     };
     // SAFETY: `index_relation` is the live IVF index relation being vacuumed.
-    let mut metadata = unsafe { page::read_metadata_page(index_relation) };
+    let mut metadata = page::read_metadata_page(index_relation);
 
     if metadata.directory_head == ItemPointer::INVALID {
         if metadata.total_live_tuples != 0 {
@@ -162,7 +162,7 @@ unsafe fn run_bulkdelete(
             .unwrap_or_else(|| pgrx::error!("ec_ivf metadata dead count overflow during vacuum"));
         // SAFETY: `index_relation` is the live IVF index relation and the
         // updated metadata preserves the same on-disk format fields.
-        unsafe { page::initialize_metadata_page(index_relation, metadata) };
+        page::initialize_metadata_page(index_relation, metadata);
         // SAFETY: `stats` is non-null after allocation/selection above and is
         // owned by PostgreSQL for this vacuum cycle.
         unsafe {

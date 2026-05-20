@@ -176,7 +176,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
     // SAFETY: `index_relation` is a live PostgreSQL index relation supplied by
     // a SQL diagnostic wrapper.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     // SAFETY: `index_relation` is live for the duration of the snapshot read.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
@@ -231,7 +231,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
     // SAFETY: `index_relation` is a live relation pointer owned by the planner
     // callback guard for the duration of this computation.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     // SAFETY: `index_relation` is live while the planner callback computes cost.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)

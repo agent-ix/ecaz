@@ -82,7 +82,7 @@ struct DirectoryDriftSummary {
 pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
     // diagnostic wrapper; page readers validate the metadata/directory layout.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
     // SAFETY: PostgreSQL owns the relation; querying the main fork block count
     // is valid for the opened index relation.
@@ -140,7 +140,7 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
     // diagnostic wrapper; metadata and reloptions are read without ownership.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     let index_options = unsafe { options::relation_options(index_relation) };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
@@ -186,7 +186,7 @@ pub(crate) unsafe fn index_page_ownership(
 ) -> Vec<IndexPageOwnershipSnapshot> {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
     // diagnostic wrapper; metadata drives payload length selection.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     let quantizer = IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
         usize::from(metadata.dimensions),

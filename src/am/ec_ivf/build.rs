@@ -544,7 +544,7 @@ pub(super) fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuild
     write_data_pages(index_relation, &plan.data_pages);
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.
-    unsafe { page::initialize_metadata_page(index_relation, plan.metadata) };
+    page::initialize_metadata_page(index_relation, plan.metadata);
 }
 
 fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
