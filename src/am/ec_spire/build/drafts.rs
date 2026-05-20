@@ -218,8 +218,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
         return Ok(0);
     }
 
-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
-    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
+    let (published_at_micros, retain_until_micros) = current_epoch_publish_times()?;
     let epoch_manifest = SpireEpochManifest {
         epoch: SPIRE_INITIAL_EPOCH,
         state: SpireEpochState::Published,
@@ -374,8 +373,7 @@ unsafe fn publish_relation_recursive_routing_build(
         return Ok(0);
     }
 
-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
-    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
+    let (published_at_micros, retain_until_micros) = current_epoch_publish_times()?;
     let centroid_plan = state.train_centroid_plan()?;
     let mut pid_allocator = SpirePidAllocator::default();
     let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
@@ -452,7 +450,7 @@ unsafe fn publish_relation_recursive_routing_build(
     Ok(state.scanned_tuples)
 }
 
-pub(super) unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
+pub(super) fn current_epoch_publish_times() -> Result<(i64, i64), String> {
     // SAFETY: reads PostgreSQL backend-local current timestamp state.
     let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)

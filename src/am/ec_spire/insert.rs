@@ -154,9 +154,7 @@ unsafe fn publish_insert_delta_epoch(
         .active_epoch
         .checked_add(1)
         .ok_or_else(|| "ec_spire insert epoch overflow".to_owned())?;
-    let (published_at_micros, retain_until_micros) =
-        // SAFETY: reads PostgreSQL backend-local current timestamp state.
-        unsafe { build::current_epoch_publish_times()? };
+    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
 
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let mut local_vec_id_allocator =
@@ -242,9 +240,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         .active_epoch
         .checked_add(1)
         .ok_or_else(|| "ec_spire insert bootstrap epoch overflow".to_owned())?;
-    let (published_at_micros, retain_until_micros) =
-        // SAFETY: reads PostgreSQL backend-local current timestamp state.
-        unsafe { build::current_epoch_publish_times()? };
+    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
 
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let mut local_vec_id_allocator =

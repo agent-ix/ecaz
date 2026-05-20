@@ -140,11 +140,6 @@ impl SpireVacuumIndexRelation {
     }
 }
 
-fn spire_vacuum_publish_times() -> Result<(i64, i64), String> {
-    // SAFETY: timestamp helper reads PostgreSQL time state for publish metadata.
-    unsafe { build::current_epoch_publish_times() }
-}
-
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambulkdelete(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
@@ -395,7 +390,7 @@ fn publish_compacted_delta_epoch_if_needed(
         .active_epoch
         .checked_add(1)
         .ok_or_else(|| "ec_spire vacuum compaction epoch overflow".to_owned())?;
-    let (published_at_micros, retain_until_micros) = spire_vacuum_publish_times()?;
+    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
     let pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
 
@@ -578,7 +573,7 @@ fn publish_delete_delta_epoch(
         .active_epoch
         .checked_add(1)
         .ok_or_else(|| "ec_spire vacuum epoch overflow".to_owned())?;
-    let (published_at_micros, retain_until_micros) = spire_vacuum_publish_times()?;
+    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
     let local_store_config = index.local_store_config(root_control)?;

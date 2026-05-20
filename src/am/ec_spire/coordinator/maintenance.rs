@@ -222,9 +222,7 @@ unsafe fn build_relation_selected_scheduled_maintenance_input(
     )?;
     let object_versions =
         scheduled_replacement_object_version_plan(selected, parent.header.object_version, rows)?;
-    let (published_at_micros, retain_until_micros) =
-        // SAFETY: reads PostgreSQL backend-local current timestamp state.
-        unsafe { build::current_epoch_publish_times()? };
+    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
 
     match selected.decision.mode {
         update::SpireLeafReplacementScheduleMode::Split => {
