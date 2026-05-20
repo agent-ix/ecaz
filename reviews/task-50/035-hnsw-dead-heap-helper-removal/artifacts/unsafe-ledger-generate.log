@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/035-hnsw-dead-heap-helper-removal/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/035-hnsw-dead-heap-helper-removal src
+wrote 2426 unsafe ledger rows to reviews/task-50/035-hnsw-dead-heap-helper-removal/artifacts/unsafe-ledger-after.jsonl
