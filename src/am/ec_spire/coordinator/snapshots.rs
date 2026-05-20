@@ -108,8 +108,7 @@ unsafe fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveInde
 }
 
 unsafe fn live_index_relid(index_relation: pg_sys::Relation) -> u32 {
-    // SAFETY: callers pass a live SPIRE index relation.
-    unsafe { live_index_relation(index_relation) }.relid()
+    live_index_relation(index_relation).relid()
 }
 
 struct SpireActiveEpochAnchor {
@@ -553,9 +552,7 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
 pub(crate) unsafe fn index_health_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexHealthSnapshot {
-    // SAFETY: forwards the live index relation to the active snapshot
-    // diagnostic wrapper before converting diagnostics to a health row.
-    let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+    let diagnostics = active_snapshot_diagnostics(index_relation);
     health_snapshot_from_diagnostics(&diagnostics)
 }
 
@@ -563,9 +560,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexRelationStorageSnapshot {
     let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
-        // index relation for the duration of the snapshot.
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = live_index_relation(index_relation);
         let index_relid = index.relid();
         let root_control = index.root_control();
         let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
@@ -690,9 +685,7 @@ pub(crate) unsafe fn index_epoch_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexEpochSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexEpochSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
-        // index relation for the duration of the snapshot.
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let mut manifests = Vec::new();
         index.scan_object_tuples(|tid, tuple| {
@@ -775,13 +768,12 @@ fn protect_tuple(
     }
 }
 
-fn collect_physical_cleanup_candidates(
+unsafe fn collect_physical_cleanup_candidates(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
     now_micros: i64,
 ) -> Result<SpirePhysicalCleanupCandidates, String> {
-    // SAFETY: caller supplies a live SPIRE index relation for cleanup planning.
-    let index = unsafe { live_index_relation(index_relation) };
+    let index = live_index_relation(index_relation);
     let index_relid = index.relid();
     let manifests = collect_epoch_manifests_for_cleanup(index)?;
     let latest_manifests = latest_epoch_manifests(&manifests);
@@ -888,9 +880,7 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
     // before physical cleanup inspects and deletes object tuples.
     let _guard = unsafe { lock_publish_relation(index_relation) };
     let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {
-        // SAFETY: reads root/control state through the live locked index
-        // relation for cleanup planning.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = live_index_relation(index_relation).root_control();
         if root_control.active_epoch == 0 {
             return Ok(SpireIndexEpochCleanupRunResult {
                 active_epoch: 0,
@@ -1586,9 +1576,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness(
 ) -> Vec<SpireRemoteNodeDescriptorReadinessRow> {
     let mut rows = Vec::new();
     let contract_rows = remote_node_descriptor_contract_rows();
-    // SAFETY: forwards the live index relation to remote-node snapshot
-    // diagnostics before expanding descriptor contract rows.
-    for node in unsafe { remote_node_snapshot(index_relation) } {
+    for node in remote_node_snapshot(index_relation) {
         if node.node_id == meta::SPIRE_LOCAL_NODE_ID {
             continue;
         }
@@ -1634,9 +1622,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness(
 pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteNodeDescriptorReadinessSummaryRow {
-    // SAFETY: reads root/control state through the live index relation for the
-    // descriptor-readiness summary epoch.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let root_control = live_index_relation(index_relation).root_control();
     let mut summary = SpireRemoteNodeDescriptorReadinessSummaryRow {
         active_epoch: root_control.active_epoch,
         remote_node_count: 0,
@@ -1653,9 +1639,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
     }
 
     let mut seen_nodes = HashSet::new();
-    // SAFETY: forwards the live index relation to descriptor-readiness rows
-    // before reducing them into a summary.
-    for row in unsafe { remote_node_descriptor_readiness(index_relation) } {
+    for row in remote_node_descriptor_readiness(index_relation) {
         if seen_nodes.insert(row.node_id) {
             summary.remote_node_count =
                 summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
@@ -1716,9 +1700,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
 pub(crate) unsafe fn remote_node_capability_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
-    // SAFETY: forwards the live index relation to remote-node snapshot
-    // diagnostics before mapping rows to capability plan entries.
-    unsafe { remote_node_snapshot(index_relation) }
+    remote_node_snapshot(index_relation)
         .into_iter()
         .map(remote_node_capability_plan_row)
         .collect()
@@ -1727,9 +1709,7 @@ pub(crate) unsafe fn remote_node_capability_plan(
 pub(crate) unsafe fn remote_node_capability_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteNodeCapabilitySummaryRow {
-    // SAFETY: reads root/control state through the live index relation for the
-    // remote-node capability summary epoch.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let root_control = live_index_relation(index_relation).root_control();
     let mut summary = SpireRemoteNodeCapabilitySummaryRow {
         active_epoch: root_control.active_epoch,
         node_count: 0,
@@ -1747,9 +1727,7 @@ pub(crate) unsafe fn remote_node_capability_summary(
         return summary;
     }
 
-    // SAFETY: forwards the live index relation to capability-plan diagnostics
-    // before reducing plan rows into a summary.
-    for row in unsafe { remote_node_capability_plan(index_relation) } {
+    for row in remote_node_capability_plan(index_relation) {
         summary.node_count = summary.node_count.checked_add(1).unwrap_or_else(|| {
             pgrx::error!("ec_spire remote node capability summary node count overflow")
         });
@@ -1814,9 +1792,7 @@ pub(crate) unsafe fn remote_node_capability_summary(
 pub(crate) unsafe fn remote_epoch_publish_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteEpochPublishPlanRow> {
-    // SAFETY: forwards the live index relation to remote-node snapshot
-    // diagnostics before filtering remote publish plan rows.
-    unsafe { remote_node_snapshot(index_relation) }
+    remote_node_snapshot(index_relation)
         .into_iter()
         .filter(|node| node.node_id != meta::SPIRE_LOCAL_NODE_ID)
         .map(remote_epoch_publish_plan_row)
@@ -1826,9 +1802,7 @@ pub(crate) unsafe fn remote_epoch_publish_plan(
 pub(crate) unsafe fn remote_epoch_publish_readiness(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteEpochPublishReadinessRow {
-    // SAFETY: reads root/control state through the live index relation for the
-    // remote epoch publish readiness epoch.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let root_control = live_index_relation(index_relation).root_control();
     let mut summary = SpireRemoteEpochPublishReadinessRow {
         active_epoch: root_control.active_epoch,
         remote_node_count: 0,
@@ -1846,9 +1820,7 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
         return summary;
     }
 
-    // SAFETY: forwards the live index relation to publish-plan diagnostics
-    // before reducing remote rows into readiness counters.
-    for row in unsafe { remote_epoch_publish_plan(index_relation) } {
+    for row in remote_epoch_publish_plan(index_relation) {
         summary.remote_node_count = summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
             pgrx::error!("ec_spire remote epoch publish readiness node count overflow")
         });
@@ -1933,9 +1905,7 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
 pub(crate) unsafe fn remote_epoch_publish_gate_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteEpochPublishGateSummaryRow {
-    // SAFETY: forwards the live index relation to the publish-readiness summary
-    // before deriving the publish gate decision.
-    let readiness = unsafe { remote_epoch_publish_readiness(index_relation) };
+    let readiness = remote_epoch_publish_readiness(index_relation);
     let (publish_scope, publish_decision, next_blocker, recommendation) =
         if readiness.active_epoch == 0 {
             (
@@ -1991,9 +1961,7 @@ pub(crate) unsafe fn remote_epoch_publish_gate_summary(
 pub(crate) unsafe fn remote_epoch_manifest_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteEpochManifestPlanRow> {
-    // SAFETY: forwards the live index relation to remote publish planning
-    // before mapping rows to manifest-plan entries.
-    unsafe { remote_epoch_publish_plan(index_relation) }
+    remote_epoch_publish_plan(index_relation)
         .into_iter()
         .map(remote_epoch_manifest_plan_row)
         .collect()
@@ -2002,9 +1970,7 @@ pub(crate) unsafe fn remote_epoch_manifest_plan(
 pub(crate) unsafe fn remote_epoch_manifest_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteEpochManifestSummaryRow {
-    // SAFETY: forwards the live index relation to the publish gate summary
-    // before deriving the manifest decision.
-    let gate = unsafe { remote_epoch_publish_gate_summary(index_relation) };
+    let gate = remote_epoch_publish_gate_summary(index_relation);
     let (manifest_decision, recommendation) = if gate.active_epoch == 0 {
         ("build_required", gate.recommendation)
     } else if gate.publish_decision == "block_publish" {
@@ -2365,9 +2331,7 @@ pub(crate) unsafe fn index_leaf_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLeafSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
-        // index relation for the duration of the leaf snapshot.
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
