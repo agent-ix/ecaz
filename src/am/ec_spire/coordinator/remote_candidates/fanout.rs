@@ -143,7 +143,7 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         // SAFETY: callers provide an open SPIRE index relation; this only reads
         // its root control page to verify the active epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
                 "ec_spire remote search fanout requested epoch {requested_epoch} does not match active epoch {}",
@@ -240,7 +240,7 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         // SAFETY: callers provide an open SPIRE index relation; this only reads
         // its root control page to verify the active epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
                 "ec_spire remote search target plan requested epoch {requested_epoch} does not match active epoch {}",

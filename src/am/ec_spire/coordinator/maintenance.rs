@@ -350,7 +350,7 @@ pub(crate) unsafe fn index_maintenance_plan_snapshot(
     let result = (|| -> Result<SpireIndexMaintenancePlanSnapshot, String> {
         // SAFETY: caller passes a live SPIRE index relation with a root/control
         // page readable for maintenance planning.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch == 0 {
             return Ok(no_maintenance_plan_snapshot(
                 root_control,
@@ -399,7 +399,7 @@ pub(crate) unsafe fn index_locked_maintenance_run_plan(
     let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {
         // SAFETY: publish lock is held while reading root/control state from
         // the live SPIRE index relation.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch == 0 {
             return Ok(no_maintenance_run_result(
                 root_control,
@@ -438,7 +438,7 @@ pub(crate) unsafe fn index_maintenance_run(
     let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {
         // SAFETY: publish lock is held while reading root/control state from
         // the live SPIRE index relation.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch == 0 {
             return Ok(no_maintenance_run_result(
                 root_control,

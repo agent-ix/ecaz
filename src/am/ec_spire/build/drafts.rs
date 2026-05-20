@@ -312,7 +312,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
     let placement_evidence =
         // SAFETY: placement entries were just written for this live index
         // relation and are valid to append to the relation-backed directory.
-        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+        write_placement_entries_to_relation(index_relation, &placement_directory)?;
     let object_manifest = object_manifest_from_placement_writes(
         SPIRE_INITIAL_EPOCH,
         &placement_directory,
@@ -330,11 +330,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
     let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     // SAFETY: the encoded manifest bundle belongs to this initial publish for
     // the live SPIRE index relation.
-    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let locators = write_manifest_bundle_to_relation(index_relation, &manifests)?;
     let root_control = root_control_state_for_publish(input, locators)?;
     // SAFETY: initial publish owns initialization of the live index relation's
     // root/control page after all manifest locators are written.
-    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    page::initialize_root_control_page(index_relation, root_control);
     Ok(state.scanned_tuples)
 }
 

@@ -305,15 +305,15 @@ unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
     // SAFETY: root_control came from this live index relation and contains the
     // tuple ID of the active epoch manifest.
     let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+        page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
     // SAFETY: root_control came from this live index relation and contains the
     // tuple ID of the active object manifest.
     let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+        page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
     // SAFETY: root_control came from this live index relation and contains the
     // tuple ID of the active placement directory.
     let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+        page::read_object_tuple(index_relation, root_control.placement_directory_tid)?;
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;

@@ -448,7 +448,7 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
         let generation_identity = remote_search_endpoint_generation_identity(index_oid)?;
         // SAFETY: reads the root control page from the same live relation used
         // to resolve the relation options and index identity above.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         let scoring_profile = "inner_product_score_v1";
         let storage_format = relation_options.storage_format.reloption_name();
         let profile_fingerprint = remote_search_stable_fingerprint(&[

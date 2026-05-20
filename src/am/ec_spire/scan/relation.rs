@@ -58,15 +58,15 @@ pub(super) unsafe fn load_relation_epoch_manifests(
     // SAFETY: root_control belongs to this open relation and stores the active
     // epoch manifest tuple id; page helper returns owned bytes.
     let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+        page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
     // SAFETY: root_control belongs to this open relation and stores the active
     // object manifest tuple id; page helper returns owned bytes.
     let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+        page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
     // SAFETY: root_control belongs to this open relation and stores the active
     // placement-directory tuple id; page helper returns owned bytes.
     let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+        page::read_object_tuple(index_relation, root_control.placement_directory_tid)?;
     // SAFETY: root_control belongs to this relation and names the local store
     // config for the same active epoch manifest set.
     let local_store_config =
@@ -126,7 +126,7 @@ pub(super) unsafe fn load_relation_local_store_config(
     // SAFETY: root_control belongs to this open relation and stores the active
     // local-store config tuple id; page helper returns owned bytes.
     let bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.local_store_config_tid)? };
+        page::read_object_tuple(index_relation, root_control.local_store_config_tid)?;
     SpireLocalStoreConfig::decode(&bytes)
 }
 

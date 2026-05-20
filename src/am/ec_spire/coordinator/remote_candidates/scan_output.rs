@@ -102,7 +102,7 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
         // SAFETY: reads the SPIRE root control page through the live index
         // relation supplied by the SQL diagnostic caller.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch == 0 {
             return Ok(SpireRemoteProductionScanHandoffSummaryRow {
                 requested_epoch: 0,
@@ -497,7 +497,7 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
         // SAFETY: reads the SPIRE root control page through the live index
         // relation supplied by the production scan wrapper.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch == 0 {
             add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);
             add_profile_elapsed(&mut metrics.total_elapsed_ms, total_start);

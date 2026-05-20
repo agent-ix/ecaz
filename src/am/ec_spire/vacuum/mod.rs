@@ -54,7 +54,7 @@ impl SpireVacuumIndexRelation {
     fn root_control(self) -> SpireRootControlState {
         // SAFETY: this wrapper is constructed only for the live SPIRE index
         // relation supplied to vacuum callbacks.
-        unsafe { page::read_root_control_page(self.relation) }
+        page::read_root_control_page(self.relation)
     }
 
     fn publish_lock(self) -> super::SpireRelationLockGuard {
@@ -67,7 +67,14 @@ impl SpireVacuumIndexRelation {
     fn active_epoch_manifests(
         self,
         root_control: SpireRootControlState,
-    ) -> Result<(SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory), String> {
+    ) -> Result<
+        (
+            SpireEpochManifest,
+            SpireObjectManifest,
+            SpirePlacementDirectory,
+        ),
+        String,
+    > {
         // SAFETY: root_control was read from this live vacuum relation and
         // names the active epoch manifests.
         unsafe { scan::load_relation_epoch_manifests(self.relation, root_control) }
@@ -120,7 +127,7 @@ impl SpireVacuumIndexRelation {
     ) -> Result<Vec<SpirePublishPlacementWriteEvidence>, String> {
         // SAFETY: caller holds the publish lock and placement_directory was
         // validated for the replacement epoch before writing placement rows.
-        unsafe { write_placement_entries_to_relation(self.relation, placement_directory) }
+        write_placement_entries_to_relation(self.relation, placement_directory)
     }
 
     fn publish_replacement_epoch(
@@ -128,15 +135,7 @@ impl SpireVacuumIndexRelation {
         active_epoch_manifest: SpireEpochManifest,
         input: SpirePublishCoordinatorInput<'_>,
     ) -> Result<(), String> {
-        // SAFETY: caller holds the publish lock; input manifests/directories
-        // were validated and active_epoch_manifest is the replaced epoch.
-        unsafe {
-            build::publish_replacement_epoch_to_relation(
-                self.relation,
-                active_epoch_manifest,
-                input,
-            )
-        }
+        build::publish_replacement_epoch_to_relation(self.relation, active_epoch_manifest, input)
     }
 }
 

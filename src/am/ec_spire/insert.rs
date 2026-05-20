@@ -61,7 +61,7 @@ unsafe fn publish_insert_delta_epoch(
     // captures and locks its OID while this publish path runs.
     let _guard = unsafe { lock_publish_relation(index_relation) };
     // SAFETY: the locked SPIRE index relation has a root/control page.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let root_control = page::read_root_control_page(index_relation);
     // SAFETY: relation options are read from the live index relation.
     let relation_options = unsafe { options::relation_options(index_relation) };
     // SAFETY: heap_relation and IndexInfo come from PostgreSQL's aminsert
@@ -200,7 +200,7 @@ unsafe fn publish_insert_delta_epoch(
     let placement_evidence =
         // SAFETY: publish lock is held and placement entries are validated for
         // appending to the live SPIRE index relation.
-        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+        write_placement_entries_to_relation(index_relation, &placement_directory)?;
     let object_manifest = object_manifest_from_placement_writes(
         new_epoch,
         &placement_directory,
@@ -224,11 +224,7 @@ unsafe fn publish_insert_delta_epoch(
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
-    // SAFETY: publish lock is held; replacement publish appends manifests and
-    // updates the root/control page of the live index relation.
-    unsafe {
-        build::publish_replacement_epoch_to_relation(index_relation, active_epoch_manifest, input)
-    }
+    build::publish_replacement_epoch_to_relation(index_relation, active_epoch_manifest, input)
 }
 
 unsafe fn publish_empty_insert_bootstrap_epoch(
@@ -289,7 +285,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
     let placement_evidence =
         // SAFETY: publish lock is held and bootstrap placement entries are
         // validated for appending to the live SPIRE index relation.
-        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+        write_placement_entries_to_relation(index_relation, &placement_directory)?;
     let object_manifest = object_manifest_from_placement_writes(
         new_epoch,
         &placement_directory,
@@ -316,9 +312,9 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
     let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     // SAFETY: publish lock is held and the encoded manifest bundle belongs to
     // this live SPIRE index relation.
-    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let locators = write_manifest_bundle_to_relation(index_relation, &manifests)?;
     let root_control = root_control_state_for_publish(input, locators)?;
     // SAFETY: publish lock is held while initializing the root/control page.
-    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    page::initialize_root_control_page(index_relation, root_control);
     Ok(())
 }

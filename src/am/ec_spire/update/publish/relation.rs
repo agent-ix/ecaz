@@ -47,7 +47,7 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     // SAFETY: index_relation is the open SPIRE index relation being published,
     // and placement_directory was derived from the validated replacement plan.
     let placement_write_evidence =
-        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+        write_placement_entries_to_relation(index_relation, &placement_directory)?;
     let draft = build_scheduled_replacement_epoch_draft_from_object_placements(
         snapshot,
         object_store,
@@ -65,7 +65,7 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     )?;
     // SAFETY: index_relation is open for this publish operation; the root page
     // is read to confirm it still references the previous epoch.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let root_control = page::read_root_control_page(index_relation);
     if root_control.active_epoch != previous_epoch_manifest.epoch {
         return Err(format!(
             "ec_spire scheduled replacement publish root/control epoch {} does not match previous epoch {}",
@@ -76,15 +76,11 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     // the local-store config for the active epoch.
     let local_store_config =
         unsafe { load_relation_local_store_config(index_relation, root_control)? };
-    // SAFETY: draft was built from validated replacement inputs and the loaded
-    // local-store config belongs to the same index relation/root epoch.
-    unsafe {
-        publish_replacement_epoch_to_relation(
-            index_relation,
-            previous_epoch_manifest,
-            draft.publish_input_with_local_store_config(local_store_config),
-        )?;
-    }
+    publish_replacement_epoch_to_relation(
+        index_relation,
+        previous_epoch_manifest,
+        draft.publish_input_with_local_store_config(local_store_config),
+    )?;
     Ok(draft)
 }
 
@@ -142,7 +138,7 @@ pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
     // SAFETY: index_relation is the open SPIRE index relation being published,
     // and placement_directory was derived from the validated replacement input.
     let placement_write_evidence =
-        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+        write_placement_entries_to_relation(index_relation, &placement_directory)?;
     let draft = build_replacement_epoch_draft(SpireReplacementEpochInput {
         epoch: input.epoch,
         published_at_micros: input.published_at_micros,
@@ -155,7 +151,7 @@ pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
     })?;
     // SAFETY: index_relation is open for this publish operation; the root page
     // is read to confirm it still references the previous epoch.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let root_control = page::read_root_control_page(index_relation);
     if root_control.active_epoch != previous_epoch_manifest.epoch {
         return Err(format!(
             "ec_spire replacement publish root/control epoch {} does not match previous epoch {}",
@@ -166,15 +162,11 @@ pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
     // the local-store config for the active epoch.
     let local_store_config =
         unsafe { load_relation_local_store_config(index_relation, root_control)? };
-    // SAFETY: draft was built from validated replacement inputs and the loaded
-    // local-store config belongs to the same index relation/root epoch.
-    unsafe {
-        publish_replacement_epoch_to_relation(
-            index_relation,
-            previous_epoch_manifest,
-            draft.publish_input_with_local_store_config(local_store_config),
-        )?;
-    }
+    publish_replacement_epoch_to_relation(
+        index_relation,
+        previous_epoch_manifest,
+        draft.publish_input_with_local_store_config(local_store_config),
+    )?;
     Ok(draft)
 }
 
@@ -251,8 +243,8 @@ pub(super) fn validate_replacement_leaf_object_inputs(
                     input.pid
                 ));
             }
-            let scored_roles =
-                row.flags & (SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA);
+            let scored_roles = row.flags
+                & (SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA);
             if scored_roles.count_ones() != 1 {
                 return Err(format!(
                     "ec_spire replacement leaf object input pid {} must set exactly one primary/boundary role",

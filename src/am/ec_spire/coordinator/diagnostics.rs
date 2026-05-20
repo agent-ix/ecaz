@@ -98,15 +98,15 @@ unsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
     // SAFETY: index_relation is the open SPIRE index relation, and the TID was
     // read from its root/control page for the active epoch manifest.
     let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+        page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
     // SAFETY: index_relation is the open SPIRE index relation, and the TID was
     // read from its root/control page for the active object manifest.
     let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+        page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
     // SAFETY: index_relation is the open SPIRE index relation, and the TID was
     // read from its root/control page for the active placement directory.
     let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+        page::read_object_tuple(index_relation, root_control.placement_directory_tid)?;
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
@@ -137,7 +137,7 @@ pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
     let result = (|| -> Result<Vec<SpireBoundaryReplicaIdentitySnapshotRow>, String> {
         // SAFETY: index_relation is the open SPIRE index relation inspected by
         // this read-only diagnostic.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
@@ -249,7 +249,7 @@ pub(crate) unsafe fn index_boundary_replica_placement_diagnostics(
     let result = (|| -> Result<Vec<SpireBoundaryReplicaPlacementDiagnosticRow>, String> {
         // SAFETY: index_relation is the open SPIRE index relation inspected by
         // this read-only diagnostic.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = page::read_root_control_page(index_relation);
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }

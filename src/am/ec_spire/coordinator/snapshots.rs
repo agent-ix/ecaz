@@ -11,7 +11,7 @@ impl SpireLiveIndexRelation {
     fn root_control(self) -> meta::SpireRootControlState {
         // SAFETY: this wrapper is constructed only for a live SPIRE index
         // relation at PostgreSQL AM/SQL diagnostic entry points.
-        unsafe { page::read_root_control_page(self.relation) }
+        page::read_root_control_page(self.relation)
     }
 
     fn relation_options(self) -> options::EcSpireOptions {
@@ -97,7 +97,7 @@ impl SpireLiveIndexRelation {
     {
         // SAFETY: this wrapper is constructed only for a live SPIRE index
         // relation; page::scan_object_tuples owns the page lock/tuple bounds.
-        unsafe { page::scan_object_tuples(self.relation, visit) }
+        page::scan_object_tuples(self.relation, visit)
     }
 }
 
@@ -621,37 +621,29 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 .checked_add(u64::from(storage_block_count))
                 .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;
 
-            // SAFETY: storage_relation is open for object tuple scanning; the
-            // callback only records tuple sizes and active-reference matches.
-            let scan_result = unsafe {
-                page::scan_object_tuples(storage_relation, |tid, tuple| {
-                    relation_object_tuple_count =
-                        relation_object_tuple_count.checked_add(1).ok_or_else(|| {
-                            "ec_spire relation object tuple count overflow".to_owned()
+            let scan_result = page::scan_object_tuples(storage_relation, |tid, tuple| {
+                relation_object_tuple_count = relation_object_tuple_count
+                    .checked_add(1)
+                    .ok_or_else(|| "ec_spire relation object tuple count overflow".to_owned())?;
+                let tuple_bytes = u64::try_from(tuple.len())
+                    .map_err(|_| "ec_spire relation object tuple bytes exceed u64".to_owned())?;
+                relation_object_tuple_bytes = relation_object_tuple_bytes
+                    .checked_add(tuple_bytes)
+                    .ok_or_else(|| "ec_spire relation object tuple bytes overflow".to_owned())?;
+                if active_tids.contains(&(storage_relid, tid)) {
+                    active_referenced_tuple_count = active_referenced_tuple_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            "ec_spire active referenced tuple count overflow".to_owned()
                         })?;
-                    let tuple_bytes = u64::try_from(tuple.len()).map_err(|_| {
-                        "ec_spire relation object tuple bytes exceed u64".to_owned()
-                    })?;
-                    relation_object_tuple_bytes = relation_object_tuple_bytes
+                    active_referenced_tuple_bytes = active_referenced_tuple_bytes
                         .checked_add(tuple_bytes)
                         .ok_or_else(|| {
-                            "ec_spire relation object tuple bytes overflow".to_owned()
+                            "ec_spire active referenced tuple bytes overflow".to_owned()
                         })?;
-                    if active_tids.contains(&(storage_relid, tid)) {
-                        active_referenced_tuple_count = active_referenced_tuple_count
-                            .checked_add(1)
-                            .ok_or_else(|| {
-                                "ec_spire active referenced tuple count overflow".to_owned()
-                            })?;
-                        active_referenced_tuple_bytes = active_referenced_tuple_bytes
-                            .checked_add(tuple_bytes)
-                            .ok_or_else(|| {
-                                "ec_spire active referenced tuple bytes overflow".to_owned()
-                            })?;
-                    }
-                    Ok(())
-                })
-            };
+                }
+                Ok(())
+            });
             scan_result?;
         }
 
@@ -854,16 +846,12 @@ unsafe fn collect_physical_cleanup_candidates(
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?;
         let mut candidates = Vec::new();
-        // SAFETY: storage_relation is open with RowExclusiveLock for cleanup
-        // planning; this pass only records unprotected tuple IDs.
-        let scan_result = unsafe {
-            page::scan_object_tuples(storage_relation, |tid, _tuple| {
-                if !protected.contains(&(storage_relid, tid)) {
-                    candidates.push(tid);
-                }
-                Ok(())
-            })
-        };
+        let scan_result = page::scan_object_tuples(storage_relation, |tid, _tuple| {
+            if !protected.contains(&(storage_relid, tid)) {
+                candidates.push(tid);
+            }
+            Ok(())
+        });
         scan_result?;
         if !candidates.is_empty() {
             candidates_by_relid.insert(storage_relid, candidates);
@@ -929,7 +917,7 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
             let delete_result =
                 // SAFETY: storage_relation is open with RowExclusiveLock and
                 // tids were selected by the protected/candidate cleanup plan.
-                unsafe { page::delete_object_tuples_no_compact(storage_relation, &tids) };
+                page::delete_object_tuples_no_compact(storage_relation, &tids);
             let (deleted_count, deleted_bytes) = delete_result?;
             removed_tuple_count = removed_tuple_count
                 .checked_add(deleted_count)
