@@ -1,0 +1,4 @@
+hardening/careful/src/../../../src/quant/rabitq.rs:755:24: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:757:35: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:998:38: replace * with + in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1132:30: replace < with <= in estimate_ip_impl

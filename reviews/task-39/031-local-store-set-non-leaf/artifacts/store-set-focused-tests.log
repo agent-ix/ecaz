@@ -1,0 +1,9 @@
+
+running 4 tests
+test careful_spire::storage::tests::local_object_store_set_rejects_unconfigured_placements ... ok
+test careful_spire::storage::tests::local_object_store_set_indexes_non_contiguous_store_ids ... ok
+test careful_spire::storage::tests::local_object_store_set_routes_by_pid_and_reads_back_objects ... ok
+test careful_spire::storage::tests::local_object_store_set_round_trips_non_leaf_object_kinds ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 451 filtered out; finished in 0.00s
+

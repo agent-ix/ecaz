@@ -1,0 +1,14 @@
+hardening/careful/src/../../../src/quant/rabitq.rs:765:13: replace || with && in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:763:24: replace < with == in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:763:24: replace < with > in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:763:24: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:765:35: replace < with == in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:765:35: replace < with > in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:765:35: replace < with <= in CenteredScorer::score_at
+hardening/careful/src/../../../src/quant/rabitq.rs:1006:31: replace / with % in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1006:31: replace / with * in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1006:26: replace + with - in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1006:26: replace + with * in quantize_level
+hardening/careful/src/../../../src/quant/rabitq.rs:1140:30: replace < with == in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1140:30: replace < with > in estimate_ip_impl
+hardening/careful/src/../../../src/quant/rabitq.rs:1140:30: replace < with <= in estimate_ip_impl

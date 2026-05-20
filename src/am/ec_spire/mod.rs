@@ -171,9 +171,6 @@ pub(super) const EC_SPIRE_DEFAULT_SEED: i32 = 42;
 pub(super) const EC_SPIRE_MIN_SEED: i32 = 0;
 pub(super) const EC_SPIRE_MAX_SEED: i32 = i32::MAX;
 
-const SPIRE_LEAF_SPLIT_AVERAGE_MULTIPLIER: u64 = 4;
-const SPIRE_LEAF_SPLIT_MIN_ASSIGNMENTS: u64 = 32;
-const SPIRE_LEAF_MERGE_AVERAGE_DIVISOR: u64 = 4;
 pub(super) const EC_SPIRE_DEFAULT_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MIN_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MAX_PQ_GROUP_SIZE: i32 = 32;

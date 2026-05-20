@@ -44,6 +44,14 @@ pub mod careful_pg_guards;
 #[path = "spire.rs"]
 pub mod careful_spire;
 
+#[allow(dead_code, unused_imports)]
+#[path = "spire_diagnostics_helpers.rs"]
+pub mod careful_spire_diagnostics_helpers;
+
+#[allow(dead_code, unused_imports)]
+#[path = "diskann_routine_helpers.rs"]
+pub mod careful_diskann_routine_helpers;
+
 #[allow(dead_code)]
 #[path = "../../../src/am/common/training.rs"]
 pub mod careful_common_training;
@@ -61,6 +69,9 @@ pub mod careful_diskann_build;
 pub mod careful_diskann_scan;
 
 pub mod storage {
+    pub use crate::careful_pg_guards::buffer_guard;
+    pub use crate::careful_pg_guards::relation_guard;
+    pub use crate::careful_pg_guards::wal;
     pub use crate::careful_storage_page as page;
 }
 
@@ -98,7 +109,7 @@ pub mod am {
     }
 
     pub mod ec_spire {
-        pub use crate::careful_spire::{assign, meta, storage};
+        pub use crate::careful_spire::{assign, meta, page, storage};
     }
 }
 

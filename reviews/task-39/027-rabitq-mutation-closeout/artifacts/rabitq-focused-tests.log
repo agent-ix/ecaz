@@ -1,0 +1,38 @@
+   Compiling ecaz-careful-hardening v0.1.0 (/Users/peter/dev/tqvector/hardening/careful)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.10s
+     Running unittests src/lib.rs (target/debug/deps/ecaz_careful_hardening-3bca8b65b65b7ce7)
+
+running 30 tests
+test quant::rabitq::tests::bit_level_packers_round_trip_all_supported_widths ... ok
+test quant::rabitq::tests::centered_context_and_scorer_cover_raw_and_degenerate_paths ... ok
+test quant::rabitq::tests::estimate_ip_guards_and_bound_are_pinned ... ok
+test quant::rabitq::tests::custom_rotation_plugs_into_seam ... ok
+test quant::rabitq::tests::centered_estimator_is_exact_on_sign_aligned_residual ... ok
+test quant::rabitq::tests::encode_code_pins_qbit_payload_and_scalars ... ok
+test quant::rabitq::tests::centered_scorer_pins_nontrivial_bound_formula ... ok
+test quant::rabitq::tests::estimator_recovers_self_ip_on_sign_aligned_vector ... ok
+test quant::rabitq::tests::centered_encode_pins_asymmetric_center_tail_and_zero_residual ... ok
+test quant::rabitq::tests::encode_code_pins_zero_vector_tail_and_levels ... ok
+test quant::rabitq::tests::estimate_ip_o_dot_floor_covers_below_equal_and_above ... ok
+test quant::rabitq::tests::centered_scorer_matches_manual_unit_residual_ip ... ok
+test quant::rabitq::tests::centered_scorer_floor_boundaries_cover_below_equal_and_above ... ok
+test quant::rabitq::tests::estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::hamming_similarity_identity_equals_dim ... ok
+test quant::rabitq::tests::centered_estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::qbit_code_len_scales_with_bits ... ok
+test quant::rabitq::tests::qbit_quantize_and_dequantize_pin_level_midpoints ... ok
+test quant::rabitq::tests::qbit_quantize_pins_non_roundtrip_scale_term ... ok
+test quant::rabitq::tests::centered_api_rejects_qbit_bits ... ok
+test quant::rabitq::tests::qbit_rejects_unsupported_bits ... ok
+test quant::rabitq::tests::quantizer_and_prepared_estimator_accessors_are_stable ... ok
+test quant::rabitq::tests::query_scorer_matches_estimator_for_nontrivial_pair ... ok
+test quant::rabitq::tests::sign_sidecar_helpers_pack_exact_words ... ok
+test quant::rabitq::tests::sign_words_from_rotated_matches_manual_pack ... ok
+test quant::rabitq::tests::qbit_encoder_reduces_error_vs_binary ... ok
+test quant::rabitq::tests::encode_then_score_same_vector_is_nonnegative ... ok
+test quant::rabitq::tests::code_len_matches_dimension ... ok
+test quant::rabitq::tests::srht_seeded_rotation_is_deterministic_and_independent_of_prod ... ok
+test quant::rabitq::tests::persisted_sidecar_helpers_preserve_supported_and_unsupported_lanes ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 421 filtered out; finished in 0.13s
+

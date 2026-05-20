@@ -27,102 +27,11 @@ impl SpireActiveSnapshotDiagnostics {
     }
 }
 
-fn health_snapshot_from_diagnostics(
-    diagnostics: &SpireActiveSnapshotDiagnostics,
-) -> SpireIndexHealthSnapshot {
-    let has_no_active_epoch = diagnostics.active_epoch == 0;
-    let (status, healthy, recommendation, compaction_recommended) = if has_no_active_epoch {
-        (
-            "empty",
-            true,
-            "build or insert rows to publish the first SPIRE epoch",
-            false,
-        )
-    } else if diagnostics.unavailable_placement_count > 0 {
-        (
-            "unavailable_placements",
-            false,
-            "restore unavailable local placements before relying on this index",
-            false,
-        )
-    } else if diagnostics.stale_placement_count > 0 {
-        (
-            "stale_placements",
-            false,
-            "publish a cleanup epoch to remove stale placements",
-            false,
-        )
-    } else if diagnostics.skipped_placement_count > 0 {
-        (
-            "skipped_placements",
-            false,
-            "inspect skipped placements before enabling degraded reads",
-            false,
-        )
-    } else if diagnostics.delta_object_count > 0 {
-        (
-            "maintenance_recommended",
-            true,
-            "run VACUUM to compact active delta objects into V2 base leaves",
-            true,
-        )
-    } else if diagnostics.consistency_mode == "degraded" {
-        (
-            "degraded_consistency",
-            true,
-            "verify degraded-read policy before relying on strict local semantics",
-            false,
-        )
-    } else {
-        ("ok", true, "none", false)
-    };
-
-    SpireIndexHealthSnapshot {
-        active_epoch: diagnostics.active_epoch,
-        consistency_mode: diagnostics.consistency_mode,
-        status,
-        healthy,
-        recommendation,
-        compaction_recommended,
-        object_count: diagnostics.object_count,
-        leaf_assignment_count: diagnostics.leaf_assignment_count,
-        delta_assignment_count: diagnostics.delta_assignment_count,
-        delta_object_count: diagnostics.delta_object_count,
-        available_placement_count: diagnostics.available_placement_count,
-        stale_placement_count: diagnostics.stale_placement_count,
-        unavailable_placement_count: diagnostics.unavailable_placement_count,
-        skipped_placement_count: diagnostics.skipped_placement_count,
-    }
-}
-
-fn assignment_payload_format_name(format: quantizer::SpireAssignmentPayloadFormat) -> &'static str {
-    match format {
-        quantizer::SpireAssignmentPayloadFormat::TurboQuant => "turboquant",
-        quantizer::SpireAssignmentPayloadFormat::PqFastScan => "pq_fastscan",
-        quantizer::SpireAssignmentPayloadFormat::RaBitQ => "rabitq",
-    }
-}
-
-const SPIRE_ASSIGNMENT_PAYLOAD_STATUS_SUPPORTED: &str = "supported";
-const SPIRE_ASSIGNMENT_PAYLOAD_STATUS_DEFERRED_MODEL_METADATA: &str = "deferred_model_metadata";
-
-fn assignment_payload_scannability(
-    format: quantizer::SpireAssignmentPayloadFormat,
-) -> (bool, &'static str, &'static str) {
-    match format {
-        quantizer::SpireAssignmentPayloadFormat::TurboQuant
-        | quantizer::SpireAssignmentPayloadFormat::RaBitQ => (
-            true,
-            SPIRE_ASSIGNMENT_PAYLOAD_STATUS_SUPPORTED,
-            "format can be used for current SPIRE scans",
-        ),
-        quantizer::SpireAssignmentPayloadFormat::PqFastScan => (
-            false,
-            SPIRE_ASSIGNMENT_PAYLOAD_STATUS_DEFERRED_MODEL_METADATA,
-            "persist grouped-PQ model metadata before using pq_fastscan with SPIRE",
-        ),
-    }
-}
+// Pure helpers shared with the hardening shadow crate live in
+// `diagnostics_helpers.rs` so the careful crate can `include!` them
+// directly under shimmed type names. The set must stay free of pgrx
+// FFI or `pg_sys` calls.
+include!("diagnostics_helpers.rs");
 
 #[derive(Debug, Default)]
 struct BoundaryReplicaIdentityAccumulator {
@@ -220,99 +129,6 @@ unsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
         ));
     }
     Ok((epoch_manifest, object_manifest, placement_directory))
-}
-
-fn boundary_replica_identity_scope(vec_id: &[u8]) -> &'static str {
-    match vec_id.first().copied() {
-        Some(storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR) => "global",
-        Some(storage::SPIRE_LOCAL_VEC_ID_DISCRIMINATOR) => "node_local",
-        _ => "invalid",
-    }
-}
-
-fn boundary_replica_identity_status(
-    vec_id_scope: &'static str,
-    primary_assignment_count: u64,
-    boundary_replica_assignment_count: u64,
-    node_count: u64,
-) -> (&'static str, &'static str) {
-    if primary_assignment_count == 0 {
-        (
-            "missing_primary_assignment",
-            "boundary replica identity requires one primary assignment for each replicated vec_id",
-        )
-    } else if primary_assignment_count > 1 {
-        (
-            "duplicate_primary_assignment",
-            "inspect boundary routing because one replicated vec_id has multiple primary assignments",
-        )
-    } else if boundary_replica_assignment_count == 0 {
-        (
-            "missing_boundary_replica",
-            "no boundary replica assignment is present for this vec_id",
-        )
-    } else if vec_id_scope == "global" {
-        (
-            "ready",
-            "global vec_id is shared by the primary and boundary replica assignments",
-        )
-    } else if vec_id_scope == "node_local" && node_count <= 1 {
-        (
-            "local_scope_only",
-            "node-local vec_id can dedupe local boundary replicas but is not safe for cross-node replica dedupe",
-        )
-    } else {
-        (
-            "requires_global_vec_id",
-            "enable source_identity = 'include' before using cross-node boundary replica dedupe",
-        )
-    }
-}
-
-fn boundary_replica_placement_status(
-    primary_assignment_count: u64,
-    boundary_replica_assignment_count: u64,
-    stale_boundary_replica_count: u64,
-    unavailable_boundary_replica_count: u64,
-    skipped_boundary_replica_count: u64,
-) -> (&'static str, &'static str, &'static str) {
-    if primary_assignment_count == 0 {
-        (
-            "missing_primary_assignment",
-            "fail_closed",
-            "boundary replica diagnostics require a primary assignment for each replicated vec_id",
-        )
-    } else if boundary_replica_assignment_count == 0 {
-        (
-            "missing_boundary_replica",
-            "fail_closed",
-            "restore boundary replica assignment coverage before relying on degraded replica reads",
-        )
-    } else if stale_boundary_replica_count > 0 {
-        (
-            "stale_boundary_replica",
-            "fail_closed",
-            "do not serve stale boundary replica placements in degraded mode",
-        )
-    } else if unavailable_boundary_replica_count > 0 {
-        (
-            "unavailable_boundary_replica",
-            "skip_and_report",
-            "report unavailable boundary replica placements in degraded search diagnostics",
-        )
-    } else if skipped_boundary_replica_count > 0 {
-        (
-            "skipped_boundary_replica",
-            "skip_and_report",
-            "report skipped boundary replica placements in degraded search diagnostics",
-        )
-    } else {
-        (
-            "ready",
-            "serve_or_dedupe",
-            "boundary replica placement coverage is available",
-        )
-    }
 }
 
 pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
@@ -634,83 +450,6 @@ fn level_nprobe_resolution(
     ))
 }
 
-fn scan_sanity_status(
-    active_epoch: u64,
-    exact_leaf_coverage: bool,
-    full_frontier_rerank: bool,
-) -> (&'static str, &'static str, &'static str) {
-    if active_epoch == 0 {
-        return (
-            "empty",
-            "none",
-            "build or insert rows to publish the first SPIRE epoch",
-        );
-    }
-    if exact_leaf_coverage && full_frontier_rerank {
-        return (
-            "exact_leaf_and_frontier_coverage",
-            "full_scan",
-            "use this configuration only when max_candidate_rows covers the expected frontier",
-        );
-    }
-    if exact_leaf_coverage {
-        return (
-            "exact_leaf_coverage_bounded_rerank",
-            "bounded_rerank",
-            "set rerank_width = 0 and max_candidate_rows high enough for full-frontier recall sanity checks",
-        );
-    }
-    (
-        "approximate_leaf_coverage",
-        "bounded_leaf_probe",
-        "increase nprobe to active_leaf_count for exact leaf coverage sanity checks",
-    )
-}
-
-fn consistency_mode_name(mode: meta::SpireConsistencyMode) -> &'static str {
-    match mode {
-        meta::SpireConsistencyMode::Strict => "strict",
-        meta::SpireConsistencyMode::Degraded => "degraded",
-    }
-}
-
-fn epoch_state_name(state: meta::SpireEpochState) -> &'static str {
-    match state {
-        meta::SpireEpochState::Building => "building",
-        meta::SpireEpochState::Published => "published",
-        meta::SpireEpochState::Retired => "retired",
-        meta::SpireEpochState::Failed => "failed",
-    }
-}
-
-fn epoch_cleanup_blocked_reason(
-    manifest: &meta::SpireEpochManifest,
-    now_micros: i64,
-    is_active_root_manifest: bool,
-    retained_retired: bool,
-    cleanup_eligible_now: bool,
-) -> &'static str {
-    if cleanup_eligible_now {
-        return "cleanup_eligible";
-    }
-    if is_active_root_manifest {
-        return "active_root_manifest";
-    }
-    match manifest.state {
-        meta::SpireEpochState::Building | meta::SpireEpochState::Published => {
-            "state_not_cleanup_eligible"
-        }
-        meta::SpireEpochState::Retired if manifest.active_query_count > 0 => "active_queries",
-        meta::SpireEpochState::Retired if retained_retired => "retained_retired_epoch",
-        meta::SpireEpochState::Retired | meta::SpireEpochState::Failed
-            if now_micros < manifest.retain_until_micros =>
-        {
-            "retention_window"
-        }
-        meta::SpireEpochState::Retired | meta::SpireEpochState::Failed => "cleanup_plan_retained",
-    }
-}
-
 fn epoch_snapshot_rows_from_manifests(
     root_control: meta::SpireRootControlState,
     mut manifests: Vec<(crate::storage::page::ItemPointer, meta::SpireEpochManifest)>,
@@ -790,42 +529,6 @@ fn epoch_snapshot_rows_from_manifests(
         .collect())
 }
 
-fn leaf_maintenance_thresholds(effective_total: u64, leaf_count: u64) -> (u64, u64) {
-    if leaf_count == 0 {
-        return (0, 0);
-    }
-    let average = effective_total.div_ceil(leaf_count);
-    let split_threshold = average
-        .saturating_mul(SPIRE_LEAF_SPLIT_AVERAGE_MULTIPLIER)
-        .max(SPIRE_LEAF_SPLIT_MIN_ASSIGNMENTS);
-    let merge_threshold = average / SPIRE_LEAF_MERGE_AVERAGE_DIVISOR;
-    (split_threshold, merge_threshold)
-}
-
-fn leaf_maintenance_labels(
-    effective_assignment_count: u64,
-    split_threshold: u64,
-    merge_threshold: u64,
-) -> (bool, bool, &'static str, &'static str) {
-    if effective_assignment_count >= split_threshold && split_threshold > 0 {
-        return (
-            true,
-            false,
-            "split_candidate",
-            "effective_assignments_at_or_above_split_threshold",
-        );
-    }
-    if effective_assignment_count <= merge_threshold {
-        return (
-            false,
-            true,
-            "merge_candidate",
-            "effective_assignments_at_or_below_merge_threshold",
-        );
-    }
-    (false, false, "none", "within_distribution_thresholds")
-}
-
 fn apply_leaf_snapshot_base_row(
     rows_by_leaf_pid: &mut HashMap<u64, SpireIndexLeafSnapshotRow>,
     active_epoch: u64,
@@ -880,21 +583,3 @@ fn apply_leaf_snapshot_base_row(
     row.leaf_object_bytes = u64::from(placement.object_bytes);
 }
 
-fn placement_state_name(state: meta::SpirePlacementState) -> &'static str {
-    match state {
-        meta::SpirePlacementState::Available => "available",
-        meta::SpirePlacementState::Stale => "stale",
-        meta::SpirePlacementState::Unavailable => "unavailable",
-        meta::SpirePlacementState::Skipped => "skipped",
-    }
-}
-
-fn partition_object_kind_name(kind: storage::SpirePartitionObjectKind) -> &'static str {
-    match kind {
-        storage::SpirePartitionObjectKind::Root => "root",
-        storage::SpirePartitionObjectKind::Internal => "internal",
-        storage::SpirePartitionObjectKind::Leaf => "leaf",
-        storage::SpirePartitionObjectKind::Delta => "delta",
-        storage::SpirePartitionObjectKind::TopGraph => "top_graph",
-    }
-}
