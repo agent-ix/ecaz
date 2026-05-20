@@ -112,22 +112,28 @@ mod tests {
 
     #[test]
     fn query_layer_maps_command_and_subquery_flags() {
-        let mut update_query = pg_sys::Query::default();
-        update_query.commandType = pg_sys::CmdType::CMD_UPDATE;
+        let update_query = pg_sys::Query {
+            commandType: pg_sys::CmdType::CMD_UPDATE,
+            ..Default::default()
+        };
         assert_eq!(
             dml_frontdoor_operation_for_query(&update_query),
             Some(SpireDmlFrontdoorOperation::Update)
         );
 
-        let mut delete_query = pg_sys::Query::default();
-        delete_query.commandType = pg_sys::CmdType::CMD_DELETE;
+        let delete_query = pg_sys::Query {
+            commandType: pg_sys::CmdType::CMD_DELETE,
+            ..Default::default()
+        };
         assert_eq!(
             dml_frontdoor_operation_for_query(&delete_query),
             Some(SpireDmlFrontdoorOperation::Delete)
         );
 
-        let mut select_query = pg_sys::Query::default();
-        select_query.commandType = pg_sys::CmdType::CMD_SELECT;
+        let mut select_query = pg_sys::Query {
+            commandType: pg_sys::CmdType::CMD_SELECT,
+            ..Default::default()
+        };
         assert_eq!(
             dml_frontdoor_operation_for_query(&select_query),
             Some(SpireDmlFrontdoorOperation::PkSelect)
@@ -140,11 +146,15 @@ mod tests {
 
     #[test]
     fn baserel_handoff_uses_only_target_rel_for_dml() {
-        let mut query = pg_sys::Query::default();
-        query.resultRelation = 1;
+        let query = pg_sys::Query {
+            resultRelation: 1,
+            ..Default::default()
+        };
 
-        let mut rel = pg_sys::RelOptInfo::default();
-        rel.relid = 2;
+        let mut rel = pg_sys::RelOptInfo {
+            relid: 2,
+            ..Default::default()
+        };
         assert_eq!(
             dml_frontdoor_baserel_target_rtindex(&query, &rel, SpireDmlFrontdoorOperation::Update)
                 .unwrap(),
