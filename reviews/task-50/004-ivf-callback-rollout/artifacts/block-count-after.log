@@ -1,0 +1,6 @@
+  98 src/am/ec_ivf/scan.rs
+  23 src/am/ec_ivf/vacuum.rs
+  20 src/am/ec_ivf/insert.rs
+   8 src/am/ec_ivf/cost.rs
+   7 src/am/ec_ivf/options.rs
+   2 src/am/common/callback.rs
