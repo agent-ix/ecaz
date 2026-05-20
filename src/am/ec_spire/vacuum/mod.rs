@@ -18,6 +18,7 @@ use super::storage::{
     SpireRelationObjectStoreSet, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use super::{lock_publish_relation, page, scan};
+use crate::am::common::callback::pg_am_callback;
 use crate::storage::page::ItemPointer;
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::IndexRelationGuard;
@@ -43,50 +44,41 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes ambulkdelete with live vacuum pointers for
-    // this callback; pgrx_extern_c_guard converts Rust panics/errors at the
-    // FFI boundary.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if info.is_null() {
-                pgrx::error!("ec_spire ambulkdelete requires vacuum info")
-            }
-            let index_relation = (*info).index;
-            let Some(callback) = callback else {
-                let live_count = collect_live_assignment_count(index_relation)
-                    .unwrap_or_else(|e| pgrx::error!("ec_spire vacuum stats failed: {e}"));
-                return finish_vacuum_stats(index_relation, stats, live_count, 0);
-            };
+    pg_am_callback!({
+        if info.is_null() {
+            pgrx::error!("ec_spire ambulkdelete requires vacuum info")
+        }
+        let index_relation = (*info).index;
+        let Some(callback) = callback else {
+            let live_count = collect_live_assignment_count(index_relation)
+                .unwrap_or_else(|e| pgrx::error!("ec_spire vacuum stats failed: {e}"));
+            return finish_vacuum_stats(index_relation, stats, live_count, 0);
+        };
 
-            let result = run_bulkdelete(index_relation, callback, callback_state)
-                .unwrap_or_else(|e| pgrx::error!("ec_spire ambulkdelete failed: {e}"));
-            finish_vacuum_stats(
-                index_relation,
-                stats,
-                result.live_assignments,
-                result.removed_assignments,
-            )
-        })
-    }
+        let result = run_bulkdelete(index_relation, callback, callback_state)
+            .unwrap_or_else(|e| pgrx::error!("ec_spire ambulkdelete failed: {e}"));
+        finish_vacuum_stats(
+            index_relation,
+            stats,
+            result.live_assignments,
+            result.removed_assignments,
+        )
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes amvacuumcleanup with live vacuum pointers for
-    // this callback; pgrx_extern_c_guard guards the FFI boundary.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if info.is_null() {
-                pgrx::error!("ec_spire amvacuumcleanup requires vacuum info")
-            }
-            let index_relation = (*info).index;
-            let live_count = run_vacuum_cleanup(index_relation)
-                .unwrap_or_else(|e| pgrx::error!("ec_spire vacuum cleanup stats failed: {e}"));
-            finish_vacuum_stats(index_relation, stats, live_count, 0)
-        })
-    }
+    pg_am_callback!({
+        if info.is_null() {
+            pgrx::error!("ec_spire amvacuumcleanup requires vacuum info")
+        }
+        let index_relation = (*info).index;
+        let live_count = run_vacuum_cleanup(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_spire vacuum cleanup stats failed: {e}"));
+        finish_vacuum_stats(index_relation, stats, live_count, 0)
+    })
 }
 
 unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, String> {
@@ -377,7 +369,7 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
             | SpirePartitionObjectKind::TopGraph => {
                 // TODO(phase6): invalidate or rebuild top graphs when compaction
                 // starts rewriting routing centroids rather than only leaf rows.
-                let mut carried = placement.clone();
+                let mut carried = *placement;
                 carried.epoch = new_epoch;
                 placement_entries.push(carried);
             }
@@ -655,16 +647,12 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
 ) -> bool {
-    // SAFETY: debug wrapper is called by the SPIRE test vacuum path with a
-    // DebugVacuumCallbackState pointer and a live ItemPointer for this call.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &*(state.cast::<DebugVacuumCallbackState>());
-            state
-                .dead_tids
-                .contains(&super::build::decode_heap_tid(itemptr, "debug vacuum"))
-        })
-    }
+    pg_am_callback!({
+        let state = &*(state.cast::<DebugVacuumCallbackState>());
+        state
+            .dead_tids
+            .contains(&super::build::decode_heap_tid(itemptr, "debug vacuum"))
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -697,8 +685,7 @@ pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
     // SAFETY: info_ptr and stats are still live from the debug bulk-delete call.
     let stats = unsafe { ec_spire_amvacuumcleanup(info_ptr, stats) };
     // SAFETY: vacuum callbacks returned a valid stats pointer for this debug path.
-    let result = unsafe { *stats };
-    result
+    unsafe { *stats }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -729,8 +716,7 @@ pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
         )
     };
     // SAFETY: vacuum callback returned a valid stats pointer for this debug path.
-    let result = unsafe { *stats };
-    result
+    unsafe { *stats }
 }
 
 include!("tests.rs");

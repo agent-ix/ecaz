@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use pgrx::pg_sys;
 
+use crate::am::common::callback::pg_am_callback;
+
 use super::assign::{
     build_boundary_insert_delta_assignment_placements_with_identity,
     build_primary_leaf_assignments_with_identity, SpireBoundaryLeafAssignmentIdentityInput,
@@ -32,23 +34,19 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_aminsert(
     _index_unchanged: bool,
     index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
-    // SAFETY: PostgreSQL invokes aminsert with live relation pointers, Datum
-    // arrays, heap TID, and IndexInfo for the duration of the guarded callback.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            crate::fault::maybe_fail_palloc("ec_spire aminsert entry");
-            publish_insert_delta_epoch(
-                index_relation,
-                values,
-                isnull,
-                heap_tid,
-                heap_relation,
-                index_info,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_spire aminsert failed: {e}"));
-            true
-        })
-    }
+    pg_am_callback!({
+        crate::fault::maybe_fail_palloc("ec_spire aminsert entry");
+        publish_insert_delta_epoch(
+            index_relation,
+            values,
+            isnull,
+            heap_tid,
+            heap_relation,
+            index_info,
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_spire aminsert failed: {e}"));
+        true
+    })
 }
 
 unsafe fn publish_insert_delta_epoch(
