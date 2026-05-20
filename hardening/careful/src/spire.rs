@@ -183,6 +183,10 @@ pub mod storage {
             env!("CARGO_MANIFEST_DIR"),
             "/../../src/am/ec_spire/storage/tests/local_store.rs"
         ));
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../src/am/ec_spire/storage/tests/helpers.rs"
+        ));
 
         #[test]
         fn local_object_store_set_routes_by_pid_and_reads_back_objects() {

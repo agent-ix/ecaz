@@ -83,4 +83,5 @@ mod tests {
     include!("tests/delta.rs");
     include!("tests/local_store.rs");
     include!("tests/relation_prefetch.rs");
+    include!("tests/helpers.rs");
 }
