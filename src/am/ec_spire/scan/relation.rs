@@ -192,6 +192,16 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
         )
     };
     let slot = allocate_heap_slot(heap_relation_ptr)?;
+    // SAFETY: the resolved heap relation/snapshot and allocated tuple slot are
+    // live for the duration of candidate preparation.
+    let mut heap_reader = unsafe {
+        crate::am::common::heap_slot::HeapSlotReader::from_raw(
+            heap_relation_ptr,
+            snapshot_pg,
+            slot.as_ptr(),
+            "ec_spire",
+        )
+    }?;
 
     let result = prepare_single_level_snapshot_scan_candidates_with_prefetch(
         snapshot,
@@ -205,18 +215,12 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
             Ok(())
         },
         |candidate| {
-            // SAFETY: heap_relation, snapshot, and slot stay live while
-            // reranking this candidate's heap tuple.
-            unsafe {
-                exact_heap_source_inner_product(
-                    heap_relation_ptr,
-                    snapshot_pg,
-                    slot.as_ptr(),
-                    indexed_attribute,
-                    query.values(),
-                    candidate.heap_tid,
-                )
-            }
+            exact_heap_source_inner_product(
+                &mut heap_reader,
+                indexed_attribute,
+                query.values(),
+                candidate.heap_tid,
+            )
         },
     );
 
@@ -356,68 +360,38 @@ fn allocate_heap_slot(
         .ok_or_else(|| "ec_spire heap rerank failed to allocate a heap tuple slot".to_owned())
 }
 
-unsafe fn exact_heap_source_inner_product(
-    heap_relation: pg_sys::Relation,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
+fn exact_heap_source_inner_product(
+    heap_reader: &mut crate::am::common::heap_slot::HeapSlotReader<'_>,
     indexed_attribute: source::IndexedVectorAttribute,
     query: &[f32],
     heap_tid: ItemPointer,
 ) -> Result<Option<f32>, String> {
-    // SAFETY: heap relation/snapshot/slot are live for this rerank call and the
-    // helper clears/reuses the slot before returning.
-    let Some(source_vector) = unsafe {
-        load_indexed_source_vector_from_heap_row(
-            heap_relation,
-            snapshot,
-            slot,
-            indexed_attribute,
-            heap_tid,
-            "ec_spire heap rerank source vector",
-        )
-    }?
+    let Some(source_vector) = load_indexed_source_vector_from_heap_row(
+        heap_reader,
+        indexed_attribute,
+        heap_tid,
+        "ec_spire heap rerank source vector",
+    )?
     else {
         return Ok(None);
     };
     exact_source_inner_product(query, &source_vector).map(Some)
 }
 
-pub(super) unsafe fn load_indexed_source_vector_from_heap_row(
-    heap_relation: pg_sys::Relation,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
+pub(super) fn load_indexed_source_vector_from_heap_row(
+    heap_reader: &mut crate::am::common::heap_slot::HeapSlotReader<'_>,
     indexed_attribute: source::IndexedVectorAttribute,
     heap_tid: ItemPointer,
     label: &str,
 ) -> Result<Option<Vec<f32>>, String> {
-    // SAFETY: heap_relation, snapshot, and slot are live for this scan callback;
-    // helper fetches at most the tuple version identified by heap_tid.
-    if !unsafe {
-        crate::am::common::heap_slot::fetch_heap_row_version(
-            heap_relation,
-            heap_tid,
-            snapshot,
-            slot,
-            "ec_spire",
-        )?
-    } {
+    if !heap_reader.fetch_row_version(heap_tid)? {
         return Ok(None);
     }
-    // SAFETY: slot contains the fetched heap tuple and attnum was resolved from
-    // the index definition for this relation.
-    let datum = unsafe {
-        crate::am::common::heap_slot::required_slot_datum(
-            slot,
-            indexed_attribute.attnum,
-            "ec_spire",
-            label,
-        )?
-    };
+    let datum = heap_reader.required_datum(indexed_attribute.attnum, label)?;
     // SAFETY: datum is the non-null vector datum read from the fetched slot.
     let result =
         unsafe { indexed_vector_datum_to_source_vector(datum, indexed_attribute.kind, label) };
-    // SAFETY: slot belongs to this scan helper and can be cleared before reuse.
-    unsafe { crate::am::common::heap_slot::clear_tuple_slot(slot) };
+    heap_reader.clear();
     result.map(Some)
 }
 

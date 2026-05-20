@@ -880,18 +880,14 @@ unsafe fn plan_backlink_mutations(
                 continue;
             }
 
-            // SAFETY: Target heap TID belongs to a live node from this index and
-            // the slot/snapshot are owned by this planning scope.
-            let target_source_vector = unsafe {
-                fetch_heap_source_vector(
-                    heap_relation,
-                    snapshot,
-                    slot.as_ptr(),
-                    source_attnum,
-                    target_tuple.primary_heaptid,
-                    "backlink planning target source vector",
-                )?
-            };
+            let target_source_vector = fetch_heap_source_vector(
+                heap_relation,
+                snapshot,
+                slot.as_ptr(),
+                source_attnum,
+                target_tuple.primary_heaptid,
+                "backlink planning target source vector",
+            )?;
             let mut existing_candidates = Vec::new();
             for neighbor_tid in target_tuple
                 .neighbors
@@ -911,18 +907,14 @@ unsafe fn plan_backlink_mutations(
                 {
                     continue;
                 }
-                // SAFETY: Neighbor heap TID belongs to a live node from this
-                // index and is read through the same slot/snapshot.
-                let neighbor_source_vector = unsafe {
-                    fetch_heap_source_vector(
-                        heap_relation,
-                        snapshot,
-                        slot.as_ptr(),
-                        source_attnum,
-                        neighbor_tuple.primary_heaptid,
-                        "backlink planning neighbor source vector",
-                    )?
-                };
+                let neighbor_source_vector = fetch_heap_source_vector(
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    neighbor_tuple.primary_heaptid,
+                    "backlink planning neighbor source vector",
+                )?;
                 existing_candidates.push(insert::ForwardNeighborCandidate {
                     tid: neighbor_tid,
                     source_vector: neighbor_source_vector,
@@ -1414,18 +1406,14 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         return Ok(Vec::new());
     }
 
-    // SAFETY: Target tuple is live and has a valid heap TID; the planner owns
-    // the heap relation/snapshot/slot used for source lookup.
-    let target_source_vector = unsafe {
-        fetch_heap_source_vector(
-            planner.heap_relation,
-            planner.snapshot,
-            planner.slot,
-            planner.source_attnum,
-            target_tuple.primary_heaptid,
-            "vacuum repair target source vector",
-        )?
-    };
+    let target_source_vector = fetch_heap_source_vector(
+        planner.heap_relation,
+        planner.snapshot,
+        planner.slot,
+        planner.source_attnum,
+        target_tuple.primary_heaptid,
+        "vacuum repair target source vector",
+    )?;
     let existing_neighbor_tids = target_tuple
         .neighbors
         .iter()
@@ -1450,18 +1438,14 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         if !neighbor_tuple.is_live() || neighbor_tuple.primary_heaptid == ItemPointer::INVALID {
             continue;
         }
-        // SAFETY: Existing neighbor tuple is live and its primary heap TID can
-        // be read through the planner-owned heap slot.
-        let neighbor_source_vector = unsafe {
-            fetch_heap_source_vector(
-                planner.heap_relation,
-                planner.snapshot,
-                planner.slot,
-                planner.source_attnum,
-                neighbor_tuple.primary_heaptid,
-                "vacuum repair neighbor source vector",
-            )?
-        };
+        let neighbor_source_vector = fetch_heap_source_vector(
+            planner.heap_relation,
+            planner.snapshot,
+            planner.slot,
+            planner.source_attnum,
+            neighbor_tuple.primary_heaptid,
+            "vacuum repair neighbor source vector",
+        )?;
         planning_candidates.push(insert::ForwardNeighborCandidate {
             tid: *neighbor_tid,
             source_vector: neighbor_source_vector,
@@ -1521,18 +1505,14 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         if !candidate_tuple.is_live() || candidate_tuple.primary_heaptid == ItemPointer::INVALID {
             continue;
         }
-        // SAFETY: Frontier candidate tuple is live and its primary heap TID can
-        // be read through the planner-owned heap slot.
-        let candidate_source_vector = unsafe {
-            fetch_heap_source_vector(
-                planner.heap_relation,
-                planner.snapshot,
-                planner.slot,
-                planner.source_attnum,
-                candidate_tuple.primary_heaptid,
-                "vacuum repair candidate source vector",
-            )?
-        };
+        let candidate_source_vector = fetch_heap_source_vector(
+            planner.heap_relation,
+            planner.snapshot,
+            planner.slot,
+            planner.source_attnum,
+            candidate_tuple.primary_heaptid,
+            "vacuum repair candidate source vector",
+        )?;
         planning_candidates.push(insert::ForwardNeighborCandidate {
             tid: candidate.tid,
             source_vector: candidate_source_vector,
@@ -1869,7 +1849,7 @@ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids
     }
 }
 
-unsafe fn exact_heap_rerank_distance(
+fn exact_heap_rerank_distance(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
@@ -1877,31 +1857,27 @@ unsafe fn exact_heap_rerank_distance(
     raw_query: &[f32],
     heap_tid: ItemPointer,
 ) -> Result<f32, String> {
-    // SAFETY: The heap relation/snapshot/slot are owned by the scan or planning
-    // scope and `heap_tid` is a candidate heap row from the index.
-    unsafe {
-        with_heap_source_vector(
-            heap_relation,
-            snapshot,
-            slot,
-            source_attnum,
-            heap_tid,
-            "heap rerank source vector",
-            |source_vector| {
-                if source_vector.len() != raw_query.len() {
-                    return Err(format!(
-                        "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
-                        raw_query.len(),
-                        source_vector.len()
-                    ));
-                }
-                Ok(-ambuild::source_inner_product(raw_query, source_vector))
-            },
-        )
-    }
+    with_heap_source_vector(
+        heap_relation,
+        snapshot,
+        slot,
+        source_attnum,
+        heap_tid,
+        "heap rerank source vector",
+        |source_vector| {
+            if source_vector.len() != raw_query.len() {
+                return Err(format!(
+                    "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
+                    raw_query.len(),
+                    source_vector.len()
+                ));
+            }
+            Ok(-ambuild::source_inner_product(raw_query, source_vector))
+        },
+    )
 }
 
-unsafe fn with_heap_source_vector<T>(
+fn with_heap_source_vector<T>(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
@@ -1910,19 +1886,26 @@ unsafe fn with_heap_source_vector<T>(
     context: &str,
     f: impl for<'a> FnOnce(&'a [f32]) -> Result<T, String>,
 ) -> Result<T, String> {
-    // SAFETY: The heap relation/snapshot/slot are caller-owned and valid for
-    // this row-version fetch. The required datum is read from the fetched row
-    // and the slot is cleared after the visitor finishes.
-    unsafe {
-        scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)?;
-        let datum = scan_state::required_slot_datum(slot, source_attnum, context)?;
-        let result = ambuild::with_ecvector_datum_slice(datum, f);
-        pg_sys::ExecClearTuple(slot);
-        result
-    }
+    // SAFETY: callers pass the heap relation/snapshot/slot owned by the scan or
+    // planning scope. The reader keeps all slot field access inside one helper.
+    let mut reader = unsafe {
+        crate::am::common::heap_slot::HeapSlotReader::from_raw(
+            heap_relation,
+            snapshot,
+            slot,
+            "ec_diskann",
+        )
+    }?;
+    scan_state::fetch_heap_row_version_with_reader(&mut reader, heap_tid)?;
+    let datum = scan_state::required_slot_datum_with_reader(&mut reader, source_attnum, context)?;
+    // SAFETY: The datum was read as the validated indexed ecvector source
+    // attribute from the fetched heap row.
+    let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };
+    reader.clear();
+    result
 }
 
-unsafe fn fetch_heap_source_vector(
+fn fetch_heap_source_vector(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
@@ -1930,19 +1913,15 @@ unsafe fn fetch_heap_source_vector(
     heap_tid: ItemPointer,
     context: &str,
 ) -> Result<Vec<f32>, String> {
-    // SAFETY: Delegates to `with_heap_source_vector` using caller-owned
-    // heap/snapshot/slot state and copies the borrowed source vector out.
-    unsafe {
-        with_heap_source_vector(
-            heap_relation,
-            snapshot,
-            slot,
-            source_attnum,
-            heap_tid,
-            context,
-            |source_vector| Ok(source_vector.to_vec()),
-        )
-    }
+    with_heap_source_vector(
+        heap_relation,
+        snapshot,
+        slot,
+        source_attnum,
+        heap_tid,
+        context,
+        |source_vector| Ok(source_vector.to_vec()),
+    )
 }
 
 #[pg_guard]

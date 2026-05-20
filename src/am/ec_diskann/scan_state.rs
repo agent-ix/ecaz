@@ -333,6 +333,19 @@ pub(super) unsafe fn fetch_heap_row_version(
     Ok(())
 }
 
+pub(super) fn fetch_heap_row_version_with_reader(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
+    heap_tid: ItemPointer,
+) -> Result<(), String> {
+    if !reader.fetch_row_version(heap_tid)? {
+        return Err(format!(
+            "ec_diskann scan could not fetch heap tuple at ({},{})",
+            heap_tid.block_number, heap_tid.offset_number
+        ));
+    }
+    Ok(())
+}
+
 pub(super) unsafe fn required_slot_datum(
     slot: *mut pg_sys::TupleTableSlot,
     attnum: i32,
@@ -341,6 +354,14 @@ pub(super) unsafe fn required_slot_datum(
     // SAFETY: caller owns a live TupleTableSlot and attnum was resolved from
     // relation metadata for the heap source column.
     unsafe { heap_slot::required_slot_datum(slot, attnum, "ec_diskann", label) }
+}
+
+pub(super) fn required_slot_datum_with_reader(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
+    attnum: i32,
+    label: &str,
+) -> Result<pg_sys::Datum, String> {
+    reader.required_datum(attnum, label)
 }
 
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPointer, String> {

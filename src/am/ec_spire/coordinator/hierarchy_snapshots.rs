@@ -212,23 +212,27 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
             .ok_or_else(|| {
                 "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
             })?;
+    // SAFETY: the heap relation guard, active snapshot, and tuple slot stay
+    // live through the local-heap resolution pass below.
+    let mut heap_reader = unsafe {
+        crate::am::common::heap_slot::HeapSlotReader::from_raw(
+            heap_relation.as_ptr(),
+            snapshot,
+            slot.as_ptr(),
+            "ec_spire",
+        )
+    }?;
 
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let mut rows = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
-            // SAFETY: heap_relation, snapshot, slot, and indexed_attribute were
-            // validated above; heap_tid was decoded from the local row locator.
-            let source_vector = unsafe {
-                scan::load_indexed_source_vector_from_heap_row(
-                    heap_relation.as_ptr(),
-                    snapshot,
-                    slot.as_ptr(),
-                    indexed_attribute,
-                    heap_tid,
-                    "ec_spire remote heap resolution source vector",
-                )
-            }?;
+            let source_vector = scan::load_indexed_source_vector_from_heap_row(
+                &mut heap_reader,
+                indexed_attribute,
+                heap_tid,
+                "ec_spire remote heap resolution source vector",
+            )?;
             let (score, status) = match source_vector {
                 Some(source_vector) => (
                     remote_search_exact_heap_score(query.values(), &source_vector)?,

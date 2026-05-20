@@ -284,21 +284,24 @@ pub(super) unsafe fn fetch_split_replacement_source_vectors(
         .map(|row_group| row_group.rows.len())
         .sum();
     let mut fetched_sources = Vec::with_capacity(row_count);
+    // SAFETY: caller owns the heap relation, snapshot, and reusable tuple slot
+    // for this materialization scope.
+    let mut heap_reader = unsafe {
+        crate::am::common::heap_slot::HeapSlotReader::from_raw(
+            heap_relation,
+            snapshot,
+            slot,
+            "ec_spire",
+        )
+    }?;
     for row_group in replacement_rows {
         for assignment in &row_group.rows {
-            // SAFETY: The caller provides a live heap relation, snapshot, and
-            // reusable slot; `assignment.heap_tid` came from the selected
-            // replacement rows being materialized for this same heap.
-            let Some(source_vector) = unsafe {
-                load_indexed_source_vector_from_heap_row(
-                    heap_relation,
-                    snapshot,
-                    slot,
-                    indexed_attribute,
-                    assignment.heap_tid,
-                    "ec_spire split replacement source vector",
-                )
-            }?
+            let Some(source_vector) = load_indexed_source_vector_from_heap_row(
+                &mut heap_reader,
+                indexed_attribute,
+                assignment.heap_tid,
+                "ec_spire split replacement source vector",
+            )?
             else {
                 // Heap rows that are no longer visible are omitted here; the
                 // heap-source wrapper drops their assignment rows before
@@ -409,9 +412,10 @@ pub(super) fn build_split_replacement_leaf_materialization(
             } else {
                 SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
             };
-            input
-                .rows
-                .push(split_replacement_assignment_with_flags(&source_row.assignment, flags)?);
+            input.rows.push(split_replacement_assignment_with_flags(
+                &source_row.assignment,
+                flags,
+            )?);
         }
     }
 
@@ -430,9 +434,7 @@ fn route_split_replacement_boundary_indexes(
     boundary_replica_count: u32,
 ) -> Result<Vec<usize>, String> {
     if centroids.is_empty() {
-        return Err(
-            "ec_spire split replacement boundary routing requires centroids".to_owned(),
-        );
+        return Err("ec_spire split replacement boundary routing requires centroids".to_owned());
     }
     if replacement_pids.len() != centroids.len() {
         return Err(format!(
@@ -451,14 +453,14 @@ fn route_split_replacement_boundary_indexes(
         source_vector,
         source_vector.len(),
         centroids
-        .iter()
-        .enumerate()
-        .zip(replacement_pids.iter().copied())
-        .map(|((index, centroid), pid)| SpireCentroidRouteInput {
-            centroid_index: index as u32,
-            pid,
-            centroid,
-        }),
+            .iter()
+            .enumerate()
+            .zip(replacement_pids.iter().copied())
+            .map(|((index, centroid), pid)| SpireCentroidRouteInput {
+                centroid_index: index as u32,
+                pid,
+                centroid,
+            }),
     )?;
     let limit = usize::try_from(boundary_replica_count)
         .unwrap_or(usize::MAX)

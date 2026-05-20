@@ -519,6 +519,23 @@ pub(crate) unsafe fn fetch_heap_row_version(
     }
 }
 
+pub(crate) fn fetch_heap_row_version_with_reader(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
+    heap_tid: page::ItemPointer,
+    label: &str,
+) {
+    let fetched = reader
+        .fetch_row_version(heap_tid)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    if !fetched {
+        pgrx::error!(
+            "ec_hnsw {label} could not fetch heap tuple at ({},{})",
+            heap_tid.block_number,
+            heap_tid.offset_number
+        );
+    }
+}
+
 pub(crate) unsafe fn required_slot_datum(
     slot: *mut pg_sys::TupleTableSlot,
     attnum: i32,
@@ -527,6 +544,16 @@ pub(crate) unsafe fn required_slot_datum(
     // SAFETY: caller owns a live TupleTableSlot and attnum was resolved from
     // relation metadata for the source column.
     unsafe { heap_slot::required_slot_datum(slot, attnum, "ec_hnsw", label) }
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
+pub(crate) fn required_slot_datum_with_reader(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
+    attnum: i32,
+    label: &str,
+) -> pg_sys::Datum {
+    reader
+        .required_datum(attnum, label)
         .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
@@ -734,6 +761,20 @@ pub(crate) unsafe fn with_source_from_heap_row<R>(
     unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
 }
 
+pub(crate) fn with_source_from_heap_row_reader<R>(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
+    heap_tid: page::ItemPointer,
+    source_attribute: SourceAttribute,
+    label: &str,
+    f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
+) -> R {
+    fetch_heap_row_version_with_reader(reader, heap_tid, label);
+    let source_datum = required_slot_datum_with_reader(reader, source_attribute.attnum, label);
+    // SAFETY: The source kind was resolved from heap metadata and the closure
+    // keeps the datum-backed source view scoped to this call.
+    unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
+}
+
 pub(crate) unsafe fn with_indexed_ecvector_from_slot<R>(
     slot: *mut pg_sys::TupleTableSlot,
     attnum: i32,
@@ -743,6 +784,19 @@ pub(crate) unsafe fn with_indexed_ecvector_from_slot<R>(
     // SAFETY: The slot contains a row with the indexed ecvector attribute and
     // `attnum` was resolved from index/heap metadata.
     let source_datum = unsafe { required_slot_datum(slot, attnum, label) };
+    // SAFETY: The indexed attribute is required to be ecvector, which is stored
+    // as a byte-backed varlena float payload.
+    let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
+    f(source)
+}
+
+pub(crate) fn with_indexed_ecvector_from_slot_reader<R>(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
+    attnum: i32,
+    label: &str,
+    f: impl for<'datum> FnOnce(FlatFloat4VarlenaRef<'datum>) -> R,
+) -> R {
+    let source_datum = required_slot_datum_with_reader(reader, attnum, label);
     // SAFETY: The indexed attribute is required to be ecvector, which is stored
     // as a byte-backed varlena float payload.
     let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
