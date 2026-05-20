@@ -1,10 +1,10 @@
 use pgrx::pg_sys;
 
 use crate::{
+    am::common::callback::pg_am_callback,
     am::common::cost::{
         current_planner_cost_constants, estimate_planner_cost, gated_planner_cost_estimate,
-        relation_main_fork_block_count, relation_reltuples, PlannerCostEstimate,
-        PlannerCostInputs,
+        relation_main_fork_block_count, relation_reltuples, PlannerCostEstimate, PlannerCostInputs,
     },
     storage::{page::FIRST_DATA_BLOCK_NUMBER, relation_guard::IndexRelationGuard},
 };
@@ -57,36 +57,34 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
     // SAFETY: PostgreSQL calls this access-method callback with planner-owned
     // output pointers. The guarded body rejects null inputs before reading the
     // IndexPath or writing the cost outputs.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if path.is_null()
-                || index_startup_cost.is_null()
-                || index_total_cost.is_null()
-                || index_selectivity.is_null()
-                || index_correlation.is_null()
-                || index_pages.is_null()
-            {
-                pgrx::error!("ec_diskann planner callback received null arguments");
-            }
-            let index_info = (*path).indexinfo;
-            if index_info.is_null() {
-                pgrx::error!("ec_diskann planner callback received null index info");
-            }
-            let index_oid = (*index_info).indexoid;
-            let index_relation = IndexRelationGuard::open(
-                index_oid,
-                pg_sys::NoLock as pg_sys::LOCKMODE,
-                "ec_diskann planner",
-            );
-            let estimate = compute_amcostestimate(index_relation.as_ptr());
+    pg_am_callback!({
+        if path.is_null()
+            || index_startup_cost.is_null()
+            || index_total_cost.is_null()
+            || index_selectivity.is_null()
+            || index_correlation.is_null()
+            || index_pages.is_null()
+        {
+            pgrx::error!("ec_diskann planner callback received null arguments");
+        }
+        let index_info = (*path).indexinfo;
+        if index_info.is_null() {
+            pgrx::error!("ec_diskann planner callback received null index info");
+        }
+        let index_oid = (*index_info).indexoid;
+        let index_relation = IndexRelationGuard::open(
+            index_oid,
+            pg_sys::NoLock as pg_sys::LOCKMODE,
+            "ec_diskann planner",
+        );
+        let estimate = compute_amcostestimate(index_relation.as_ptr());
 
-            *index_startup_cost = estimate.startup_cost;
-            *index_total_cost = estimate.total_cost;
-            *index_selectivity = estimate.selectivity;
-            *index_correlation = estimate.correlation;
-            *index_pages = estimate.index_pages;
-        })
-    }
+        *index_startup_cost = estimate.startup_cost;
+        *index_total_cost = estimate.total_cost;
+        *index_selectivity = estimate.selectivity;
+        *index_correlation = estimate.correlation;
+        *index_pages = estimate.index_pages;
+    })
 }
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {

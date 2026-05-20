@@ -96,10 +96,8 @@ pub(crate) unsafe fn index_cost_snapshot(
     let reltuples = relation_reltuples(index_relation);
     let constants = current_planner_cost_constants();
     let relation_options = options::relation_options(index_relation);
-    // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
-    let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
-    // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
-    let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
+    let diagnostics = cost_active_snapshot_diagnostics(index_relation);
+    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
         &diagnostics,
@@ -157,10 +155,8 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
     let index_pages = f64::from(block_count);
     let reltuples = relation_reltuples(index_relation);
     let relation_options = options::relation_options(index_relation);
-    // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
-    let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
-    // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
-    let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
+    let diagnostics = cost_active_snapshot_diagnostics(index_relation);
+    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
         &diagnostics,
@@ -196,10 +192,8 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     let reltuples = relation_reltuples(index_relation);
     let constants = current_planner_cost_constants();
     let relation_options = options::relation_options(index_relation);
-    // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
-    let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
-    // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
-    let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
+    let diagnostics = cost_active_snapshot_diagnostics(index_relation);
+    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
         &diagnostics,
@@ -212,10 +206,22 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
 }
 
 fn spire_tree_height_callback_value(index_relation: pg_sys::Relation) -> i32 {
-    // SAFETY: caller passes the live SPIRE index relation; hierarchy snapshot
-    // only reads index metadata.
-    let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
+    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
     i32::from(hierarchy.hierarchy_depth)
+}
+
+fn cost_active_snapshot_diagnostics(
+    index_relation: pg_sys::Relation,
+) -> SpireActiveSnapshotDiagnostics {
+    // SAFETY: cost callers pass a live SPIRE index relation, and the snapshot
+    // only reads index metadata.
+    unsafe { active_snapshot_diagnostics(index_relation) }
+}
+
+fn cost_index_hierarchy_snapshot(index_relation: pg_sys::Relation) -> SpireIndexHierarchySnapshot {
+    // SAFETY: cost callers pass a live SPIRE index relation, and the snapshot
+    // only reads hierarchy metadata.
+    unsafe { index_hierarchy_snapshot(index_relation) }
 }
 
 #[cfg(feature = "pg18")]
