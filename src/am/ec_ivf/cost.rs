@@ -5,8 +5,9 @@ use pgrx::pg_sys;
 use super::{options, page};
 use crate::am::common::callback::{am_callback, pg_am_callback};
 use crate::am::common::cost::{
-    current_planner_cost_constants, strategy_translation_snapshot, PlannerCostConstants,
-    PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
+    current_planner_cost_constants, relation_main_fork_block_count, relation_reltuples,
+    strategy_translation_snapshot, PlannerCostConstants, PlannerCostEstimate,
+    PlannerTreeHeightInput, StrategyTranslationSnapshot,
 };
 use crate::storage::relation_guard::IndexRelationGuard;
 
@@ -177,13 +178,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     // SAFETY: `index_relation` is a live PostgreSQL index relation supplied by
     // a SQL diagnostic wrapper.
     let metadata = page::read_metadata_page(index_relation);
-    // SAFETY: `index_relation` is live for the duration of the snapshot read.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     let constants = current_planner_cost_constants();
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let tree_height = resolved_ivf_tree_height_input();
@@ -231,13 +228,9 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     // SAFETY: `index_relation` is a live relation pointer owned by the planner
     // callback guard for the duration of this computation.
     let metadata = page::read_metadata_page(index_relation);
-    // SAFETY: `index_relation` is live while the planner callback computes cost.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     let constants = current_planner_cost_constants();
 
     estimate_ivf_cost(&metadata, index_pages, reltuples, constants)

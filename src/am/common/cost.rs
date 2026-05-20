@@ -118,6 +118,30 @@ pub(crate) fn current_cpu_tuple_cost() -> f64 {
     unsafe { pg_sys::cpu_tuple_cost }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(crate) fn relation_main_fork_block_count(
+    index_relation: pg_sys::Relation,
+) -> pg_sys::BlockNumber {
+    if index_relation.is_null() {
+        pgrx::error!("planner relation block count needs a valid index relation");
+    }
+    // SAFETY: caller supplies a live index relation during AM planning or
+    // diagnostics; PostgreSQL accepts it for main-fork block counting.
+    unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(crate) fn relation_reltuples(index_relation: pg_sys::Relation) -> f64 {
+    if index_relation.is_null() {
+        pgrx::error!("planner reltuples read needs a valid index relation");
+    }
+    // SAFETY: the live relation descriptor owns rd_rel for the relation
+    // lifetime; reltuples is copied by value.
+    unsafe { (*(*index_relation).rd_rel).reltuples as f64 }
+}
+
 #[cfg_attr(feature = "pg18", allow(dead_code))]
 pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
     PlannerTreeHeightInput {
@@ -356,11 +380,7 @@ unsafe fn compute_amcostestimate(
     // SAFETY: caller passes a live index relation for this planner callback.
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
-    // SAFETY: `index_relation` is live and opened by the planner callback
-    // wrapper while the main fork page count is read.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
     // Block 0 is always the metadata page; an index with no data pages still
     // reports block_count == 1. FR-020's "Empty index (0 data pages)" gate
@@ -369,9 +389,7 @@ unsafe fn compute_amcostestimate(
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return gated_planner_cost_estimate(index_pages);
     }
-    // SAFETY: `index_relation` is live and its pg_class tuple is available for
-    // planner metadata reads.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     // SAFETY: `index_relation` is a live ec_hnsw relation with block 0 present
     // because the empty-index gate above returned for metadata-only indexes.
     let metadata = unsafe { shared::read_metadata_page(index_relation) };

@@ -6,7 +6,8 @@ use super::{
 };
 use crate::am::common::callback::{am_callback, pg_am_callback};
 use crate::am::common::cost::{
-    self, current_planner_cost_constants, PlannerCostConstants, PlannerCostEstimate,
+    self, current_planner_cost_constants, relation_main_fork_block_count, relation_reltuples,
+    PlannerCostConstants, PlannerCostEstimate,
 };
 use crate::storage::relation_guard::IndexRelationGuard;
 
@@ -90,14 +91,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexCostSnapshot {
-    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
-    // it for main-fork block counting.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     let constants = current_planner_cost_constants();
     let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
@@ -157,14 +153,9 @@ pub(crate) unsafe fn index_cost_snapshot(
 pub(crate) unsafe fn index_cost_tuning_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexCostTuningSnapshot {
-    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
-    // it for main-fork block counting.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
@@ -200,14 +191,9 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
 }
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
-    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
-    // it for main-fork block counting.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     let constants = current_planner_cost_constants();
     let relation_options = options::relation_options(index_relation);
     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.

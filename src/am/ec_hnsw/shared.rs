@@ -740,9 +740,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let metadata = unsafe { read_metadata_page(index_relation) };
     let block_count = hnsw_main_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: `index_relation` is a live Relation and `rd_rel` points at
-    // PostgreSQL's relation catalog tuple for the relation lifetime.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = super::cost::relation_reltuples(index_relation);
     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
     let constants = super::cost::current_planner_cost_constants();
     // Block 0 is always the metadata page; an empty index has block_count == 1.

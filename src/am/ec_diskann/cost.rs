@@ -3,7 +3,8 @@ use pgrx::pg_sys;
 use crate::{
     am::common::cost::{
         current_planner_cost_constants, estimate_planner_cost, gated_planner_cost_estimate,
-        PlannerCostEstimate, PlannerCostInputs,
+        relation_main_fork_block_count, relation_reltuples, PlannerCostEstimate,
+        PlannerCostInputs,
     },
     storage::{page::FIRST_DATA_BLOCK_NUMBER, relation_guard::IndexRelationGuard},
 };
@@ -93,17 +94,13 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     // callback guard for the duration of this computation.
     let relation_options = unsafe { options::relation_options(index_relation) };
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
-    // SAFETY: `index_relation` is live while the planner callback computes cost.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
     if block_count <= FIRST_DATA_BLOCK_NUMBER {
         return gated_planner_cost_estimate(index_pages);
     }
 
-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     // A metadata decode failure means the index itself is structurally
     // broken. Failing loudly during planning is preferable to masking
     // corruption behind a gated cost and continuing with an invalid AM
@@ -132,13 +129,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     // diagnostic wrapper.
     let relation_options = unsafe { options::relation_options(index_relation) };
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
-    // SAFETY: `index_relation` is live for the duration of the snapshot read.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = relation_reltuples(index_relation);
     let constants = current_planner_cost_constants();
 
     let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) =
