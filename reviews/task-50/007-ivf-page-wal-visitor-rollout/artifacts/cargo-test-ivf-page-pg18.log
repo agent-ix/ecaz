@@ -1,0 +1,8 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 11s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-bd03b5ecc8756b91)
+/home/peter/dev/ecaz/target/debug/deps/ecaz-bd03b5ecc8756b91: symbol lookup error: /home/peter/dev/ecaz/target/debug/deps/ecaz-bd03b5ecc8756b91: undefined symbol: LockBuffer
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `/home/peter/dev/ecaz/target/debug/deps/ecaz-bd03b5ecc8756b91 'am::ec_ivf::page::' --nocapture` (exit status: 127)
