@@ -6,6 +6,7 @@ use std::time::Instant;
 use hashbrown::{HashMap, HashSet};
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
+use crate::am::common::heap_slot::HeapSlotReader;
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{
     BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
@@ -2707,18 +2708,22 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     let source_attribute = heap_rerank_state.source_attribute;
     #[cfg(any(test, feature = "pg_test"))]
     let fetch_started = Instant::now();
-    // SAFETY: heap relation, snapshot, and slot are all held by
-    // `heap_rerank_state`, and `heap_tid` is a candidate heap TID from the
-    // current grouped graph element.
-    unsafe {
-        source::fetch_heap_row_version(
+    // SAFETY: heap relation, snapshot, and slot are all held by the grouped
+    // heap rerank state for this scan callback.
+    let mut heap_reader = unsafe {
+        HeapSlotReader::from_raw(
             heap_rerank_state.heap_relation(),
-            heap_tid,
             heap_rerank_state.snapshot(),
             heap_rerank_state.slot(),
-            "PqFastScan heap rerank source vector",
+            "ec_hnsw",
         )
-    };
+    }
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    source::fetch_heap_row_version_with_reader(
+        &mut heap_reader,
+        heap_tid,
+        "PqFastScan heap rerank source vector",
+    );
     #[cfg(any(test, feature = "pg_test"))]
     let fetch_elapsed_us =
         u64::try_from(fetch_started.elapsed().as_micros()).expect("timing should fit in u64");
@@ -2727,12 +2732,10 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     record_grouped_rerank_heap_fetch(opaque, fetch_elapsed_us);
     #[cfg(any(test, feature = "pg_test"))]
     let decode_started = Instant::now();
-    // SAFETY: `required_slot_datum` reads from the slot filled above, and the
-    // source attribute was resolved for the same heap relation.
     let score = unsafe {
         source::with_flat_float4_source_from_datum(
-            source::required_slot_datum(
-                heap_rerank_state.slot(),
+            source::required_slot_datum_with_reader(
+                &mut heap_reader,
                 source_attribute.attnum,
                 "PqFastScan heap rerank source vector",
             ),
@@ -2759,9 +2762,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
             },
         )
     };
-    // SAFETY: the tuple slot belongs to `heap_rerank_state` and was filled by
-    // the heap fetch immediately above.
-    unsafe { pg_sys::ExecClearTuple(heap_rerank_state.slot()) };
+    heap_reader.clear();
     score
 }
 

@@ -3,6 +3,7 @@ use std::{cmp::Ordering, collections::HashMap};
 use pgrx::pg_sys;
 
 use super::{build, graph, options, page, search, shared, source};
+use crate::am::common::heap_slot::HeapSlotReader;
 use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
@@ -169,27 +170,35 @@ impl InsertHeapSourceScorer {
         }
     }
 
-    unsafe fn load_source_vector(&mut self, heap_tid: page::ItemPointer, label: &str) -> Vec<f32> {
+    fn heap_reader(&mut self) -> HeapSlotReader<'_> {
         // SAFETY: `self.heap_relation`, snapshot, and tuple slot belong to this
-        // scorer, and `heap_tid` is the heap TID for the tuple being inserted.
-        let vector = unsafe {
-            source::with_source_from_heap_row(
+        // scorer for the insert planning scope.
+        unsafe {
+            HeapSlotReader::from_raw(
                 self.heap_relation,
-                heap_tid,
                 self.snapshot,
                 self.slot.as_ptr(),
-                self.source_attribute,
-                label,
-                |source| source.as_slice().to_vec(),
+                "ec_hnsw",
             )
-        };
-        // SAFETY: The slot was allocated for this scorer and may be cleared
-        // after the heap row source value has been copied out.
-        unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+        }
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+    }
+
+    fn load_source_vector(&mut self, heap_tid: page::ItemPointer, label: &str) -> Vec<f32> {
+        let source_attribute = self.source_attribute;
+        let mut reader = self.heap_reader();
+        let vector = source::with_source_from_heap_row_reader(
+            &mut reader,
+            heap_tid,
+            source_attribute,
+            label,
+            |source| source.as_slice().to_vec(),
+        );
+        reader.clear();
         vector
     }
 
-    unsafe fn averaged_source_vector(
+    fn averaged_source_vector(
         &mut self,
         heap_tids: &[page::ItemPointer],
         label: &str,
@@ -198,36 +207,30 @@ impl InsertHeapSourceScorer {
         let mut count = 0usize;
 
         for heap_tid in heap_tids.iter().copied() {
-            // SAFETY: `heap_tid` comes from a graph element's heap TID list and
-            // the scorer owns the heap relation, snapshot, and reusable slot.
-            unsafe {
-                source::with_source_from_heap_row(
-                    self.heap_relation,
-                    heap_tid,
-                    self.snapshot,
-                    self.slot.as_ptr(),
-                    self.source_attribute,
-                    label,
-                    |source| match representative.as_mut() {
-                        Some(existing) => {
-                            source::average_source_representatives(
-                                existing,
-                                count,
-                                source.as_slice(),
-                                1,
-                            );
-                            count += 1;
-                        }
-                        None => {
-                            representative = Some(source.as_slice().to_vec());
-                            count = 1;
-                        }
-                    },
-                )
-            };
-            // SAFETY: The slot was allocated for this scorer and can be cleared
-            // before loading the next representative row.
-            unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+            let source_attribute = self.source_attribute;
+            let mut reader = self.heap_reader();
+            source::with_source_from_heap_row_reader(
+                &mut reader,
+                heap_tid,
+                source_attribute,
+                label,
+                |source| match representative.as_mut() {
+                    Some(existing) => {
+                        source::average_source_representatives(
+                            existing,
+                            count,
+                            source.as_slice(),
+                            1,
+                        );
+                        count += 1;
+                    }
+                    None => {
+                        representative = Some(source.as_slice().to_vec());
+                        count = 1;
+                    }
+                },
+            );
+            reader.clear();
         }
 
         representative
@@ -242,11 +245,8 @@ impl InsertHeapSourceScorer {
             return None;
         }
 
-        // SAFETY: Live graph elements carry heap TIDs for source lookup; the
-        // scorer owns the relation/snapshot/slot used for those lookups.
-        let element_source = unsafe {
-            self.averaged_source_vector(&element.heaptids, "live insert source graph element")
-        }?;
+        let element_source =
+            self.averaged_source_vector(&element.heaptids, "live insert source graph element")?;
         Some(source::negative_inner_product(
             query_source,
             &element_source,
@@ -258,28 +258,22 @@ impl InsertHeapSourceScorer {
         target_element: &graph::GraphElement,
         candidate_element: &graph::GraphElement,
     ) -> f32 {
-        // SAFETY: Backlink candidates are live graph elements whose heap TID
-        // representatives are loaded through this scorer's heap relation/slot.
-        let target_source = unsafe {
-            self.averaged_source_vector(
+        let target_source = self
+            .averaged_source_vector(
                 &target_element.heaptids,
                 "live insert backlink target source vector",
             )
-        }
-        .unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw live insert backlink target is missing source data")
-        });
-        // SAFETY: The candidate element is loaded from the same graph and its
-        // heap representatives are read through this scorer.
-        let candidate_source = unsafe {
-            self.averaged_source_vector(
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw live insert backlink target is missing source data")
+            });
+        let candidate_source = self
+            .averaged_source_vector(
                 &candidate_element.heaptids,
                 "live insert backlink candidate source vector",
             )
-        }
-        .unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw live insert backlink candidate is missing source data")
-        });
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw live insert backlink candidate is missing source data")
+            });
         source::negative_inner_product(&target_source, &candidate_source)
     }
 
@@ -288,17 +282,14 @@ impl InsertHeapSourceScorer {
         target_element: &graph::GraphElement,
         new_tuple: &build::BuildTuple,
     ) -> f32 {
-        // SAFETY: The target graph element was loaded from the index and its
-        // heap representatives are read through this scorer.
-        let target_source = unsafe {
-            self.averaged_source_vector(
+        let target_source = self
+            .averaged_source_vector(
                 &target_element.heaptids,
                 "live insert backlink target source vector",
             )
-        }
-        .unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw live insert backlink target is missing source data")
-        });
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_hnsw live insert backlink target is missing source data")
+            });
         let new_source = new_tuple.source_vector.as_deref().unwrap_or_else(|| {
             pgrx::error!("ec_hnsw live insert source scoring requires source data")
         });

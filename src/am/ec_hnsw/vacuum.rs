@@ -3,6 +3,7 @@ use std::{collections::HashSet, ffi::c_void};
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
 use super::{graph, options, page, search, shared, source};
+use crate::am::common::heap_slot::HeapSlotReader;
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
@@ -154,7 +155,21 @@ impl VacuumHeapSourceScorer {
         }
     }
 
-    unsafe fn averaged_source_vector(
+    fn heap_reader(&mut self) -> HeapSlotReader<'_> {
+        // SAFETY: `self.heap_relation`, snapshot, and tuple slot belong to this
+        // scorer for the vacuum planning scope.
+        unsafe {
+            HeapSlotReader::from_raw(
+                self.heap_relation,
+                self.snapshot,
+                self.slot.as_ptr(),
+                "ec_hnsw",
+            )
+        }
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+    }
+
+    fn averaged_source_vector(
         &mut self,
         heap_tids: &[page::ItemPointer],
         label: &str,
@@ -163,41 +178,36 @@ impl VacuumHeapSourceScorer {
         let mut count = 0usize;
 
         for heap_tid in heap_tids.iter().copied() {
-            // SAFETY: `heap_tid` comes from a graph element's heap TID list, and
-            // the scorer owns the heap relation, snapshot, and reusable slot;
-            // the slot is cleared after each row source is copied or accumulated.
-            unsafe {
-                source::with_source_from_heap_row(
-                    self.heap_relation,
-                    heap_tid,
-                    self.snapshot,
-                    self.slot.as_ptr(),
-                    self.source_attribute,
-                    label,
-                    |source| match representative.as_mut() {
-                        Some(existing) => {
-                            source::average_source_representatives(
-                                existing,
-                                count,
-                                source.as_slice(),
-                                1,
-                            );
-                            count += 1;
-                        }
-                        None => {
-                            representative = Some(source.as_slice().to_vec());
-                            count = 1;
-                        }
-                    },
-                );
-                pg_sys::ExecClearTuple(self.slot.as_ptr());
-            }
+            let source_attribute = self.source_attribute;
+            let mut reader = self.heap_reader();
+            source::with_source_from_heap_row_reader(
+                &mut reader,
+                heap_tid,
+                source_attribute,
+                label,
+                |source| match representative.as_mut() {
+                    Some(existing) => {
+                        source::average_source_representatives(
+                            existing,
+                            count,
+                            source.as_slice(),
+                            1,
+                        );
+                        count += 1;
+                    }
+                    None => {
+                        representative = Some(source.as_slice().to_vec());
+                        count = 1;
+                    }
+                },
+            );
+            reader.clear();
         }
 
         representative
     }
 
-    unsafe fn score_graph_element_pair(
+    fn score_graph_element_pair(
         &mut self,
         source_element: &graph::GraphElement,
         candidate_element: &graph::GraphElement,
@@ -210,20 +220,14 @@ impl VacuumHeapSourceScorer {
             return None;
         }
 
-        // SAFETY: Both graph elements have live heap representatives and are
-        // loaded through the same scorer-owned heap state.
-        let (source_vector, candidate_vector) = unsafe {
-            (
-                self.averaged_source_vector(
-                    &source_element.heaptids,
-                    "vacuum repair source-backed element",
-                )?,
-                self.averaged_source_vector(
-                    &candidate_element.heaptids,
-                    "vacuum repair source-backed candidate",
-                )?,
-            )
-        };
+        let source_vector = self.averaged_source_vector(
+            &source_element.heaptids,
+            "vacuum repair source-backed element",
+        )?;
+        let candidate_vector = self.averaged_source_vector(
+            &candidate_element.heaptids,
+            "vacuum repair source-backed candidate",
+        )?;
         Some(source::negative_inner_product(
             &source_vector,
             &candidate_vector,
@@ -296,11 +300,9 @@ impl VacuumSearchMetric {
             Self::Code => {
                 score_vacuum_code_element(metadata, &source_element.code, candidate_element)
             }
-            // SAFETY: Source-backed repair scoring loads heap representatives
-            // for graph elements that were already read from the index.
-            Self::Source(scorer) => unsafe {
+            Self::Source(scorer) => {
                 scorer.score_graph_element_pair(source_element, candidate_element)
-            },
+            }
         }
     }
 }
