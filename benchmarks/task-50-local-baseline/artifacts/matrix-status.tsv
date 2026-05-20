@@ -68,3 +68,7 @@ timestamp	profile	label	step	status	notes
 2026-05-19T16:45:09-07:00	ec_real_ann_benchmarks_anchor	hnsw	recall	FAIL(rc=137)	/home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/recall-ec_real_ann_benchmarks_anchor-hnsw.log
 2026-05-19T16:48:54-07:00	ec_real_ann_benchmarks_anchor	hnsw	latency	ok	/home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/latency-ec_real_ann_benchmarks_anchor-hnsw.log
 2026-05-19T16:48:55-07:00	ec_real_ann_benchmarks_anchor	hnsw	storage	ok	/home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/storage-ec_real_ann_benchmarks_anchor-hnsw.log
+2026-05-19T20:37:33-07:00	ec_real_ann_benchmarks_anchor	diskann	load	FAIL(rc=1)	/home/peter/dev/ecaz/benchmarks/task-50-local-baseline/artifacts/corpus-load-ec_real_ann_benchmarks_anchor-diskann.log
+2026-05-19T20:37:46-07:00	ec_real_ann_benchmarks_anchor	diskann	load	FAIL(canceled-4h)	wrap-budget; ambuild canceled via pg_cancel_backend after 4h
+2026-05-19T20:37:46-07:00	ec_real_ann_benchmarks_anchor	ivfrabitq	recall	ok-backfill	--queries-limit 1000
+2026-05-19T20:37:46-07:00	ec_real_ann_benchmarks_anchor	hnsw	recall	ok-backfill	--queries-limit 1000
