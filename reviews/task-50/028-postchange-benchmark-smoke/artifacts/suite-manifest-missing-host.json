@@ -1,0 +1,1488 @@
+{
+  "suite": "task-50-postchange-smoke",
+  "schema_version": 1,
+  "config": "reviews/task-50/028-postchange-benchmark-smoke/suite.json",
+  "config_sha256": "a5a8c09dc381d3f88ab79a8b8e2cc23ea609dc60d3c5385e2065c1fc684432ab",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779289104594,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "prepare-ec_real_25k",
+      "kind": "corpus-prepare",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "prepare"
+      ],
+      "expected_artifacts": [
+        "target/real-corpus/staged-task50/ec_real_25k_corpus.tsv",
+        "target/real-corpus/staged-task50/ec_real_25k_queries.tsv",
+        "target/real-corpus/staged-task50/ec_real_25k_manifest.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "prepare-ec_real_100k",
+      "kind": "corpus-prepare",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "prepare"
+      ],
+      "expected_artifacts": [
+        "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+        "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+        "target/real-corpus/staged-task50/ec_real_100k_manifest.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-10k-ivfrabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-ivfrabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "ec_real_10k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_10k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-ivfrabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289104595,
+      "finished_at_unix_ms": 1779289105703,
+      "duration_ms": 1107,
+      "exit_code": 1
+    },
+    {
+      "name": "recall-10k-ivfrabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_10k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-ivfrabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_10k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-ivfrabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289105703,
+      "finished_at_unix_ms": 1779289105708,
+      "duration_ms": 4,
+      "exit_code": 1
+    },
+    {
+      "name": "latency-10k-ivfrabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_10k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-ivfrabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_10k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-ivfrabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289105709,
+      "finished_at_unix_ms": 1779289105715,
+      "duration_ms": 5,
+      "exit_code": 1
+    },
+    {
+      "name": "storage-10k-ivfrabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-ivfrabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_10k_ivfrabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_10k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-ivfrabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289105715,
+      "finished_at_unix_ms": 1779289105720,
+      "duration_ms": 5,
+      "exit_code": 1
+    },
+    {
+      "name": "load-10k-spirerabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-spirerabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "ec_real_10k_spirerabitq",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_10k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-spirerabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289105721,
+      "finished_at_unix_ms": 1779289106802,
+      "duration_ms": 1080,
+      "exit_code": 1
+    },
+    {
+      "name": "recall-10k-spirerabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_10k_spirerabitq",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-spirerabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_10k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-spirerabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289106802,
+      "finished_at_unix_ms": 1779289106809,
+      "duration_ms": 5,
+      "exit_code": 1
+    },
+    {
+      "name": "latency-10k-spirerabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_10k_spirerabitq",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "8,16,24,32,48,64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-spirerabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_10k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-spirerabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289106809,
+      "finished_at_unix_ms": 1779289106814,
+      "duration_ms": 4,
+      "exit_code": 1
+    },
+    {
+      "name": "storage-10k-spirerabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-spirerabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_10k_spirerabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_10k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-spirerabitq.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289106814,
+      "finished_at_unix_ms": 1779289106820,
+      "duration_ms": 4,
+      "exit_code": 1
+    },
+    {
+      "name": "load-10k-hnsw",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-hnsw.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "ec_real_10k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "8,16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-hnsw.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289106820,
+      "finished_at_unix_ms": 1779289107882,
+      "duration_ms": 1062,
+      "exit_code": 1
+    },
+    {
+      "name": "recall-10k-hnsw",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_10k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-hnsw.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289107883,
+      "finished_at_unix_ms": 1779289107889,
+      "duration_ms": 5,
+      "exit_code": 1
+    },
+    {
+      "name": "latency-10k-hnsw",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_10k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-hnsw.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289107890,
+      "finished_at_unix_ms": 1779289107895,
+      "duration_ms": 5,
+      "exit_code": 1
+    },
+    {
+      "name": "storage-10k-hnsw",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-hnsw.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_10k_hnsw"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_10k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-hnsw.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289107896,
+      "finished_at_unix_ms": 1779289107933,
+      "duration_ms": 37,
+      "exit_code": 1
+    },
+    {
+      "name": "load-10k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "ec_real_10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_10k-diskann.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289107934,
+      "finished_at_unix_ms": 1779289108958,
+      "duration_ms": 1023,
+      "exit_code": 1
+    },
+    {
+      "name": "recall-10k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_10k-diskann.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289108959,
+      "finished_at_unix_ms": 1779289108966,
+      "duration_ms": 5,
+      "exit_code": 1
+    },
+    {
+      "name": "latency-10k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "1000",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_10k-diskann.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289108966,
+      "finished_at_unix_ms": 1779289108971,
+      "duration_ms": 4,
+      "exit_code": 1
+    },
+    {
+      "name": "storage-10k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "ec_real_10k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_10k-diskann.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779289108971,
+      "finished_at_unix_ms": 1779289108977,
+      "duration_ms": 4,
+      "exit_code": 1
+    },
+    {
+      "name": "load-25k-ivfrabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_25k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_25k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-25k-ivfrabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_25k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_25k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-25k-ivfrabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_25k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_25k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-25k-ivfrabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_25k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_25k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-25k-spirerabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_25k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_25k-spirerabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-25k-spirerabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_25k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_25k-spirerabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-25k-spirerabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_25k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_25k-spirerabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-25k-spirerabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_25k",
+        "spirerabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_25k-spirerabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-25k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_25k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_25k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-25k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_25k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_25k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-25k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_25k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_25k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-25k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_25k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_25k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-25k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_25k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_25k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-25k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_25k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_25k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-25k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_25k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_25k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-25k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_25k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_25k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-ivfrabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-ivfrabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-ivfrabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-ivfrabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_50k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-spirerabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "spirerabitq",
+        "known-fail"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_50k-spirerabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_50k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-50k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-50k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-50k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-50k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-ivfrabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-ivfrabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-ivfrabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-ivfrabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_100k-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-spirerabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "spirerabitq",
+        "known-fail"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_100k-spirerabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_100k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-990k-ivfrabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "anchor",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_ann_benchmarks_anchor-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-990k-ivfrabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "anchor",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_ann_benchmarks_anchor-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-990k-ivfrabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "anchor",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_ann_benchmarks_anchor-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-990k-ivfrabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "anchor",
+        "ivfrabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_ann_benchmarks_anchor-ivfrabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-990k-spirerabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "anchor",
+        "spirerabitq",
+        "known-fail"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_ann_benchmarks_anchor-spirerabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-990k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "anchor",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_ann_benchmarks_anchor-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-990k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "anchor",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_ann_benchmarks_anchor-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-990k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "anchor",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_ann_benchmarks_anchor-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-990k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "anchor",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_ann_benchmarks_anchor-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-990k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "anchor",
+        "hnsw",
+        "slow"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/corpus-load-ec_real_ann_benchmarks_anchor-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-990k-hnsw",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "anchor",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/recall-ec_real_ann_benchmarks_anchor-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-990k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "anchor",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/latency-ec_real_ann_benchmarks_anchor-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-990k-hnsw",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "anchor",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/028-postchange-benchmark-smoke/artifacts/storage-ec_real_ann_benchmarks_anchor-hnsw.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

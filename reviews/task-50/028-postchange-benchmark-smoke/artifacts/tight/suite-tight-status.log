@@ -1,0 +1,74 @@
+[suite:task-50-postchange-smoke] completed=16 failed=0 skipped=57 dry_run=0 missing_artifacts=0 stale=0
+Skipped      prepare-ec_real_25k                  
+Skipped      prepare-ec_real_100k                 
+Succeeded    load-10k-ivfrabitq                   --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/corpus-load-ec_real_10k-ivfrabitq.log corpus load --prefix ec_real_10k_ivfrabitq --profile ec_ivf --corpus-file target/real-corpus/staged-task50/ec_real_10k_corpus.tsv --queries-file target/real-corpus/staged-task50/ec_real_10k_queries.tsv --manifest-file target/real-corpus/staged-task50/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format rabitq
+Succeeded    recall-10k-ivfrabitq                 --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_10k_ivfrabitq --profile ec_ivf --k 10 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/recall-ec_real_10k-ivfrabitq.log
+Succeeded    latency-10k-ivfrabitq                --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_10k_ivfrabitq --profile ec_ivf --k 10 --concurrency 1 --iterations 50 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/latency-ec_real_10k-ivfrabitq.log
+Succeeded    storage-10k-ivfrabitq                --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/storage-ec_real_10k-ivfrabitq.log bench storage --prefix ec_real_10k_ivfrabitq
+Succeeded    load-10k-spirerabitq                 --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/corpus-load-ec_real_10k-spirerabitq.log corpus load --prefix ec_real_10k_spirerabitq --profile ec_spire --corpus-file target/real-corpus/staged-task50/ec_real_10k_corpus.tsv --queries-file target/real-corpus/staged-task50/ec_real_10k_queries.tsv --manifest-file target/real-corpus/staged-task50/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format rabitq
+Succeeded    recall-10k-spirerabitq               --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_10k_spirerabitq --profile ec_spire --k 10 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/recall-ec_real_10k-spirerabitq.log
+Succeeded    latency-10k-spirerabitq              --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_10k_spirerabitq --profile ec_spire --k 10 --concurrency 1 --iterations 50 --sweep "8,16,24,32,48,64" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/latency-ec_real_10k-spirerabitq.log
+Succeeded    storage-10k-spirerabitq              --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/storage-ec_real_10k-spirerabitq.log bench storage --prefix ec_real_10k_spirerabitq
+Succeeded    load-10k-hnsw                        --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/corpus-load-ec_real_10k-hnsw.log corpus load --prefix ec_real_10k_hnsw --profile ec_hnsw --corpus-file target/real-corpus/staged-task50/ec_real_10k_corpus.tsv --queries-file target/real-corpus/staged-task50/ec_real_10k_queries.tsv --manifest-file target/real-corpus/staged-task50/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --m "8,16" --ef-construction 128
+Succeeded    recall-10k-hnsw                      --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_10k_hnsw --profile ec_hnsw --k 10 --sweep "40,80,120,200,400" --bits 4 --seed 42 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/recall-ec_real_10k-hnsw.log
+Succeeded    latency-10k-hnsw                     --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_10k_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 50 --sweep "40,80,120,200,400" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/latency-ec_real_10k-hnsw.log
+Succeeded    storage-10k-hnsw                     --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/storage-ec_real_10k-hnsw.log bench storage --prefix ec_real_10k_hnsw
+Succeeded    load-10k-diskann                     --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/corpus-load-ec_real_10k-diskann.log corpus load --prefix ec_real_10k_diskann --profile ec_diskann --corpus-file target/real-corpus/staged-task50/ec_real_10k_corpus.tsv --queries-file target/real-corpus/staged-task50/ec_real_10k_queries.tsv --manifest-file target/real-corpus/staged-task50/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42
+Succeeded    recall-10k-diskann                   --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench recall --prefix ec_real_10k_diskann --profile ec_diskann --k 10 --sweep "64,128,200,400,800" --bits 4 --seed 42 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/recall-ec_real_10k-diskann.log
+Succeeded    latency-10k-diskann                  --database tqvector_bench --host /home/peter/.pgrx --port 28818 bench latency --prefix ec_real_10k_diskann --profile ec_diskann --k 10 --concurrency 1 --iterations 50 --sweep "64,128,200,400,800" --bits 4 --seed 42 --memory-sample-interval-ms 25 --log-output reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/latency-ec_real_10k-diskann.log
+Succeeded    storage-10k-diskann                  --database tqvector_bench --host /home/peter/.pgrx --port 28818 --log-file reviews/task-50/028-postchange-benchmark-smoke/artifacts/tight/storage-ec_real_10k-diskann.log bench storage --prefix ec_real_10k_diskann
+Skipped      load-25k-ivfrabitq                   
+Skipped      recall-25k-ivfrabitq                 
+Skipped      latency-25k-ivfrabitq                
+Skipped      storage-25k-ivfrabitq                
+Skipped      load-25k-spirerabitq                 
+Skipped      recall-25k-spirerabitq               
+Skipped      latency-25k-spirerabitq              
+Skipped      storage-25k-spirerabitq              
+Skipped      load-25k-hnsw                        
+Skipped      recall-25k-hnsw                      
+Skipped      latency-25k-hnsw                     
+Skipped      storage-25k-hnsw                     
+Skipped      load-25k-diskann                     
+Skipped      recall-25k-diskann                   
+Skipped      latency-25k-diskann                  
+Skipped      storage-25k-diskann                  
+Skipped      load-50k-ivfrabitq                   
+Skipped      recall-50k-ivfrabitq                 
+Skipped      latency-50k-ivfrabitq                
+Skipped      storage-50k-ivfrabitq                
+Skipped      load-50k-spirerabitq                 
+Skipped      load-50k-hnsw                        
+Skipped      recall-50k-hnsw                      
+Skipped      latency-50k-hnsw                     
+Skipped      storage-50k-hnsw                     
+Skipped      load-50k-diskann                     
+Skipped      recall-50k-diskann                   
+Skipped      latency-50k-diskann                  
+Skipped      storage-50k-diskann                  
+Skipped      load-100k-ivfrabitq                  
+Skipped      recall-100k-ivfrabitq                
+Skipped      latency-100k-ivfrabitq               
+Skipped      storage-100k-ivfrabitq               
+Skipped      load-100k-spirerabitq                
+Skipped      load-100k-hnsw                       
+Skipped      recall-100k-hnsw                     
+Skipped      latency-100k-hnsw                    
+Skipped      storage-100k-hnsw                    
+Skipped      load-100k-diskann                    
+Skipped      recall-100k-diskann                  
+Skipped      latency-100k-diskann                 
+Skipped      storage-100k-diskann                 
+Skipped      load-990k-ivfrabitq                  
+Skipped      recall-990k-ivfrabitq                
+Skipped      latency-990k-ivfrabitq               
+Skipped      storage-990k-ivfrabitq               
+Skipped      load-990k-spirerabitq                
+Skipped      load-990k-diskann                    
+Skipped      recall-990k-diskann                  
+Skipped      latency-990k-diskann                 
+Skipped      storage-990k-diskann                 
+Skipped      load-990k-hnsw                       
+Skipped      recall-990k-hnsw                     
+Skipped      latency-990k-hnsw                    
+Skipped      storage-990k-hnsw                    
