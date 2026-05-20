@@ -1,0 +1,2 @@
+coverage ok: am/ec_spire/page.rs actual=81.12 baseline=81.12
+coverage ok: am/ec_spire/storage/relation_store.rs actual=27.20 baseline=27.20

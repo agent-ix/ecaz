@@ -180,6 +180,8 @@
     #[test]
     fn local_object_store_rejects_invalid_store_and_epoch() {
         assert!(SpireLocalObjectStore::with_default_page_size(0).is_err());
+        // The other branch in new_for_store: a valid relid with page_size == 0.
+        assert!(SpireLocalObjectStore::new(12345, 0).is_err());
         let object = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
         let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
 
@@ -191,6 +193,22 @@
 
         let root = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
         assert!(store.insert_routing_object(0, &root).is_err());
+
+        // Top-graph insert shares the epoch == 0 guard with the other inserts.
+        let top_graph = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            2,
+            2,
+            4,
+            1.2,
+            0,
+            vec![top_graph_node(21, 0, vec![])],
+        )
+        .unwrap();
+        assert!(store.insert_top_graph_object(0, &top_graph).is_err());
     }
 
     #[test]
@@ -268,4 +286,263 @@
         let mut wrong_bytes = placement;
         wrong_bytes.object_bytes += 1;
         assert!(store.read_routing_object(&wrong_bytes).is_err());
+    }
+
+    #[test]
+    fn local_object_store_set_from_config_rejects_duplicate_local_store_id() {
+        // Two descriptors with the same local_store_id must error before
+        // any store is constructed.
+        let config = SpireLocalStoreConfig::from_stores(
+            1,
+            vec![
+                SpireLocalStoreDescriptor::available(0, 10_000, 0).unwrap(),
+                SpireLocalStoreDescriptor::available(0, 10_001, 0).unwrap(),
+            ],
+        );
+        // from_stores itself may reject the duplicate; if it does, accept
+        // that as the matching guard. If it does not, drive
+        // SpireLocalObjectStoreSet::from_config directly.
+        match config {
+            Ok(config) => {
+                let err = SpireLocalObjectStoreSet::from_config(config, 512)
+                    .err()
+                    .expect("duplicate local_store_id must be rejected");
+                assert!(
+                    err.contains("duplicate local_store_id"),
+                    "unexpected error: {err}"
+                );
+            }
+            Err(err) => {
+                assert!(
+                    err.contains("local_store_id") || err.contains("duplicate"),
+                    "unexpected from_stores error: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn local_object_store_set_round_trips_leaf_v1() {
+        // The set's `read_leaf_object` (V1) delegate at line 132 was not
+        // covered by 028-031; this exercises it end-to-end alongside the
+        // matching insert path on a single-store config.
+        let config = SpireLocalStoreConfig::from_stores(
+            1,
+            vec![SpireLocalStoreDescriptor::available(0, 10_000, 0).unwrap()],
+        )
+        .unwrap();
+        let mut store_set = SpireLocalObjectStoreSet::from_config(config, 512).unwrap();
+        let object = SpireLeafPartitionObject::new(
+            17,
+            3,
+            0,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(1),
+                heap_tid: ItemPointer {
+                    block_number: 10,
+                    offset_number: 1,
+                },
+                payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                gamma: 0.25,
+                encoded_payload: vec![1, 2],
+            }],
+        )
+        .unwrap();
+        // V1 insert delegates through the single-store path; route via
+        // store_mut_for_pid + SpireLocalObjectStore::insert_leaf_object.
+        let placement = store_set
+            .store_mut_for_pid(17)
+            .unwrap()
+            .insert_leaf_object(7, &object)
+            .unwrap();
+        let decoded = store_set.read_leaf_object(&placement).unwrap();
+        assert_eq!(decoded.header.pid, 17);
+        assert_eq!(decoded.header.object_version, 3);
+    }
+
+    #[test]
+    fn local_object_store_set_object_reader_trait_routes_through_store_for_placement() {
+        // Cover the SpireObjectReader-for-SpireLocalObjectStoreSet impls
+        // (read_object_header / read_routing / read_delta / read_top_graph
+        // / read_leaf_v2) through trait dispatch so a `delegate-to-wrong-store`
+        // mutation is observable.
+        let config = SpireLocalStoreConfig::from_stores(
+            1,
+            vec![SpireLocalStoreDescriptor::available(0, 10_000, 0).unwrap()],
+        )
+        .unwrap();
+        let mut store_set = SpireLocalObjectStoreSet::from_config(config, 1024).unwrap();
+        let routing =
+            SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        let routing_placement = store_set.insert_routing_object(7, &routing).unwrap();
+        let leaf_placement = store_set
+            .insert_leaf_object_v2_from_rows(
+                7,
+                17,
+                3,
+                5,
+                &[leaf_v2_assignment(1, 8), leaf_v2_assignment(2, 8)],
+            )
+            .unwrap();
+        let delta = SpireDeltaPartitionObject::new(
+            19,
+            4,
+            17,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                vec_id: SpireVecId::local(1),
+                heap_tid: ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2, 3, 4],
+            }],
+        )
+        .unwrap();
+        let delta_placement = store_set.insert_delta_object(7, &delta).unwrap();
+        let top_graph = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            2,
+            2,
+            4,
+            1.2,
+            0,
+            vec![SpireTopGraphNodeRecord {
+                child_pid: 21,
+                centroid_ordinal: 0,
+                neighbors: vec![],
+            }],
+        )
+        .unwrap();
+        let top_placement = store_set.insert_top_graph_object(7, &top_graph).unwrap();
+
+        let reader: &dyn SpireObjectReader = &store_set;
+        assert_eq!(reader.read_object_header(&routing_placement).unwrap().pid, 11);
+        assert_eq!(
+            reader.read_routing_object(&routing_placement).unwrap().header.pid,
+            11,
+        );
+        assert_eq!(
+            reader
+                .read_leaf_object_v2(&leaf_placement)
+                .unwrap()
+                .meta
+                .header
+                .pid,
+            17,
+        );
+        assert_eq!(reader.read_delta_object(&delta_placement).unwrap().header.pid, 19);
+        assert_eq!(
+            reader.read_top_graph_object(&top_placement).unwrap().header.pid,
+            90,
+        );
+    }
+
+    #[test]
+    fn local_object_store_trait_dispatch_covers_all_read_methods() {
+        // Cover the SpireObjectReader-for-SpireLocalObjectStore impl block
+        // (165-207). Existing tests call the inherent methods; trait
+        // dispatch on a `&dyn SpireObjectReader` exercises the impl block.
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let routing =
+            SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        let routing_placement = store.insert_routing_object(7, &routing).unwrap();
+
+        let leaf_v1 = SpireLeafPartitionObject::new(
+            17,
+            3,
+            0,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(1),
+                heap_tid: ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2, 3, 4],
+            }],
+        )
+        .unwrap();
+        let leaf_v1_placement = store.insert_leaf_object(7, &leaf_v1).unwrap();
+
+        let leaf_v2_placement = store
+            .insert_leaf_object_v2_from_rows(
+                7,
+                18,
+                1,
+                17,
+                &[leaf_v2_assignment(1, 8)],
+            )
+            .unwrap();
+
+        let delta = SpireDeltaPartitionObject::new(
+            19,
+            1,
+            17,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                vec_id: SpireVecId::local(1),
+                heap_tid: ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                gamma: 0.5,
+                encoded_payload: vec![9, 9, 9, 9],
+            }],
+        )
+        .unwrap();
+        let delta_placement = store.insert_delta_object(7, &delta).unwrap();
+
+        let top_graph = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            2,
+            2,
+            4,
+            1.2,
+            0,
+            vec![SpireTopGraphNodeRecord {
+                child_pid: 21,
+                centroid_ordinal: 0,
+                neighbors: vec![],
+            }],
+        )
+        .unwrap();
+        let top_placement = store.insert_top_graph_object(7, &top_graph).unwrap();
+
+        let reader: &dyn SpireObjectReader = &store;
+        assert_eq!(reader.read_object_header(&routing_placement).unwrap().pid, 11);
+        assert_eq!(
+            reader.read_routing_object(&routing_placement).unwrap().header.pid,
+            11
+        );
+        assert_eq!(
+            reader.read_leaf_object(&leaf_v1_placement).unwrap().header.pid,
+            17
+        );
+        assert_eq!(
+            reader
+                .read_leaf_object_v2(&leaf_v2_placement)
+                .unwrap()
+                .meta
+                .header
+                .pid,
+            18
+        );
+        assert_eq!(reader.read_delta_object(&delta_placement).unwrap().header.pid, 19);
+        assert_eq!(
+            reader.read_top_graph_object(&top_placement).unwrap().header.pid,
+            90
+        );
     }
