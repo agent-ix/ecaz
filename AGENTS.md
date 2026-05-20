@@ -66,6 +66,7 @@ Packet directories inside a task bucket must sort in chronological order.
   Chat output alone is invisible to the coder inbox loop.
 - Frontmatter is required: `agent`, `role`, `model`, `date`, `seq`.
 - Any agent can leave feedback on any topic.
+- Commit and push every review request (`request.md`) and feedback file immediately after creating it; uncommitted files are invisible to the other role.
 
 ### Review, Test, Benchmark, and Artifact Logs
 
