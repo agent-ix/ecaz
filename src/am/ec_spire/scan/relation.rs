@@ -1,42 +1,18 @@
 pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
-    // SAFETY: scan is the live IndexScanDesc for this AM callback; xs_heaptid is
-    // PostgreSQL-owned scan output storage for the current tuple.
-    unsafe {
-        pgrx::itemptr::item_pointer_set_all(
-            &mut (*scan).xs_heaptid,
-            heap_tid.block_number,
-            heap_tid.offset_number,
-        );
-    }
+    crate::am::common::scan_output::set_scan_heap_tid(scan, heap_tid);
 }
 
 pub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
-    // SAFETY: scan is the live IndexScanDesc for this AM callback; orderby
-    // output arrays are allocated in PostgreSQL memory before being written.
-    unsafe {
-        if (*scan).xs_orderbyvals.is_null() {
-            crate::fault::maybe_fail_palloc("ec_spire scan orderby values");
-            (*scan).xs_orderbyvals =
-                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
-        }
-        if (*scan).xs_orderbynulls.is_null() {
-            crate::fault::maybe_fail_palloc("ec_spire scan orderby nulls");
-            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
-        }
-
-        *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
-        *(*scan).xs_orderbynulls = false;
-    }
+    crate::am::common::scan_output::set_scan_orderby_score(
+        scan,
+        score,
+        "ec_spire scan orderby values",
+        "ec_spire scan orderby nulls",
+    );
 }
 
 pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
-    // SAFETY: scan is the live IndexScanDesc for this AM callback; when the
-    // orderby null array exists, setting the first flag clears the score output.
-    unsafe {
-        if !(*scan).xs_orderbynulls.is_null() {
-            *(*scan).xs_orderbynulls = true;
-        }
-    }
+    crate::am::common::scan_output::clear_scan_orderby_output(scan);
 }
 
 pub(super) struct ResolvedScanHeapRelation {

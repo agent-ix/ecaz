@@ -5,6 +5,7 @@ pub(crate) mod explain;
 pub(crate) mod heap_slot;
 pub(crate) mod parallel;
 pub(crate) mod parallel_slot;
+pub(crate) mod scan_output;
 pub(crate) mod stats;
 pub(crate) mod stream;
 pub(crate) mod training;

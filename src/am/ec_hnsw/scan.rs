@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use hashbrown::{HashMap, HashSet};
-use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
+use pgrx::{pg_sys, FromDatum, PgBox};
 
 use crate::am::common::heap_slot::HeapSlotReader;
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
@@ -5256,15 +5256,7 @@ unsafe fn score_scan_element_result(
 }
 
 fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
-    // SAFETY: `scan` is the live PostgreSQL index scan descriptor being filled
-    // for the current callback, and `xs_heaptid` is its output slot.
-    unsafe {
-        pgrx::itemptr::item_pointer_set_all(
-            &mut (*scan).xs_heaptid,
-            heap_tid.block_number,
-            heap_tid.offset_number,
-        );
-    }
+    crate::am::common::scan_output::set_scan_heap_tid(scan, heap_tid);
 }
 
 fn clear_last_emitted_scan_scores(opaque: &mut TqScanOpaque) {
@@ -5316,32 +5308,16 @@ fn emit_scan_output(
 }
 
 fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
-    // SAFETY: `scan` is the live PostgreSQL index scan descriptor; order-by
-    // arrays are allocated in the scan memory context on first use.
-    unsafe {
-        if (*scan).xs_orderbyvals.is_null() {
-            crate::fault::maybe_fail_palloc("ec_hnsw scan orderby values");
-            (*scan).xs_orderbyvals =
-                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
-        }
-        if (*scan).xs_orderbynulls.is_null() {
-            crate::fault::maybe_fail_palloc("ec_hnsw scan orderby nulls");
-            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
-        }
-
-        *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
-        *(*scan).xs_orderbynulls = false;
-    }
+    crate::am::common::scan_output::set_scan_orderby_score(
+        scan,
+        score,
+        "ec_hnsw scan orderby values",
+        "ec_hnsw scan orderby nulls",
+    );
 }
 
 fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
-    // SAFETY: `scan` is the live PostgreSQL index scan descriptor; if the nulls
-    // array exists, setting its first slot marks the previous score as absent.
-    unsafe {
-        if !(*scan).xs_orderbynulls.is_null() {
-            *(*scan).xs_orderbynulls = true;
-        }
-    }
+    crate::am::common::scan_output::clear_scan_orderby_output(scan);
 }
 
 #[repr(C)]
