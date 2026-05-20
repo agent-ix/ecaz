@@ -216,28 +216,23 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
         4
     } else if values.len() < 16 {
         for chunk in values.chunks_exact_mut(8) {
-            // SAFETY: `chunk` is exactly eight contiguous f32 values; unaligned
-            // AVX2 loads and stores are permitted for `_mm256_loadu/storeu_ps`.
-            let block = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
-            // SAFETY: this function carries the AVX2 target feature required by
-            // the block transform.
-            let transformed = unsafe { fwht8_avx2_block(block) };
-            // SAFETY: `chunk` still owns eight writable f32 values.
-            unsafe { _mm256_storeu_ps(chunk.as_mut_ptr(), transformed) };
+            // SAFETY: `chunk` is exactly eight contiguous f32 values; this
+            // function carries AVX2, and unaligned AVX2 load/store is allowed.
+            unsafe {
+                let block = _mm256_loadu_ps(chunk.as_ptr());
+                let transformed = fwht8_avx2_block(block);
+                _mm256_storeu_ps(chunk.as_mut_ptr(), transformed);
+            }
         }
         8
     } else if values.len() < 32 {
         for chunk in values.chunks_exact_mut(16) {
-            // SAFETY: `chunk` is 16 f32 values, so offsets 0 and 8 each expose
-            // a full unaligned eight-lane AVX2 block.
-            let left = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
-            let right = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
-            // SAFETY: this function carries AVX2 and the inputs are the two
-            // halves of the 16-lane chunk.
-            let (sum, diff) = unsafe { fwht16_avx2_block(left, right) };
-            // SAFETY: the two stores write back to the same non-overlapping
-            // eight-lane halves loaded above.
+            // SAFETY: `chunk` is 16 f32 values; offsets 0 and 8 expose two
+            // complete, non-overlapping eight-lane AVX2 blocks.
             unsafe {
+                let left = _mm256_loadu_ps(chunk.as_ptr());
+                let right = _mm256_loadu_ps(chunk.as_ptr().add(8));
+                let (sum, diff) = fwht16_avx2_block(left, right);
                 _mm256_storeu_ps(chunk.as_mut_ptr(), sum);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), diff);
             }
@@ -245,20 +240,14 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
         16
     } else if values.len() < 64 {
         for chunk in values.chunks_exact_mut(32) {
-            // SAFETY: `chunk` is 32 f32 values, so offsets 0, 8, 16, and 24
-            // each address a complete unaligned eight-lane AVX2 block.
-            let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
-            let a1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
-            // SAFETY: the remaining offsets are still within the same 32-lane
-            // chunk and each exposes a full eight-lane block.
-            let b0 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(16)) };
-            let b1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(24)) };
-            // SAFETY: this function carries AVX2 and the inputs partition the
-            // 32-lane chunk into four eight-lane blocks.
-            let (sum0, sum1, diff0, diff1) = unsafe { fwht32_avx2_block(a0, a1, b0, b1) };
-            // SAFETY: the stores target the same four non-overlapping
-            // eight-lane regions loaded above.
+            // SAFETY: `chunk` is 32 f32 values; offsets 0, 8, 16, and 24 each
+            // expose a complete non-overlapping eight-lane AVX2 block.
             unsafe {
+                let a0 = _mm256_loadu_ps(chunk.as_ptr());
+                let a1 = _mm256_loadu_ps(chunk.as_ptr().add(8));
+                let b0 = _mm256_loadu_ps(chunk.as_ptr().add(16));
+                let b1 = _mm256_loadu_ps(chunk.as_ptr().add(24));
+                let (sum0, sum1, diff0, diff1) = fwht32_avx2_block(a0, a1, b0, b1);
                 _mm256_storeu_ps(chunk.as_mut_ptr(), sum0);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), sum1);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(16), diff0);
@@ -268,29 +257,19 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
         32
     } else {
         for chunk in values.chunks_exact_mut(64) {
-            // SAFETY: `chunk` is 64 f32 values, so offsets 0 through 56 in
-            // steps of eight each address a complete unaligned AVX2 block.
-            let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
-            let a1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
-            // SAFETY: offsets 16 and 24 are within the same 64-lane chunk and
-            // each exposes a full eight-lane block.
-            let a2 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(16)) };
-            let a3 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(24)) };
-            // SAFETY: offsets 32 and 40 are within the same 64-lane chunk and
-            // each exposes a full eight-lane block.
-            let b0 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(32)) };
-            let b1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(40)) };
-            // SAFETY: offsets 48 and 56 are within the same 64-lane chunk and
-            // each exposes a full eight-lane block.
-            let b2 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(48)) };
-            let b3 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(56)) };
-            // SAFETY: this function carries AVX2 and the inputs partition the
-            // 64-lane chunk into eight eight-lane blocks.
-            let (sum0, sum1, sum2, sum3, diff0, diff1, diff2, diff3) =
-                unsafe { fwht64_avx2_block(a0, a1, a2, a3, b0, b1, b2, b3) };
-            // SAFETY: the stores target the same eight non-overlapping
-            // eight-lane regions loaded above.
+            // SAFETY: `chunk` is 64 f32 values; offsets 0 through 56 in steps
+            // of eight partition it into complete non-overlapping AVX2 blocks.
             unsafe {
+                let a0 = _mm256_loadu_ps(chunk.as_ptr());
+                let a1 = _mm256_loadu_ps(chunk.as_ptr().add(8));
+                let a2 = _mm256_loadu_ps(chunk.as_ptr().add(16));
+                let a3 = _mm256_loadu_ps(chunk.as_ptr().add(24));
+                let b0 = _mm256_loadu_ps(chunk.as_ptr().add(32));
+                let b1 = _mm256_loadu_ps(chunk.as_ptr().add(40));
+                let b2 = _mm256_loadu_ps(chunk.as_ptr().add(48));
+                let b3 = _mm256_loadu_ps(chunk.as_ptr().add(56));
+                let (sum0, sum1, sum2, sum3, diff0, diff1, diff2, diff3) =
+                    fwht64_avx2_block(a0, a1, a2, a3, b0, b1, b2, b3);
                 _mm256_storeu_ps(chunk.as_mut_ptr(), sum0);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), sum1);
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(16), sum2);
