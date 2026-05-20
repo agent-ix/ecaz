@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report unsafe-block-count ffi-audit ffi-lint ffi-dylint ffi-dylint-self-test cargo-geiger mirai build install clean
+.PHONY: fmt fmt-check lint lint-pg17 lint-hardening test test-local test-hardening-local pg-test pg-test-pg17 deny deny-full audit cargo-audit cargo-vet audit-unsafe unsafe-baseline-report unsafe-block-count unsafe-ledger unsafe-ledger-check ffi-audit ffi-lint ffi-dylint ffi-dylint-self-test cargo-geiger mirai build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded miri-tree miri-many-seeds miri-full careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: loom-real shuttle-real sim-spire-remote sim-spire-remote-deep kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
@@ -103,6 +103,16 @@ unsafe-baseline-report:
 
 unsafe-block-count:
 	@bash scripts/unsafe_block_count.sh $(PATHS)
+
+UNSAFE_LEDGER ?= reviews/task-50/031-unsafe-ledger-seed/artifacts/unsafe-ledger.jsonl
+UNSAFE_LEDGER_PACKET ?= reviews/task-50/031-unsafe-ledger-seed
+UNSAFE_LEDGER_PATHS ?= src
+
+unsafe-ledger:
+	python3 scripts/unsafe_ledger.py generate --output $(UNSAFE_LEDGER) --packet $(UNSAFE_LEDGER_PACKET) $(UNSAFE_LEDGER_PATHS)
+
+unsafe-ledger-check:
+	python3 scripts/unsafe_ledger.py check --ledger $(UNSAFE_LEDGER) $(UNSAFE_LEDGER_PATHS)
 
 ffi-audit:
 	python3 scripts/ffi_audit.py --check
