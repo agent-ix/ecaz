@@ -363,53 +363,48 @@ unsafe fn custom_scan_candidate_index_oid(
     if root.is_null() || rel.is_null() || rte.is_null() {
         return None;
     }
-    // SAFETY: rel was checked non-null and is owned by the active planner hook.
-    let rel_ref = unsafe { rel.as_ref()? };
-    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
-        return None;
-    }
-    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
-        return None;
-    }
-    // SAFETY: root was checked non-null and is owned by the active planner hook.
-    let root_ref = unsafe { root.as_ref()? };
-    if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
-        return None;
-    }
-    // SAFETY: helper only inspects the live planner root/rel target and pathkey
-    // state to confirm the query expression shape.
-    let _ = unsafe { custom_scan_orderby_query_expr(root, rel)? };
 
-    // SAFETY: static AM name is nul-terminated and missing_ok is true.
-    let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
-    if ec_spire_am_oid == pg_sys::InvalidOid {
-        return None;
-    }
-
-    // SAFETY: rel_ref.indexlist is planner-owned and valid during this hook.
-    let index_list = unsafe { PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist) };
-    for index_info in index_list.iter_ptr() {
-        // SAFETY: index-list entries may be null; as_ref handles null and the
-        // IndexOptInfo is read only during this callback.
-        let Some(index_info) = (unsafe { index_info.as_ref() }) else {
-            continue;
-        };
-        if index_info.relam != ec_spire_am_oid {
-            continue;
+    // SAFETY: PostgreSQL calls the set_rel_pathlist hook with live planner
+    // root/rel/RTE pointers. All list and index metadata reads stay within this
+    // hook invocation; opened index relations are guard-managed.
+    unsafe {
+        let rel_ref = rel.as_ref()?;
+        if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
+            return None;
         }
-        let Some(index_relation) =
-            crate::storage::relation_guard::IndexRelationGuard::try_access_share(
-                index_info.indexoid,
-            )
-        else {
-            continue;
-        };
-        // SAFETY: IndexRelationGuard keeps the index relation open while the
-        // eligibility helper reads SPIRE root/control metadata.
-        let eligibility = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) };
-        if let Ok(row) = eligibility {
-            if row.eligible_for_custom_scan {
-                return Some((index_info.indexoid, row));
+        if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
+            return None;
+        }
+        let root_ref = root.as_ref()?;
+        if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
+            return None;
+        }
+        let _ = custom_scan_orderby_query_expr(root, rel)?;
+
+        let ec_spire_am_oid = pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true);
+        if ec_spire_am_oid == pg_sys::InvalidOid {
+            return None;
+        }
+
+        let index_list = PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist);
+        for index_info in index_list.iter_ptr() {
+            let Some(index_info) = index_info.as_ref() else {
+                continue;
+            };
+            if index_info.relam != ec_spire_am_oid {
+                continue;
+            }
+            let Some(index_relation) =
+                crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                    index_info.indexoid,
+                )
+            else {
+                continue;
+            };
+            if let Ok(row) = custom_scan_index_eligibility_result(index_relation.as_ptr()) {
+                if row.eligible_for_custom_scan {
+                    return Some((index_info.indexoid, row));
+                }
             }
         }
     }
@@ -424,39 +419,38 @@ unsafe fn dml_pk_select_candidate_index_oid(
     if root.is_null() || rel.is_null() || rte.is_null() {
         return None;
     }
-    // SAFETY: rel was checked non-null and is planner-owned for this hook.
-    let rel_ref = unsafe { rel.as_ref()? };
-    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
-        return None;
-    }
-    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
-        return None;
-    }
-    // SAFETY: static AM name is nul-terminated and missing_ok is true.
-    let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
-    if ec_spire_am_oid == pg_sys::InvalidOid {
-        return None;
-    }
 
-    // SAFETY: rel_ref.indexlist is planner-owned and valid during this hook.
-    let index_list = unsafe { PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist) };
-    let mut placement_index_oid = None;
-    for index_info in index_list.iter_ptr() {
-        // SAFETY: index-list entries may be null; as_ref handles null and the
-        // IndexOptInfo is read only during this callback.
-        let Some(index_info) = (unsafe { index_info.as_ref() }) else {
-            continue;
-        };
-        if index_info.relam == ec_spire_am_oid
-            // SAFETY: helper opens SPIRE placement catalog relations under
-            // guards and performs a bounded index probe for this index OID.
-            && unsafe { custom_scan_index_has_sql_placement(index_info.indexoid) }
-        {
-            placement_index_oid = Some(index_info.indexoid);
-            break;
+    // SAFETY: PostgreSQL calls the set_rel_pathlist hook with live planner
+    // pointers. This discovery path only inspects planner-owned baserel index
+    // metadata and invokes guard-managed catalog placement lookup.
+    let placement_index_oid = unsafe {
+        let rel_ref = rel.as_ref()?;
+        if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
+            return None;
         }
-    }
-    let placement_index_oid = placement_index_oid?;
+        if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
+            return None;
+        }
+        let ec_spire_am_oid = pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true);
+        if ec_spire_am_oid == pg_sys::InvalidOid {
+            return None;
+        }
+
+        let index_list = PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist);
+        let mut placement_index_oid = None;
+        for index_info in index_list.iter_ptr() {
+            let Some(index_info) = index_info.as_ref() else {
+                continue;
+            };
+            if index_info.relam == ec_spire_am_oid
+                && custom_scan_index_has_sql_placement(index_info.indexoid)
+            {
+                placement_index_oid = Some(index_info.indexoid);
+                break;
+            }
+        }
+        placement_index_oid?
+    };
     // SAFETY: DML frontdoor helper validates planner root/rel and returns owned
     // primitive-plan data or an error.
     let plan_expr = match unsafe {
@@ -543,57 +537,50 @@ unsafe fn add_custom_scan_path(
     if root.is_null() || rel.is_null() {
         return;
     }
-    // SAFETY: root was checked non-null and remains live for this hook call.
-    let root_ref = unsafe { root.as_ref().expect("checked root pointer") };
-    // SAFETY: rel was checked non-null and remains live for this hook call.
-    let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };
-    // SAFETY: CustomPath is allocated as a PostgreSQL planner node and later
-    // transferred to the planner via add_path.
-    let mut custom_path =
-        unsafe { PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath) };
-    let rows = if root_ref.limit_tuples >= 0.0 {
-        root_ref.limit_tuples.max(1.0)
-    } else {
-        rel_ref.rows.max(1.0)
-    };
-    let target_width = custom_scan_target_width(rel_ref.reltarget);
-    // SAFETY: cost estimator reads the owned eligibility row and scalar planner
-    // estimates only.
-    let cost = unsafe {
-        estimate_custom_scan_cost(rows, rel_ref.rows.max(1.0), target_width, &eligibility)
-    };
-    custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
-    custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
-    custom_path.path.parent = rel;
-    custom_path.path.pathtarget = rel_ref.reltarget;
-    custom_path.path.param_info = std::ptr::null_mut();
-    custom_path.path.parallel_aware = false;
-    custom_path.path.parallel_safe = false;
-    custom_path.path.parallel_workers = 0;
-    custom_path.path.rows = rows;
-    custom_path.path.disabled_nodes = 0;
-    custom_path.path.startup_cost = cost.startup_cost;
-    custom_path.path.total_cost = cost.total_cost;
-    custom_path.path.pathkeys = root_ref.sort_pathkeys;
-    custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
-    custom_path.custom_paths = std::ptr::null_mut();
-    custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
-    // SAFETY: lappend_oid allocates a planner-owned OID list for CustomPath
-    // private data.
-    custom_path.custom_private = unsafe {
-        pg_sys::lappend_oid(
+
+    // SAFETY: root/rel were checked non-null and remain live for this planner
+    // hook call. The CustomPath node and private OID list are allocated in
+    // PostgreSQL planner memory and transferred with add_path.
+    unsafe {
+        let root_ref = root.as_ref().expect("checked root pointer");
+        let rel_ref = rel.as_ref().expect("checked rel pointer");
+        let mut custom_path =
+            PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
+        let rows = if root_ref.limit_tuples >= 0.0 {
+            root_ref.limit_tuples.max(1.0)
+        } else {
+            rel_ref.rows.max(1.0)
+        };
+        let target_width = custom_scan_target_width(rel_ref.reltarget);
+        let cost =
+            estimate_custom_scan_cost(rows, rel_ref.rows.max(1.0), target_width, &eligibility);
+        custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
+        custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
+        custom_path.path.parent = rel;
+        custom_path.path.pathtarget = rel_ref.reltarget;
+        custom_path.path.param_info = std::ptr::null_mut();
+        custom_path.path.parallel_aware = false;
+        custom_path.path.parallel_safe = false;
+        custom_path.path.parallel_workers = 0;
+        custom_path.path.rows = rows;
+        custom_path.path.disabled_nodes = 0;
+        custom_path.path.startup_cost = cost.startup_cost;
+        custom_path.path.total_cost = cost.total_cost;
+        custom_path.path.pathkeys = root_ref.sort_pathkeys;
+        custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
+        custom_path.custom_paths = std::ptr::null_mut();
+        custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
+        custom_path.custom_private = pg_sys::lappend_oid(
             pg_sys::lappend_oid(
                 std::ptr::null_mut(),
                 pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
             ),
             index_oid,
-        )
-    };
-    custom_path.methods = &raw const CUSTOM_PATH_METHODS;
+        );
+        custom_path.methods = &raw const CUSTOM_PATH_METHODS;
 
-    // SAFETY: custom_path is a planner node allocated above; add_path takes
-    // ownership through PostgreSQL planner memory.
-    unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
+        pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path);
+    }
 }
 
 unsafe fn add_dml_pk_select_custom_scan_path(
@@ -604,42 +591,39 @@ unsafe fn add_dml_pk_select_custom_scan_path(
     if root.is_null() || rel.is_null() {
         return;
     }
-    // SAFETY: rel was checked non-null and remains live for this hook call.
-    let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };
-    // SAFETY: CustomPath is allocated as a PostgreSQL planner node and later
-    // transferred to the planner via add_path.
-    let mut custom_path =
-        unsafe { PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath) };
-    custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
-    custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
-    custom_path.path.parent = rel;
-    custom_path.path.pathtarget = rel_ref.reltarget;
-    custom_path.path.param_info = std::ptr::null_mut();
-    custom_path.path.parallel_aware = false;
-    custom_path.path.parallel_safe = false;
-    custom_path.path.parallel_workers = 0;
-    custom_path.path.rows = 1.0;
-    custom_path.path.disabled_nodes = 0;
-    custom_path.path.startup_cost = -1.0;
-    custom_path.path.total_cost = -1.0;
-    custom_path.path.pathkeys = std::ptr::null_mut();
-    custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
-    custom_path.custom_paths = std::ptr::null_mut();
-    custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
-    // SAFETY: lappend_oid allocates a planner-owned OID list for DML CustomPath
-    // private data.
-    custom_path.custom_private = unsafe {
-        pg_sys::lappend_oid(
+
+    // SAFETY: rel was checked non-null and remains live for this planner hook
+    // call. The CustomPath node and private OID list are allocated in
+    // PostgreSQL planner memory and transferred with add_path.
+    unsafe {
+        let rel_ref = rel.as_ref().expect("checked rel pointer");
+        let mut custom_path =
+            PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
+        custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
+        custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
+        custom_path.path.parent = rel;
+        custom_path.path.pathtarget = rel_ref.reltarget;
+        custom_path.path.param_info = std::ptr::null_mut();
+        custom_path.path.parallel_aware = false;
+        custom_path.path.parallel_safe = false;
+        custom_path.path.parallel_workers = 0;
+        custom_path.path.rows = 1.0;
+        custom_path.path.disabled_nodes = 0;
+        custom_path.path.startup_cost = -1.0;
+        custom_path.path.total_cost = -1.0;
+        custom_path.path.pathkeys = std::ptr::null_mut();
+        custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
+        custom_path.custom_paths = std::ptr::null_mut();
+        custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
+        custom_path.custom_private = pg_sys::lappend_oid(
             pg_sys::lappend_oid(
                 std::ptr::null_mut(),
                 pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT),
             ),
             index_oid,
-        )
-    };
-    custom_path.methods = &raw const CUSTOM_PATH_METHODS;
+        );
+        custom_path.methods = &raw const CUSTOM_PATH_METHODS;
 
-    // SAFETY: custom_path is a planner node allocated above; add_path takes
-    // ownership through PostgreSQL planner memory.
-    unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
+        pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path);
+    }
 }
