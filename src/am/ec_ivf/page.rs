@@ -1307,7 +1307,7 @@ pub(super) fn read_ivf_pq_codebook(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_postings_for_list_blocks(
+pub(super) fn read_ivf_postings_for_list_blocks(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: BlockRef,
@@ -1315,26 +1315,22 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks(
     payload_len: usize,
 ) -> Result<Vec<IvfPostingTuple>, String> {
     let mut postings = Vec::new();
-    // SAFETY: the block range was supplied from IVF list metadata; the visitor
-    // helper validates range consistency and tuple bounds while collecting.
-    unsafe {
-        visit_ivf_postings_for_list_blocks(
-            index_relation,
-            list_id,
-            head_block,
-            tail_block,
-            payload_len,
-            |_, posting| {
-                postings.push(posting);
-                Ok(())
-            },
-        )?
-    };
+    visit_ivf_postings_for_list_blocks(
+        index_relation,
+        list_id,
+        head_block,
+        tail_block,
+        payload_len,
+        |_, posting| {
+            postings.push(posting);
+            Ok(())
+        },
+    )?;
     Ok(postings)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn visit_ivf_postings_for_list_blocks<F>(
+pub(super) fn visit_ivf_postings_for_list_blocks<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: BlockRef,
@@ -1387,7 +1383,7 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
+pub(super) fn read_ivf_postings_for_list_blocks_with_tids(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: BlockRef,
@@ -1395,26 +1391,22 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
     payload_len: usize,
 ) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
     let mut postings = Vec::new();
-    // SAFETY: the block range was supplied from IVF list metadata; the visitor
-    // helper validates range consistency and tuple bounds while collecting TIDs.
-    unsafe {
-        visit_ivf_postings_for_list_blocks(
-            index_relation,
-            list_id,
-            head_block,
-            tail_block,
-            payload_len,
-            |posting_tid, posting| {
-                postings.push((posting_tid, posting));
-                Ok(())
-            },
-        )?
-    };
+    visit_ivf_postings_for_list_blocks(
+        index_relation,
+        list_id,
+        head_block,
+        tail_block,
+        payload_len,
+        |posting_tid, posting| {
+            postings.push((posting_tid, posting));
+            Ok(())
+        },
+    )?;
     Ok(postings)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
+pub(super) fn rewrite_ivf_postings_for_list_blocks<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: BlockRef,
@@ -1455,7 +1447,7 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn visit_ivf_postings_for_block_sequence<F>(
+pub(super) fn visit_ivf_postings_for_block_sequence<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
@@ -1494,7 +1486,7 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn visit_ivf_posting_refs_for_block_sequence<F>(
+pub(super) fn visit_ivf_posting_refs_for_block_sequence<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
@@ -1761,7 +1753,7 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn append_ivf_posting_to_list_range(
+pub(super) fn append_ivf_posting_to_list_range(
     index_relation: pg_sys::Relation,
     block_range: Option<(pg_sys::BlockNumber, pg_sys::BlockNumber)>,
     tuple: &IvfPostingTuple,
@@ -1930,7 +1922,7 @@ fn append_ivf_posting_to_new_block(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn rewrite_ivf_list_directory(
+pub(super) fn rewrite_ivf_list_directory(
     index_relation: pg_sys::Relation,
     directory_tid: ItemPointer,
     directory: IvfListDirectoryTuple,
@@ -1963,7 +1955,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn update_ivf_list_directory<F>(
+pub(super) fn update_ivf_list_directory<F>(
     index_relation: pg_sys::Relation,
     directory_tid: ItemPointer,
     update: F,
@@ -2560,10 +2552,7 @@ fn decode_rerank(value: u8) -> Result<RerankMode, String> {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) fn initialize_metadata_page(
-    index_relation: pg_sys::Relation,
-    metadata: MetadataPage,
-) {
+pub(super) fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: MetadataPage) {
     // SAFETY: caller supplies a live IVF index relation for metadata init.
     let index = IvfPageRelation::new(index_relation);
     let existing_blocks = index.number_of_blocks();

@@ -128,8 +128,7 @@ fn insert_into_trained_index(
     let model = load_centroid_model(index_relation, metadata)?;
     let list_id = training::assign_vector_to_centroid(&tuple.source_vector, &model)
         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
-    let (directory_tid, directory) =
-        load_directory_entry(index_relation, metadata, list_id)?;
+    let (directory_tid, directory) = load_directory_entry(index_relation, metadata, list_id)?;
 
     let posting = page::IvfPostingTuple {
         list_id: u32::try_from(list_id)
@@ -147,23 +146,17 @@ fn insert_into_trained_index(
     // a heap line pointer can be reused. The debug validation helper below
     // keeps the corruption-check path available without scanning on inserts.
     let posting_tid =
-        // SAFETY: relation is live, block_range comes from the selected
-        // directory entry, and `posting` is fully encoded for this index.
-        unsafe { page::append_ivf_posting_to_list_range(index_relation, block_range, &posting) }?;
+        page::append_ivf_posting_to_list_range(index_relation, block_range, &posting)?;
 
-    // SAFETY: `directory_tid` identifies the selected list directory tuple in
-    // this live relation; the closure only updates insert counters/range refs.
-    unsafe {
-        page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
-            if latest_directory.list_id != posting.list_id {
-                return Err(format!(
-                    "ec_ivf directory order mismatch during insert: got list {}, expected {}",
-                    latest_directory.list_id, posting.list_id
-                ));
-            }
-            apply_directory_insert_stats(latest_directory, posting_tid)
-        })
-    }
+    page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
+        if latest_directory.list_id != posting.list_id {
+            return Err(format!(
+                "ec_ivf directory order mismatch during insert: got list {}, expected {}",
+                latest_directory.list_id, posting.list_id
+            ));
+        }
+        apply_directory_insert_stats(latest_directory, posting_tid)
+    })
     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
     // SAFETY: relation is live and the callback only increments metadata
     // insert counters.
@@ -199,18 +192,13 @@ fn ensure_heap_tid_absent(
             ));
         }
 
-        let postings =
-            // SAFETY: directory tuple was read from this live relation and its
-            // posting block refs delimit this list.
-            unsafe {
-                page::read_ivf_postings_for_list_blocks(
-                    index_relation,
-                    directory.list_id,
-                    directory.head_block,
-                    directory.tail_block,
-                    payload_len,
-                )?
-            };
+        let postings = page::read_ivf_postings_for_list_blocks(
+            index_relation,
+            directory.list_id,
+            directory.head_block,
+            directory.tail_block,
+            payload_len,
+        )?;
         if postings
             .iter()
             .filter(|posting| !posting.deleted)

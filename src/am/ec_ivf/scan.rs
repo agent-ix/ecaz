@@ -982,74 +982,68 @@ unsafe fn materialize_probe_candidates(
         .explain_counters
         .record_posting_pages_read(posting_pages);
     record_posting_pages_read(opaque, posting_pages);
-    // SAFETY: `probe_plan.block_sequence` contains posting blocks from
-    // validated IVF directory metadata, and the visitor only borrows tuple refs
-    // for the duration of each callback.
-    unsafe {
-        super::page::visit_ivf_posting_refs_for_block_sequence(
-            index_relation,
-            &probe_plan.block_sequence,
-            payload_len,
-            |_, posting| {
-                if !probe_plan.contains_list(posting.list_id) || posting.deleted {
-                    return Ok(());
-                }
-                opaque.explain_counters.record_posting_visited();
-                let heap_tid_count = posting.heaptids().count();
-                if !consume_live_tid_budget(
-                    &mut remaining_live_tids_by_list,
-                    posting.list_id,
-                    heap_tid_count,
-                )? {
-                    return Ok(());
-                }
-                let min_ip_to_keep = running_top
-                    .as_ref()
-                    .and_then(CandidateTopK::worst_score_if_full)
-                    .map(|worst_score| -worst_score);
-                let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
-                    prepared_query,
-                    posting.gamma,
-                    posting.payload,
-                    min_ip_to_keep,
-                )?
-                else {
-                    opaque.explain_counters.record_posting_pruned_by_bound();
-                    return Ok(());
-                };
-                let score = -ip;
-                opaque.explain_counters.record_posting_scored();
-                opaque
-                    .explain_counters
-                    .record_heap_tids_scored(heap_tid_count);
-                record_distance_calcs(opaque, 1);
-                for heap_tid in posting.heaptids() {
-                    opaque.explain_counters.record_candidate_scored();
-                    let candidate = EcIvfScoredCandidate { heap_tid, score };
-                    let best_by_heap_tid =
-                        scan_box_mut(best_by_heap_tid, "ec_ivf candidate dedup map")
-                            .expect("candidate dedup map should be live");
-                    match best_by_heap_tid.entry(heap_tid) {
-                        Entry::Occupied(mut entry) => {
-                            opaque.explain_counters.record_filtered_duplicate();
-                            let existing = entry.get_mut();
-                            if candidate_cmp(&candidate, existing) == Ordering::Less {
-                                *existing = candidate;
-                            }
+    super::page::visit_ivf_posting_refs_for_block_sequence(
+        index_relation,
+        &probe_plan.block_sequence,
+        payload_len,
+        |_, posting| {
+            if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                return Ok(());
+            }
+            opaque.explain_counters.record_posting_visited();
+            let heap_tid_count = posting.heaptids().count();
+            if !consume_live_tid_budget(
+                &mut remaining_live_tids_by_list,
+                posting.list_id,
+                heap_tid_count,
+            )? {
+                return Ok(());
+            }
+            let min_ip_to_keep = running_top
+                .as_ref()
+                .and_then(CandidateTopK::worst_score_if_full)
+                .map(|worst_score| -worst_score);
+            let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
+                prepared_query,
+                posting.gamma,
+                posting.payload,
+                min_ip_to_keep,
+            )?
+            else {
+                opaque.explain_counters.record_posting_pruned_by_bound();
+                return Ok(());
+            };
+            let score = -ip;
+            opaque.explain_counters.record_posting_scored();
+            opaque
+                .explain_counters
+                .record_heap_tids_scored(heap_tid_count);
+            record_distance_calcs(opaque, 1);
+            for heap_tid in posting.heaptids() {
+                opaque.explain_counters.record_candidate_scored();
+                let candidate = EcIvfScoredCandidate { heap_tid, score };
+                let best_by_heap_tid = scan_box_mut(best_by_heap_tid, "ec_ivf candidate dedup map")
+                    .expect("candidate dedup map should be live");
+                match best_by_heap_tid.entry(heap_tid) {
+                    Entry::Occupied(mut entry) => {
+                        opaque.explain_counters.record_filtered_duplicate();
+                        let existing = entry.get_mut();
+                        if candidate_cmp(&candidate, existing) == Ordering::Less {
+                            *existing = candidate;
                         }
-                        Entry::Vacant(entry) => {
-                            entry.insert(candidate);
-                            opaque.explain_counters.record_candidate_inserted();
-                            if let Some(top_k) = running_top.as_mut() {
-                                top_k.push(candidate);
-                            }
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(candidate);
+                        opaque.explain_counters.record_candidate_inserted();
+                        if let Some(top_k) = running_top.as_mut() {
+                            top_k.push(candidate);
                         }
                     }
                 }
-                Ok(())
-            },
-        )?
-    };
+            }
+            Ok(())
+        },
+    )?;
 
     let best_by_heap_tid = scan_box_mut(best_by_heap_tid, "ec_ivf candidate dedup map")
         .expect("candidate dedup map should be live");

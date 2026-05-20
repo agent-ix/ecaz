@@ -140,9 +140,7 @@ unsafe fn run_bulkdelete(
                 });
             directory.head_block = repaired_head;
             directory.tail_block = repaired_tail;
-            // SAFETY: `directory_tid` identifies the directory tuple just
-            // read from this live relation and `directory` keeps its list id.
-            unsafe { page::rewrite_ivf_list_directory(index_relation, directory_tid, directory) }
+            page::rewrite_ivf_list_directory(index_relation, directory_tid, directory)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             removed_heap_tids = removed_heap_tids
                 .checked_add(list_result.removed_heap_tids)
@@ -196,28 +194,23 @@ fn bulkdelete_list_postings(
     callback_state: *mut c_void,
 ) -> Result<ListBulkDeleteResult, String> {
     let mut result = ListBulkDeleteResult::default();
-    // SAFETY: caller passes the live IVF index relation and a directory tuple
-    // from that relation; the rewrite visitor only mutates posting tuples for
-    // the listed blocks during this call.
-    unsafe {
-        page::rewrite_ivf_postings_for_list_blocks(
-            index_relation,
-            directory.list_id,
-            directory.head_block,
-            directory.tail_block,
-            payload_len,
-            &[directory_block_number],
-            |posting_tid, mut posting| {
-                bulkdelete_posting(
-                    &mut result,
-                    posting_tid,
-                    &mut posting,
-                    callback,
-                    callback_state,
-                )
-            },
-        )?
-    };
+    page::rewrite_ivf_postings_for_list_blocks(
+        index_relation,
+        directory.list_id,
+        directory.head_block,
+        directory.tail_block,
+        payload_len,
+        &[directory_block_number],
+        |posting_tid, mut posting| {
+            bulkdelete_posting(
+                &mut result,
+                posting_tid,
+                &mut posting,
+                callback,
+                callback_state,
+            )
+        },
+    )?;
 
     Ok(result)
 }
