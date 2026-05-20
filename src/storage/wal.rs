@@ -6,6 +6,8 @@
 
 use pgrx::pg_sys;
 
+use crate::storage::buffer_guard::LockedBufferGuard;
+
 /// Current format tag for future extension-owned ECAZ WAL payloads.
 pub const ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION: u8 = 1;
 
@@ -57,19 +59,24 @@ impl GenericXLogTxn {
         }
     }
 
-    /// Register a buffer for modification and return the writable page pointer.
-    ///
-    /// # Safety
-    ///
-    /// `buffer` must be a valid buffer belonging to the relation used to start
-    /// this transaction. `flags` must follow PostgreSQL's GenericXLog contract.
-    pub unsafe fn register_buffer(&mut self, buffer: pg_sys::Buffer, flags: i32) -> pg_sys::Page {
+    /// Register a locked buffer as a full-page image and return the writable page.
+    pub fn register_locked_buffer_full_image(
+        &mut self,
+        buffer: &LockedBufferGuard,
+    ) -> pg_sys::Page {
         assert!(
             !self.finished,
             "cannot register buffer after GenericXLogFinish"
         );
-        // SAFETY: The caller guarantees `buffer` and `flags` are valid.
-        unsafe { pg_sys::GenericXLogRegisterBuffer(self.state, buffer, flags) }
+        // SAFETY: `LockedBufferGuard` owns a valid locked buffer. ECAZ's current
+        // GenericXLog usage registers full-page images only.
+        unsafe {
+            pg_sys::GenericXLogRegisterBuffer(
+                self.state,
+                buffer.buffer(),
+                pg_sys::GENERIC_XLOG_FULL_IMAGE as i32,
+            )
+        }
     }
 
     /// Finish the GenericXLog transaction and return the written WAL pointer.

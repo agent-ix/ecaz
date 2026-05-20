@@ -2423,11 +2423,7 @@ pub(super) unsafe fn write_data_pages(
         let page_size = buffer.page_size();
         // SAFETY: The live index relation is the WAL target for this page write.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The buffer is locked by `buffer`, and registering it with the
-        // active generic WAL transaction returns the page pointer to modify.
-        let page_ptr = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
         // SAFETY: `page_ptr` refers to the newly allocated zeroed page and
         // `page_size` comes from the locked buffer.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };

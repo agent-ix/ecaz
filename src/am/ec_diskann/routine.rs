@@ -1617,8 +1617,7 @@ unsafe fn apply_tuple_rewrites(
             }
 
             let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-            let writable_page =
-                wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
+            let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
             for rewrite in block_rewrites {
                 with_vacuum_page_tuple_bytes_mut(
                     writable_page,
@@ -1680,8 +1679,7 @@ unsafe fn write_raw_tuple_bytes(
     let page_result: Result<(), String> = unsafe {
         let page_size = buffer.page_size();
         let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-        let writable_page =
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
+        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
             if tuple_bytes.len() != replacement_raw.len() {
                 return Err(format!(

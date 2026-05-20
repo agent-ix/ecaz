@@ -78,8 +78,7 @@ impl VacuumPageRewrite {
         // to that relation for the GenericXLog transaction.
         let (wal_txn, page_ptr) = unsafe {
             let mut wal_txn = wal::GenericXLogTxn::start(relation);
-            let page_ptr =
-                wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
+            let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
             (wal_txn, page_ptr)
         };
         Self {

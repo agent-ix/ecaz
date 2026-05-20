@@ -1848,10 +1848,7 @@ unsafe fn try_append_ivf_posting_to_block(
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // registered buffers below remain exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the buffer is exclusive-locked and registered as a full-page
-    // image, yielding a mutable page pointer for the transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = WalRegisteredPage::new(index_relation, block_number, page);
     let free_space = registered.free_space();
     if free_space < raw_tuple_storage_bytes(payload.len()) {
@@ -1896,10 +1893,7 @@ unsafe fn append_ivf_posting_to_new_block(
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the newly allocated buffer remains locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the new buffer is locked and registered as a full-page image,
-    // yielding a mutable page pointer for initialization and insertion.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = WalRegisteredPage::new(index_relation, buffer.block_number(), page);
     registered.init(page_size, 0);
 
@@ -1945,10 +1939,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the target buffer remains exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for this transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let writer = PageTupleWriter::new(page, buffer.page_size(), directory_tid.block_number);
     if let Err(err) = writer.copy_required_exact(directory_tid, "directory", &encoded) {
         std::mem::drop(wal_txn);
@@ -1987,10 +1978,7 @@ where
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the target buffer remains exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for this transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let writer = PageTupleWriter::new(page, buffer.page_size(), directory_tid.block_number);
     let mut directory = match writer.visit_required(directory_tid, "directory", |tuple_bytes| {
         if tuple_bytes.len() != IvfListDirectoryTuple::encoded_len() {
@@ -2050,10 +2038,7 @@ pub(super) unsafe fn rewrite_ivf_posting(
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the target buffer remains exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for this transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let writer = PageTupleWriter::new(page, buffer.page_size(), posting_tid.block_number);
     if let Err(err) = writer.copy_required_exact(posting_tid, "posting", &encoded) {
         std::mem::drop(wal_txn);
@@ -2242,10 +2227,7 @@ where
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the caller holds `buffer` with an exclusive lock for this block.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for rewrite/delete decisions.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = WalRegisteredPage::new(index_relation, block_number, page);
     let writer = PageTupleWriter::new(registered.page(), buffer.page_size(), block_number);
     let mut delete_offsets = Vec::new();
@@ -2614,10 +2596,7 @@ pub(super) unsafe fn initialize_metadata_page(
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the metadata buffer remains locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the locked metadata buffer is registered as a full-page image for
-    // initialization and special-area writes.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = WalRegisteredPage::new(index_relation, buffer.block_number(), page);
     let metadata_bytes = metadata.encode();
     let special_size = align_up(metadata_bytes.len(), ALIGNMENT_BYTES);
@@ -2668,10 +2647,7 @@ where
     // SAFETY: starts a generic WAL transaction for the live index relation;
     // the metadata buffer remains exclusive-locked by `buffer`.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked metadata buffer is registered as a full-page
-    // image for in-place special-area updates.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = WalRegisteredPage::new(index_relation, METADATA_BLOCK_NUMBER, page);
     let metadata_bytes = registered.special_bytes(METADATA_BYTES);
     let mut metadata = match MetadataPage::decode(metadata_bytes) {

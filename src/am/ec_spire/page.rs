@@ -69,10 +69,7 @@ unsafe fn initialize_spire_metadata_block_zero(
     // SAFETY: GenericXLogTxn is started for the same relation whose buffer will
     // be registered for full-image metadata initialization.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: buffer is locked exclusively by LockedBufferGuard, and the page
-    // pointer remains valid while the guard and WAL transaction are live.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let root_control_bytes = root_control
         .encode()
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -296,10 +293,7 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
     // SAFETY: WAL transaction is for the same relation as the exclusively
     // locked buffer that will be modified.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: buffer is locked exclusively, and the registered page remains
-    // valid while the guard and WAL transaction are live.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let page_size = buffer.page_size();
     // SAFETY: helper validates the TID and tuple bounds on the locked page
     // before exposing the tuple slice to the closure.
@@ -364,11 +358,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
         // SAFETY: WAL transaction is for the same relation as the exclusively
         // locked page that will be modified.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: buffer is exclusively locked and remains pinned while the WAL
-        // transaction registers and mutates the page.
-        let page = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let page = wal_txn.register_locked_buffer_full_image(&buffer);
         let page_size = buffer.page_size();
         // SAFETY: page is locked and pinned while reading the max item offset.
         let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
@@ -444,9 +434,7 @@ unsafe fn try_append_object_tuple_to_block(
     // SAFETY: WAL transaction is for the relation page held under exclusive
     // buffer lock.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: buffer is exclusively locked and pinned while registered.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let page_size = buffer.page_size();
     if raw_tuple_storage_bytes(payload.len()) > page_size {
         std::mem::drop(wal_txn);
@@ -518,9 +506,7 @@ unsafe fn append_object_tuple_to_new_block(
     let page_size = buffer.page_size();
     // SAFETY: WAL transaction is for the same relation as the new locked page.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: new buffer is locked and pinned while registered for WAL.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     // SAFETY: page is the new locked buffer page and page_size comes from the
     // buffer guard.
     unsafe { pg_sys::PageInit(page, page_size, 0) };

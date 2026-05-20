@@ -70,10 +70,7 @@ impl InsertPageWrite {
         // SAFETY: The caller guarantees `index_relation` is live and `buffer`
         // belongs to that relation for this GenericXLog transaction.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The locked buffer remains pinned for this writer's lifetime.
-        let page_ptr = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
         Self {
             buffer,
             wal_txn: Some(wal_txn),
@@ -1313,9 +1310,9 @@ unsafe fn add_backlinks_on_page(
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     // SAFETY: The buffer remains pinned/locked while registered in the generic
     // WAL transaction; the full-image registration covers in-place tuple edits.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
-            .cast::<u8>();
+    let page_ptr = wal_txn
+        .register_locked_buffer_full_image(&buffer)
+        .cast::<u8>();
     let page_size = buffer.page_size();
     let mut changed = false;
     let mut retries = Vec::new();
@@ -2403,9 +2400,9 @@ unsafe fn coalesce_duplicate_heap_tid(
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     // SAFETY: The locked buffer is registered for generic WAL before in-place
     // tuple byte mutation.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
-            .cast::<u8>();
+    let page_ptr = wal_txn
+        .register_locked_buffer_full_image(&buffer)
+        .cast::<u8>();
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate tuple on the registered
     // page and the closure preserves the encoded tuple length.
@@ -2480,9 +2477,9 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     // SAFETY: The locked buffer is registered for generic WAL before in-place
     // tuple byte mutation.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
-            .cast::<u8>();
+    let page_ptr = wal_txn
+        .register_locked_buffer_full_image(&buffer)
+        .cast::<u8>();
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate hot tuple on the registered
     // page and the closure preserves the encoded tuple length.
@@ -2560,9 +2557,9 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     // SAFETY: The locked buffer is registered for generic WAL before in-place
     // tuple byte mutation.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
-            .cast::<u8>();
+    let page_ptr = wal_txn
+        .register_locked_buffer_full_image(&buffer)
+        .cast::<u8>();
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate grouped tuple on the
     // registered page and the closure preserves the encoded tuple length.

@@ -695,11 +695,7 @@ unsafe fn apply_duplicate_bind_patches(
         // SAFETY: `index_relation` is live while duplicate-bind page changes
         // are WAL-logged.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: `buffer` is exclusively locked and registered in this generic
-        // WAL transaction before producing a writable page pointer.
-        let writable_page = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let mut page_retry = false;
 
@@ -1214,10 +1210,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     // SAFETY: `index_relation` is live while metadata page changes are
     // WAL-logged.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The exclusive metadata buffer is registered in the active generic
-    // WAL transaction before producing a writable page pointer.
-    let writable_page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
     // SAFETY: `writable_page` is the registered metadata page and `page_size`
     // comes from the locked buffer; `special_size` is aligned from encoded size.
     unsafe { pg_sys::PageInit(writable_page, page_size, special_size) };
@@ -1409,10 +1402,7 @@ unsafe fn append_raw_tuple_payload(
     let page_size = buffer.page_size();
     // SAFETY: `index_relation` is live while the append is WAL-logged.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The append buffer is exclusively locked and registered in the
-    // active generic WAL transaction before writing page contents.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
     if target_block == P_NEW {
         // SAFETY: `page_ptr` is the newly allocated zeroed page and `page_size`
         // comes from the locked buffer.
@@ -1495,11 +1485,7 @@ pub(super) unsafe fn add_backlinks_if_free(
         // SAFETY: `index_relation` is live while backlink page changes are
         // WAL-logged.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The exclusive buffer is registered in the active generic WAL
-        // transaction before producing a writable page pointer.
-        let writable_page = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let page_result = (|| -> Result<usize, String> {
             let mut page_changes = 0usize;
@@ -1608,11 +1594,7 @@ pub(super) unsafe fn apply_backlink_mutations(
         // SAFETY: `index_relation` is live while backlink rewrite changes are
         // WAL-logged.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The exclusive buffer is registered in the active generic WAL
-        // transaction before producing a writable page pointer.
-        let writable_page = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let page_result = (|| -> Result<(), String> {
             while start < sorted.len() && sorted[start].target_tid.block_number == block_number {

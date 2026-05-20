@@ -127,7 +127,7 @@ fn rewrite_metadata_buffer(
     // large enough for the encoded metadata before the bytes are copied.
     unsafe {
         let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-        let page = wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
+        let page = wal_txn.register_locked_buffer_full_image(&buffer);
         pg_sys::PageInit(page, page_size, special_size);
         write_metadata_bytes(page, &metadata_bytes);
         wal_txn.finish();

@@ -772,10 +772,7 @@ fn write_metadata_to_buffer(
     let page_size = buffer.page_size();
     // SAFETY: The WAL transaction is scoped to this live index relation.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The metadata buffer is locked exclusively by the caller and is
-    // registered for a full image rewrite.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
     // SAFETY: `page_ptr` is the WAL-registered metadata page and `page_size`
@@ -808,11 +805,7 @@ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &
         let page_size = buffer.page_size();
         // SAFETY: The WAL transaction is scoped to this live index relation.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The newly allocated data buffer is locked exclusively and is
-        // registered for a full image write.
-        let page_ptr = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
         // SAFETY: `page_ptr` is the WAL-registered data page and `page_size`
         // comes from the locked buffer guard.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };

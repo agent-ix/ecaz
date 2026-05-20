@@ -570,11 +570,7 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPa
         let page_size = buffer.page_size();
         // SAFETY: starts a generic WAL transaction for this live relation.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: the locked buffer remains pinned/locked through `buffer`;
-        // generic WAL returns a page pointer valid until transaction finish.
-        let page_ptr = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
         // SAFETY: page_ptr comes from the registered zeroed buffer and
         // page_size matches that buffer.
         unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
