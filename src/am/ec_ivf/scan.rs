@@ -9,8 +9,6 @@ use crate::am::common::{
 };
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
-#[cfg(feature = "pg18")]
-use crate::storage::buffer_guard::PinnedBufferGuard;
 use crate::storage::{
     page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
     snapshot_guard::RegisteredSnapshotGuard,
@@ -1184,9 +1182,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
         unsafe { HeapSlotReader::from_raw(heap_relation, snapshot, slot, "ec_ivf") }
             .unwrap_or_else(|error| pgrx::error!("{error}"));
 
-    // SAFETY: heap relation is live and candidates contain heap TIDs to
-    // prefetch before heap row fetches.
-    unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
+    prefetch_heap_rerank_blocks(heap_relation, candidates);
 
     let rerank_rows = {
         let query_values = opaque.query_values();
@@ -1217,8 +1213,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
     }
 }
 
-#[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(
+fn prefetch_heap_rerank_blocks(
     heap_relation: pg_sys::Relation,
     candidates: &[EcIvfScoredCandidate],
 ) {
@@ -1226,55 +1221,7 @@ unsafe fn prefetch_heap_rerank_blocks(
         .iter()
         .map(|candidate| candidate.heap_tid.block_number)
         .collect::<Vec<_>>();
-    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
-    // SAFETY: `heap_relation` is live, `state` outlives the stream loop, and
-    // per-buffer data stores block-number-sized callback payloads.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_DEFAULT as i32,
-            ptr::null_mut(),
-            heap_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
-            std::mem::size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` was created above and remains open until
-        // `read_stream_end` after exhaustion.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        // SAFETY: `read_stream_next_buffer` returns a valid pinned buffer
-        // until the stream is exhausted; the guard owns the release.
-        let _buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
-            .unwrap_or_else(|| pgrx::error!("ec_ivf read stream returned an invalid buffer"));
-    }
-
-    // SAFETY: closes the read stream created above.
-    unsafe { pg_sys::read_stream_end(stream) };
-}
-
-#[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    candidates: &[EcIvfScoredCandidate],
-) {
-    for candidate in candidates {
-        // SAFETY: `heap_relation` is live and candidate heap TIDs provide
-        // main-fork block numbers for best-effort prefetch.
-        unsafe {
-            pg_sys::PrefetchBuffer(
-                heap_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                candidate.heap_tid.block_number,
-            )
-        };
-    }
+    crate::am::stream::prefetch_relation_blocks(heap_relation, block_numbers, "ec_ivf heap rerank");
 }
 
 unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {

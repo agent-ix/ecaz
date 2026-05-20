@@ -10,7 +10,7 @@ use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts
 use crate::{
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
-        buffer_guard::{LockedBufferGuard, PinnedBufferGuard},
+        buffer_guard::LockedBufferGuard,
         page::{DataPageChain, ItemPointer},
         relation_guard::HeapRelationGuard,
         wal,
@@ -1802,51 +1802,13 @@ where
     visit(tuple_bytes)
 }
 
-#[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
-    if heap_tids.is_empty() {
-        return;
-    }
+fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
     let block_numbers = heap_tids.iter().map(|tid| tid.block_number).collect();
-    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
-    // SAFETY: The heap relation is live and the callback state lives until
-    // `read_stream_end`; each returned buffer pin is adopted and released by a guard.
-    unsafe {
-        let stream = pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_DEFAULT as i32,
-            ptr::null_mut(),
-            heap_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
-            std::mem::size_of::<pg_sys::BlockNumber>(),
-        );
-        loop {
-            let mut per_buffer_data = ptr::null_mut();
-            let buffer = pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data);
-            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-                break;
-            }
-            let _buffer = PinnedBufferGuard::from_pinned(buffer)
-                .unwrap_or_else(|| pgrx::error!("ec_diskann prefetch returned invalid buffer"));
-        }
-        pg_sys::read_stream_end(stream);
-    }
-}
-
-#[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
-    for heap_tid in heap_tids {
-        // SAFETY: The heap relation is live and the block number comes from a
-        // bound heap TID in the scan result set.
-        unsafe {
-            pg_sys::PrefetchBuffer(
-                heap_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                heap_tid.block_number,
-            )
-        };
-    }
+    crate::am::stream::prefetch_relation_blocks(
+        heap_relation,
+        block_numbers,
+        "ec_diskann heap rerank",
+    );
 }
 
 fn exact_heap_rerank_distance(

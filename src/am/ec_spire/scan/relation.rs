@@ -209,9 +209,7 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
         query,
         options,
         |candidates| {
-            // SAFETY: heap_relation_ptr is held by heap_relation for the
-            // duration of candidate preparation.
-            unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates) };
+            prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates);
             Ok(())
         },
         |candidate| {
@@ -239,74 +237,16 @@ fn heap_rerank_prefetch_block_numbers(
     block_numbers
 }
 
-unsafe fn prefetch_heap_rerank_candidate_blocks(
+fn prefetch_heap_rerank_candidate_blocks(
     heap_relation: pg_sys::Relation,
     candidates: &[SpireScoredScanCandidate],
 ) {
     let block_numbers = heap_rerank_prefetch_block_numbers(candidates);
-    if block_numbers.is_empty() {
-        return;
-    }
-    // SAFETY: heap_relation is open for the scan and block_numbers were derived
-    // from candidate heap TIDs for this relation.
-    unsafe { prefetch_heap_rerank_blocks(heap_relation, &block_numbers) };
-}
-
-#[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    block_numbers: &[pg_sys::BlockNumber],
-) {
-    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers.to_vec());
-    // SAFETY: heap_relation is open for the scan; state lives until
-    // read_stream_end and is only used by the block-sequence callback.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_DEFAULT as i32,
-            ptr::null_mut(),
-            heap_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
-            std::mem::size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: stream was created above and remains open until read_stream_end.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        // SAFETY: read_stream_next_buffer returned a valid pinned buffer; the
-        // guard unpins it at the end of this loop iteration.
-        let _buffer =
-            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
-                .unwrap_or_else(|| pgrx::error!("ec_spire read stream returned an invalid buffer"));
-    }
-
-    // SAFETY: stream was opened by read_stream_begin_relation and is no longer
-    // used after this call.
-    unsafe { pg_sys::read_stream_end(stream) };
-}
-
-#[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    block_numbers: &[pg_sys::BlockNumber],
-) {
-    for block_number in block_numbers {
-        // SAFETY: heap_relation is open for the scan and block_number came from
-        // candidate heap TIDs for this relation.
-        unsafe {
-            pg_sys::PrefetchBuffer(
-                heap_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                *block_number,
-            );
-        }
-    }
+    crate::am::stream::prefetch_relation_blocks(
+        heap_relation,
+        block_numbers,
+        "ec_spire heap rerank",
+    );
 }
 
 fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRelation {

@@ -1,4 +1,3 @@
-#[cfg(feature = "pg18")]
 use pgrx::pg_sys;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,6 +146,67 @@ pub(crate) fn block_sequence_prefetch_callback(
     match state.next_block() {
         Some(block) => ReadStreamCallbackResult::Block(block),
         None => ReadStreamCallbackResult::EndOfStream,
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn prefetch_relation_blocks(
+    relation: pg_sys::Relation,
+    block_numbers: Vec<pg_sys::BlockNumber>,
+    context: &str,
+) {
+    if block_numbers.is_empty() {
+        return;
+    }
+
+    let mut state = BlockSequencePrefetchState::new(block_numbers);
+    // SAFETY: relation is open for the caller's scan, state lives until
+    // read_stream_end, and the callback-private pointer is only used by the
+    // block-sequence callback registered here.
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_DEFAULT as i32,
+            std::ptr::null_mut(),
+            relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(block_sequence_prefetch_cb),
+            (&mut state as *mut BlockSequencePrefetchState).cast(),
+            std::mem::size_of::<pg_sys::BlockNumber>(),
+        )
+    };
+
+    loop {
+        let mut per_buffer_data = std::ptr::null_mut();
+        // SAFETY: stream was created above and remains live until
+        // read_stream_end after exhaustion.
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        // SAFETY: read_stream_next_buffer returns a valid pinned buffer until
+        // the stream is exhausted; the guard owns the release.
+        let _buffer =
+            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
+                .unwrap_or_else(|| {
+                    pgrx::error!("{context} read stream returned an invalid buffer")
+                });
+    }
+
+    // SAFETY: stream was opened by read_stream_begin_relation above and is no
+    // longer used after this call.
+    unsafe { pg_sys::read_stream_end(stream) };
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn prefetch_relation_blocks(
+    relation: pg_sys::Relation,
+    block_numbers: Vec<pg_sys::BlockNumber>,
+    _context: &str,
+) {
+    for block_number in block_numbers {
+        // SAFETY: relation is open for the caller's scan, and each block number
+        // came from candidate heap TIDs for that relation.
+        unsafe { pg_sys::PrefetchBuffer(relation, pg_sys::ForkNumber::MAIN_FORKNUM, block_number) };
     }
 }
 
