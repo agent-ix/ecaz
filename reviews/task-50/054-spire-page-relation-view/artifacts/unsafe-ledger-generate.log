@@ -1,0 +1,5 @@
+Script started on 2026-05-20 11:29:01-07:00 [<not executed on terminal>]
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/054-spire-page-relation-view/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/054-spire-page-relation-view src
+wrote 2225 unsafe ledger rows to reviews/task-50/054-spire-page-relation-view/artifacts/unsafe-ledger-after.jsonl
+
+Script done on 2026-05-20 11:29:02-07:00 [COMMAND_EXIT_CODE="0"]
