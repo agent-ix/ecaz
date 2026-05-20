@@ -12,7 +12,7 @@ pub(crate) use super::parallel_slot::{
     EcParallelWorkerSlotRuntimeSnapshot, EcParallelWorkerSlotSnapshot,
     EC_PARALLEL_WORKER_PHASE_EXHAUSTED, EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL,
     EC_PARALLEL_WORKER_PHASE_IDLE, EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK,
-    EC_PARALLEL_WORKER_SLOT_CLAIMED, EC_PARALLEL_WORKER_SLOT_FREE,
+    EC_PARALLEL_WORKER_SLOT_FREE,
 };
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
@@ -156,7 +156,7 @@ fn coordinator_ptr(state: &EcParallelScanState) -> *mut EcParallelCoordinatorSta
     // SAFETY: callers pass the start of the AM-private descriptor; the
     // coordinator immediately follows the MAXALIGN-sized state header.
     unsafe {
-        std::ptr::from_ref(state)
+        (state as *const EcParallelScanState)
             .cast::<u8>()
             .add(ec_parallel_scan_state_size())
             .cast::<EcParallelCoordinatorState>()
@@ -173,7 +173,7 @@ fn worker_slots_ptr(state: &EcParallelScanState) -> *mut EcParallelWorkerSlot {
     // SAFETY: the worker slot array starts after the state header plus the
     // recorded coordinator span, both checked for overflow above.
     unsafe {
-        std::ptr::from_ref(state)
+        (state as *const EcParallelScanState)
             .cast::<u8>()
             .add(coordinator_offset)
             .cast::<EcParallelWorkerSlot>()
@@ -288,7 +288,7 @@ fn validate_parallel_scan_state(
     }
 
     Ok(ParallelScanAttachment {
-        state: std::ptr::from_ref(state_ref).cast_mut(),
+        state: state_ref as *const EcParallelScanState as *mut EcParallelScanState,
         coordinator: coordinator_ptr(state_ref),
         worker_slots: worker_slots_ptr(state_ref),
         descriptor_bytes: state_ref.descriptor_bytes,
@@ -520,6 +520,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_amparallelrescan(scan: pg_sys::IndexSc
 
 #[cfg(test)]
 mod tests {
+    use super::super::parallel_slot::EC_PARALLEL_WORKER_SLOT_CLAIMED;
     use super::*;
     use std::collections::HashSet;
     use std::ptr;
