@@ -1,0 +1,333 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index cb51fe5b..add471a1 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -1985,29 +1985,28 @@ fn dml_frontdoor_query_has_join_shape(
+ }
+ 
+ fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
+-    // SAFETY: query is a live planner Query; jointree may be null and is
+-    // checked before dereferencing.
+-    let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
+-        return false;
+-    };
+-    if jointree.fromlist.is_null() {
+-        return false;
+-    }
+-    // SAFETY: fromlist is a PostgreSQL List pointer owned by the live Query and
+-    // is consumed only for immediate inspection.
+-    let fromlist = unsafe { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
+-    if fromlist.is_empty() {
+-        return false;
+-    }
+-    if fromlist.len() != 1 {
+-        return true;
+-    }
+-    let Some(from_node) = fromlist.get_ptr(0) else {
+-        return false;
+-    };
+-    // SAFETY: from_node came from the live Query jointree and is only inspected
+-    // while determining whether the DML shape has an extra FROM/USING rel.
+-    let Some(range_table_ref) = (unsafe { dml_frontdoor_range_table_ref_node(from_node) }) else {
++    // SAFETY: query is a live planner Query; jointree/fromlist nodes are only
++    // inspected while determining whether the DML shape has extra FROM/USING
++    // relations.
++    let Some(range_table_ref) = (unsafe {
++        let Some(jointree) = query.jointree.as_ref() else {
++            return false;
++        };
++        if jointree.fromlist.is_null() {
++            return false;
++        }
++        let fromlist = PgList::<pg_sys::Node>::from_pg(jointree.fromlist);
++        if fromlist.is_empty() {
++            return false;
++        }
++        if fromlist.len() != 1 {
++            return true;
++        }
++        let Some(from_node) = fromlist.get_ptr(0) else {
++            return false;
++        };
++        dml_frontdoor_range_table_ref_node(from_node)
++    }) else {
+         return true;
+     };
+     range_table_ref.rtindex != query.resultRelation
+@@ -2022,21 +2021,20 @@ fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
+ }
+ 
+ fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+-    // SAFETY: query is live and jointree is checked for null by as_ref.
+-    let jointree = unsafe { query.jointree.as_ref()? };
+-    if jointree.fromlist.is_null() {
+-        return None;
+-    }
+-    // SAFETY: fromlist belongs to the live Query and is inspected immediately.
+-    let fromlist = unsafe { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
+-    if fromlist.len() != 1 {
+-        return None;
++    // SAFETY: query is live; jointree/fromlist nodes are checked and inspected
++    // immediately while extracting the single range-table ref index.
++    unsafe {
++        let jointree = query.jointree.as_ref()?;
++        if jointree.fromlist.is_null() {
++            return None;
++        }
++        let fromlist = PgList::<pg_sys::Node>::from_pg(jointree.fromlist);
++        if fromlist.len() != 1 {
++            return None;
++        }
++        let from_node = fromlist.get_ptr(0)?;
++        dml_frontdoor_range_table_ref_node(from_node).map(|range_table_ref| range_table_ref.rtindex)
+     }
+-    let from_node = fromlist.get_ptr(0)?;
+-    // SAFETY: from_node came from the live Query jointree and is only inspected
+-    // while extracting the single range-table ref index.
+-    unsafe { dml_frontdoor_range_table_ref_node(from_node) }
+-        .map(|range_table_ref| range_table_ref.rtindex)
+ }
+ 
+ fn dml_frontdoor_relation_oid_from_rtable(
+@@ -2046,13 +2044,14 @@ fn dml_frontdoor_relation_oid_from_rtable(
+     if rtindex <= 0 || query.rtable.is_null() {
+         return None;
+     }
+-    // SAFETY: rtable is a PostgreSQL List owned by the live Query and is only
+-    // read during this function call.
+-    let rtable = unsafe { PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable) };
+-    let rte = rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?;
+-    // SAFETY: get_ptr returned a non-nullable option; as_ref handles null and
+-    // the RTE is only read by value.
+-    let rte = unsafe { rte.as_ref()? };
++    // SAFETY: rtable is a PostgreSQL List owned by the live Query; the selected
++    // RTE is checked for null and read immediately by value.
++    let rte = unsafe {
++        let rtable = PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable);
++        rtable
++            .get_ptr(usize::try_from(rtindex - 1).ok()?)?
++            .as_ref()?
++    };
+     if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
+         return None;
+     }
+@@ -2083,18 +2082,21 @@ fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
+         return None;
+     }
+     // SAFETY: baserestrictinfo is a planner-owned RestrictInfo List valid for
+-    // the set_rel_pathlist callback.
+-    let restrict_infos = unsafe { PgList::<pg_sys::RestrictInfo>::from_pg(baserestrictinfo) };
+-    for restrict_info in restrict_infos.iter_ptr() {
+-        // SAFETY: list cells may contain null pointers; as_ref handles that and
+-        // the RestrictInfo is only inspected during the callback.
+-        let Some(restrict_info) = (unsafe { restrict_info.as_ref() }) else {
+-            continue;
+-        };
+-        if let Some(predicate) =
+-            dml_frontdoor_pk_predicate_from_clause(restrict_info.clause, target_rtindex, context)
+-        {
+-            return Some(predicate);
++    // the set_rel_pathlist callback; list cells may be null and are checked
++    // before their clauses are inspected.
++    unsafe {
++        let restrict_infos = PgList::<pg_sys::RestrictInfo>::from_pg(baserestrictinfo);
++        for restrict_info in restrict_infos.iter_ptr() {
++            let Some(restrict_info) = restrict_info.as_ref() else {
++                continue;
++            };
++            if let Some(predicate) = dml_frontdoor_pk_predicate_from_clause(
++                restrict_info.clause,
++                target_rtindex,
++                context,
++            ) {
++                return Some(predicate);
++            }
+         }
+     }
+     None
+@@ -2105,42 +2107,74 @@ fn dml_frontdoor_pk_predicate_from_clause(
+     target_rtindex: i32,
+     context: &SpireDmlFrontdoorQueryContext<'_>,
+ ) -> Option<SpireDmlFrontdoorPkPredicate> {
+-    // SAFETY: clause belongs to the live planner tree and is only viewed while
+-    // selecting a concrete expression shape.
+-    let Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) =
+-        (unsafe { dml_frontdoor_expr_node(clause) })
+-    else {
+-        if dml_frontdoor_expr_references_column(clause, target_rtindex, context, context.pk_column)
+-        {
++    enum ClauseRead {
++        NonOp,
++        NonBinary {
++            operator: Option<&'static str>,
++        },
++        Binary {
++            operator: Option<&'static str>,
++            left: Option<*mut pg_sys::Expr>,
++            right: Option<*mut pg_sys::Expr>,
++        },
++    }
++
++    // SAFETY: clause belongs to the live planner tree. NodeTag gates the OpExpr
++    // read, then opcode and args are inspected immediately.
++    let clause_read = unsafe {
++        match dml_frontdoor_expr_node(clause) {
++            Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
++                let operator =
++                    if dml_frontdoor_bigint_equality_opcode(pg_sys::get_opcode(op_expr.opno)) {
++                        Some("=")
++                    } else {
++                        Some("other")
++                    };
++                let args = PgList::<pg_sys::Expr>::from_pg(op_expr.args);
++                if args.len() == 2 {
++                    ClauseRead::Binary {
++                        operator,
++                        left: args.get_ptr(0),
++                        right: args.get_ptr(1),
++                    }
++                } else {
++                    ClauseRead::NonBinary { operator }
++                }
++            }
++            _ => ClauseRead::NonOp,
++        }
++    };
++    let (operator, left, right) = match clause_read {
++        ClauseRead::NonOp => {
++            if dml_frontdoor_expr_references_column(
++                clause,
++                target_rtindex,
++                context,
++                context.pk_column,
++            ) {
++                return Some(SpireDmlFrontdoorPkPredicate {
++                    column: Some(context.pk_column.to_owned()),
++                    operator: Some("other"),
++                    value: dml_frontdoor_other_predicate_value(),
++                    value_expr: None,
++                });
++            }
++            return None;
++        }
++        ClauseRead::NonBinary { operator } => {
+             return Some(SpireDmlFrontdoorPkPredicate {
+-                column: Some(context.pk_column.to_owned()),
+-                operator: Some("other"),
++                column: None,
++                operator,
+                 value: dml_frontdoor_other_predicate_value(),
+                 value_expr: None,
+             });
+         }
+-        return None;
+-    };
+-    let operator =
+-        // SAFETY: NodeTag confirmed T_OpExpr, so opno can be passed to
+-        // PostgreSQL's opcode lookup.
+-        if dml_frontdoor_bigint_equality_opcode(unsafe { pg_sys::get_opcode(op_expr.opno) }) {
+-            Some("=")
+-        } else {
+-            Some("other")
+-        };
+-    // SAFETY: OpExpr::args is a PostgreSQL List owned by the live expression.
+-    let args = unsafe { PgList::<pg_sys::Expr>::from_pg(op_expr.args) };
+-    if args.len() != 2 {
+-        return Some(SpireDmlFrontdoorPkPredicate {
+-            column: None,
++        ClauseRead::Binary {
+             operator,
+-            value: dml_frontdoor_other_predicate_value(),
+-            value_expr: None,
+-        });
+-    }
+-    let left = args.get_ptr(0);
+-    let right = args.get_ptr(1);
++            left,
++            right,
++        } => (operator, left, right),
++    };
+     match (left, right) {
+         (Some(left), Some(right)) => {
+             if let Some(column) = dml_frontdoor_predicate_var_column(left, target_rtindex, context)
+@@ -2404,16 +2438,17 @@ fn dml_frontdoor_single_coerced_arg_value(
+ }
+ 
+ fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+-    // SAFETY: args may be null; as_ref handles that before any List fields are
+-    // inspected.
+-    let args = unsafe { args.as_ref()? };
+-    if args.type_ != pg_sys::NodeTag::T_List || args.length != 1 || args.elements.is_null() {
+-        return None;
++    // SAFETY: args may be null; one-element List shape and elements are checked
++    // before reading the PG18 ListCell pointer value.
++    unsafe {
++        let args = args.as_ref()?;
++        if args.type_ != pg_sys::NodeTag::T_List || args.length != 1 || args.elements.is_null() {
++            return None;
++        }
++        // PG18 exposes List cells through `elements`; this remains the stable
++        // single-argument check for implicit-cast FuncExpr wrappers.
++        Some((*args.elements).ptr_value.cast::<pg_sys::Expr>())
+     }
+-    // PG18 exposes List cells through `elements`; this remains the stable
+-    // single-argument check for implicit-cast FuncExpr wrappers.
+-    // SAFETY: args was checked to be a one-element List with non-null elements.
+-    Some(unsafe { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
+ }
+ 
+ fn dml_frontdoor_coercible_integer_value(
+@@ -2583,32 +2618,28 @@ fn dml_frontdoor_target_column_exprs(
+     if target_list.is_null() {
+         return Vec::new();
+     }
+-    // SAFETY: target_list is a PostgreSQL TargetEntry List from a live Query and
+-    // is consumed immediately.
+-    let targets = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(target_list) };
+     let mut columns = Vec::new();
+-    for target_entry in targets.iter_ptr() {
+-        // SAFETY: list entries may be null; as_ref handles nulls before reading
+-        // TargetEntry fields.
+-        let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {
+-            continue;
+-        };
+-        if target_entry.resjunk {
+-            continue;
+-        }
+-        if let Some(column) = context
+-            .column_names
+-            .iter()
+-            .find_map(|(attno, name)| (*attno == target_entry.resno).then(|| (*name).to_owned()))
+-        {
+-            columns.push((column, target_entry.expr));
+-            continue;
+-        }
+-        if !target_entry.resname.is_null() {
+-            // SAFETY: resname was checked non-null and points at a PostgreSQL
+-            // C string for the target entry; it is copied immediately.
+-            if let Ok(column) = unsafe { CStr::from_ptr(target_entry.resname) }.to_str() {
+-                columns.push((column.to_owned(), target_entry.expr));
++    // SAFETY: target_list is a PostgreSQL TargetEntry List from a live Query.
++    // Each non-null entry and optional resname C string are copied immediately.
++    unsafe {
++        let targets = PgList::<pg_sys::TargetEntry>::from_pg(target_list);
++        for target_entry in targets.iter_ptr() {
++            let Some(target_entry) = target_entry.as_ref() else {
++                continue;
++            };
++            if target_entry.resjunk {
++                continue;
++            }
++            if let Some(column) = context.column_names.iter().find_map(|(attno, name)| {
++                (*attno == target_entry.resno).then(|| (*name).to_owned())
++            }) {
++                columns.push((column, target_entry.expr));
++                continue;
++            }
++            if !target_entry.resname.is_null() {
++                if let Ok(column) = CStr::from_ptr(target_entry.resname).to_str() {
++                    columns.push((column.to_owned(), target_entry.expr));
++                }
+             }
+         }
+     }
