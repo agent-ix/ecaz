@@ -86,7 +86,7 @@ unsafe fn scan_opaque_mut<'a>(opaque: *mut TqScanOpaque) -> &'a mut TqScanOpaque
     unsafe { &mut *opaque }
 }
 
-fn scan_box_ref<'a, T>(ptr: *const T, _opaque: &'a TqScanOpaque) -> Option<&'a T> {
+fn scan_box_ref<T>(ptr: *const T, _opaque: &TqScanOpaque) -> Option<&T> {
     if ptr.is_null() {
         None
     } else {
@@ -96,7 +96,7 @@ fn scan_box_ref<'a, T>(ptr: *const T, _opaque: &'a TqScanOpaque) -> Option<&'a T
     }
 }
 
-fn scan_box_mut<'a, T>(ptr: *mut T, _opaque: &'a mut TqScanOpaque) -> Option<&'a mut T> {
+fn scan_box_mut<T>(ptr: *mut T, _opaque: &mut TqScanOpaque) -> Option<&mut T> {
     if ptr.is_null() {
         None
     } else {
