@@ -1,0 +1,5 @@
+1c7e8974 Centralize SPIRE custom scan current relation unsafe
+ src/am/ec_spire/custom_scan/begin_exec.rs   |  2 +-
+ src/am/ec_spire/custom_scan/cost_helpers.rs | 14 ++++++++++++++
+ src/am/ec_spire/custom_scan/dml.rs          | 25 ++++++++-----------------
+ 3 files changed, 23 insertions(+), 18 deletions(-)

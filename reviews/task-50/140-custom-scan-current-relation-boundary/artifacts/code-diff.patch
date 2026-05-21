@@ -1,0 +1,95 @@
+commit 1c7e8974e73deda8c360c6c0b3526c4088834636
+Author: Agent IX <agent@agent-ix.dev>
+Date:   Wed May 20 19:16:00 2026 -0700
+
+    Centralize SPIRE custom scan current relation unsafe
+---
+ src/am/ec_spire/custom_scan/begin_exec.rs   |  2 +-
+ src/am/ec_spire/custom_scan/cost_helpers.rs | 14 ++++++++++++++
+ src/am/ec_spire/custom_scan/dml.rs          | 25 ++++++++-----------------
+ 3 files changed, 23 insertions(+), 18 deletions(-)
+
+diff --git a/src/am/ec_spire/custom_scan/begin_exec.rs b/src/am/ec_spire/custom_scan/begin_exec.rs
+index 5c8be4ad..d2cca2fa 100644
+--- a/src/am/ec_spire/custom_scan/begin_exec.rs
++++ b/src/am/ec_spire/custom_scan/begin_exec.rs
+@@ -148,7 +148,7 @@ fn custom_scan_tuple_payload_state_from_plan(
+         (
+             custom_scan_tuple_payload_columns(node, custom_scan),
+             custom_scan_payload_attr_io(crate::storage::relation::relation_tuple_desc(
+-                (*node).ss.ss_currentRelation,
++                custom_scan_current_relation(node, "tuple payload input descriptor"),
+             )),
+         )
+     }
+diff --git a/src/am/ec_spire/custom_scan/cost_helpers.rs b/src/am/ec_spire/custom_scan/cost_helpers.rs
+index 565d59ae..328bdab2 100644
+--- a/src/am/ec_spire/custom_scan/cost_helpers.rs
++++ b/src/am/ec_spire/custom_scan/cost_helpers.rs
+@@ -140,6 +140,20 @@ fn custom_scan_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
+     unsafe { ptr.as_ref() }
+ }
+
++fn custom_scan_current_relation(
++    node: *mut pg_sys::CustomScanState,
++    label: &str,
++) -> pg_sys::Relation {
++    let Some(node) = custom_scan_pg_ref(node) else {
++        pgrx::error!("EcSpireDistributedScan {label} missing custom scan state");
++    };
++    let relation = node.ss.ss_currentRelation;
++    if relation.is_null() {
++        pgrx::error!("EcSpireDistributedScan {label} missing scan relation");
++    }
++    relation
++}
++
+ fn custom_scan_list_len(list: *mut pg_sys::List) -> Option<i32> {
+     custom_scan_pg_ref(list).map(|list| list.length)
+ }
+diff --git a/src/am/ec_spire/custom_scan/dml.rs b/src/am/ec_spire/custom_scan/dml.rs
+index 33b9944b..08b3d03d 100644
+--- a/src/am/ec_spire/custom_scan/dml.rs
++++ b/src/am/ec_spire/custom_scan/dml.rs
+@@ -202,13 +202,10 @@ unsafe fn custom_scan_tuple_payload_columns(
+     node: *mut pg_sys::CustomScanState,
+     custom_scan: *mut pg_sys::CustomScan,
+ ) -> Vec<String> {
++    let relation = custom_scan_current_relation(node, "tuple payload columns");
+     // SAFETY: executor passes live CustomScanState/CustomScan pointers; relation
+     // and targetlist metadata are read only for tuple payload column discovery.
+     unsafe {
+-        let relation = (*node).ss.ss_currentRelation;
+-        if relation.is_null() {
+-            pgrx::error!("EcSpireDistributedScan missing scan relation for tuple payload columns");
+-        }
+         let tuple_desc = crate::storage::relation::relation_tuple_desc(relation);
+         if tuple_desc.is_null() {
+             pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
+@@ -327,19 +324,13 @@ unsafe fn custom_scan_payload_attr_io(
+ }
+
+ unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> String {
+-    // SAFETY: executor passes a live CustomScanState whose current relation is
+-    // the DML target relation.
+-    unsafe {
+-        let relation = (*node).ss.ss_currentRelation;
+-        if relation.is_null() {
+-            pgrx::error!("EcSpireDistributedScan DML path missing scan relation");
+-        }
+-        let context = super::dml_frontdoor_relation_context_catalog_row((*relation).rd_id)
+-            .unwrap_or_else(|e| pgrx::error!("{e}"));
+-        context.pk_column.unwrap_or_else(|| {
+-            pgrx::error!("EcSpireDistributedScan DML path relation has no PK column")
+-        })
+-    }
++    let relation = custom_scan_current_relation(node, "DML path");
++    let relation_oid = crate::storage::relation::relation_oid(relation);
++    let context = super::dml_frontdoor_relation_context_catalog_row(relation_oid)
++        .unwrap_or_else(|e| pgrx::error!("{e}"));
++    context
++        .pk_column
++        .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan DML path relation has no PK column"))
+ }
+
+ unsafe fn custom_scan_dml_pk_value_from_plan(
