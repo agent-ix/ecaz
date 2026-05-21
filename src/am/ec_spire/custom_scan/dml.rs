@@ -133,7 +133,8 @@ fn custom_scan_exec_state_mut<'a>(
 
 unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
     let custom_private = unsafe { custom_scan_custom_private(custom_scan, "private LIMIT") };
-    let raw = unsafe { custom_scan_list_nth_oid(custom_private, 2) }
+    let raw = custom_private
+        .nth_oid(2)
         .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing private LIMIT"));
     usize::try_from(raw.to_u32())
         .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan plan LIMIT is out of range"))
