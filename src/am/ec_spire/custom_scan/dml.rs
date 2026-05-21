@@ -520,11 +520,17 @@ unsafe fn custom_scan_execute_dml_update(
         );
     }
     let row_payload_json = unsafe {
-        custom_scan_dml_update_row_payload_json(
-            scan_state.cast::<pg_sys::CustomScanState>(),
-            &invocation.updated_columns,
-            &state.dml_update_value_exprs,
-        )
+        let node = scan_state.cast::<pg_sys::CustomScanState>();
+        let mut payload = serde_json::Map::with_capacity(invocation.updated_columns.len());
+        for (column, expr) in invocation
+            .updated_columns
+            .iter()
+            .zip(state.dml_update_value_exprs.iter().copied())
+        {
+            let value = custom_scan_dml_update_expr_json_value(node, expr);
+            payload.insert(column.clone(), value);
+        }
+        serde_json::Value::Object(payload).to_string()
     };
     let updated_column_refs = invocation
         .updated_columns
@@ -571,24 +577,6 @@ unsafe fn custom_scan_execute_dml_update(
     u64::try_from(updated_count).unwrap_or_else(|_| {
         pgrx::error!("EcSpireDistributedScan DML UPDATE returned a negative updated_count")
     })
-}
-
-unsafe fn custom_scan_dml_update_row_payload_json(
-    node: *mut pg_sys::CustomScanState,
-    updated_columns: &[String],
-    value_exprs: &[*mut pg_sys::Expr],
-) -> String {
-    if updated_columns.len() != value_exprs.len() {
-        pgrx::error!("EcSpireDistributedScan DML UPDATE payload column/value width mismatch");
-    }
-    let mut payload = serde_json::Map::with_capacity(updated_columns.len());
-    for (column, expr) in updated_columns.iter().zip(value_exprs.iter().copied()) {
-        // SAFETY: each expression pointer comes from the provider-owned DML
-        // UPDATE expression list for this CustomScanState.
-        let value = unsafe { custom_scan_dml_update_expr_json_value(node, expr) };
-        payload.insert(column.clone(), value);
-    }
-    serde_json::Value::Object(payload).to_string()
 }
 
 unsafe fn custom_scan_dml_update_expr_json_value(
