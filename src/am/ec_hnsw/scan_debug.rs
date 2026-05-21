@@ -4032,7 +4032,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_gettuple_backward_after_rescan");
     let index_relation = index_relation_guard.as_ptr();
@@ -4053,7 +4053,7 @@ pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
+pub(crate) fn debug_gettuple_rescan_after_exhaustion(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<HeapTidCoords>, Vec<HeapTidCoords>) {
@@ -4111,7 +4111,7 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
+pub(crate) fn debug_gettuple_rescan_after_partial(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (HeapTidCoords, Vec<HeapTidCoords>) {
@@ -4140,7 +4140,7 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
     );
     // SAFETY: The successful gettuple call populated `xs_heaptid` for this live
     // index scan descriptor.
-    let first_tid = debug_scan_heap_tid(scan);
+    let first_tid = unsafe { debug_scan_heap_tid(scan) };
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,

@@ -2452,7 +2452,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (first_pass, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (first_pass, rescanned_tids) = am::debug_gettuple_rescan_after_exhaustion(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
 
         let expected_tids = Spi::connect(|client| {
             client
@@ -2535,7 +2538,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        hnsw_scan_debug!(am::debug_gettuple_backward_after_rescan(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        am::debug_gettuple_backward_after_rescan(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
     }
 
     #[pg_test]
@@ -2562,7 +2568,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (first_tid, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_partial(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (first_tid, rescanned_tids) = am::debug_gettuple_rescan_after_partial(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
 
         let expected_tids = Spi::connect(|client| {
             client
@@ -2808,7 +2817,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (first_pass, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (first_pass, rescanned_tids) = am::debug_gettuple_rescan_after_exhaustion(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
 
         assert!(
             first_pass.is_empty(),
