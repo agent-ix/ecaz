@@ -5,10 +5,13 @@ use std::sync::{
 };
 use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr, slice};
 
-use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts};
+use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgMemoryContexts};
 
 use crate::{
-    am::common::callback::pg_am_callback,
+    am::common::{
+        callback::pg_am_callback,
+        routine::{alloc_index_am_routine, IndexAmRoutineBox},
+    },
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
         buffer_guard::LockedBufferGuard,
@@ -157,11 +160,8 @@ fn maybe_apply_vacuum_rewrite_test_injection(
     Ok(())
 }
 
-fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
-    // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
-    // with the corresponding node tag.
-    let mut amroutine =
-        unsafe { PgBox::<pg_sys::IndexAmRoutine>::alloc_node(pg_sys::NodeTag::T_IndexAmRoutine) };
+fn build_ec_diskann_routine() -> IndexAmRoutineBox {
+    let mut amroutine = alloc_index_am_routine();
 
     amroutine.amstrategies = 1;
     amroutine.amsupport = 1;

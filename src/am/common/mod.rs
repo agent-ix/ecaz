@@ -7,6 +7,7 @@ pub(crate) mod parallel;
 pub(crate) mod parallel_slot;
 pub(crate) mod pg_ptr;
 pub(crate) mod reloptions;
+pub(crate) mod routine;
 pub(crate) mod scan_output;
 pub(crate) mod stats;
 pub(crate) mod stream;
