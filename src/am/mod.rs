@@ -143,6 +143,7 @@ pub(crate) use self::ec_spire::{
     index_writer_identity_snapshot as spire_index_writer_identity_snapshot,
     reap_orphaned_remote_prepared_xacts as spire_reap_orphaned_remote_prepared_xacts,
     reap_orphaned_remote_prepared_xacts_all as spire_reap_orphaned_remote_prepared_xacts_all,
+    register_dml_frontdoor_planner_hook,
     remote_catalog_lifecycle_contract_rows as spire_remote_catalog_lifecycle_contract_rows,
     remote_conninfo_secret_provider_lookup_key as spire_remote_conninfo_secret_provider_lookup_key,
     remote_conninfo_secret_resolution_contract_rows as spire_remote_conninfo_secret_resolution_contract_rows,
@@ -324,12 +325,6 @@ pub(crate) fn register_gucs() {
 
 pub(crate) fn register_custom_scan() {
     ec_spire::register_custom_scan();
-}
-
-pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
-    // SAFETY: caller runs during extension initialization before concurrent
-    // planner-hook use; SPIRE owns the process-local hook state it installs.
-    unsafe { ec_spire::register_dml_frontdoor_planner_hook() };
 }
 
 #[cfg(any(test, feature = "bench"))]
