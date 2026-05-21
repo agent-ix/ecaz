@@ -584,8 +584,30 @@ unsafe fn custom_scan_dml_update_expr_json_value(
     expr: *mut pg_sys::Expr,
 ) -> serde_json::Value {
     // SAFETY: expr is a provider-owned UPDATE value expression; NodeTag dispatch
-    // below guards Const/Param casts and evaluation.
+    // below guards Const/Param casts and evaluation. Non-null Datum values are
+    // immediately converted through PostgreSQL's type output function.
     unsafe {
+        let datum_json_value = |datum: pg_sys::Datum, typoid: pg_sys::Oid| {
+            if typoid == pg_sys::InvalidOid {
+                pgrx::error!("EcSpireDistributedScan DML UPDATE value has invalid type OID");
+            }
+            let mut typoutput = pg_sys::InvalidOid;
+            let mut typisvarlena = false;
+            pg_sys::getTypeOutputInfo(typoid, &mut typoutput, &mut typisvarlena);
+            let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
+            pg_sys::fmgr_info(typoutput, &mut flinfo);
+            let output = pg_sys::OutputFunctionCall(&mut flinfo, datum);
+            if output.is_null() {
+                pgrx::error!("EcSpireDistributedScan DML UPDATE type output returned NULL");
+            }
+            let value = std::ffi::CStr::from_ptr(output)
+                .to_str()
+                .unwrap_or_else(|_| {
+                    pgrx::error!("EcSpireDistributedScan DML UPDATE output value is not UTF-8")
+                })
+                .to_owned();
+            serde_json::Value::String(value)
+        };
         if expr.is_null() {
             pgrx::error!("EcSpireDistributedScan DML UPDATE value expression is null");
         }
@@ -595,10 +617,7 @@ unsafe fn custom_scan_dml_update_expr_json_value(
                 if const_expr.constisnull {
                     serde_json::Value::Null
                 } else {
-                    custom_scan_dml_update_datum_json_value(
-                        const_expr.constvalue,
-                        const_expr.consttype,
-                    )
+                    datum_json_value(const_expr.constvalue, const_expr.consttype)
                 }
             }
             pg_sys::NodeTag::T_Param => {
@@ -617,42 +636,13 @@ unsafe fn custom_scan_dml_update_expr_json_value(
                     serde_json::Value::Null
                 } else {
                     let typoid = pg_sys::exprType(expr.cast());
-                    custom_scan_dml_update_datum_json_value(datum, typoid)
+                    datum_json_value(datum, typoid)
                 }
             }
             _ => pgrx::error!(
                 "EcSpireDistributedScan DML UPDATE supports only constant or parameter SET values in v1"
             ),
         }
-    }
-}
-
-unsafe fn custom_scan_dml_update_datum_json_value(
-    datum: pg_sys::Datum,
-    typoid: pg_sys::Oid,
-) -> serde_json::Value {
-    // SAFETY: caller supplies a non-null Datum and its PostgreSQL type OID;
-    // output function metadata is read before converting to UTF-8 JSON string.
-    unsafe {
-        if typoid == pg_sys::InvalidOid {
-            pgrx::error!("EcSpireDistributedScan DML UPDATE value has invalid type OID");
-        }
-        let mut typoutput = pg_sys::InvalidOid;
-        let mut typisvarlena = false;
-        pg_sys::getTypeOutputInfo(typoid, &mut typoutput, &mut typisvarlena);
-        let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
-        pg_sys::fmgr_info(typoutput, &mut flinfo);
-        let output = pg_sys::OutputFunctionCall(&mut flinfo, datum);
-        if output.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML UPDATE type output returned NULL");
-        }
-        let value = std::ffi::CStr::from_ptr(output)
-            .to_str()
-            .unwrap_or_else(|_| {
-                pgrx::error!("EcSpireDistributedScan DML UPDATE output value is not UTF-8")
-            })
-            .to_owned();
-        serde_json::Value::String(value)
     }
 }
 
