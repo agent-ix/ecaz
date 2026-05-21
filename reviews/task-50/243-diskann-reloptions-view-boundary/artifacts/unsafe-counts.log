@@ -1,0 +1,8 @@
+Script started on 2026-05-21 07:14:24-07:00 [<not executed on terminal>]
+src/am/ec_diskann/options.rs unsafe lines: 7
+src unsafe lines: 2478
+free read_string_reloption refs:
+278:    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+306:            match self.read_string_reloption(reloptions.storage_format_offset, "storage_format") {
+
+Script done on 2026-05-21 07:14:24-07:00 [COMMAND_EXIT_CODE="0"]
