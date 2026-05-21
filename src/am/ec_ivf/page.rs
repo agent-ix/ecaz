@@ -1419,29 +1419,6 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
-    index_relation: pg_sys::Relation,
-    list_id: u32,
-    head_block: BlockRef,
-    tail_block: BlockRef,
-    payload_len: usize,
-) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
-    let mut postings = Vec::new();
-    visit_ivf_postings_for_list_blocks(
-        index_relation,
-        list_id,
-        head_block,
-        tail_block,
-        payload_len,
-        |posting_tid, posting| {
-            postings.push((posting_tid, posting));
-            Ok(())
-        },
-    )?;
-    Ok(postings)
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -1479,45 +1456,6 @@ where
             !no_compact_blocks.contains(&block_number),
             &mut rewrite,
         )?;
-    }
-
-    Ok(())
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn visit_ivf_postings_for_block_sequence<F>(
-    index_relation: pg_sys::Relation,
-    block_numbers: &[pg_sys::BlockNumber],
-    payload_len: usize,
-    mut visitor: F,
-) -> Result<(), String>
-where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
-{
-    if block_numbers.is_empty() {
-        return Ok(());
-    }
-
-    #[cfg(feature = "pg18")]
-    {
-        visit_ivf_posting_block_sequence_with_read_stream(
-            index_relation,
-            block_numbers,
-            payload_len,
-            &mut visitor,
-        )?;
-    }
-
-    #[cfg(not(feature = "pg18"))]
-    {
-        for block_number in block_numbers {
-            visit_all_ivf_postings_for_block(
-                index_relation,
-                *block_number,
-                payload_len,
-                &mut visitor,
-            )?;
-        }
     }
 
     Ok(())
@@ -1586,26 +1524,6 @@ where
 }
 
 #[cfg(feature = "pg18")]
-fn visit_ivf_posting_block_sequence_with_read_stream<F>(
-    index_relation: pg_sys::Relation,
-    block_numbers: &[pg_sys::BlockNumber],
-    payload_len: usize,
-    visitor: &mut F,
-) -> Result<(), String>
-where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
-{
-    crate::am::stream::visit_relation_block_sequence_read_stream(
-        index_relation,
-        block_numbers,
-        "ec_ivf posting block sequence",
-        |buffer, block_number| {
-            visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor)
-        },
-    )
-}
-
-#[cfg(feature = "pg18")]
 fn visit_ivf_posting_ref_block_sequence_with_read_stream<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
@@ -1640,22 +1558,6 @@ where
 
     let result =
         visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor);
-    result
-}
-
-#[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
-fn visit_all_ivf_postings_for_block<F>(
-    index_relation: pg_sys::Relation,
-    block_number: pg_sys::BlockNumber,
-    payload_len: usize,
-    visitor: &mut F,
-) -> Result<(), String>
-where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
-{
-    let buffer = read_posting_block(index_relation, block_number, "posting-list")?;
-
-    let result = visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor);
     result
 }
 
@@ -2018,39 +1920,6 @@ where
     }
     wal_txn.finish();
     Ok(directory)
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn rewrite_ivf_posting(
-    index_relation: pg_sys::Relation,
-    posting_tid: ItemPointer,
-    posting: &IvfPostingTuple,
-) -> Result<(), String> {
-    // SAFETY: caller supplies a live IVF index relation for the rewrite path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
-    let encoded = posting.encode()?;
-    let buffer = index
-        .read_main(
-            posting_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-        .ok_or_else(|| {
-            format!(
-                "ec_ivf failed to open posting block {}",
-                posting_tid.block_number
-            )
-        })?;
-
-    let mut wal_txn = index.start_wal();
-    let page = wal_txn.register_locked_buffer_full_image(&buffer);
-    let writer = PageTupleWriter::new(page, buffer.page_size(), posting_tid.block_number);
-    if let Err(err) = writer.copy_required_exact(posting_tid, "posting", &encoded) {
-        std::mem::drop(wal_txn);
-        return Err(err);
-    }
-    wal_txn.finish();
-    Ok(())
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
