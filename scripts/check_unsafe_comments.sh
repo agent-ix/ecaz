@@ -8,7 +8,7 @@ if [[ "${1:-}" == "--update-baseline" ]]; then
   update_baseline=true
 fi
 
-rg -n '^pub(\(crate\))? fn .*pg_sys::Relation' src >&2 && echo "warning: safe public function takes pg_sys::Relation; prefer unsafe fn or a typed guard/view" >&2 || true
+rg -n '^pub(\(crate\))? fn .*pg_sys::(Relation|IndexScanDesc|StringInfo|ParamListInfo|Query|PlannerInfo|RelOptInfo|Node|Expr|List|TupleTableSlot|ScanKey|IndexBuildHeapScan|IndexVacuumInfo|IndexBulkDeleteResult)' src >&2 && echo "warning: safe public function takes a raw PostgreSQL boundary type; prefer unsafe fn or a typed guard/view" >&2 || true
 
 unsafe_lines=()
 while IFS= read -r line; do
