@@ -641,6 +641,17 @@ struct DebugHeapBackedScan {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+impl DebugHeapBackedScan {
+    fn as_ptr(&self) -> pg_sys::IndexScanDesc {
+        self.scan.as_ptr()
+    }
+
+    fn with_opaque<R>(&self, f: impl for<'a> FnOnce(&'a TqScanOpaque) -> R) -> R {
+        debug_with_scan_opaque(self.as_ptr(), f)
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
@@ -990,7 +1001,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids(
     query: Vec<f32>,
 ) -> Vec<HeapTidCoords> {
     let scan_state = debug_begin_heap_backed_scan(index_oid);
-    let scan = scan_state.scan.as_ptr();
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -1029,7 +1040,7 @@ pub(crate) fn debug_profile_ordered_scan_with_limit(
     result_limit: Option<usize>,
 ) -> DebugScanProfile {
     let scan_state = debug_begin_heap_backed_scan(index_oid);
-    let scan = scan_state.scan.as_ptr();
+    let scan = scan_state.as_ptr();
 
     let total_started = Instant::now();
     let rescan_started = Instant::now();
@@ -1043,21 +1054,33 @@ pub(crate) fn debug_profile_ordered_scan_with_limit(
     let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
         .expect("rescan timing should fit in i64");
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let rescan_counters = opaque.explain_counters;
-    let rescan_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
-    let rescan_current_result = active_result_state_ref(opaque).current().has_element();
-    let rescan_ordered_slots = i32::try_from(debug_runtime_ordered_slots(opaque).len())
-        .expect("slot count should fit in i32");
-    let rescan_pending_heap_tids = i32::from(active_result_state_ref(opaque).pending_count());
-    let rescan_visited_count = i32::try_from(debug_sorted_visited_tids(opaque).len())
-        .expect("visited count should fit in i32");
-    let rescan_expanded_count = i32::try_from(debug_sorted_expanded_source_tids(opaque).len())
-        .expect("expanded count should fit in i32");
-    let rescan_emitted_count = i32::try_from(debug_sorted_emitted_tids(opaque).len())
-        .expect("emitted count should fit in i32");
-    let rescan_debug_profile = opaque.debug_profile;
+    let (
+        rescan_counters,
+        rescan_phase,
+        rescan_current_result,
+        rescan_ordered_slots,
+        rescan_pending_heap_tids,
+        rescan_visited_count,
+        rescan_expanded_count,
+        rescan_emitted_count,
+        rescan_debug_profile,
+    ) = scan_state.with_opaque(|opaque| {
+        (
+            opaque.explain_counters,
+            debug_execution_phase_label(opaque.execution_phase).to_string(),
+            active_result_state_ref(opaque).current().has_element(),
+            i32::try_from(debug_runtime_ordered_slots(opaque).len())
+                .expect("slot count should fit in i32"),
+            i32::from(active_result_state_ref(opaque).pending_count()),
+            i32::try_from(debug_sorted_visited_tids(opaque).len())
+                .expect("visited count should fit in i32"),
+            i32::try_from(debug_sorted_expanded_source_tids(opaque).len())
+                .expect("expanded count should fit in i32"),
+            i32::try_from(debug_sorted_emitted_tids(opaque).len())
+                .expect("emitted count should fit in i32"),
+            opaque.debug_profile,
+        )
+    });
 
     let emit_started = Instant::now();
     let mut result_count = 0_i32;
@@ -1072,15 +1095,17 @@ pub(crate) fn debug_profile_ordered_scan_with_limit(
     let emit_elapsed_us =
         i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
 
-    // SAFETY: The scan descriptor remains live until `scan_state` is dropped
-    // consumes `scan_state` below.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let total_counters = opaque.explain_counters;
-    let final_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
-    let final_ordered_slots = i32::try_from(debug_runtime_ordered_slots(opaque).len())
-        .expect("slot count should fit in i32");
-    let final_emitted_count = i32::try_from(debug_sorted_emitted_tids(opaque).len())
-        .expect("emitted count should fit in i32");
+    let (total_counters, final_phase, final_ordered_slots, final_emitted_count) =
+        scan_state.with_opaque(|opaque| {
+            (
+                opaque.explain_counters,
+                debug_execution_phase_label(opaque.execution_phase).to_string(),
+                i32::try_from(debug_runtime_ordered_slots(opaque).len())
+                    .expect("slot count should fit in i32"),
+                i32::try_from(debug_sorted_emitted_tids(opaque).len())
+                    .expect("emitted count should fit in i32"),
+            )
+        });
 
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
@@ -1285,7 +1310,7 @@ pub(crate) fn debug_grouped_rerank_profile(
     limit_count: i32,
 ) -> DebugGroupedRerankProfile {
     let scan_state = debug_begin_heap_backed_scan(index_oid);
-    let scan = scan_state.scan.as_ptr();
+    let scan = scan_state.as_ptr();
     let result_limit =
         usize::try_from(limit_count).expect("grouped rerank profile limit should fit in usize");
 
@@ -1312,10 +1337,7 @@ pub(crate) fn debug_grouped_rerank_profile(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    // SAFETY: The scan descriptor remains live until `scan_state` is dropped
-    // consumes `scan_state` below.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let debug_profile = opaque.debug_profile;
+    let debug_profile = scan_state.with_opaque(|opaque| opaque.debug_profile);
 
     drop(scan_state);
 
@@ -1351,7 +1373,7 @@ pub(crate) fn debug_turboquant_scan_stage_profile(
     query: Vec<f32>,
 ) -> DebugTurboQuantScanStageProfile {
     let scan_state = debug_begin_heap_backed_scan(index_oid);
-    let scan = scan_state.scan.as_ptr();
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -1361,22 +1383,36 @@ pub(crate) fn debug_turboquant_scan_stage_profile(
     // quals, and `orderby` is a valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    if !matches!(
-        opaque.scan_graph_storage,
-        graph::GraphStorageDescriptor::TurboQuant { .. }
-            | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
-    ) {
+    let (
+        is_turboquant,
+        has_quantizer,
+        debug_profile,
+        exact_score_mode,
+        exact_score_uses_lut,
+        exact_score_uses_qjl,
+    ) = scan_state.with_opaque(|opaque| {
+        (
+            matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::TurboQuant { .. }
+                    | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            ),
+            !opaque.cached_quantizer.is_null(),
+            opaque.debug_profile,
+            turboquant_exact_score_mode_name(opaque).to_owned(),
+            turboquant_exact_score_uses_lut(opaque),
+            turboquant_exact_score_uses_qjl(opaque),
+        )
+    });
+    if !is_turboquant {
         drop(scan_state);
         pgrx::error!("debug turboquant scan stage profile requires a turboquant index");
     }
-    if opaque.cached_quantizer.is_null() {
+    if !has_quantizer {
         drop(scan_state);
         pgrx::error!("debug turboquant scan stage profile requires a prepared quantizer");
     }
 
-    let debug_profile = opaque.debug_profile;
     let rerank_score_calls = debug_profile
         .grouped_rerank_quantized_score_calls
         .saturating_add(debug_profile.grouped_rerank_heap_score_calls);
@@ -1388,9 +1424,6 @@ pub(crate) fn debug_turboquant_scan_stage_profile(
         .saturating_sub(debug_profile.binary_prefilter_score_elapsed_us)
         .saturating_sub(debug_profile.candidate_score_elapsed_us)
         .saturating_sub(rerank_score_elapsed_us);
-    let exact_score_mode = turboquant_exact_score_mode_name(opaque).to_owned();
-    let exact_score_uses_lut = turboquant_exact_score_uses_lut(opaque);
-    let exact_score_uses_qjl = turboquant_exact_score_uses_qjl(opaque);
 
     drop(scan_state);
 
@@ -2407,7 +2440,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_scores(
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
     let scan_state = debug_begin_heap_backed_scan(index_oid);
-    let scan = scan_state.scan.as_ptr();
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -2437,7 +2470,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
     let scan_state = debug_begin_heap_backed_scan(index_oid);
-    let scan = scan_state.scan.as_ptr();
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
