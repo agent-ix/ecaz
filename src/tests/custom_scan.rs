@@ -49,6 +49,42 @@
             })
     }
 
+    fn custom_scan_payload_slot_datum(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> (pg_sys::Datum, bool) {
+        let mut is_null = false;
+        // SAFETY: Callers pass a live slot and an attribute number from the
+        // test relation populated by `spire_custom_scan_store_tuple_payload_json_for_test`.
+        let datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), attnum, &mut is_null) };
+        (datum, is_null)
+    }
+
+    fn custom_scan_payload_slot_bigint(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> Option<i64> {
+        let (datum, is_null) = custom_scan_payload_slot_datum(slot, attnum);
+        // SAFETY: The caller selects a bigint attribute from the payload slot.
+        unsafe { i64::from_datum(datum, is_null) }
+    }
+
+    fn custom_scan_payload_slot_text(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> Option<String> {
+        let (datum, is_null) = custom_scan_payload_slot_datum(slot, attnum);
+        // SAFETY: The caller selects a text attribute from the payload slot.
+        unsafe { String::from_datum(datum, is_null) }
+    }
+
+    fn custom_scan_payload_slot_is_null(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> bool {
+        custom_scan_payload_slot_datum(slot, attnum).1
+    }
+
     #[pg_test]
     fn test_ec_spire_customscan_tuple_payload_stores_virtual_slot() {
         Spi::run(
@@ -72,28 +108,9 @@
             r#"{"id":42,"title":"remote alpha"}"#,
         );
 
-        let mut id_is_null = false;
-        // SAFETY: attribute 1 exists in the test relation created above, and
-        // `slot` remains live until after the value is decoded.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let id_datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 1, &mut id_is_null) };
-        // SAFETY: `id_datum` was read from the bigint primary-key column.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let id = unsafe { i64::from_datum(id_datum, id_is_null) }.expect("id should decode");
-        let mut title_is_null = false;
-        // SAFETY: attribute 2 exists in the test relation created above, and
-        // `slot` remains live until after the value is decoded.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let title_datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 2, &mut title_is_null) };
-        // SAFETY: `title_datum` was read from the text column.
-        let title =
-            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { String::from_datum(title_datum, title_is_null) }.expect("title should decode");
-        let mut embedding_is_null = false;
-        // SAFETY: attribute 3 exists in the test relation created above, and
-        // this read only observes the slot null flag for the optional payload.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let _ = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 3, &mut embedding_is_null) };
+        let id = custom_scan_payload_slot_bigint(&slot, 1).expect("id should decode");
+        let title = custom_scan_payload_slot_text(&slot, 2).expect("title should decode");
+        let embedding_is_null = custom_scan_payload_slot_is_null(&slot, 3);
 
         assert_eq!(id, 42);
         assert_eq!(title, "remote alpha");
