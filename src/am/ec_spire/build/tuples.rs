@@ -184,93 +184,81 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    // SAFETY: PostgreSQL invokes ambuild with live heap/index relations and an
-    // IndexInfo pointer; the guard converts Rust panics/errors into PostgreSQL
-    // error handling while the closure performs all catalog/build work.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let options = options::relation_options(index_relation);
-            let local_store_tablespace_plan =
-                options::resolve_local_store_tablespace_plan(index_relation, &options)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let local_store_relation_plan = plan_local_store_relations(
-                (*index_relation).rd_id.into(),
-                local_store_tablespace_plan
-                    .iter()
-                    .map(|entry| (entry.local_store_id, entry.tablespace_oid)),
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let store_relids =
-                create_local_store_relations_for_build(index_relation, &local_store_relation_plan)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let local_store_config = local_store_config_from_relation_plan(
-                SPIRE_INITIAL_EPOCH,
-                &local_store_relation_plan,
-                store_relids,
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let recursive_fanout = options.recursive_fanout();
-            let top_graph_plan = options
-                .top_graph_plan()
+    pg_am_callback!({
+        let options = options::relation_options(index_relation);
+        let local_store_tablespace_plan =
+            options::resolve_local_store_tablespace_plan(index_relation, &options)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-            if top_graph_plan.enabled && recursive_fanout.is_none() {
-                pgrx::error!(
-                    "ec_spire top_graph_enabled requires recursive_fanout >= 2 during build"
-                );
-            }
-            page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
-            let tuple_layout =
-                resolve_indexed_tuple_layout(heap_relation, index_info, &options, "ambuild");
-            let mut state = SpireBuildState::new(options, tuple_layout);
-            let heap_tuples = pg_sys::table_index_build_scan(
-                heap_relation,
+        let local_store_relation_plan = plan_local_store_relations(
+            (*index_relation).rd_id.into(),
+            local_store_tablespace_plan
+                .iter()
+                .map(|entry| (entry.local_store_id, entry.tablespace_oid)),
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let store_relids =
+            create_local_store_relations_for_build(index_relation, &local_store_relation_plan)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let local_store_config = local_store_config_from_relation_plan(
+            SPIRE_INITIAL_EPOCH,
+            &local_store_relation_plan,
+            store_relids,
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let recursive_fanout = options.recursive_fanout();
+        let top_graph_plan = options
+            .top_graph_plan()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if top_graph_plan.enabled && recursive_fanout.is_none() {
+            pgrx::error!("ec_spire top_graph_enabled requires recursive_fanout >= 2 during build");
+        }
+        page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
+        let tuple_layout =
+            resolve_indexed_tuple_layout(heap_relation, index_info, &options, "ambuild");
+        let mut state = SpireBuildState::new(options, tuple_layout);
+        let heap_tuples = pg_sys::table_index_build_scan(
+            heap_relation,
+            index_relation,
+            index_info,
+            false,
+            false,
+            Some(ec_spire_build_callback),
+            (&mut state as *mut SpireBuildState).cast(),
+            ptr::null_mut(),
+        );
+        let index_tuples = if state.scanned_tuples == 0 {
+            0.0
+        } else if let Some(recursive_fanout) = recursive_fanout {
+            publish_relation_recursive_routing_build(
                 index_relation,
-                index_info,
-                false,
-                false,
-                Some(ec_spire_build_callback),
-                (&mut state as *mut SpireBuildState).cast(),
-                ptr::null_mut(),
-            );
-            let index_tuples = if state.scanned_tuples == 0 {
-                0.0
-            } else if let Some(recursive_fanout) = recursive_fanout {
-                publish_relation_recursive_routing_build(
-                    index_relation,
-                    &state,
-                    recursive_fanout,
-                    local_store_config,
-                )
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_spire recursive populated ambuild failed: {e}")
-                }) as f64
-            } else {
-                publish_relation_partitioned_single_level_build(
-                    index_relation,
-                    &state,
-                    local_store_config,
-                )
-                .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
-                    as f64
-            };
+                &state,
+                recursive_fanout,
+                local_store_config,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_spire recursive populated ambuild failed: {e}"))
+                as f64
+        } else {
+            publish_relation_partitioned_single_level_build(
+                index_relation,
+                &state,
+                local_store_config,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
+                as f64
+        };
 
-            crate::fault::maybe_fail_palloc("ec_spire ambuild result");
-            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
-            result.heap_tuples = heap_tuples;
-            result.index_tuples = index_tuples;
-            result.into_pg()
-        })
-    }
+        crate::fault::maybe_fail_palloc("ec_spire ambuild result");
+        let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+        result.heap_tuples = heap_tuples;
+        result.index_tuples = index_tuples;
+        result.into_pg()
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg_sys::Relation) {
-    // SAFETY: PostgreSQL invokes ambuildempty with the target index relation
-    // open; the guarded closure initializes only that index's root page.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            page::initialize_root_control_page(_index_relation, SpireRootControlState::empty());
-        })
-    }
+    pg_am_callback!({
+        page::initialize_root_control_page(_index_relation, SpireRootControlState::empty());
+    })
 }
 
 unsafe extern "C-unwind" fn ec_spire_build_callback(
@@ -281,21 +269,17 @@ unsafe extern "C-unwind" fn ec_spire_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
-    // SAFETY: table_index_build_scan invokes this callback with Datum/null
-    // arrays and the SpireBuildState pointer supplied by ec_spire_ambuild.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &mut *state.cast::<SpireBuildState>();
-            let heap_tid = decode_heap_tid(tid, "ambuild");
-            let tuple = build_spire_index_tuple(
-                values,
-                isnull,
-                heap_tid,
-                state.tuple_layout,
-                state.options.assignment_payload_format(),
-                "ambuild",
-            );
-            state.push(tuple);
-        })
-    }
+    pg_am_callback!({
+        let state = &mut *state.cast::<SpireBuildState>();
+        let heap_tid = decode_heap_tid(tid, "ambuild");
+        let tuple = build_spire_index_tuple(
+            values,
+            isnull,
+            heap_tid,
+            state.tuple_layout,
+            state.options.assignment_payload_format(),
+            "ambuild",
+        );
+        state.push(tuple);
+    })
 }
