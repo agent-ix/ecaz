@@ -1717,18 +1717,18 @@ unsafe fn vacuum_page_tuple_location(
     page_size: usize,
     tid: ItemPointer,
 ) -> Result<(*mut u8, usize), String> {
-    // SAFETY: The caller supplies a pinned PostgreSQL page; this reads its max
-    // line pointer offset.
-    let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
-    if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
-        return Err(format!(
-            "ec_diskann vacuum target ({},{}) has invalid offset {} (max {})",
-            tid.block_number, tid.offset_number, tid.offset_number, max_offset
-        ));
-    }
+    // SAFETY: The caller supplies a pinned PostgreSQL page. This block reads
+    // the line pointer, validates slot and tuple bounds, then derives the tuple
+    // byte pointer within that same page.
+    let (tuple_ptr, tuple_len) = unsafe {
+        let max_offset = pg_sys::PageGetMaxOffsetNumber(page);
+        if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
+            return Err(format!(
+                "ec_diskann vacuum target ({},{}) has invalid offset {} (max {})",
+                tid.block_number, tid.offset_number, tid.offset_number, max_offset
+            ));
+        }
 
-    // SAFETY: `tid.offset_number` was checked against the page max offset.
-    let item_id_ref = unsafe {
         let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
         if item_id.is_null() {
             return Err(format!(
@@ -1736,26 +1736,25 @@ unsafe fn vacuum_page_tuple_location(
                 tid.block_number, tid.offset_number
             ));
         }
-        &*item_id
+        let item_id_ref = &*item_id;
+        if item_id_ref.lp_flags() == 0 {
+            return Err(format!(
+                "ec_diskann vacuum target ({},{}) points at an unused slot",
+                tid.block_number, tid.offset_number
+            ));
+        }
+
+        let tuple_offset = item_id_ref.lp_off() as usize;
+        let tuple_len = item_id_ref.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            return Err(format!(
+                "ec_diskann vacuum target ({},{}) has invalid tuple bounds",
+                tid.block_number, tid.offset_number
+            ));
+        }
+
+        ((page as *mut u8).add(tuple_offset), tuple_len)
     };
-    if item_id_ref.lp_flags() == 0 {
-        return Err(format!(
-            "ec_diskann vacuum target ({},{}) points at an unused slot",
-            tid.block_number, tid.offset_number
-        ));
-    }
-
-    let tuple_offset = item_id_ref.lp_off() as usize;
-    let tuple_len = item_id_ref.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_diskann vacuum target ({},{}) has invalid tuple bounds",
-            tid.block_number, tid.offset_number
-        ));
-    }
-
-    // SAFETY: Tuple bounds were validated against `page_size` above.
-    let tuple_ptr = unsafe { (page as *mut u8).add(tuple_offset) };
     Ok((tuple_ptr, tuple_len))
 }
 
