@@ -788,9 +788,9 @@
         );
 
         let (_block_count, _m, _ef_construction, mut metadata) =
-            hnsw_runtime_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         metadata.payload_flags &= !am::page::PAYLOAD_FLAG_BINARY_SIDECAR;
-        hnsw_runtime_debug!(am::debug_update_index_metadata(index_oid, metadata));
+        am::debug_update_index_metadata(index_oid, metadata);
 
         assert_eq!(
             fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")

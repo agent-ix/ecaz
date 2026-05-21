@@ -1234,7 +1234,7 @@
             "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index",
         );
         let (_block_count, _m, _ef_construction, metadata) =
-            hnsw_recall_export_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         let storage = hnsw_recall_export_debug!(
             am::graph::GraphStorageDescriptor::from_index_relation(
                 index_relation.as_ptr(),

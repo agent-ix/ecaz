@@ -1676,7 +1676,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let snapshot = hnsw_scan_debug!(am::debug_planner_tuning_snapshot(index_oid));
+        let snapshot = am::debug_planner_tuning_snapshot(index_oid);
 
         assert_eq!(snapshot.relation_ef_search, 111);
         assert_eq!(snapshot.session_ef_search, None);
@@ -1714,7 +1714,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let snapshot = hnsw_scan_debug!(am::debug_planner_tuning_snapshot(index_oid));
+        let snapshot = am::debug_planner_tuning_snapshot(index_oid);
 
         assert_eq!(snapshot.relation_ef_search, 111);
         assert_eq!(snapshot.session_ef_search, Some(7));

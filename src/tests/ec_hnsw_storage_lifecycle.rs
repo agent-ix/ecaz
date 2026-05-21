@@ -1,12 +1,3 @@
-    macro_rules! hnsw_storage_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before calling the extension's test-only storage debug helper.
-            // The helper owns PostgreSQL relation/page access for the OID.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
@@ -1704,7 +1695,7 @@
             "ec_hnsw_vacuum_grouped_stats_idx",
         );
 
-        let stats = hnsw_storage_debug!(am::debug_vacuum_stats(index_oid));
+        let stats = am::debug_vacuum_stats(index_oid);
         let (_metadata, _layout, elements, _neighbors) =
             decode_grouped_index_elements_and_neighbors(index_oid);
 
@@ -1776,7 +1767,7 @@
         Spi::run("DELETE FROM ec_hnsw_vacuum_pass1_grouped_duplicates WHERE id = 2")
             .expect("delete should succeed");
 
-        let stats = hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        let stats = am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
         let (_metadata_after, _layout_after, elements_after, _neighbors_after) =
             decode_grouped_index_elements_and_neighbors(index_oid);
         let (_duplicate_tid_after, duplicate_after) =
@@ -1854,7 +1845,7 @@
         ))
         .expect("delete should succeed");
 
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (_metadata_after, _layout_after, elements_after, neighbors_after) =
             decode_grouped_index_elements_and_neighbors(index_oid);
@@ -1958,7 +1949,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (metadata_after, _layout_after, elements_after, neighbors_after) =
             decode_grouped_index_elements_and_neighbors(index_oid);
@@ -2045,7 +2036,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
         assert!(
@@ -2128,7 +2119,7 @@
         ))
         .expect("ALTER INDEX should update the reloption without rewriting the index");
 
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
     }
 
     #[pg_test]
@@ -2207,7 +2198,7 @@
         ))
         .expect("ALTER INDEX should update the reloption without rewriting the index");
 
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
     }
 
     #[pg_test]
@@ -2224,7 +2215,7 @@
             .expect("REINDEX should rebuild the index to match the new storage format");
 
         let (_block_count, _m, _ef_construction, metadata) =
-            hnsw_storage_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         assert_eq!(
             metadata
                 .graph_storage_format()
@@ -2257,7 +2248,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
         assert!(
@@ -2323,7 +2314,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
         assert!(
@@ -2521,7 +2512,7 @@
 
         Spi::run(&format!("DELETE FROM {table_name} WHERE id = {}", case.0))
             .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[case.1]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[case.1]);
 
         let (metadata_after, elements_after, neighbors_after) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));

@@ -883,9 +883,7 @@ fn planner_tuning_snapshot(index_relation: pg_sys::Relation) -> DebugPlannerTuni
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_planner_tuning_snapshot(
-    index_oid: pg_sys::Oid,
-) -> DebugPlannerTuningSnapshot {
+pub(crate) fn debug_planner_tuning_snapshot(index_oid: pg_sys::Oid) -> DebugPlannerTuningSnapshot {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_planner_tuning_snapshot");
     planner_tuning_snapshot(index_relation.as_ptr())
@@ -939,9 +937,7 @@ unsafe fn read_data_page(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_index_metadata(
-    index_oid: pg_sys::Oid,
-) -> (u32, i32, i32, page::MetadataPage) {
+pub(crate) fn debug_index_metadata(index_oid: pg_sys::Oid) -> (u32, i32, i32, page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_metadata");
     let options = super::options::relation_options(index_relation.as_ptr());
     let block_count = hnsw_main_block_count(index_relation.as_ptr());
@@ -952,10 +948,7 @@ pub(crate) unsafe fn debug_index_metadata(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_update_index_metadata(
-    index_oid: pg_sys::Oid,
-    metadata: page::MetadataPage,
-) {
+pub(crate) fn debug_update_index_metadata(index_oid: pg_sys::Oid, metadata: page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_update_index_metadata");
     // SAFETY: The index relation guard keeps the relation open while the
     // metadata page is rewritten under exclusive lock.
@@ -963,9 +956,11 @@ pub(crate) unsafe fn debug_update_index_metadata(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_vacuum_stats");
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: The debug helper immediately initializes the required vacuum
+    // fields before passing the struct to AM vacuum callbacks.
+    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 

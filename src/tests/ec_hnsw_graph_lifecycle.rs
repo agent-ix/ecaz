@@ -121,17 +121,17 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_block_count, _m, _ef_construction, mut metadata) =
-            hnsw_graph_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
 
         metadata.entry_point = am::page::ItemPointer::INVALID;
-        hnsw_graph_debug!(am::debug_update_index_metadata(index_oid, metadata));
+        am::debug_update_index_metadata(index_oid, metadata);
 
         let (_block_count, _m, _ef_construction, metadata) =
-            hnsw_graph_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         assert_eq!(metadata.entry_point, am::page::ItemPointer::INVALID);
 
         Spi::run(
@@ -245,7 +245,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let mut previous_metadata = hnsw_graph_debug!(am::debug_index_metadata(index_oid)).3;
+        let mut previous_metadata = am::debug_index_metadata(index_oid).3;
         for id in 2_i64..=128_i64 {
             Spi::run(&format!(
                 "INSERT INTO ec_hnsw_insert_level_promotion VALUES (
@@ -459,7 +459,7 @@
 
         let mut chosen_insert = None;
         for id in 1_i64..=192_i64 {
-            let previous_metadata = hnsw_graph_debug!(am::debug_index_metadata(index_oid)).3;
+            let previous_metadata = am::debug_index_metadata(index_oid).3;
             Spi::run(&format!(
                 "INSERT INTO ec_hnsw_insert_upper_layer_links VALUES (
                     {id},
@@ -741,7 +741,7 @@
         let element_tuple_count =
             decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4)).len();
 
-        let stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
+        let stats = am::debug_vacuum_stats(index_oid);
         assert_eq!(stats.num_pages, block_count);
         assert!(
             !stats.estimated_count,
@@ -771,7 +771,7 @@
         let (block_count, _metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(data_pages.len(), 0, "empty index should have no data pages");
 
-        let stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
+        let stats = am::debug_vacuum_stats(index_oid);
         assert_eq!(stats.num_pages, block_count);
         assert!(
             !stats.estimated_count,
@@ -806,8 +806,8 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_repeat_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let first_stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
-        let second_stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
+        let first_stats = am::debug_vacuum_stats(index_oid);
+        let second_stats = am::debug_vacuum_stats(index_oid);
 
         assert_eq!(second_stats.num_pages, first_stats.num_pages);
         assert_eq!(second_stats.estimated_count, first_stats.estimated_count);
@@ -850,7 +850,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let stats = hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        let stats = am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
         let (_metadata, elements, _neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (_element_tid, duplicate_element) =
@@ -901,7 +901,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_pass1_scan_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let stats = hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        let stats = am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
         let (_metadata, elements, _neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let deleted_element = elements
@@ -987,7 +987,7 @@
         ))
         .expect("delete should succeed");
 
-        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (metadata_after, elements_after, _neighbors_after) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
@@ -1077,13 +1077,13 @@
         ))
         .expect("delete should succeed");
 
-        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (_block_count, _m, _ef_construction, mut stale_metadata) =
-            hnsw_graph_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         stale_metadata.entry_point = deleted_element_before.0;
         stale_metadata.max_level = deleted_level;
-        hnsw_graph_debug!(am::debug_update_index_metadata(index_oid, stale_metadata));
+        am::debug_update_index_metadata(index_oid, stale_metadata);
 
         let returned =
             am::debug_gettuple_scan_heap_tids(index_oid, fixture_query(deleted_row_id));
@@ -1138,7 +1138,7 @@
         Spi::run("DELETE FROM ec_hnsw_vacuum_pass2_unlink WHERE id = 2")
             .expect("delete should succeed");
 
-        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (_metadata_after, elements_after, neighbors_after) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
@@ -1239,7 +1239,7 @@
             "DELETE FROM ec_hnsw_vacuum_pass2_replace WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (metadata_after, elements_after, neighbors_after) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
@@ -1376,7 +1376,7 @@
             "DELETE FROM ec_hnsw_vacuum_pass2_upper_replace WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (metadata_after, elements_after, neighbors_after) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
@@ -1455,9 +1455,9 @@
             .expect("delete should succeed");
 
         let first_stats =
-            hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+            am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
         let second_stats =
-            hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+            am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
         let (_metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
 
@@ -1504,7 +1504,7 @@
 
         Spi::run("DELETE FROM ec_hnsw_vacuum_reinsert WHERE id = 1")
             .expect("delete should succeed");
-        hnsw_graph_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         Spi::run(
             "INSERT INTO ec_hnsw_vacuum_reinsert VALUES

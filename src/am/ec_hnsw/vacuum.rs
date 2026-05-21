@@ -2057,7 +2057,7 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
+pub(crate) fn debug_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[page::ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
@@ -2080,7 +2080,9 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     let heap_relation = heap_relation_guard
         .as_ref()
         .map_or(std::ptr::null_mut(), HeapRelationGuard::as_ptr);
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: The debug helper immediately initializes the required vacuum
+    // fields before passing the struct to AM vacuum callbacks.
+    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
     info.index = index_relation;
     info.heaprel = heap_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
