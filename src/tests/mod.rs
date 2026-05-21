@@ -1847,9 +1847,7 @@
         index_oid: pg_sys::Oid,
         code_len: usize,
     ) -> ScalarElementsAndNeighbors {
-        // SAFETY: Test callers create the referenced HNSW index before asking
-        // the debug helper to decode its page image.
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let mut neighbors = HashMap::new();
 
         for page in &data_pages {
@@ -1876,9 +1874,7 @@
     fn decode_grouped_index_elements_and_neighbors(
         index_oid: pg_sys::Oid,
     ) -> GroupedElementsAndNeighbors {
-        // SAFETY: Test callers create the referenced HNSW index before asking
-        // the debug helper to decode its page image.
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
@@ -2198,9 +2194,7 @@
         ctid_to_id: &HashMap<(u32, u16), usize>,
         k: usize,
     ) -> Vec<usize> {
-        // SAFETY: Test callers create the referenced HNSW index before asking
-        // the debug helper to run a gettuple scan for the supplied query.
-        unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
+        am::debug_gettuple_scan_heap_tids(index_oid, query)
             .into_iter()
             .take(k)
             .map(|heap_tid| {
@@ -2438,10 +2432,7 @@
             .iter()
             .zip(ground_truth.iter())
             .map(|(query, true_top_k)| {
-                // SAFETY: Recall fixtures create the HNSW index before
-                // measuring debug gettuple results for each query vector.
-                let predicted =
-                    unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) };
+                let predicted = am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
                 let predicted_top_k: HashSet<usize> = predicted
                     .iter()
                     .take(RECALL_K)

@@ -528,7 +528,7 @@ pub(crate) struct DebugIndexDataPage {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_index_pages(
+pub(crate) fn debug_index_pages(
     index_oid: pg_sys::Oid,
 ) -> (u32, page::MetadataPage, Vec<DebugIndexDataPage>) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_pages");

@@ -729,7 +729,7 @@
             "ec_hnsw_graph_hierarchy_summary",
         ));
 
-        let (_block_count, metadata, data_pages) = hnsw_recall_export_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let m = metadata.m as usize;
         let code_len = code_len(metadata.dimensions as usize, metadata.bits);
 
@@ -2085,7 +2085,7 @@
             "tests.ec_hnsw_debug_scan_result_count",
         ));
 
-        i32::try_from(hnsw_recall_export_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query)).len())
+        i32::try_from(am::debug_gettuple_scan_heap_tids(index_oid, query).len())
             .expect("debug scan result count should fit in i32")
     }
 
@@ -2099,7 +2099,7 @@
             "tests.ec_hnsw_debug_scan_heap_tids",
         ));
 
-        let rows = hnsw_recall_export_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query))
+        let rows = am::debug_gettuple_scan_heap_tids(index_oid, query)
             .into_iter()
             .map(|(block_number, offset_number)| {
                 (i64::from(block_number), i32::from(offset_number))

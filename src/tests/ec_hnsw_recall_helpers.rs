@@ -261,7 +261,7 @@
         let (prefill_found, _, _, _, _, _, _, _) =
             hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
         let predicted_heap_tids =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids = predicted_heap_tids
             .iter()
             .take(RECALL_K)
@@ -411,7 +411,7 @@
         let (prefill_found, _, _, _, _, _, _, _) =
             hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
         let predicted_heap_tids =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids_full = predicted_heap_tids
             .iter()
             .map(|heap_tid| {
@@ -645,7 +645,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1126,7 +1126,7 @@
             .zip(context.ground_truth_top_k.iter())
         {
             let predicted_row_indices: Vec<i64> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .map(|heap_tid| {
                         let row_index = *context
@@ -1240,7 +1240,7 @@
                 .map(|(idx, _)| *idx as i64)
                 .collect();
             let predicted_top_10_ids: Vec<i64> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1354,7 +1354,7 @@
                 .map(|(idx, _)| *idx as i64)
                 .collect();
             let predicted_top_10_row_indices: Vec<i64> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1455,7 +1455,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1593,7 +1593,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1734,7 +1734,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1877,7 +1877,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -2173,7 +2173,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -2379,7 +2379,7 @@
         let (prefill_found, _, _, _, _, _, _, _) =
             hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
         let predicted_heap_tids =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids = predicted_heap_tids
             .iter()
             .take(RECALL_K)

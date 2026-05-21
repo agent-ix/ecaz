@@ -34,7 +34,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let query = vec![1.0, 0.0, 0.5, -1.0];
-        let rust_count = i32::try_from(hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len()))
+        let rust_count = i32::try_from(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len())
         .expect("scan result count should fit in i32");
         let sql_count = Spi::get_one::<i32>(
             "SELECT tests.ec_hnsw_debug_scan_result_count(
@@ -716,7 +716,7 @@
         .expect("index oid should exist");
 
         let observed_tids =
-            hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let expected_tids = Spi::connect(|client| {
             client
                 .select(
@@ -2194,7 +2194,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (current_result_tid, neighbor_count) = hnsw_scan_debug!(am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
-        let (_block_count, metadata, _data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, _data_pages) = am::debug_index_pages(index_oid);
 
         assert_ne!(
             current_result_tid,
@@ -2232,7 +2232,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let neighbor_tids = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid));
-        let (_block_count, _metadata, data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, _metadata, data_pages) = am::debug_index_pages(index_oid);
         let element_tids = data_pages
             .iter()
             .flat_map(|page| {
@@ -2279,7 +2279,7 @@
         .expect("index oid should exist");
 
         let observed_tids =
-            hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let expected_tids = Spi::connect(|client| {
             client
                 .select(
@@ -2662,7 +2662,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (block_count, _metadata, _data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+        let (block_count, _metadata, _data_pages) = am::debug_index_pages(index_oid);
         assert!(
             block_count > 2,
             "duplicate-heavy linear scan coverage should span multiple data pages"
@@ -2672,7 +2672,7 @@
         query[0] = 1.0;
         query[2] = 0.5;
         query[3] = -1.0;
-        let observed_tids = hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query));
+        let observed_tids = am::debug_gettuple_scan_heap_tids(index_oid, query);
         let expected_tids = Spi::connect(|client| {
             client
                 .select(

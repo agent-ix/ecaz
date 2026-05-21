@@ -737,7 +737,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_noop_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (block_count, metadata, data_pages) = hnsw_graph_debug!(am::debug_index_pages(index_oid));
+        let (block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let element_tuple_count =
             decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4)).len();
 
@@ -768,7 +768,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_empty_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (block_count, _metadata, data_pages) = hnsw_graph_debug!(am::debug_index_pages(index_oid));
+        let (block_count, _metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(data_pages.len(), 0, "empty index should have no data pages");
 
         let stats = hnsw_graph_debug!(am::debug_vacuum_stats(index_oid));
@@ -924,7 +924,7 @@
         );
 
         let returned =
-            hnsw_graph_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]));
+            am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]);
         assert!(
             !returned.contains(&(
                 deleted_heap_tid.block_number,
@@ -1086,7 +1086,7 @@
         hnsw_graph_debug!(am::debug_update_index_metadata(index_oid, stale_metadata));
 
         let returned =
-            hnsw_graph_debug!(am::debug_gettuple_scan_heap_tids(index_oid, fixture_query(deleted_row_id)));
+            am::debug_gettuple_scan_heap_tids(index_oid, fixture_query(deleted_row_id));
         assert!(
             !returned.is_empty(),
             "scan should fall back to another live seed when metadata.entry_point is stale and deleted",
@@ -1533,7 +1533,7 @@
         );
 
         let returned =
-            hnsw_graph_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]));
+            am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]);
         assert!(
             returned.contains(&(
                 replacement_heap_tid.block_number,

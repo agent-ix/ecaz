@@ -949,7 +949,7 @@ pub(crate) unsafe fn debug_gettuple_after_rescan_result(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
+pub(crate) fn debug_gettuple_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<HeapTidCoords> {
@@ -972,7 +972,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
         // SAFETY: A successful gettuple call populated `xs_heaptid` for this
         // live index scan descriptor.
-        let (block_number, offset_number) = debug_scan_heap_tid(scan);
+        let (block_number, offset_number) = unsafe { debug_scan_heap_tid(scan) };
         tids.push((block_number, offset_number));
     }
 

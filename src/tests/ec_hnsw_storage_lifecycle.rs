@@ -36,7 +36,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
 
@@ -463,7 +463,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert!(block_count > 2, "build should span more than one data page");
         assert_eq!(metadata.dimensions, dim as u16);
         assert_eq!(metadata.bits, bits);
@@ -571,7 +571,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let elements =
             decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(dim, bits));
 
@@ -613,7 +613,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
@@ -661,7 +661,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
@@ -714,7 +714,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_append_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
@@ -756,7 +756,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, _metadata, _data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             before_block_count, 2,
             "seed build should fit on one data page"
@@ -768,7 +768,7 @@
         )
         .expect("insert should succeed");
 
-        let (after_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (after_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(
             after_block_count, before_block_count,
             "insert should reuse existing tail page"
@@ -856,7 +856,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, metadata, _data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             before_block_count, 2,
             "seed build should occupy one data page"
@@ -873,7 +873,7 @@
         .expect("insert should succeed");
 
         let (after_block_count, _metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert!(
             after_block_count > before_block_count,
             "insert should allocate a new data page when the tail page is full"
@@ -979,7 +979,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_block_count, metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, dim);
         assert!(
             !before_pages.is_empty(),
@@ -995,7 +995,7 @@
         .expect("rollover insert should succeed");
 
         let (after_rollover_block_count, _metadata, after_rollover_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert!(
             after_rollover_block_count > before_block_count,
             "insert should allocate a new page once the original tail page is full"
@@ -1011,7 +1011,7 @@
         .expect("post-rollover insert should succeed");
 
         let (after_reuse_block_count, _metadata, after_reuse_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             after_reuse_block_count, after_rollover_block_count,
             "insert after rollover should reuse the new tail page when space remains"
@@ -1042,7 +1042,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(metadata.seed, 42);
         let before_tuple_count = data_pages
             .iter()
@@ -1056,7 +1056,7 @@
         .expect("duplicate insert should succeed");
 
         let (after_block_count, _metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             after_block_count, before_block_count,
             "duplicate insert should not allocate a new block"
@@ -1106,7 +1106,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_block_count, metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let before_tuple_count = before_pages
             .iter()
             .map(|page| page.tuples.len())
@@ -1119,7 +1119,7 @@
         .expect("gamma-distinct insert should succeed");
 
         let (after_block_count, _metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             after_block_count, before_block_count,
             "gamma-distinct same-code inserts should stay on the current tail page in this narrow test"
@@ -1447,7 +1447,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_before_block_count, before_metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let before_page_tuples = before_pages
             .iter()
             .flat_map(|page| {
@@ -1492,7 +1492,7 @@
         .expect("insert should succeed on a built PqFastScan index");
 
         let (_after_block_count, after_metadata, after_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let after_page_tuples = after_pages
             .iter()
             .flat_map(|page| {
@@ -1636,7 +1636,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_before_block_count, _before_metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let before_tuple_count = before_pages
             .iter()
             .map(|page| page.tuples.len())
@@ -1651,7 +1651,7 @@
         .expect("duplicate insert should succeed on a built PqFastScan index");
 
         let (_after_block_count, after_metadata, after_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let after_tuple_count = after_pages
             .iter()
             .map(|page| page.tuples.len())
