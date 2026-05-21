@@ -4,7 +4,7 @@ use crate::{
     am::common::callback::pg_am_callback,
     am::common::cost::{
         current_planner_cost_constants, estimate_planner_cost, gated_planner_cost_estimate,
-        relation_main_fork_block_count, PlannerCostEstimate, PlannerCostInputs,
+        PlannerCostEstimate, PlannerCostInputs,
     },
     storage::{page::FIRST_DATA_BLOCK_NUMBER, relation_guard::IndexRelationGuard},
 };
@@ -90,21 +90,21 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
     let relation_options = options::relation_options(index_relation);
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
-    let block_count = relation_main_fork_block_count(index_relation);
+    // SAFETY: The planner callback guard supplies a live index relation for
+    // this cost estimate.
+    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation) }
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann planner relation error: {e}"));
+    let block_count = insert_relation.main_fork_block_count();
     let index_pages = f64::from(block_count);
     if block_count <= FIRST_DATA_BLOCK_NUMBER {
         return gated_planner_cost_estimate(index_pages);
     }
 
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let reltuples = insert_relation.reltuples();
     // A metadata decode failure means the index itself is structurally
     // broken. Failing loudly during planning is preferable to masking
     // corruption behind a gated cost and continuing with an invalid AM
     // state.
-    // SAFETY: The planner callback guard supplies a live index relation for
-    // this cost estimate.
-    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation) }
-        .unwrap_or_else(|e| pgrx::error!("ec_diskann planner relation error: {e}"));
     let metadata = insert::read_metadata_page(&insert_relation)
         .unwrap_or_else(|e| pgrx::error!("ec_diskann planner could not read metadata: {e}"));
     // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
@@ -127,47 +127,46 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
     let relation_options = options::relation_options(index_relation);
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
-    let block_count = relation_main_fork_block_count(index_relation);
+    // SAFETY: The diagnostic caller supplies a live DISKANN index relation for
+    // the duration of this snapshot.
+    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation) }
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot relation error: {e}"));
+    let block_count = insert_relation.main_fork_block_count();
     let index_pages = f64::from(block_count);
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let reltuples = insert_relation.reltuples();
     // SAFETY: diagnostic snapshot reads planner cost globals in the current
     // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
 
-    let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) = if block_count
-        <= FIRST_DATA_BLOCK_NUMBER
-    {
-        (
-            false,
-            "planner scan selection is gated: ec_diskann index has no data pages",
-            0,
-            gated_planner_cost_estimate(index_pages),
-        )
-    } else {
-        // SAFETY: The diagnostic caller supplies a live index relation, and
-        // this branch only reads metadata after confirming data pages exist.
-        let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation) }
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot relation error: {e}"));
-        let metadata = insert::read_metadata_page(&insert_relation)
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot failed: {e}"));
-        let estimate = estimate_planner_cost(
-            PlannerCostInputs {
-                index_pages,
-                reltuples,
-                m: relation_options.graph_degree,
-                ef_search: scan_tuning.effective_list_size,
-                dimensions: metadata.dimensions,
-                tree_height: DISKANN_SINGLE_LAYER_TREE_HEIGHT,
-            },
-            constants,
-        );
-        (
-            true,
-            "planner scan selection is live: ec_diskann cost model active",
-            metadata.dimensions,
-            estimate,
-        )
-    };
+    let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) =
+        if block_count <= FIRST_DATA_BLOCK_NUMBER {
+            (
+                false,
+                "planner scan selection is gated: ec_diskann index has no data pages",
+                0,
+                gated_planner_cost_estimate(index_pages),
+            )
+        } else {
+            let metadata = insert::read_metadata_page(&insert_relation)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot failed: {e}"));
+            let estimate = estimate_planner_cost(
+                PlannerCostInputs {
+                    index_pages,
+                    reltuples,
+                    m: relation_options.graph_degree,
+                    ef_search: scan_tuning.effective_list_size,
+                    dimensions: metadata.dimensions,
+                    tree_height: DISKANN_SINGLE_LAYER_TREE_HEIGHT,
+                },
+                constants,
+            );
+            (
+                true,
+                "planner scan selection is live: ec_diskann cost model active",
+                metadata.dimensions,
+                estimate,
+            )
+        };
 
     IndexCostSnapshot {
         planner_scan_enabled,

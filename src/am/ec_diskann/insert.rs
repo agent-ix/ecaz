@@ -79,9 +79,14 @@ impl<'rel> DiskannInsertRelation<'rel> {
         self.relation
     }
 
-    fn main_fork_block_count(&self) -> pg_sys::BlockNumber {
+    pub(super) fn main_fork_block_count(&self) -> pg_sys::BlockNumber {
         // SAFETY: `Self` is constructed only from a live index relation borrow.
         unsafe { crate::storage::relation::main_fork_block_count(self.relation) }
+    }
+
+    pub(super) fn reltuples(&self) -> f64 {
+        // SAFETY: `Self` is constructed only from a live index relation borrow.
+        unsafe { crate::storage::relation::relation_reltuples(self.relation) }
     }
 
     fn read_main(
