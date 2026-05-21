@@ -67,15 +67,10 @@
                 .expect("payload slot relation should open");
         let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(&relation)
             .expect("payload slot should allocate");
-        // SAFETY: `slot` is allocated for the live heap relation above, and
-        // the JSON payload only targets attributes from that relation.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        unsafe {
-            am::spire_custom_scan_store_tuple_payload_json_for_test(
-                slot.as_ptr(),
-                r#"{"id":42,"title":"remote alpha"}"#,
-            );
-        }
+        am::spire_custom_scan_store_tuple_payload_json_for_test(
+            &slot,
+            r#"{"id":42,"title":"remote alpha"}"#,
+        );
 
         let mut id_is_null = false;
         // SAFETY: attribute 1 exists in the test relation created above, and

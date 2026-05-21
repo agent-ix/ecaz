@@ -104,16 +104,15 @@ unsafe fn custom_scan_store_tuple_payload_json(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn custom_scan_store_tuple_payload_json_for_test(
-    slot: *mut pg_sys::TupleTableSlot,
+pub(crate) fn custom_scan_store_tuple_payload_json_for_test(
+    slot: &crate::storage::slot_guard::TupleTableSlotGuard,
     payload_json: &str,
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: pg_test callers pass a PostgreSQL TupleTableSlot; this builds a
-    // matching attribute I/O cache before delegating to the JSON slot writer.
+    let slot = slot.as_ptr();
+    // SAFETY: pg_test callers pass a TupleTableSlotGuard for a live PostgreSQL
+    // TupleTableSlot; this builds a matching attribute I/O cache before
+    // delegating to the JSON slot writer.
     unsafe {
-        if slot.is_null() {
-            pgrx::error!("EcSpireDistributedScan tuple payload slot is null");
-        }
         let mut attr_inputs = custom_scan_payload_attr_io((*slot).tts_tupleDescriptor);
         custom_scan_store_tuple_payload_json(slot, payload_json, &mut attr_inputs)
     }
