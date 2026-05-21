@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, BinaryHeap, HashMap, HashSet};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 #[cfg(any(test, feature = "pg_test"))]
 use pgrx::IntoDatum;
@@ -158,11 +158,10 @@ struct IvfScanDescView<'a> {
 }
 
 impl<'a> IvfScanDescView<'a> {
-    unsafe fn from_raw(scan: pg_sys::IndexScanDesc, context: &str) -> Self {
+    fn from_nonnull(scan: NonNull<pg_sys::IndexScanDescData>) -> Self {
         // SAFETY: AM callbacks and debug helpers pass a PostgreSQL-owned
         // IndexScanDesc that remains live for the current callback/probe.
-        let scan = unsafe { scan.as_ref() }
-            .unwrap_or_else(|| pgrx::error!("{context} received null scan"));
+        let scan = unsafe { scan.as_ref() };
         Self { scan }
     }
 
@@ -914,7 +913,10 @@ unsafe fn configure_heap_rerank_state(
     // guards in the returned state, and the attribute resolver validates the
     // indexed ecvector source attribute for heap_f32 rerank.
     let (heap_relation, snapshot, source_attribute) = unsafe {
-        let scan = IvfScanDescView::from_raw(scan, "ec_ivf heap_f32 rerank");
+        let scan = IvfScanDescView::from_nonnull(
+            NonNull::new(scan)
+                .unwrap_or_else(|| pgrx::error!("ec_ivf heap_f32 rerank received null scan")),
+        );
         let heap_relation = resolve_scan_heap_relation(scan);
         let heap_relation_ptr = heap_relation.as_ptr();
         let snapshot = resolve_scan_snapshot(scan);
@@ -1496,7 +1498,10 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
         return IvfExplainCounters::default();
     }
 
-    let scan_desc = unsafe { IvfScanDescView::from_raw(scan_desc, "ec_ivf EXPLAIN counters") };
+    let scan_desc = IvfScanDescView::from_nonnull(
+        NonNull::new(scan_desc)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf EXPLAIN counters received null scan")),
+    );
     scan_desc
         .opaque_option("ec_ivf EXPLAIN counters")
         .map(|opaque| opaque.explain_counters)
@@ -1612,14 +1617,17 @@ fn debug_scan_desc_ref<'a>(
     scan: pg_sys::IndexScanDesc,
     context: &str,
 ) -> &'a pg_sys::IndexScanDescData {
-    // SAFETY: Debug callers keep the PostgreSQL index scan descriptor live
-    // while reading descriptor fields.
-    unsafe { IvfScanDescView::from_raw(scan, context) }.as_ref()
+    IvfScanDescView::from_nonnull(
+        NonNull::new(scan).unwrap_or_else(|| pgrx::error!("{context} received null scan")),
+    )
+    .as_ref()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_opaque_option<'a>(scan: pg_sys::IndexScanDesc) -> Option<&'a EcIvfScanOpaque> {
-    let scan = unsafe { IvfScanDescView::from_raw(scan, "ec_ivf debug scan opaque") };
+    let scan = IvfScanDescView::from_nonnull(
+        NonNull::new(scan).unwrap_or_else(|| pgrx::error!("ec_ivf debug scan received null scan")),
+    );
     scan.opaque_option("ec_ivf debug scan opaque")
 }
 
