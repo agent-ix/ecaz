@@ -202,13 +202,10 @@ unsafe fn custom_scan_tuple_payload_columns(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) -> Vec<String> {
+    let relation = custom_scan_current_relation(node, "tuple payload columns");
     // SAFETY: executor passes live CustomScanState/CustomScan pointers; relation
     // and targetlist metadata are read only for tuple payload column discovery.
     unsafe {
-        let relation = (*node).ss.ss_currentRelation;
-        if relation.is_null() {
-            pgrx::error!("EcSpireDistributedScan missing scan relation for tuple payload columns");
-        }
         let tuple_desc = crate::storage::relation::relation_tuple_desc(relation);
         if tuple_desc.is_null() {
             pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
@@ -327,19 +324,13 @@ unsafe fn custom_scan_payload_attr_io(
 }
 
 unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> String {
-    // SAFETY: executor passes a live CustomScanState whose current relation is
-    // the DML target relation.
-    unsafe {
-        let relation = (*node).ss.ss_currentRelation;
-        if relation.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML path missing scan relation");
-        }
-        let context = super::dml_frontdoor_relation_context_catalog_row((*relation).rd_id)
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-        context.pk_column.unwrap_or_else(|| {
-            pgrx::error!("EcSpireDistributedScan DML path relation has no PK column")
-        })
-    }
+    let relation = custom_scan_current_relation(node, "DML path");
+    let relation_oid = crate::storage::relation::relation_oid(relation);
+    let context = super::dml_frontdoor_relation_context_catalog_row(relation_oid)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    context
+        .pk_column
+        .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan DML path relation has no PK column"))
 }
 
 unsafe fn custom_scan_dml_pk_value_from_plan(

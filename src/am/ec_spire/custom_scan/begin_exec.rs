@@ -148,7 +148,7 @@ fn custom_scan_tuple_payload_state_from_plan(
         (
             custom_scan_tuple_payload_columns(node, custom_scan),
             custom_scan_payload_attr_io(crate::storage::relation::relation_tuple_desc(
-                (*node).ss.ss_currentRelation,
+                custom_scan_current_relation(node, "tuple payload input descriptor"),
             )),
         )
     }

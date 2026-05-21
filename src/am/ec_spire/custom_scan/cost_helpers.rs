@@ -140,6 +140,20 @@ fn custom_scan_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
     unsafe { ptr.as_ref() }
 }
 
+fn custom_scan_current_relation(
+    node: *mut pg_sys::CustomScanState,
+    label: &str,
+) -> pg_sys::Relation {
+    let Some(node) = custom_scan_pg_ref(node) else {
+        pgrx::error!("EcSpireDistributedScan {label} missing custom scan state");
+    };
+    let relation = node.ss.ss_currentRelation;
+    if relation.is_null() {
+        pgrx::error!("EcSpireDistributedScan {label} missing scan relation");
+    }
+    relation
+}
+
 fn custom_scan_list_len(list: *mut pg_sys::List) -> Option<i32> {
     custom_scan_pg_ref(list).map(|list| list.length)
 }
