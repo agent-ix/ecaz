@@ -347,15 +347,9 @@ fn debug_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_prepared_query_lengths(opaque: &TqScanOpaque) -> (usize, usize) {
-    // SAFETY: Debug callers inspect the prepared-query pointer while the owning
-    // scan descriptor is live. Null means the AM has not prepared query state.
-    unsafe {
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| (prepared.lut.len(), prepared.sq.len()))
-            .unwrap_or((0, 0))
-    }
+    scan_box_ref(opaque.prepared_query, opaque)
+        .map(|prepared| (prepared.lut.len(), prepared.sq.len()))
+        .unwrap_or((0, 0))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -431,15 +425,13 @@ type DebugBootstrapCandidateMaterializationState = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_sorted_tid_set(tids: *const HashSet<page::ItemPointer>) -> Vec<HeapTidCoords> {
-    if tids.is_null() {
-        return Vec::new();
-    }
-
-    // SAFETY: Debug callers pass scan-owned set pointers while the owning
-    // opaque is live and null was handled above.
-    let mut tids = unsafe { &*tids }
-        .iter()
+fn debug_sorted_tid_set(
+    opaque: &TqScanOpaque,
+    tids: *const HashSet<page::ItemPointer>,
+) -> Vec<HeapTidCoords> {
+    let mut tids = scan_box_ref(tids, opaque)
+        .into_iter()
+        .flatten()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect::<Vec<_>>();
     tids.sort_unstable();
@@ -448,17 +440,17 @@ fn debug_sorted_tid_set(tids: *const HashSet<page::ItemPointer>) -> Vec<HeapTidC
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    debug_sorted_tid_set(opaque.visited_tids)
+    debug_sorted_tid_set(opaque, opaque.visited_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_expanded_source_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    debug_sorted_tid_set(opaque.expanded_source_tids)
+    debug_sorted_tid_set(opaque, opaque.expanded_source_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_emitted_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    debug_sorted_tid_set(opaque.emitted_result_tids)
+    debug_sorted_tid_set(opaque, opaque.emitted_result_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -780,15 +772,13 @@ fn debug_with_scan_opaque_mut<R>(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_oracle_score_parts(opaque: &TqScanOpaque) -> DebugOracleScoreParts<'_> {
-    // SAFETY: AM rescan prepares cached quantizer and query storage before
-    // these oracle debug helpers score graph elements.
-    unsafe {
-        DebugOracleScoreParts {
-            storage: opaque.scan_graph_storage,
-            scan_m: opaque.scan_m,
-            quantizer: &*opaque.cached_quantizer,
-            prepared_query: &*opaque.prepared_query,
-        }
+    DebugOracleScoreParts {
+        storage: opaque.scan_graph_storage,
+        scan_m: opaque.scan_m,
+        quantizer: scan_box_ref(opaque.cached_quantizer, opaque)
+            .expect("oracle debug helpers require a cached quantizer"),
+        prepared_query: scan_box_ref(opaque.prepared_query, opaque)
+            .expect("oracle debug helpers require a prepared query"),
     }
 }
 
