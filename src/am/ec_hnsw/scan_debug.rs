@@ -153,6 +153,30 @@ where
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_main_fork_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
+    // SAFETY: Debug callers pass a live index relation descriptor.
+    unsafe { crate::storage::relation::main_fork_block_count(index_relation) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_read_main_buffer(
+    index_relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+) -> LockedBufferGuard {
+    // SAFETY: Debug callers pass a live index relation and a block number
+    // bounded by `debug_main_fork_block_count`; the guard owns the shared lock.
+    unsafe {
+        LockedBufferGuard::read_main(
+            index_relation,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+    }
+    .unwrap_or_else(|| pgrx::error!("ec_hnsw debug failed to open graph block {block_number}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_load_neighbor_tids_for_layer(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
@@ -591,6 +615,12 @@ fn debug_index_scan_end(scan: pg_sys::IndexScanDesc) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
+    // SAFETY: Debug callers pass a live HNSW scan descriptor.
+    unsafe { (*scan).opaque.is_null() }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a TqScanOpaque {
     // SAFETY: Debug callers inspect the HNSW opaque while the scan descriptor is
     // live and after begin/rescan initialized the opaque pointer.
@@ -745,15 +775,11 @@ impl DebugAmScan {
     }
 
     fn has_opaque(&self) -> bool {
-        // SAFETY: This guard owns a descriptor allocated by the HNSW AM begin
-        // callback and keeps it allocated until drop.
-        unsafe { !(*self.scan).opaque.is_null() }
+        !debug_scan_opaque_is_null(self.scan)
     }
 
     fn opaque_is_null(&self) -> bool {
-        // SAFETY: This guard owns a descriptor allocated by the HNSW AM begin
-        // callback and keeps it allocated until drop.
-        unsafe { (*self.scan).opaque.is_null() }
+        debug_scan_opaque_is_null(self.scan)
     }
 
     fn end_am(&mut self) {
@@ -1515,27 +1541,12 @@ fn debug_collect_element_tids_at_level(
     storage: graph::GraphStorageDescriptor,
     target_level: u8,
 ) -> Vec<page::ItemPointer> {
-    // SAFETY: `index_relation` is an open index relation supplied by the debug
-    // caller; PostgreSQL returns the current main-fork block count.
-    // SAFETY: debug callers pass a live index relation descriptor.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let block_count = debug_main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: The block number is within the relation's main-fork block
-        // count and is read under a shared buffer lock for inspection.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
-        });
+        let buffer = debug_read_main_buffer(index_relation, block_number);
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
@@ -1580,27 +1591,12 @@ fn debug_collect_element_tids_at_or_above_level(
     storage: graph::GraphStorageDescriptor,
     min_level: u8,
 ) -> Vec<page::ItemPointer> {
-    // SAFETY: `index_relation` is an open index relation supplied by the debug
-    // caller; PostgreSQL returns the current main-fork block count.
-    // SAFETY: debug callers pass a live index relation descriptor.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let block_count = debug_main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: The block number is within the relation's main-fork block
-        // count and is read under a shared buffer lock for inspection.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
-        });
+        let buffer = debug_read_main_buffer(index_relation, block_number);
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
@@ -1644,27 +1640,12 @@ fn debug_collect_element_tid_by_heap_tid(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
 ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
-    // SAFETY: `index_relation` is an open index relation supplied by the debug
-    // caller; PostgreSQL returns the current main-fork block count.
-    // SAFETY: debug callers pass a live index relation descriptor.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let block_count = debug_main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut map = std::collections::HashMap::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: The block number is within the relation's main-fork block
-        // count and is read under a shared buffer lock for inspection.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
-        });
+        let buffer = debug_read_main_buffer(index_relation, block_number);
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
