@@ -1,0 +1,12 @@
+Script started on 2026-05-21 01:08:07-07:00 [<not executed on terminal>]
+11
+8
+0
+0
+2660
+2657
+ src/am/ec_spire/build.rs        |   4 [32m+[m[31m-[m
+ src/am/ec_spire/build/tuples.rs | 178 [32m++++++++++++++++++[m[31m----------------------[m
+ 2 files changed, 84 insertions(+), 98 deletions(-)
+
+Script done on 2026-05-21 01:08:07-07:00 [COMMAND_EXIT_CODE="0"]
