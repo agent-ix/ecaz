@@ -721,8 +721,9 @@ pub(crate) fn debug_spire_vacuum_remove_heap_tids(
     };
     // SAFETY: info_ptr and stats are still live from the debug bulk-delete call.
     let stats = unsafe { ec_spire_amvacuumcleanup(info_ptr, stats) };
-    // SAFETY: vacuum callbacks returned a valid stats pointer for this debug path.
-    unsafe { *stats }
+    crate::am::common::vacuum::copy_index_bulk_delete_result(
+        std::ptr::NonNull::new(stats).expect("ec_spire debug vacuum stats should be non-null"),
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -754,8 +755,9 @@ pub(crate) fn debug_spire_vacuum_bulkdelete_heap_tids(
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
         )
     };
-    // SAFETY: vacuum callback returned a valid stats pointer for this debug path.
-    unsafe { *stats }
+    crate::am::common::vacuum::copy_index_bulk_delete_result(
+        std::ptr::NonNull::new(stats).expect("ec_spire debug vacuum stats should be non-null"),
+    )
 }
 
 include!("tests.rs");

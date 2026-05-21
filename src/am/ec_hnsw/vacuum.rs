@@ -2103,9 +2103,9 @@ pub(crate) fn debug_vacuum_remove_heap_tids(
     // SAFETY: The same debug IndexVacuumInfo and stats pointer are valid for the
     // follow-up cleanup call.
     let stats = unsafe { ec_hnsw_amvacuumcleanup(info_ptr, stats) };
-    // SAFETY: The AM returned a valid stats pointer owned by the current
-    // PostgreSQL memory context; copy the result before dropping guards.
-    let result = unsafe { *stats };
+    let result = crate::am::common::vacuum::copy_index_bulk_delete_result(
+        std::ptr::NonNull::new(stats).expect("ec_hnsw debug vacuum stats should be non-null"),
+    );
     drop(heap_relation_guard);
     drop(index_relation_guard);
     result

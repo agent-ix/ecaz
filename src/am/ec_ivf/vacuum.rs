@@ -326,10 +326,9 @@ fn debug_ec_ivf_vacuum_stats_row(
     if stats.is_null() {
         pgrx::error!("ec_ivf debug vacuum stats returned NULL");
     }
-    // SAFETY: caller passes the stats pointer returned by the immediate
-    // bulkdelete/vacuumcleanup invocation; scalar fields are copied out before
-    // PostgreSQL-owned memory or relation guards leave scope.
-    let stats = unsafe { &*stats };
+    let stats = crate::am::common::vacuum::copy_index_bulk_delete_result(
+        std::ptr::NonNull::new(stats).expect("ec_ivf debug vacuum stats should be non-null"),
+    );
     DebugEcIvfVacuumStats {
         estimated_count: stats.estimated_count,
         num_index_tuples: stats.num_index_tuples,
