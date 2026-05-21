@@ -2365,18 +2365,14 @@ mod tests {
         itemptr: pg_sys::ItemPointer,
         state: *mut c_void,
     ) -> bool {
-        // SAFETY: Debug vacuum passes a `DebugVacuumCallbackState` pointer as
-        // callback state for the duration of this guarded callback.
-        unsafe {
-            pgrx::pgrx_extern_c_guard(|| {
-                let state = &*(state.cast::<DebugVacuumCallbackState>());
-                let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(*itemptr);
-                state.dead_tids.contains(&ItemPointer {
-                    block_number,
-                    offset_number,
-                })
+        crate::am::common::callback::pg_callback!({
+            let state = &*(state.cast::<DebugVacuumCallbackState>());
+            let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(*itemptr);
+            state.dead_tids.contains(&ItemPointer {
+                block_number,
+                offset_number,
             })
-        }
+        })
     }
 
     fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {

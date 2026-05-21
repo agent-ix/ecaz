@@ -2050,14 +2050,10 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
 ) -> bool {
-    // SAFETY: Debug vacuum passes a `DebugVacuumCallbackState` pointer as the
-    // callback state for the duration of this guarded callback.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &*(state.cast::<DebugVacuumCallbackState>());
-            state.dead_tids.contains(&shared::decode_heap_tid(itemptr))
-        })
-    }
+    crate::am::common::callback::pg_callback!({
+        let state = &*(state.cast::<DebugVacuumCallbackState>());
+        state.dead_tids.contains(&shared::decode_heap_tid(itemptr))
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]

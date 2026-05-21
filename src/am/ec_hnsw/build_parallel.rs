@@ -16,6 +16,7 @@ use super::concurrent_dsm_state::{
     EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY, EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
 };
 use super::{build, graph, insert, options, page, search, shared, source};
+use crate::am::common::callback::{pg_am_callback, pg_callback};
 use crate::storage::lock_guard::LwLockGuard;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
@@ -2697,19 +2698,13 @@ unsafe extern "C-unwind" fn ec_hnsw_parallel_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
-    // SAFETY: PostgreSQL invokes this callback with a valid callback state
-    // pointer supplied to table_index_build_scan and tuple value/null arrays
-    // live for the callback duration.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &mut *state.cast::<EcHnswParallelBuildWorkerScanState>();
-            let heap_tid = shared::decode_heap_tid(tid);
-            let tuple =
-                build::build_heap_tuple(values, isnull, heap_tid, state.indexed_vector_kind);
-            send_build_tuple_message(state.queue_handle, &tuple);
-            state.encoded_tuples += tuple.heap_tids.len() as u64;
-        })
-    }
+    pg_am_callback!({
+        let state = &mut *state.cast::<EcHnswParallelBuildWorkerScanState>();
+        let heap_tid = shared::decode_heap_tid(tid);
+        let tuple = build::build_heap_tuple(values, isnull, heap_tid, state.indexed_vector_kind);
+        send_build_tuple_message(state.queue_handle, &tuple);
+        state.encoded_tuples += tuple.heap_tids.len() as u64;
+    })
 }
 
 #[pgrx::pg_guard]
@@ -2718,13 +2713,9 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_build_main(
     seg: *mut pg_sys::dsm_segment,
     toc: *mut pg_sys::shm_toc,
 ) {
-    // SAFETY: PostgreSQL enters this background-worker function with the DSM
-    // segment and TOC pointers for the launched parallel worker.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            parallel_build_worker_main(seg, toc);
-        })
-    }
+    pg_callback!({
+        parallel_build_worker_main(seg, toc);
+    })
 }
 
 #[pgrx::pg_guard]
@@ -2733,13 +2724,9 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
     _seg: *mut pg_sys::dsm_segment,
     toc: *mut pg_sys::shm_toc,
 ) {
-    // SAFETY: PostgreSQL enters this background-worker function with the TOC
-    // pointer for the launched graph-build worker.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            parallel_graph_build_worker_main(toc);
-        })
-    }
+    pg_callback!({
+        parallel_graph_build_worker_main(toc);
+    })
 }
 
 unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
