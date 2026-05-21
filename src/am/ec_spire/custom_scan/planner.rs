@@ -153,14 +153,17 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     // SAFETY: PostgreSQL calls PlanCustomPath with live planner/path/list
     // pointers; allocated plan nodes are returned to PostgreSQL ownership.
     unsafe {
+        let path = CustomScanPath::new(best_path).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan PlanCustomPath missing CustomPath")
+        });
         let planner_rel = CustomScanPlannerRel::new(root, rel).unwrap_or_else(|| {
             pgrx::error!("EcSpireDistributedScan PlanCustomPath missing planner relation")
         });
-        let mode = custom_scan_mode_from_path(best_path).unwrap_or_else(|| {
+        let mode = path.mode().unwrap_or_else(|| {
             pgrx::error!("EcSpireDistributedScan CustomPath is missing plan mode")
         });
         if mode.is_dml() {
-            return plan_dml_custom_path(root, rel, best_path, tlist, clauses, custom_plans, mode);
+            return plan_dml_custom_path(root, rel, path, tlist, clauses, custom_plans, mode);
         }
 
         let top_k = planner_rel.top_k().unwrap_or(1);
@@ -173,26 +176,23 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
             std::ptr::null_mut(),
             pg_sys::copyObjectImpl(query_expr.cast()).cast(),
         );
+        let path_fields = path.plan_fields();
 
         let mut custom_scan =
             PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
         custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
-        custom_scan.scan.plan.disabled_nodes = (*best_path).path.disabled_nodes;
-        custom_scan.scan.plan.startup_cost = (*best_path).path.startup_cost;
-        custom_scan.scan.plan.total_cost = (*best_path).path.total_cost;
-        custom_scan.scan.plan.plan_rows = (*best_path).path.rows;
-        custom_scan.scan.plan.plan_width = if !(*best_path).path.pathtarget.is_null() {
-            (*(*best_path).path.pathtarget).width
-        } else {
-            0
-        };
+        custom_scan.scan.plan.disabled_nodes = path_fields.disabled_nodes;
+        custom_scan.scan.plan.startup_cost = path_fields.startup_cost;
+        custom_scan.scan.plan.total_cost = path_fields.total_cost;
+        custom_scan.scan.plan.plan_rows = path_fields.rows;
+        custom_scan.scan.plan.plan_width = path_fields.width;
         custom_scan.scan.plan.parallel_aware = false;
         custom_scan.scan.plan.parallel_safe = false;
         custom_scan.scan.plan.async_capable = false;
         custom_scan.scan.plan.targetlist = tlist;
         custom_scan.scan.plan.qual = pg_sys::extract_actual_clauses(clauses, false);
-        custom_scan.scan.scanrelid = (*(*best_path).path.parent).relid;
-        custom_scan.flags = (*best_path).flags;
+        custom_scan.scan.scanrelid = path_fields.scanrelid;
+        custom_scan.flags = path_fields.flags;
         custom_scan.custom_plans = custom_plans;
         custom_scan.custom_exprs = custom_exprs;
         custom_scan.custom_private = pg_sys::lappend_oid(
@@ -201,7 +201,7 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
                     std::ptr::null_mut(),
                     pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
                 ),
-                custom_scan_index_oid_from_path(best_path),
+                path.index_oid(),
             ),
             pg_sys::Oid::from(u32::try_from(top_k).unwrap_or_else(|_| {
                 pgrx::error!("EcSpireDistributedScan LIMIT exceeds CustomScan plan-private range")
@@ -217,7 +217,7 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
 unsafe fn plan_dml_custom_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
-    best_path: *mut pg_sys::CustomPath,
+    path: CustomScanPath<'_>,
     tlist: *mut pg_sys::List,
     clauses: *mut pg_sys::List,
     custom_plans: *mut pg_sys::List,
@@ -242,30 +242,27 @@ unsafe fn plan_dml_custom_path(
             )
         }
         let custom_exprs = custom_scan_dml_custom_exprs_from_plan_expr(&plan_expr);
+        let path_fields = path.plan_fields();
         let mut custom_scan =
             PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
         custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
-        custom_scan.scan.plan.disabled_nodes = (*best_path).path.disabled_nodes;
-        custom_scan.scan.plan.startup_cost = (*best_path).path.startup_cost;
-        custom_scan.scan.plan.total_cost = (*best_path).path.total_cost;
-        custom_scan.scan.plan.plan_rows = (*best_path).path.rows;
-        custom_scan.scan.plan.plan_width = if !(*best_path).path.pathtarget.is_null() {
-            (*(*best_path).path.pathtarget).width
-        } else {
-            0
-        };
+        custom_scan.scan.plan.disabled_nodes = path_fields.disabled_nodes;
+        custom_scan.scan.plan.startup_cost = path_fields.startup_cost;
+        custom_scan.scan.plan.total_cost = path_fields.total_cost;
+        custom_scan.scan.plan.plan_rows = path_fields.rows;
+        custom_scan.scan.plan.plan_width = path_fields.width;
         custom_scan.scan.plan.parallel_aware = false;
         custom_scan.scan.plan.parallel_safe = false;
         custom_scan.scan.plan.async_capable = false;
         custom_scan.scan.plan.targetlist = tlist;
         custom_scan.scan.plan.qual = pg_sys::extract_actual_clauses(clauses, false);
-        custom_scan.scan.scanrelid = (*(*best_path).path.parent).relid;
-        custom_scan.flags = (*best_path).flags;
+        custom_scan.scan.scanrelid = path_fields.scanrelid;
+        custom_scan.flags = path_fields.flags;
         custom_scan.custom_plans = custom_plans;
         custom_scan.custom_exprs = custom_exprs;
         custom_scan.custom_private = custom_scan_dml_plan_private(
             mode,
-            custom_scan_index_oid_from_path(best_path),
+            path.index_oid(),
             &plan_expr.primitive_plan.pk_argument.pk_column,
             &plan_expr.primitive_plan.updated_columns,
             &plan_expr.primitive_plan.projected_columns,

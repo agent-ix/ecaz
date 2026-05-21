@@ -177,29 +177,79 @@ impl<'a> CustomScanPlan<'a> {
     }
 }
 
-unsafe fn custom_scan_mode_from_path(
-    custom_path: *mut pg_sys::CustomPath,
-) -> Option<SpireCustomScanPlanMode> {
-    // SAFETY: caller guarantees custom_path is a live CustomPath produced by
-    // this provider for immediate private-list inspection.
-    let custom_private = unsafe { custom_scan_pg_ref(custom_path)? }.custom_private;
-    let custom_private = unsafe { CustomScanPlanPrivate::new(custom_private)? };
-    custom_scan_mode_from_u32(custom_private.nth_oid(0)?.to_u32())
+#[derive(Clone, Copy)]
+struct CustomScanPath<'a> {
+    path_ref: &'a pg_sys::CustomPath,
 }
 
-unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) -> pg_sys::Oid {
-    // SAFETY: caller guarantees custom_path is a live CustomPath produced by
-    // this provider for immediate private-list inspection.
-    let Some(custom_path) = (unsafe { custom_scan_pg_ref(custom_path) }) else {
-        pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID");
-    };
-    let custom_private = unsafe { CustomScanPlanPrivate::new(custom_path.custom_private) }
-        .unwrap_or_else(|| {
-            pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID")
-        });
-    custom_private.nth_oid(1).unwrap_or_else(|| {
-        pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID")
-    })
+#[derive(Clone, Copy)]
+struct CustomScanPathPlanFields {
+    disabled_nodes: i32,
+    startup_cost: f64,
+    total_cost: f64,
+    rows: f64,
+    width: i32,
+    scanrelid: pg_sys::Index,
+    flags: u32,
+}
+
+impl<'a> CustomScanPath<'a> {
+    unsafe fn new(path: *mut pg_sys::CustomPath) -> Option<Self> {
+        // SAFETY: caller guarantees `path` is the provider-owned CustomPath
+        // supplied by PostgreSQL for immediate PlanCustomPath inspection.
+        let path_ref = unsafe { custom_scan_pg_ref(path)? };
+        Some(Self { path_ref })
+    }
+
+    fn custom_private(self, label: &str) -> CustomScanPlanPrivate<'a> {
+        if self.path_ref.custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan CustomPath is missing {label}");
+        }
+        // SAFETY: this view was built from the live provider-owned CustomPath
+        // for the current planner callback; custom_private is null-checked
+        // before wrapping.
+        unsafe { CustomScanPlanPrivate::new(self.path_ref.custom_private) }
+            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan CustomPath is missing {label}"))
+    }
+
+    fn mode(self) -> Option<SpireCustomScanPlanMode> {
+        let custom_private = self.custom_private("plan mode");
+        custom_scan_mode_from_u32(custom_private.nth_oid(0)?.to_u32())
+    }
+
+    fn index_oid(self) -> pg_sys::Oid {
+        self.custom_private("private index OID")
+            .nth_oid(1)
+            .unwrap_or_else(|| {
+                pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID")
+            })
+    }
+
+    fn plan_fields(self) -> CustomScanPathPlanFields {
+        if self.path_ref.path.parent.is_null() {
+            pgrx::error!("EcSpireDistributedScan CustomPath is missing parent relation");
+        }
+        // SAFETY: parent is null-checked above. pathtarget, when non-null, and
+        // parent are live planner nodes referenced by this CustomPath for the
+        // current PlanCustomPath callback.
+        let (width, scanrelid) = unsafe {
+            let width = if self.path_ref.path.pathtarget.is_null() {
+                0
+            } else {
+                (*self.path_ref.path.pathtarget).width
+            };
+            (width, (*self.path_ref.path.parent).relid)
+        };
+        CustomScanPathPlanFields {
+            disabled_nodes: self.path_ref.path.disabled_nodes,
+            startup_cost: self.path_ref.path.startup_cost,
+            total_cost: self.path_ref.path.total_cost,
+            rows: self.path_ref.path.rows,
+            width,
+            scanrelid,
+            flags: self.path_ref.flags,
+        }
+    }
 }
 
 fn custom_scan_mode_from_u32(raw: u32) -> Option<SpireCustomScanPlanMode> {
