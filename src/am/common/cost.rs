@@ -124,7 +124,7 @@ pub(crate) unsafe fn current_cpu_tuple_cost() -> f64 {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(crate) fn relation_main_fork_block_count(
+pub(crate) unsafe fn relation_main_fork_block_count(
     index_relation: pg_sys::Relation,
 ) -> pg_sys::BlockNumber {
     if index_relation.is_null() {
@@ -135,7 +135,7 @@ pub(crate) fn relation_main_fork_block_count(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(crate) fn relation_reltuples(index_relation: pg_sys::Relation) -> f64 {
+pub(crate) unsafe fn relation_reltuples(index_relation: pg_sys::Relation) -> f64 {
     if index_relation.is_null() {
         pgrx::error!("planner reltuples read needs a valid index relation");
     }
