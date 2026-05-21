@@ -642,10 +642,7 @@ unsafe fn finish_vacuum_stats(
         } else {
             stats
         };
-        let block_count = pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        );
+        let block_count = crate::storage::relation::main_fork_block_count(index_relation);
         (*stats).num_pages = block_count;
         (*stats).estimated_count = false;
         (*stats).num_index_tuples = live_assignments as f64;

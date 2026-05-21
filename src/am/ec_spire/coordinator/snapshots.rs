@@ -595,14 +595,8 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
 
-            // SAFETY: storage_relation is open in AccessShareLock mode and is
-            // only queried for its main-fork block count.
-            let storage_block_count = unsafe {
-                pg_sys::RelationGetNumberOfBlocksInFork(
-                    storage_relation,
-                    pg_sys::ForkNumber::MAIN_FORKNUM,
-                )
-            };
+            let storage_block_count =
+                crate::storage::relation::main_fork_block_count(storage_relation);
             relation_block_count = relation_block_count
                 .checked_add(u64::from(storage_block_count))
                 .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;

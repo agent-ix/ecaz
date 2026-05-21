@@ -1634,9 +1634,7 @@ unsafe fn append_heap_tuple(
 
     // SAFETY: The index relation is open for the aminsert callback; this only
     // reads the current main-fork block count.
-    let existing_blocks = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
     let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
         existing_blocks - 1
     } else {
@@ -1780,9 +1778,7 @@ unsafe fn append_turbo_hot_cold_tuple(
 
     // SAFETY: The index relation is open for the aminsert callback; this reads
     // only the current main-fork block count.
-    let existing_blocks = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
     let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
         existing_blocks - 1
     } else {
@@ -2012,9 +2008,7 @@ unsafe fn append_pq_fastscan_tuple(
 
     // SAFETY: The index relation is open for the aminsert callback; this reads
     // only the current main-fork block count.
-    let existing_blocks = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
     let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
         existing_blocks - 1
     } else {
@@ -2129,9 +2123,7 @@ unsafe fn find_duplicate_element_tid(
 ) -> Option<page::ItemPointer> {
     // SAFETY: Duplicate scanning only reads the live index main-fork block
     // count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }
@@ -2208,9 +2200,7 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
 ) -> Option<page::ItemPointer> {
     // SAFETY: Duplicate scanning only reads the live index main-fork block
     // count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }
@@ -2292,9 +2282,7 @@ unsafe fn find_duplicate_grouped_element_tid(
 ) -> Option<page::ItemPointer> {
     // SAFETY: Duplicate scanning only reads the live index main-fork block
     // count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }

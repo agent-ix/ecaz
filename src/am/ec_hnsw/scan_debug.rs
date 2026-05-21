@@ -1395,9 +1395,7 @@ unsafe fn debug_collect_element_tids_at_level(
 ) -> Vec<page::ItemPointer> {
     // SAFETY: `index_relation` is an open index relation supplied by the debug
     // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
@@ -1469,9 +1467,7 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
 ) -> Vec<page::ItemPointer> {
     // SAFETY: `index_relation` is an open index relation supplied by the debug
     // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
@@ -1542,9 +1538,7 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
 ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
     // SAFETY: `index_relation` is an open index relation supplied by the debug
     // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut map = std::collections::HashMap::new();
 

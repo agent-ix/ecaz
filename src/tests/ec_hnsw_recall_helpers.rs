@@ -2367,15 +2367,9 @@
         );
         let index_relation =
             open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_graph_scan_recall_probe");
-        // SAFETY: `open_valid_ec_hnsw_index_guard` returned an open relation for the
-        // just-created HNSW index, and the guard keeps that relation valid for this call.
-        let index_block_count = unsafe {
-            i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation.as_ptr(),
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            ))
-            .expect("block count should fit into int")
-        };
+        let index_block_count =
+            i32::try_from(crate::storage::relation::main_fork_block_count(index_relation.as_ptr()))
+                .expect("block count should fit into int");
         drop(index_relation);
 
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))

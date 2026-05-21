@@ -34,11 +34,7 @@ impl VacuumIndexRelation {
     }
 
     fn main_fork_block_count(self) -> pg_sys::BlockNumber {
-        // SAFETY: This wrapper owns the invariant that the relation pointer is
-        // live for the current vacuum callback.
-        unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(self.relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-        }
+        crate::storage::relation::main_fork_block_count(self.relation)
     }
 
     fn read_main_locked(

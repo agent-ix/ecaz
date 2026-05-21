@@ -57,9 +57,7 @@ unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {
 fn hnsw_main_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
     // SAFETY: Callers hold a live index relation while copying its current
     // main-fork block count.
-    unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    }
+    crate::storage::relation::main_fork_block_count(index_relation)
 }
 
 fn read_main_buffer(
@@ -149,10 +147,7 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
     // SAFETY: `stats` is either PostgreSQL-supplied or allocated above, and the
     // index relation is live while page/live-tuple stats are computed.
     unsafe {
-        (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        );
+        (*stats).num_pages = crate::storage::relation::main_fork_block_count(index_relation);
         (*stats).estimated_count = false;
         (*stats).num_index_tuples = count_element_tuples(index_relation) as f64;
     }

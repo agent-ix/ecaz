@@ -130,11 +130,7 @@ pub(crate) fn relation_main_fork_block_count(
     if index_relation.is_null() {
         pgrx::error!("planner relation block count needs a valid index relation");
     }
-    // SAFETY: caller supplies a live index relation during AM planning or
-    // diagnostics; PostgreSQL accepts it for main-fork block counting.
-    unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    }
+    crate::storage::relation::main_fork_block_count(index_relation)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]

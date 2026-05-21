@@ -86,9 +86,7 @@ pub(crate) fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDri
     let directory = directory_drift_summary(index_relation, &metadata);
     // SAFETY: PostgreSQL owns the relation; querying the main fork block count
     // is valid for the opened index relation.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
 
     let total_live_tuples = metadata.total_live_tuples;
     let changed_row_count = metadata

@@ -2267,15 +2267,9 @@
 
     fn recall_index_block_count(index_oid: pg_sys::Oid, caller_name: &'static str) -> i32 {
         let index_relation = open_valid_ec_hnsw_index_guard(index_oid, caller_name);
-        // SAFETY: The relation guard keeps the HNSW index open while reading
-        // its main-fork block count from PostgreSQL.
-        let index_block_count = unsafe {
-            i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation.as_ptr(),
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            ))
-            .expect("block count should fit into int")
-        };
+        let index_block_count =
+            i32::try_from(crate::storage::relation::main_fork_block_count(index_relation.as_ptr()))
+                .expect("block count should fit into int");
         drop(index_relation);
         index_block_count
     }

@@ -959,10 +959,7 @@ unsafe fn ec_diskann_noop_vacuum_stats(
     // SAFETY: `stats` is either PostgreSQL-supplied or allocated above; the
     // index relation is live while page count/live tuple stats are computed.
     unsafe {
-        (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        );
+        (*stats).num_pages = crate::storage::relation::main_fork_block_count(index_relation);
         (*stats).estimated_count = false;
         (*stats).num_index_tuples = count_live_node_tuples(index_relation)? as f64;
     }
@@ -1033,9 +1030,7 @@ unsafe fn run_diskann_bulkdelete_pass(
 ) -> Result<VacuumBulkDeletePassResult, String> {
     // SAFETY: The index relation is live; this reads the current main-fork block
     // count for the vacuum pass.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     // SAFETY: The index relation is live and materialization only reads the
     // persisted DiskANN page chain.
     let (metadata, original_chain) =

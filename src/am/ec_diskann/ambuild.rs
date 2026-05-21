@@ -725,9 +725,7 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
 unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
     // SAFETY: The index relation is live while initializing its main fork and
     // PostgreSQL returns the current block count for that fork.
-    let existing_blocks = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {

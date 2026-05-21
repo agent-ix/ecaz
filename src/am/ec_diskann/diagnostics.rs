@@ -59,9 +59,7 @@ pub(crate) unsafe fn graph_summary(
 ) -> Result<DiskannGraphSummary, String> {
     // SAFETY: The caller provides a live DiskANN index relation; this read-only
     // diagnostic only asks PostgreSQL for the current MAIN fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     // SAFETY: The same live DiskANN index relation is materialized through the
     // scan-state reader without modifying pages.
     let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };

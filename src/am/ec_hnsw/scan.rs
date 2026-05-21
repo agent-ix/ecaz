@@ -1025,10 +1025,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
                     resolve_grouped_exact_traversal_limit()
                 };
             configure_grouped_heap_rerank_state(scan, opaque, &index_options);
-            opaque.scan_block_count = pg_sys::RelationGetNumberOfBlocksInFork(
-                (*scan).indexRelation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            );
+            opaque.scan_block_count =
+                crate::storage::relation::main_fork_block_count((*scan).indexRelation);
             let scan_tuning = super::options::resolve_scan_tuning(&index_options);
             opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
                 .expect("ef_search should fit in usize")

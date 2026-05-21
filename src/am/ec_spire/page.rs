@@ -36,10 +36,7 @@ impl SpirePageRelation {
     }
 
     fn number_of_blocks(self) -> pg_sys::BlockNumber {
-        // SAFETY: this view is constructed only for an open SPIRE relation.
-        unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(self.relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-        }
+        crate::storage::relation::main_fork_block_count(self.relation)
     }
 
     fn page_with_free_space(self, required_space: usize) -> pg_sys::BlockNumber {

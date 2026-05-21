@@ -183,9 +183,7 @@ pub(super) unsafe fn materialize_chain_from_index(
 
     // SAFETY: `index_relation` is live while beginscan materializes the index
     // and PostgreSQL can report the current main-fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
     let mut chain = DataPageChain::new(page_size);
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
         let page_result: Result<(), String> = {

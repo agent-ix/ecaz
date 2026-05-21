@@ -269,9 +269,7 @@ fn finish_vacuum_stats(
     };
     // SAFETY: `index_relation` is the live IVF index relation; PostgreSQL
     // accepts this relation pointer for main-fork block counting.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
 
     // SAFETY: `stats` is non-null after allocation/selection above and is
     // writable for the current vacuum callback.
