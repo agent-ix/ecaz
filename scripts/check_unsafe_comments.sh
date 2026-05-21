@@ -8,6 +8,8 @@ if [[ "${1:-}" == "--update-baseline" ]]; then
   update_baseline=true
 fi
 
+rg -n '^pub(\(crate\))? fn .*pg_sys::Relation' src >&2 && echo "warning: safe public function takes pg_sys::Relation; prefer unsafe fn or a typed guard/view" >&2 || true
+
 unsafe_lines=()
 while IFS= read -r line; do
   unsafe_lines+=("$line")
