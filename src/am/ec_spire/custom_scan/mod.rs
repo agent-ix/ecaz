@@ -2,8 +2,9 @@ use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList, Spi};
 
 use std::{ffi::CString, ptr};
 
-use crate::am::common::cost::{
-    current_cpu_tuple_cost, current_planner_cost_constants, PlannerCostConstants,
+use crate::am::common::{
+    cost::{current_cpu_tuple_cost, current_planner_cost_constants, PlannerCostConstants},
+    heap_slot::TupleSlotWriter,
 };
 
 use super::meta;

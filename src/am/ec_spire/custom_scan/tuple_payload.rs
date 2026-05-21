@@ -3,122 +3,112 @@ fn custom_scan_store_remote_tuple_payload(
     access_state: CustomScanAccessState<'_>,
     output: &super::SpireRemoteProductionScanOutputRow,
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: state and access_state are PostgreSQL-owned custom scan execution
-    // pointers for the active callback; this only stores one output row payload
-    // into ss_ScanTupleSlot using the state's prepared attribute I/O cache.
-    unsafe {
-        if output.tuple_payload_missing {
-            pgrx::error!(
-                "EcSpireDistributedScan remote tuple payload is missing for node_id {} output",
-                output.node_id
-            );
-        }
-        if let Some(payload) = output.typed_tuple_payload.as_ref() {
-            return custom_scan_store_tuple_payload_typed(
-                access_state.tuple_slot(),
-                payload,
-                &mut state.tuple_payload_inputs,
-            );
-        }
-        let Some(payload_json) = output.tuple_payload_json.as_deref() else {
-            pgrx::error!(
-                "EcSpireDistributedScan tuple payload delivery requires remote payload for node_id {} output; heap_lookup_owner {}",
-                output.node_id,
-                output.heap_lookup_owner
-            );
-        };
-        custom_scan_store_tuple_payload_json(
-            access_state.tuple_slot(),
-            payload_json,
-            &mut state.tuple_payload_inputs,
-        )
+    if output.tuple_payload_missing {
+        pgrx::error!(
+            "EcSpireDistributedScan remote tuple payload is missing for node_id {} output",
+            output.node_id
+        );
     }
+    if let Some(payload) = output.typed_tuple_payload.as_ref() {
+        return custom_scan_store_tuple_payload_typed(
+            access_state.tuple_slot(),
+            payload,
+            &mut state.tuple_payload_inputs,
+        );
+    }
+    let Some(payload_json) = output.tuple_payload_json.as_deref() else {
+        pgrx::error!(
+            "EcSpireDistributedScan tuple payload delivery requires remote payload for node_id {} output; heap_lookup_owner {}",
+            output.node_id,
+            output.heap_lookup_owner
+        );
+    };
+    custom_scan_store_tuple_payload_json(
+        access_state.tuple_slot(),
+        payload_json,
+        &mut state.tuple_payload_inputs,
+    )
 }
 
-unsafe fn custom_scan_store_tuple_payload_json(
+fn custom_scan_store_tuple_payload_json(
     slot: *mut pg_sys::TupleTableSlot,
     payload_json: &str,
     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: slot is a PostgreSQL TupleTableSlot for the scan output and
-    // attr_inputs is sized for its tuple descriptor; null/dropped attributes are
-    // handled before writing values/isnull arrays.
-    unsafe {
-        if slot.is_null() {
-            pgrx::error!("EcSpireDistributedScan tuple payload slot is null");
-        }
-        let tuple_desc = (*slot).tts_tupleDescriptor;
-        if tuple_desc.is_null() {
-            pgrx::error!("EcSpireDistributedScan tuple payload slot has no tuple descriptor");
-        }
-        let payload = serde_json::from_str::<serde_json::Value>(payload_json).unwrap_or_else(|e| {
-            pgrx::error!("EcSpireDistributedScan remote tuple payload JSON decode failed: {e}")
-        });
-        let payload_object = payload.as_object().unwrap_or_else(|| {
-            pgrx::error!("EcSpireDistributedScan remote tuple payload must be a JSON object")
-        });
-
-        if attr_inputs.len() != usize::try_from((*tuple_desc).natts).unwrap_or(usize::MAX) {
-            pgrx::error!("EcSpireDistributedScan tuple payload input cache width mismatch");
-        }
-
-        pg_sys::ExecClearTuple(slot);
-        let natts = (*tuple_desc).natts;
-        for attr_index in 0..natts {
-            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
-            if attr.is_null() || (*attr).attisdropped {
-                *(*slot).tts_isnull.add(attr_index as usize) = true;
-                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
-                continue;
-            }
-            let attr_name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
-                .to_str()
-                .unwrap_or_else(|_| {
-                    pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
-                });
-            match payload_object.get(attr_name) {
-                None | Some(serde_json::Value::Null) => {
-                    *(*slot).tts_isnull.add(attr_index as usize) = true;
-                    *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
-                }
-                Some(value) => {
-                    *(*slot).tts_isnull.add(attr_index as usize) = false;
-                    let Some(attr_input) = attr_inputs
-                        .get_mut(attr_index as usize)
-                        .and_then(Option::as_mut)
-                    else {
-                        pgrx::error!(
-                            "EcSpireDistributedScan tuple payload input cache missing attribute {}",
-                            attr_index + 1
-                        );
-                    };
-                    *(*slot).tts_values.add(attr_index as usize) =
-                        custom_scan_json_value_to_datum(value, attr_name, attr_input);
-                }
-            }
-        }
-        (*slot).tts_nvalid = i16::try_from(natts)
-            .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan tuple descriptor too wide"));
-        pg_sys::ExecStoreVirtualTuple(slot)
-    }
+    let writer =
+        tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
+    custom_scan_store_tuple_payload_json_with_writer(writer, payload_json, attr_inputs)
 }
 
-#[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn custom_scan_store_tuple_payload_json_for_test(
-    slot: &crate::storage::slot_guard::TupleTableSlotGuard,
+fn custom_scan_store_tuple_payload_json_with_writer(
+    mut writer: TupleSlotWriter<'_>,
     payload_json: &str,
+    attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
 ) -> *mut pg_sys::TupleTableSlot {
-    let slot = slot.as_ptr();
-    // SAFETY: pg_test callers pass a TupleTableSlotGuard for a live PostgreSQL
-    // TupleTableSlot; this builds a matching attribute I/O cache before
-    // delegating to the JSON slot writer.
-    unsafe {
-        let mut attr_inputs = custom_scan_payload_attr_io((*slot).tts_tupleDescriptor);
-        custom_scan_store_tuple_payload_json(slot, payload_json, &mut attr_inputs)
+    let payload = serde_json::from_str::<serde_json::Value>(payload_json).unwrap_or_else(|e| {
+        pgrx::error!("EcSpireDistributedScan remote tuple payload JSON decode failed: {e}")
+    });
+    let payload_object = payload.as_object().unwrap_or_else(|| {
+        pgrx::error!("EcSpireDistributedScan remote tuple payload must be a JSON object")
+    });
+
+    writer
+        .validate_input_width(attr_inputs.len())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+
+    writer.clear();
+    let natts = writer.natts();
+    for attr_index in 0..natts {
+        let Some(attr) = writer
+            .attribute(attr_index)
+            .unwrap_or_else(|error| pgrx::error!("{error}"))
+        else {
+            writer.set_null(attr_index);
+            continue;
+        };
+        match payload_object.get(attr.name.as_str()) {
+            None | Some(serde_json::Value::Null) => {
+                writer.set_null(attr_index);
+            }
+            Some(value) => {
+                let Some(attr_input) = attr_inputs
+                    .get_mut(attr_index as usize)
+                    .and_then(Option::as_mut)
+                else {
+                    pgrx::error!(
+                        "EcSpireDistributedScan tuple payload input cache missing attribute {}",
+                        attr_index + 1
+                    );
+                };
+                let datum = custom_scan_json_value_to_datum(value, attr.name.as_str(), attr_input);
+                writer.set_datum(attr_index, datum);
+            }
+        }
     }
+    writer
+        .store_virtual_tuple()
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
-unsafe fn custom_scan_json_value_to_datum(
+fn tuple_payload_writer<'slot>(
+    slot: *mut pg_sys::TupleTableSlot,
+) -> Result<TupleSlotWriter<'slot>, String> {
+    // SAFETY: SPIRE custom scan callers pass the scan output TupleTableSlot for
+    // the active callback; `TupleSlotWriter` centralizes descriptor validation
+    // and slot value/null writes for that callback scope.
+    unsafe { TupleSlotWriter::from_raw_slot(slot, "EcSpireDistributedScan") }
+}
+
+fn tuple_payload_attr_io_for_slot(
+    slot: *mut pg_sys::TupleTableSlot,
+) -> Vec<Option<SpireCustomScanPayloadAttrIo>> {
+    let writer =
+        tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
+    // SAFETY: writer construction validated the live slot and tuple descriptor.
+    unsafe { custom_scan_payload_attr_io(writer.tuple_desc()) }
+}
+
+fn custom_scan_json_value_to_datum(
     value: &serde_json::Value,
     attr_name: &str,
     attr_input: &mut SpireCustomScanPayloadAttrIo,
@@ -150,101 +140,102 @@ unsafe fn custom_scan_json_value_to_datum(
     }
 }
 
-unsafe fn custom_scan_store_tuple_payload_typed(
+fn custom_scan_store_tuple_payload_typed(
     slot: *mut pg_sys::TupleTableSlot,
     payload: &super::SpireRemoteTypedTuplePayload,
     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: slot is a PostgreSQL TupleTableSlot for the scan output and
-    // attr_inputs is sized for its tuple descriptor; typed payload metadata is
-    // validated before writing Datum/isnull arrays.
-    unsafe {
-        if slot.is_null() {
-            pgrx::error!("EcSpireDistributedScan tuple payload slot is null");
-        }
-        let tuple_desc = (*slot).tts_tupleDescriptor;
-        if tuple_desc.is_null() {
-            pgrx::error!("EcSpireDistributedScan tuple payload slot has no tuple descriptor");
-        }
-        if attr_inputs.len() != usize::try_from((*tuple_desc).natts).unwrap_or(usize::MAX) {
-            pgrx::error!("EcSpireDistributedScan tuple payload input cache width mismatch");
-        }
-        let payload_width = payload.payload_attnums.len();
-        for (label, width) in [
-            ("payload_names", payload.payload_names.len()),
-            ("payload_type_oids", payload.payload_type_oids.len()),
-            ("payload_typmods", payload.payload_typmods.len()),
-            ("payload_collations", payload.payload_collations.len()),
-            ("payload_nulls", payload.payload_nulls.len()),
-            ("payload_values", payload.payload_values.len()),
-            ("payload_formats", payload.payload_formats.len()),
-        ] {
-            if width != payload_width {
-                pgrx::error!(
-                    "EcSpireDistributedScan typed tuple payload {label} width {width} does not match attnum width {payload_width}"
-                );
-            }
-        }
-        if payload.tuple_transport != super::SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
-            || payload.tuple_transport_status != super::SPIRE_REMOTE_STATUS_READY
-        {
-            pgrx::error!(
-                "EcSpireDistributedScan unsupported typed tuple transport {} status {}",
-                payload.tuple_transport,
-                payload.tuple_transport_status
-            );
-        }
+    let writer =
+        tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
+    custom_scan_store_tuple_payload_typed_with_writer(writer, payload, attr_inputs)
+}
 
-        pg_sys::ExecClearTuple(slot);
-        let natts = (*tuple_desc).natts;
-        for attr_index in 0..natts {
-            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
-            if attr.is_null() || (*attr).attisdropped {
-                *(*slot).tts_isnull.add(attr_index as usize) = true;
-                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
-                continue;
-            }
-            let attr_name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
-                .to_str()
-                .unwrap_or_else(|_| {
-                    pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
-                });
-            let attr_attnum = (*attr).attnum;
-            let payload_position = payload
-                .payload_attnums
-                .iter()
-                .position(|attnum| *attnum == attr_attnum);
-            let Some(payload_position) = payload_position else {
-                *(*slot).tts_isnull.add(attr_index as usize) = true;
-                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
-                continue;
-            };
-            custom_scan_validate_typed_payload_attr(payload, payload_position, attr_name);
-            if payload.payload_nulls[payload_position] {
-                *(*slot).tts_isnull.add(attr_index as usize) = true;
-                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
-                continue;
-            }
-            let Some(attr_input) = attr_inputs
-                .get_mut(attr_index as usize)
-                .and_then(Option::as_mut)
-            else {
-                pgrx::error!(
-                    "EcSpireDistributedScan tuple payload input cache missing attribute {}",
-                    attr_index + 1
-                );
-            };
-            *(*slot).tts_isnull.add(attr_index as usize) = false;
-            *(*slot).tts_values.add(attr_index as usize) = custom_scan_binary_value_to_datum(
-                &payload.payload_values[payload_position],
-                attr_name,
-                attr_input,
+fn custom_scan_store_tuple_payload_typed_with_writer(
+    mut writer: TupleSlotWriter<'_>,
+    payload: &super::SpireRemoteTypedTuplePayload,
+    attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
+) -> *mut pg_sys::TupleTableSlot {
+    writer
+        .validate_input_width(attr_inputs.len())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let payload_width = payload.payload_attnums.len();
+    for (label, width) in [
+        ("payload_names", payload.payload_names.len()),
+        ("payload_type_oids", payload.payload_type_oids.len()),
+        ("payload_typmods", payload.payload_typmods.len()),
+        ("payload_collations", payload.payload_collations.len()),
+        ("payload_nulls", payload.payload_nulls.len()),
+        ("payload_values", payload.payload_values.len()),
+        ("payload_formats", payload.payload_formats.len()),
+    ] {
+        if width != payload_width {
+            pgrx::error!(
+                "EcSpireDistributedScan typed tuple payload {label} width {width} does not match attnum width {payload_width}"
             );
         }
-        (*slot).tts_nvalid = i16::try_from(natts)
-            .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan tuple descriptor too wide"));
-        pg_sys::ExecStoreVirtualTuple(slot)
     }
+    if payload.tuple_transport != super::SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1
+        || payload.tuple_transport_status != super::SPIRE_REMOTE_STATUS_READY
+    {
+        pgrx::error!(
+            "EcSpireDistributedScan unsupported typed tuple transport {} status {}",
+            payload.tuple_transport,
+            payload.tuple_transport_status
+        );
+    }
+
+    writer.clear();
+    let natts = writer.natts();
+    for attr_index in 0..natts {
+        let Some(attr) = writer
+            .attribute(attr_index)
+            .unwrap_or_else(|error| pgrx::error!("{error}"))
+        else {
+            writer.set_null(attr_index);
+            continue;
+        };
+        let payload_position = payload
+            .payload_attnums
+            .iter()
+            .position(|attnum| *attnum == attr.attnum);
+        let Some(payload_position) = payload_position else {
+            writer.set_null(attr_index);
+            continue;
+        };
+        custom_scan_validate_typed_payload_attr(payload, payload_position, attr.name.as_str());
+        if payload.payload_nulls[payload_position] {
+            writer.set_null(attr_index);
+            continue;
+        }
+        let Some(attr_input) = attr_inputs
+            .get_mut(attr_index as usize)
+            .and_then(Option::as_mut)
+        else {
+            pgrx::error!(
+                "EcSpireDistributedScan tuple payload input cache missing attribute {}",
+                attr_index + 1
+            );
+        };
+        let datum = custom_scan_binary_value_to_datum(
+            &payload.payload_values[payload_position],
+            attr.name.as_str(),
+            attr_input,
+        );
+        writer.set_datum(attr_index, datum);
+    }
+    writer
+        .store_virtual_tuple()
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn custom_scan_store_tuple_payload_json_for_test(
+    slot: &crate::storage::slot_guard::TupleTableSlotGuard,
+    payload_json: &str,
+) -> *mut pg_sys::TupleTableSlot {
+    let slot = slot.as_ptr();
+    let mut attr_inputs = tuple_payload_attr_io_for_slot(slot);
+    custom_scan_store_tuple_payload_json(slot, payload_json, &mut attr_inputs)
 }
 
 fn custom_scan_validate_typed_payload_attr(
@@ -270,7 +261,7 @@ fn custom_scan_validate_typed_payload_attr(
     }
 }
 
-unsafe fn custom_scan_binary_value_to_datum(
+fn custom_scan_binary_value_to_datum(
     value: &[u8],
     attr_name: &str,
     attr_input: &mut SpireCustomScanPayloadAttrIo,

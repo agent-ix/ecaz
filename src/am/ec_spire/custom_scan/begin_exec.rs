@@ -519,15 +519,11 @@ fn custom_scan_dml_pk_select_access(
     let Some(payload_json) = state.dml_tuple_payload_json.as_deref() else {
         return access_state.clear_tuple_slot();
     };
-    // SAFETY: access_state holds the live scan tuple slot for this callback and
-    // state owns the matching tuple payload input cache.
-    unsafe {
-        custom_scan_store_tuple_payload_json(
-            access_state.tuple_slot(),
-            payload_json,
-            &mut state.tuple_payload_inputs,
-        )
-    }
+    custom_scan_store_tuple_payload_json(
+        access_state.tuple_slot(),
+        payload_json,
+        &mut state.tuple_payload_inputs,
+    )
 }
 
 fn custom_scan_dml_update_access(
