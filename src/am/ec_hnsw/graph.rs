@@ -777,20 +777,6 @@ pub(crate) unsafe fn load_graph_neighbors(
     }
 }
 
-pub(crate) unsafe fn load_graph_adjacency(
-    index_relation: pg_sys::Relation,
-    element_tid: page::ItemPointer,
-    code_len: usize,
-) -> (GraphElement, GraphNeighbors) {
-    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata
-    // or traversal, and `index_relation` remains live for the tuple load.
-    let element = unsafe { load_graph_element(index_relation, element_tid, code_len) };
-    // SAFETY: The element decoder produced `neighbortid`; the neighbor loader
-    // validates INVALID and tuple shape before exposing the TID list.
-    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
-    (element, neighbors)
-}
-
 pub(crate) unsafe fn load_exact_graph_adjacency(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
