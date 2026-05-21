@@ -1,0 +1,9 @@
+Script started on 2026-05-21 07:42:20-07:00 [<not executed on terminal>]
+HEAD src unsafe count: 2443
+working src unsafe count: 2441
+HEAD IVF build unsafe count: 19
+working IVF build unsafe count: 18
+HEAD SPIRE DML unsafe count: 69
+working SPIRE DML unsafe count: 68
+
+Script done on 2026-05-21 07:42:20-07:00 [COMMAND_EXIT_CODE="0"]
