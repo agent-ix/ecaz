@@ -907,7 +907,7 @@ unsafe fn ec_diskann_noop_vacuum_stats(
     let stats = unsafe {
         let stats = if stats.is_null() {
             crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
-            alloc_index_bulk_delete_result()
+            alloc_index_bulk_delete_result().into()
         } else {
             stats
         };
@@ -929,7 +929,7 @@ unsafe fn run_diskann_bulkdelete(
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_diskann bulkdelete stats");
-        alloc_index_bulk_delete_result()
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };

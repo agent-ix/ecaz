@@ -489,7 +489,7 @@ unsafe fn run_bulkdelete_with_adapter(
     let storage = format.graph_storage();
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_hnsw vacuum stats");
-        alloc_index_bulk_delete_result()
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };

@@ -76,7 +76,7 @@ unsafe fn run_bulkdelete(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_ivf bulkdelete stats");
-        alloc_index_bulk_delete_result()
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };
@@ -259,7 +259,7 @@ unsafe fn finish_vacuum_stats(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_ivf vacuum stats");
-        alloc_index_bulk_delete_result()
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };
