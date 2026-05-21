@@ -142,7 +142,7 @@ pub(super) fn local_store_config_from_relation_plan(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18", feature = "pg_test"))]
-unsafe fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
+fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
     let option = std::ffi::CString::new("autovacuum_enabled=false")
         .map_err(|_| "ec_spire auxiliary store reloption contains NUL".to_owned())?;
     // SAFETY: option is a NUL-terminated CString that remains live while
@@ -170,12 +170,14 @@ unsafe fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18", feature = "pg_test"))]
-pub(super) unsafe fn create_local_store_relations_for_build(
+pub(super) fn create_local_store_relations_for_build(
     index_relation: pg_sys::Relation,
     relation_plan: &[SpireLocalStoreRelationPlanEntry],
 ) -> Result<Vec<(u32, u32)>, String> {
     if index_relation.is_null() {
-        return Err("ec_spire local store relation creation needs a valid index relation".to_owned());
+        return Err(
+            "ec_spire local store relation creation needs a valid index relation".to_owned(),
+        );
     }
     if relation_plan.is_empty() {
         return Err(
@@ -221,9 +223,7 @@ pub(super) unsafe fn create_local_store_relations_for_build(
         if tuple_desc.is_null() {
             return Err("ec_spire failed to allocate local store tuple descriptor".to_owned());
         }
-        // SAFETY: spire_aux_store_reloptions builds PostgreSQL-owned reloptions
-        // Datums from fixed NUL-free input.
-        let reloptions = unsafe { spire_aux_store_reloptions()? };
+        let reloptions = spire_aux_store_reloptions()?;
 
         // SAFETY: relname, tuple_desc, reloptions, namespace/owner/persistence,
         // and tablespace values are prepared above and remain valid for the
