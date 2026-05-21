@@ -509,23 +509,14 @@
         assert_eq!(aux_store_relids.len(), 2);
 
         for relid in aux_store_relids {
-            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            let autovacuum_enabled = unsafe {
-                let relation = crate::storage::relation_guard::RelationGuard::try_open(
-                    pg_sys::Oid::from(relid),
-                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                )
-                .unwrap_or_else(|| panic!("auxiliary relation {relid} should open"));
-                let rd_options = (*relation.as_ptr()).rd_options;
-                assert!(
-                    !rd_options.is_null(),
-                    "auxiliary relation {relid} should have parsed reloptions"
-                );
-                let enabled = (*rd_options.cast::<pg_sys::StdRdOptions>())
-                    .autovacuum
-                    .enabled;
-                enabled
-            };
+            let relation = crate::storage::relation_guard::RelationGuard::try_open(
+                pg_sys::Oid::from(relid),
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+            .unwrap_or_else(|| panic!("auxiliary relation {relid} should open"));
+            let autovacuum_enabled = relation
+                .std_rd_options_autovacuum_enabled()
+                .unwrap_or_else(|| panic!("auxiliary relation {relid} should have parsed reloptions"));
             assert!(
                 !autovacuum_enabled,
                 "auxiliary relation {relid} should be disabled in relcache autovacuum options"

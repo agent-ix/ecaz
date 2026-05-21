@@ -1,3 +1,10 @@
+    fn expr_node_tag(expr: *mut pg_sys::Expr) -> pg_sys::NodeTag {
+        assert!(!expr.is_null(), "expression pointer should not be null");
+        // SAFETY: callers pass expression pointers returned from the primitive
+        // plan expression helper for an analyzed test query.
+        unsafe { (*expr.cast::<pg_sys::Node>()).type_ }
+    }
+
     #[pg_test]
     fn test_ec_spire_dml_frontdoor_hook_status_installed_pass_through() {
         let status_from = "FROM ec_spire_dml_frontdoor_hook_status()";
@@ -237,6 +244,10 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_dml_target_oid_sql'::regclass::oid")
                 .expect("DML target oid relation lookup should succeed")
                 .expect("DML target oid relation should exist");
+        let target_relation_oid = |query| {
+            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
+            unsafe { am::spire_dml_frontdoor_target_relation_oid(query) }
+        };
 
         for sql in [
             "UPDATE ec_spire_dml_target_oid_sql SET title = 'updated' WHERE id = 1",
@@ -245,7 +256,7 @@
         ] {
             let query = analyzed_query(sql);
             assert_eq!(
-                unsafe { am::spire_dml_frontdoor_target_relation_oid(query) },
+                target_relation_oid(query),
                 Some(relation_oid),
                 "{sql}"
             );
@@ -257,7 +268,7 @@
                    JOIN ec_spire_dml_target_oid_sql AS r ON l.id = r.id",
         );
         assert_eq!(
-            unsafe { am::spire_dml_frontdoor_target_relation_oid(join_query) },
+            target_relation_oid(join_query),
             None
         );
     }
@@ -282,12 +293,15 @@
             column_names: &[(1, "id"), (2, "title"), (3, "embedding")],
             embedding_columns: &["embedding"],
         };
+        let classify_query = |query| {
+            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
+            unsafe { am::spire_classify_dml_frontdoor_query(query, context) }
+        };
 
         let coerced_const_query =
             analyzed_query("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5");
         let coerced_const_shape =
-            unsafe { am::spire_classify_dml_frontdoor_query(coerced_const_query, context) }
-                .expect("coerced const query should classify");
+            classify_query(coerced_const_query).expect("coerced const query should classify");
         assert!(
             coerced_const_shape.supported,
             "coerced const shape: {:?}",
@@ -299,8 +313,7 @@
             "WITH marker AS (SELECT 1) \
                  SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5",
         );
-        let cte_shape = unsafe { am::spire_classify_dml_frontdoor_query(cte_query, context) }
-            .expect("CTE-prefixed query should classify");
+        let cte_shape = classify_query(cte_query).expect("CTE-prefixed query should classify");
         assert!(!cte_shape.supported);
         assert_eq!(cte_shape.kind, "unsupported_subquery_shape");
 
@@ -1021,12 +1034,15 @@
              (embedding ecvector_spire_ip_ops)",
         )
         .expect("DML PK argument ec_spire index creation should succeed");
+        let replacement_decision = |query| {
+            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
+            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) }
+        };
 
         let select_query =
             analyzed_query("SELECT id FROM ec_spire_dml_pk_argument_sql WHERE id = 5");
-        let select_decision =
-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
-                .expect("PK SELECT replacement decision should exist");
+        let select_decision = replacement_decision(select_query)
+            .expect("PK SELECT replacement decision should exist");
         let select_pk_argument =
             am::spire_dml_frontdoor_pk_argument_from_replacement_decision(&select_decision)
                 .expect("PK SELECT argument should be buildable");
@@ -1041,7 +1057,7 @@
                     SET embedding = '[1,2,3]'::ecvector \
                   WHERE id = 5",
         );
-        let embedding_update_decision = unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query) }
+        let embedding_update_decision = replacement_decision(embedding_update_query)
         .expect("embedding UPDATE replacement decision should exist");
         let error = am::spire_dml_frontdoor_pk_argument_from_replacement_decision(
             &embedding_update_decision,
@@ -1063,15 +1079,32 @@
              (embedding ecvector_spire_ip_ops)",
         )
         .expect("DML primitive plan ec_spire index creation should succeed");
+        let replacement_decision = |query| {
+            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
+            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) }
+        };
+        let primitive_plan_expr = |query| {
+            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
+            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(query) }
+        };
+        let const_primitive_invocation = |plan| {
+            // SAFETY: const-PK plans do not read executor parameters, so a null
+            // ParamListInfo is valid for the invocation helper.
+            unsafe {
+                am::spire_dml_frontdoor_primitive_invocation_from_plan(
+                    plan,
+                    std::ptr::null_mut(),
+                )
+            }
+        };
 
         let update_query = analyzed_query(
             "UPDATE ec_spire_dml_primitive_plan_sql \
                     SET title = 'updated' \
                   WHERE id = 5",
         );
-        let update_decision =
-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(update_query) }
-                .expect("UPDATE primitive plan decision should exist");
+        let update_decision = replacement_decision(update_query)
+            .expect("UPDATE primitive plan decision should exist");
         let update_plan =
             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&update_decision)
                 .expect("UPDATE primitive plan should be buildable");
@@ -1086,27 +1119,23 @@
         assert_eq!(update_plan.pk_argument.pk_column, "id");
         assert_eq!(update_plan.updated_columns, vec!["title".to_owned()]);
         assert!(update_plan.projected_columns.is_empty());
-        let update_plan_expr =
-            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(update_query) }
-                .expect("UPDATE primitive plan expression handoff should classify")
-                .expect("UPDATE primitive plan expression handoff should be buildable");
+        let update_plan_expr = primitive_plan_expr(update_query)
+            .expect("UPDATE primitive plan expression handoff should classify")
+            .expect("UPDATE primitive plan expression handoff should be buildable");
         assert_eq!(
             update_plan_expr.primitive_plan.mode,
             am::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload
         );
         assert!(!update_plan_expr.pk_value_expr.is_null());
         assert_eq!(
-            // SAFETY: The primitive-plan helper returned a non-null
-            // PostgreSQL expression node for this analyzed UPDATE query.
-            unsafe { (*update_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+            expr_node_tag(update_plan_expr.pk_value_expr),
             pg_sys::NodeTag::T_Const
         );
 
         let delete_query =
             analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5");
-        let delete_decision =
-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(delete_query) }
-                .expect("DELETE primitive plan decision should exist");
+        let delete_decision = replacement_decision(delete_query)
+            .expect("DELETE primitive plan decision should exist");
         let delete_plan =
             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&delete_decision)
                 .expect("DELETE primitive plan should be buildable");
@@ -1120,27 +1149,23 @@
         );
         assert!(delete_plan.updated_columns.is_empty());
         assert!(delete_plan.projected_columns.is_empty());
-        let delete_plan_expr =
-            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(delete_query) }
-                .expect("DELETE primitive plan expression handoff should classify")
-                .expect("DELETE primitive plan expression handoff should be buildable");
+        let delete_plan_expr = primitive_plan_expr(delete_query)
+            .expect("DELETE primitive plan expression handoff should classify")
+            .expect("DELETE primitive plan expression handoff should be buildable");
         assert_eq!(
             delete_plan_expr.primitive_plan.mode,
             am::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload
         );
         assert!(!delete_plan_expr.pk_value_expr.is_null());
         assert_eq!(
-            // SAFETY: The primitive-plan helper returned a non-null
-            // PostgreSQL expression node for this analyzed DELETE query.
-            unsafe { (*delete_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+            expr_node_tag(delete_plan_expr.pk_value_expr),
             pg_sys::NodeTag::T_Const
         );
 
         let select_query =
             analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5");
-        let select_decision =
-            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
-                .expect("PK SELECT primitive plan decision should exist");
+        let select_decision = replacement_decision(select_query)
+            .expect("PK SELECT primitive plan decision should exist");
         let select_plan =
             am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&select_decision)
                 .expect("PK SELECT primitive plan should be buildable");
@@ -1157,19 +1182,16 @@
             select_plan.projected_columns,
             vec!["id".to_owned(), "title".to_owned()]
         );
-        let select_plan_expr =
-            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(select_query) }
-                .expect("PK SELECT primitive plan expression handoff should classify")
-                .expect("PK SELECT primitive plan expression handoff should be buildable");
+        let select_plan_expr = primitive_plan_expr(select_query)
+            .expect("PK SELECT primitive plan expression handoff should classify")
+            .expect("PK SELECT primitive plan expression handoff should be buildable");
         assert_eq!(
             select_plan_expr.primitive_plan.mode,
             am::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
         );
         assert!(!select_plan_expr.pk_value_expr.is_null());
         assert_eq!(
-            // SAFETY: The primitive-plan helper returned a non-null
-            // PostgreSQL expression node for this analyzed SELECT query.
-            unsafe { (*select_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+            expr_node_tag(select_plan_expr.pk_value_expr),
             pg_sys::NodeTag::T_Const
         );
         assert_eq!(
@@ -1179,15 +1201,8 @@
             ),
             "0000000000000005"
         );
-        // SAFETY: this const-PK plan does not read executor parameters, so a
-        // null ParamListInfo is valid for the invocation helper.
-        let select_invocation = unsafe {
-            am::spire_dml_frontdoor_primitive_invocation_from_plan(
-                &select_plan,
-                std::ptr::null_mut(),
-            )
-        }
-        .expect("const PK primitive invocation should be buildable");
+        let select_invocation = const_primitive_invocation(&select_plan)
+            .expect("const PK primitive invocation should be buildable");
         assert_eq!(
             select_invocation.mode,
             am::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
@@ -1297,7 +1312,7 @@
                     SET embedding = '[1,2,3]'::ecvector \
                   WHERE id = 5",
         );
-        let embedding_update_decision = unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query) }
+        let embedding_update_decision = replacement_decision(embedding_update_query)
         .expect("embedding UPDATE primitive plan decision should exist");
         let unsupported_error = am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(
             &embedding_update_decision,

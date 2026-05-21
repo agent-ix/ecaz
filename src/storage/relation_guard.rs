@@ -123,6 +123,20 @@ impl RelationGuard {
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
     }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn std_rd_options_autovacuum_enabled(&self) -> Option<bool> {
+        // SAFETY: this guard owns a live PostgreSQL relation descriptor. The
+        // reloptions pointer is relation-owned, borrowed only for this read,
+        // and this helper is limited to heap relations using StdRdOptions.
+        unsafe {
+            let rd_options = crate::storage::relation::relation_options(self.relation);
+            if rd_options.is_null() {
+                return None;
+            }
+            Some((*rd_options.cast::<pg_sys::StdRdOptions>()).autovacuum.enabled)
+        }
+    }
 }
 
 impl Drop for RelationGuard {
