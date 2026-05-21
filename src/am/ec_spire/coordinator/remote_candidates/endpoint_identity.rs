@@ -429,12 +429,13 @@ fn validate_remote_search_endpoint_identity_row(
     })
 }
 
-pub(crate) unsafe fn remote_search_endpoint_identity_row(
+pub(crate) fn remote_search_endpoint_identity_row(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteSearchEndpointIdentityRow {
     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
-        let relation_options = options::relation_options(index_relation);
-        let index_oid = crate::storage::relation::relation_oid(index_relation);
+        let index = unsafe { live_index_relation(index_relation) };
+        let relation_options = index.relation_options();
+        let index_oid = index.relid().into();
         let assignment_payload_format = relation_options.assignment_payload_format();
         let assignment_payload_format_name =
             remote_search_assignment_payload_format_name(assignment_payload_format);
@@ -442,9 +443,7 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
             remote_search_endpoint_quantizer_profile(assignment_payload_format);
         let opclass_identity = remote_search_endpoint_opclass_identity(index_oid)?;
         let generation_identity = remote_search_endpoint_generation_identity(index_oid)?;
-        // SAFETY: reads the root control page from the same live relation used
-        // to resolve the relation options and index identity above.
-        let root_control = page::read_root_control_page(index_relation);
+        let root_control = index.root_control();
         let scoring_profile = "inner_product_score_v1";
         let storage_format = relation_options.storage_format.reloption_name();
         let profile_fingerprint = remote_search_stable_fingerprint(&[

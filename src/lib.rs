@@ -13207,7 +13207,7 @@ fn ec_spire_remote_search_endpoint_identity(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_endpoint_identity");
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_endpoint_identity_row
     );
@@ -13630,7 +13630,7 @@ fn spire_remote_pipeline_step_rows(
 
     let coordinator_result = if probe_remote_executor {
         let index_relation = open_valid_ec_spire_index_guard(index_oid, function_name);
-        Some(with_live_index_relation!(
+        Some(with_live_index_relation_safe!(
             index_relation,
             am::spire_remote_search_coordinator_result_summary_row,
             requested_epoch_u64,
@@ -14318,7 +14318,7 @@ fn ec_spire_remote_search_local_heap_resolution_plan(
         index_oid,
         "ec_spire_remote_search_local_heap_resolution_plan",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_resolution_plan_rows,
         requested_epoch,
@@ -14396,7 +14396,7 @@ fn ec_spire_remote_search_heap_resolution_summary(
         index_oid,
         "ec_spire_remote_search_heap_resolution_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_heap_resolution_summary_row,
         requested_epoch,
@@ -14475,7 +14475,7 @@ fn ec_spire_remote_search_local_heap_candidates(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_local_heap_candidates");
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15402,7 +15402,7 @@ fn ec_spire_remote_search_tuple_payload(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15530,7 +15530,7 @@ fn ec_spire_remote_search_tuple_payload_typed(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload_typed");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15689,7 +15689,7 @@ fn ec_spire_remote_search_local_heap_candidate_summary(
         index_oid,
         "ec_spire_remote_search_local_heap_candidate_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_summary_row,
         requested_epoch,
@@ -15774,7 +15774,7 @@ fn ec_spire_remote_search_coordinator_result_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_result_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_coordinator_result_summary_row,
         requested_epoch,
@@ -16022,7 +16022,7 @@ fn ec_spire_remote_search_coordinator_local(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_coordinator_local");
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_coordinator_local_candidates,
         requested_epoch,
@@ -16097,7 +16097,7 @@ fn ec_spire_remote_search_coordinator_local_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_local_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_coordinator_local_summary,
         requested_epoch,
@@ -16175,7 +16175,7 @@ fn ec_spire_remote_search(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search");
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_candidates,
         requested_epoch,
@@ -16184,7 +16184,7 @@ fn ec_spire_remote_search(
         top_k,
         &consistency_mode,
     );
-    let endpoint_identity = with_live_index_relation!(
+    let endpoint_identity = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_endpoint_identity_row
     );

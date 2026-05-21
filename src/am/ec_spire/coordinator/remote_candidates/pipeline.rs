@@ -178,7 +178,7 @@ pub(crate) fn remote_search_coordinator_gate_summary_row(
     }
 }
 
-pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
+pub(crate) fn remote_search_heap_resolution_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
