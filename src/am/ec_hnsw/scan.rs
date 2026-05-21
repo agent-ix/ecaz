@@ -6,8 +6,9 @@ use std::time::Instant;
 use hashbrown::{HashMap, HashSet};
 use pgrx::{pg_sys, FromDatum, PgBox};
 
-use crate::am::common::heap_slot::HeapSlotReader;
-use crate::am::common::scan_output::IndexScanOutput;
+use crate::am::common::{
+    callback::pg_am_callback, heap_slot::HeapSlotReader, scan_output::IndexScanOutput,
+};
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{
     BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
@@ -877,21 +878,17 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambeginscan(
     nkeys: std::ffi::c_int,
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    // SAFETY: pgrx guards the PostgreSQL callback boundary; the guarded body
-    // checks allocation results before storing AM-private scan state.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
-            if scan.is_null() {
-                pgrx::error!("ec_hnsw failed to allocate scan descriptor");
-            }
+    pg_am_callback!({
+        let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
+        if scan.is_null() {
+            pgrx::error!("ec_hnsw failed to allocate scan descriptor");
+        }
 
-            (*scan).parallel_scan = ptr::null_mut();
-            crate::fault::maybe_fail_palloc("ec_hnsw ambeginscan opaque");
-            (*scan).opaque = PgBox::<TqScanOpaque>::alloc0().into_pg().cast();
-            scan
-        })
-    }
+        (*scan).parallel_scan = ptr::null_mut();
+        crate::fault::maybe_fail_palloc("ec_hnsw ambeginscan opaque");
+        (*scan).opaque = PgBox::<TqScanOpaque>::alloc0().into_pg().cast();
+        scan
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
@@ -901,226 +898,219 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
     orderbys: pg_sys::ScanKey,
     norderbys: std::ffi::c_int,
 ) {
-    // SAFETY: pgrx guards the PostgreSQL callback boundary; null scan/orderby
-    // inputs are rejected before dereferencing PostgreSQL-owned pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_hnsw amrescan received a null scan descriptor");
-            }
-            // PostgreSQL may still pass an allocated key buffer for pure
-            // ORDER BY scans even when the actual qual count is zero.
-            if nkeys != 0 {
-                pgrx::error!("ec_hnsw scan does not support index quals yet");
-            }
-            if norderbys != 1 {
-                pgrx::error!("ec_hnsw scan currently requires exactly one ORDER BY query");
-            }
-            if orderbys.is_null() {
-                pgrx::error!("ec_hnsw amrescan received null order-by scan keys");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_hnsw amrescan received a null scan descriptor");
+        }
+        // PostgreSQL may still pass an allocated key buffer for pure
+        // ORDER BY scans even when the actual qual count is zero.
+        if nkeys != 0 {
+            pgrx::error!("ec_hnsw scan does not support index quals yet");
+        }
+        if norderbys != 1 {
+            pgrx::error!("ec_hnsw scan currently requires exactly one ORDER BY query");
+        }
+        if orderbys.is_null() {
+            pgrx::error!("ec_hnsw amrescan received null order-by scan keys");
+        }
 
-            #[cfg(any(test, feature = "pg_test"))]
-            let amrescan_started = Instant::now();
-            let orderby = &*orderbys;
-            if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
-                pgrx::error!("ec_hnsw scan query must not be NULL");
-            }
+        #[cfg(any(test, feature = "pg_test"))]
+        let amrescan_started = Instant::now();
+        let orderby = &*orderbys;
+        if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
+            pgrx::error!("ec_hnsw scan query must not be NULL");
+        }
 
-            #[cfg(any(test, feature = "pg_test"))]
-            let query_decode_started = Instant::now();
-            let query = Vec::<f32>::from_polymorphic_datum(
-                orderby.sk_argument,
-                false,
-                pg_sys::FLOAT4ARRAYOID,
-            )
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw scan requires a real[] ORDER BY query"));
-            #[cfg(any(test, feature = "pg_test"))]
-            let query_decode_elapsed_us = u64::try_from(query_decode_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let query_decode_elapsed_us = 0;
-            if query.is_empty() {
-                pgrx::error!("ec_hnsw scan query must not be empty");
-            }
-            if query.len() > u16::MAX as usize {
-                pgrx::error!(
-                    "ec_hnsw scan query dimension {} exceeds maximum {}",
-                    query.len(),
-                    u16::MAX
-                );
-            }
+        #[cfg(any(test, feature = "pg_test"))]
+        let query_decode_started = Instant::now();
+        let query =
+            Vec::<f32>::from_polymorphic_datum(orderby.sk_argument, false, pg_sys::FLOAT4ARRAYOID)
+                .unwrap_or_else(|| pgrx::error!("ec_hnsw scan requires a real[] ORDER BY query"));
+        #[cfg(any(test, feature = "pg_test"))]
+        let query_decode_elapsed_us = u64::try_from(query_decode_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let query_decode_elapsed_us = 0;
+        if query.is_empty() {
+            pgrx::error!("ec_hnsw scan query must not be empty");
+        }
+        if query.len() > u16::MAX as usize {
+            pgrx::error!(
+                "ec_hnsw scan query dimension {} exceeds maximum {}",
+                query.len(),
+                u16::MAX
+            );
+        }
 
-            #[cfg(any(test, feature = "pg_test"))]
-            let scan_setup_started = Instant::now();
-            let metadata = super::shared::read_metadata_page((*scan).indexRelation);
-            let graph_storage = validate_runtime_scan_format((*scan).indexRelation, &metadata)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
-                pgrx::error!(
-                    "ec_hnsw scan query dimension mismatch: index dim {}, query dim {}",
-                    metadata.dimensions,
-                    query.len()
-                );
-            }
+        #[cfg(any(test, feature = "pg_test"))]
+        let scan_setup_started = Instant::now();
+        let metadata = super::shared::read_metadata_page((*scan).indexRelation);
+        let graph_storage = validate_runtime_scan_format((*scan).indexRelation, &metadata)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
+            pgrx::error!(
+                "ec_hnsw scan query dimension mismatch: index dim {}, query dim {}",
+                metadata.dimensions,
+                query.len()
+            );
+        }
 
-            (*scan).xs_recheck = false;
-            (*scan).xs_recheckorderby = false;
-            (*scan).xs_orderbyvals = ptr::null_mut();
-            (*scan).xs_orderbynulls = ptr::null_mut();
+        (*scan).xs_recheck = false;
+        (*scan).xs_recheckorderby = false;
+        (*scan).xs_orderbyvals = ptr::null_mut();
+        (*scan).xs_orderbynulls = ptr::null_mut();
 
-            let index_options = super::options::relation_options((*scan).indexRelation);
-            let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
-            bind_parallel_scan_state(scan, opaque);
-            if opaque.rescan_called {
-                finalize_scan_stats(opaque);
-                flush_scan_stats(opaque);
-            }
-            opaque.rescan_called = true;
-            opaque.scan_dimensions = metadata.dimensions;
-            opaque.scan_m = metadata.m;
-            opaque.scan_bits = metadata.bits;
-            opaque.scan_seed = metadata.seed;
-            opaque.scan_code_len = if metadata.dimensions == 0 {
+        let index_options = super::options::relation_options((*scan).indexRelation);
+        let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
+        bind_parallel_scan_state(scan, opaque);
+        if opaque.rescan_called {
+            finalize_scan_stats(opaque);
+            flush_scan_stats(opaque);
+        }
+        opaque.rescan_called = true;
+        opaque.scan_dimensions = metadata.dimensions;
+        opaque.scan_m = metadata.m;
+        opaque.scan_bits = metadata.bits;
+        opaque.scan_seed = metadata.seed;
+        opaque.scan_code_len = if metadata.dimensions == 0 {
+            0
+        } else {
+            crate::code_len(metadata.dimensions as usize, metadata.bits)
+        };
+        opaque.scan_graph_storage = graph_storage;
+        opaque.grouped_live_rerank_window = if matches!(
+            opaque.scan_graph_storage,
+            graph::GraphStorageDescriptor::PqFastScan(_)
+        ) {
+            u8::try_from(resolve_grouped_live_rerank_window())
+                .expect("grouped live rerank window should fit in u8")
+        } else {
+            u8::try_from(PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW)
+                .expect("default grouped live rerank window should fit in u8")
+        };
+        opaque.grouped_traversal_score_mode = if matches!(
+            opaque.scan_graph_storage,
+            graph::GraphStorageDescriptor::PqFastScan(_)
+        ) {
+            resolve_grouped_traversal_score_mode(opaque.scan_graph_storage)
+        } else {
+            GroupedTraversalScoreMode::GroupedPq
+        };
+        opaque.grouped_exact_traversal_mode = if matches!(
+            opaque.scan_graph_storage,
+            graph::GraphStorageDescriptor::PqFastScan(_)
+        ) {
+            resolve_grouped_exact_traversal_mode()
+        } else {
+            GroupedExactTraversalMode::Disabled
+        };
+        opaque.grouped_exact_traversal_strategy =
+            if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
+                GroupedExactTraversalStrategy::Expansion
+            } else {
+                resolve_grouped_exact_traversal_strategy(opaque.grouped_exact_traversal_mode)
+            };
+        opaque.grouped_exact_traversal_limit =
+            if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
                 0
             } else {
-                crate::code_len(metadata.dimensions as usize, metadata.bits)
+                resolve_grouped_exact_traversal_limit()
             };
-            opaque.scan_graph_storage = graph_storage;
-            opaque.grouped_live_rerank_window = if matches!(
-                opaque.scan_graph_storage,
-                graph::GraphStorageDescriptor::PqFastScan(_)
-            ) {
-                u8::try_from(resolve_grouped_live_rerank_window())
-                    .expect("grouped live rerank window should fit in u8")
-            } else {
-                u8::try_from(PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW)
-                    .expect("default grouped live rerank window should fit in u8")
-            };
-            opaque.grouped_traversal_score_mode = if matches!(
-                opaque.scan_graph_storage,
-                graph::GraphStorageDescriptor::PqFastScan(_)
-            ) {
-                resolve_grouped_traversal_score_mode(opaque.scan_graph_storage)
-            } else {
-                GroupedTraversalScoreMode::GroupedPq
-            };
-            opaque.grouped_exact_traversal_mode = if matches!(
-                opaque.scan_graph_storage,
-                graph::GraphStorageDescriptor::PqFastScan(_)
-            ) {
-                resolve_grouped_exact_traversal_mode()
-            } else {
-                GroupedExactTraversalMode::Disabled
-            };
-            opaque.grouped_exact_traversal_strategy =
-                if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
-                    GroupedExactTraversalStrategy::Expansion
-                } else {
-                    resolve_grouped_exact_traversal_strategy(opaque.grouped_exact_traversal_mode)
-                };
-            opaque.grouped_exact_traversal_limit =
-                if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
-                    0
-                } else {
-                    resolve_grouped_exact_traversal_limit()
-                };
-            configure_grouped_heap_rerank_state(scan, opaque, &index_options);
-            // SAFETY: `scan` is the live rescan descriptor and owns a live index relation.
-            opaque.scan_block_count =
-                crate::storage::relation::main_fork_block_count((*scan).indexRelation);
-            let scan_tuning = super::options::resolve_scan_tuning(&index_options);
-            opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
-                .expect("ef_search should fit in usize")
-                .max(1);
-            #[cfg(any(test, feature = "pg_test"))]
-            let scan_setup_elapsed_us = u64::try_from(scan_setup_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let scan_setup_elapsed_us = 0;
-            record_query_decode_elapsed(opaque, query_decode_elapsed_us);
-            record_scan_setup_elapsed(opaque, scan_setup_elapsed_us);
-            #[cfg(any(test, feature = "pg_test"))]
-            let store_query_started = Instant::now();
-            store_scan_query(opaque, &query);
-            #[cfg(any(test, feature = "pg_test"))]
-            let store_query_elapsed_us = u64::try_from(store_query_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let store_query_elapsed_us = 0;
-            record_store_query_elapsed(opaque, store_query_elapsed_us);
-            opaque.explain_counters.reset();
-            opaque.stats_delta.reset();
-            super::stats::record_scan_started();
-            opaque.stats_delta.record_scan_started();
-            #[cfg(any(test, feature = "pg_test"))]
-            let prepare_started = Instant::now();
-            store_scan_prepared_query(opaque, &query, &metadata);
-            store_grouped_scan_query((*scan).indexRelation, opaque, &metadata);
-            #[cfg(any(test, feature = "pg_test"))]
-            let prepare_elapsed_us = u64::try_from(prepare_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let prepare_elapsed_us = 0;
-            record_prepare_query_elapsed(opaque, prepare_elapsed_us);
-            #[cfg(any(test, feature = "pg_test"))]
-            let reset_started = Instant::now();
-            reset_scan_position(opaque);
+        configure_grouped_heap_rerank_state(scan, opaque, &index_options);
+        // SAFETY: `scan` is the live rescan descriptor and owns a live index relation.
+        opaque.scan_block_count =
+            crate::storage::relation::main_fork_block_count((*scan).indexRelation);
+        let scan_tuning = super::options::resolve_scan_tuning(&index_options);
+        opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
+            .expect("ef_search should fit in usize")
+            .max(1);
+        #[cfg(any(test, feature = "pg_test"))]
+        let scan_setup_elapsed_us = u64::try_from(scan_setup_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let scan_setup_elapsed_us = 0;
+        record_query_decode_elapsed(opaque, query_decode_elapsed_us);
+        record_scan_setup_elapsed(opaque, scan_setup_elapsed_us);
+        #[cfg(any(test, feature = "pg_test"))]
+        let store_query_started = Instant::now();
+        store_scan_query(opaque, &query);
+        #[cfg(any(test, feature = "pg_test"))]
+        let store_query_elapsed_us = u64::try_from(store_query_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let store_query_elapsed_us = 0;
+        record_store_query_elapsed(opaque, store_query_elapsed_us);
+        opaque.explain_counters.reset();
+        opaque.stats_delta.reset();
+        super::stats::record_scan_started();
+        opaque.stats_delta.record_scan_started();
+        #[cfg(any(test, feature = "pg_test"))]
+        let prepare_started = Instant::now();
+        store_scan_prepared_query(opaque, &query, &metadata);
+        store_grouped_scan_query((*scan).indexRelation, opaque, &metadata);
+        #[cfg(any(test, feature = "pg_test"))]
+        let prepare_elapsed_us =
+            u64::try_from(prepare_started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let prepare_elapsed_us = 0;
+        record_prepare_query_elapsed(opaque, prepare_elapsed_us);
+        #[cfg(any(test, feature = "pg_test"))]
+        let reset_started = Instant::now();
+        reset_scan_position(opaque);
+        reset_linear_prefetch_state(opaque);
+        reset_graph_prefetch_state(opaque);
+        #[cfg(feature = "pg18")]
+        {
+            let graph_stream = ensure_graph_read_stream((*scan).indexRelation, opaque);
+            let linear_stream = ensure_linear_read_stream((*scan).indexRelation, opaque);
+            super::stream::reset_scan_owned_read_stream(graph_stream, "ec_hnsw graph prefetch")
+                .unwrap_or_else(|error| pgrx::error!("{error}"));
+            super::stream::reset_scan_owned_read_stream(linear_stream, "ec_hnsw linear scan")
+                .unwrap_or_else(|error| pgrx::error!("{error}"));
+        }
+        #[cfg(any(test, feature = "pg_test"))]
+        let reset_elapsed_us =
+            u64::try_from(reset_started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let reset_elapsed_us = 0;
+        record_reset_state_elapsed(opaque, reset_elapsed_us);
+        #[cfg(any(test, feature = "pg_test"))]
+        let initialize_started = Instant::now();
+        initialize_scan_entry_candidate(
+            (*scan).indexRelation,
+            (*scan).heapRelation,
+            opaque,
+            &metadata,
+        );
+        #[cfg(any(test, feature = "pg_test"))]
+        let initialize_elapsed_us = u64::try_from(initialize_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let initialize_elapsed_us = 0;
+        record_initialize_entry_elapsed(opaque, initialize_elapsed_us);
+        let opaque_ptr = opaque as *mut TqScanOpaque;
+        #[cfg(any(test, feature = "pg_test"))]
+        let prefetch_started = Instant::now();
+        if !graph_traversal_cursor(opaque)
+            .ensure_prefetched_output((*scan).indexRelation, opaque_ptr)
+        {
+            enter_linear_fallback_phase(opaque);
             reset_linear_prefetch_state(opaque);
-            reset_graph_prefetch_state(opaque);
-            #[cfg(feature = "pg18")]
-            {
-                let graph_stream = ensure_graph_read_stream((*scan).indexRelation, opaque);
-                let linear_stream = ensure_linear_read_stream((*scan).indexRelation, opaque);
-                super::stream::reset_scan_owned_read_stream(graph_stream, "ec_hnsw graph prefetch")
-                    .unwrap_or_else(|error| pgrx::error!("{error}"));
-                super::stream::reset_scan_owned_read_stream(linear_stream, "ec_hnsw linear scan")
-                    .unwrap_or_else(|error| pgrx::error!("{error}"));
-            }
-            #[cfg(any(test, feature = "pg_test"))]
-            let reset_elapsed_us = u64::try_from(reset_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let reset_elapsed_us = 0;
-            record_reset_state_elapsed(opaque, reset_elapsed_us);
-            #[cfg(any(test, feature = "pg_test"))]
-            let initialize_started = Instant::now();
-            initialize_scan_entry_candidate(
-                (*scan).indexRelation,
-                (*scan).heapRelation,
-                opaque,
-                &metadata,
-            );
-            #[cfg(any(test, feature = "pg_test"))]
-            let initialize_elapsed_us = u64::try_from(initialize_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let initialize_elapsed_us = 0;
-            record_initialize_entry_elapsed(opaque, initialize_elapsed_us);
-            let opaque_ptr = opaque as *mut TqScanOpaque;
-            #[cfg(any(test, feature = "pg_test"))]
-            let prefetch_started = Instant::now();
-            if !graph_traversal_cursor(opaque)
-                .ensure_prefetched_output((*scan).indexRelation, opaque_ptr)
-            {
-                enter_linear_fallback_phase(opaque);
-                reset_linear_prefetch_state(opaque);
-            }
-            #[cfg(any(test, feature = "pg_test"))]
-            let initial_prefetch_elapsed_us = u64::try_from(prefetch_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let initial_prefetch_elapsed_us = 0;
-            record_initial_prefetch_elapsed(opaque, initial_prefetch_elapsed_us);
-            #[cfg(any(test, feature = "pg_test"))]
-            let amrescan_total_elapsed_us = u64::try_from(amrescan_started.elapsed().as_micros())
-                .expect("timing should fit in u64");
-            #[cfg(not(any(test, feature = "pg_test")))]
-            let amrescan_total_elapsed_us = 0;
-            record_amrescan_total_elapsed(opaque, amrescan_total_elapsed_us);
-            publish_parallel_scan_worker_slot_snapshot(opaque);
-        })
-    }
+        }
+        #[cfg(any(test, feature = "pg_test"))]
+        let initial_prefetch_elapsed_us = u64::try_from(prefetch_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let initial_prefetch_elapsed_us = 0;
+        record_initial_prefetch_elapsed(opaque, initial_prefetch_elapsed_us);
+        #[cfg(any(test, feature = "pg_test"))]
+        let amrescan_total_elapsed_us = u64::try_from(amrescan_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let amrescan_total_elapsed_us = 0;
+        record_amrescan_total_elapsed(opaque, amrescan_total_elapsed_us);
+        publish_parallel_scan_worker_slot_snapshot(opaque);
+    })
 }
 
 fn validate_runtime_scan_format(
@@ -1886,87 +1876,79 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    // SAFETY: pgrx guards the PostgreSQL callback boundary; the guarded body
-    // validates the scan descriptor and opaque pointer before dereferencing.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_hnsw amgettuple received a null scan descriptor");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_hnsw amgettuple received a null scan descriptor");
+        }
 
-            let opaque_ptr = (*scan).opaque.cast::<TqScanOpaque>();
-            if opaque_ptr.is_null() {
-                pgrx::error!("ec_hnsw amgettuple missing scan opaque state");
-            }
+        let opaque_ptr = (*scan).opaque.cast::<TqScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_hnsw amgettuple missing scan opaque state");
+        }
 
-            let opaque = &*opaque_ptr;
-            if !opaque.rescan_called {
-                pgrx::error!("ec_hnsw amgettuple requires amrescan before scan execution");
-            }
-            if direction != pg_sys::ScanDirection::ForwardScanDirection {
-                pgrx::error!("ec_hnsw amgettuple only supports forward scan direction");
-            }
+        let opaque = &*opaque_ptr;
+        if !opaque.rescan_called {
+            pgrx::error!("ec_hnsw amgettuple requires amrescan before scan execution");
+        }
+        if direction != pg_sys::ScanDirection::ForwardScanDirection {
+            pgrx::error!("ec_hnsw amgettuple only supports forward scan direction");
+        }
 
-            if opaque.scan_dimensions == 0 {
-                let mut scan_output =
-                    IndexScanOutput::from_raw(scan, "ec_hnsw amgettuple zero-dimension output");
-                clear_scan_orderby_output(&mut scan_output);
-                return false;
-            }
-
-            let opaque = &mut *opaque_ptr;
-            let mut scan_output = IndexScanOutput::from_raw(scan, "ec_hnsw amgettuple scan output");
-            if produce_next_scan_heap_tid(
-                &mut scan_output,
-                (*scan).indexRelation,
-                opaque,
-                opaque.scan_code_len,
-            ) {
-                return true;
-            }
-
+        if opaque.scan_dimensions == 0 {
+            let mut scan_output =
+                IndexScanOutput::from_raw(scan, "ec_hnsw amgettuple zero-dimension output");
             clear_scan_orderby_output(&mut scan_output);
-            false
-        })
-    }
+            return false;
+        }
+
+        let opaque = &mut *opaque_ptr;
+        let mut scan_output = IndexScanOutput::from_raw(scan, "ec_hnsw amgettuple scan output");
+        if produce_next_scan_heap_tid(
+            &mut scan_output,
+            (*scan).indexRelation,
+            opaque,
+            opaque.scan_code_len,
+        ) {
+            return true;
+        }
+
+        clear_scan_orderby_output(&mut scan_output);
+        false
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScanDesc) {
-    // SAFETY: pgrx guards the PostgreSQL callback boundary; null scan and
-    // opaque pointers are checked before releasing AM-private state.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                return;
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            return;
+        }
 
-            let opaque_ptr = (*scan).opaque;
-            if !opaque_ptr.is_null() {
-                let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
-                finalize_scan_stats(opaque);
-                flush_scan_stats(opaque);
-                clear_parallel_scan_state(opaque);
-                #[cfg(feature = "pg18")]
-                {
-                    end_read_stream(&mut opaque.graph_read_stream);
-                    end_read_stream(&mut opaque.linear_read_stream);
-                }
-                free_graph_prefetch_state(opaque);
-                free_scan_graph_cache(opaque);
-                free_scan_score_cache(opaque);
-                free_scan_candidate_frontier(opaque);
-                free_bootstrap_expansion(opaque);
-                free_scan_expanded_set(opaque);
-                free_scan_visited_set(opaque);
-                free_scan_emitted_set(opaque);
-                free_scan_prepared_query(opaque);
-                free_scan_query(opaque);
-                free_grouped_heap_rerank_state(opaque);
-                pg_sys::pfree(opaque_ptr);
-                (*scan).opaque = ptr::null_mut();
+        let opaque_ptr = (*scan).opaque;
+        if !opaque_ptr.is_null() {
+            let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
+            finalize_scan_stats(opaque);
+            flush_scan_stats(opaque);
+            clear_parallel_scan_state(opaque);
+            #[cfg(feature = "pg18")]
+            {
+                end_read_stream(&mut opaque.graph_read_stream);
+                end_read_stream(&mut opaque.linear_read_stream);
             }
-        })
-    }
+            free_graph_prefetch_state(opaque);
+            free_scan_graph_cache(opaque);
+            free_scan_score_cache(opaque);
+            free_scan_candidate_frontier(opaque);
+            free_bootstrap_expansion(opaque);
+            free_scan_expanded_set(opaque);
+            free_scan_visited_set(opaque);
+            free_scan_emitted_set(opaque);
+            free_scan_prepared_query(opaque);
+            free_scan_query(opaque);
+            free_grouped_heap_rerank_state(opaque);
+            pg_sys::pfree(opaque_ptr);
+            (*scan).opaque = ptr::null_mut();
+        }
+    })
 }
 
 pub(crate) unsafe fn explain_counters_from_index_scan_state(

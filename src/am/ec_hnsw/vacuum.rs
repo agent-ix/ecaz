@@ -3,7 +3,7 @@ use std::{collections::HashSet, ffi::c_void};
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
 use super::{graph, options, page, search, shared, source};
-use crate::am::common::heap_slot::HeapSlotReader;
+use crate::am::common::{callback::pg_am_callback, heap_slot::HeapSlotReader};
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
@@ -425,44 +425,36 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes ambulkdelete with callback-duration relation,
-    // stats, callback, and callback state pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let index = VacuumIndexRelation::new((*info).index);
-            let metadata = index.metadata();
-            let format = resolve_vacuum_format_adapter(index, &metadata)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let Some(callback) = callback else {
-                return shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats);
-            };
-            run_bulkdelete_with_adapter(
-                format,
-                index,
-                (*info).heaprel,
-                stats,
-                callback,
-                callback_state,
-            )
-        })
-    }
+    pg_am_callback!({
+        let index = VacuumIndexRelation::new((*info).index);
+        let metadata = index.metadata();
+        let format =
+            resolve_vacuum_format_adapter(index, &metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+        let Some(callback) = callback else {
+            return shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats);
+        };
+        run_bulkdelete_with_adapter(
+            format,
+            index,
+            (*info).heaprel,
+            stats,
+            callback,
+            callback_state,
+        )
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes amvacuumcleanup with callback-duration relation
-    // and stats pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let index = VacuumIndexRelation::new((*info).index);
-            let metadata = index.metadata();
-            let format = resolve_vacuum_format_adapter(index, &metadata)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            format.vacuum_cleanup(index, stats)
-        })
-    }
+    pg_am_callback!({
+        let index = VacuumIndexRelation::new((*info).index);
+        let metadata = index.metadata();
+        let format =
+            resolve_vacuum_format_adapter(index, &metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+        format.vacuum_cleanup(index, stats)
+    })
 }
 
 fn resolve_vacuum_format_adapter(
