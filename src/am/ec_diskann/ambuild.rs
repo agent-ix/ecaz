@@ -822,9 +822,9 @@ unsafe fn validate_single_ecvector_attribute(
     if index_info.is_null() {
         pgrx::error!("ec_diskann ambuild received a null IndexInfo");
     }
-    // SAFETY: Null was checked above and PostgreSQL owns IndexInfo for the
-    // duration of the ambuild callback.
-    let info = unsafe { &*index_info };
+    let info = crate::am::common::pg_ptr::index_info(
+        std::ptr::NonNull::new(index_info).expect("ec_diskann IndexInfo should be non-null"),
+    );
     if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {
         pgrx::error!("ec_diskann currently supports single-column indexes only");
     }

@@ -81,9 +81,9 @@ pub(super) fn resolve_indexed_tuple_layout(
     if index_info.is_null() {
         pgrx::error!("ec_spire {context} received a null IndexInfo");
     }
-    // SAFETY: index_info was checked non-null and PostgreSQL keeps the IndexInfo
-    // live for the duration of the build callback/setup path.
-    let index_info = unsafe { &*index_info };
+    let index_info = crate::am::common::pg_ptr::index_info(
+        std::ptr::NonNull::new(index_info).expect("ec_spire IndexInfo should be non-null"),
+    );
     if index_info.ii_NumIndexKeyAttrs != 1 {
         pgrx::error!("ec_spire currently supports exactly one vector key column");
     }

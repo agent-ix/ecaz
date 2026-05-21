@@ -19,6 +19,12 @@ pub(crate) unsafe fn pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
     unsafe { ptr.as_ref() }
 }
 
+pub(crate) fn index_info<'a>(index_info: NonNull<pg_sys::IndexInfo>) -> &'a pg_sys::IndexInfo {
+    // SAFETY: `NonNull` proves the callback-owned IndexInfo exists for this
+    // immediate borrow; callers only inspect/copy fields during the callback.
+    unsafe { index_info.as_ref() }
+}
+
 pub(crate) fn item_pointer(tid: NonNull<pg_sys::ItemPointerData>) -> ItemPointer {
     // SAFETY: `NonNull` proves the callback-owned ItemPointerData exists for
     // this immediate copy; no PostgreSQL-owned pointer is retained.

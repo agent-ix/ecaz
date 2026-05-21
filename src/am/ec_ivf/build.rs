@@ -785,9 +785,10 @@ pub(super) fn resolve_indexed_vector_kind(
 }
 
 fn index_info_ref<'a>(index_info: *mut pg_sys::IndexInfo, context: &str) -> &'a pg_sys::IndexInfo {
-    // SAFETY: PostgreSQL owns IndexInfo for the AM callback duration.
-    unsafe { index_info.as_ref() }
-        .unwrap_or_else(|| pgrx::error!("ec_ivf {context} received a null IndexInfo"))
+    let Some(index_info) = std::ptr::NonNull::new(index_info) else {
+        pgrx::error!("ec_ivf {context} received a null IndexInfo");
+    };
+    crate::am::common::pg_ptr::index_info(index_info)
 }
 
 unsafe fn heap_relation_tuple_desc(

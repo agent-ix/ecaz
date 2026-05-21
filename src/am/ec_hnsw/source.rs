@@ -345,9 +345,9 @@ pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
     if index_info.is_null() {
         pgrx::error!("ec_hnsw {label} received a null IndexInfo");
     }
-    // SAFETY: Null was checked above and PostgreSQL owns `IndexInfo` for the
-    // duration of the calling AM callback.
-    let index_info = unsafe { &*index_info };
+    let index_info = crate::am::common::pg_ptr::index_info(
+        std::ptr::NonNull::new(index_info).expect("ec_hnsw IndexInfo should be non-null"),
+    );
     if index_info.ii_NumIndexKeyAttrs != 1 {
         pgrx::error!("ec_hnsw {label} currently supports single-key indexes only");
     }
