@@ -225,7 +225,7 @@ pub(crate) unsafe fn index_page_ownership(
         .collect()
 }
 
-fn directory_drift_summary(
+unsafe fn directory_drift_summary(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> DirectoryDriftSummary {
@@ -243,10 +243,8 @@ fn directory_drift_summary(
     let mut next_tid = metadata.directory_head;
     let mut summary = DirectoryDriftSummary::default();
     for expected_list_id in 0..metadata.nlists {
-        // SAFETY: `next_tid` starts at the metadata directory head and advances
-        // through decoded directory tuples in the same live index relation.
         let (directory, following_tid) =
-            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid) }
+            page::read_ivf_list_directory_and_next(index_relation, next_tid)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
         if directory.list_id != expected_list_id {
             pgrx::error!(

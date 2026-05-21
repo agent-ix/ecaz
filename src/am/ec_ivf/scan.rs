@@ -691,7 +691,7 @@ fn free_scan_query(opaque: &mut EcIvfScanOpaque) {
     opaque.query_dimensions = 0;
 }
 
-fn store_scan_prepared_query(
+unsafe fn store_scan_prepared_query(
     opaque: &mut EcIvfScanOpaque,
     index_relation: pg_sys::Relation,
     query: &[f32],
@@ -726,7 +726,7 @@ fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
     drop_boxed_scan_ptr(&mut opaque.prepared_query);
 }
 
-fn pq_fastscan_model_for_scan<'a>(
+unsafe fn pq_fastscan_model_for_scan<'a>(
     opaque: &'a mut EcIvfScanOpaque,
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
@@ -1356,7 +1356,7 @@ fn metadata_pq_group_size(metadata: &super::page::MetadataPage) -> Option<usize>
     }
 }
 
-fn build_selected_probe_plan(
+unsafe fn build_selected_probe_plan(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
     selected_lists: &[u32],
@@ -1440,7 +1440,7 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
         .unwrap_or_default()
 }
 
-fn load_directory_entries(
+unsafe fn load_directory_entries(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
 ) -> Result<Vec<super::page::IvfListDirectoryTuple>, String> {
@@ -1454,10 +1454,8 @@ fn load_directory_entries(
     let mut next_tid = metadata.directory_head;
     let mut directories = Vec::with_capacity(metadata.nlists as usize);
     for expected_list_id in 0..metadata.nlists {
-        // SAFETY: `index_relation` is the live IVF relation for this scan and
-        // `next_tid` walks the directory chain rooted in its metadata.
         let (directory, following_tid) =
-            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid) }?;
+            super::page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",

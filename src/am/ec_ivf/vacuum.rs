@@ -185,7 +185,7 @@ fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
     .map(|quantizer| quantizer.payload_len())
 }
 
-fn bulkdelete_list_postings(
+unsafe fn bulkdelete_list_postings(
     index_relation: pg_sys::Relation,
     directory: &page::IvfListDirectoryTuple,
     directory_block_number: pg_sys::BlockNumber,
@@ -194,27 +194,23 @@ fn bulkdelete_list_postings(
     callback_state: *mut c_void,
 ) -> Result<ListBulkDeleteResult, String> {
     let mut result = ListBulkDeleteResult::default();
-    // SAFETY: `index_relation` is the live IVF relation from the vacuum
-    // callback; directory block refs were decoded from that relation.
-    unsafe {
-        page::rewrite_ivf_postings_for_list_blocks(
-            index_relation,
-            directory.list_id,
-            directory.head_block,
-            directory.tail_block,
-            payload_len,
-            &[directory_block_number],
-            |posting_tid, mut posting| {
-                bulkdelete_posting(
-                    &mut result,
-                    posting_tid,
-                    &mut posting,
-                    callback,
-                    callback_state,
-                )
-            },
-        )
-    }?;
+    page::rewrite_ivf_postings_for_list_blocks(
+        index_relation,
+        directory.list_id,
+        directory.head_block,
+        directory.tail_block,
+        payload_len,
+        &[directory_block_number],
+        |posting_tid, mut posting| {
+            bulkdelete_posting(
+                &mut result,
+                posting_tid,
+                &mut posting,
+                callback,
+                callback_state,
+            )
+        },
+    )?;
 
     Ok(result)
 }
@@ -258,7 +254,7 @@ fn bulkdelete_posting(
     Ok(rewrite)
 }
 
-fn finish_vacuum_stats(
+unsafe fn finish_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
     metadata: &page::MetadataPage,
@@ -271,10 +267,7 @@ fn finish_vacuum_stats(
     } else {
         stats
     };
-    // SAFETY: `index_relation` is the live IVF index relation; PostgreSQL
-    // accepts this relation pointer for main-fork block counting.
-    // SAFETY: `index_relation` is live during IVF vacuum.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
 
     // SAFETY: `stats` is non-null after allocation/selection above and is
     // writable for the current vacuum callback.
