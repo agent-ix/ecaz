@@ -1830,7 +1830,7 @@ fn ec_spire_index_active_snapshot_diagnostics(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_active_snapshot_diagnostics");
     let diagnostics =
-        with_live_index_relation!(index_relation, am::spire_active_snapshot_diagnostics);
+        with_live_index_relation_safe!(index_relation, am::spire_active_snapshot_diagnostics);
 
     TableIterator::once((
         i64::try_from(diagnostics.active_epoch).expect("active epoch should fit in i64"),
@@ -1899,7 +1899,7 @@ fn ec_spire_index_allocator_snapshot(
         u64::try_from(warn_within).expect("non-negative warning threshold should fit in u64");
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_allocator_snapshot");
-    let snapshot = with_live_index_relation!(
+    let snapshot = with_live_index_relation_safe!(
         index_relation,
         am::spire_index_allocator_snapshot,
         warn_within
@@ -1953,7 +1953,7 @@ fn ec_spire_index_placement_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_placement_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_placement_snapshot);
+    let rows = with_live_index_relation_safe!(index_relation, am::spire_index_placement_snapshot);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2019,7 +2019,7 @@ fn ec_spire_remote_node_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_snapshot);
+    let rows = with_live_index_relation_safe!(index_relation, am::spire_remote_node_snapshot);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2850,7 +2850,7 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
         .expect("remote placement count should fit in i64");
 
     let result = Spi::connect_mut(|client| {
-        let current_active_epoch = i64::try_from(with_live_index_relation!(
+        let current_active_epoch = i64::try_from(with_live_index_relation_safe!(
             index_relation,
             am::spire_active_epoch
         ))
@@ -16309,7 +16309,8 @@ fn ec_spire_index_options_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_options_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_options_snapshot);
+    let snapshot =
+        with_live_index_relation_safe!(index_relation, am::spire_index_options_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16371,7 +16372,7 @@ fn ec_spire_index_writer_identity_snapshot(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_writer_identity_snapshot");
     let snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_writer_identity_snapshot);
+        with_live_index_relation_safe!(index_relation, am::spire_index_writer_identity_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16526,7 +16527,8 @@ fn ec_spire_index_level_parameter_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_level_parameter_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_level_parameter_snapshot);
+    let rows =
+        with_live_index_relation_safe!(index_relation, am::spire_index_level_parameter_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16573,7 +16575,8 @@ fn ec_spire_index_scan_sanity_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_sanity_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_scan_sanity_snapshot);
+    let snapshot =
+        with_live_index_relation_safe!(index_relation, am::spire_index_scan_sanity_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16619,7 +16622,7 @@ fn ec_spire_index_health_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_health_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_health_snapshot);
+    let snapshot = with_live_index_relation_safe!(index_relation, am::spire_index_health_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16668,7 +16671,7 @@ fn ec_spire_index_relation_storage_snapshot(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_relation_storage_snapshot");
     let snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
+        with_live_index_relation_safe!(index_relation, am::spire_index_relation_storage_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16714,7 +16717,7 @@ fn ec_spire_index_epoch_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
+    let rows = with_live_index_relation_safe!(index_relation, am::spire_index_epoch_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16760,9 +16763,9 @@ fn ec_spire_index_epoch_cleanup_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_summary");
-    let epoch_rows = with_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
+    let epoch_rows = with_live_index_relation_safe!(index_relation, am::spire_index_epoch_snapshot);
     let storage_snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
+        with_live_index_relation_safe!(index_relation, am::spire_index_relation_storage_snapshot);
     drop(index_relation);
 
     let active_root_manifest_count = epoch_rows
@@ -16854,7 +16857,7 @@ fn ec_spire_index_epoch_cleanup_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_run");
-    let result = with_live_index_relation!(index_relation, am::spire_index_epoch_cleanup_run);
+    let result = with_live_index_relation_safe!(index_relation, am::spire_index_epoch_cleanup_run);
     drop(index_relation);
 
     TableIterator::once((
@@ -16907,7 +16910,7 @@ fn ec_spire_index_leaf_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_leaf_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_leaf_snapshot);
+    let rows = with_live_index_relation_safe!(index_relation, am::spire_index_leaf_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -17326,7 +17329,8 @@ fn ec_spire_index_insert_debt_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_insert_debt_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_insert_debt_snapshot);
+    let snapshot =
+        with_live_index_relation_safe!(index_relation, am::spire_index_insert_debt_snapshot);
     drop(index_relation);
 
     TableIterator::once((

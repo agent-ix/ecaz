@@ -165,11 +165,11 @@ impl SpireActiveEpochAnchor {
     }
 }
 
-pub(crate) unsafe fn active_snapshot_diagnostics(
+pub(crate) fn active_snapshot_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> SpireActiveSnapshotDiagnostics {
     let result = (|| -> Result<SpireActiveSnapshotDiagnostics, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));
@@ -245,18 +245,18 @@ fn open_storage_relation_or_index(
     Ok((relation, Some(guard)))
 }
 
-pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
-    live_index_relation(index_relation)
+pub(crate) fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
+    checked_live_index_relation(index_relation)
         .root_control()
         .active_epoch
 }
 
-pub(crate) unsafe fn index_allocator_snapshot(
+pub(crate) fn index_allocator_snapshot(
     index_relation: pg_sys::Relation,
     warn_within: u64,
 ) -> SpireIndexAllocatorSnapshot {
     let result = (|| -> Result<SpireIndexAllocatorSnapshot, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let diagnostics = diagnostics::collect_allocator_diagnostics(&root_control, warn_within)?;
         Ok(SpireIndexAllocatorSnapshot {
@@ -273,11 +273,11 @@ pub(crate) unsafe fn index_allocator_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_options_snapshot(
+pub(crate) fn index_options_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexOptionsSnapshot {
     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = index.root_control();
@@ -389,10 +389,10 @@ pub(crate) unsafe fn index_options_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_writer_identity_snapshot(
+pub(crate) fn index_writer_identity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexWriterIdentitySnapshot {
-    let index = live_index_relation(index_relation);
+    let index = checked_live_index_relation(index_relation);
     let relation_options = index.relation_options();
     let root_control = index.root_control();
     let (writer_identity_status, writer_identity_recommendation) = writer_identity_snapshot_status(
@@ -433,11 +433,11 @@ struct SpireLevelParameterAccumulator {
     centroid_dimensions: u16,
 }
 
-pub(crate) unsafe fn index_level_parameter_snapshot(
+pub(crate) fn index_level_parameter_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLevelParameterSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
@@ -536,11 +536,11 @@ fn collect_level_parameter_snapshot_rows(
         .collect()
 }
 
-pub(crate) unsafe fn index_scan_sanity_snapshot(
+pub(crate) fn index_scan_sanity_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexScanSanitySnapshot {
     let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = index.root_control();
@@ -585,18 +585,18 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_health_snapshot(
+pub(crate) fn index_health_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexHealthSnapshot {
     let diagnostics = active_snapshot_diagnostics(index_relation);
     health_snapshot_from_diagnostics(&diagnostics)
 }
 
-pub(crate) unsafe fn index_relation_storage_snapshot(
+pub(crate) fn index_relation_storage_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexRelationStorageSnapshot {
     let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let index_relid = index.relid();
         let root_control = index.root_control();
         let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
@@ -645,8 +645,11 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
 
-            let storage_block_count =
-                crate::storage::relation::main_fork_block_count(storage_relation.as_ptr());
+            // SAFETY: `storage_relation` is open with AccessShareLock while
+            // collecting relation storage diagnostics.
+            let storage_block_count = unsafe {
+                crate::storage::relation::main_fork_block_count(storage_relation.as_ptr())
+            };
             relation_block_count = relation_block_count
                 .checked_add(u64::from(storage_block_count))
                 .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;
@@ -703,11 +706,11 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_epoch_snapshot(
+pub(crate) fn index_epoch_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexEpochSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexEpochSnapshotRow>, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let mut manifests = Vec::new();
         index.scan_object_tuples(|tid, tuple| {
@@ -888,14 +891,14 @@ fn collect_physical_cleanup_candidates(
     Ok((cleanup_epochs, protected, candidates_by_relid))
 }
 
-pub(crate) unsafe fn index_epoch_cleanup_run(
+pub(crate) fn index_epoch_cleanup_run(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexEpochCleanupRunResult {
     // SAFETY: acquires the publish relation lock for the live index relation
     // before physical cleanup inspects and deletes object tuples.
     let _guard = unsafe { lock_publish_relation(index_relation) };
     let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch == 0 {
             return Ok(SpireIndexEpochCleanupRunResult {
@@ -940,10 +943,10 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
                 storage_relid,
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
             )?;
+            // SAFETY: storage_relation is open with RowExclusiveLock and
+            // tids were selected by the protected/candidate cleanup plan.
             let delete_result =
-                // SAFETY: storage_relation is open with RowExclusiveLock and
-                // tids were selected by the protected/candidate cleanup plan.
-                page::delete_object_tuples_no_compact(storage_relation.as_ptr(), &tids);
+                unsafe { page::delete_object_tuples_no_compact(storage_relation.as_ptr(), &tids) };
             let (deleted_count, deleted_bytes) = delete_result?;
             removed_tuple_count = removed_tuple_count
                 .checked_add(deleted_count)
@@ -973,11 +976,11 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_placement_snapshot(
+pub(crate) fn index_placement_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexPlacementSnapshotRow>, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1019,11 +1022,11 @@ pub(crate) unsafe fn index_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_node_snapshot(
+pub(crate) fn remote_node_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeSnapshotRow> {
     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -2339,11 +2342,11 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
     }
 }
 
-pub(crate) unsafe fn index_leaf_snapshot(
+pub(crate) fn index_leaf_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLeafSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {
-        let index = live_index_relation(index_relation);
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());

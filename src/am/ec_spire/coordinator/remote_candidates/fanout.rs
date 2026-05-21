@@ -324,9 +324,7 @@ pub(crate) fn remote_search_target_readiness_rows(
             selected_pids,
             consistency_mode,
         );
-        // SAFETY: `index_relation` is the live SPIRE index relation supplied
-        // by the caller for this readiness probe.
-        let node_rows = unsafe { remote_node_snapshot(index_relation) }
+        let node_rows = remote_node_snapshot(index_relation)
             .into_iter()
             .map(|row| (row.node_id, row))
             .collect::<BTreeMap<_, _>>();

@@ -1,7 +1,7 @@
-pub(crate) unsafe fn index_insert_debt_snapshot(
+pub(crate) fn index_insert_debt_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexInsertDebtSnapshot {
-    let index = live_index_relation(index_relation);
+    let index = checked_live_index_relation(index_relation);
     let root_control = index.root_control();
     let leaf_rows = index_leaf_snapshot(index_relation);
     let active_leaf_count = u64::try_from(leaf_rows.len())

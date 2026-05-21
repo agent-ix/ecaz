@@ -219,9 +219,7 @@ unsafe fn spire_tree_height_callback_value(index_relation: pg_sys::Relation) -> 
 unsafe fn cost_active_snapshot_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> SpireActiveSnapshotDiagnostics {
-    // SAFETY: cost callers pass a live SPIRE index relation, and the snapshot
-    // only reads index metadata.
-    unsafe { active_snapshot_diagnostics(index_relation) }
+    active_snapshot_diagnostics(index_relation)
 }
 
 unsafe fn cost_index_hierarchy_snapshot(
