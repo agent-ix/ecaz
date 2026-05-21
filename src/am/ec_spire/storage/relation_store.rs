@@ -9,7 +9,9 @@ pub(super) struct SpireRelationObjectStore {
 }
 
 impl SpireRelationObjectStore {
-    pub(super) fn for_index_relation(index_relation: pg_sys::Relation) -> Result<Self, String> {
+    pub(super) unsafe fn for_index_relation(
+        index_relation: pg_sys::Relation,
+    ) -> Result<Self, String> {
         if index_relation.is_null() {
             return Err("ec_spire relation object store needs a valid relation".to_owned());
         }
@@ -19,14 +21,12 @@ impl SpireRelationObjectStore {
             return Err("ec_spire relation object store relid is invalid".to_owned());
         }
         let store_relid = relation_oid.into();
-        Ok(Self::for_store_relation_id(
-            index_relation,
-            SPIRE_SINGLE_LOCAL_STORE_ID,
-            store_relid,
-        ))
+        Ok(unsafe {
+            Self::for_store_relation_id(index_relation, SPIRE_SINGLE_LOCAL_STORE_ID, store_relid)
+        })
     }
 
-    pub(super) fn for_store_relation_id(
+    pub(super) unsafe fn for_store_relation_id(
         store_relation: pg_sys::Relation,
         local_store_id: u32,
         store_relid: u32,
@@ -1238,7 +1238,7 @@ impl Drop for OpenedRelationsGuard {
 }
 
 impl SpireRelationObjectStoreSet {
-    pub(super) fn for_index_relation_and_config(
+    pub(super) unsafe fn for_index_relation_and_config(
         index_relation: pg_sys::Relation,
         config: SpireLocalStoreConfig,
         lockmode: pg_sys::LOCKMODE,
@@ -1274,11 +1274,13 @@ impl SpireRelationObjectStoreSet {
                 };
                 relation
             };
-            stores.push(SpireRelationObjectStore::for_store_relation_id(
-                store_relation,
-                descriptor.local_store_id,
-                descriptor.store_relid,
-            ));
+            stores.push(unsafe {
+                SpireRelationObjectStore::for_store_relation_id(
+                    store_relation,
+                    descriptor.local_store_id,
+                    descriptor.store_relid,
+                )
+            });
             let store_index = stores.len() - 1;
             if store_indexes_by_key
                 .insert(
@@ -1302,7 +1304,7 @@ impl SpireRelationObjectStoreSet {
         })
     }
 
-    pub(super) fn for_index_relation_and_placements(
+    pub(super) unsafe fn for_index_relation_and_placements(
         index_relation: pg_sys::Relation,
         placement_directory: &SpirePlacementDirectory,
         lockmode: pg_sys::LOCKMODE,
@@ -1344,11 +1346,13 @@ impl SpireRelationObjectStoreSet {
                 };
                 relation
             };
-            stores.push(SpireRelationObjectStore::for_store_relation_id(
-                store_relation,
-                local_store_id,
-                store_relid,
-            ));
+            stores.push(unsafe {
+                SpireRelationObjectStore::for_store_relation_id(
+                    store_relation,
+                    local_store_id,
+                    store_relid,
+                )
+            });
             let store_index = stores.len() - 1;
             if store_indexes_by_key
                 .insert((local_store_id, store_relid), store_index)

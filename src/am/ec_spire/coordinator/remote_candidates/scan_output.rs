@@ -123,11 +123,15 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store = storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            index_relation,
-            &placement_directory,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )?;
+        // SAFETY: production scan handoff uses the live SPIRE index relation
+        // supplied by the diagnostic wrapper.
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        }?;
         let relation_options = options::relation_options(index_relation);
         let top_graph_plan = relation_options.top_graph_plan()?;
         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
@@ -513,11 +517,15 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         &object_manifest,
         &placement_directory,
     )?;
-    let object_store = storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-        index_relation,
-        &placement_directory,
-        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-    )?;
+    // SAFETY: production scan heap resolution uses the live SPIRE index
+    // relation supplied by the scan wrapper.
+    let object_store = unsafe {
+        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+            index_relation,
+            &placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )
+    }?;
     let relation_options = options::relation_options(index_relation);
     let top_graph_plan = relation_options.top_graph_plan()?;
     let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;

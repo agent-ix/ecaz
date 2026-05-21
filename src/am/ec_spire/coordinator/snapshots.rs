@@ -64,15 +64,21 @@ impl SpireLiveIndexRelation {
         placement_directory: &meta::SpirePlacementDirectory,
         lockmode: pg_sys::LOCKMODE,
     ) -> Result<storage::SpireRelationObjectStoreSet, String> {
-        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            self.relation,
-            placement_directory,
-            lockmode,
-        )
+        // SAFETY: this view is constructed from a live SPIRE index relation
+        // and does not outlive the caller's relation scope.
+        unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                self.relation,
+                placement_directory,
+                lockmode,
+            )
+        }
     }
 
     fn object_store(self) -> Result<storage::SpireRelationObjectStore, String> {
-        storage::SpireRelationObjectStore::for_index_relation(self.relation)
+        // SAFETY: this view is constructed from a live SPIRE index relation
+        // and does not outlive the caller's relation scope.
+        unsafe { storage::SpireRelationObjectStore::for_index_relation(self.relation) }
     }
 
     fn scan_object_tuples<F>(self, visit: F) -> Result<(), String>

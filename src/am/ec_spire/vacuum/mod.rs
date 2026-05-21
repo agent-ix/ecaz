@@ -94,11 +94,15 @@ impl SpireVacuumIndexRelation {
         placement_directory: &SpirePlacementDirectory,
         lockmode: pg_sys::LOCKMODE,
     ) -> Result<SpireRelationObjectStoreSet, String> {
-        SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            self.relation,
-            placement_directory,
-            lockmode,
-        )
+        // SAFETY: `self.relation` is the live SPIRE index relation for this
+        // vacuum operation.
+        unsafe {
+            SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                self.relation,
+                placement_directory,
+                lockmode,
+            )
+        }
     }
 
     fn object_store_set_for_config(
@@ -106,11 +110,15 @@ impl SpireVacuumIndexRelation {
         local_store_config: SpireLocalStoreConfig,
         lockmode: pg_sys::LOCKMODE,
     ) -> Result<SpireRelationObjectStoreSet, String> {
-        SpireRelationObjectStoreSet::for_index_relation_and_config(
-            self.relation,
-            local_store_config,
-            lockmode,
-        )
+        // SAFETY: `self.relation` is the live SPIRE index relation for this
+        // vacuum operation.
+        unsafe {
+            SpireRelationObjectStoreSet::for_index_relation_and_config(
+                self.relation,
+                local_store_config,
+                lockmode,
+            )
+        }
     }
 
     fn write_placement_entries(
