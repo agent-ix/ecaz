@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-use crate::am::common::{detoast::DetoastedVarlena, training};
+use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena, training};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
@@ -159,79 +159,71 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    // SAFETY: PostgreSQL invokes ambuild with callback-duration relation and
-    // IndexInfo pointers; all raw pointer work is contained inside the guard.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let mut state = BuildState::new(index_relation);
-            let index_name = relation_name(index_relation);
-            validate_single_ecvector_attribute(heap_relation, index_info);
+    pg_am_callback!({
+        let mut state = BuildState::new(index_relation);
+        let index_name = relation_name(index_relation);
+        validate_single_ecvector_attribute(heap_relation, index_info);
 
-            initialize_metadata_page(index_relation, empty_metadata(&state));
+        initialize_metadata_page(index_relation, empty_metadata(&state));
 
-            let total_started = Instant::now();
-            let heap_scan_started = Instant::now();
-            let heap_tuples = pg_sys::table_index_build_scan(
-                heap_relation,
-                index_relation,
-                index_info,
-                false,
-                false,
-                Some(ec_diskann_build_callback),
-                (&mut state as *mut BuildState).cast(),
-                ptr::null_mut(),
+        let total_started = Instant::now();
+        let heap_scan_started = Instant::now();
+        let heap_tuples = pg_sys::table_index_build_scan(
+            heap_relation,
+            index_relation,
+            index_info,
+            false,
+            false,
+            Some(ec_diskann_build_callback),
+            (&mut state as *mut BuildState).cast(),
+            ptr::null_mut(),
+        );
+        let heap_scan_elapsed = heap_scan_started.elapsed();
+
+        let index_tuples = if state.heap_tuples.is_empty() {
+            log_ambuild_empty_timing(
+                &index_name,
+                heap_tuples,
+                state.scanned_tuples,
+                heap_scan_elapsed,
+                total_started.elapsed(),
             );
-            let heap_scan_elapsed = heap_scan_started.elapsed();
+            0.0
+        } else {
+            let flush_timing = flush_build_state(index_relation, &state)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
+            log_ambuild_timing(
+                &index_name,
+                heap_tuples,
+                state.scanned_tuples,
+                state.heap_tuples.len(),
+                heap_scan_elapsed,
+                &flush_timing,
+                total_started.elapsed(),
+            );
+            state.heap_tuples.len() as f64
+        };
 
-            let index_tuples = if state.heap_tuples.is_empty() {
-                log_ambuild_empty_timing(
-                    &index_name,
-                    heap_tuples,
-                    state.scanned_tuples,
-                    heap_scan_elapsed,
-                    total_started.elapsed(),
-                );
-                0.0
-            } else {
-                let flush_timing = flush_build_state(index_relation, &state)
-                    .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
-                log_ambuild_timing(
-                    &index_name,
-                    heap_tuples,
-                    state.scanned_tuples,
-                    state.heap_tuples.len(),
-                    heap_scan_elapsed,
-                    &flush_timing,
-                    total_started.elapsed(),
-                );
-                state.heap_tuples.len() as f64
-            };
+        if heap_tuples != state.scanned_tuples as f64 {
+            pgrx::error!(
+                "ec_diskann ambuild scanned {heap_tuples} heap tuples but observed {}",
+                state.scanned_tuples
+            );
+        }
 
-            if heap_tuples != state.scanned_tuples as f64 {
-                pgrx::error!(
-                    "ec_diskann ambuild scanned {heap_tuples} heap tuples but observed {}",
-                    state.scanned_tuples
-                );
-            }
-
-            crate::fault::maybe_fail_palloc("ec_diskann ambuild result");
-            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
-            result.heap_tuples = heap_tuples;
-            result.index_tuples = index_tuples;
-            result.into_pg()
-        })
-    }
+        crate::fault::maybe_fail_palloc("ec_diskann ambuild result");
+        let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+        result.heap_tuples = heap_tuples;
+        result.index_tuples = index_tuples;
+        result.into_pg()
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuildempty(index_relation: pg_sys::Relation) {
-    // SAFETY: PostgreSQL invokes ambuildempty with a live index relation; the
-    // metadata initialization stays inside the guard.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = BuildState::new(index_relation);
-            initialize_metadata_page(index_relation, empty_metadata(&state));
-        })
-    }
+    pg_am_callback!({
+        let state = BuildState::new(index_relation);
+        initialize_metadata_page(index_relation, empty_metadata(&state));
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_build_callback(
@@ -242,26 +234,22 @@ unsafe extern "C-unwind" fn ec_diskann_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
-    // SAFETY: PostgreSQL invokes the build callback with callback-duration
-    // Datum/null arrays, heap TID, and opaque state pointer from ambuild.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &mut *state.cast::<BuildState>();
-            if values.is_null() || isnull.is_null() {
-                pgrx::error!("ec_diskann ambuild received null tuple value arrays");
-            }
-            if *isnull {
-                pgrx::error!("ec_diskann does not support NULL indexed values");
-            }
-            let datum = *values;
-            if datum.is_null() {
-                pgrx::error!("ec_diskann ambuild received a null indexed datum");
-            }
-            let source_vector = ecvector_datum_to_vec(datum);
-            let heap_tid = decode_heap_tid(tid);
-            state.push(heap_tid, source_vector);
-        })
-    }
+    pg_am_callback!({
+        let state = &mut *state.cast::<BuildState>();
+        if values.is_null() || isnull.is_null() {
+            pgrx::error!("ec_diskann ambuild received null tuple value arrays");
+        }
+        if *isnull {
+            pgrx::error!("ec_diskann does not support NULL indexed values");
+        }
+        let datum = *values;
+        if datum.is_null() {
+            pgrx::error!("ec_diskann ambuild received a null indexed datum");
+        }
+        let source_vector = ecvector_datum_to_vec(datum);
+        let heap_tid = decode_heap_tid(tid);
+        state.push(heap_tid, source_vector);
+    })
 }
 
 fn empty_metadata(state: &BuildState) -> VamanaMetadataPage {
