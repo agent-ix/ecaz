@@ -183,21 +183,15 @@ unsafe fn custom_scan_query_from_plan(
                 "EcSpireDistributedScan requires a constant or parameter real[] ORDER BY query"
             ),
         };
-        custom_scan_query_values_from_datum(datum).unwrap_or_else(|| {
-            pgrx::error!("EcSpireDistributedScan requires a finite real[] ORDER BY query parameter")
-        })
+        let values = Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)
+            .filter(|values| !values.is_empty() && values.iter().all(|value| value.is_finite()))
+            .unwrap_or_else(|| {
+                pgrx::error!(
+                    "EcSpireDistributedScan requires a finite real[] ORDER BY query parameter"
+                )
+            });
+        values
     }
-}
-
-unsafe fn custom_scan_query_values_from_datum(datum: pg_sys::Datum) -> Option<Vec<f32>> {
-    // SAFETY: caller supplies a non-null real[] Datum from a validated Const or
-    // evaluated Param; pgrx decodes it without taking PostgreSQL ownership.
-    let values =
-        unsafe { Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)? };
-    if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
-    Some(values)
 }
 
 unsafe fn custom_scan_tuple_payload_columns(
@@ -424,7 +418,15 @@ unsafe fn custom_scan_bigint_expr_value(
                 if const_expr.constisnull {
                     pgrx::error!("EcSpireDistributedScan DML constant PK is NULL");
                 }
-                custom_scan_bigint_datum_value(const_expr.constvalue, const_expr.consttype)
+                match const_expr.consttype {
+                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(const_expr.constvalue)),
+                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(const_expr.constvalue)),
+                    pg_sys::INT8OID => pg_sys::DatumGetInt64(const_expr.constvalue),
+                    other => pgrx::error!(
+                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
+                        other.to_u32()
+                    ),
+                }
             }
             pg_sys::NodeTag::T_Param => {
                 let param = &*expr.cast::<pg_sys::Param>();
@@ -440,26 +442,18 @@ unsafe fn custom_scan_bigint_expr_value(
                 if is_null {
                     pgrx::error!("EcSpireDistributedScan DML PK parameter must not be NULL");
                 }
-                custom_scan_bigint_datum_value(datum, param.paramtype)
+                match param.paramtype {
+                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(datum)),
+                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(datum)),
+                    pg_sys::INT8OID => pg_sys::DatumGetInt64(datum),
+                    other => pgrx::error!(
+                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
+                        other.to_u32()
+                    ),
+                }
             }
             _ => pgrx::error!(
                 "EcSpireDistributedScan DML path requires a constant or parameter bigint PK"
-            ),
-        }
-    }
-}
-
-unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::Oid) -> i64 {
-    // SAFETY: caller supplies a non-null integer Datum and its exact PostgreSQL
-    // type OID; each DatumGet branch matches that OID.
-    unsafe {
-        match typoid {
-            pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(datum)),
-            pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(datum)),
-            pg_sys::INT8OID => pg_sys::DatumGetInt64(datum),
-            other => pgrx::error!(
-                "EcSpireDistributedScan DML path unsupported PK type OID {}",
-                other.to_u32()
             ),
         }
     }
