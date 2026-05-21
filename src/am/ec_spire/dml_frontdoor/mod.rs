@@ -1444,22 +1444,23 @@ impl<'a> DmlFrontdoorHeapRelationView<'a> {
     fn new(heap_relation: &'a HeapRelationGuard) -> Result<Self, String> {
         let heap_relation_ptr = heap_relation.as_ptr();
         // SAFETY: `heap_relation` owns a live PostgreSQL heap relation for the
-        // duration of this catalog read.
+        // duration of this catalog read. The tuple descriptor is copied through
+        // the local TupleDescView wrapper before leaving this boundary.
         let (relation_oid, tuple_desc) = unsafe {
             (
                 crate::storage::relation::relation_oid(heap_relation_ptr),
-                (*heap_relation_ptr).rd_att,
+                SpireDmlFrontdoorTupleDesc {
+                    tuple_desc: TupleDescView::from_raw(
+                        (*heap_relation_ptr).rd_att,
+                        "ec_spire DML frontdoor catalog relation",
+                    )?,
+                },
             )
-        };
-        // SAFETY: `tuple_desc` comes from the live heap relation guard and is
-        // only copied through the local TupleDescView wrapper.
-        let tuple_desc = unsafe {
-            TupleDescView::from_raw(tuple_desc, "ec_spire DML frontdoor catalog relation")?
         };
         Ok(Self {
             heap_relation,
             relation_oid,
-            tuple_desc: SpireDmlFrontdoorTupleDesc { tuple_desc },
+            tuple_desc,
         })
     }
 
@@ -1523,6 +1524,22 @@ impl<'a> DmlFrontdoorIndexRelationView<'a> {
 
     fn relam(&self) -> Option<pg_sys::Oid> {
         self.class_form.map(|class_form| class_form.relam)
+    }
+
+    fn key_attnum(&self, key_index: i16) -> Option<pg_sys::AttrNumber> {
+        let index_form = self.index_form?;
+        if key_index < 0 || key_index >= index_form.indnkeyatts {
+            return None;
+        }
+        // SAFETY: `key_index` is bounded by `indnkeyatts`, so PostgreSQL
+        // relcache metadata has initialized the selected indkey slot.
+        Some(unsafe {
+            *index_form
+                .indkey
+                .values
+                .as_ptr()
+                .add(usize::try_from(key_index).ok()?)
+        })
     }
 }
 
@@ -1620,10 +1637,8 @@ fn dml_frontdoor_catalog_index_and_pk(
             }
         }
         if primary_key.is_none() {
-            if let Some(index_form) = index_relation.index_form() {
-                primary_key =
-                    dml_frontdoor_primary_key_column_from_index(heap_relation, index_form)?;
-            }
+            primary_key =
+                dml_frontdoor_primary_key_column_from_index(heap_relation, &index_relation)?;
         }
     }
 
@@ -1638,14 +1653,15 @@ fn dml_frontdoor_catalog_index_and_pk(
 
 fn dml_frontdoor_primary_key_column_from_index(
     heap_relation: &DmlFrontdoorHeapRelationView<'_>,
-    index_form: &pg_sys::FormData_pg_index,
+    index_relation: &DmlFrontdoorIndexRelationView<'_>,
 ) -> Result<Option<SpireDmlFrontdoorPrimaryKeyColumn>, String> {
+    let Some(index_form) = index_relation.index_form() else {
+        return Ok(None);
+    };
     if !index_form.indisprimary || index_form.indnkeyatts != 1 {
         return Ok(None);
     }
-    // SAFETY: single-key primary index metadata guarantees the first indkey
-    // slot is initialized.
-    let attnum = unsafe { *index_form.indkey.values.as_ptr() };
+    let attnum = index_relation.key_attnum(0).unwrap_or(0);
     if attnum <= 0 {
         return Ok(None);
     }
@@ -1674,14 +1690,8 @@ fn dml_frontdoor_index_key_column_names_from_rel(
         .ok_or_else(|| "ec_spire DML frontdoor catalog index metadata is NULL".to_owned())?;
     let mut columns = Vec::new();
     for key_index in 0..index_form.indnkeyatts {
-        // SAFETY: key_index is bounded by indnkeyatts, so the indkey slot is
-        // initialized by PostgreSQL relcache metadata.
-        let attnum = unsafe {
-            *index_form
-                .indkey
-                .values
-                .as_ptr()
-                .add(usize::try_from(key_index).unwrap_or(usize::MAX))
+        let Some(attnum) = index_relation.key_attnum(key_index) else {
+            continue;
         };
         if attnum <= 0 {
             continue;
