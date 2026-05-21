@@ -146,16 +146,12 @@ impl<'a> CustomScanPlannerRel<'a> {
         output_rows: f64,
         eligibility: &SpireCustomScanIndexEligibilityRow,
     ) -> SpireCustomScanCostEstimate {
-        // SAFETY: this view exists only inside the PostgreSQL planner callback
-        // where backend-local planner cost globals are valid to read.
-        unsafe {
-            estimate_custom_scan_cost(
-                output_rows,
-                self.rel_ref.rows.max(1.0),
-                self.target_width(),
-                eligibility,
-            )
-        }
+        estimate_custom_scan_cost(
+            output_rows,
+            self.rel_ref.rows.max(1.0),
+            self.target_width(),
+            eligibility,
+        )
     }
 }
 
@@ -244,7 +240,7 @@ impl<'a> CustomScanExpr<'a> {
     }
 }
 
-unsafe fn estimate_custom_scan_cost(
+fn estimate_custom_scan_cost(
     output_rows: f64,
     rel_rows: f64,
     target_width: f64,
