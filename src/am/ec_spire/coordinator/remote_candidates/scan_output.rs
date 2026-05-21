@@ -799,15 +799,12 @@ pub(crate) fn remote_search_production_read_profile_row(
     production_read_profile_row(&profiled.stream.summary, &profiled.metrics)
 }
 
-pub(crate) unsafe fn remote_search_operator_diagnostics_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_operator_diagnostics_row(
+    index: SpireLiveIndexRelation,
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteSearchOperatorDiagnosticsRow {
     let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {
-        // SAFETY: callers hold the SPIRE index relation open while collecting
-        // operator diagnostics.
-        let index = unsafe { live_index_relation(index_relation) };
         let capability = remote_node_capability_summary(index);
         let remote_snapshots = remote_node_snapshot(index)
             .into_iter()

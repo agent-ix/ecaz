@@ -12967,7 +12967,7 @@ fn ec_spire_remote_search_operator_diagnostics(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_operator_diagnostics");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_operator_diagnostics_row,
         query,

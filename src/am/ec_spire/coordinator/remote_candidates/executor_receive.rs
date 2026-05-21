@@ -196,8 +196,8 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_identity_cache_contract_probe_counts(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -205,9 +205,6 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
     consistency_mode: &str,
 ) -> (u64, u64, u64, u64, String) {
     let result = (|| -> Result<(u64, u64, u64, u64, String), String> {
-        // SAFETY: test callers pass an open SPIRE index relation guard for
-        // the duration of this contract probe.
-        let index = unsafe { live_index_relation(index_relation) };
         let index_relid = remote_candidate_index_oid(
             index,
             "ec_spire libpq identity cache contract probe",
