@@ -741,25 +741,15 @@ fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a TqScanOpaque {
-    // SAFETY: Debug callers inspect the HNSW opaque while the scan descriptor is
-    // live and after begin/rescan initialized the opaque pointer.
-    unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut TqScanOpaque {
-    // SAFETY: Debug callers take exclusive mutable access to the scan opaque
-    // while the live scan descriptor is not otherwise borrowed.
-    unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
 fn debug_with_scan_opaque<R>(
     scan: pg_sys::IndexScanDesc,
     f: impl for<'a> FnOnce(&'a TqScanOpaque) -> R,
 ) -> R {
-    f(debug_scan_opaque(scan))
+    // SAFETY: Debug callers inspect the HNSW opaque while the scan descriptor is
+    // live and after begin/rescan initialized the opaque pointer. The closure
+    // binds the returned borrow to this call instead of exposing an unbounded
+    // lifetime from a raw scan pointer helper.
+    f(unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -767,7 +757,11 @@ fn debug_with_scan_opaque_mut<R>(
     scan: pg_sys::IndexScanDesc,
     f: impl for<'a> FnOnce(&'a mut TqScanOpaque) -> R,
 ) -> R {
-    f(debug_scan_opaque_mut(scan))
+    // SAFETY: Debug callers take exclusive mutable access to the scan opaque
+    // while the live scan descriptor is not otherwise borrowed. The closure
+    // binds the returned borrow to this call instead of exposing an unbounded
+    // lifetime from a raw scan pointer helper.
+    f(unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
