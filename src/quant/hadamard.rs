@@ -112,36 +112,28 @@ pub fn orthonormal_fwht_tiled_in_place(values: &mut [f32], tile_size: usize) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
-    if values.len() == 1024 {
+    if let Some((outer_tile_width, inner_tile_width)) = match values.len() {
+        1024 => Some((512, 256)),
+        2048 => Some((1024, 256)),
+        4096 => Some((2048, 256)),
+        _ => None,
+    } {
         // SAFETY: this function requires AVX2/FMA and the fixed two-level
-        // widths divide the exact 1024-element power-of-two input.
-        unsafe { fwht_in_place_avx2_two_level(values, 512, 256) };
-        return;
-    }
-
-    if values.len() == 2048 {
-        // SAFETY: this function requires AVX2/FMA and the fixed two-level
-        // widths divide the exact 2048-element power-of-two input.
-        unsafe { fwht_in_place_avx2_two_level(values, 1024, 256) };
-        return;
-    }
-
-    if values.len() == 4096 {
-        // SAFETY: this function requires AVX2/FMA and the fixed two-level
-        // widths divide the exact 4096-element power-of-two input.
-        unsafe { fwht_in_place_avx2_two_level(values, 2048, 256) };
+        // widths divide the exact power-of-two input length selected above.
+        unsafe { fwht_in_place_avx2_two_level(values, outer_tile_width, inner_tile_width) };
         return;
     }
 
     let tile_width = avx2_fwht_tile_width(values.len());
     if tile_width > 0 {
         for chunk in values.chunks_exact_mut(tile_width) {
-            // SAFETY: each chunk has `tile_width >= 128`, so the AVX2 bootstrap
-            // processes complete 64-lane groups and returns width 64.
-            unsafe { fwht_in_place_avx2_bootstrap(chunk) };
-            // SAFETY: width 64 divides every selected tile width and the caller
-            // is already executing under the AVX2 target feature.
-            unsafe { fwht_in_place_avx2_stages(chunk, 64) };
+            // SAFETY: each chunk has `tile_width >= 128`, so the AVX2
+            // bootstrap processes complete 64-lane groups; width 64 divides
+            // every selected tile width and this function has AVX2 enabled.
+            unsafe {
+                fwht_in_place_avx2_bootstrap(chunk);
+                fwht_in_place_avx2_stages(chunk, 64);
+            }
         }
         // SAFETY: `tile_width` is a power-of-two stage width selected to divide
         // `values.len()`, and this function has the required AVX2 target feature.
@@ -150,11 +142,12 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
     }
 
     // SAFETY: this AVX2 function is only called after dispatch or tests prove
-    // AVX2 availability; bootstrap handles the small power-of-two widths.
-    let bootstrap_width = unsafe { fwht_in_place_avx2_bootstrap(values) };
-    // SAFETY: bootstrap returns the completed power-of-two width for `values`,
-    // so the remaining stage loop starts at a valid divisor.
-    unsafe { fwht_in_place_avx2_stages(values, bootstrap_width) };
+    // AVX2 availability; bootstrap returns the completed power-of-two width
+    // for `values`, so the remaining stage loop starts at a valid divisor.
+    unsafe {
+        let bootstrap_width = fwht_in_place_avx2_bootstrap(values);
+        fwht_in_place_avx2_stages(values, bootstrap_width);
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -174,11 +167,11 @@ unsafe fn fwht_in_place_avx2_two_level(
     for outer_chunk in values.chunks_exact_mut(outer_tile_width) {
         for inner_chunk in outer_chunk.chunks_exact_mut(inner_tile_width) {
             // SAFETY: every inner chunk has at least 64 lanes and this function
-            // carries the AVX2 target feature required by the bootstrap.
-            unsafe { fwht_in_place_avx2_bootstrap(inner_chunk) };
-            // SAFETY: width 64 divides `inner_tile_width`; the debug asserts
-            // above encode the two-level tiling contract.
-            unsafe { fwht_in_place_avx2_stages(inner_chunk, 64) };
+            // carries AVX2; width 64 divides `inner_tile_width` by contract.
+            unsafe {
+                fwht_in_place_avx2_bootstrap(inner_chunk);
+                fwht_in_place_avx2_stages(inner_chunk, 64);
+            }
         }
         // SAFETY: `inner_tile_width` divides `outer_tile_width`, so the outer
         // chunk can continue from that completed stage width.
@@ -312,21 +305,21 @@ unsafe fn fwht_in_place_avx2_stage_width(values: &mut [f32], width: usize) {
         while offset < len {
             // SAFETY: `offset` advances by `step`, `len % step == 0`, and
             // `right` starts `width` lanes into the current chunk.
-            let left = unsafe { ptr.add(offset) };
-            let right = unsafe { left.add(width) };
+            let (left, right) = unsafe { (ptr.add(offset), ptr.add(offset + width)) };
             let mut i = 0;
             while i < width {
                 // SAFETY: `width % 8 == 0`; every `i` addresses complete,
-                // non-overlapping eight-lane left/right vectors inside chunk.
-                let a = unsafe { _mm256_loadu_ps(left.add(i)) };
-                let b = unsafe { _mm256_loadu_ps(right.add(i)) };
-                let sum = _mm256_add_ps(a, b);
-                let diff = _mm256_sub_ps(a, b);
-                // SAFETY: the stores write back to the exact left/right
-                // eight-lane regions loaded above.
+                // non-overlapping eight-lane left/right vectors inside the
+                // chunk and writes back to those same regions.
                 unsafe {
-                    _mm256_storeu_ps(left.add(i), sum);
-                    _mm256_storeu_ps(right.add(i), diff);
+                    let left_lane = left.add(i);
+                    let right_lane = right.add(i);
+                    let a = _mm256_loadu_ps(left_lane);
+                    let b = _mm256_loadu_ps(right_lane);
+                    let sum = _mm256_add_ps(a, b);
+                    let diff = _mm256_sub_ps(a, b);
+                    _mm256_storeu_ps(left_lane, sum);
+                    _mm256_storeu_ps(right_lane, diff);
                 }
                 i += 8;
             }
@@ -340,8 +333,7 @@ unsafe fn fwht_in_place_avx2_stage_width(values: &mut [f32], width: usize) {
     while offset < len {
         // SAFETY: `offset` advances by `step`, `len % step == 0`, and `right`
         // starts `width` scalar lanes into the current chunk.
-        let left = unsafe { ptr.add(offset) };
-        let right = unsafe { left.add(width) };
+        let (left, right) = unsafe { (ptr.add(offset), ptr.add(offset + width)) };
         let mut i = 0;
         while i < width {
             // SAFETY: `i < width` keeps both left/right scalar accesses inside
@@ -398,8 +390,7 @@ unsafe fn fwht16_avx2_block(
 
     // SAFETY: this function carries AVX2 and delegates each eight-lane half to
     // the AVX2 block transform before combining them.
-    let left = unsafe { fwht8_avx2_block(left) };
-    let right = unsafe { fwht8_avx2_block(right) };
+    let (left, right) = unsafe { (fwht8_avx2_block(left), fwht8_avx2_block(right)) };
     (_mm256_add_ps(left, right), _mm256_sub_ps(left, right))
 }
 
@@ -420,8 +411,7 @@ unsafe fn fwht32_avx2_block(
 
     // SAFETY: this function carries AVX2 and delegates each 16-lane half to the
     // AVX2 block transform before combining them.
-    let (a0, a1) = unsafe { fwht16_avx2_block(a0, a1) };
-    let (b0, b1) = unsafe { fwht16_avx2_block(b0, b1) };
+    let ((a0, a1), (b0, b1)) = unsafe { (fwht16_avx2_block(a0, a1), fwht16_avx2_block(b0, b1)) };
     (
         _mm256_add_ps(a0, b0),
         _mm256_add_ps(a1, b1),
@@ -455,8 +445,12 @@ unsafe fn fwht64_avx2_block(
 
     // SAFETY: this function carries AVX2 and delegates each 32-lane half to the
     // AVX2 block transform before combining them.
-    let (a0, a1, a2, a3) = unsafe { fwht32_avx2_block(a0, a1, a2, a3) };
-    let (b0, b1, b2, b3) = unsafe { fwht32_avx2_block(b0, b1, b2, b3) };
+    let ((a0, a1, a2, a3), (b0, b1, b2, b3)) = unsafe {
+        (
+            fwht32_avx2_block(a0, a1, a2, a3),
+            fwht32_avx2_block(b0, b1, b2, b3),
+        )
+    };
     (
         _mm256_add_ps(a0, b0),
         _mm256_add_ps(a1, b1),
