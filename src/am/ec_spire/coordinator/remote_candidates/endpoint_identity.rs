@@ -434,9 +434,7 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
 ) -> SpireRemoteSearchEndpointIdentityRow {
     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
         let relation_options = options::relation_options(index_relation);
-        // SAFETY: rd_id is stable while the relation is open for this diagnostic
-        // read and is used only as an OID input to identity helpers.
-        let index_oid = unsafe { (*index_relation).rd_id };
+        let index_oid = crate::storage::relation::relation_oid(index_relation);
         let assignment_payload_format = relation_options.assignment_payload_format();
         let assignment_payload_format_name =
             remote_search_assignment_payload_format_name(assignment_payload_format);

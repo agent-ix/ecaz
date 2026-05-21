@@ -22,10 +22,7 @@ fn remote_candidate_index_oid(index_relation: pg_sys::Relation, context: &str) -
     if index_relation.is_null() {
         pgrx::error!("{context} received a null SPIRE index relation");
     }
-    // SAFETY: callers pass the live SPIRE index relation for the surrounding
-    // diagnostic or coordinator operation. This copies rd_id without taking
-    // ownership of the relation.
-    let index_oid = unsafe { (*index_relation).rd_id };
+    let index_oid = crate::storage::relation::relation_oid(index_relation);
     if index_oid == pg_sys::InvalidOid {
         pgrx::error!("{context} received an invalid SPIRE index relation OID");
     }

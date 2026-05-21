@@ -185,9 +185,7 @@ pub(super) fn create_local_store_relations_for_build(
         );
     }
 
-    // SAFETY: index_relation was checked non-null above and remains open while
-    // planning auxiliary local store relation creation.
-    let index_relid = unsafe { (*index_relation).rd_id };
+    let index_relid = crate::storage::relation::relation_oid(index_relation);
     if index_relid == pg_sys::InvalidOid {
         return Err("ec_spire local store relation creation needs a valid index relid".to_owned());
     }

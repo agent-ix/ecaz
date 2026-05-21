@@ -253,8 +253,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
     )?;
 
     let store = SpireRelationObjectStore::for_index_relation(index_relation)?;
-    // SAFETY: index_relation remains live while reading its relcache OID.
-    let index_oid = unsafe { (*index_relation).rd_id };
+    let index_oid = crate::storage::relation::relation_oid(index_relation);
     // SAFETY: index_relation remains live while reading its relcache tablespace.
     let tablespace = unsafe { (*(*index_relation).rd_rel).reltablespace };
     let local_store_config =

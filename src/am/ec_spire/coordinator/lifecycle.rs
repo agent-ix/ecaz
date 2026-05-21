@@ -18,9 +18,7 @@ pub(super) unsafe fn lock_publish_relation(
 ) -> SpireRelationLockGuard {
     // Callers hold an open Relation for the guard lifetime. Capture the relid
     // before locking and unlock by relid so Drop never dereferences the pointer.
-    // SAFETY: index_relation is live for the publish lock acquisition; only the
-    // stable relation OID is copied out before locking.
-    let relid = unsafe { (*index_relation).rd_id };
+    let relid = crate::storage::relation::relation_oid(index_relation);
     // SAFETY: relid identifies the open index relation and the lock mode is the
     // fixed publish lock mode paired with SpireRelationLockGuard::drop.
     unsafe { pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE) };

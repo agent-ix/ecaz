@@ -13,9 +13,7 @@ impl SpireRelationObjectStore {
         if index_relation.is_null() {
             return Err("ec_spire relation object store needs a valid relation".to_owned());
         }
-        // SAFETY: index_relation was checked non-null and is open for the
-        // caller's relation-store lifetime; rd_id is copied by value.
-        let relation_oid = unsafe { (*index_relation).rd_id };
+        let relation_oid = crate::storage::relation::relation_oid(index_relation);
         if relation_oid == pg_sys::InvalidOid {
             return Err("ec_spire relation object store relid is invalid".to_owned());
         }
@@ -1249,9 +1247,7 @@ impl SpireRelationObjectStoreSet {
                 "ec_spire relation object store set needs a valid index relation".to_owned(),
             );
         }
-        // SAFETY: index_relation was checked non-null and remains open for the
-        // store-set lifetime; rd_id is copied by value.
-        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        let index_relid: u32 = crate::storage::relation::relation_oid(index_relation).into();
         let mut stores = Vec::with_capacity(config.stores.len());
         let mut store_indexes_by_key = HashMap::with_capacity(config.stores.len());
         let mut opened_relations = OpenedRelationsGuard::new();
@@ -1313,9 +1309,7 @@ impl SpireRelationObjectStoreSet {
                 "ec_spire relation object store set needs a valid index relation".to_owned(),
             );
         }
-        // SAFETY: index_relation was checked non-null and remains open for the
-        // store-set lifetime; rd_id is copied by value.
-        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        let index_relid: u32 = crate::storage::relation::relation_oid(index_relation).into();
         let mut relid_by_store_id = BTreeMap::<u32, u32>::new();
         for placement in &placement_directory.entries {
             if let Some(existing_relid) =

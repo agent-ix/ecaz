@@ -19,9 +19,7 @@ impl SpireLiveIndexRelation {
     }
 
     fn relid(self) -> u32 {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation; rd_id is copied and no ownership is taken.
-        unsafe { (*self.relation).rd_id }.into()
+        crate::storage::relation::relation_oid(self.relation).into()
     }
 
     fn active_epoch_anchor(
