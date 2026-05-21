@@ -143,6 +143,7 @@ fn custom_scan_top_k_from_plan(plan: CustomScanPlan<'_>) -> usize {
 #[derive(Clone, Copy)]
 struct CustomScanExprList<'a> {
     custom_exprs: *mut pg_sys::List,
+    len: i32,
     _custom_scan: std::marker::PhantomData<&'a pg_sys::CustomScan>,
 }
 
@@ -156,24 +157,30 @@ impl<'a> CustomScanExprList<'a> {
         if custom_scan.custom_exprs.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing {label}");
         }
+        // SAFETY: custom_exprs is null-checked above and belongs to the live
+        // provider-owned CustomScan plan node represented by this view.
+        let Some(custom_exprs_ref) = (unsafe { custom_scan_pg_ref(custom_scan.custom_exprs) })
+        else {
+            pgrx::error!("EcSpireDistributedScan plan expression list is NULL");
+        };
         Self {
             custom_exprs: custom_scan.custom_exprs,
+            len: custom_exprs_ref.length,
             _custom_scan: std::marker::PhantomData,
         }
     }
 
     fn len(self) -> i32 {
-        // SAFETY: this view is constructed only from a live provider-owned
-        // CustomScan expression list.
-        unsafe { custom_scan_list_len(self.custom_exprs) }
-            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan expression list is NULL"))
+        self.len
     }
 
     fn expr(self, offset: i32, label: &str) -> *mut pg_sys::Expr {
+        if offset < 0 || offset >= self.len {
+            pgrx::error!("EcSpireDistributedScan plan is missing {label}");
+        }
         // SAFETY: this view is constructed only from a live provider-owned
-        // CustomScan expression list and the helper bounds-checks `offset`.
-        let expr = unsafe { custom_scan_list_nth_node(self.custom_exprs, offset) }
-            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing {label}"));
+        // CustomScan expression list, and `offset` is bounds-checked above.
+        let expr = unsafe { pg_sys::list_nth(self.custom_exprs, offset).cast::<pg_sys::Node>() };
         if expr.is_null() {
             pgrx::error!("EcSpireDistributedScan plan has a null {label}");
         }
