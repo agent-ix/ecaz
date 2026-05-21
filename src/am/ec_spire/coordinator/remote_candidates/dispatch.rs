@@ -19,7 +19,7 @@ fn remote_search_libpq_dispatch_budget_blocked(
     false
 }
 
-pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
+pub(crate) fn remote_search_libpq_dispatch_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -116,7 +116,7 @@ fn remote_search_libpq_dispatch_summary_from_plan_rows(
     })
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_budget_summary_row(
+pub(crate) fn remote_search_libpq_executor_budget_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
