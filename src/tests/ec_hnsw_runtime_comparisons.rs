@@ -862,7 +862,7 @@
             0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
             1.52, 1.62,
         ];
-        let observed = hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
+        let observed = am::debug_grouped_scan_comparison_rows(index_oid, query.clone());
         let expected_emitted_result_count =
             i32::try_from(observed.len()).expect("emitted result count should fit in i32");
         let expected_grouped_result_count = expected_emitted_result_count;
@@ -1224,7 +1224,7 @@
             1.54, 1.64,
         ];
         let baseline_rows =
-            hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
+            am::debug_grouped_scan_comparison_rows(index_oid, query.clone());
         let window_size = 4_usize;
         let mut buffered_rows = Vec::with_capacity(window_size);
         let mut next_idx = 0usize;
@@ -1424,7 +1424,7 @@
                     query.clone(),
                 );
                 let baseline_rows =
-                    hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
+                    am::debug_grouped_scan_comparison_rows(index_oid, query.clone());
                 let actual_live_order = live_rows
                     .iter()
                     .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
@@ -1669,9 +1669,9 @@
             1.56, 1.66,
         ];
         let baseline_rows =
-            hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
+            am::debug_grouped_scan_comparison_rows(index_oid, query.clone());
         let windowed_rows =
-            hnsw_runtime_debug!(am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4));
+            am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4);
 
         let rank_metrics = |rows: &[(i32, Option<i32>, Option<i32>)]| {
             let mut compared_result_count = 0_i32;

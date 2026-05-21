@@ -2593,7 +2593,7 @@ fn debug_grouped_scan_windowed_rows_from_comparison_rows(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
+pub(crate) fn debug_grouped_scan_comparison_rows(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<DebugGroupedScanComparisonRow> {
@@ -2679,7 +2679,7 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
+pub(crate) fn debug_grouped_scan_comparison_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugGroupedScanComparisonSummary {
@@ -2736,16 +2736,14 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
+pub(crate) fn debug_grouped_scan_order_drift_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugGroupedScanOrderDriftSummary {
     // SAFETY: The debug wrapper forwards the caller-provided index oid to the
     // grouped-storage classifier, which opens and reads index metadata.
     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The comparison-row helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug order drift summary count should fit in i32");
     if !grouped_results {
@@ -2806,20 +2804,18 @@ pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_windowed_rows(
+pub(crate) fn debug_grouped_scan_windowed_rows(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     window_size: i32,
 ) -> Vec<DebugGroupedScanWindowedRow> {
-    // SAFETY: The comparison-row helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let window_size = debug_grouped_window_size(window_size);
     debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, window_size)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_windowed_summary(
+pub(crate) fn debug_grouped_scan_windowed_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     window_size: i32,
@@ -2827,9 +2823,7 @@ pub(crate) unsafe fn debug_grouped_scan_windowed_summary(
     // SAFETY: The debug wrapper forwards the caller-provided index oid to the
     // grouped-storage classifier, which opens and reads index metadata.
     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The comparison-row helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let window_size = debug_grouped_window_size(window_size);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug grouped window summary count should fit in i32");

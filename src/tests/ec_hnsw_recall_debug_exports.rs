@@ -1490,7 +1490,7 @@
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> PqFastScanScanOrderDriftSummaryValues {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_order_drift_summary(index_oid, query))
+        am::debug_grouped_scan_order_drift_summary(index_oid, query)
     }
 
     fn pq_fastscan_scan_windowed_rows_values(
@@ -1498,7 +1498,7 @@
         query: Vec<f32>,
         window_size: i32,
     ) -> Vec<PqFastScanScanWindowedRowValues> {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_windowed_rows(index_oid, query, window_size))
+        am::debug_grouped_scan_windowed_rows(index_oid, query, window_size)
             .into_iter()
             .map(
                 |(
@@ -1532,14 +1532,14 @@
         query: Vec<f32>,
         window_size: i32,
     ) -> PqFastScanScanWindowedSummaryValues {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_windowed_summary(index_oid, query, window_size))
+        am::debug_grouped_scan_windowed_summary(index_oid, query, window_size)
     }
 
     fn pq_fastscan_scan_comparison_rows_values(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> Vec<PqFastScanScanComparisonRowValues> {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query))
+        am::debug_grouped_scan_comparison_rows(index_oid, query)
             .into_iter()
             .map(
                 |(
@@ -1568,7 +1568,7 @@
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> PqFastScanScanComparisonSummaryValues {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_comparison_summary(index_oid, query))
+        am::debug_grouped_scan_comparison_summary(index_oid, query)
     }
 
     fn debug_scan_hot_path_profile_values(
