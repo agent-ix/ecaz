@@ -145,11 +145,12 @@ fn custom_scan_tuple_payload_state_from_plan(
     // SAFETY: node/custom_scan are the live executor state and matching plan;
     // the current relation tuple descriptor remains valid during BeginCustomScan.
     unsafe {
+        let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(
+            custom_scan_current_relation(node, "tuple payload input descriptor"),
+        );
         (
             custom_scan_tuple_payload_columns(node, custom_scan),
-            custom_scan_payload_attr_io(crate::storage::relation::relation_tuple_desc(
-                custom_scan_current_relation(node, "tuple payload input descriptor"),
-            )),
+            custom_scan_payload_attr_io(tuple_desc.as_ptr()),
         )
     }
 }

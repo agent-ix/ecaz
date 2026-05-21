@@ -83,16 +83,6 @@ pub(crate) fn relation_namespace_owner_persistence(
     }
 }
 
-pub(crate) fn relation_tuple_desc(relation: pg_sys::Relation) -> pg_sys::TupleDesc {
-    if relation.is_null() {
-        pgrx::error!("relation tuple descriptor read needs a valid relation");
-    }
-    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_att
-    // is borrowed from that descriptor and callers only use it inside the
-    // descriptor's callback/executor lifetime.
-    unsafe { (*relation).rd_att }
-}
-
 pub(crate) fn relation_tuple_desc_copy(relation: pg_sys::Relation) -> PgTupleDesc<'static> {
     if relation.is_null() {
         pgrx::error!("relation tuple descriptor copy needs a valid relation");

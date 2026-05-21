@@ -206,7 +206,8 @@ unsafe fn custom_scan_tuple_payload_columns(
     // SAFETY: executor passes live CustomScanState/CustomScan pointers; relation
     // and targetlist metadata are read only for tuple payload column discovery.
     unsafe {
-        let tuple_desc = crate::storage::relation::relation_tuple_desc(relation);
+        let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(relation);
+        let tuple_desc = tuple_desc.as_ptr();
         if tuple_desc.is_null() {
             pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
         }
