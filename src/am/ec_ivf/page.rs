@@ -1422,6 +1422,8 @@ pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
+    // SAFETY: caller supplies a live IVF index relation for the rewrite path.
+    let index = unsafe { IvfPageRelation::new(index_relation) };
     if head_block == BlockRef::INVALID && tail_block == BlockRef::INVALID {
         return Ok(());
     }
@@ -1438,7 +1440,7 @@ where
 
     for block_number in head_block.block_number..=tail_block.block_number {
         rewrite_ivf_postings_for_list_block(
-            index_relation,
+            index,
             list_id,
             block_number,
             payload_len,
@@ -2047,10 +2049,11 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
     payload_len: usize,
 ) -> Result<Vec<IvfPostingBlockSummary>, String> {
     // SAFETY: caller supplies a live IVF index relation for the diagnostics read.
-    let block_count = unsafe { IvfPageRelation::new(index_relation) }.number_of_blocks();
+    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let block_count = index.number_of_blocks();
     let mut summaries = Vec::new();
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
-        let summary = debug_ivf_posting_block_summary(index_relation, block_number, payload_len)?;
+        let summary = debug_ivf_posting_block_summary(index, block_number, payload_len)?;
         if summary.line_pointer_count > 0
             || summary.posting_tuples > 0
             || summary.non_posting_tuples > 0
@@ -2064,7 +2067,7 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn rewrite_ivf_postings_for_list_block<F>(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -2074,8 +2077,7 @@ fn rewrite_ivf_postings_for_list_block<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
-    // SAFETY: caller supplies a live IVF index relation for the rewrite path.
-    let buffer = unsafe { IvfPageRelation::new(index_relation) }
+    let buffer = index
         .read_main(
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -2084,7 +2086,7 @@ where
         .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
     rewrite_ivf_postings_from_exclusive_buffer(
-        index_relation,
+        index,
         &buffer,
         list_id,
         block_number,
@@ -2096,12 +2098,11 @@ where
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn debug_ivf_posting_block_summary(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
 ) -> Result<IvfPostingBlockSummary, String> {
-    // SAFETY: caller supplies a live IVF index relation for the diagnostics read.
-    let buffer = unsafe { IvfPageRelation::new(index_relation) }
+    let buffer = index
         .read_main(
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -2167,7 +2168,7 @@ fn debug_ivf_posting_block_summary(
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn rewrite_ivf_postings_from_exclusive_buffer<F>(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     buffer: &LockedBufferGuard,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
@@ -2186,10 +2187,9 @@ where
         Delete,
     }
 
-    // SAFETY: caller supplies a live IVF index relation for the rewrite path.
-    let mut wal_txn = unsafe { IvfPageRelation::new(index_relation) }.start_wal();
+    let mut wal_txn = index.start_wal();
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
-    let registered = WalRegisteredPage::new(index_relation, block_number, page);
+    let registered = WalRegisteredPage::new(index.raw(), block_number, page);
     let writer = PageTupleWriter::new(registered.page(), buffer.page_size(), block_number);
     let mut delete_offsets = Vec::new();
     let mut changed = false;
