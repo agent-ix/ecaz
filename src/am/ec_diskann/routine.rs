@@ -133,7 +133,7 @@ fn take_vacuum_rewrite_test_injection() -> Option<VacuumRewriteTestInjection> {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn maybe_apply_vacuum_rewrite_test_injection(
+fn maybe_apply_vacuum_rewrite_test_injection(
     index_relation: pg_sys::Relation,
 ) -> Result<(), String> {
     let Some(injection) = take_vacuum_rewrite_test_injection() else {
@@ -151,7 +151,7 @@ unsafe fn maybe_apply_vacuum_rewrite_test_injection(
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
-unsafe fn maybe_apply_vacuum_rewrite_test_injection(
+fn maybe_apply_vacuum_rewrite_test_injection(
     _index_relation: pg_sys::Relation,
 ) -> Result<(), String> {
     Ok(())
@@ -723,7 +723,7 @@ unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {
     })
 }
 
-unsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
+fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
     // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
     // metadata that remains valid until it is released at the end of this block.
     unsafe {
@@ -1003,14 +1003,10 @@ unsafe fn run_diskann_bulkdelete_pass(
             tid,
         )?;
         let original_tuple = tuple.clone();
-        removed_heap_tids += insert::vacuum_bound_heap_rows(
-            &mut mutated_chain,
-            tid,
-            &mut tuple,
-            // SAFETY: The callback and state were supplied by PostgreSQL for
-            // this ambulkdelete pass and are invoked synchronously.
-            |heap_tid| unsafe { callback_marks_heap_tid_dead(callback, callback_state, heap_tid) },
-        )?;
+        removed_heap_tids +=
+            insert::vacuum_bound_heap_rows(&mut mutated_chain, tid, &mut tuple, |heap_tid| {
+                callback_marks_heap_tid_dead(callback, callback_state, heap_tid)
+            })?;
         if tuple != original_tuple {
             write_chain_node(
                 &mut mutated_chain,
@@ -1053,21 +1049,15 @@ unsafe fn run_diskann_bulkdelete_pass(
                 )?;
             }
         }
-        // SAFETY: The heap relation is either supplied by PostgreSQL or opened
-        // from the index relation and remains alive through repair filling.
-        // Repair targets/dead set were derived from this pass and the mutable
-        // chain is the pass-local rewrite plan.
-        unsafe {
-            let heap_relation = resolve_vacuum_heap_relation(index_relation, heap_relation)?;
-            fill_vacuum_neighbor_slots(
-                index_relation,
-                heap_relation.as_ptr(),
-                &metadata,
-                &mut mutated_chain,
-                &repair_target_tids,
-                &dead_set,
-            )?
-        };
+        let heap_relation = resolve_vacuum_heap_relation(index_relation, heap_relation)?;
+        fill_vacuum_neighbor_slots(
+            index_relation,
+            heap_relation.as_ptr(),
+            &metadata,
+            &mut mutated_chain,
+            &repair_target_tids,
+            &dead_set,
+        )?;
     }
 
     for &tid in &finalize_tids {
@@ -1113,7 +1103,7 @@ unsafe fn run_diskann_bulkdelete_pass(
     })
 }
 
-unsafe fn resolve_vacuum_heap_relation(
+fn resolve_vacuum_heap_relation(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
 ) -> Result<ResolvedVacuumHeapRelation, String> {
@@ -1131,7 +1121,7 @@ unsafe fn resolve_vacuum_heap_relation(
         .ok_or_else(|| "ec_diskann vacuum could not open heap relation".into())
 }
 
-unsafe fn fill_vacuum_neighbor_slots(
+fn fill_vacuum_neighbor_slots(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
     metadata: &VamanaMetadataPage,
@@ -1142,11 +1132,12 @@ unsafe fn fill_vacuum_neighbor_slots(
     if repair_target_tids.is_empty() {
         return Ok(());
     }
-    // SAFETY: The index relation is live and the helper only reads index
-    // metadata to resolve the indexed ecvector attribute.
-    let source_attnum = unsafe { indexed_ecvector_attnum(index_relation)? };
-    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-        .ok_or_else(|| "ec_diskann vacuum fill failed to allocate heap slot".to_owned())?;
+    let source_attnum = indexed_ecvector_attnum(index_relation)?;
+    // SAFETY: `heap_relation` is either PostgreSQL-supplied for this vacuum
+    // callback or owned by a relation guard in the caller.
+    let slot =
+        unsafe { crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation) }
+            .ok_or_else(|| "ec_diskann vacuum fill failed to allocate heap slot".to_owned())?;
     let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
     let mut visited = VisitedState::new();
 
@@ -1163,11 +1154,8 @@ unsafe fn fill_vacuum_neighbor_slots(
                 chain,
                 dead_set,
             };
-            // SAFETY: The planner owns heap slot/snapshot state and points at
-            // the pass-local mutated chain.
-            let fill_candidates = unsafe {
-                plan_vacuum_fill_candidates_for_target(&planner, target_tid, &mut visited)?
-            };
+            let fill_candidates =
+                plan_vacuum_fill_candidates_for_target(&planner, target_tid, &mut visited)?;
             if fill_candidates.is_empty() {
                 continue;
             }
@@ -1319,7 +1307,7 @@ fn prepare_prefilter(
     })
 }
 
-unsafe fn plan_vacuum_fill_candidates_for_target(
+fn plan_vacuum_fill_candidates_for_target(
     planner: &VacuumFillPlanner<'_>,
     target_tid: ItemPointer,
     visited: &mut VisitedState,
@@ -1515,7 +1503,7 @@ unsafe fn apply_tuple_rewrites(
 
     // SAFETY: Test-only injection, when enabled, locks and rewrites the target
     // page before the normal expected-byte validation below.
-    unsafe { maybe_apply_vacuum_rewrite_test_injection(index_relation)? };
+    maybe_apply_vacuum_rewrite_test_injection(index_relation)?;
     let mut cursor = 0usize;
     while cursor < rewrites.len() {
         let block_number = rewrites[cursor].tid.block_number;
@@ -1635,7 +1623,7 @@ unsafe fn write_raw_tuple_bytes(
     page_result
 }
 
-unsafe fn callback_marks_heap_tid_dead(
+fn callback_marks_heap_tid_dead(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
     heap_tid: ItemPointer,
@@ -2191,9 +2179,7 @@ mod tests {
         let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
             .expect("heap relation should open for fixture search");
         let heap_relation_ptr = heap_relation.as_ptr();
-        // SAFETY: The index relation is open and the helper only reads index
-        // metadata to resolve the indexed ecvector attribute.
-        let source_attnum = unsafe { super::indexed_ecvector_attnum(index_relation) }
+        let source_attnum = super::indexed_ecvector_attnum(index_relation)
             .expect("indexed source attnum should resolve");
         let slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation_ptr) }
             .expect("heap slot allocation should succeed");
@@ -2327,15 +2313,11 @@ mod tests {
                             chain: &working_chain,
                             dead_set: &dead_set,
                         };
-                        // SAFETY: The fixture planner uses live guard-owned
-                        // heap state and a cloned in-memory chain.
-                        let fill_candidates = unsafe {
-                            super::plan_vacuum_fill_candidates_for_target(
-                                &planner,
-                                target_tid,
-                                &mut visited,
-                            )
-                        }
+                        let fill_candidates = super::plan_vacuum_fill_candidates_for_target(
+                            &planner,
+                            target_tid,
+                            &mut visited,
+                        )
                         .expect("fixture search should plan vacuum fill candidates");
                         if fill_candidates.contains(&replacement_tid) {
                             Some(VacuumRefillFixture {
