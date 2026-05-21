@@ -50,6 +50,13 @@ impl IndexRelationGuard {
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
     }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn heap_relation_oid(&self) -> pg_sys::Oid {
+        // SAFETY: this guard owns a live PostgreSQL index relation descriptor;
+        // the helper copies the linked heap relation OID by value.
+        unsafe { crate::storage::relation::index_heap_relation_oid(self.relation) }
+    }
 }
 
 impl Drop for IndexRelationGuard {

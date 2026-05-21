@@ -579,10 +579,7 @@ struct DebugHeapBackedScan {
 unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
-    // SAFETY: `index_relation` is an open PostgreSQL index relation guard.
-    // SAFETY: `index_relation` is held live by the debug relation guard.
-    let heap_oid =
-        unsafe { crate::storage::relation::index_heap_relation_oid(index_relation.as_ptr()) };
+    let heap_oid = index_relation.heap_relation_oid();
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("debug scan could not resolve heap relation for index {index_oid}");
     }

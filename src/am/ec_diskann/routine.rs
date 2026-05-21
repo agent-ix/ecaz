@@ -2182,8 +2182,7 @@ mod tests {
         let search_index_relation =
             IndexRelationGuard::access_share(index_oid(index_name), "find_vacuum_refill_fixture");
         let index_relation = search_index_relation.as_ptr();
-        // SAFETY: `index_relation` is live while resolving the heap relation.
-        let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+        let heap_oid = search_index_relation.heap_relation_oid();
         assert_ne!(heap_oid, pg_sys::InvalidOid, "heap relation should resolve");
         let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
             .expect("heap relation should open for fixture search");
@@ -2392,9 +2391,7 @@ mod tests {
             "debug_vacuum_remove_heap_tids",
         );
         let index_relation_ptr = index_relation.as_ptr();
-        // SAFETY: `index_relation_ptr` is held live by the relation guard.
-        let heap_oid =
-            unsafe { crate::storage::relation::index_heap_relation_oid(index_relation_ptr) };
+        let heap_oid = index_relation.heap_relation_oid();
         let heap_relation = if heap_oid == pg_sys::InvalidOid {
             None
         } else {
