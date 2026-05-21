@@ -979,7 +979,7 @@ pub(crate) unsafe fn index_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_node_snapshot(
+pub(crate) fn remote_node_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeSnapshotRow> {
     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
@@ -1671,7 +1671,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
     summary
 }
 
-pub(crate) unsafe fn remote_node_capability_plan(
+pub(crate) fn remote_node_capability_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
     remote_node_snapshot(index_relation)
@@ -1680,7 +1680,7 @@ pub(crate) unsafe fn remote_node_capability_plan(
         .collect()
 }
 
-pub(crate) unsafe fn remote_node_capability_summary(
+pub(crate) fn remote_node_capability_summary(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteNodeCapabilitySummaryRow {
     let root_control = live_index_relation(index_relation).root_control();

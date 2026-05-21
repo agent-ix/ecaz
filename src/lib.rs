@@ -2109,7 +2109,7 @@ fn ec_spire_remote_node_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_snapshot);
+    let rows = with_live_index_relation_safe!(index_relation, am::spire_remote_node_snapshot);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2604,7 +2604,8 @@ fn ec_spire_remote_node_capability_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_plan");
-    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_capability_plan);
+    let rows =
+        with_live_index_relation_safe!(index_relation, am::spire_remote_node_capability_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2653,7 +2654,8 @@ fn ec_spire_remote_node_capability_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_summary");
-    let row = with_live_index_relation!(index_relation, am::spire_remote_node_capability_summary);
+    let row =
+        with_live_index_relation_safe!(index_relation, am::spire_remote_node_capability_summary);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),

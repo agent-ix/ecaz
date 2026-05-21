@@ -810,12 +810,8 @@ pub(crate) unsafe fn remote_search_operator_diagnostics_row(
     top_k: usize,
 ) -> SpireRemoteSearchOperatorDiagnosticsRow {
     let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {
-        // SAFETY: reads remote-node capability diagnostics through the live
-        // index relation supplied by the SQL diagnostic wrapper.
-        let capability = unsafe { remote_node_capability_summary(index_relation) };
-        // SAFETY: reads remote-node snapshot diagnostics through the same live
-        // index relation before filtering to non-local nodes.
-        let remote_snapshots = unsafe { remote_node_snapshot(index_relation) }
+        let capability = remote_node_capability_summary(index_relation);
+        let remote_snapshots = remote_node_snapshot(index_relation)
             .into_iter()
             .filter(|row| row.node_id != meta::SPIRE_LOCAL_NODE_ID)
             .collect::<Vec<_>>();

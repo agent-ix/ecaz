@@ -330,9 +330,7 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
                 consistency_mode,
             )
         };
-        // SAFETY: index_relation is the open SPIRE index relation used to read
-        // the coordinator node snapshot.
-        let node_rows = unsafe { remote_node_snapshot(index_relation) }
+        let node_rows = remote_node_snapshot(index_relation)
             .into_iter()
             .map(|row| (row.node_id, row))
             .collect::<BTreeMap<_, _>>();
