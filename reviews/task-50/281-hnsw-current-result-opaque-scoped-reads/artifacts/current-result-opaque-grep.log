@@ -1,0 +1,16 @@
+Script started on 2026-05-21 10:56:06-07:00 [<not executed on terminal>]
+579:    let opaque = unsafe { debug_scan_opaque(scan) };
+2485:            let approx_score = debug_current_result_approx_score(scan)
+2488:            let comparison_score = debug_current_result_comparison_score(scan);
+2489:            let approx_rank = debug_current_result_approx_rank(scan);
+2978:pub(crate) fn debug_gettuple_current_result_state(
+2992:        IndexRelationGuard::access_share(index_oid, "debug_gettuple_current_result_state");
+3111:fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+3120:fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+3129:fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> {
+3187:pub(crate) fn debug_rescan_entry_candidate_state(
+3192:        IndexRelationGuard::access_share(index_oid, "debug_rescan_entry_candidate_state");
+3241:pub(crate) fn debug_rescan_successor_candidate_state(
+3253:        IndexRelationGuard::access_share(index_oid, "debug_rescan_successor_candidate_state");
+
+Script done on 2026-05-21 10:56:06-07:00 [COMMAND_EXIT_CODE="0"]
