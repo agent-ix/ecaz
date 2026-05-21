@@ -1,10 +1,15 @@
-use std::{collections::HashSet, ffi::c_void};
+use std::{collections::HashSet, ffi::c_void, ptr::NonNull};
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys};
 
 use super::{graph, options, page, search, shared, source};
 use crate::am::common::{
-    callback::pg_am_callback, heap_slot::HeapSlotReader, vacuum::alloc_index_bulk_delete_result,
+    callback::pg_am_callback,
+    heap_slot::HeapSlotReader,
+    vacuum::{
+        add_index_bulk_delete_tuples_removed, alloc_index_bulk_delete_result,
+        set_index_bulk_delete_summary,
+    },
 };
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
@@ -558,14 +563,14 @@ unsafe fn run_bulkdelete_with_adapter(
         repair_metadata_entry_point_after_vacuum(index, storage, &finalize_tids);
     }
 
-    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above for this
-    // callback and remains valid until returned.
-    unsafe {
-        (*stats).num_pages = block_count;
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = live_elements as f64;
-        (*stats).tuples_removed += removed_heap_tids as f64;
-    }
+    let stats_handle =
+        NonNull::new(stats).unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum stats is null"));
+    let live_elements = u64::try_from(live_elements)
+        .unwrap_or_else(|_| pgrx::error!("ec_hnsw vacuum live tuple count exceeds u64"));
+    let removed_heap_tids = u64::try_from(removed_heap_tids)
+        .unwrap_or_else(|_| pgrx::error!("ec_hnsw vacuum removed heap tid count exceeds u64"));
+    set_index_bulk_delete_summary(stats_handle, block_count, live_elements);
+    add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
     stats
 }
 

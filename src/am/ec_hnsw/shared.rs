@@ -1,9 +1,9 @@
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use pgrx::pg_sys;
 
 use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
-use crate::am::common::vacuum::alloc_index_bulk_delete_result;
+use crate::am::common::vacuum::{alloc_index_bulk_delete_result, set_index_bulk_delete_summary};
 use crate::storage::buffer_guard::LockedBufferGuard;
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::IndexRelationGuard;
@@ -144,13 +144,12 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
         stats
     };
 
-    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above, and the
-    // index relation is live while page/live-tuple stats are computed.
-    unsafe {
-        (*stats).num_pages = crate::storage::relation::main_fork_block_count(index_relation);
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = count_element_tuples(index_relation) as f64;
-    }
+    let stats_handle =
+        NonNull::new(stats).unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum stats is null"));
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    let live_tuples = u64::try_from(count_element_tuples(index_relation))
+        .unwrap_or_else(|_| pgrx::error!("ec_hnsw vacuum live tuple count exceeds u64"));
+    set_index_bulk_delete_summary(stats_handle, block_count, live_tuples);
 
     stats
 }
