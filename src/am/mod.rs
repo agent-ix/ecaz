@@ -86,6 +86,8 @@ pub(crate) use self::ec_spire::custom_scan_reset_rescan_snapshot_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::custom_scan_store_tuple_payload_json_for_test as spire_custom_scan_store_tuple_payload_json_for_test;
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_const_plan_param_list_info as spire_dml_frontdoor_const_plan_param_list_info;
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::DmlFrontdoorQueryView as SpireDmlFrontdoorQueryView;
 pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,

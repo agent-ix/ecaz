@@ -52,6 +52,8 @@ pub(crate) use self::dml_frontdoor::{
 };
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::dml_frontdoor::DmlFrontdoorQueryView;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::dml_frontdoor::dml_frontdoor_const_plan_param_list_info;
 pub(crate) use self::dml_frontdoor::{
     dml_frontdoor_bigint_pk_value_bytes, dml_frontdoor_hook_status_row,
     dml_frontdoor_param_list_info, dml_frontdoor_pk_argument_from_replacement_decision,

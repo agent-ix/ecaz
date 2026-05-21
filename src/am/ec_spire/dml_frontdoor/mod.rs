@@ -212,6 +212,13 @@ pub(crate) unsafe fn dml_frontdoor_param_list_info(
     DmlFrontdoorParamListInfo { params }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn dml_frontdoor_const_plan_param_list_info() -> DmlFrontdoorParamListInfo {
+    DmlFrontdoorParamListInfo {
+        params: std::ptr::null_mut(),
+    }
+}
+
 pub(crate) unsafe fn with_dml_frontdoor_baserel_view<R>(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,

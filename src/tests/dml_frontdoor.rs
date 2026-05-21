@@ -1101,9 +1101,7 @@
             })
         };
         let const_primitive_invocation = |plan| {
-            // SAFETY: const-PK plans do not read executor parameters, so a null
-            // ParamListInfo is valid for the invocation helper.
-            let params = unsafe { am::spire_dml_frontdoor_param_list_info(std::ptr::null_mut()) };
+            let params = am::spire_dml_frontdoor_const_plan_param_list_info();
             am::spire_dml_frontdoor_primitive_invocation_from_plan(plan, params)
         };
 
