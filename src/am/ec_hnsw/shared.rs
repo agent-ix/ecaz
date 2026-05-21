@@ -732,7 +732,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let metadata = unsafe { read_metadata_page(index_relation) };
     let block_count = hnsw_main_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = super::cost::relation_reltuples(index_relation);
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
     // SAFETY: diagnostic snapshot reads planner cost globals in the current
     // backend to report the same constants the planner would use.

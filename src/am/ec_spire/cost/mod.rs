@@ -6,8 +6,8 @@ use super::{
 };
 use crate::am::common::callback::{am_callback, pg_am_callback};
 use crate::am::common::cost::{
-    self, current_planner_cost_constants, relation_main_fork_block_count, relation_reltuples,
-    PlannerCostConstants, PlannerCostEstimate,
+    self, current_planner_cost_constants, relation_main_fork_block_count, PlannerCostConstants,
+    PlannerCostEstimate,
 };
 use crate::storage::relation_guard::IndexRelationGuard;
 
@@ -93,7 +93,7 @@ pub(crate) unsafe fn index_cost_snapshot(
 ) -> SpireIndexCostSnapshot {
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = relation_reltuples(index_relation);
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     // SAFETY: diagnostic snapshot reads planner cost globals in the current
     // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
@@ -157,7 +157,7 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
 ) -> SpireIndexCostTuningSnapshot {
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = relation_reltuples(index_relation);
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     let relation_options = options::relation_options(index_relation);
     let diagnostics = unsafe { cost_active_snapshot_diagnostics(index_relation) };
     let hierarchy = unsafe { cost_index_hierarchy_snapshot(index_relation) };
@@ -193,7 +193,7 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = relation_reltuples(index_relation);
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
     // context where backend-local planner cost globals are valid to read.
     let constants = unsafe { current_planner_cost_constants() };

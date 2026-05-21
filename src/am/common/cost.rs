@@ -134,15 +134,6 @@ pub(crate) unsafe fn relation_main_fork_block_count(
     unsafe { crate::storage::relation::main_fork_block_count(index_relation) }
 }
 
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(crate) unsafe fn relation_reltuples(index_relation: pg_sys::Relation) -> f64 {
-    if index_relation.is_null() {
-        pgrx::error!("planner reltuples read needs a valid index relation");
-    }
-    // SAFETY: planner callbacks pass a live index relation descriptor.
-    unsafe { crate::storage::relation::relation_reltuples(index_relation) }
-}
-
 #[cfg_attr(feature = "pg18", allow(dead_code))]
 pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
     PlannerTreeHeightInput {
@@ -386,7 +377,7 @@ unsafe fn compute_amcostestimate(
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return gated_planner_cost_estimate(index_pages);
     }
-    let reltuples = relation_reltuples(index_relation);
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     // SAFETY: `index_relation` is a live ec_hnsw relation with block 0 present
     // because the empty-index gate above returned for metadata-only indexes.
     let metadata = unsafe { shared::read_metadata_page(index_relation) };

@@ -4,7 +4,7 @@ use crate::{
     am::common::callback::pg_am_callback,
     am::common::cost::{
         current_planner_cost_constants, estimate_planner_cost, gated_planner_cost_estimate,
-        relation_main_fork_block_count, relation_reltuples, PlannerCostEstimate, PlannerCostInputs,
+        relation_main_fork_block_count, PlannerCostEstimate, PlannerCostInputs,
     },
     storage::{page::FIRST_DATA_BLOCK_NUMBER, relation_guard::IndexRelationGuard},
 };
@@ -96,7 +96,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
         return gated_planner_cost_estimate(index_pages);
     }
 
-    let reltuples = relation_reltuples(index_relation);
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     // A metadata decode failure means the index itself is structurally
     // broken. Failing loudly during planning is preferable to masking
     // corruption behind a gated cost and continuing with an invalid AM
@@ -127,7 +127,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let scan_tuning = options::resolve_scan_tuning(&relation_options);
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = relation_reltuples(index_relation);
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     // SAFETY: diagnostic snapshot reads planner cost globals in the current
     // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
