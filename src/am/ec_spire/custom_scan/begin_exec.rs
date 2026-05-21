@@ -531,8 +531,7 @@ fn custom_scan_dml_update_access(
     access_state: CustomScanAccessState<'_>,
 ) -> *mut pg_sys::TupleTableSlot {
     if !state.dml_payload_emitted {
-        // SAFETY: access_state was built from the live scan callback state.
-        let updated_count = unsafe { custom_scan_execute_dml_update(state, access_state.as_ptr()) };
+        let updated_count = custom_scan_execute_dml_update(state, access_state);
         access_state.add_processed_count(updated_count);
         state.dml_payload_emitted = true;
     }

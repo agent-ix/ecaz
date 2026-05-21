@@ -483,9 +483,9 @@ fn custom_scan_execute_dml_delete(state: &SpireCustomScanExecState) -> u64 {
     })
 }
 
-unsafe fn custom_scan_execute_dml_update(
+fn custom_scan_execute_dml_update(
     state: &SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
+    access_state: CustomScanAccessState<'_>,
 ) -> u64 {
     let invocation =
         custom_scan_dml_primitive_invocation(state).unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -498,7 +498,7 @@ unsafe fn custom_scan_execute_dml_update(
         );
     }
     let row_payload_json = unsafe {
-        let node = scan_state.cast::<pg_sys::CustomScanState>();
+        let node = access_state.as_ptr().cast::<pg_sys::CustomScanState>();
         let mut payload = serde_json::Map::with_capacity(invocation.updated_columns.len());
         for (column, expr) in invocation
             .updated_columns
