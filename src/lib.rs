@@ -17469,7 +17469,7 @@ fn ec_spire_index_cost_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_cost_snapshot);
+    let snapshot = with_spire_live_index_relation!(index_relation, am::spire_index_cost_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17533,7 +17533,8 @@ fn ec_spire_index_cost_tuning_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_tuning_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_cost_tuning_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_cost_tuning_snapshot);
     drop(index_relation);
 
     TableIterator::once((
