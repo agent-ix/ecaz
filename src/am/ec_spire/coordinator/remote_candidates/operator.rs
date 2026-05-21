@@ -330,7 +330,7 @@ fn remote_search_libpq_connection_open_summary_from_plan_rows(
     })
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
+pub(crate) fn remote_search_libpq_executor_readiness_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,

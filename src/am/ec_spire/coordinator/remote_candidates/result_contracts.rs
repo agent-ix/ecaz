@@ -164,7 +164,7 @@ pub(crate) fn remote_search_heap_resolution_contract_rows(
     ]
 }
 
-pub(crate) unsafe fn remote_search_finalization_summary_row(
+pub(crate) fn remote_search_finalization_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,

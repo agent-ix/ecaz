@@ -11745,7 +11745,7 @@ fn ec_spire_remote_search_libpq_executor_work_plan(
         top_k,
         &consistency_mode,
     );
-    let readiness_row = with_live_index_relation!(
+    let readiness_row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_executor_readiness_row,
         requested_epoch,
@@ -11853,7 +11853,7 @@ fn ec_spire_remote_search_libpq_executor_work_summary(
         top_k,
         &consistency_mode,
     );
-    let readiness = with_live_index_relation!(
+    let readiness = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_executor_readiness_row,
         requested_epoch,
@@ -12116,7 +12116,7 @@ fn ec_spire_remote_search_production_policy_summary(
         index_oid,
         "ec_spire_remote_search_production_policy_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_production_consistency_policy_summary_row,
         requested_epoch,
@@ -12171,7 +12171,7 @@ fn ec_spire_remote_search_production_policy_session_summary(
         index_oid,
         "ec_spire_remote_search_production_policy_session_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_production_session_consistency_policy_summary_row,
         requested_epoch,
@@ -13049,7 +13049,7 @@ fn ec_spire_remote_search_libpq_executor_readiness(
         index_oid,
         "ec_spire_remote_search_libpq_executor_readiness",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_executor_readiness_row,
         requested_epoch,
@@ -15856,7 +15856,7 @@ fn ec_spire_remote_search_finalization_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_finalization_summary");
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_finalization_summary_row,
         requested_epoch,
