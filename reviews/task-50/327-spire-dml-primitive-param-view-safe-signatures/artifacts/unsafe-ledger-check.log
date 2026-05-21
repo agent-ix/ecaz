@@ -1,0 +1,5 @@
+Script started on 2026-05-21 14:52:49-07:00 [<not executed on terminal>]
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/327-spire-dml-primitive-param-view-safe-signatures/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 1355 current unsafe rows
+
+Script done on 2026-05-21 14:52:49-07:00 [COMMAND_EXIT_CODE="0"]
