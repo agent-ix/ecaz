@@ -48,6 +48,88 @@ impl ResolvedScanHeapRelation {
     }
 }
 
+struct SpireIndexScanView<'a> {
+    scan_ref: &'a mut pg_sys::IndexScanDescData,
+}
+
+impl<'a> SpireIndexScanView<'a> {
+    unsafe fn from_raw(scan: pg_sys::IndexScanDesc, label: &str) -> Self {
+        // SAFETY: AM callbacks supply a live IndexScanDesc for the duration of
+        // the callback; null is rejected before safe accessors are exposed.
+        let Some(scan_ref) = (unsafe { scan.as_mut() }) else {
+            pgrx::error!("ec_spire {label} received a null scan descriptor");
+        };
+        Self { scan_ref }
+    }
+
+    fn index_relation(&self) -> pg_sys::Relation {
+        self.scan_ref.indexRelation
+    }
+
+    fn clear_recheck_flags_and_orderby_outputs(&mut self) {
+        self.scan_ref.xs_recheck = false;
+        self.scan_ref.xs_recheckorderby = false;
+        self.scan_ref.xs_orderbyvals = ptr::null_mut();
+        self.scan_ref.xs_orderbynulls = ptr::null_mut();
+    }
+
+    fn mark_tuple_output_current(&mut self) {
+        self.scan_ref.xs_recheck = false;
+        self.scan_ref.xs_recheckorderby = false;
+    }
+
+    fn opaque_mut(&mut self, label: &str) -> &mut SpireScanOpaque {
+        let opaque_ptr = self.scan_ref.opaque.cast::<SpireScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_spire {label} missing scan opaque state");
+        }
+        // SAFETY: ambeginscan allocates SpireScanOpaque into scan.opaque, and
+        // AM callbacks serialize mutable access to the current scan descriptor.
+        unsafe { &mut *opaque_ptr }
+    }
+
+    fn take_opaque_for_end_scan(&mut self) -> Option<*mut SpireScanOpaque> {
+        let opaque_ptr = self.scan_ref.opaque.cast::<SpireScanOpaque>();
+        if opaque_ptr.is_null() {
+            return None;
+        }
+        self.scan_ref.opaque = ptr::null_mut();
+        Some(opaque_ptr)
+    }
+
+    fn heap_relation(&self) -> ResolvedScanHeapRelation {
+        if !self.scan_ref.heapRelation.is_null() {
+            return ResolvedScanHeapRelation::borrowed(self.scan_ref.heapRelation);
+        }
+
+        // SAFETY: the scan descriptor view was constructed from a live AM
+        // callback scan; indexRelation is live for relation resolution here.
+        let heap_oid =
+            unsafe { crate::storage::relation::index_heap_relation_oid(self.index_relation()) };
+        if heap_oid == pg_sys::InvalidOid {
+            pgrx::error!("ec_spire heap rerank could not resolve heap relation");
+        }
+        let Some(relation) =
+            crate::storage::relation_guard::HeapRelationGuard::try_access_share(heap_oid)
+        else {
+            pgrx::error!("ec_spire heap rerank failed to open heap relation");
+        };
+        ResolvedScanHeapRelation::owned(relation)
+    }
+
+    fn snapshot(&self) -> pg_sys::Snapshot {
+        if !self.scan_ref.xs_snapshot.is_null() {
+            return self.scan_ref.xs_snapshot;
+        }
+
+        if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
+            return active_snapshot;
+        }
+
+        pgrx::error!("ec_spire heap rerank requires an executor or active snapshot");
+    }
+}
+
 pub(super) unsafe fn load_relation_epoch_manifests(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -159,15 +241,17 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
     query: &SpireScanQuery,
     options: EcSpireOptions,
 ) -> Result<SpirePreparedScanCandidates, String> {
-    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
+    let scan_view =
+        unsafe { SpireIndexScanView::from_raw(scan, "heap rerank candidate preparation") };
+    let heap_relation = scan_view.heap_relation();
     let heap_relation_ptr = heap_relation.as_ptr();
-    let snapshot_pg = unsafe { resolve_scan_snapshot(scan) };
-    // SAFETY: scan is the live IndexScanDesc for this scan path; indexRelation
-    // is read only to resolve the indexed vector attribute.
+    let snapshot_pg = scan_view.snapshot();
+    // SAFETY: the scan view proves this is the live IndexScanDesc for this scan
+    // path; indexRelation is read only to resolve the indexed vector attribute.
     let indexed_attribute = unsafe {
         source::resolve_indexed_vector_attribute(
             heap_relation_ptr,
-            (*scan).indexRelation,
+            scan_view.index_relation(),
             "ec_spire heap rerank indexed column",
         )
     };
@@ -227,49 +311,6 @@ unsafe fn prefetch_heap_rerank_candidate_blocks(
         block_numbers,
         "ec_spire heap rerank",
     );
-}
-
-unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRelation {
-    if scan.is_null() {
-        pgrx::error!("ec_spire heap rerank received a null scan descriptor");
-    }
-
-    // SAFETY: `scan` is non-null and owned by PostgreSQL for this AM callback.
-    let scan_ref = unsafe { &*scan };
-    if !scan_ref.heapRelation.is_null() {
-        return ResolvedScanHeapRelation::borrowed(scan_ref.heapRelation);
-    }
-
-    // SAFETY: `scan_ref.indexRelation` is live for the scan relation resolution scope.
-    let heap_oid =
-        unsafe { crate::storage::relation::index_heap_relation_oid(scan_ref.indexRelation) };
-    if heap_oid == pg_sys::InvalidOid {
-        pgrx::error!("ec_spire heap rerank could not resolve heap relation");
-    }
-    let Some(relation) =
-        crate::storage::relation_guard::HeapRelationGuard::try_access_share(heap_oid)
-    else {
-        pgrx::error!("ec_spire heap rerank failed to open heap relation");
-    };
-    ResolvedScanHeapRelation::owned(relation)
-}
-
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
-    if scan.is_null() {
-        pgrx::error!("ec_spire heap rerank received a null scan descriptor");
-    }
-
-    // SAFETY: `scan` is non-null and owned by PostgreSQL for this AM callback.
-    let scan_ref = unsafe { &*scan };
-    if !scan_ref.xs_snapshot.is_null() {
-        return scan_ref.xs_snapshot;
-    }
-
-    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
-        return active_snapshot;
-    }
-
-    pgrx::error!("ec_spire heap rerank requires an executor or active snapshot");
 }
 
 unsafe fn allocate_heap_slot(
