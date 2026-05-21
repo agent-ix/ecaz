@@ -140,6 +140,35 @@ fn custom_scan_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
     unsafe { ptr.as_ref() }
 }
 
+fn custom_scan_list_len(list: *mut pg_sys::List) -> Option<i32> {
+    custom_scan_pg_ref(list).map(|list| list.length)
+}
+
+fn custom_scan_list_tag(list: *mut pg_sys::List) -> Option<pg_sys::NodeTag> {
+    custom_scan_pg_ref(list).map(|list| list.type_)
+}
+
+fn custom_scan_list_nth_node(
+    list: *mut pg_sys::List,
+    offset: i32,
+) -> Option<*mut pg_sys::Node> {
+    if offset < 0 || custom_scan_list_len(list)? <= offset {
+        return None;
+    }
+    // SAFETY: list is non-null and offset is bounds-checked against the
+    // PostgreSQL List length above.
+    Some(unsafe { pg_sys::list_nth(list, offset).cast::<pg_sys::Node>() })
+}
+
+fn custom_scan_list_nth_oid(list: *mut pg_sys::List, offset: i32) -> Option<pg_sys::Oid> {
+    if offset < 0 || custom_scan_list_len(list)? <= offset {
+        return None;
+    }
+    // SAFETY: list is non-null and offset is bounds-checked against the
+    // PostgreSQL List length above.
+    Some(unsafe { pg_sys::list_nth_oid(list, offset) })
+}
+
 fn custom_scan_op_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::OpExpr> {
     if custom_scan_expr_node_tag(expr)? != pg_sys::NodeTag::T_OpExpr {
         return None;
