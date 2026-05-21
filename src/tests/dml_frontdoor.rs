@@ -1,12 +1,3 @@
-    macro_rules! dml_frontdoor_checked {
-        ($call:expr) => {{
-            // SAFETY: These pg_test cases build analyzed PostgreSQL query trees
-            // and then pass those planner-owned nodes to test-only DML
-            // frontdoor helpers before the surrounding test context exits.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_test]
     fn test_ec_spire_dml_frontdoor_hook_status_installed_pass_through() {
         let status_from = "FROM ec_spire_dml_frontdoor_hook_status()";
@@ -252,7 +243,7 @@
             "DELETE FROM ec_spire_dml_target_oid_sql WHERE id = 1",
             "SELECT id, title FROM ec_spire_dml_target_oid_sql WHERE id = 1",
         ] {
-            let query = dml_frontdoor_checked!(analyzed_query(sql));
+            let query = analyzed_query(sql);
             assert_eq!(
                 unsafe { am::spire_dml_frontdoor_target_relation_oid(query) },
                 Some(relation_oid),
@@ -260,11 +251,11 @@
             );
         }
 
-        let join_query = dml_frontdoor_checked!(analyzed_query(
-                "SELECT l.id \
+        let join_query = analyzed_query(
+            "SELECT l.id \
                    FROM ec_spire_dml_target_oid_sql AS l \
                    JOIN ec_spire_dml_target_oid_sql AS r ON l.id = r.id",
-            ));
+        );
         assert_eq!(
             unsafe { am::spire_dml_frontdoor_target_relation_oid(join_query) },
             None
@@ -293,7 +284,7 @@
         };
 
         let coerced_const_query =
-            dml_frontdoor_checked!(analyzed_query("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5"));
+            analyzed_query("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5");
         let coerced_const_shape =
             unsafe { am::spire_classify_dml_frontdoor_query(coerced_const_query, context) }
                 .expect("coerced const query should classify");
@@ -304,10 +295,10 @@
         );
         assert_eq!(coerced_const_shape.kind, "pk_select_by_pk");
 
-        let cte_query = dml_frontdoor_checked!(analyzed_query(
-                "WITH marker AS (SELECT 1) \
+        let cte_query = analyzed_query(
+            "WITH marker AS (SELECT 1) \
                  SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5",
-            ));
+        );
         let cte_shape = unsafe { am::spire_classify_dml_frontdoor_query(cte_query, context) }
             .expect("CTE-prefixed query should classify");
         assert!(!cte_shape.supported);
@@ -1032,7 +1023,7 @@
         .expect("DML PK argument ec_spire index creation should succeed");
 
         let select_query =
-            dml_frontdoor_checked!(analyzed_query("SELECT id FROM ec_spire_dml_pk_argument_sql WHERE id = 5"));
+            analyzed_query("SELECT id FROM ec_spire_dml_pk_argument_sql WHERE id = 5");
         let select_decision =
             unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
                 .expect("PK SELECT replacement decision should exist");
@@ -1045,11 +1036,11 @@
             am::SpireDmlFrontdoorPkValuePlan::ConstBigint(5)
         );
 
-        let embedding_update_query = dml_frontdoor_checked!(analyzed_query(
-                "UPDATE ec_spire_dml_pk_argument_sql \
+        let embedding_update_query = analyzed_query(
+            "UPDATE ec_spire_dml_pk_argument_sql \
                     SET embedding = '[1,2,3]'::ecvector \
                   WHERE id = 5",
-            ));
+        );
         let embedding_update_decision = unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query) }
         .expect("embedding UPDATE replacement decision should exist");
         let error = am::spire_dml_frontdoor_pk_argument_from_replacement_decision(
@@ -1073,11 +1064,11 @@
         )
         .expect("DML primitive plan ec_spire index creation should succeed");
 
-        let update_query = dml_frontdoor_checked!(analyzed_query(
-                "UPDATE ec_spire_dml_primitive_plan_sql \
+        let update_query = analyzed_query(
+            "UPDATE ec_spire_dml_primitive_plan_sql \
                     SET title = 'updated' \
                   WHERE id = 5",
-            ));
+        );
         let update_decision =
             unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(update_query) }
                 .expect("UPDATE primitive plan decision should exist");
@@ -1112,7 +1103,7 @@
         );
 
         let delete_query =
-            dml_frontdoor_checked!(analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5"));
+            analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5");
         let delete_decision =
             unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(delete_query) }
                 .expect("DELETE primitive plan decision should exist");
@@ -1145,7 +1136,8 @@
             pg_sys::NodeTag::T_Const
         );
 
-        let select_query = dml_frontdoor_checked!(analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5"));
+        let select_query =
+            analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5");
         let select_decision =
             unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
                 .expect("PK SELECT primitive plan decision should exist");
@@ -1300,11 +1292,11 @@
             assert!(null_error.contains("must not be NULL"), "{null_error}");
         }
 
-        let embedding_update_query = dml_frontdoor_checked!(analyzed_query(
-                "UPDATE ec_spire_dml_primitive_plan_sql \
+        let embedding_update_query = analyzed_query(
+            "UPDATE ec_spire_dml_primitive_plan_sql \
                     SET embedding = '[1,2,3]'::ecvector \
                   WHERE id = 5",
-            ));
+        );
         let embedding_update_decision = unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query) }
         .expect("embedding UPDATE primitive plan decision should exist");
         let unsupported_error = am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(

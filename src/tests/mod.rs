@@ -2506,7 +2506,7 @@
 
 
 
-    unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
+    fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
         let sql = CString::new(sql).expect("test SQL should not contain NUL");
         // SAFETY: The SQL string is NUL-terminated and valid for the duration
         // of PostgreSQL parsing in this test helper.
