@@ -1,0 +1,5 @@
+Script started on 2026-05-21 12:06:56-07:00 [<not executed on terminal>]
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/296-hnsw-debug-graph-search-helper-safe/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/296-hnsw-debug-graph-search-helper-safe src
+wrote 1399 unsafe ledger rows to reviews/task-50/296-hnsw-debug-graph-search-helper-safe/artifacts/unsafe-ledger-after.jsonl
+
+Script done on 2026-05-21 12:06:56-07:00 [COMMAND_EXIT_CODE="0"]
