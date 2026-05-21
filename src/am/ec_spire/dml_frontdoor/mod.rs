@@ -206,6 +206,18 @@ pub(crate) unsafe fn with_dml_frontdoor_query_view<R>(
     unsafe { DmlFrontdoorQueryView::from_raw(query).map(f) }
 }
 
+pub(crate) fn with_analyzed_dml_frontdoor_query_view<R>(
+    sql: &str,
+    f: impl for<'a> FnOnce(DmlFrontdoorQueryView<'a>) -> R,
+) -> Result<Option<R>, String> {
+    let query = crate::storage::query::analyze_single_query(sql)?;
+    Ok(query.with_query_ptr(|query| {
+        // SAFETY: the analyzed query wrapper owns a PostgreSQL-analyzed Query
+        // pointer for this backend memory context and scopes the view to `f`.
+        unsafe { with_dml_frontdoor_query_view(query, f) }
+    }))
+}
+
 pub(crate) unsafe fn dml_frontdoor_param_list_info(
     params: pg_sys::ParamListInfo,
 ) -> DmlFrontdoorParamListInfo {

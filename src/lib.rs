@@ -1360,82 +1360,73 @@ fn ec_spire_dml_frontdoor_classify_sql(
         name!(next_step, &'static str),
     ),
 > {
-    let query = storage::query::analyze_single_query(sql)
-        .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
-    // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
-    // that remains live for this diagnostic function call.
-    let Some(result) = (unsafe {
-        am::spire_with_dml_frontdoor_query_view(query, |query_view| {
-            let Some(target_relation_oid) =
-                am::spire_dml_frontdoor_target_relation_oid(query_view)
-            else {
-                return TableIterator::once((
-                    None,
-                    None,
-                    false,
-                    "unsupported",
-                    "unsupported_target_relation",
-                    "unsupported_shape",
-                    Some(
-                        "ec_spire_distributed: DML front door requires one target heap relation",
-                    ),
-                    Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-                    "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
-                ));
-            };
-            let relation = am::spire_dml_frontdoor_relation_context_row(target_relation_oid)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let pk_column = relation.pk_column.as_deref().unwrap_or("");
-            let column_names = relation
-                .column_names
-                .iter()
-                .map(|(attnum, name)| (*attnum, name.as_str()))
-                .collect::<Vec<_>>();
-            let embedding_columns = relation
-                .embedding_columns
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>();
-            let query_context = am::SpireDmlFrontdoorQueryContext {
-                ec_spire_distributed_table: relation.ec_spire_distributed_table,
-                pk_column,
-                column_names: &column_names,
-                embedding_columns: &embedding_columns,
-            };
-            let Some(shape) = am::spire_classify_dml_frontdoor_query(query_view, query_context)
-            else {
-                return TableIterator::once((
-                    Some(target_relation_oid),
-                    Some(relation.status),
-                    false,
-                    "unsupported",
-                    "unsupported_operation",
-                    "unsupported_shape",
-                    Some(
-                        "ec_spire_distributed: only UPDATE, DELETE, and PK SELECT are supported in v1",
-                    ),
-                    Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-                    "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
-                ));
-            };
-
-            TableIterator::once((
+    let Some(result) = am::spire_with_analyzed_dml_frontdoor_query_view(sql, |query_view| {
+        let Some(target_relation_oid) = am::spire_dml_frontdoor_target_relation_oid(query_view)
+        else {
+            return TableIterator::once((
+                None,
+                None,
+                false,
+                "unsupported",
+                "unsupported_target_relation",
+                "unsupported_shape",
+                Some("ec_spire_distributed: DML front door requires one target heap relation"),
+                Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+            ));
+        };
+        let relation = am::spire_dml_frontdoor_relation_context_row(target_relation_oid)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let pk_column = relation.pk_column.as_deref().unwrap_or("");
+        let column_names = relation
+            .column_names
+            .iter()
+            .map(|(attnum, name)| (*attnum, name.as_str()))
+            .collect::<Vec<_>>();
+        let embedding_columns = relation
+            .embedding_columns
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let query_context = am::SpireDmlFrontdoorQueryContext {
+            ec_spire_distributed_table: relation.ec_spire_distributed_table,
+            pk_column,
+            column_names: &column_names,
+            embedding_columns: &embedding_columns,
+        };
+        let Some(shape) = am::spire_classify_dml_frontdoor_query(query_view, query_context) else {
+            return TableIterator::once((
                 Some(target_relation_oid),
                 Some(relation.status),
-                shape.supported,
-                shape.operation,
-                shape.kind,
-                shape.status,
-                shape.error,
-                shape.hint,
-                if shape.supported {
-                    "wire planner hook to CustomScan executor replacement"
-                } else {
-                    "rewrite query to fit the ADR-069 v1 DML front-door shape"
-                },
-            ))
-        })
-    }) else {
+                false,
+                "unsupported",
+                "unsupported_operation",
+                "unsupported_shape",
+                Some(
+                    "ec_spire_distributed: only UPDATE, DELETE, and PK SELECT are supported in v1",
+                ),
+                Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+            ));
+        };
+
+        TableIterator::once((
+            Some(target_relation_oid),
+            Some(relation.status),
+            shape.supported,
+            shape.operation,
+            shape.kind,
+            shape.status,
+            shape.error,
+            shape.hint,
+            if shape.supported {
+                "wire planner hook to CustomScan executor replacement"
+            } else {
+                "rewrite query to fit the ADR-069 v1 DML front-door shape"
+            },
+        ))
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}")) else {
         pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
     result
@@ -1467,63 +1458,55 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         name!(next_step, &'static str),
     ),
 > {
-    let query = storage::query::analyze_single_query(sql)
-        .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
-    // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
-    // that remains live for this diagnostic function call.
-    let Some(result) = (unsafe {
-        am::spire_with_dml_frontdoor_query_view(query, |query_view| {
-            let Some(decision) =
-                am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
-            else {
-                return TableIterator::once((
-                    None,
-                    None,
-                    false,
-                    "unsupported",
-                    "unsupported_target_relation",
-                    "unsupported_shape",
-                    "none",
-                    "none",
-                    None,
-                    "other",
-                    None,
-                    None,
-                    Vec::new(),
-                    Vec::new(),
-                    Some(
-                        "ec_spire_distributed: DML front door requires one target heap relation",
-                    ),
-                    Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-                    "raise ADR-069 planner error instead of using coordinator heap path",
-                ));
-            };
+    let Some(result) = am::spire_with_analyzed_dml_frontdoor_query_view(sql, |query_view| {
+        let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+        else {
+            return TableIterator::once((
+                None,
+                None,
+                false,
+                "unsupported",
+                "unsupported_target_relation",
+                "unsupported_shape",
+                "none",
+                "none",
+                None,
+                "other",
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Some("ec_spire_distributed: DML front door requires one target heap relation"),
+                Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                "raise ADR-069 planner error instead of using coordinator heap path",
+            ));
+        };
 
-            TableIterator::once((
-                Some(decision.target_relation_oid),
-                if decision.index_oid == pg_sys::InvalidOid {
-                    None
-                } else {
-                    Some(decision.index_oid)
-                },
-                decision.supported,
-                decision.operation,
-                decision.kind,
-                decision.status,
-                decision.custom_scan_mode,
-                decision.primitive,
-                decision.pk_column,
-                decision.pk_value_kind,
-                decision.pk_value_const,
-                decision.pk_value_param_id,
-                decision.updated_columns,
-                decision.projected_columns,
-                decision.error,
-                decision.hint,
-                decision.next_step,
-            ))
-        })
-    }) else {
+        TableIterator::once((
+            Some(decision.target_relation_oid),
+            if decision.index_oid == pg_sys::InvalidOid {
+                None
+            } else {
+                Some(decision.index_oid)
+            },
+            decision.supported,
+            decision.operation,
+            decision.kind,
+            decision.status,
+            decision.custom_scan_mode,
+            decision.primitive,
+            decision.pk_column,
+            decision.pk_value_kind,
+            decision.pk_value_const,
+            decision.pk_value_param_id,
+            decision.updated_columns,
+            decision.projected_columns,
+            decision.error,
+            decision.hint,
+            decision.next_step,
+        ))
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}")) else {
         pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
     result
@@ -1553,12 +1536,7 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         name!(next_step, &'static str),
     ),
 > {
-    let query = storage::query::analyze_single_query(sql)
-        .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
-    // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
-    // that remains live for this diagnostic function call.
-    let Some(result) = (unsafe {
-        am::spire_with_dml_frontdoor_query_view(query, |query_view| {
+    let Some(result) = am::spire_with_analyzed_dml_frontdoor_query_view(sql, |query_view| {
             let Some(decision) =
                 am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
             else {
@@ -1655,7 +1633,7 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
                 next_step,
             ))
         })
-    }) else {
+    .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}")) else {
         pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
     result
@@ -2458,10 +2436,8 @@ fn ec_spire_remote_node_descriptor_readiness(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_descriptor_readiness");
-    let rows = with_spire_live_index_relation!(
-        index_relation,
-        am::spire_remote_node_descriptor_readiness
-    );
+    let rows =
+        with_spire_live_index_relation!(index_relation, am::spire_remote_node_descriptor_readiness);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2643,8 +2619,7 @@ fn ec_spire_remote_epoch_publish_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_plan");
-    let rows =
-        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_publish_plan);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_publish_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2743,8 +2718,10 @@ fn ec_spire_remote_epoch_publish_gate_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_gate_summary");
-    let row =
-        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_publish_gate_summary);
+    let row = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_epoch_publish_gate_summary
+    );
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -3212,11 +3189,10 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
             index_oid,
             "ec_spire_remote_epoch_manifest_catalog_summary",
         );
-        let summary =
-            with_spire_live_index_relation!(
-                index_relation,
-                am::spire_remote_epoch_manifest_summary
-            );
+        let summary = with_spire_live_index_relation!(
+            index_relation,
+            am::spire_remote_epoch_manifest_summary
+        );
         let current_entries =
             with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan)
                 .into_iter()
@@ -16361,7 +16337,8 @@ fn ec_spire_index_options_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_options_snapshot");
-    let snapshot = with_spire_live_index_relation!(index_relation, am::spire_index_options_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_options_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16814,7 +16791,8 @@ fn ec_spire_index_epoch_cleanup_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_summary");
-    let epoch_rows = with_spire_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
+    let epoch_rows =
+        with_spire_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
     let storage_snapshot =
         with_spire_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
     drop(index_relation);
@@ -17027,10 +17005,8 @@ fn ec_spire_index_maintenance_plan_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_plan_snapshot");
-    let snapshot = with_spire_live_index_relation!(
-        index_relation,
-        am::spire_index_maintenance_plan_snapshot
-    );
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_maintenance_plan_snapshot);
     drop(index_relation);
 
     TableIterator::once((

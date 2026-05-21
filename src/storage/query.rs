@@ -2,7 +2,17 @@
 
 use pgrx::{ffi::CString, pg_sys};
 
-pub(crate) fn analyze_single_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
+pub(crate) struct AnalyzedQuery {
+    query: *mut pg_sys::Query,
+}
+
+impl AnalyzedQuery {
+    pub(crate) fn with_query_ptr<R>(self, f: impl FnOnce(*mut pg_sys::Query) -> R) -> R {
+        f(self.query)
+    }
+}
+
+pub(crate) fn analyze_single_query(sql: &str) -> Result<AnalyzedQuery, String> {
     let sql = CString::new(sql).map_err(|_| "SQL text contains an interior NUL byte".to_owned())?;
     // SAFETY: The CString is NUL-terminated and lives through the PostgreSQL
     // parser/analyzer calls. PostgreSQL owns the returned parser/analyzer Lists
@@ -31,6 +41,8 @@ pub(crate) fn analyze_single_query(sql: &str) -> Result<*mut pg_sys::Query, Stri
         if pg_sys::list_length(queries) != 1 {
             return Err("expected exactly one analyzed query".to_owned());
         }
-        Ok(pg_sys::list_nth(queries, 0).cast::<pg_sys::Query>())
+        Ok(AnalyzedQuery {
+            query: pg_sys::list_nth(queries, 0).cast::<pg_sys::Query>(),
+        })
     }
 }

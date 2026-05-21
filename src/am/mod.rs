@@ -88,6 +88,8 @@ pub(crate) use self::ec_spire::custom_scan_store_tuple_payload_json_for_test as 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::dml_frontdoor_const_plan_param_list_info as spire_dml_frontdoor_const_plan_param_list_info;
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::with_dml_frontdoor_query_view as spire_with_dml_frontdoor_query_view;
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::DmlFrontdoorQueryView as SpireDmlFrontdoorQueryView;
 pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,
@@ -117,7 +119,6 @@ pub(crate) use self::ec_spire::{
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
     dml_frontdoor_replacement_decision_catalog_row as spire_dml_frontdoor_replacement_decision_catalog_row,
     dml_frontdoor_target_relation_oid as spire_dml_frontdoor_target_relation_oid,
-    with_dml_frontdoor_query_view as spire_with_dml_frontdoor_query_view,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
     index_boundary_replica_placement_diagnostics as spire_index_boundary_replica_placement_diagnostics,
@@ -131,7 +132,6 @@ pub(crate) use self::ec_spire::{
     index_insert_debt_snapshot as spire_index_insert_debt_snapshot,
     index_leaf_snapshot as spire_index_leaf_snapshot,
     index_level_parameter_snapshot as spire_index_level_parameter_snapshot,
-    live_index_relation as spire_live_index_relation,
     index_locked_maintenance_plan_snapshot as spire_index_locked_maintenance_plan_snapshot,
     index_locked_maintenance_run_plan as spire_index_locked_maintenance_run_plan,
     index_maintenance_plan_snapshot as spire_index_maintenance_plan_snapshot,
@@ -148,6 +148,7 @@ pub(crate) use self::ec_spire::{
     index_selected_pid_placement_snapshot as spire_index_selected_pid_placement_snapshot,
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     index_writer_identity_snapshot as spire_index_writer_identity_snapshot,
+    live_index_relation as spire_live_index_relation,
     reap_orphaned_remote_prepared_xacts as spire_reap_orphaned_remote_prepared_xacts,
     reap_orphaned_remote_prepared_xacts_all as spire_reap_orphaned_remote_prepared_xacts_all,
     register_dml_frontdoor_planner_hook,
@@ -234,6 +235,7 @@ pub(crate) use self::ec_spire::{
     remote_search_target_readiness_rows as spire_remote_search_target_readiness_rows,
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
     remote_write_shape_fingerprint_from_secret as spire_remote_write_shape_fingerprint_from_secret,
+    with_analyzed_dml_frontdoor_query_view as spire_with_analyzed_dml_frontdoor_query_view,
     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
 };
 pub use self::ec_spire::{
