@@ -13,6 +13,7 @@ pub(crate) mod scan_guard;
 pub(crate) mod slot_guard;
 pub(crate) mod snapshot_guard;
 pub(crate) mod spi_guard;
+pub(crate) mod string_info;
 pub(crate) mod time;
 pub(crate) mod type_info;
 pub mod wal;

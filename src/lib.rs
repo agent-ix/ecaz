@@ -606,37 +606,16 @@ fn expected_binary_len(data: &[u8]) -> Result<usize, String> {
 }
 
 unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, String> {
-    if msg.is_null() {
-        return Err("invalid tqvector binary: missing input buffer".into());
-    }
-
-    // SAFETY: caller supplies PostgreSQL's live `StringInfo` for the current
-    // type receive call; the null pointer case is rejected above.
-    let total_len =
-        usize::try_from(unsafe { (*msg).len }).map_err(|_| "invalid tqvector binary length")?;
-    // SAFETY: same live `StringInfo`; reading the cursor field does not mutate
-    // the input buffer.
-    let cursor =
-        usize::try_from(unsafe { (*msg).cursor }).map_err(|_| "invalid tqvector binary cursor")?;
-    if cursor > total_len {
-        return Err("invalid tqvector binary cursor state".into());
-    }
-
-    let remaining = total_len - cursor;
+    let remaining = crate::storage::string_info::remaining_len(msg, "invalid tqvector binary")?;
     if remaining < MIN_BINARY_BYTES {
         return Err(format!(
             "tqvector too short: {remaining} bytes (need >= {MIN_BINARY_BYTES})"
         ));
     }
 
-    // SAFETY: `remaining >= MIN_BINARY_BYTES`, so PostgreSQL can advance the
-    // message cursor by the fixed tqvector prefix length.
-    let prefix = unsafe { pg_sys::pq_getmsgbytes(msg, MIN_BINARY_BYTES as i32) as *const u8 };
-    // SAFETY: `pq_getmsgbytes` returns a pointer to at least the requested
-    // prefix bytes inside the live message buffer.
-    let prefix = unsafe { std::slice::from_raw_parts(prefix, MIN_BINARY_BYTES) };
-
-    let expected_len = expected_binary_len(prefix)?;
+    let prefix =
+        crate::storage::string_info::read_bytes(msg, MIN_BINARY_BYTES, "invalid tqvector binary")?;
+    let expected_len = expected_binary_len(&prefix)?;
     if remaining != expected_len {
         return Err(format!(
             "code length mismatch: got {} bytes, expected {}",
@@ -646,21 +625,19 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
     }
 
     let mut bytes = Vec::with_capacity(expected_len);
-    bytes.extend_from_slice(prefix);
+    bytes.extend_from_slice(&prefix);
 
     let code_bytes_len = expected_len - MIN_BINARY_BYTES;
     if code_bytes_len > 0 {
-        // SAFETY: `remaining == expected_len`, and the prefix has already been
-        // consumed, so exactly `code_bytes_len` bytes remain in `msg`.
-        let codes = unsafe { pg_sys::pq_getmsgbytes(msg, code_bytes_len as i32) as *const u8 };
-        // SAFETY: PostgreSQL returned a pointer to the requested code payload
-        // bytes in the live message buffer.
-        let codes = unsafe { std::slice::from_raw_parts(codes, code_bytes_len) };
-        bytes.extend_from_slice(codes);
+        let codes = crate::storage::string_info::read_bytes(
+            msg,
+            code_bytes_len,
+            "invalid tqvector binary",
+        )?;
+        bytes.extend_from_slice(&codes);
     }
 
-    // SAFETY: all bytes in the message have been consumed and validated.
-    unsafe { pg_sys::pq_getmsgend(msg) };
+    crate::storage::string_info::finish(msg, "invalid tqvector binary")?;
     unpack(&bytes)?;
     Ok(bytes)
 }
@@ -762,36 +739,10 @@ fn raw_inner_product(left: &[f32], right: &[f32], label: &str) -> Result<f32, St
 }
 
 unsafe fn recv_raw_f32_message(msg: pg_sys::StringInfo, label: &str) -> Result<Vec<u8>, String> {
-    if msg.is_null() {
-        return Err(format!("{label}: missing input buffer"));
-    }
+    let remaining = crate::storage::string_info::remaining_len(msg, label)?;
+    let bytes = crate::storage::string_info::read_bytes(msg, remaining, label)?;
 
-    // SAFETY: caller supplies PostgreSQL's live `StringInfo` for the current
-    // type receive call; the null pointer case is rejected above.
-    let total_len = usize::try_from(unsafe { (*msg).len })
-        .map_err(|_| format!("{label}: invalid binary length"))?;
-    // SAFETY: same live `StringInfo`; reading the cursor field does not mutate
-    // the input buffer.
-    let cursor = usize::try_from(unsafe { (*msg).cursor })
-        .map_err(|_| format!("{label}: invalid binary cursor"))?;
-    if cursor > total_len {
-        return Err(format!("{label}: invalid binary cursor state"));
-    }
-
-    let remaining = total_len - cursor;
-    let mut bytes = Vec::with_capacity(remaining);
-    if remaining > 0 {
-        // SAFETY: `remaining` is computed from the live message length and
-        // cursor, and the cursor has been checked not to exceed the length.
-        let payload = unsafe { pg_sys::pq_getmsgbytes(msg, remaining as i32) as *const u8 };
-        // SAFETY: PostgreSQL returned a pointer to exactly the requested
-        // remaining payload bytes in the live message buffer.
-        let payload = unsafe { std::slice::from_raw_parts(payload, remaining) };
-        bytes.extend_from_slice(payload);
-    }
-
-    // SAFETY: all bytes in the message have been consumed and validated.
-    unsafe { pg_sys::pq_getmsgend(msg) };
+    crate::storage::string_info::finish(msg, label)?;
     unpack_raw_f32(&bytes, label)?;
     Ok(bytes)
 }
