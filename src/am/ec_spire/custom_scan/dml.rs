@@ -147,7 +147,8 @@ unsafe fn custom_scan_query_from_plan(
     // SAFETY: executor passes the live CustomScanState; the expression was
     // extracted from the provider-owned CustomScan custom_exprs list.
     unsafe {
-        let expr = custom_scan_expr_from_plan(custom_scan, 0, "ORDER BY query expression");
+        let expr = CustomScanExprList::from_custom_scan(custom_scan, "ORDER BY query expression")
+            .expr(0, "ORDER BY query expression");
         let Some(query_expr) = CustomScanExpr::new(expr) else {
             pgrx::error!("EcSpireDistributedScan plan has a null ORDER BY query expression");
         };
@@ -259,6 +260,47 @@ unsafe fn custom_scan_tuple_payload_columns(
     }
 }
 
+#[derive(Clone, Copy)]
+struct CustomScanExprList<'a> {
+    custom_exprs: *mut pg_sys::List,
+    _custom_scan: std::marker::PhantomData<&'a pg_sys::CustomScan>,
+}
+
+impl<'a> CustomScanExprList<'a> {
+    unsafe fn from_custom_scan(custom_scan: *mut pg_sys::CustomScan, label: &str) -> Self {
+        // SAFETY: caller guarantees custom_scan is a live provider-owned
+        // CustomScan plan node for the current executor callback.
+        let Some(custom_scan) = (unsafe { custom_scan_pg_ref(custom_scan) }) else {
+            pgrx::error!("EcSpireDistributedScan plan is missing {label}");
+        };
+        if custom_scan.custom_exprs.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan is missing {label}");
+        }
+        Self {
+            custom_exprs: custom_scan.custom_exprs,
+            _custom_scan: std::marker::PhantomData,
+        }
+    }
+
+    fn len(self) -> i32 {
+        // SAFETY: this view is constructed only from a live provider-owned
+        // CustomScan expression list.
+        unsafe { custom_scan_list_len(self.custom_exprs) }
+            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan expression list is NULL"))
+    }
+
+    fn expr(self, offset: i32, label: &str) -> *mut pg_sys::Expr {
+        // SAFETY: this view is constructed only from a live provider-owned
+        // CustomScan expression list and the helper bounds-checks `offset`.
+        let expr = unsafe { custom_scan_list_nth_node(self.custom_exprs, offset) }
+            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing {label}"));
+        if expr.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan has a null {label}");
+        }
+        expr.cast::<pg_sys::Expr>()
+    }
+}
+
 fn custom_scan_validate_tuple_payload_attr(attr: &TupleSlotAttribute) {
     let mut typreceive = pg_sys::InvalidOid;
     let mut typioparam = pg_sys::InvalidOid;
@@ -334,7 +376,8 @@ unsafe fn custom_scan_dml_pk_value_from_plan(
     // SAFETY: executor passes a live CustomScanState and expr comes from the
     // provider-owned DML custom_exprs list.
     let value = unsafe {
-        let expr = custom_scan_expr_from_plan(custom_scan, 0, "PK expression");
+        let expr = CustomScanExprList::from_custom_scan(custom_scan, "PK expression")
+            .expr(0, "PK expression");
         custom_scan_bigint_expr_value(node, expr)
     };
     super::dml_frontdoor_bigint_pk_value_bytes(value)
@@ -347,66 +390,22 @@ unsafe fn custom_scan_dml_update_value_exprs_from_plan(
     // SAFETY: caller guarantees custom_scan is a live provider-owned
     // CustomScan plan node carrying the DML UPDATE expression list.
     unsafe {
-        let custom_exprs = custom_scan_custom_exprs(custom_scan, "DML UPDATE value expressions");
+        let custom_exprs =
+            CustomScanExprList::from_custom_scan(custom_scan, "DML UPDATE value expressions");
         let expected_len = i32::try_from(expected_count.saturating_add(1)).unwrap_or_else(|_| {
             pgrx::error!("EcSpireDistributedScan DML UPDATE expression list is too wide")
         });
-        if custom_scan_list_len(custom_exprs) != Some(expected_len) {
+        if custom_exprs.len() != expected_len {
             pgrx::error!(
                 "EcSpireDistributedScan DML UPDATE plan expression count does not match updated columns"
             );
         }
         let mut exprs = Vec::with_capacity(expected_count);
         for offset in 1..expected_len {
-            exprs.push(custom_scan_expr_from_exprs(
-                custom_exprs,
-                offset,
-                "DML UPDATE value expression",
-            ));
+            exprs.push(custom_exprs.expr(offset, "DML UPDATE value expression"));
         }
         exprs
     }
-}
-
-unsafe fn custom_scan_custom_exprs(
-    custom_scan: *mut pg_sys::CustomScan,
-    label: &str,
-) -> *mut pg_sys::List {
-    // SAFETY: caller guarantees custom_scan is a live provider-owned
-    // CustomScan plan node.
-    let Some(custom_scan) = (unsafe { custom_scan_pg_ref(custom_scan) }) else {
-        pgrx::error!("EcSpireDistributedScan plan is missing {label}");
-    };
-    if custom_scan.custom_exprs.is_null() {
-        pgrx::error!("EcSpireDistributedScan plan is missing {label}");
-    }
-    custom_scan.custom_exprs
-}
-
-unsafe fn custom_scan_expr_from_plan(
-    custom_scan: *mut pg_sys::CustomScan,
-    offset: i32,
-    label: &str,
-) -> *mut pg_sys::Expr {
-    // SAFETY: caller guarantees custom_scan is live and provider-owned.
-    unsafe {
-        custom_scan_expr_from_exprs(custom_scan_custom_exprs(custom_scan, label), offset, label)
-    }
-}
-
-unsafe fn custom_scan_expr_from_exprs(
-    custom_exprs: *mut pg_sys::List,
-    offset: i32,
-    label: &str,
-) -> *mut pg_sys::Expr {
-    // SAFETY: caller guarantees custom_exprs is a live provider-owned
-    // expression list.
-    let expr = unsafe { custom_scan_list_nth_node(custom_exprs, offset) }
-        .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing {label}"));
-    if expr.is_null() {
-        pgrx::error!("EcSpireDistributedScan plan has a null {label}");
-    }
-    expr.cast::<pg_sys::Expr>()
 }
 
 unsafe fn custom_scan_bigint_expr_value(
