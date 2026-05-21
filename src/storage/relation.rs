@@ -4,7 +4,7 @@ use std::ffi::{c_char, CStr};
 
 use pgrx::{pg_sys, PgTupleDesc};
 
-pub(crate) fn main_fork_block_count(relation: pg_sys::Relation) -> pg_sys::BlockNumber {
+pub(crate) unsafe fn main_fork_block_count(relation: pg_sys::Relation) -> pg_sys::BlockNumber {
     if relation.is_null() {
         pgrx::error!("main fork block count needs a valid relation");
     }
@@ -13,7 +13,7 @@ pub(crate) fn main_fork_block_count(relation: pg_sys::Relation) -> pg_sys::Block
     unsafe { pg_sys::RelationGetNumberOfBlocksInFork(relation, pg_sys::ForkNumber::MAIN_FORKNUM) }
 }
 
-pub(crate) fn relation_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
+pub(crate) unsafe fn relation_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
     if relation.is_null() {
         pgrx::error!("relation OID read needs a valid relation");
     }
@@ -22,7 +22,7 @@ pub(crate) fn relation_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
     unsafe { (*relation).rd_id }
 }
 
-pub(crate) fn relation_reltuples(relation: pg_sys::Relation) -> f64 {
+pub(crate) unsafe fn relation_reltuples(relation: pg_sys::Relation) -> f64 {
     if relation.is_null() {
         pgrx::error!("relation reltuples read needs a valid relation");
     }
@@ -31,7 +31,7 @@ pub(crate) fn relation_reltuples(relation: pg_sys::Relation) -> f64 {
     unsafe { (*(*relation).rd_rel).reltuples as f64 }
 }
 
-pub(crate) fn relation_tablespace(relation: pg_sys::Relation) -> pg_sys::Oid {
+pub(crate) unsafe fn relation_tablespace(relation: pg_sys::Relation) -> pg_sys::Oid {
     if relation.is_null() {
         pgrx::error!("relation tablespace read needs a valid relation");
     }
@@ -40,7 +40,7 @@ pub(crate) fn relation_tablespace(relation: pg_sys::Relation) -> pg_sys::Oid {
     unsafe { (*(*relation).rd_rel).reltablespace }
 }
 
-pub(crate) fn relation_name(relation: pg_sys::Relation) -> String {
+pub(crate) unsafe fn relation_name(relation: pg_sys::Relation) -> String {
     if relation.is_null() {
         pgrx::error!("relation name read needs a valid relation");
     }
@@ -51,7 +51,7 @@ pub(crate) fn relation_name(relation: pg_sys::Relation) -> String {
         .into_owned()
 }
 
-pub(crate) fn relation_kind(relation: pg_sys::Relation) -> c_char {
+pub(crate) unsafe fn relation_kind(relation: pg_sys::Relation) -> c_char {
     if relation.is_null() {
         pgrx::error!("relation kind read needs a valid relation");
     }
@@ -60,7 +60,7 @@ pub(crate) fn relation_kind(relation: pg_sys::Relation) -> c_char {
     unsafe { (*(*relation).rd_rel).relkind }
 }
 
-pub(crate) fn relation_am_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
+pub(crate) unsafe fn relation_am_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
     if relation.is_null() {
         pgrx::error!("relation access method read needs a valid relation");
     }
@@ -69,7 +69,7 @@ pub(crate) fn relation_am_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
     unsafe { (*(*relation).rd_rel).relam }
 }
 
-pub(crate) fn relation_namespace_owner_persistence(
+pub(crate) unsafe fn relation_namespace_owner_persistence(
     relation: pg_sys::Relation,
 ) -> (pg_sys::Oid, pg_sys::Oid, c_char) {
     if relation.is_null() {
@@ -83,7 +83,7 @@ pub(crate) fn relation_namespace_owner_persistence(
     }
 }
 
-pub(crate) fn relation_tuple_desc_copy(relation: pg_sys::Relation) -> PgTupleDesc<'static> {
+pub(crate) unsafe fn relation_tuple_desc_copy(relation: pg_sys::Relation) -> PgTupleDesc<'static> {
     if relation.is_null() {
         pgrx::error!("relation tuple descriptor copy needs a valid relation");
     }
@@ -93,7 +93,7 @@ pub(crate) fn relation_tuple_desc_copy(relation: pg_sys::Relation) -> PgTupleDes
     unsafe { PgTupleDesc::from_pg_copy((*relation).rd_att) }
 }
 
-pub(crate) fn relation_raw_tuple_desc_copy(relation: pg_sys::Relation) -> pg_sys::TupleDesc {
+pub(crate) unsafe fn relation_raw_tuple_desc_copy(relation: pg_sys::Relation) -> pg_sys::TupleDesc {
     if relation.is_null() {
         pgrx::error!("raw relation tuple descriptor copy needs a valid relation");
     }
@@ -103,7 +103,7 @@ pub(crate) fn relation_raw_tuple_desc_copy(relation: pg_sys::Relation) -> pg_sys
     unsafe { pg_sys::CreateTupleDescCopy((*relation).rd_att) }
 }
 
-pub(crate) fn relation_options(relation: pg_sys::Relation) -> *mut pg_sys::varlena {
+pub(crate) unsafe fn relation_options(relation: pg_sys::Relation) -> *mut pg_sys::varlena {
     if relation.is_null() {
         pgrx::error!("relation options read needs a valid relation");
     }
@@ -112,8 +112,9 @@ pub(crate) fn relation_options(relation: pg_sys::Relation) -> *mut pg_sys::varle
     unsafe { (*relation).rd_options }
 }
 
-pub(crate) fn index_heap_relation_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
-    index_heap_relation_oid_from_index_oid(relation_oid(index_relation))
+pub(crate) unsafe fn index_heap_relation_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
+    // SAFETY: caller guarantees `index_relation` is live while reading its OID.
+    index_heap_relation_oid_from_index_oid(unsafe { relation_oid(index_relation) })
 }
 
 pub(crate) fn index_heap_relation_oid_from_index_oid(index_oid: pg_sys::Oid) -> pg_sys::Oid {

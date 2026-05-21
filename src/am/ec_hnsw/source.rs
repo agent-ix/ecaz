@@ -300,7 +300,8 @@ pub(crate) unsafe fn resolve_source_attribute_by_attnum(
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
+    // SAFETY: `heap_relation` is live while resolving heap source metadata.
+    let tuple_desc = unsafe { crate::storage::relation::relation_tuple_desc_copy(heap_relation) };
     let att = tuple_desc
         .get(source_attnum as usize - 1)
         .expect("resolved source attribute should exist");
@@ -411,7 +412,8 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     // SAFETY: `index_info` is callback-duration PostgreSQL metadata and the
     // helper validates single-key base-column shape.
     let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };
-    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
+    // SAFETY: `heap_relation` is live while resolving heap source metadata.
+    let tuple_desc = unsafe { crate::storage::relation::relation_tuple_desc_copy(heap_relation) };
     let att = tuple_desc
         .get(indexed_attnum as usize - 1)
         .expect("resolved indexed attribute should exist");

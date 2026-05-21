@@ -185,7 +185,8 @@ pub(super) fn create_local_store_relations_for_build(
         );
     }
 
-    let index_relid = crate::storage::relation::relation_oid(index_relation);
+    // SAFETY: `index_relation` is live during local-store relation planning.
+    let index_relid = unsafe { crate::storage::relation::relation_oid(index_relation) };
     if index_relid == pg_sys::InvalidOid {
         return Err("ec_spire local store relation creation needs a valid index relid".to_owned());
     }
@@ -194,8 +195,9 @@ pub(super) fn create_local_store_relations_for_build(
         return Ok(vec![(relation_plan[0].local_store_id, index_relid.into())]);
     }
 
+    // SAFETY: `index_relation` is live while copying catalog fields for aux stores.
     let (namespace_oid, owner_oid, relpersistence) =
-        crate::storage::relation::relation_namespace_owner_persistence(index_relation);
+        unsafe { crate::storage::relation::relation_namespace_owner_persistence(index_relation) };
     let mut created = Vec::with_capacity(relation_plan.len());
 
     for entry in relation_plan {
@@ -211,7 +213,9 @@ pub(super) fn create_local_store_relations_for_build(
             ));
         }
 
-        let tuple_desc = crate::storage::relation::relation_raw_tuple_desc_copy(index_relation);
+        // SAFETY: `index_relation` is live while copying its tuple descriptor.
+        let tuple_desc =
+            unsafe { crate::storage::relation::relation_raw_tuple_desc_copy(index_relation) };
         if tuple_desc.is_null() {
             return Err("ec_spire failed to allocate local store tuple descriptor".to_owned());
         }

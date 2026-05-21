@@ -446,7 +446,8 @@ fn elapsed_ms(duration: Duration) -> u128 {
 }
 
 fn relation_name(relation: pg_sys::Relation) -> String {
-    crate::storage::relation::relation_name(relation)
+    // SAFETY: callers pass the live relation descriptor from PostgreSQL build context.
+    unsafe { crate::storage::relation::relation_name(relation) }
 }
 
 fn log_ambuild_empty_timing(
@@ -718,7 +719,9 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
 unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
     // SAFETY: The index relation is live while initializing its main fork and
     // PostgreSQL returns the current block count for that fork.
-    let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: `index_relation` is live during DiskANN build.
+    let existing_blocks =
+        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {
@@ -860,7 +863,8 @@ unsafe fn validate_single_ecvector_attribute(
         pgrx::error!("ec_diskann ambuild requires a base heap column index key");
     }
 
-    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
+    // SAFETY: `heap_relation` is live during DiskANN build tuple processing.
+    let tuple_desc = unsafe { crate::storage::relation::relation_tuple_desc_copy(heap_relation) };
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("indexed attribute should exist");

@@ -1026,6 +1026,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
                     resolve_grouped_exact_traversal_limit()
                 };
             configure_grouped_heap_rerank_state(scan, opaque, &index_options);
+            // SAFETY: `scan` is the live rescan descriptor and owns a live index relation.
             opaque.scan_block_count =
                 crate::storage::relation::main_fork_block_count((*scan).indexRelation);
             let scan_tuning = super::options::resolve_scan_tuning(&index_options);
@@ -1394,7 +1395,8 @@ pub(super) fn turboquant_exact_score_uses_qjl(opaque: &TqScanOpaque) -> bool {
 unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) -> bool {
     // SAFETY: `index_relation` is a live index relation supplied by the scan
     // path; PostgreSQL maps its relid back to the heap relation OID.
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+    // SAFETY: `index_relation` is live for the scan setup scope.
+    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
     if heap_oid == pg_sys::InvalidOid {
         return false;
     }
@@ -1765,7 +1767,8 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHns
 
     // SAFETY: `indexRelation` is live in the scan descriptor.
     let index_relation = unsafe { (*scan).indexRelation };
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+    // SAFETY: `index_relation` is live for grouped heap rerank setup.
+    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve heap relation");
     }

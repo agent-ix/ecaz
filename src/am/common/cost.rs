@@ -130,7 +130,8 @@ pub(crate) fn relation_main_fork_block_count(
     if index_relation.is_null() {
         pgrx::error!("planner relation block count needs a valid index relation");
     }
-    crate::storage::relation::main_fork_block_count(index_relation)
+    // SAFETY: planner callbacks pass a live index relation descriptor.
+    unsafe { crate::storage::relation::main_fork_block_count(index_relation) }
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -138,7 +139,8 @@ pub(crate) fn relation_reltuples(index_relation: pg_sys::Relation) -> f64 {
     if index_relation.is_null() {
         pgrx::error!("planner reltuples read needs a valid index relation");
     }
-    crate::storage::relation::relation_reltuples(index_relation)
+    // SAFETY: planner callbacks pass a live index relation descriptor.
+    unsafe { crate::storage::relation::relation_reltuples(index_relation) }
 }
 
 #[cfg_attr(feature = "pg18", allow(dead_code))]

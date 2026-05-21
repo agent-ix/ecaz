@@ -639,7 +639,9 @@ pub(super) fn resolve_local_store_tablespace_plan(
     if index_relation.is_null() {
         return Err("ec_spire local store tablespace plan needs a valid index relation".to_owned());
     }
-    let index_tablespace_oid = crate::storage::relation::relation_tablespace(index_relation).into();
+    // SAFETY: SPIRE options callers pass a live index relation descriptor.
+    let index_tablespace_oid =
+        unsafe { crate::storage::relation::relation_tablespace(index_relation) }.into();
     plan_local_store_tablespaces_with_resolver(
         options.local_store_count,
         index_tablespace_oid,
@@ -1604,7 +1606,8 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptio
     if index_relation.is_null() {
         pgrx::error!("ec_spire relation options need a valid index relation");
     }
-    let rd_options = crate::storage::relation::relation_options(index_relation);
+    // SAFETY: SPIRE options callers pass a live index relation descriptor.
+    let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
     if rd_options.is_null() {
         return EcSpireOptions::DEFAULT;
     }

@@ -1030,7 +1030,8 @@ unsafe fn run_diskann_bulkdelete_pass(
 ) -> Result<VacuumBulkDeletePassResult, String> {
     // SAFETY: The index relation is live; this reads the current main-fork block
     // count for the vacuum pass.
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: `index_relation` is live while reading DiskANN relation pages.
+    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
     // SAFETY: The index relation is live and materialization only reads the
     // persisted DiskANN page chain.
     let (metadata, original_chain) =
@@ -1179,7 +1180,8 @@ unsafe fn resolve_vacuum_heap_relation(
         return Ok(ResolvedVacuumHeapRelation::borrowed(heap_relation));
     }
 
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+    // SAFETY: `index_relation` is live while resolving the heap relation.
+    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_diskann vacuum could not resolve heap relation".into());
     }
@@ -2243,7 +2245,8 @@ mod tests {
         let search_index_relation =
             IndexRelationGuard::access_share(index_oid(index_name), "find_vacuum_refill_fixture");
         let index_relation = search_index_relation.as_ptr();
-        let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+        // SAFETY: `index_relation` is live while resolving the heap relation.
+        let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
         assert_ne!(heap_oid, pg_sys::InvalidOid, "heap relation should resolve");
         let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
             .expect("heap relation should open for fixture search");
@@ -2462,7 +2465,9 @@ mod tests {
             "debug_vacuum_remove_heap_tids",
         );
         let index_relation_ptr = index_relation.as_ptr();
-        let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation_ptr);
+        // SAFETY: `index_relation_ptr` is held live by the relation guard.
+        let heap_oid =
+            unsafe { crate::storage::relation::index_heap_relation_oid(index_relation_ptr) };
         let heap_relation = if heap_oid == pg_sys::InvalidOid {
             None
         } else {

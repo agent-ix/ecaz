@@ -580,7 +580,9 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
     // SAFETY: `index_relation` is an open PostgreSQL index relation guard.
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation.as_ptr());
+    // SAFETY: `index_relation` is held live by the debug relation guard.
+    let heap_oid =
+        unsafe { crate::storage::relation::index_heap_relation_oid(index_relation.as_ptr()) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("debug scan could not resolve heap relation for index {index_oid}");
     }
@@ -1395,7 +1397,8 @@ unsafe fn debug_collect_element_tids_at_level(
 ) -> Vec<page::ItemPointer> {
     // SAFETY: `index_relation` is an open index relation supplied by the debug
     // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: debug callers pass a live index relation descriptor.
+    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
@@ -1467,7 +1470,8 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
 ) -> Vec<page::ItemPointer> {
     // SAFETY: `index_relation` is an open index relation supplied by the debug
     // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: debug callers pass a live index relation descriptor.
+    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
@@ -1538,7 +1542,8 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
 ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
     // SAFETY: `index_relation` is an open index relation supplied by the debug
     // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: debug callers pass a live index relation descriptor.
+    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
     let element_tag = debug_graph_tuple_tag(storage);
     let mut map = std::collections::HashMap::new();
 

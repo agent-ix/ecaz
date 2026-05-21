@@ -286,7 +286,8 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOpt
     if index_relation.is_null() {
         pgrx::error!("ec_diskann relation options need a valid index relation");
     }
-    let rd_options = crate::storage::relation::relation_options(index_relation);
+    // SAFETY: reloptions are read from a live index relation descriptor.
+    let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
     if rd_options.is_null() {
         return TqDiskannOptions::DEFAULT;
     }

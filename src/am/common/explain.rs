@@ -372,7 +372,9 @@ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -
         return None;
     }
 
-    let am_oid = crate::storage::relation::relation_am_oid(index_relation);
+    // SAFETY: `index_relation` is the live relation descriptor from the
+    // IndexScanState currently being explained.
+    let am_oid = unsafe { crate::storage::relation::relation_am_oid(index_relation) };
     // SAFETY: `am_oid` comes from the relation descriptor; PostgreSQL returns a
     // palloc-owned C string or null when no AM name exists.
     let am_name_ptr = unsafe { pg_sys::get_am_name(am_oid) };

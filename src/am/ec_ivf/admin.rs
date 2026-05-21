@@ -86,7 +86,8 @@ pub(crate) fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDri
     let directory = directory_drift_summary(index_relation, &metadata);
     // SAFETY: PostgreSQL owns the relation; querying the main fork block count
     // is valid for the opened index relation.
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: admin callers pass a live IVF index relation descriptor.
+    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
 
     let total_live_tuples = metadata.total_live_tuples;
     let changed_row_count = metadata
@@ -145,7 +146,8 @@ pub(crate) fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdm
     // SAFETY: the same live index relation is reused for the nested diagnostic
     // snapshot, and PostgreSQL keeps relcache metadata valid for the call.
     let drift = index_drift_snapshot(index_relation);
-    let reltuples = crate::storage::relation::relation_reltuples(index_relation);
+    // SAFETY: admin callers pass a live IVF index relation descriptor.
+    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
 
     IndexAdminSnapshot {
         block_count: drift.block_count,

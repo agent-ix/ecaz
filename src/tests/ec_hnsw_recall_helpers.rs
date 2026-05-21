@@ -2367,9 +2367,11 @@
         );
         let index_relation =
             open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_graph_scan_recall_probe");
-        let index_block_count =
-            i32::try_from(crate::storage::relation::main_fork_block_count(index_relation.as_ptr()))
-                .expect("block count should fit into int");
+        // SAFETY: `index_relation` guard keeps the relation live for the block count read.
+        let index_block_count = i32::try_from(unsafe {
+            crate::storage::relation::main_fork_block_count(index_relation.as_ptr())
+        })
+        .expect("block count should fit into int");
         drop(index_relation);
 
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))

@@ -878,7 +878,9 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
             let encoded = overflow_tuple.encode()?;
             // SAFETY: `index_relation` is live and PostgreSQL can report the
             // current main-fork size before choosing an append target block.
-            let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
+            // SAFETY: `index_relation` is live during DiskANN insert page extension.
+            let existing_blocks =
+                unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
             let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
                 existing_blocks - 1
             } else {
@@ -1342,7 +1344,9 @@ pub(super) unsafe fn append_live_node(
 
     // SAFETY: `index_relation` is live and PostgreSQL can report the current
     // main-fork size before choosing an append target block.
-    let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: `index_relation` is live during DiskANN insert page extension.
+    let existing_blocks =
+        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
     let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
         existing_blocks - 1
     } else {

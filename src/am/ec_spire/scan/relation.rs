@@ -240,7 +240,9 @@ fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRe
         return ResolvedScanHeapRelation::borrowed(scan_ref.heapRelation);
     }
 
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(scan_ref.indexRelation);
+    // SAFETY: `scan_ref.indexRelation` is live for the scan relation resolution scope.
+    let heap_oid =
+        unsafe { crate::storage::relation::index_heap_relation_oid(scan_ref.indexRelation) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_spire heap rerank could not resolve heap relation");
     }

@@ -415,14 +415,19 @@ fn open_valid_ec_index_guard(
 ) -> IndexRelationGuard {
     let index_relation = IndexRelationGuard::access_share(index_oid, caller_name);
     let relation = index_relation.as_ptr();
-    if crate::storage::relation::relation_kind(relation)
+    // SAFETY: `relation` is the live PostgreSQL relation descriptor owned by
+    // `index_relation` for this validation scope.
+    if unsafe { crate::storage::relation::relation_kind(relation) }
         != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char
     {
-        let relation_name = crate::storage::relation::relation_name(relation);
+        // SAFETY: same live relation descriptor validated above.
+        let relation_name = unsafe { crate::storage::relation::relation_name(relation) };
         pgrx::error!("{caller_name} requires an index relation, got \"{relation_name}\"");
     }
-    if crate::storage::relation::relation_am_oid(relation) != expected_am_oid {
-        let relation_name = crate::storage::relation::relation_name(relation);
+    // SAFETY: `relation` remains live for this validation scope.
+    if unsafe { crate::storage::relation::relation_am_oid(relation) } != expected_am_oid {
+        // SAFETY: same live relation descriptor validated above.
+        let relation_name = unsafe { crate::storage::relation::relation_name(relation) };
         pgrx::error!(
             "{caller_name} requires a {expected_am_name} index, got relation \"{relation_name}\""
         );

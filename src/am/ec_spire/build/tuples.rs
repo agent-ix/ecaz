@@ -119,7 +119,8 @@ pub(super) fn resolve_indexed_tuple_layout(
         pgrx::error!("ec_spire requires a base heap column index key");
     }
 
-    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
+    // SAFETY: `heap_relation` is live during SPIRE build tuple conversion.
+    let tuple_desc = unsafe { crate::storage::relation::relation_tuple_desc_copy(heap_relation) };
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("resolved indexed attribute should exist");

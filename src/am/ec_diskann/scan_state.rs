@@ -183,7 +183,8 @@ pub(super) unsafe fn materialize_chain_from_index(
 
     // SAFETY: `index_relation` is live while beginscan materializes the index
     // and PostgreSQL can report the current main-fork block count.
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    // SAFETY: scan state callers pass a live index relation descriptor.
+    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
     let mut chain = DataPageChain::new(page_size);
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
         let page_result: Result<(), String> = {
@@ -277,7 +278,8 @@ pub(super) unsafe fn resolve_scan_heap_relation(
 
     // SAFETY: The scan owns a live index relation descriptor.
     let index_relation = unsafe { (*scan).indexRelation };
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+    // SAFETY: `index_relation` is live while resolving the heap relation.
+    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_diskann scan could not resolve heap relation".into());
     }

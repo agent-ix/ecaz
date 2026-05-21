@@ -34,7 +34,8 @@ impl VacuumIndexRelation {
     }
 
     fn main_fork_block_count(self) -> pg_sys::BlockNumber {
-        crate::storage::relation::main_fork_block_count(self.relation)
+        // SAFETY: `self.relation` is the live vacuum relation for this page relation view.
+        unsafe { crate::storage::relation::main_fork_block_count(self.relation) }
     }
 
     fn read_main_locked(
@@ -2078,7 +2079,8 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     )
     .unwrap_or_else(|| pgrx::error!("ec_hnsw debug vacuum could not open index relation"));
     let index_relation = index_relation_guard.as_ptr();
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+    // SAFETY: `index_relation` is live during vacuum processing.
+    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
     let heap_relation_guard = if heap_oid == pg_sys::InvalidOid {
         None
     } else {

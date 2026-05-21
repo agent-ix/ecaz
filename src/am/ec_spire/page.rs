@@ -36,7 +36,8 @@ impl SpirePageRelation {
     }
 
     fn number_of_blocks(self) -> pg_sys::BlockNumber {
-        crate::storage::relation::main_fork_block_count(self.relation)
+        // SAFETY: `self.relation` is the live relation behind this page view.
+        unsafe { crate::storage::relation::main_fork_block_count(self.relation) }
     }
 
     fn page_with_free_space(self, required_space: usize) -> pg_sys::BlockNumber {

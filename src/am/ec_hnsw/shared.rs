@@ -57,7 +57,8 @@ unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {
 fn hnsw_main_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
     // SAFETY: Callers hold a live index relation while copying its current
     // main-fork block count.
-    crate::storage::relation::main_fork_block_count(index_relation)
+    // SAFETY: callers pass a live index relation descriptor.
+    unsafe { crate::storage::relation::main_fork_block_count(index_relation) }
 }
 
 fn read_main_buffer(

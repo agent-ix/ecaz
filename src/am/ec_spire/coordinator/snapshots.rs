@@ -19,7 +19,8 @@ impl SpireLiveIndexRelation {
     }
 
     fn relid(self) -> u32 {
-        crate::storage::relation::relation_oid(self.relation).into()
+        // SAFETY: this snapshot relation view is constructed for a live relation.
+        unsafe { crate::storage::relation::relation_oid(self.relation) }.into()
     }
 
     fn active_epoch_anchor(
