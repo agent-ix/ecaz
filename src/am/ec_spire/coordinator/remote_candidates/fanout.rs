@@ -129,19 +129,19 @@ fn fanout_placement_state_name(state: meta::SpirePlacementState) -> &'static str
 }
 
 pub(crate) fn remote_search_fanout_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     selected_pids: Vec<u64>,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchFanoutPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchFanoutPlanRow>, String> {
+        let index_relation = index.as_ptr();
         if requested_epoch == 0 {
             return Err(
                 "ec_spire remote search fanout requested_epoch must be greater than 0".to_owned(),
             );
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
@@ -221,12 +221,13 @@ pub(crate) fn remote_search_fanout_plan_rows(
 }
 
 pub(crate) fn remote_search_target_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     selected_pids: Vec<u64>,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchTargetPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchTargetPlanRow>, String> {
+        let index_relation = index.as_ptr();
         if requested_epoch == 0 {
             return Err(
                 "ec_spire remote search target plan requested_epoch must be greater than 0"
@@ -234,7 +235,6 @@ pub(crate) fn remote_search_target_plan_rows(
             );
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
@@ -312,19 +312,19 @@ pub(crate) fn remote_search_target_plan_rows(
 }
 
 pub(crate) fn remote_search_target_readiness_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     selected_pids: Vec<u64>,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchTargetReadinessRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchTargetReadinessRow>, String> {
         let target_rows = remote_search_target_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             selected_pids,
             consistency_mode,
         );
-        let node_rows = remote_node_snapshot(index_relation)
+        let node_rows = remote_node_snapshot(index)
             .into_iter()
             .map(|row| (row.node_id, row))
             .collect::<BTreeMap<_, _>>();
@@ -385,7 +385,7 @@ pub(crate) fn remote_search_target_readiness_rows(
 }
 
 pub(crate) fn remote_search_request_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -400,7 +400,7 @@ pub(crate) fn remote_search_request_plan_rows(
             .map_err(|_| "ec_spire remote search request plan top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         let rows = remote_search_target_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             selected_pids,
             consistency_mode,
@@ -429,7 +429,7 @@ pub(crate) fn remote_search_request_plan_rows(
 }
 
 pub(crate) fn remote_search_request_readiness_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -444,7 +444,7 @@ pub(crate) fn remote_search_request_readiness_rows(
             .map_err(|_| "ec_spire remote search request readiness top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         let rows = remote_search_target_readiness_rows(
-            index_relation,
+            index,
             requested_epoch,
             selected_pids,
             consistency_mode,
@@ -476,7 +476,7 @@ pub(crate) fn remote_search_request_readiness_rows(
 }
 
 pub(crate) fn remote_search_request_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -488,7 +488,7 @@ pub(crate) fn remote_search_request_summary_row(
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request summary top_k exceeds u64")?;
         let rows = remote_search_request_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -546,7 +546,7 @@ pub(crate) fn remote_search_request_summary_row(
 }
 
 pub(crate) fn remote_search_readiness_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -558,7 +558,7 @@ pub(crate) fn remote_search_readiness_summary_row(
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search readiness summary top_k exceeds u64")?;
         let rows = remote_search_request_readiness_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -622,7 +622,7 @@ pub(crate) fn remote_search_readiness_summary_row(
 }
 
 pub(crate) fn remote_search_execution_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -630,7 +630,7 @@ pub(crate) fn remote_search_execution_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchExecutionPlanRow> {
     let rows = remote_search_request_readiness_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -686,7 +686,7 @@ fn remote_search_execution_plan_row_from_readiness(
 }
 
 pub(crate) fn remote_search_execution_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -698,7 +698,7 @@ pub(crate) fn remote_search_execution_summary_row(
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search execution summary top_k exceeds u64")?;
         let rows = remote_search_execution_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,

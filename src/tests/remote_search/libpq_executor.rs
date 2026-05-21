@@ -581,14 +581,17 @@
             identity_cache_probe_hits,
             identity_cache_probe_misses,
             identity_cache_probe_mismatch_status,
-        ) = am::spire_remote_search_libpq_identity_cache_contract_probe_counts(
-            index_relation.as_ptr(),
-            u64::try_from(active_epoch).expect("active epoch should fit u64"),
-            vec![1.0, 0.0],
-            vec![u64::try_from(selected_pid).expect("selected PID should fit u64")],
-            1,
-            "strict",
-        );
+        ) =
+            unsafe {
+                am::spire_remote_search_libpq_identity_cache_contract_probe_counts(
+                    index_relation.as_ptr(),
+                    u64::try_from(active_epoch).expect("active epoch should fit u64"),
+                    vec![1.0, 0.0],
+                    vec![u64::try_from(selected_pid).expect("selected PID should fit u64")],
+                    1,
+                    "strict",
+                )
+            };
         drop(index_relation);
 
         assert!(register_result);

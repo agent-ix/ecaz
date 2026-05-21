@@ -20,7 +20,7 @@ fn remote_search_libpq_dispatch_budget_blocked(
 }
 
 pub(crate) fn remote_search_libpq_dispatch_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -32,7 +32,7 @@ pub(crate) fn remote_search_libpq_dispatch_summary_row(
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq dispatch summary top_k exceeds u64")?;
         let rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -117,7 +117,7 @@ fn remote_search_libpq_dispatch_summary_from_plan_rows(
 }
 
 pub(crate) fn remote_search_libpq_executor_budget_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -126,7 +126,7 @@ pub(crate) fn remote_search_libpq_executor_budget_summary_row(
 ) -> SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchLibpqExecutorBudgetSummaryRow, String> {
         let rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,

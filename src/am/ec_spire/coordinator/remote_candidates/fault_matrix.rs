@@ -1,10 +1,11 @@
 pub(crate) fn remote_search_production_consistency_policy_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     consistency_mode_source: &'static str,
     consistency_mode: &str,
 ) -> SpireRemoteProductionConsistencyPolicySummaryRow {
     let result = (|| -> Result<SpireRemoteProductionConsistencyPolicySummaryRow, String> {
+        let index_relation = index.as_ptr();
         if requested_epoch == 0 {
             return Err(
                 "ec_spire remote search production consistency policy requested_epoch must be greater than 0"
@@ -13,7 +14,6 @@ pub(crate) fn remote_search_production_consistency_policy_summary_row(
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         let requested_consistency_mode = consistency_mode_name(requested_consistency_mode);
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let (epoch_manifest, _, _) =
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
@@ -68,12 +68,12 @@ pub(crate) fn remote_search_production_consistency_policy_summary_row(
 }
 
 pub(crate) fn remote_search_production_session_consistency_policy_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
 ) -> SpireRemoteProductionConsistencyPolicySummaryRow {
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
     remote_search_production_consistency_policy_summary_row(
-        index_relation,
+        index,
         requested_epoch,
         "ec_spire.remote_search_consistency_mode",
         consistency_mode,

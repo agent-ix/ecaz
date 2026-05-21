@@ -1,5 +1,5 @@
 pub(crate) fn remote_search_libpq_secret_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -7,7 +7,7 @@ pub(crate) fn remote_search_libpq_secret_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqSecretPlanRow> {
     let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -77,7 +77,7 @@ fn remote_search_libpq_secret_plan_rows_from_dispatch(
 }
 
 pub(crate) fn remote_search_libpq_secret_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -85,7 +85,7 @@ pub(crate) fn remote_search_libpq_secret_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqSecretSummaryRow {
     let rows = remote_search_libpq_secret_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -182,7 +182,7 @@ fn remote_search_libpq_secret_summary_from_plan_rows(
 }
 
 pub(crate) fn remote_search_libpq_connection_open_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -190,7 +190,7 @@ pub(crate) fn remote_search_libpq_connection_open_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqConnectionOpenPlanRow> {
     let secret_rows = remote_search_libpq_secret_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -244,7 +244,7 @@ fn remote_search_libpq_connection_open_plan_rows_from_secrets(
 }
 
 pub(crate) fn remote_search_libpq_connection_open_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -252,7 +252,7 @@ pub(crate) fn remote_search_libpq_connection_open_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqConnectionOpenSummaryRow {
     let rows = remote_search_libpq_connection_open_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -331,7 +331,7 @@ fn remote_search_libpq_connection_open_summary_from_plan_rows(
 }
 
 pub(crate) fn remote_search_libpq_executor_readiness_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -343,7 +343,7 @@ pub(crate) fn remote_search_libpq_executor_readiness_row(
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq executor readiness top_k exceeds u64")?;
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,

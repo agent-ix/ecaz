@@ -9,7 +9,7 @@ struct SpireCoordinatorPipeline {
 
 impl SpireCoordinatorPipeline {
     fn execute_once(
-        index_relation: pg_sys::Relation,
+        index: SpireLiveIndexRelation,
         requested_epoch: u64,
         query: Vec<f32>,
         selected_pids: Vec<u64>,
@@ -20,7 +20,7 @@ impl SpireCoordinatorPipeline {
             u64::try_from(top_k).map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;
         let query_for_summary_fallback = query.clone();
         let readiness_rows = remote_search_request_readiness_rows(
-            index_relation,
+            index,
             requested_epoch,
             query.clone(),
             selected_pids,
@@ -39,7 +39,7 @@ impl SpireCoordinatorPipeline {
             consistency_mode,
         )?;
         let request_rows = remote_search_libpq_request_plan_rows_from_execution(&execution_rows);
-        let index_oid = remote_candidate_index_oid(index_relation, "ec_spire coordinator pipeline");
+        let index_oid = remote_candidate_index_oid(index, "ec_spire coordinator pipeline");
         let connection_rows =
             remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)?;
         let dispatch_rows =
@@ -74,7 +74,7 @@ impl SpireCoordinatorPipeline {
 }
 
 pub(crate) fn remote_search_coordinator_gate_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -82,7 +82,7 @@ pub(crate) fn remote_search_coordinator_gate_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorGateSummaryRow {
     let pipeline = SpireCoordinatorPipeline::execute_once(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -179,7 +179,7 @@ pub(crate) fn remote_search_coordinator_gate_summary_row(
 }
 
 pub(crate) fn remote_search_heap_resolution_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -187,7 +187,7 @@ pub(crate) fn remote_search_heap_resolution_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchHeapResolutionSummaryRow {
     let gate = remote_search_coordinator_gate_summary_row(
-        index_relation,
+        index,
         requested_epoch,
         query.clone(),
         selected_pids.clone(),
@@ -199,7 +199,7 @@ pub(crate) fn remote_search_heap_resolution_summary_row(
         && gate.status != SPIRE_REMOTE_STATUS_EMPTY_TOP_K
     {
         let rows = remote_search_local_heap_resolution_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,

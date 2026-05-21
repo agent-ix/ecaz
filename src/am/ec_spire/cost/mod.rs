@@ -1,8 +1,8 @@
 use pgrx::pg_sys;
 
 use super::{
-    active_snapshot_diagnostics, index_hierarchy_snapshot, options, SpireActiveSnapshotDiagnostics,
-    SpireIndexHierarchySnapshot,
+    active_snapshot_diagnostics, index_hierarchy_snapshot, live_index_relation, options,
+    SpireActiveSnapshotDiagnostics, SpireIndexHierarchySnapshot,
 };
 use crate::am::common::callback::{am_callback, pg_am_callback};
 use crate::am::common::cost::{
@@ -219,7 +219,10 @@ unsafe fn spire_tree_height_callback_value(index_relation: pg_sys::Relation) -> 
 unsafe fn cost_active_snapshot_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> SpireActiveSnapshotDiagnostics {
-    active_snapshot_diagnostics(index_relation)
+    // SAFETY: cost callers pass a live SPIRE index relation, and the snapshot
+    // only reads index metadata.
+    let index = unsafe { live_index_relation(index_relation) };
+    active_snapshot_diagnostics(index)
 }
 
 unsafe fn cost_index_hierarchy_snapshot(

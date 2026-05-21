@@ -196,7 +196,7 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn remote_search_libpq_identity_cache_contract_probe_counts(
+pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -205,12 +205,15 @@ pub(crate) fn remote_search_libpq_identity_cache_contract_probe_counts(
     consistency_mode: &str,
 ) -> (u64, u64, u64, u64, String) {
     let result = (|| -> Result<(u64, u64, u64, u64, String), String> {
+        // SAFETY: test callers pass an open SPIRE index relation guard for
+        // the duration of this contract probe.
+        let index = unsafe { live_index_relation(index_relation) };
         let index_relid = remote_candidate_index_oid(
-            index_relation,
+            index,
             "ec_spire libpq identity cache contract probe",
         );
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -411,7 +414,7 @@ pub(crate) fn remote_search_libpq_executor_budget_contract_probe_counts(
 }
 
 pub(crate) fn remote_search_libpq_executor_receive_attempt_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -421,9 +424,9 @@ pub(crate) fn remote_search_libpq_executor_receive_attempt_rows(
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqReceiveAttemptRow>, String> {
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         let index_relid =
-            remote_candidate_index_oid(index_relation, "ec_spire libpq executor receive attempts");
+            remote_candidate_index_oid(index, "ec_spire libpq executor receive attempts");
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query.clone(),
             selected_pids,
@@ -635,7 +638,7 @@ fn remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
 }
 
 fn remote_search_libpq_executor_candidate_rows_with_state(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -644,7 +647,7 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
     executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
     let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query.clone(),
         selected_pids,
@@ -652,7 +655,7 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
         consistency_mode,
     );
     remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
-        remote_candidate_index_oid(index_relation, "ec_spire libpq executor candidates"),
+        remote_candidate_index_oid(index, "ec_spire libpq executor candidates"),
         &dispatch_rows,
         &query,
         top_k,
@@ -662,7 +665,7 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
 }
 
 pub(crate) fn remote_search_libpq_executor_candidate_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -672,7 +675,7 @@ pub(crate) fn remote_search_libpq_executor_candidate_rows(
     let result = (|| -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
         let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
         remote_search_libpq_executor_candidate_rows_with_state(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -734,7 +737,7 @@ fn remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
 }
 
 fn remote_search_libpq_executor_heap_candidate_rows_with_state(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -743,7 +746,7 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
     executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
     let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query.clone(),
         selected_pids,
@@ -751,7 +754,7 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
         consistency_mode,
     );
     remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
-        remote_candidate_index_oid(index_relation, "ec_spire libpq heap candidates"),
+        remote_candidate_index_oid(index, "ec_spire libpq heap candidates"),
         &dispatch_rows,
         &query,
         top_k,
@@ -761,7 +764,7 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
 }
 
 pub(crate) fn remote_search_libpq_executor_heap_candidate_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -771,7 +774,7 @@ pub(crate) fn remote_search_libpq_executor_heap_candidate_rows(
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
         remote_search_libpq_executor_heap_candidate_rows_with_state(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -784,7 +787,7 @@ pub(crate) fn remote_search_libpq_executor_heap_candidate_rows(
 }
 
 pub(crate) fn remote_search_libpq_identity_cache_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -793,9 +796,9 @@ pub(crate) fn remote_search_libpq_identity_cache_summary_row(
 ) -> SpireRemoteSearchLibpqIdentityCacheSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchLibpqIdentityCacheSummaryRow, String> {
         let index_relid =
-            remote_candidate_index_oid(index_relation, "ec_spire libpq identity cache summary");
+            remote_candidate_index_oid(index, "ec_spire libpq identity cache summary");
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query.clone(),
             selected_pids,
@@ -873,7 +876,7 @@ pub(crate) fn remote_search_libpq_identity_cache_summary_row(
 }
 
 pub(crate) fn remote_search_receive_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -881,7 +884,7 @@ pub(crate) fn remote_search_receive_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchReceivePlanRow> {
     let rows = remote_search_libpq_request_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -910,7 +913,7 @@ fn remote_search_receive_plan_rows_from_requests(
 }
 
 pub(crate) fn remote_search_merge_input_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -919,7 +922,7 @@ pub(crate) fn remote_search_merge_input_summary_row(
 ) -> SpireRemoteSearchMergeInputSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchMergeInputSummaryRow, String> {
         let execution_summary = remote_search_execution_summary_row(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,

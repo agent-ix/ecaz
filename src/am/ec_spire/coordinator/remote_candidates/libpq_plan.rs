@@ -18,11 +18,11 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
 const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
 const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str = "merge_validated_remote_search_candidate_batches";
 
-fn remote_candidate_index_oid(index_relation: pg_sys::Relation, context: &str) -> pg_sys::Oid {
-    if index_relation.is_null() {
+fn remote_candidate_index_oid(index: SpireLiveIndexRelation, context: &str) -> pg_sys::Oid {
+    if index.as_ptr().is_null() {
         pgrx::error!("{context} received a null SPIRE index relation");
     }
-    let index_oid = checked_live_index_relation(index_relation).relid().into();
+    let index_oid = index.relid().into();
     if index_oid == pg_sys::InvalidOid {
         pgrx::error!("{context} received an invalid SPIRE index relation OID");
     }
@@ -35,7 +35,7 @@ fn remote_search_result_column_count() -> u64 {
 }
 
 pub(crate) fn remote_search_libpq_request_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -43,7 +43,7 @@ pub(crate) fn remote_search_libpq_request_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqRequestPlanRow> {
     let rows = remote_search_execution_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -79,7 +79,7 @@ fn remote_search_libpq_request_plan_rows_from_execution(
 }
 
 pub(crate) fn remote_search_libpq_request_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -91,7 +91,7 @@ pub(crate) fn remote_search_libpq_request_summary_row(
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq request summary top_k exceeds u64")?;
         let rows = remote_search_libpq_request_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -321,7 +321,7 @@ fn load_remote_libpq_connection_descriptors(
 }
 
 pub(crate) fn remote_search_libpq_connection_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -330,15 +330,14 @@ pub(crate) fn remote_search_libpq_connection_plan_rows(
 ) -> Vec<SpireRemoteSearchLibpqConnectionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqConnectionPlanRow>, String> {
         let request_rows = remote_search_libpq_request_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
             top_k,
             consistency_mode,
         );
-        let index_oid =
-            remote_candidate_index_oid(index_relation, "ec_spire remote search connection plan");
+        let index_oid = remote_candidate_index_oid(index, "ec_spire remote search connection plan");
         remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -435,7 +434,7 @@ fn remote_search_libpq_read_shape_status(
 }
 
 pub(crate) fn remote_search_libpq_connection_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -447,7 +446,7 @@ pub(crate) fn remote_search_libpq_connection_summary_row(
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq connection summary top_k exceeds u64")?;
         let rows = remote_search_libpq_connection_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -531,7 +530,7 @@ pub(crate) fn remote_search_libpq_connection_summary_row(
 }
 
 pub(crate) fn remote_search_libpq_dispatch_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -539,7 +538,7 @@ pub(crate) fn remote_search_libpq_dispatch_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqDispatchPlanRow> {
     let connection_rows = remote_search_libpq_connection_plan_rows(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -611,13 +610,15 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
         .collect()
 }
 
-pub(crate) fn coordinator_insert_dispatch_plan_row(
+pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
     index_relation: pg_sys::Relation,
     node_id: u32,
     served_epoch: u64,
 ) -> SpireCoordinatorInsertDispatchPlanRow {
-    let index_oid =
-        remote_candidate_index_oid(index_relation, "ec_spire coordinator insert dispatch plan");
+    // SAFETY: coordinator DML callers hold the SPIRE index relation open for
+    // the duration of dispatch planning.
+    let index = unsafe { live_index_relation(index_relation) };
+    let index_oid = remote_candidate_index_oid(index, "ec_spire coordinator insert dispatch plan");
     let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {
         let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;
         let Some(descriptor) = descriptors.get(&node_id) else {

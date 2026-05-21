@@ -1,9 +1,8 @@
 pub(crate) fn index_insert_debt_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexInsertDebtSnapshot {
-    let index = checked_live_index_relation(index_relation);
     let root_control = index.root_control();
-    let leaf_rows = index_leaf_snapshot(index_relation);
+    let leaf_rows = index_leaf_snapshot(index);
     let active_leaf_count = u64::try_from(leaf_rows.len())
         .unwrap_or_else(|_| pgrx::error!("ec_spire leaf row count exceeds u64"));
     let leaf_count_with_deltas = leaf_rows
@@ -325,14 +324,13 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
 }
 
 pub(crate) fn remote_search_candidates(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    let index = checked_live_index_relation(index_relation);
     let result = remote_search_candidates_result(
         index,
         requested_epoch,
@@ -416,14 +414,13 @@ fn remote_search_candidates_result(
 }
 
 pub(crate) fn remote_search_coordinator_local_candidates(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    let index = checked_live_index_relation(index_relation);
     let result = remote_search_coordinator_local_candidates_result(
         index,
         requested_epoch,
@@ -648,14 +645,13 @@ fn remote_search_coordinator_local_candidates_for_result_summary(
 }
 
 pub(crate) fn remote_search_coordinator_local_summary(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorLocalSummaryRow {
-    let index = checked_live_index_relation(index_relation);
     let result = remote_search_coordinator_local_summary_result(
         index,
         requested_epoch,
@@ -668,7 +664,7 @@ pub(crate) fn remote_search_coordinator_local_summary(
 }
 
 pub(crate) fn remote_search_local_heap_resolution_plan_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -676,7 +672,6 @@ pub(crate) fn remote_search_local_heap_resolution_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapResolutionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapResolutionPlanRow>, String> {
-        let index = checked_live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_result(
             index,
             requested_epoch,
@@ -711,7 +706,7 @@ pub(crate) fn remote_search_local_heap_resolution_plan_rows(
 }
 
 pub(crate) fn remote_search_local_heap_candidate_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -720,7 +715,6 @@ pub(crate) fn remote_search_local_heap_candidate_rows(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
-        let index = checked_live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_result(
             index,
             requested_epoch,
@@ -772,7 +766,7 @@ fn remote_search_local_heap_candidate_rows_for_result_summary(
 }
 
 pub(crate) fn remote_search_local_heap_candidate_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -780,14 +774,13 @@ pub(crate) fn remote_search_local_heap_candidate_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLocalHeapCandidateSummaryRow {
     let gate = remote_search_coordinator_gate_summary_row(
-        index_relation,
+        index,
         requested_epoch,
         query.clone(),
         selected_pids.clone(),
         top_k,
         consistency_mode,
     );
-    let index = checked_live_index_relation(index_relation);
     remote_search_local_heap_candidate_summary_from_gate(
         index,
         &gate,
@@ -964,16 +957,15 @@ fn merge_remote_search_heap_candidates_for_result(
 }
 
 pub(crate) fn remote_search_coordinator_result_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorResultSummaryRow {
-    let index = checked_live_index_relation(index_relation);
     let gate = remote_search_coordinator_gate_summary_row(
-        index_relation,
+        index,
         requested_epoch,
         query.clone(),
         selected_pids.clone(),
@@ -996,7 +988,7 @@ pub(crate) fn remote_search_coordinator_result_summary_row(
     }
     if gate.remote_plan_count > 0 && gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED {
         heap_candidates.extend(remote_search_libpq_executor_heap_candidate_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,

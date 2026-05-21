@@ -536,7 +536,7 @@ pub(crate) fn coordinator_insert_prepare_remote_sql_batch(
     let mut dispatches = Vec::with_capacity(requests.len());
     let mut prepare_requests = Vec::with_capacity(requests.len());
     for (node_id, served_epoch, remote_sql) in requests {
-        let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
+        let dispatch = unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
         if dispatch.status != SPIRE_REMOTE_STATUS_READY {
             return Err(format!(
                 "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
@@ -644,7 +644,7 @@ pub(crate) fn coordinator_insert_prepare_remote_tuple_payload(
     row_payload_json: &str,
     requested_columns: &[String],
 ) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
-    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
+    let dispatch = unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
@@ -666,7 +666,7 @@ pub(crate) fn coordinator_insert_prepare_remote_tuple_payload_batch(
 ) -> Result<Vec<SpireCoordinatorInsertRemotePrepareRow>, String> {
     let mut requests = Vec::with_capacity(rows.len());
     for (node_id, served_epoch, row_payload_json) in rows {
-        let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
+        let dispatch = unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
         if dispatch.status != SPIRE_REMOTE_STATUS_READY {
             return Err(format!(
                 "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
@@ -692,7 +692,7 @@ pub(crate) fn coordinator_update_remote_tuple_payload(
     row_payload_json: &str,
     updated_columns: &[String],
 ) -> Result<SpireCoordinatorUpdateRemoteRow, String> {
-    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
+    let dispatch = unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator update remote dispatch for node_id {} is blocked with status {}",
@@ -749,7 +749,7 @@ pub(crate) fn coordinator_delete_prepare_remote_tuple_payload(
     pk_column: &str,
     pk_value: &[u8],
 ) -> Result<SpireCoordinatorDeleteRemotePrepareRow, String> {
-    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
+    let dispatch = unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator delete remote dispatch for node_id {} is blocked with status {}",
@@ -849,7 +849,7 @@ pub(crate) fn coordinator_select_remote_tuple_payload(
     pk_value: &[u8],
     requested_columns: &[String],
 ) -> Result<SpireCoordinatorSelectRemoteRow, String> {
-    let dispatch = coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch);
+    let dispatch = unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
     if dispatch.status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire coordinator select remote dispatch for node_id {} is blocked with status {}",

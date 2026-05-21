@@ -165,7 +165,7 @@ pub(crate) fn remote_search_heap_resolution_contract_rows(
 }
 
 pub(crate) fn remote_search_finalization_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -173,7 +173,7 @@ pub(crate) fn remote_search_finalization_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchFinalizationSummaryRow {
     let merge_summary = remote_search_merge_input_summary_row(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,

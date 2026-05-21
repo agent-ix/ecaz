@@ -55,8 +55,11 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
 
         let heap_relation = scan_view.heap_relation();
         let snapshot = scan_view.snapshot();
+        // SAFETY: `index_relation` is the live SPIRE index relation for this
+        // AM scan callback.
+        let index = super::live_index_relation(index_relation);
         let stream = super::remote_search_production_scan_heap_resolution_am_result_stream(
-            index_relation,
+            index,
             heap_relation.as_ptr(),
             snapshot,
             query.values().to_vec(),

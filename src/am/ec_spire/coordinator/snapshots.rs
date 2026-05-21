@@ -1,11 +1,15 @@
 #[derive(Clone, Copy)]
-struct SpireLiveIndexRelation {
+pub(crate) struct SpireLiveIndexRelation {
     relation: pg_sys::Relation,
 }
 
 impl SpireLiveIndexRelation {
     unsafe fn new(relation: pg_sys::Relation) -> Self {
         Self { relation }
+    }
+
+    fn as_ptr(self) -> pg_sys::Relation {
+        self.relation
     }
 
     fn root_control(self) -> meta::SpireRootControlState {
@@ -126,18 +130,14 @@ impl SpireLiveObjectRelation {
     }
 }
 
-unsafe fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
+pub(crate) unsafe fn live_index_relation(
+    index_relation: pg_sys::Relation,
+) -> SpireLiveIndexRelation {
     if index_relation.is_null() {
         pgrx::error!("ec_spire live index relation view received a null relation");
     }
     // SAFETY: caller guarantees `index_relation` is live for the returned view.
     unsafe { SpireLiveIndexRelation::new(index_relation) }
-}
-
-fn checked_live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
-    // SAFETY: SQL diagnostic and AM wrapper entry points pass relation guards
-    // that keep the SPIRE index relation live for the duration of the call.
-    unsafe { live_index_relation(index_relation) }
 }
 
 struct SpireActiveEpochAnchor {
@@ -166,10 +166,9 @@ impl SpireActiveEpochAnchor {
 }
 
 pub(crate) fn active_snapshot_diagnostics(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireActiveSnapshotDiagnostics {
     let result = (|| -> Result<SpireActiveSnapshotDiagnostics, String> {
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));
@@ -211,8 +210,7 @@ pub(crate) fn active_snapshot_diagnostics(
 }
 
 fn open_storage_relation_or_index(
-    index_relation: pg_sys::Relation,
-    index_relid: u32,
+    index: SpireLiveIndexRelation,
     storage_relid: u32,
     lockmode: pg_sys::LOCKMODE,
 ) -> Result<
@@ -222,6 +220,8 @@ fn open_storage_relation_or_index(
     ),
     String,
 > {
+    let index_relation = index.as_ptr();
+    let index_relid = index.relid();
     if storage_relid == index_relid {
         return Ok((
             SpireLiveObjectRelation {
@@ -245,18 +245,15 @@ fn open_storage_relation_or_index(
     Ok((relation, Some(guard)))
 }
 
-pub(crate) fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
-    checked_live_index_relation(index_relation)
-        .root_control()
-        .active_epoch
+pub(crate) fn active_epoch(index: SpireLiveIndexRelation) -> u64 {
+    index.root_control().active_epoch
 }
 
 pub(crate) fn index_allocator_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     warn_within: u64,
 ) -> SpireIndexAllocatorSnapshot {
     let result = (|| -> Result<SpireIndexAllocatorSnapshot, String> {
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let diagnostics = diagnostics::collect_allocator_diagnostics(&root_control, warn_within)?;
         Ok(SpireIndexAllocatorSnapshot {
@@ -274,10 +271,9 @@ pub(crate) fn index_allocator_snapshot(
 }
 
 pub(crate) fn index_options_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexOptionsSnapshot {
     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
-        let index = checked_live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = index.root_control();
@@ -390,9 +386,8 @@ pub(crate) fn index_options_snapshot(
 }
 
 pub(crate) fn index_writer_identity_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexWriterIdentitySnapshot {
-    let index = checked_live_index_relation(index_relation);
     let relation_options = index.relation_options();
     let root_control = index.root_control();
     let (writer_identity_status, writer_identity_recommendation) = writer_identity_snapshot_status(
@@ -434,10 +429,9 @@ struct SpireLevelParameterAccumulator {
 }
 
 pub(crate) fn index_level_parameter_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexLevelParameterSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
-        let index = checked_live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
@@ -537,10 +531,9 @@ fn collect_level_parameter_snapshot_rows(
 }
 
 pub(crate) fn index_scan_sanity_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexScanSanitySnapshot {
     let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {
-        let index = checked_live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = index.root_control();
@@ -586,17 +579,16 @@ pub(crate) fn index_scan_sanity_snapshot(
 }
 
 pub(crate) fn index_health_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexHealthSnapshot {
-    let diagnostics = active_snapshot_diagnostics(index_relation);
+    let diagnostics = active_snapshot_diagnostics(index);
     health_snapshot_from_diagnostics(&diagnostics)
 }
 
 pub(crate) fn index_relation_storage_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexRelationStorageSnapshot {
     let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {
-        let index = checked_live_index_relation(index_relation);
         let index_relid = index.relid();
         let root_control = index.root_control();
         let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
@@ -639,8 +631,7 @@ pub(crate) fn index_relation_storage_snapshot(
         let mut active_referenced_tuple_bytes = 0_u64;
         for storage_relid in sorted_storage_relids {
             let (storage_relation, _storage_relation_guard) = open_storage_relation_or_index(
-                index_relation,
-                index_relid,
+                index,
                 storage_relid,
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
@@ -707,10 +698,9 @@ pub(crate) fn index_relation_storage_snapshot(
 }
 
 pub(crate) fn index_epoch_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexEpochSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexEpochSnapshotRow>, String> {
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let mut manifests = Vec::new();
         index.scan_object_tuples(|tid, tuple| {
@@ -870,8 +860,7 @@ fn collect_physical_cleanup_candidates(
     sorted_storage_relids.sort_unstable();
     for storage_relid in sorted_storage_relids {
         let (storage_relation, _storage_relation_guard) = open_storage_relation_or_index(
-            index.relation,
-            index_relid,
+            index,
             storage_relid,
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?;
@@ -892,13 +881,13 @@ fn collect_physical_cleanup_candidates(
 }
 
 pub(crate) fn index_epoch_cleanup_run(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexEpochCleanupRunResult {
+    let index_relation = index.as_ptr();
     // SAFETY: acquires the publish relation lock for the live index relation
     // before physical cleanup inspects and deletes object tuples.
     let _guard = unsafe { lock_publish_relation(index_relation) };
     let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch == 0 {
             return Ok(SpireIndexEpochCleanupRunResult {
@@ -931,15 +920,11 @@ pub(crate) fn index_epoch_cleanup_run(
             });
         }
 
-        // rd_id is stable while index_relation is open and locked; it is copied
-        // as the index OID for cleanup deletion accounting.
-        let index_relid = index.relid();
         let mut removed_tuple_count = 0_u64;
         let mut removed_tuple_bytes = 0_u64;
         for (storage_relid, tids) in candidates_by_relid {
             let (storage_relation, _storage_relation_guard) = open_storage_relation_or_index(
-                index_relation,
-                index_relid,
+                index,
                 storage_relid,
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
             )?;
@@ -977,10 +962,9 @@ pub(crate) fn index_epoch_cleanup_run(
 }
 
 pub(crate) fn index_placement_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexPlacementSnapshotRow>, String> {
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1023,10 +1007,9 @@ pub(crate) fn index_placement_snapshot(
 }
 
 pub(crate) fn remote_node_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireRemoteNodeSnapshotRow> {
     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1591,7 +1574,10 @@ pub(crate) unsafe fn remote_node_descriptor_readiness(
 ) -> Vec<SpireRemoteNodeDescriptorReadinessRow> {
     let mut rows = Vec::new();
     let contract_rows = remote_node_descriptor_contract_rows();
-    for node in remote_node_snapshot(index_relation) {
+    // SAFETY: callers hold the SPIRE index relation open while collecting
+    // remote-node descriptor readiness.
+    let index = unsafe { live_index_relation(index_relation) };
+    for node in remote_node_snapshot(index) {
         if node.node_id == meta::SPIRE_LOCAL_NODE_ID {
             continue;
         }
@@ -1715,7 +1701,10 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
 pub(crate) unsafe fn remote_node_capability_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
-    remote_node_snapshot(index_relation)
+    // SAFETY: callers hold the SPIRE index relation open while collecting
+    // remote-node capability rows.
+    let index = unsafe { live_index_relation(index_relation) };
+    remote_node_snapshot(index)
         .into_iter()
         .map(remote_node_capability_plan_row)
         .collect()
@@ -1807,7 +1796,10 @@ pub(crate) unsafe fn remote_node_capability_summary(
 pub(crate) unsafe fn remote_epoch_publish_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteEpochPublishPlanRow> {
-    remote_node_snapshot(index_relation)
+    // SAFETY: callers hold the SPIRE index relation open while collecting
+    // remote epoch publication rows.
+    let index = unsafe { live_index_relation(index_relation) };
+    remote_node_snapshot(index)
         .into_iter()
         .filter(|node| node.node_id != meta::SPIRE_LOCAL_NODE_ID)
         .map(remote_epoch_publish_plan_row)
@@ -2343,10 +2335,9 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
 }
 
 pub(crate) fn index_leaf_snapshot(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexLeafSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());

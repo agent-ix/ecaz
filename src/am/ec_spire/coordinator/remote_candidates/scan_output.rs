@@ -1,5 +1,5 @@
 pub(crate) fn remote_search_production_executor_state_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -8,7 +8,7 @@ pub(crate) fn remote_search_production_executor_state_summary_row(
 ) -> SpireRemoteProductionExecutorStateSummaryRow {
     let result = (|| -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -26,7 +26,7 @@ pub(crate) fn remote_search_production_executor_state_summary_row(
 }
 
 pub(crate) fn remote_search_production_degraded_skip_report_rows(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -35,7 +35,7 @@ pub(crate) fn remote_search_production_degraded_skip_report_rows(
 ) -> Vec<SpireRemoteProductionDegradedSkipReportRow> {
     let result = (|| -> Result<Vec<SpireRemoteProductionDegradedSkipReportRow>, String> {
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -52,7 +52,7 @@ pub(crate) fn remote_search_production_degraded_skip_report_rows(
 }
 
 pub(crate) fn remote_search_production_executor_session_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -60,7 +60,7 @@ pub(crate) fn remote_search_production_executor_session_summary_row(
 ) -> SpireRemoteProductionExecutorSessionSummaryRow {
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
     let summary = remote_search_production_executor_state_summary_row(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -81,14 +81,14 @@ pub(crate) fn remote_search_production_executor_session_summary_row(
 }
 
 pub(crate) fn remote_search_production_scan_handoff_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteProductionScanHandoffSummaryRow {
     let result = (|| -> Result<SpireRemoteProductionScanHandoffSummaryRow, String> {
+        let index_relation = index.as_ptr();
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
-        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch == 0 {
             return Ok(SpireRemoteProductionScanHandoffSummaryRow {
@@ -141,7 +141,7 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             .map_err(|_| "ec_spire production scan handoff selected PID count exceeds u64")?;
 
         let execution_summary = remote_search_execution_summary_row(
-            index_relation,
+            index,
             root_control.active_epoch,
             query.clone(),
             selected_leaf_pids.clone(),
@@ -174,7 +174,7 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
         }
 
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-            index_relation,
+            index,
             root_control.active_epoch,
             query.clone(),
             selected_leaf_pids,
@@ -456,11 +456,12 @@ fn production_read_profile_row(
 }
 
 fn remote_search_production_scan_heap_resolution_result_stream_impl(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     query: Vec<f32>,
     top_k_override: Option<usize>,
     tuple_payload_columns: Option<&[String]>,
 ) -> Result<SpireRemoteProductionProfiledScanResult, String> {
+    let index_relation = index.as_ptr();
     if index_relation.is_null() {
         return Err("ec_spire production scan needs a valid index relation".to_owned());
     }
@@ -469,7 +470,6 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     let mut metrics = SpireRemoteProductionReadMetrics::default();
     let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
-    let index = checked_live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);
@@ -534,7 +534,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     let selected_pid_count = u64::try_from(selected_leaf_pids.len())
         .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;
     let execution_summary = remote_search_execution_summary_row(
-        index_relation,
+        index,
         root_control.active_epoch,
         query.clone(),
         selected_leaf_pids.clone(),
@@ -595,7 +595,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
 
     let fingerprint_start = std::time::Instant::now();
     let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
-        index_relation,
+        index,
         root_control.active_epoch,
         query.clone(),
         selected_leaf_pids,
@@ -728,12 +728,12 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
 }
 
 pub(crate) fn remote_search_production_scan_heap_resolution_result_stream(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteProductionScanResultStream {
     let result = remote_search_production_scan_heap_resolution_result_stream_impl(
-        index_relation,
+        index,
         query,
         Some(top_k),
         None,
@@ -742,13 +742,13 @@ pub(crate) fn remote_search_production_scan_heap_resolution_result_stream(
 }
 
 pub(crate) fn remote_search_production_scan_tuple_payload_result_stream(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     query: Vec<f32>,
     top_k: usize,
     tuple_payload_columns: &[String],
 ) -> SpireRemoteProductionScanResultStream {
     let result = remote_search_production_scan_heap_resolution_result_stream_impl(
-        index_relation,
+        index,
         query,
         Some(top_k),
         Some(tuple_payload_columns),
@@ -757,14 +757,14 @@ pub(crate) fn remote_search_production_scan_tuple_payload_result_stream(
 }
 
 pub(crate) fn remote_search_production_scan_heap_resolution_am_result_stream(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     query: Vec<f32>,
 ) -> SpireRemoteProductionScanResultStream {
     let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {
         let stream = remote_search_production_scan_heap_resolution_result_stream_impl(
-            index_relation,
+            index,
             query,
             None,
             None,
@@ -777,21 +777,20 @@ pub(crate) fn remote_search_production_scan_heap_resolution_am_result_stream(
 }
 
 pub(crate) fn remote_search_production_scan_heap_resolution_summary_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteProductionScanHeapResolutionSummaryRow {
-    remote_search_production_scan_heap_resolution_result_stream(index_relation, query, top_k)
-        .summary
+    remote_search_production_scan_heap_resolution_result_stream(index, query, top_k).summary
 }
 
 pub(crate) fn remote_search_production_read_profile_row(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     query: Vec<f32>,
     top_k: usize,
 ) -> SpireRemoteProductionReadProfileRow {
     let result = remote_search_production_scan_heap_resolution_result_stream_impl(
-        index_relation,
+        index,
         query,
         Some(top_k),
         None,
@@ -807,7 +806,10 @@ pub(crate) unsafe fn remote_search_operator_diagnostics_row(
 ) -> SpireRemoteSearchOperatorDiagnosticsRow {
     let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {
         let capability = remote_node_capability_summary(index_relation);
-        let remote_snapshots = remote_node_snapshot(index_relation)
+        // SAFETY: callers hold the SPIRE index relation open while collecting
+        // operator diagnostics.
+        let index = unsafe { live_index_relation(index_relation) };
+        let remote_snapshots = remote_node_snapshot(index)
             .into_iter()
             .filter(|row| row.node_id != meta::SPIRE_LOCAL_NODE_ID)
             .collect::<Vec<_>>();
@@ -834,8 +836,7 @@ pub(crate) unsafe fn remote_search_operator_diagnostics_row(
             .ok_or_else(|| {
                 "ec_spire operator diagnostics remote node count underflow".to_owned()
             })?;
-        let summary =
-            remote_search_production_scan_handoff_summary_row(index_relation, query, top_k);
+        let summary = remote_search_production_scan_handoff_summary_row(index, query, top_k);
 
         let (next_blocker, status, recommendation) =
             if capability.remote_node_count > 0 && capability.status != SPIRE_REMOTE_STATUS_READY {
