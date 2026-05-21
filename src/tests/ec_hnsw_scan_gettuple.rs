@@ -442,7 +442,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_scan_scaffold_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (has_opaque, cleared_opaque) = hnsw_scan_debug!(am::debug_begin_end_scan(index_oid));
+        let (has_opaque, cleared_opaque) = am::debug_begin_end_scan(index_oid);
         assert!(has_opaque, "ambeginscan should allocate scan opaque state");
         assert!(cleared_opaque, "amendscan should release scan opaque state");
     }
@@ -470,7 +470,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (has_opaque, cleared_after_first, cleared_after_second) =
-            hnsw_scan_debug!(am::debug_end_scan_twice(index_oid));
+            am::debug_end_scan_twice(index_oid);
         assert!(has_opaque, "ambeginscan should allocate scan opaque state");
         assert!(
             cleared_after_first,
@@ -497,7 +497,7 @@
             has_prepared_query,
             prepared_lut_len,
             prepared_sq_len,
-        ) = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         assert!(
             rescan_called,
             "amrescan should mark scan state as initialized"
@@ -545,11 +545,11 @@
             has_prepared_query,
             prepared_lut_len,
             prepared_sq_len,
-        ) = hnsw_scan_debug!(am::debug_rescan_overwrites_query_dimensions(
+        ) = am::debug_rescan_overwrites_query_dimensions(
                 index_oid,
                 vec![1.0, 0.0, 0.5, -1.0],
                 second_query.clone(),
-            ));
+            );
         assert!(
             rescan_called,
             "repeated amrescan should keep scan state initialized"
@@ -578,21 +578,21 @@
     #[should_panic(expected = "ec_hnsw scan query dimension mismatch")]
     fn test_ech_rescan_scaffold_rejects_wrong_query_dimensions() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_mismatch");
-        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]));
+        let _ = am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]);
     }
 
     #[pg_test]
     #[should_panic(expected = "ec_hnsw scan query must not be NULL")]
     fn test_ech_rescan_scaffold_rejects_null_query() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_null");
-        hnsw_scan_debug!(am::debug_rescan_null_query(index_oid));
+        am::debug_rescan_null_query(index_oid);
     }
 
     #[pg_test]
     #[should_panic(expected = "ec_hnsw scan query must not be empty")]
     fn test_ech_rescan_scaffold_rejects_empty_query() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_empty");
-        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![]));
+        let _ = am::debug_rescan_query_dimensions(index_oid, vec![]);
     }
 
     #[pg_test]
@@ -614,7 +614,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let oversized_query = vec![0.0_f32; (u16::MAX as usize) + 1];
-        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, oversized_query));
+        let _ = am::debug_rescan_query_dimensions(index_oid, oversized_query);
     }
 
     #[pg_test]
@@ -632,7 +632,7 @@
             has_prepared_query,
             prepared_lut_len,
             prepared_sq_len,
-        ) = hnsw_scan_debug!(am::debug_rescan_with_unused_key_buffer(index_oid, query.clone()));
+        ) = am::debug_rescan_with_unused_key_buffer(index_oid, query.clone());
 
         assert!(rescan_called, "amrescan should still initialize scan state");
         assert_eq!(query_dimensions, query.len() as u16);
@@ -656,14 +656,14 @@
     #[should_panic(expected = "ec_hnsw scan does not support index quals yet")]
     fn test_ech_rescan_scaffold_rejects_index_quals() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_quals");
-        hnsw_scan_debug!(am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
     }
 
     #[pg_test]
     #[should_panic(expected = "ec_hnsw scan currently requires exactly one ORDER BY query")]
     fn test_ech_rescan_scaffold_rejects_multiple_orderbys() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_multi_orderby");
-        hnsw_scan_debug!(am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
     }
 
     #[pg_test]
@@ -688,7 +688,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_gettuple_scaffold_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        hnsw_scan_debug!(am::debug_gettuple_without_rescan(index_oid));
+        am::debug_gettuple_without_rescan(index_oid);
     }
 
     #[pg_test]
@@ -2750,7 +2750,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let found_tuple =
-            hnsw_scan_debug!(am::debug_gettuple_after_rescan_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_after_rescan_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         assert!(
             !found_tuple,
             "amgettuple should report no tuples for a valid rescan on an empty index"

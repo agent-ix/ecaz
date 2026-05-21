@@ -196,6 +196,19 @@ fn debug_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_prepared_query_lengths(opaque: &TqScanOpaque) -> (usize, usize) {
+    // SAFETY: Debug callers inspect the prepared-query pointer while the owning
+    // scan descriptor is live. Null means the AM has not prepared query state.
+    unsafe {
+        opaque
+            .prepared_query
+            .as_ref()
+            .map(|prepared| (prepared.lut.len(), prepared.sq.len()))
+            .unwrap_or((0, 0))
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFrontierSlots {
     visible_frontier_candidates(opaque)
         .into_iter()
@@ -615,19 +628,19 @@ unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
+pub(crate) fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_begin_end_scan");
     // SAFETY: The index relation guard keeps the relation open for the scan
     // descriptor returned by the AM begin callback.
     let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
     // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.
-    let has_opaque = debug_scan_has_opaque(scan);
+    let has_opaque = unsafe { debug_scan_has_opaque(scan) };
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
     // SAFETY: `ec_hnsw_amendscan` clears the opaque field on the same live
     // descriptor.
-    let cleared_opaque = debug_scan_opaque_is_null(scan);
+    let cleared_opaque = unsafe { debug_scan_opaque_is_null(scan) };
 
     // SAFETY: The descriptor was allocated by `IndexScanBegin` through the AM
     // begin path and has had AM cleanup run above.
@@ -636,25 +649,25 @@ pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
+pub(crate) fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_end_scan_twice");
     // SAFETY: The index relation guard keeps the relation open for the scan
     // descriptor returned by the AM begin callback.
     let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
     // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.
-    let has_opaque = debug_scan_has_opaque(scan);
+    let has_opaque = unsafe { debug_scan_has_opaque(scan) };
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
     // SAFETY: The descriptor remains allocated after AM cleanup for this debug
     // idempotence check.
-    let cleared_after_first = debug_scan_opaque_is_null(scan);
+    let cleared_after_first = unsafe { debug_scan_opaque_is_null(scan) };
 
     // SAFETY: This deliberately repeats AM cleanup on the same descriptor to
     // verify the end callback tolerates an already-cleared opaque pointer.
     debug_am_end_scan(scan);
     // SAFETY: The descriptor remains allocated until `IndexScanEnd` below.
-    let cleared_after_second = debug_scan_opaque_is_null(scan);
+    let cleared_after_second = unsafe { debug_scan_opaque_is_null(scan) };
 
     // SAFETY: The descriptor was allocated by the AM begin path and is freed
     // exactly once after the idempotence probe.
@@ -663,7 +676,7 @@ pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_query_dimensions(
+pub(crate) fn debug_rescan_query_dimensions(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
@@ -684,6 +697,7 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
     // SAFETY: `ec_hnsw_amrescan` initializes the HNSW scan opaque on the live
     // scan descriptor.
     let opaque = unsafe { debug_scan_opaque(scan) };
+    let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
@@ -693,16 +707,8 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
         opaque.scan_code_len,
         opaque.scan_block_count,
         !opaque.prepared_query.is_null(),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.lut.len())
-            .unwrap_or(0),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.sq.len())
-            .unwrap_or(0),
+        prepared_lut_len,
+        prepared_sq_len,
     );
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
@@ -713,7 +719,7 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
+pub(crate) fn debug_rescan_overwrites_query_dimensions(
     index_oid: pg_sys::Oid,
     first_query: Vec<f32>,
     second_query: Vec<f32>,
@@ -745,6 +751,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     // SAFETY: The second AM rescan leaves the HNSW scan opaque initialized on
     // the live descriptor for debug inspection.
     let opaque = unsafe { debug_scan_opaque(scan) };
+    let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
@@ -754,16 +761,8 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
         opaque.scan_code_len,
         opaque.scan_block_count,
         !opaque.prepared_query.is_null(),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.lut.len())
-            .unwrap_or(0),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.sq.len())
-            .unwrap_or(0),
+        prepared_lut_len,
+        prepared_sq_len,
     );
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
@@ -774,7 +773,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
+pub(crate) fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_rescan_null_query");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
     // descriptor.
@@ -790,7 +789,7 @@ pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_index_qual");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
@@ -808,7 +807,7 @@ pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query:
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
+pub(crate) fn debug_rescan_with_unused_key_buffer(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
@@ -832,6 +831,7 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
 
     // SAFETY: AM rescan initializes the HNSW scan opaque on the live descriptor.
     let opaque = unsafe { debug_scan_opaque(scan) };
+    let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
@@ -841,16 +841,8 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
         opaque.scan_code_len,
         opaque.scan_block_count,
         !opaque.prepared_query.is_null(),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.lut.len())
-            .unwrap_or(0),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.sq.len())
-            .unwrap_or(0),
+        prepared_lut_len,
+        prepared_sq_len,
     );
 
     // SAFETY: `unused_keys` was allocated by `palloc0` above and has not been
@@ -864,7 +856,7 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_multiple_orderbys");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
@@ -888,7 +880,7 @@ pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
+pub(crate) fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_gettuple_without_rescan");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
@@ -901,7 +893,7 @@ pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
     // descriptor.
@@ -920,10 +912,7 @@ pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: 
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_after_rescan_result(
-    index_oid: pg_sys::Oid,
-    query: Vec<f32>,
-) -> bool {
+pub(crate) fn debug_gettuple_after_rescan_result(index_oid: pg_sys::Oid, query: Vec<f32>) -> bool {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan_result");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
