@@ -1,0 +1,69 @@
+Script started on 2026-05-21 15:28:52-07:00 [<not executed on terminal>]
+src/tests/dml_frontdoor.rs
+5:        unsafe { (*expr.cast::<pg_sys::Node>()).type_ }
+14:        unsafe { am::spire_with_dml_frontdoor_query_view(query, f) }
+1106:            let params = unsafe { am::spire_dml_frontdoor_param_list_info(std::ptr::null_mut()) };
+1273:        unsafe {
+
+src/am/ec_spire/dml_frontdoor/mod.rs
+206:    unsafe { DmlFrontdoorQueryView::from_raw(query).map(f) }
+225:    unsafe {
+250:        unsafe {
+319:        let rte = unsafe {
+350:        unsafe {
+428:    unsafe {
+441:    unsafe {
+499:    unsafe {
+694:    let plan_expr = unsafe {
+730:    unsafe {
+1094:            let value = unsafe { dml_frontdoor_bound_param_bigint_value(params, param_id) }?;
+1137:    let (isnull, value, ptype) = unsafe {
+1495:        let (relation_oid, tuple_desc) = unsafe {
+1557:        let (index_form, class_form) = unsafe {
+1584:        Some(unsafe {
+1663:    let index_list = unsafe {
+2106:    unsafe {
+2143:    let clause_read = unsafe {
+2198:    unsafe {
+2245:    unsafe {
+2272:    let exprs = unsafe { dml_frontdoor_pg_list::<pg_sys::Expr>(exprs) };
+2288:    unsafe {
+2356:    let exprs = unsafe { dml_frontdoor_pg_list::<pg_sys::Expr>(exprs) };
+2384:    let Some(SpireDmlFrontdoorExprNode::Var(var)) = (unsafe { dml_frontdoor_expr_node(expr) })
+2401:    unsafe { dml_frontdoor_predicate_value(expr) }.kind
+2407:    unsafe { dml_frontdoor_predicate_value_inner(expr, 0) }
+2419:    unsafe {
+2474:    unsafe {
+2484:    unsafe {
+2499:    unsafe {
+2547:    unsafe {
+2580:    unsafe { dml_frontdoor_bigint_equality_opcode(pg_sys::get_opcode(opno)) }
+2604:    let node = unsafe {
+2643:    unsafe { CStr::from_ptr(ptr) }
+2657:    unsafe {
+2683:    unsafe {
+
+src/lib.rs
+46:    unsafe {
+53:    unsafe {
+420:    if unsafe { crate::storage::relation::relation_kind(relation) }
+424:        let relation_name = unsafe { crate::storage::relation::relation_name(relation) };
+428:    if unsafe { crate::storage::relation::relation_am_oid(relation) } != expected_am_oid {
+430:        let relation_name = unsafe { crate::storage::relation::relation_name(relation) };
+444:        unsafe { $func(index_relation $(, $arg)*) }
+454:        let index = unsafe { am::spire_live_index_relation(index_relation) };
+497:    relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
+787:    let msg = unsafe {
+796:    let bytes = unsafe { recv_raw_f32_message(msg, "ecvector") }
+844:    pgrx::pgrx_extern_c_guard(|| unsafe {
+876:        let array = unsafe { am::common::detoast::DetoastedVarlena::packed_from_datum(datum) }
+885:        let raw_typmods = unsafe {
+894:            unsafe { *raw_typmods }
+934:    let msg = unsafe {
+942:    unsafe { recv_tqvector_message(msg) }
+1367:    let Some(result) = (unsafe {
+1474:    let Some(result) = (unsafe {
+1560:    let Some(result) = (unsafe {
+14820:    unsafe {
+
+Script done on 2026-05-21 15:28:52-07:00 [COMMAND_EXIT_CODE="0"]
