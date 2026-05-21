@@ -641,7 +641,7 @@ struct DebugHeapBackedScan {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
     let heap_oid = index_relation.heap_relation_oid();
@@ -672,11 +672,6 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
         _index_relation: index_relation,
         _heap_relation: heap_relation,
     }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
-    drop(state);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -994,9 +989,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<HeapTidCoords> {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
     let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -1017,9 +1010,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids(
         tids.push((block_number, offset_number));
     }
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after iteration completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
     tids
 }
 
@@ -1037,9 +1028,7 @@ pub(crate) fn debug_profile_ordered_scan_with_limit(
     query: Vec<f32>,
     result_limit: Option<usize>,
 ) -> DebugScanProfile {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
     let scan = scan_state.scan.as_ptr();
 
     let total_started = Instant::now();
@@ -1083,7 +1072,7 @@ pub(crate) fn debug_profile_ordered_scan_with_limit(
     let emit_elapsed_us =
         i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
 
-    // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`
+    // SAFETY: The scan descriptor remains live until `scan_state` is dropped
     // consumes `scan_state` below.
     let opaque = unsafe { debug_scan_opaque(scan) };
     let total_counters = opaque.explain_counters;
@@ -1096,9 +1085,7 @@ pub(crate) fn debug_profile_ordered_scan_with_limit(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after profiling completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
 
     (
         rescan_elapsed_us,
@@ -1297,9 +1284,7 @@ pub(crate) fn debug_grouped_rerank_profile(
     query: Vec<f32>,
     limit_count: i32,
 ) -> DebugGroupedRerankProfile {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
     let scan = scan_state.scan.as_ptr();
     let result_limit =
         usize::try_from(limit_count).expect("grouped rerank profile limit should fit in usize");
@@ -1327,14 +1312,12 @@ pub(crate) fn debug_grouped_rerank_profile(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`
+    // SAFETY: The scan descriptor remains live until `scan_state` is dropped
     // consumes `scan_state` below.
     let opaque = unsafe { debug_scan_opaque(scan) };
     let debug_profile = opaque.debug_profile;
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after profiling completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
 
     (
         i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
@@ -1367,9 +1350,7 @@ pub(crate) fn debug_turboquant_scan_stage_profile(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugTurboQuantScanStageProfile {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
     let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -1387,15 +1368,11 @@ pub(crate) fn debug_turboquant_scan_stage_profile(
         graph::GraphStorageDescriptor::TurboQuant { .. }
             | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
     ) {
-        // SAFETY: `scan_state` owns the scan and relation guards and is
-        // consumed before the debug error aborts this path.
-        unsafe { debug_end_heap_backed_scan(scan_state) };
+        drop(scan_state);
         pgrx::error!("debug turboquant scan stage profile requires a turboquant index");
     }
     if opaque.cached_quantizer.is_null() {
-        // SAFETY: `scan_state` owns the scan and relation guards and is
-        // consumed before the debug error aborts this path.
-        unsafe { debug_end_heap_backed_scan(scan_state) };
+        drop(scan_state);
         pgrx::error!("debug turboquant scan stage profile requires a prepared quantizer");
     }
 
@@ -1415,9 +1392,7 @@ pub(crate) fn debug_turboquant_scan_stage_profile(
     let exact_score_uses_lut = turboquant_exact_score_uses_lut(opaque);
     let exact_score_uses_qjl = turboquant_exact_score_uses_qjl(opaque);
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after profiling completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
 
     (
         i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
@@ -2431,9 +2406,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_scores(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
     let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2454,9 +2427,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_scores(
         }
     }
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after iteration completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
     tids
 }
 
@@ -2465,9 +2436,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
     let scan = scan_state.scan.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
@@ -2491,9 +2460,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         }
     }
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after iteration completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
     tids
 }
 
