@@ -8,7 +8,6 @@ mod ec_spire;
 
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
-pub(crate) use self::ec_diskann::diagnostics::DiskannGraphSummary;
 pub use self::ec_diskann::page::{
     VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN, VAMANA_METADATA_ALPHA_OFFSET,
     VAMANA_METADATA_BUILD_LIST_SIZE_L_OFFSET, VAMANA_METADATA_BYTES,
@@ -32,15 +31,21 @@ pub use self::ec_diskann::vamana::{
     build_vamana_graph_with_stats, greedy_search, greedy_search_view, MetricSummary,
     VamanaBuildPassStats, VamanaBuildStats, VamanaGraph, VamanaGraphView,
 };
-pub(crate) use self::ec_diskann::IndexCostSnapshot as DiskannIndexCostSnapshot;
+pub(crate) use self::ec_diskann::{
+    diagnostics::graph_summary as diskann_graph_summary,
+    index_cost_snapshot as diskann_index_cost_snapshot,
+};
 pub use self::ec_diskann::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTupleFixture};
 #[allow(unused_imports)]
 pub(crate) use self::ec_hnsw::{
-    graph, page, IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
+    graph, index_admin_snapshot, index_cost_snapshot, page, planner_integration_snapshot,
+    IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
 };
 pub(crate) use self::ec_ivf::{
-    IndexAdminSnapshot as IvfIndexAdminSnapshot, IndexCostSnapshot as IvfIndexCostSnapshot,
-    IndexDriftSnapshot, IndexPageOwnershipSnapshot as IvfIndexPageOwnershipSnapshot,
+    index_admin_snapshot as ivf_index_admin_snapshot,
+    index_cost_snapshot as ivf_index_cost_snapshot,
+    index_drift_snapshot as ivf_index_drift_snapshot,
+    index_page_ownership as ivf_index_page_ownership,
 };
 pub use self::ec_ivf::{
     IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple,
@@ -406,75 +411,6 @@ pub(crate) use self::ec_spire::{
     remote_search_production_transport_probe_with_local_cancel_summary_for_test as spire_remote_search_production_transport_probe_with_local_cancel_summary_for_test,
     SpireRemoteProductionCandidateReceiveRequest, SpireRemoteProductionTransportProbeRequest,
 };
-
-pub(crate) unsafe fn index_cost_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IndexCostSnapshot {
-    // SAFETY: callers pass a live ec_hnsw index relation opened for the
-    // duration of the snapshot read.
-    unsafe { ec_hnsw::index_cost_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn index_admin_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IndexAdminSnapshot {
-    // SAFETY: callers pass a live ec_hnsw index relation opened for the
-    // duration of the metadata/admin snapshot read.
-    unsafe { ec_hnsw::index_admin_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn planner_integration_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> PlannerIntegrationSnapshot {
-    // SAFETY: callers pass a live ec_hnsw index relation opened while planner
-    // integration metadata is read.
-    unsafe { ec_hnsw::planner_integration_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_drift_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IndexDriftSnapshot {
-    // SAFETY: caller guarantees a live ec_ivf index relation for this snapshot.
-    unsafe { ec_ivf::index_drift_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_admin_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IvfIndexAdminSnapshot {
-    // SAFETY: caller guarantees a live ec_ivf index relation for this snapshot.
-    unsafe { ec_ivf::index_admin_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_cost_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IvfIndexCostSnapshot {
-    // SAFETY: callers pass a live ec_ivf index relation opened for this cost
-    // snapshot read.
-    unsafe { ec_ivf::index_cost_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_page_ownership(
-    index_relation: pgrx::pg_sys::Relation,
-) -> Vec<IvfIndexPageOwnershipSnapshot> {
-    // SAFETY: caller guarantees a live ec_ivf index relation for this snapshot.
-    unsafe { ec_ivf::index_page_ownership(index_relation) }
-}
-
-pub(crate) unsafe fn diskann_graph_summary(
-    index_relation: pgrx::pg_sys::Relation,
-) -> Result<DiskannGraphSummary, String> {
-    // SAFETY: callers pass a live ec_diskann index relation opened for the
-    // duration of graph summary page reads.
-    unsafe { ec_diskann::diagnostics::graph_summary(index_relation) }
-}
-
-pub(crate) unsafe fn diskann_index_cost_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> DiskannIndexCostSnapshot {
-    // SAFETY: callers pass a live ec_diskann index relation opened for this
-    // cost snapshot read.
-    unsafe { ec_diskann::index_cost_snapshot(index_relation) }
-}
 
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
