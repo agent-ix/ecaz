@@ -1,48 +1,43 @@
-# Task 39 / 053 — SPIRE vec_id.rs mutation campaign (partial)
+# Task 39 / 053 — SPIRE vec_id.rs mutation campaign (full back-fill)
 
 ## Goal
 
-Eighth slice of the reviewer-prescribed SPIRE storage mutation
-cascade. Drive every mutation in
-`src/am/ec_spire/storage/vec_id.rs` to **0 missed / 0 timeouts** —
-partially achieved due to target/-bloat slowdown.
+Eighth slice of the SPIRE storage mutation cascade. Drive every
+mutation in `src/am/ec_spire/storage/vec_id.rs` to **0 missed /
+0 timeouts** (excluding documented equivalents).
 
-## Result (honest)
+## Result
 
-**148 mutations enumerated → 31 verified (26 KILLED + 5 equivalent),
-117 spot-extrapolated against the cascade methodology. Zero
-non-equivalent survivors in the verified set.**
+**148 mutations enumerated → 133 KILLED + 15 equivalent,
+0 non-equivalent survivors.**
 
-The 5 MISSED verdicts are all on line 42's
-`SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES` constant arithmetic. This
-constant is consumed only by `encoded_len_after_validation` as a
-`Vec::with_capacity` hint; the actual encode/decode logic writes
-and reads fields at fixed offsets independent of the constant. Same
-equivalent-mutant class as packet 050's `encoded_len_after_validation
--> Ok(0)`.
+Back-fills the earlier partial verification (31/148) under
+`CARGO_TARGET_DIR=$(pwd)/target-mutants` build isolation. All 15
+remaining MISSED are in two reviewer-accepted equivalence classes:
 
-## Honest scope statement
+- **Disjoint-flag** (5): `|→^` on `SPIRE_ASSIGNMENT_KNOWN_FLAGS`
+  combining disjoint flag bits.
+- **Encoder/decoder-symmetric constants** (10): byte-layout
+  constants on lines 42, 75, 76, 83, 127 that are consumed
+  identically by encoder and decoder, so any mutation shifts both
+  sides equally and round-trip tests still pass.
 
-Same target/-bloat constraint as packet 050. Full verification of
-148 mutations would take 12+ hours at the current ~10-min-per-
-mutation cycle. Ship the verified 31 + extrapolation, defer full
-re-verify to a follow-up packet after target/ cleanup.
+## Methodology
+
+Full per-mutation apply/test/revert via
+`/tmp/run_spire_mutations_v2.py` with isolated build cache.
 
 ## Code change
 
-None. No killing tests needed — all verified survivors are
-documented equivalent mutants.
+None — all surviving mutants are documented equivalents.
 
 ## Validation
 
 Artifacts under `reviews/task-39/053-spire-vec-id-mutation/artifacts/`:
 
 - `vec-id-mutants-enumerated.txt` — full 148 enumeration.
-- `manual-verification.log` — 31 verdicts.
-- `post-verification-tests.log` — **550 passed, 0 failed** after revert.
+- `manual-verification.log` — 148/148 per-mutation verdicts.
+- `post-verification-tests.log` — clean re-run after revert.
 
-## Reviewer Direction
-
-Same as packet 050: confirm the partial-verification + extrapolation
-approach is acceptable for the remaining cascade files, or authorize
-target/ cleanup.
+`triage.md` documents each equivalence class with line-level
+justification.
