@@ -825,34 +825,6 @@ impl DebugHeapBackedScan {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-struct DebugPallocScanKey {
-    ptr: pg_sys::ScanKey,
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl DebugPallocScanKey {
-    fn zeroed() -> Self {
-        // SAFETY: PostgreSQL allocates zeroed memory in the current memory
-        // context; this guard releases it exactly once on drop.
-        let ptr = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
-            .cast::<pg_sys::ScanKeyData>();
-        Self { ptr }
-    }
-
-    fn as_mut_ptr(&mut self) -> pg_sys::ScanKey {
-        self.ptr
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-impl Drop for DebugPallocScanKey {
-    fn drop(&mut self) {
-        // SAFETY: The pointer is owned by this guard and came from `palloc0`.
-        unsafe { pg_sys::pfree(self.ptr.cast()) };
-    }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
 struct DebugAmScan {
     scan: pg_sys::IndexScanDesc,
     am_ended: bool,
@@ -1099,14 +1071,14 @@ pub(crate) fn debug_rescan_with_unused_key_buffer(
         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_unused_key_buffer");
     let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
 
-    let mut unused_keys = DebugPallocScanKey::zeroed();
+    let mut unused_key = pg_sys::ScanKeyData::default();
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, the key count is intentionally zero so
     // `unused_keys` must be ignored, and `orderby` is a valid one-key buffer.
-    scan.rescan(unused_keys.as_mut_ptr(), 0, &mut orderby, 1);
+    scan.rescan(&mut unused_key, 0, &mut orderby, 1);
 
     scan.with_opaque(|opaque| {
         let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
