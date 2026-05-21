@@ -633,6 +633,19 @@ unsafe fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_am_gettuple_heap_tid(
+    scan: pg_sys::IndexScanDesc,
+    direction: pg_sys::ScanDirection::Type,
+) -> Option<HeapTidCoords> {
+    debug_am_gettuple(scan, direction).then(|| {
+        // SAFETY: The successful gettuple call above populated `xs_heaptid` for
+        // this live index scan descriptor, and this helper snapshots it before
+        // any later AM callback can alter the descriptor.
+        unsafe { debug_scan_heap_tid(scan) }
+    })
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
     scan: IndexScanGuard<'static, 'static, 'static>,
     _snapshot: ActiveSnapshotGuard,
@@ -1005,17 +1018,14 @@ pub(crate) fn debug_gettuple_scan_heap_tids(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
-    // quals, and `orderby` is a valid one-key buffer.
+    // The scan state owns a live heap-backed scan, there are no index quals,
+    // and `orderby` is a valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        let (block_number, offset_number) = unsafe { debug_scan_heap_tid(scan) };
+    while let Some((block_number, offset_number)) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
         tids.push((block_number, offset_number));
     }
 
@@ -2446,16 +2456,14 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_scores(
     };
     let mut tids = Vec::new();
     // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
-    // quals, and `orderby` is a valid one-key buffer. AM rescan initializes the
-    // HNSW opaque before gettuple advances the same live scan descriptor.
-    unsafe {
-        debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-        while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-            let heap_tid = debug_scan_heap_tid(scan);
-            let score = debug_scan_orderby_score(scan)
-                .expect("graph-first scan should publish an order-by score for emitted tuples");
-            tids.push((heap_tid, score));
-        }
+    // quals, and `orderby` is a valid one-key buffer.
+    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        let score = debug_scan_orderby_score(scan)
+            .expect("graph-first scan should publish an order-by score for emitted tuples");
+        tids.push((heap_tid, score));
     }
 
     drop(scan_state);
@@ -2476,19 +2484,17 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     };
     let mut tids = Vec::new();
     // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
-    // quals, and `orderby` is a valid one-key buffer. AM rescan initializes the
-    // HNSW opaque before gettuple advances the same live scan descriptor.
-    unsafe {
-        debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-        while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-            let heap_tid = debug_scan_heap_tid(scan);
-            let approx_score = debug_current_result_approx_score(scan)
-                .or_else(|| debug_scan_orderby_score(scan))
-                .expect("graph-first scan should publish an approximate score for emitted tuples");
-            let comparison_score = debug_current_result_comparison_score(scan);
-            let approx_rank = debug_current_result_approx_rank(scan);
-            tids.push((heap_tid, approx_score, comparison_score, approx_rank));
-        }
+    // quals, and `orderby` is a valid one-key buffer.
+    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        let approx_score = debug_current_result_approx_score(scan)
+            .or_else(|| debug_scan_orderby_score(scan))
+            .expect("graph-first scan should publish an approximate score for emitted tuples");
+        let comparison_score = debug_current_result_comparison_score(scan);
+        let approx_rank = debug_current_result_approx_rank(scan);
+        tids.push((heap_tid, approx_score, comparison_score, approx_rank));
     }
 
     drop(scan_state);
@@ -2950,14 +2956,10 @@ pub(crate) fn debug_gettuple_exhaustion_state(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        tids.push(heap_tid);
     }
 
     // SAFETY: The scan descriptor remains live after exhaustion for this debug
@@ -3314,13 +3316,21 @@ pub(crate) fn debug_rescan_candidate_frontier(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque_mut(scan) };
-    let frontier_slots = debug_runtime_ordered_slots(opaque);
-    let frontier = frontier_slots.clone();
-    let frontier_provenance = debug_runtime_ordered_provenance_slots(opaque);
-    let expanded_sources = debug_sorted_expanded_source_tids(opaque);
-    let head = debug_runtime_ordered_head(opaque);
+    let (head, frontier, frontier_slots, frontier_provenance, expanded_sources) =
+        debug_with_scan_opaque_mut(scan, |opaque| {
+            let frontier_slots = debug_runtime_ordered_slots(opaque);
+            let frontier = frontier_slots.clone();
+            let frontier_provenance = debug_runtime_ordered_provenance_slots(opaque);
+            let expanded_sources = debug_sorted_expanded_source_tids(opaque);
+            let head = debug_runtime_ordered_head(opaque);
+            (
+                head,
+                frontier,
+                frontier_slots,
+                frontier_provenance,
+                expanded_sources,
+            )
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -4164,14 +4174,10 @@ pub(crate) fn debug_gettuple_rescan_after_exhaustion(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     let mut first_pass = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live descriptor until exhaustion.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        first_pass.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        first_pass.push(heap_tid);
     }
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
@@ -4183,14 +4189,10 @@ pub(crate) fn debug_gettuple_rescan_after_exhaustion(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
     let mut rescanned = Vec::new();
-    // SAFETY: The second AM rescan reinitialized the HNSW opaque, so repeated
-    // gettuple calls may advance the live descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        rescanned.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        rescanned.push(heap_tid);
     }
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
@@ -4221,16 +4223,8 @@ pub(crate) fn debug_gettuple_rescan_after_partial(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the
-    // live descriptor for the partial first pass.
-    let found_first = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
-    assert!(
-        found_first,
-        "partial scan should yield at least one heap tid"
-    );
-    // SAFETY: The successful gettuple call populated `xs_heaptid` for this live
-    // index scan descriptor.
-    let first_tid = unsafe { debug_scan_heap_tid(scan) };
+    let first_tid = debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+        .expect("partial scan should yield at least one heap tid");
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -4241,14 +4235,10 @@ pub(crate) fn debug_gettuple_rescan_after_partial(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
     let mut tids = Vec::new();
-    // SAFETY: The second AM rescan reinitialized the HNSW opaque, so repeated
-    // gettuple calls may advance the live descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        tids.push(heap_tid);
     }
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
