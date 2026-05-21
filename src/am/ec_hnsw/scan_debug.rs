@@ -144,7 +144,7 @@ where
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_load_neighbor_tids_for_layer(
+fn debug_load_neighbor_tids_for_layer(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
     element_tid: page::ItemPointer,
@@ -1778,18 +1778,13 @@ pub(crate) fn debug_top_level_reachable_heap_tids(index_oid: pg_sys::Oid) -> Vec
             heap_tids.push(debug_item_pointer_coords(heap_tid));
         }
 
-        // SAFETY: The current element was loaded from graph storage and `m`
-        // comes from validated metadata; adjacency loading validates the graph
-        // tuple before returning layer neighbors.
-        for neighbor_tid in unsafe {
-            debug_load_neighbor_tids_for_layer(
-                index_relation,
-                storage,
-                element_tid,
-                m,
-                metadata.max_level,
-            )
-        } {
+        for neighbor_tid in debug_load_neighbor_tids_for_layer(
+            index_relation,
+            storage,
+            element_tid,
+            m,
+            metadata.max_level,
+        ) {
             if !visited.contains(&neighbor_tid) {
                 queue.push_back(neighbor_tid);
             }
@@ -1836,12 +1831,9 @@ pub(crate) fn debug_layer0_reachable_live_element_tids(
         }
         reachable.push(element_tid);
 
-        // SAFETY: The current element was loaded from graph storage and `m`
-        // comes from validated metadata; adjacency loading validates the graph
-        // tuple before returning layer-0 neighbors.
-        for neighbor_tid in unsafe {
+        for neighbor_tid in
             debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0)
-        } {
+        {
             if !visited.contains(&neighbor_tid) {
                 queue.push_back(neighbor_tid);
             }
@@ -2249,19 +2241,13 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
                 scored_elements.push((seed.score, seed_element.heaptids.clone()));
             }
 
-            // SAFETY: The seed element was loaded from graph storage and
-            // `scan_m` comes from the initialized scan opaque; adjacency
-            // loading validates the graph tuple before returning layer-0
-            // neighbors.
-            for neighbor_tid in unsafe {
-                debug_load_neighbor_tids_for_layer(
-                    index_relation,
-                    parts.storage,
-                    seed.node,
-                    usize::from(parts.scan_m),
-                    0,
-                )
-            } {
+            for neighbor_tid in debug_load_neighbor_tids_for_layer(
+                index_relation,
+                parts.storage,
+                seed.node,
+                usize::from(parts.scan_m),
+                0,
+            ) {
                 if !visited_elements.insert(neighbor_tid) {
                     continue;
                 }
