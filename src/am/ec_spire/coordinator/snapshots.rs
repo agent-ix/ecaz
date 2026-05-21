@@ -99,7 +99,28 @@ impl SpireLiveIndexRelation {
     where
         F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
     {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        SpireLiveObjectRelation {
+            relation: self.relation,
+        }
+        .scan_object_tuples(visit)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SpireLiveObjectRelation {
+    relation: pg_sys::Relation,
+}
+
+impl SpireLiveObjectRelation {
+    fn as_ptr(self) -> pg_sys::Relation {
+        self.relation
+    }
+
+    fn scan_object_tuples<F>(self, visit: F) -> Result<(), String>
+    where
+        F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
+    {
+        // SAFETY: this wrapper is constructed only for a live SPIRE object
         // relation; page::scan_object_tuples owns the page lock/tuple bounds.
         unsafe { page::scan_object_tuples(self.relation, visit) }
     }
@@ -195,13 +216,18 @@ fn open_storage_relation_or_index(
     lockmode: pg_sys::LOCKMODE,
 ) -> Result<
     (
-        pg_sys::Relation,
+        SpireLiveObjectRelation,
         Option<crate::storage::relation_guard::RelationGuard>,
     ),
     String,
 > {
     if storage_relid == index_relid {
-        return Ok((index_relation, None));
+        return Ok((
+            SpireLiveObjectRelation {
+                relation: index_relation,
+            },
+            None,
+        ));
     }
 
     let Some(guard) = crate::storage::relation_guard::RelationGuard::try_open(
@@ -212,7 +238,9 @@ fn open_storage_relation_or_index(
             "ec_spire failed to open local store relation {storage_relid}"
         ));
     };
-    let relation = guard.as_ptr();
+    let relation = SpireLiveObjectRelation {
+        relation: guard.as_ptr(),
+    };
     Ok((relation, Some(guard)))
 }
 
@@ -617,12 +645,12 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
             )?;
 
             let storage_block_count =
-                crate::storage::relation::main_fork_block_count(storage_relation);
+                crate::storage::relation::main_fork_block_count(storage_relation.as_ptr());
             relation_block_count = relation_block_count
                 .checked_add(u64::from(storage_block_count))
                 .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;
 
-            let scan_result = page::scan_object_tuples(storage_relation, |tid, tuple| {
+            let scan_result = storage_relation.scan_object_tuples(|tid, tuple| {
                 relation_object_tuple_count = relation_object_tuple_count
                     .checked_add(1)
                     .ok_or_else(|| "ec_spire relation object tuple count overflow".to_owned())?;
@@ -844,18 +872,12 @@ fn collect_physical_cleanup_candidates(
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?;
         let mut candidates = Vec::new();
-        let scan_result =
-            // SAFETY: `storage_relation` is either the live index relation or a
-            // relation opened by the guard above with RowExclusiveLock for this
-            // scan; `scan_object_tuples` owns page locks and tuple bounds.
-            unsafe {
-                page::scan_object_tuples(storage_relation, |tid, _tuple| {
-                    if !protected.contains(&(storage_relid, tid)) {
-                        candidates.push(tid);
-                    }
-                    Ok(())
-                })
-            };
+        let scan_result = storage_relation.scan_object_tuples(|tid, _tuple| {
+            if !protected.contains(&(storage_relid, tid)) {
+                candidates.push(tid);
+            }
+            Ok(())
+        });
         scan_result?;
         if !candidates.is_empty() {
             candidates_by_relid.insert(storage_relid, candidates);
@@ -920,7 +942,7 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
             let delete_result =
                 // SAFETY: storage_relation is open with RowExclusiveLock and
                 // tids were selected by the protected/candidate cleanup plan.
-                page::delete_object_tuples_no_compact(storage_relation, &tids);
+                page::delete_object_tuples_no_compact(storage_relation.as_ptr(), &tids);
             let (deleted_count, deleted_bytes) = delete_result?;
             removed_tuple_count = removed_tuple_count
                 .checked_add(deleted_count)
