@@ -166,6 +166,11 @@ impl<'a> IvfScanDescView<'a> {
         Self { scan }
     }
 
+    #[cfg(any(test, feature = "pg_test"))]
+    fn from_ref(scan: &'a pg_sys::IndexScanDescData) -> Self {
+        Self { scan }
+    }
+
     fn as_ref(self) -> &'a pg_sys::IndexScanDescData {
         self.scan
     }
@@ -194,6 +199,34 @@ impl<'a> IvfScanDescView<'a> {
         self.opaque_option(context)
             .unwrap_or_else(|| pgrx::error!("{context} missing IVF scan opaque state"))
     }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    fn first_orderby_output(self) -> DebugFirstOrderbyOutput {
+        // SAFETY: debug callers pass a live scan descriptor. The null and
+        // value arrays are PostgreSQL-owned single-element ORDER BY outputs
+        // for this IVF scan descriptor and are copied immediately.
+        unsafe {
+            if self.scan.xs_orderbynulls.is_null() {
+                return DebugFirstOrderbyOutput {
+                    is_null: true,
+                    value: None,
+                };
+            }
+            let is_null = *self.scan.xs_orderbynulls;
+            let value = if is_null || self.scan.xs_orderbyvals.is_null() {
+                None
+            } else {
+                f32::from_datum(*self.scan.xs_orderbyvals, false)
+            };
+            DebugFirstOrderbyOutput { is_null, value }
+        }
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+struct DebugFirstOrderbyOutput {
+    is_null: bool,
+    value: Option<f32>,
 }
 
 unsafe fn ivf_index_scan_state_ref<'a>(
@@ -1646,31 +1679,16 @@ fn debug_scan_orderbynulls_is_null(scan: pg_sys::IndexScanDesc) -> bool {
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_first_orderby_is_null(scan: pg_sys::IndexScanDesc) -> bool {
-    // SAFETY: the debug caller passes a live scan descriptor; this block checks
-    // the order-by null array before reading the first flag.
-    unsafe {
-        let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan orderby null flag");
-        if scan_ref.xs_orderbynulls.is_null() {
-            return true;
-        }
-        *scan_ref.xs_orderbynulls
-    }
+    let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan orderby null flag");
+    let scan = IvfScanDescView::from_ref(scan_ref);
+    scan.first_orderby_output().is_null
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_first_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    // SAFETY: the debug caller passes a live scan descriptor; this block checks
-    // the order-by value/null arrays before reading the first score datum.
-    unsafe {
-        let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan orderby score");
-        if scan_ref.xs_orderbyvals.is_null() || scan_ref.xs_orderbynulls.is_null() {
-            return None;
-        }
-        if *scan_ref.xs_orderbynulls {
-            return None;
-        }
-        f32::from_datum(*scan_ref.xs_orderbyvals, false)
-    }
+    let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan orderby score");
+    let scan = IvfScanDescView::from_ref(scan_ref);
+    scan.first_orderby_output().value
 }
 
 #[cfg(any(test, feature = "pg_test"))]
