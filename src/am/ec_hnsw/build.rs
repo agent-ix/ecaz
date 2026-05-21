@@ -328,7 +328,7 @@ impl BuildState {
         let options = options::relation_options(index_relation);
         // SAFETY: `index_relation` is live and its `rd_id` can be resolved to
         // the heap relation OID, or InvalidOid for test-only detached state.
-        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
         let indexed_vector_kind = if heap_oid == pg_sys::InvalidOid {
             source::IndexedVectorKind::Ecvector
         } else {
@@ -532,7 +532,7 @@ fn validate_grouped_rerank_source_column_for_empty_build(
 
     // SAFETY: `index_relation` is live during empty-build validation, and
     // PostgreSQL resolves its heap relation OID from the index relcache entry.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw rerank_source_column could not resolve heap relation for validation");
     }

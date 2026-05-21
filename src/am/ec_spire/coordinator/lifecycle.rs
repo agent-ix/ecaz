@@ -33,11 +33,7 @@ pub(super) unsafe fn lock_publish_relation(
 unsafe fn open_spire_heap_relation_for_index(
     index_relation: pg_sys::Relation,
 ) -> Result<HeapRelationGuard, String> {
-    // SAFETY: index_relation is live while resolving its owning heap relation.
-    let index_oid = unsafe { (*index_relation).rd_id };
-    // SAFETY: IndexGetRelation reads catalog metadata for the copied index OID
-    // and does not retain the Relation pointer.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_spire maintenance could not resolve heap relation".to_owned());
     }

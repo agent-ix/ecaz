@@ -236,8 +236,7 @@ fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRe
         return ResolvedScanHeapRelation::borrowed(scan_ref.heapRelation);
     }
 
-    // SAFETY: `indexRelation` comes from the live scan descriptor.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*scan_ref.indexRelation).rd_id, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid(scan_ref.indexRelation);
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_spire heap rerank could not resolve heap relation");
     }

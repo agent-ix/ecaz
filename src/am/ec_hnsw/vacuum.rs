@@ -2078,9 +2078,7 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     )
     .unwrap_or_else(|| pgrx::error!("ec_hnsw debug vacuum could not open index relation"));
     let index_relation = index_relation_guard.as_ptr();
-    // SAFETY: The opened index relation is valid and IndexGetRelation only
-    // resolves its heap OID.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
     let heap_relation_guard = if heap_oid == pg_sys::InvalidOid {
         None
     } else {

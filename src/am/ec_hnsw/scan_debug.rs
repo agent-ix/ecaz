@@ -580,7 +580,7 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
     // SAFETY: `index_relation` is an open PostgreSQL index relation guard.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation.as_ptr()).rd_id, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation.as_ptr());
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("debug scan could not resolve heap relation for index {index_oid}");
     }
@@ -1152,7 +1152,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     // SAFETY: `index_oid` names the index relation supplied by the pg_test
     // caller; PostgreSQL resolves the owning heap oid without taking
     // ownership.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_from_index_oid(index_oid);
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!(
             "debug heap-fetch profile could not resolve heap relation for index {index_oid}"

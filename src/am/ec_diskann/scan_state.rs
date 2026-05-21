@@ -275,9 +275,9 @@ pub(super) unsafe fn resolve_scan_heap_relation(
         }));
     }
 
-    // SAFETY: The scan owns a live index relation descriptor, whose OID can be
-    // resolved to the heap relation when PostgreSQL did not attach one.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+    // SAFETY: The scan owns a live index relation descriptor.
+    let index_relation = unsafe { (*scan).indexRelation };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_diskann scan could not resolve heap relation".into());
     }

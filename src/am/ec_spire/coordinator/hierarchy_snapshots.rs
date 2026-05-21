@@ -181,7 +181,7 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
     // SAFETY: index_relation is live for the heap-resolution request; rd_id is
     // copied only to resolve the owning heap relation OID.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_spire remote heap resolution could not resolve heap relation".to_owned());
     }
