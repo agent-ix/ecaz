@@ -8,6 +8,7 @@ use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr, slice};
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts};
 
 use crate::{
+    am::common::callback::pg_am_callback,
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
         buffer_guard::LockedBufferGuard,
@@ -222,210 +223,197 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
-    // SAFETY: PostgreSQL calls aminsert with callback-duration relation
-    // pointers, Datum/null arrays, and heap TID pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            crate::fault::maybe_fail_palloc("ec_diskann aminsert entry");
-            if values.is_null() || isnull.is_null() {
-                pgrx::error!("ec_diskann aminsert received null datum arrays");
-            }
-            if *isnull {
-                pgrx::error!("ec_diskann does not support NULL indexed values");
-            }
-            let datum = *values;
-            if datum.is_null() {
-                pgrx::error!("ec_diskann aminsert received a null indexed datum");
-            }
+    pg_am_callback!({
+        crate::fault::maybe_fail_palloc("ec_diskann aminsert entry");
+        if values.is_null() || isnull.is_null() {
+            pgrx::error!("ec_diskann aminsert received null datum arrays");
+        }
+        if *isnull {
+            pgrx::error!("ec_diskann does not support NULL indexed values");
+        }
+        let datum = *values;
+        if datum.is_null() {
+            pgrx::error!("ec_diskann aminsert received a null indexed datum");
+        }
 
-            let source_vector = ambuild::ecvector_datum_to_vec(datum);
-            warn_on_non_unit_source_vector(&source_vector, "aminsert");
-            let heap_tid = ambuild::decode_heap_tid(heap_tid);
-            let metadata = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert failed to read metadata: {e}")
-            });
+        let source_vector = ambuild::ecvector_datum_to_vec(datum);
+        warn_on_non_unit_source_vector(&source_vector, "aminsert");
+        let heap_tid = ambuild::decode_heap_tid(heap_tid);
+        let metadata = insert::read_metadata_page(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to read metadata: {e}"));
 
-            if metadata.dimensions == 0 && metadata.entry_point == ItemPointer::INVALID {
-                let bootstrapped = insert::with_locked_metadata_page(index_relation, |metadata| {
-                    if metadata.dimensions != 0 || metadata.entry_point != ItemPointer::INVALID {
-                        return Ok(false);
-                    }
-                    let output = insert::bootstrap_empty_insert_output(
-                        index_relation,
-                        heap_tid,
-                        &source_vector,
-                    )?;
-                    ambuild::write_data_pages(index_relation, &output.chain);
-                    *metadata = output.metadata;
-                    Ok(true)
-                })
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann empty-index bootstrap insert failed: {e}")
-                });
-                if bootstrapped {
-                    return false;
+        if metadata.dimensions == 0 && metadata.entry_point == ItemPointer::INVALID {
+            let bootstrapped = insert::with_locked_metadata_page(index_relation, |metadata| {
+                if metadata.dimensions != 0 || metadata.entry_point != ItemPointer::INVALID {
+                    return Ok(false);
                 }
-            }
-
-            let refreshed = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}")
-            });
-            if refreshed.dimensions != 0 && source_vector.len() != refreshed.dimensions as usize {
-                pgrx::error!(
-                    "ec_diskann insert source dimension mismatch: source dim {}, index dim {}",
-                    source_vector.len(),
-                    refreshed.dimensions
-                );
-            }
-
-            let (materialized_metadata, chain) =
-                scan_state::materialize_chain_from_index(index_relation).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann aminsert failed to materialize persisted chain: {e}")
-                });
-            let payload = insert::derive_insert_payload_from_persisted(
-                &materialized_metadata,
-                &chain,
-                &source_vector,
-            )
+                let output = insert::bootstrap_empty_insert_output(
+                    index_relation,
+                    heap_tid,
+                    &source_vector,
+                )?;
+                ambuild::write_data_pages(index_relation, &output.chain);
+                *metadata = output.metadata;
+                Ok(true)
+            })
             .unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert failed to derive insert payload: {e}")
+                pgrx::error!("ec_diskann empty-index bootstrap insert failed: {e}")
             });
-            let reader = PersistedGraphReader::new(
-                &chain,
-                materialized_metadata.graph_degree_r,
-                scan_state::metadata_binary_word_count(&materialized_metadata),
-                scan_state::metadata_search_code_len(&materialized_metadata),
+            if bootstrapped {
+                return false;
+            }
+        }
+
+        let refreshed = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}")
+        });
+        if refreshed.dimensions != 0 && source_vector.len() != refreshed.dimensions as usize {
+            pgrx::error!(
+                "ec_diskann insert source dimension mismatch: source dim {}, index dim {}",
+                source_vector.len(),
+                refreshed.dimensions
             );
-            let duplicate_candidates =
-                insert::duplicate_candidate_tids_by_payload(&reader, &payload).unwrap_or_else(
-                    |e| pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}"),
-                );
-            let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
+        }
+
+        let (materialized_metadata, chain) =
+            scan_state::materialize_chain_from_index(index_relation).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann aminsert failed to materialize persisted chain: {e}")
             });
-            if !duplicate_candidates.is_empty() {
-                let slot =
-                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-                        .unwrap_or_else(|| {
-                            pgrx::error!(
-                                "ec_diskann aminsert could not allocate duplicate-probe slot"
-                            )
-                        });
-                let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
-                let duplicate_tid = duplicate_candidates.into_iter().find(|candidate_tid| {
-                    let Ok(candidate_tuple) = reader.read_node(*candidate_tid) else {
-                        return false;
-                    };
-                    if candidate_tuple.primary_heaptid == ItemPointer::INVALID {
-                        return false;
-                    }
-                    let Ok(existing_vector) = fetch_heap_source_vector(
-                        heap_relation,
-                        snapshot,
-                        slot.as_ptr(),
-                        source_attnum,
-                        candidate_tuple.primary_heaptid,
-                        "duplicate probe source vector",
-                    ) else {
-                        return false;
-                    };
-                    existing_vector == source_vector
-                });
-                if let Some(existing_tid) = duplicate_tid {
-                    insert::bind_duplicate_heap_tid(index_relation, existing_tid, heap_tid)
-                        .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate bind failed: {e}"));
-                    return false;
-                }
-            }
-
-            let entry_point = scan::resolve_entry_point(&reader, materialized_metadata.entry_point)
-                .unwrap_or_else(|e| {
-                    pgrx::error!(
-                        "ec_diskann unique insert planning could not resolve entry point: {e}"
-                    )
-                });
-            let Some(entry_point) = entry_point else {
-                pgrx::error!("ec_diskann unique insert planning found no live entry point");
-            };
-
-            let group_count = usize::from(materialized_metadata.search_subvector_count);
-            let group_size = usize::from(materialized_metadata.search_subvector_dim);
-            if group_count == 0 || group_size == 0 {
-                pgrx::error!(
-                    "ec_diskann unique insert planning requires grouped-PQ metadata: group_count={}, group_size={}",
-                    group_count,
-                    group_size
-                );
-            }
-            let build_list_size = usize::from(materialized_metadata.build_list_size_l);
-            if build_list_size == 0 {
-                pgrx::error!("ec_diskann unique insert planning requires build_list_size_l > 0");
-            }
-            let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
-                &chain,
-                materialized_metadata.grouped_codebook_head,
-                group_count,
-                group_size,
-                materialized_metadata.dimensions as usize,
-                materialized_metadata.seed,
-                &source_vector,
-            )
+        let payload = insert::derive_insert_payload_from_persisted(
+            &materialized_metadata,
+            &chain,
+            &source_vector,
+        )
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann aminsert failed to derive insert payload: {e}")
+        });
+        let reader = PersistedGraphReader::new(
+            &chain,
+            materialized_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&materialized_metadata),
+            scan_state::metadata_search_code_len(&materialized_metadata),
+        );
+        let duplicate_candidates = insert::duplicate_candidate_tids_by_payload(&reader, &payload)
             .unwrap_or_else(|e| {
-                pgrx::error!(
-                    "ec_diskann unique insert planning failed to build grouped-PQ LUT: {e}"
-                )
+                pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}")
             });
-            if helper_group_count != group_count {
-                pgrx::error!(
-                    "ec_diskann unique insert planning grouped-PQ helper returned group_count {}, expected {}",
-                    helper_group_count,
-                    group_count
-                );
-            }
-
+        let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
+        });
+        if !duplicate_candidates.is_empty() {
             let slot =
                 crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
                     .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_diskann unique insert planning could not allocate heap slot"
-                        )
+                        pgrx::error!("ec_diskann aminsert could not allocate duplicate-probe slot")
                     });
             let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
-            let rerank_error = RefCell::new(None::<String>);
-            let mut visited = VisitedState::new();
-            let exact_candidates = scan::vamana_scan_with(
-                &reader,
-                &mut visited,
-                ScanParams {
-                    entry_point,
-                    list_size: build_list_size,
-                    rerank_budget: build_list_size,
-                    top_k: build_list_size,
-                },
-                |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
-                |_: &[ItemPointer]| {},
-                |heap_tid| match exact_heap_rerank_distance(
+            let duplicate_tid = duplicate_candidates.into_iter().find(|candidate_tid| {
+                let Ok(candidate_tuple) = reader.read_node(*candidate_tid) else {
+                    return false;
+                };
+                if candidate_tuple.primary_heaptid == ItemPointer::INVALID {
+                    return false;
+                }
+                let Ok(existing_vector) = fetch_heap_source_vector(
                     heap_relation,
                     snapshot,
                     slot.as_ptr(),
                     source_attnum,
-                    &source_vector,
-                    heap_tid,
-                ) {
-                    Ok(distance) => distance,
-                    Err(error) => {
-                        if rerank_error.borrow().is_none() {
-                            *rerank_error.borrow_mut() = Some(error);
-                        }
-                        f32::INFINITY
-                    }
-                },
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert planning scan failed: {e}"));
-            if let Some(error) = rerank_error.into_inner() {
-                pgrx::error!("ec_diskann unique insert planning exact rerank failed: {error}");
+                    candidate_tuple.primary_heaptid,
+                    "duplicate probe source vector",
+                ) else {
+                    return false;
+                };
+                existing_vector == source_vector
+            });
+            if let Some(existing_tid) = duplicate_tid {
+                insert::bind_duplicate_heap_tid(index_relation, existing_tid, heap_tid)
+                    .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate bind failed: {e}"));
+                return false;
             }
-            let planning_candidates = exact_candidates
+        }
+
+        let entry_point = scan::resolve_entry_point(&reader, materialized_metadata.entry_point)
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann unique insert planning could not resolve entry point: {e}")
+            });
+        let Some(entry_point) = entry_point else {
+            pgrx::error!("ec_diskann unique insert planning found no live entry point");
+        };
+
+        let group_count = usize::from(materialized_metadata.search_subvector_count);
+        let group_size = usize::from(materialized_metadata.search_subvector_dim);
+        if group_count == 0 || group_size == 0 {
+            pgrx::error!(
+                    "ec_diskann unique insert planning requires grouped-PQ metadata: group_count={}, group_size={}",
+                    group_count,
+                    group_size
+                );
+        }
+        let build_list_size = usize::from(materialized_metadata.build_list_size_l);
+        if build_list_size == 0 {
+            pgrx::error!("ec_diskann unique insert planning requires build_list_size_l > 0");
+        }
+        let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
+            &chain,
+            materialized_metadata.grouped_codebook_head,
+            group_count,
+            group_size,
+            materialized_metadata.dimensions as usize,
+            materialized_metadata.seed,
+            &source_vector,
+        )
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann unique insert planning failed to build grouped-PQ LUT: {e}")
+        });
+        if helper_group_count != group_count {
+            pgrx::error!(
+                    "ec_diskann unique insert planning grouped-PQ helper returned group_count {}, expected {}",
+                    helper_group_count,
+                    group_count
+                );
+        }
+
+        let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_diskann unique insert planning could not allocate heap slot")
+            });
+        let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
+        let rerank_error = RefCell::new(None::<String>);
+        let mut visited = VisitedState::new();
+        let exact_candidates = scan::vamana_scan_with(
+            &reader,
+            &mut visited,
+            ScanParams {
+                entry_point,
+                list_size: build_list_size,
+                rerank_budget: build_list_size,
+                top_k: build_list_size,
+            },
+            |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
+            |_: &[ItemPointer]| {},
+            |heap_tid| match exact_heap_rerank_distance(
+                heap_relation,
+                snapshot,
+                slot.as_ptr(),
+                source_attnum,
+                &source_vector,
+                heap_tid,
+            ) {
+                Ok(distance) => distance,
+                Err(error) => {
+                    if rerank_error.borrow().is_none() {
+                        *rerank_error.borrow_mut() = Some(error);
+                    }
+                    f32::INFINITY
+                }
+            },
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert planning scan failed: {e}"));
+        if let Some(error) = rerank_error.into_inner() {
+            pgrx::error!("ec_diskann unique insert planning exact rerank failed: {error}");
+        }
+        let planning_candidates = exact_candidates
                 .into_iter()
                 .map(|candidate| {
                     let source_vector = fetch_heap_source_vector(
@@ -448,40 +436,37 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 })
                 .collect::<Vec<_>>();
 
-            let forward_neighbors = insert::select_insert_forward_neighbors(
-                &source_vector,
-                &planning_candidates,
-                materialized_metadata.alpha,
-                materialized_metadata.graph_degree_r as usize,
-            )
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
-            });
-            let new_tid = insert::append_live_node(
-                index_relation,
-                &materialized_metadata,
-                heap_tid,
-                &payload,
-                &forward_neighbors,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert append failed: {e}"));
-            install_backlinks_with_replan(
-                index_relation,
-                heap_relation,
-                source_attnum,
-                &forward_neighbors,
-                new_tid,
-                &source_vector,
-            )
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann unique insert backlink update failed: {e}")
-            });
-            insert::increment_inserted_since_rebuild(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann unique insert metadata update failed: {e}")
-            });
-            false
-        })
-    }
+        let forward_neighbors = insert::select_insert_forward_neighbors(
+            &source_vector,
+            &planning_candidates,
+            materialized_metadata.alpha,
+            materialized_metadata.graph_degree_r as usize,
+        )
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
+        });
+        let new_tid = insert::append_live_node(
+            index_relation,
+            &materialized_metadata,
+            heap_tid,
+            &payload,
+            &forward_neighbors,
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert append failed: {e}"));
+        install_backlinks_with_replan(
+            index_relation,
+            heap_relation,
+            source_attnum,
+            &forward_neighbors,
+            new_tid,
+            &source_vector,
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert backlink update failed: {e}"));
+        insert::increment_inserted_since_rebuild(index_relation).unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann unique insert metadata update failed: {e}")
+        });
+        false
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
@@ -490,38 +475,30 @@ unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes ambulkdelete with callback-duration relation,
-    // stats, callback, and callback-state pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let Some(callback) = callback else {
-                return ec_diskann_noop_vacuum_stats((*info).index, stats)
-                    .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"));
-            };
-            run_diskann_bulkdelete(
-                (*info).index,
-                (*info).heaprel,
-                stats,
-                callback,
-                callback_state,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"))
-        })
-    }
+    pg_am_callback!({
+        let Some(callback) = callback else {
+            return ec_diskann_noop_vacuum_stats((*info).index, stats)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"));
+        };
+        run_diskann_bulkdelete(
+            (*info).index,
+            (*info).heaprel,
+            stats,
+            callback,
+            callback_state,
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"))
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes amvacuumcleanup with callback-duration relation
-    // and stats pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            ec_diskann_noop_vacuum_stats((*info).index, stats)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann amvacuumcleanup failed: {e}"))
-        })
-    }
+    pg_am_callback!({
+        ec_diskann_noop_vacuum_stats((*info).index, stats)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann amvacuumcleanup failed: {e}"))
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
@@ -529,30 +506,25 @@ unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
     nkeys: std::ffi::c_int,
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    // SAFETY: PostgreSQL invokes ambeginscan with a live index relation and scan
-    // key counts; all raw descriptor writes stay inside the guard.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
-            if scan.is_null() {
-                pgrx::error!("ec_diskann failed to allocate scan descriptor");
-            }
+    pg_am_callback!({
+        let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
+        if scan.is_null() {
+            pgrx::error!("ec_diskann failed to allocate scan descriptor");
+        }
 
-            let (metadata, chain) = scan_state::materialize_chain_from_index(index_relation)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
-            let options = options::relation_options(index_relation);
-            let opaque_state = DiskannScanOpaque::new(metadata, chain, options)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
+        let (metadata, chain) = scan_state::materialize_chain_from_index(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
+        let options = options::relation_options(index_relation);
+        let opaque_state = DiskannScanOpaque::new(metadata, chain, options)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
 
-            crate::fault::maybe_fail_palloc("ec_diskann ambeginscan opaque");
-            let opaque = PgBox::<DiskannScanOpaque>::alloc_in_context(
-                PgMemoryContexts::CurrentMemoryContext,
-            );
-            ptr::write(opaque.as_ptr(), opaque_state);
-            (*scan).opaque = opaque.into_pg().cast();
-            scan
-        })
-    }
+        crate::fault::maybe_fail_palloc("ec_diskann ambeginscan opaque");
+        let opaque =
+            PgBox::<DiskannScanOpaque>::alloc_in_context(PgMemoryContexts::CurrentMemoryContext);
+        ptr::write(opaque.as_ptr(), opaque_state);
+        (*scan).opaque = opaque.into_pg().cast();
+        scan
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amrescan(
@@ -562,217 +534,193 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
     orderbys: pg_sys::ScanKey,
     norderbys: std::ffi::c_int,
 ) {
-    // SAFETY: PostgreSQL invokes amrescan with a live scan descriptor and
-    // callback-duration scan key arrays.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_diskann amrescan received a null scan descriptor");
-            }
-            if nkeys != 0 {
-                pgrx::error!("ec_diskann scan does not support index quals");
-            }
-            if norderbys != 1 {
-                pgrx::error!("ec_diskann scan currently requires exactly one ORDER BY query");
-            }
-            if orderbys.is_null() {
-                pgrx::error!("ec_diskann amrescan received null order-by scan keys");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_diskann amrescan received a null scan descriptor");
+        }
+        if nkeys != 0 {
+            pgrx::error!("ec_diskann scan does not support index quals");
+        }
+        if norderbys != 1 {
+            pgrx::error!("ec_diskann scan currently requires exactly one ORDER BY query");
+        }
+        if orderbys.is_null() {
+            pgrx::error!("ec_diskann amrescan received null order-by scan keys");
+        }
 
-            let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
-            if opaque_ptr.is_null() {
-                pgrx::error!("ec_diskann amrescan missing scan opaque state");
-            }
-            let opaque = &mut *opaque_ptr;
-            let orderby = &*orderbys;
-            if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
-                pgrx::error!("ec_diskann scan query must not be NULL");
-            }
+        let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_diskann amrescan missing scan opaque state");
+        }
+        let opaque = &mut *opaque_ptr;
+        let orderby = &*orderbys;
+        if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
+            pgrx::error!("ec_diskann scan query must not be NULL");
+        }
 
-            let raw_query = Vec::<f32>::from_polymorphic_datum(
-                orderby.sk_argument,
-                false,
-                pg_sys::FLOAT4ARRAYOID,
-            )
-            .unwrap_or_else(|| pgrx::error!("ec_diskann scan requires a real[] ORDER BY query"));
-            if raw_query.is_empty() {
-                pgrx::error!("ec_diskann scan query must not be empty");
-            }
-            if opaque.metadata.dimensions != 0
-                && raw_query.len() != opaque.metadata.dimensions as usize
-            {
-                pgrx::error!(
-                    "ec_diskann scan query dimension mismatch: index dim {}, query dim {}",
-                    opaque.metadata.dimensions,
-                    raw_query.len()
-                );
-            }
-
-            (*scan).xs_recheck = false;
-            (*scan).xs_recheckorderby = false;
-            (*scan).xs_orderbyvals = ptr::null_mut();
-            (*scan).xs_orderbynulls = ptr::null_mut();
-
-            opaque.flat_codebooks.clear();
-            opaque.query_rotated.clear();
-            opaque.query_lut.clear();
-            opaque.query_binary_words.clear();
-            opaque.visited.clear();
-            opaque.result_buf.clear();
-            opaque.result_cursor = 0;
-
-            if opaque.metadata.dimensions == 0 {
-                opaque.rescan_called = true;
-                return;
-            }
-
-            let prefilter = prepare_prefilter(
-                &opaque.chain,
-                &opaque.metadata,
-                &raw_query,
-                options::current_prefilter_kind(),
-                "scan",
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan prefilter setup failed: {e}"));
-
-            let reader = PersistedGraphReader::new(
-                &opaque.chain,
-                opaque.metadata.graph_degree_r,
-                opaque.binary_word_count(),
-                opaque.search_code_len(),
+        let raw_query =
+            Vec::<f32>::from_polymorphic_datum(orderby.sk_argument, false, pg_sys::FLOAT4ARRAYOID)
+                .unwrap_or_else(|| {
+                    pgrx::error!("ec_diskann scan requires a real[] ORDER BY query")
+                });
+        if raw_query.is_empty() {
+            pgrx::error!("ec_diskann scan query must not be empty");
+        }
+        if opaque.metadata.dimensions != 0 && raw_query.len() != opaque.metadata.dimensions as usize
+        {
+            pgrx::error!(
+                "ec_diskann scan query dimension mismatch: index dim {}, query dim {}",
+                opaque.metadata.dimensions,
+                raw_query.len()
             );
-            let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann scan entry-point resolution failed: {e}")
-                });
-            let Some(entry_point) = entry_point else {
-                opaque.rescan_called = true;
-                return;
-            };
+        }
 
-            let heap_relation_state =
-                scan_state::resolve_scan_heap_relation(scan).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann scan heap relation setup failed: {e}")
-                });
-            let snapshot_state = scan_state::resolve_scan_snapshot(scan)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan snapshot setup failed: {e}"));
-            let source_attnum =
-                indexed_ecvector_attnum((*scan).indexRelation).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
-                });
-            let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
-            let scan_params = ScanParams {
-                entry_point,
-                list_size: opaque.list_size,
-                rerank_budget: opaque.rerank_budget,
-                top_k: sql_result_cap,
-            };
-            let (results, rerank_error) = {
-                let heap_relation = heap_relation_state.as_ptr();
-                let snapshot = snapshot_state.as_ptr();
-                let slot =
-                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-                        .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
-                let rerank_error = RefCell::new(None::<String>);
-                let results = scan::vamana_scan_with(
-                    &reader,
-                    &mut opaque.visited,
-                    scan_params,
-                    |tuple| prefilter.score(tuple),
-                    |heap_tids: &[ItemPointer]| {
-                        prefetch_heap_rerank_blocks(heap_relation, heap_tids)
-                    },
-                    |heap_tid| match exact_heap_rerank_distance(
-                        heap_relation,
-                        snapshot,
-                        slot.as_ptr(),
-                        source_attnum,
-                        &raw_query,
-                        heap_tid,
-                    ) {
-                        Ok(distance) => distance,
-                        Err(error) => {
-                            if rerank_error.borrow().is_none() {
-                                *rerank_error.borrow_mut() = Some(error);
-                            }
-                            f32::INFINITY
-                        }
-                    },
-                );
-                (results, rerank_error.into_inner())
-            };
-            prefilter.load_into_scan_opaque(opaque);
+        (*scan).xs_recheck = false;
+        (*scan).xs_recheckorderby = false;
+        (*scan).xs_orderbyvals = ptr::null_mut();
+        (*scan).xs_orderbynulls = ptr::null_mut();
 
-            if let Some(error) = rerank_error {
-                pgrx::error!("ec_diskann scan heap rerank failed: {error}");
-            }
-            let node_results =
-                results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
-            opaque.result_buf = expand_scan_results_with_bound_heap_tids(
-                &opaque.chain,
-                &node_results,
-                sql_result_cap,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
-            opaque.result_cursor = 0;
+        opaque.flat_codebooks.clear();
+        opaque.query_rotated.clear();
+        opaque.query_lut.clear();
+        opaque.query_binary_words.clear();
+        opaque.visited.clear();
+        opaque.result_buf.clear();
+        opaque.result_cursor = 0;
+
+        if opaque.metadata.dimensions == 0 {
             opaque.rescan_called = true;
-        })
-    }
+            return;
+        }
+
+        let prefilter = prepare_prefilter(
+            &opaque.chain,
+            &opaque.metadata,
+            &raw_query,
+            options::current_prefilter_kind(),
+            "scan",
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann scan prefilter setup failed: {e}"));
+
+        let reader = PersistedGraphReader::new(
+            &opaque.chain,
+            opaque.metadata.graph_degree_r,
+            opaque.binary_word_count(),
+            opaque.search_code_len(),
+        );
+        let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan entry-point resolution failed: {e}"));
+        let Some(entry_point) = entry_point else {
+            opaque.rescan_called = true;
+            return;
+        };
+
+        let heap_relation_state = scan_state::resolve_scan_heap_relation(scan)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan heap relation setup failed: {e}"));
+        let snapshot_state = scan_state::resolve_scan_snapshot(scan)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan snapshot setup failed: {e}"));
+        let source_attnum = indexed_ecvector_attnum((*scan).indexRelation).unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
+        });
+        let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
+        let scan_params = ScanParams {
+            entry_point,
+            list_size: opaque.list_size,
+            rerank_budget: opaque.rerank_budget,
+            top_k: sql_result_cap,
+        };
+        let (results, rerank_error) = {
+            let heap_relation = heap_relation_state.as_ptr();
+            let snapshot = snapshot_state.as_ptr();
+            let slot =
+                crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+                    .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
+            let rerank_error = RefCell::new(None::<String>);
+            let results = scan::vamana_scan_with(
+                &reader,
+                &mut opaque.visited,
+                scan_params,
+                |tuple| prefilter.score(tuple),
+                |heap_tids: &[ItemPointer]| prefetch_heap_rerank_blocks(heap_relation, heap_tids),
+                |heap_tid| match exact_heap_rerank_distance(
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    &raw_query,
+                    heap_tid,
+                ) {
+                    Ok(distance) => distance,
+                    Err(error) => {
+                        if rerank_error.borrow().is_none() {
+                            *rerank_error.borrow_mut() = Some(error);
+                        }
+                        f32::INFINITY
+                    }
+                },
+            );
+            (results, rerank_error.into_inner())
+        };
+        prefilter.load_into_scan_opaque(opaque);
+
+        if let Some(error) = rerank_error {
+            pgrx::error!("ec_diskann scan heap rerank failed: {error}");
+        }
+        let node_results =
+            results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
+        opaque.result_buf =
+            expand_scan_results_with_bound_heap_tids(&opaque.chain, &node_results, sql_result_cap)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
+        opaque.result_cursor = 0;
+        opaque.rescan_called = true;
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    // SAFETY: PostgreSQL invokes amgettuple with a live scan descriptor; opaque
-    // access and heap TID writes are guarded and null-checked.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_diskann amgettuple received a null scan descriptor");
-            }
-            if direction != pg_sys::ScanDirection::ForwardScanDirection {
-                pgrx::error!("ec_diskann amgettuple only supports forward scan direction");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_diskann amgettuple received a null scan descriptor");
+        }
+        if direction != pg_sys::ScanDirection::ForwardScanDirection {
+            pgrx::error!("ec_diskann amgettuple only supports forward scan direction");
+        }
 
-            let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
-            if opaque_ptr.is_null() {
-                pgrx::error!("ec_diskann amgettuple missing scan opaque state");
-            }
-            let opaque = &mut *opaque_ptr;
-            if !opaque.rescan_called {
-                pgrx::error!("ec_diskann amgettuple requires amrescan before scan execution");
-            }
-            if opaque.result_cursor >= opaque.result_buf.len() {
-                return false;
-            }
+        let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_diskann amgettuple missing scan opaque state");
+        }
+        let opaque = &mut *opaque_ptr;
+        if !opaque.rescan_called {
+            pgrx::error!("ec_diskann amgettuple requires amrescan before scan execution");
+        }
+        if opaque.result_cursor >= opaque.result_buf.len() {
+            return false;
+        }
 
-            let hit = opaque.result_buf[opaque.result_cursor];
-            opaque.result_cursor += 1;
-            scan_state::set_scan_heap_tid(scan, hit.primary_heaptid);
-            (*scan).xs_recheckorderby = false;
-            true
-        })
-    }
+        let hit = opaque.result_buf[opaque.result_cursor];
+        opaque.result_cursor += 1;
+        scan_state::set_scan_heap_tid(scan, hit.primary_heaptid);
+        (*scan).xs_recheckorderby = false;
+        true
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {
-    // SAFETY: PostgreSQL owns the scan descriptor and this AM owns the opaque
-    // pointer it allocated in ambeginscan.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                return;
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            return;
+        }
 
-            let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
-            if !opaque_ptr.is_null() {
-                ptr::drop_in_place(opaque_ptr);
-                pg_sys::pfree(opaque_ptr.cast());
-                (*scan).opaque = ptr::null_mut();
-            }
-        })
-    }
+        let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
+        if !opaque_ptr.is_null() {
+            ptr::drop_in_place(opaque_ptr);
+            pg_sys::pfree(opaque_ptr.cast());
+            (*scan).opaque = ptr::null_mut();
+        }
+    })
 }
 
 unsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
