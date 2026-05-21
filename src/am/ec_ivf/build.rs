@@ -123,6 +123,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
     pg_am_callback!({
+        // SAFETY: PostgreSQL invokes ambuild with a live IVF index relation.
         let options = options::relation_options(index_relation);
         options
             .storage_format
@@ -829,6 +830,7 @@ fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuildempty(index_relation: pg_sys::Relation) {
     pg_am_callback!({
+        // SAFETY: PostgreSQL invokes ambuildempty with a live IVF index relation.
         let options = options::relation_options(index_relation);
         options
             .storage_format

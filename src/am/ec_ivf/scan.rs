@@ -474,6 +474,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
         }
 
         let metadata = super::page::read_metadata_page((*scan).indexRelation);
+        // SAFETY: AM scan begin owns a live index scan descriptor whose
+        // indexRelation remains open while scan state is initialized.
         let index_options = super::options::relation_options((*scan).indexRelation);
         metadata
             .storage_format

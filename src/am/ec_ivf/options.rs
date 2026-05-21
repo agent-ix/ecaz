@@ -367,7 +367,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
     })
 }
 
-fn read_string_reloption(
+unsafe fn read_string_reloption(
     rd_options: *mut pg_sys::varlena,
     offset: i32,
     name: &str,
@@ -395,7 +395,7 @@ fn read_string_reloption(
     Some(value.to_owned())
 }
 
-pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
+pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
     if index_relation.is_null() {
         pgrx::error!("ec_ivf relation options need a valid index relation");
     }
@@ -409,13 +409,17 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions
     // SAFETY: `rd_options` was allocated using the `EcIvfReloptions` layout
     // registered by `ec_ivf_amoptions`.
     let reloptions = unsafe { &*rd_options.cast::<EcIvfReloptions>() };
-    let storage_format_reloption = read_string_reloption(
-        rd_options,
-        reloptions.storage_format_offset,
-        "storage_format",
-    );
+    // SAFETY: `rd_options` is the live reloptions allocation for `index_relation`.
+    let storage_format_reloption = unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.storage_format_offset,
+            "storage_format",
+        )
+    };
+    // SAFETY: `rd_options` is the live reloptions allocation for `index_relation`.
     let quantizer_reloption =
-        read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer");
+        unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
     if let (Some(storage_format), Some(quantizer)) =
         (&storage_format_reloption, &quantizer_reloption)
     {
@@ -431,7 +435,10 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions
         .or(quantizer_reloption)
         .map(|value| StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")))
         .unwrap_or(StorageFormat::Auto);
-    let rerank = match read_string_reloption(rd_options, reloptions.rerank_offset, "rerank") {
+    // SAFETY: `rd_options` is the live reloptions allocation for `index_relation`.
+    let rerank = match unsafe {
+        read_string_reloption(rd_options, reloptions.rerank_offset, "rerank")
+    } {
         Some(value) => RerankMode::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
         None => RerankMode::Auto,
     };

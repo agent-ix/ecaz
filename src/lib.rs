@@ -1684,7 +1684,7 @@ fn ec_ivf_index_drift_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_drift_snapshot");
-    let snapshot = with_live_index_relation_safe!(index_relation, am::ivf_index_drift_snapshot);
+    let snapshot = with_live_index_relation!(index_relation, am::ivf_index_drift_snapshot);
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -1743,7 +1743,7 @@ fn ec_ivf_index_admin_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_admin_snapshot");
-    let snapshot = with_live_index_relation_safe!(index_relation, am::ivf_index_admin_snapshot);
+    let snapshot = with_live_index_relation!(index_relation, am::ivf_index_admin_snapshot);
 
     TableIterator::once((
         i64::from(snapshot.block_count),
@@ -17351,7 +17351,7 @@ fn ec_ivf_index_page_ownership(
     ),
 > {
     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_page_ownership");
-    let rows = with_live_index_relation_safe!(index_relation, am::ivf_index_page_ownership);
+    let rows = with_live_index_relation!(index_relation, am::ivf_index_page_ownership);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
