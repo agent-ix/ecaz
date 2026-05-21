@@ -138,10 +138,18 @@ mod tests {
             dml_frontdoor_operation_for_query(&select_query),
             Some(SpireDmlFrontdoorOperation::PkSelect)
         );
-        assert!(!dml_frontdoor_query_has_subquery_shape(&select_query));
+        assert!(!DmlFrontdoorQueryView {
+            query: &select_query,
+            jointree: None,
+        }
+        .has_subquery_shape());
 
         select_query.hasSubLinks = true;
-        assert!(dml_frontdoor_query_has_subquery_shape(&select_query));
+        assert!(DmlFrontdoorQueryView {
+            query: &select_query,
+            jointree: None,
+        }
+        .has_subquery_shape());
     }
 
     #[test]

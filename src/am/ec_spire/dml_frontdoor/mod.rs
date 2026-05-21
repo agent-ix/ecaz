@@ -179,6 +179,145 @@ pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
     pub(crate) embedding_columns: &'a [&'a str],
 }
 
+#[derive(Clone, Copy)]
+struct DmlFrontdoorQueryView<'a> {
+    query: &'a pg_sys::Query,
+    jointree: Option<&'a pg_sys::FromExpr>,
+}
+
+impl<'a> DmlFrontdoorQueryView<'a> {
+    unsafe fn from_raw(query: *mut pg_sys::Query) -> Option<Self> {
+        if query.is_null() {
+            return None;
+        }
+        // SAFETY: callers establish that the Query comes from the active
+        // PostgreSQL planner callback. The view never outlives that callback
+        // and only exposes immediate read-only accessors.
+        unsafe {
+            query.as_ref().map(|query| Self {
+                query,
+                jointree: query.jointree.as_ref(),
+            })
+        }
+    }
+
+    fn as_ref(self) -> &'a pg_sys::Query {
+        self.query
+    }
+
+    fn operation(self) -> Option<SpireDmlFrontdoorOperation> {
+        dml_frontdoor_operation_for_query(self.query)
+    }
+
+    fn target_rtindex(self, operation: SpireDmlFrontdoorOperation) -> Option<i32> {
+        match operation {
+            SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+                Some(self.query.resultRelation)
+            }
+            SpireDmlFrontdoorOperation::PkSelect => self.single_range_table_ref(),
+        }
+    }
+
+    fn single_range_table_ref(self) -> Option<i32> {
+        match self.from_shape() {
+            DmlFrontdoorFromShape::SingleRangeTableRef(rtindex) => Some(rtindex),
+            DmlFrontdoorFromShape::Empty | DmlFrontdoorFromShape::Other => None,
+        }
+    }
+
+    fn has_join_shape(self, operation: SpireDmlFrontdoorOperation) -> bool {
+        // SELECT v1 must have exactly one range-table ref. UPDATE/DELETE v1
+        // allow only the result relation in the jointree; FROM/USING
+        // relations make the shape a join even though baserel handoff skips
+        // those non-target rels.
+        match operation {
+            SpireDmlFrontdoorOperation::PkSelect => self.single_range_table_ref().is_none(),
+            SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+                match self.from_shape() {
+                    DmlFrontdoorFromShape::Empty => false,
+                    DmlFrontdoorFromShape::SingleRangeTableRef(rtindex) => {
+                        rtindex != self.query.resultRelation
+                    }
+                    DmlFrontdoorFromShape::Other => true,
+                }
+            }
+        }
+    }
+
+    fn has_subquery_shape(self) -> bool {
+        self.query.hasSubLinks
+            || self.query.hasModifyingCTE
+            || self.query.hasRecursive
+            || !self.query.cteList.is_null()
+            || !self.query.setOperations.is_null()
+    }
+
+    fn has_returning(self) -> bool {
+        !self.query.returningList.is_null()
+    }
+
+    fn relation_oid_from_rtable(self, rtindex: i32) -> Option<pg_sys::Oid> {
+        if rtindex <= 0 || self.query.rtable.is_null() {
+            return None;
+        }
+        // SAFETY: the range table is planner-owned by the QueryView contract;
+        // the selected RTE is borrowed only long enough to copy relid.
+        let rte = unsafe {
+            let rtable = dml_frontdoor_pg_list::<pg_sys::RangeTblEntry>(self.query.rtable);
+            dml_frontdoor_pg_ref(rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?)?
+        };
+        if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
+            return None;
+        }
+        Some(rte.relid)
+    }
+
+    fn pk_predicate(
+        self,
+        target_rtindex: i32,
+        context: &SpireDmlFrontdoorQueryContext<'_>,
+    ) -> SpireDmlFrontdoorPkPredicate {
+        let Some(jointree) = self.jointree() else {
+            return dml_frontdoor_empty_pk_predicate();
+        };
+        dml_frontdoor_pk_predicate_from_clause(jointree.quals.cast(), target_rtindex, context)
+            .unwrap_or_else(dml_frontdoor_empty_pk_predicate)
+    }
+
+    fn from_shape(self) -> DmlFrontdoorFromShape {
+        let Some(jointree) = self.jointree() else {
+            return DmlFrontdoorFromShape::Empty;
+        };
+        if jointree.fromlist.is_null() {
+            return DmlFrontdoorFromShape::Empty;
+        }
+        // SAFETY: the fromlist and any RangeTblRef node are covered by the
+        // QueryView planner-lifetime contract and inspected immediately.
+        unsafe {
+            let fromlist = dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist);
+            if fromlist.is_empty() {
+                return DmlFrontdoorFromShape::Empty;
+            }
+            if fromlist.len() != 1 {
+                return DmlFrontdoorFromShape::Other;
+            }
+            let Some(from_node) = fromlist.get_ptr(0) else {
+                return DmlFrontdoorFromShape::Empty;
+            };
+            match dml_frontdoor_range_table_ref_node(from_node) {
+                Some(range_table_ref) => {
+                    DmlFrontdoorFromShape::SingleRangeTableRef(range_table_ref.rtindex)
+                }
+                None => DmlFrontdoorFromShape::Other,
+            }
+        }
+    }
+
+    fn jointree(self) -> Option<&'a pg_sys::FromExpr> {
+        self.jointree
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct DmlFrontdoorBackendHookState {
     planner_hook_installed: bool,
@@ -615,7 +754,8 @@ fn dml_frontdoor_raise_planner_error(decision: &SpireDmlFrontdoorReplacementDeci
 pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
     query: *mut pg_sys::Query,
 ) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
-    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query) }?;
+    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
+    let target_relation_oid = dml_frontdoor_target_relation_oid_view(query_view)?;
     let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
         Ok(relation) => relation,
         Err(_err) => {
@@ -640,7 +780,7 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
             });
         }
     };
-    let detail = dml_frontdoor_query_detail_with_relation(query, &relation)?;
+    let detail = dml_frontdoor_query_detail_with_relation(query_view, &relation)?;
     Some(dml_frontdoor_replacement_decision_from_shape(
         target_relation_oid,
         relation.index_oid,
@@ -651,7 +791,8 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
 pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
     query: *mut pg_sys::Query,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query) }?;
+    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
+    let target_relation_oid = dml_frontdoor_target_relation_oid_view(query_view)?;
     let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
         Ok(relation) => relation,
         Err(_err) => {
@@ -661,7 +802,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
             ));
         }
     };
-    let detail = dml_frontdoor_query_detail_with_relation(query, &relation)?;
+    let detail = dml_frontdoor_query_detail_with_relation(query_view, &relation)?;
     let updated_value_exprs = detail.updated_value_exprs.clone();
     let pk_value_expr = detail.pk_value_expr.ok_or_else(|| {
         "ec_spire DML frontdoor CustomScan expression handoff requires a PK value expression"
@@ -694,16 +835,16 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
         }
         let root_ref = root.as_ref()?;
         let rel_ref = rel.as_ref()?;
-        let query_ref = root_ref.parse.as_ref()?;
-        let operation = dml_frontdoor_operation_for_query(query_ref)?;
+        let query_view = DmlFrontdoorQueryView::from_raw(root_ref.parse)?;
+        let query_ref = query_view.as_ref();
+        let operation = query_view.operation()?;
         let target_rtindex =
             match dml_frontdoor_baserel_target_rtindex(query_ref, rel_ref, operation) {
                 Ok(Some(target_rtindex)) => target_rtindex,
                 Ok(None) => return None,
                 Err(err) => return Some(Err(err)),
             };
-        let target_relation_oid =
-            dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex)?;
+        let target_relation_oid = query_view.relation_oid_from_rtable(target_rtindex)?;
         let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
             Ok(relation) => relation,
             Err(_err) => {
@@ -714,7 +855,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
             }
         };
         let detail = dml_frontdoor_query_detail_from_baserel(
-            root_ref.parse,
+            query_view,
             rel_ref,
             operation,
             target_rtindex,
@@ -1025,35 +1166,6 @@ fn dml_frontdoor_primitive_for_mode(mode: SpireDmlFrontdoorCustomScanMode) -> &'
     }
 }
 
-fn dml_frontdoor_classify_query_with_catalog_context(
-    query: *mut pg_sys::Query,
-) -> Option<SpireDmlFrontdoorShapeRow> {
-    // SAFETY: callers pass a live analyzed Query for immediate classification.
-    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query) }?;
-    let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
-        Ok(relation) => relation,
-        Err(_err) => {
-            return Some(SpireDmlFrontdoorShapeRow {
-                supported: false,
-                operation: "unsupported",
-                kind: "relation_context_error",
-                status: "unsupported_shape",
-                error: Some("ec_spire_distributed: relation context could not be loaded"),
-                hint: Some(ADR_069_HINT),
-            });
-        }
-    };
-    dml_frontdoor_classify_query_with_relation(query, &relation)
-}
-
-fn dml_frontdoor_classify_query_with_relation(
-    query: *mut pg_sys::Query,
-    relation: &SpireDmlFrontdoorRelationContext,
-) -> Option<SpireDmlFrontdoorShapeRow> {
-    let detail = dml_frontdoor_query_detail_with_relation(query, relation)?;
-    Some(detail.shape)
-}
-
 struct SpireDmlFrontdoorQueryDetail {
     shape: SpireDmlFrontdoorShapeRow,
     pk_column: Option<String>,
@@ -1072,11 +1184,11 @@ struct SpireDmlFrontdoorPredicateValue {
 }
 
 fn dml_frontdoor_query_detail_with_relation(
-    query: *mut pg_sys::Query,
+    query_view: DmlFrontdoorQueryView<'_>,
     relation: &SpireDmlFrontdoorRelationContext,
 ) -> Option<SpireDmlFrontdoorQueryDetail> {
-    let query_ref = dml_frontdoor_query_ref(query)?;
-    let operation = dml_frontdoor_operation_for_query(query_ref)?;
+    let query_ref = query_view.as_ref();
+    let operation = query_view.operation()?;
     let pk_column = relation.pk_column.as_deref().unwrap_or("");
     let column_names = relation
         .column_names
@@ -1094,20 +1206,9 @@ fn dml_frontdoor_query_detail_with_relation(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
-    // SAFETY: this helper already narrowed the raw Query pointer to a live
-    // immediate-use planner query for this classification path.
-    let shape = unsafe { classify_dml_frontdoor_query(query, query_context) }?;
-    let target_rtindex = match operation {
-        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
-            query_ref.resultRelation
-        }
-        SpireDmlFrontdoorOperation::PkSelect => {
-            single_range_table_ref(query_ref).unwrap_or_default()
-        }
-    };
-    // SAFETY: predicate and target-list helpers only inspect planner-owned
-    // nodes while the Query remains live for this callback.
-    let predicate = dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context);
+    let shape = classify_dml_frontdoor_query_view(query_view, query_context)?;
+    let target_rtindex = query_view.target_rtindex(operation).unwrap_or_default();
+    let predicate = query_view.pk_predicate(target_rtindex, &query_context);
     let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
         dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context)
     } else {
@@ -1159,14 +1260,14 @@ fn dml_frontdoor_baserel_target_rtindex(
 }
 
 fn dml_frontdoor_query_detail_from_baserel(
-    query: *mut pg_sys::Query,
+    query_view: DmlFrontdoorQueryView<'_>,
     rel: &pg_sys::RelOptInfo,
     operation: SpireDmlFrontdoorOperation,
     target_rtindex: i32,
     relation: &SpireDmlFrontdoorRelationContext,
 ) -> Option<SpireDmlFrontdoorQueryDetail> {
-    let query_ref = dml_frontdoor_query_ref(query)?;
-    if dml_frontdoor_operation_for_query(query_ref) != Some(operation) {
+    let query_ref = query_view.as_ref();
+    if query_view.operation() != Some(operation) {
         return None;
     }
     let pk_column = relation.pk_column.as_deref().unwrap_or("");
@@ -1193,7 +1294,7 @@ fn dml_frontdoor_query_detail_from_baserel(
         target_rtindex,
         &query_context,
     )
-    .unwrap_or_else(|| dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context));
+    .unwrap_or_else(|| query_view.pk_predicate(target_rtindex, &query_context));
     let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
         dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context)
     } else {
@@ -1220,14 +1321,14 @@ fn dml_frontdoor_query_detail_from_baserel(
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
-    let has_join = dml_frontdoor_query_has_join_shape(query_ref, operation);
+    let has_join = query_view.has_join_shape(operation);
     let shape = classify_dml_frontdoor_shape(SpireDmlFrontdoorShapeInput {
         operation,
         ec_spire_distributed_table: query_context.ec_spire_distributed_table,
         single_table: target_rtindex > 0 && !has_join,
         has_join,
-        has_subquery: dml_frontdoor_query_has_subquery_shape(query_ref),
-        has_returning: !query_ref.returningList.is_null(),
+        has_subquery: query_view.has_subquery_shape(),
+        has_returning: query_view.has_returning(),
         pk_column: query_context.pk_column,
         predicate_column: predicate.column.as_deref(),
         predicate_operator: predicate.operator,
@@ -1813,23 +1914,19 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
     query: *mut pg_sys::Query,
     context: SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<SpireDmlFrontdoorShapeRow> {
-    if query.is_null() {
-        return None;
-    }
-    let query_ref = dml_frontdoor_query_ref(query)?;
-    let operation = dml_frontdoor_operation_for_query(query_ref)?;
-    let target_rtindex = match operation {
-        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
-            query_ref.resultRelation
-        }
-        SpireDmlFrontdoorOperation::PkSelect => {
-            // Keep unsupported SELECT shapes flowing into the shared classifier
-            // so diagnostics report the same fail-closed status/kind matrix.
-            single_range_table_ref(query_ref).unwrap_or_default()
-        }
-    };
-    let has_join = dml_frontdoor_query_has_join_shape(query_ref, operation);
-    let predicate = dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context);
+    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
+    classify_dml_frontdoor_query_view(query_view, context)
+}
+
+fn classify_dml_frontdoor_query_view(
+    query_view: DmlFrontdoorQueryView<'_>,
+    context: SpireDmlFrontdoorQueryContext<'_>,
+) -> Option<SpireDmlFrontdoorShapeRow> {
+    let query_ref = query_view.as_ref();
+    let operation = query_view.operation()?;
+    let target_rtindex = query_view.target_rtindex(operation).unwrap_or_default();
+    let has_join = query_view.has_join_shape(operation);
+    let predicate = query_view.pk_predicate(target_rtindex, &context);
     let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
         dml_frontdoor_target_columns(query_ref.targetList, &context)
     } else {
@@ -1854,8 +1951,8 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         ec_spire_distributed_table: context.ec_spire_distributed_table,
         single_table: target_rtindex > 0 && !has_join,
         has_join,
-        has_subquery: dml_frontdoor_query_has_subquery_shape(query_ref),
-        has_returning: !query_ref.returningList.is_null(),
+        has_subquery: query_view.has_subquery_shape(),
+        has_returning: query_view.has_returning(),
         pk_column: context.pk_column,
         predicate_column: predicate.column.as_deref(),
         predicate_operator: predicate.operator,
@@ -1869,18 +1966,16 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
 pub(crate) unsafe fn dml_frontdoor_target_relation_oid(
     query: *mut pg_sys::Query,
 ) -> Option<pg_sys::Oid> {
-    if query.is_null() {
-        return None;
-    }
-    let query_ref = dml_frontdoor_query_ref(query)?;
-    let operation = dml_frontdoor_operation_for_query(query_ref)?;
-    let target_rtindex = match operation {
-        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
-            query_ref.resultRelation
-        }
-        SpireDmlFrontdoorOperation::PkSelect => single_range_table_ref(query_ref)?,
-    };
-    dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex)
+    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
+    dml_frontdoor_target_relation_oid_view(query_view)
+}
+
+fn dml_frontdoor_target_relation_oid_view(
+    query_view: DmlFrontdoorQueryView<'_>,
+) -> Option<pg_sys::Oid> {
+    let operation = query_view.operation()?;
+    let target_rtindex = query_view.target_rtindex(operation)?;
+    query_view.relation_oid_from_rtable(target_rtindex)
 }
 
 fn dml_frontdoor_operation_for_query(query: &pg_sys::Query) -> Option<SpireDmlFrontdoorOperation> {
@@ -1892,109 +1987,10 @@ fn dml_frontdoor_operation_for_query(query: &pg_sys::Query) -> Option<SpireDmlFr
     }
 }
 
-fn dml_frontdoor_query_has_join_shape(
-    query: &pg_sys::Query,
-    operation: SpireDmlFrontdoorOperation,
-) -> bool {
-    // SELECT v1 must have exactly one range-table ref. UPDATE/DELETE v1 allow
-    // only the result relation in the jointree; FROM/USING relations make the
-    // shape a join even though baserel handoff skips those non-target rels.
-    match operation {
-        SpireDmlFrontdoorOperation::PkSelect => single_range_table_ref(query).is_none(),
-        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
-            dml_frontdoor_dml_has_extra_from_shape(query)
-        }
-    }
-}
-
-fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
-    match dml_frontdoor_jointree_from_shape(query) {
-        DmlFrontdoorFromShape::Empty => false,
-        DmlFrontdoorFromShape::SingleRangeTableRef(rtindex) => rtindex != query.resultRelation,
-        DmlFrontdoorFromShape::Other => true,
-    }
-}
-
-fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
-    query.hasSubLinks
-        || query.hasModifyingCTE
-        || query.hasRecursive
-        || !query.cteList.is_null()
-        || !query.setOperations.is_null()
-}
-
-fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
-    match dml_frontdoor_jointree_from_shape(query) {
-        DmlFrontdoorFromShape::SingleRangeTableRef(rtindex) => Some(rtindex),
-        DmlFrontdoorFromShape::Empty | DmlFrontdoorFromShape::Other => None,
-    }
-}
-
 enum DmlFrontdoorFromShape {
     Empty,
     SingleRangeTableRef(i32),
     Other,
-}
-
-fn dml_frontdoor_jointree_from_shape(query: &pg_sys::Query) -> DmlFrontdoorFromShape {
-    let Some(jointree) = dml_frontdoor_query_jointree(query) else {
-        return DmlFrontdoorFromShape::Empty;
-    };
-    if jointree.fromlist.is_null() {
-        return DmlFrontdoorFromShape::Empty;
-    }
-    // SAFETY: the Query jointree is planner-owned for the active callback; the
-    // fromlist and any RangeTblRef node are inspected immediately.
-    unsafe {
-        let fromlist = dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist);
-        if fromlist.is_empty() {
-            return DmlFrontdoorFromShape::Empty;
-        }
-        if fromlist.len() != 1 {
-            return DmlFrontdoorFromShape::Other;
-        }
-        let Some(from_node) = fromlist.get_ptr(0) else {
-            return DmlFrontdoorFromShape::Empty;
-        };
-        match dml_frontdoor_range_table_ref_node(from_node) {
-            Some(range_table_ref) => {
-                DmlFrontdoorFromShape::SingleRangeTableRef(range_table_ref.rtindex)
-            }
-            None => DmlFrontdoorFromShape::Other,
-        }
-    }
-}
-
-fn dml_frontdoor_relation_oid_from_rtable(
-    query: &pg_sys::Query,
-    rtindex: i32,
-) -> Option<pg_sys::Oid> {
-    if rtindex <= 0 || query.rtable.is_null() {
-        return None;
-    }
-    // SAFETY: the range table is planner-owned for the active callback; the
-    // selected RTE is borrowed only long enough to copy relation metadata.
-    let rte = unsafe {
-        let rtable = dml_frontdoor_pg_list::<pg_sys::RangeTblEntry>(query.rtable);
-        dml_frontdoor_pg_ref(rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?)?
-    };
-    if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
-        return None;
-    }
-    Some(rte.relid)
-}
-
-fn dml_frontdoor_pk_predicate(
-    query: &pg_sys::Query,
-    target_rtindex: i32,
-    context: &SpireDmlFrontdoorQueryContext<'_>,
-) -> SpireDmlFrontdoorPkPredicate {
-    let Some(jointree) = dml_frontdoor_query_jointree(query) else {
-        return dml_frontdoor_empty_pk_predicate();
-    };
-    let qual = jointree.quals;
-    dml_frontdoor_pk_predicate_from_clause(qual.cast(), target_rtindex, context)
-        .unwrap_or_else(dml_frontdoor_empty_pk_predicate)
 }
 
 fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
@@ -2536,19 +2532,6 @@ unsafe fn dml_frontdoor_expr_node<'a>(
         }
     };
     Some(node)
-}
-
-fn dml_frontdoor_query_jointree(query: &pg_sys::Query) -> Option<&pg_sys::FromExpr> {
-    // SAFETY: all callers pass PostgreSQL Query objects owned by the active
-    // planner callback and use the borrowed jointree only for immediate
-    // read-only classification.
-    unsafe { query.jointree.as_ref() }
-}
-
-fn dml_frontdoor_query_ref<'a>(query: *mut pg_sys::Query) -> Option<&'a pg_sys::Query> {
-    // SAFETY: DML frontdoor callers pass PostgreSQL Query pointers owned by
-    // the active planner callback and inspect them immediately.
-    unsafe { query.as_ref() }
 }
 
 unsafe fn dml_frontdoor_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
