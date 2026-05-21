@@ -1484,7 +1484,7 @@ pub(crate) fn debug_turboquant_scan_stage_profile(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_collect_element_tids_at_level(
+fn debug_collect_element_tids_at_level(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
     target_level: u8,
@@ -1553,7 +1553,7 @@ unsafe fn debug_collect_element_tids_at_level(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_collect_element_tids_at_or_above_level(
+fn debug_collect_element_tids_at_or_above_level(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
     min_level: u8,
@@ -1622,7 +1622,7 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_collect_element_tid_by_heap_tid(
+fn debug_collect_element_tid_by_heap_tid(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
 ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
@@ -1716,10 +1716,8 @@ pub(crate) fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapT
     // SAFETY: Metadata was read from the open index relation and validated
     // enough to resolve the graph storage descriptor for debug inspection.
     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for top-level element TIDs.
     let mut heap_tids =
-        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) }
+        debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
             .into_iter()
             .filter_map(|element_tid| {
                 // SAFETY: `element_tid` was collected from graph pages matching
@@ -1891,11 +1889,8 @@ pub(crate) fn debug_top_level_oracle_k_seed_heap_tids(
     scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
     let heap_tids = scan.with_oracle_score_parts(|parts| {
-        // SAFETY: The relation guard keeps the graph relation open while the
-        // helper scans locked pages for top-level element TIDs.
-        let top_level_tids = unsafe {
-            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level)
-        };
+        let top_level_tids =
+            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level);
 
         let mut heap_tids = top_level_tids
             .into_iter()
@@ -1965,11 +1960,8 @@ pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
     scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
     let tids = scan.with_oracle_score_parts(|parts| {
-        // SAFETY: The relation guard keeps the graph relation open while the
-        // helper scans locked pages for top-level element TIDs.
-        let top_level_tids = unsafe {
-            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level)
-        };
+        let top_level_tids =
+            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level);
 
         let mut seeds = top_level_tids
             .into_iter()
@@ -2079,11 +2071,8 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
     let tids = scan.with_oracle_score_parts(|parts| {
-        // SAFETY: The relation guard keeps the graph relation open while the
-        // helper scans locked pages for candidate element TIDs.
-        let layer_tids = unsafe {
-            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer)
-        };
+        let layer_tids =
+            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer);
 
         let mut seeds = layer_tids
             .into_iter()
@@ -2220,11 +2209,8 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
     let heap_tids = scan.with_oracle_score_parts(|parts| {
-        // SAFETY: The relation guard keeps the graph relation open while the
-        // helper scans locked pages for candidate element TIDs.
-        let layer_tids = unsafe {
-            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer)
-        };
+        let layer_tids =
+            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer);
 
         let mut seeds = layer_tids
             .into_iter()
@@ -2350,10 +2336,8 @@ pub(crate) fn debug_exact_seed_scan_heap_tids(
     scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
     let tids = scan.with_oracle_score_parts(|parts| {
-        // SAFETY: The relation guard keeps the graph relation open while the
-        // helper scans locked graph pages and maps heap TIDs to element TIDs.
         let element_by_heap_tid =
-            unsafe { debug_collect_element_tid_by_heap_tid(index_relation, parts.storage) };
+            debug_collect_element_tid_by_heap_tid(index_relation, parts.storage);
         let seed_element_tids = seed_heap_tids
             .into_iter()
             .filter_map(|heap_tid| element_by_heap_tid.get(&heap_tid).copied())
