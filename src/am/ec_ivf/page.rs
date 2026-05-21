@@ -247,70 +247,7 @@ fn read_posting_block(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-struct PageTupleReader<'a> {
-    page_ptr: *mut u8,
-    page_size: usize,
-    block_number: pg_sys::BlockNumber,
-    line_pointer_count: u16,
-    _buffer: PhantomData<&'a LockedBufferGuard>,
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-impl<'a> PageTupleReader<'a> {
-    fn new(buffer: &'a LockedBufferGuard, block_number: pg_sys::BlockNumber) -> Self {
-        let page_ptr = buffer.page().cast::<u8>();
-        Self {
-            page_ptr,
-            page_size: buffer.page_size(),
-            block_number,
-            line_pointer_count: page_line_pointer_count(page_ptr),
-            _buffer: PhantomData,
-        }
-    }
-
-    fn line_pointer_count(&self) -> u16 {
-        self.line_pointer_count
-    }
-
-    fn visit_line<R, F>(
-        &self,
-        offset: u16,
-        tuple_kind: &str,
-        visit: F,
-    ) -> Result<PageTupleVisit<R>, String>
-    where
-        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
-    {
-        if offset > self.line_pointer_count {
-            return Err(format!(
-                "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
-                self.block_number
-            ));
-        }
-
-        with_page_line_tuple_bytes(
-            self.page_ptr,
-            self.page_size,
-            self.block_number,
-            offset,
-            tuple_kind,
-            visit,
-        )
-    }
-
-    fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
-    where
-        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
-    {
-        match self.visit_line(offset, tuple_kind, visit)? {
-            PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
-            PageTupleVisit::Present(tuple) => Ok(tuple),
-        }
-    }
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-struct PageTupleWriter {
+struct PageTuplePage {
     page_ptr: *mut u8,
     page_size: usize,
     block_number: pg_sys::BlockNumber,
@@ -318,9 +255,8 @@ struct PageTupleWriter {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-impl PageTupleWriter {
-    fn new(page: pg_sys::Page, page_size: usize, block_number: pg_sys::BlockNumber) -> Self {
-        let page_ptr = page.cast::<u8>();
+impl PageTuplePage {
+    fn new(page_ptr: *mut u8, page_size: usize, block_number: pg_sys::BlockNumber) -> Self {
         Self {
             page_ptr,
             page_size,
@@ -342,33 +278,22 @@ impl PageTupleWriter {
     where
         F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
     {
-        if offset > self.line_pointer_count {
-            return Err(format!(
-                "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
-                self.block_number
-            ));
-        }
+        let Some(slot) = self.optional_slot(offset, tuple_kind)? else {
+            return Ok(PageTupleVisit::Unused);
+        };
 
-        with_page_line_tuple_bytes(
-            self.page_ptr,
-            self.page_size,
-            self.block_number,
-            offset,
-            tuple_kind,
-            visit,
-        )
+        // SAFETY: tuple offset and length were checked against `page_size`, and
+        // the page remains locked for the duration of the visitor call.
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(self.page_ptr.add(slot.offset), slot.len) };
+        visit(tuple_bytes).map(PageTupleVisit::Present)
     }
 
-    fn visit_required<R, F>(
-        &self,
-        tid: ItemPointer,
-        tuple_kind: &str,
-        visit: F,
-    ) -> Result<R, String>
+    fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
     where
         F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
     {
-        match self.visit_line(tid.offset_number, tuple_kind, visit)? {
+        match self.visit_line(offset, tuple_kind, visit)? {
             PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
             PageTupleVisit::Present(tuple) => Ok(tuple),
         }
@@ -402,6 +327,15 @@ impl PageTupleWriter {
     }
 
     fn required_slot(&self, offset: u16, tuple_kind: &str) -> Result<PageTupleSlot, String> {
+        self.optional_slot(offset, tuple_kind)?
+            .ok_or_else(|| format!("ec_ivf {tuple_kind} tuple slot is unused"))
+    }
+
+    fn optional_slot(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+    ) -> Result<Option<PageTupleSlot>, String> {
         if offset == 0 || offset > self.line_pointer_count {
             return Err(format!(
                 "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
@@ -409,9 +343,16 @@ impl PageTupleWriter {
             ));
         }
 
-        let item_id = page_item_id_ref(self.page_ptr, offset);
+        // SAFETY: offset is nonzero and range-checked against the page's line
+        // pointer count before computing the ItemId address.
+        let item_id = unsafe {
+            &*self
+                .page_ptr
+                .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
+                .cast::<pg_sys::ItemIdData>()
+        };
         if item_id.lp_flags() == 0 {
-            return Err(format!("ec_ivf {tuple_kind} tuple slot is unused"));
+            return Ok(None);
         }
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
@@ -421,10 +362,101 @@ impl PageTupleWriter {
                 self.block_number
             ));
         }
-        Ok(PageTupleSlot {
+        Ok(Some(PageTupleSlot {
             offset: tuple_offset,
             len: tuple_len,
-        })
+        }))
+    }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTupleReader<'a> {
+    page: PageTuplePage,
+    _buffer: PhantomData<&'a LockedBufferGuard>,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl<'a> PageTupleReader<'a> {
+    fn new(buffer: &'a LockedBufferGuard, block_number: pg_sys::BlockNumber) -> Self {
+        Self {
+            page: PageTuplePage::new(buffer.page().cast::<u8>(), buffer.page_size(), block_number),
+            _buffer: PhantomData,
+        }
+    }
+
+    fn line_pointer_count(&self) -> u16 {
+        self.page.line_pointer_count()
+    }
+
+    fn visit_line<R, F>(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<PageTupleVisit<R>, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page.visit_line(offset, tuple_kind, visit)
+    }
+
+    fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page.visit_required(offset, tuple_kind, visit)
+    }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTupleWriter {
+    page: PageTuplePage,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl PageTupleWriter {
+    fn new(page: pg_sys::Page, page_size: usize, block_number: pg_sys::BlockNumber) -> Self {
+        Self {
+            page: PageTuplePage::new(page.cast::<u8>(), page_size, block_number),
+        }
+    }
+
+    fn line_pointer_count(&self) -> u16 {
+        self.page.line_pointer_count()
+    }
+
+    fn visit_line<R, F>(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<PageTupleVisit<R>, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page.visit_line(offset, tuple_kind, visit)
+    }
+
+    fn visit_required<R, F>(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<R, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page
+            .visit_required(tid.offset_number, tuple_kind, visit)
+    }
+
+    fn copy_required_exact(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        encoded: &[u8],
+    ) -> Result<(), String> {
+        self.page.copy_required_exact(tid, tuple_kind, encoded)
     }
 }
 
@@ -2429,53 +2461,6 @@ fn next_physical_tuple_tid(
             .ok_or_else(|| "ec_ivf tuple block number overflow".to_owned())?,
         offset_number: 1,
     })
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-fn page_item_id_ref<'a>(page_ptr: *mut u8, offset: u16) -> &'a pg_sys::ItemIdData {
-    // SAFETY: callers pass a page pointer and a nonzero line pointer offset
-    // already range-checked against `page_line_pointer_count`.
-    unsafe {
-        &*page_ptr
-            .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
-            .cast::<pg_sys::ItemIdData>()
-    }
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-fn with_page_line_tuple_bytes<R, F>(
-    page_ptr: *mut u8,
-    page_size: usize,
-    block_number: pg_sys::BlockNumber,
-    offset: u16,
-    tuple_kind: &str,
-    visit: F,
-) -> Result<PageTupleVisit<R>, String>
-where
-    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
-{
-    if offset == 0 {
-        return Err(format!(
-            "ec_ivf {tuple_kind} tuple offset 0 out of range on block {block_number}"
-        ));
-    }
-
-    let item_id = page_item_id_ref(page_ptr, offset);
-    if item_id.lp_flags() == 0 {
-        return Ok(PageTupleVisit::Unused);
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_ivf {tuple_kind} tuple bounds exceed block {block_number}"
-        ));
-    }
-    // SAFETY: tuple offset and length were checked against `page_size`, and
-    // the page remains locked for the duration of the visitor call.
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    visit(tuple_bytes).map(PageTupleVisit::Present)
 }
 
 fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
