@@ -197,12 +197,13 @@ pub(crate) struct DmlFrontdoorBaserelView<'a> {
     rel: &'a pg_sys::RelOptInfo,
 }
 
-pub(crate) unsafe fn dml_frontdoor_query_view<'a>(
+pub(crate) unsafe fn with_dml_frontdoor_query_view<R>(
     query: *mut pg_sys::Query,
-) -> Option<DmlFrontdoorQueryView<'a>> {
-    // SAFETY: caller binds the returned view lifetime to the live analyzed
-    // Query supplied by PostgreSQL or the local SQL analyzer.
-    unsafe { DmlFrontdoorQueryView::from_raw(query) }
+    f: impl for<'a> FnOnce(DmlFrontdoorQueryView<'a>) -> R,
+) -> Option<R> {
+    // SAFETY: caller guarantees `query` is live for the callback duration; the
+    // callback prevents the borrowed query view from escaping.
+    unsafe { DmlFrontdoorQueryView::from_raw(query).map(f) }
 }
 
 pub(crate) unsafe fn dml_frontdoor_param_list_info(
@@ -688,25 +689,28 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
 ) -> *mut pg_sys::PlannedStmt {
     // Run the SPIRE fail-closed guard before chained hooks so unsupported
     // distributed DML cannot be rewritten into a coordinator-heap base plan.
-    let decision = dml_frontdoor_observe_planner_query(parse);
-    let plan_expr = dml_frontdoor_plan_tree_replacement_expr(parse, decision.as_ref());
+    // SAFETY: PostgreSQL invokes the planner hook with a live Query pointer for
+    // the duration of this callback.
+    let plan_expr = unsafe {
+        with_dml_frontdoor_query_view(parse, |query_view| {
+            let decision = dml_frontdoor_observe_planner_query(query_view);
+            dml_frontdoor_plan_tree_replacement_expr(query_view, decision.as_ref())
+        })
+    }
+    .flatten();
     let planned_stmt =
         dml_frontdoor_call_next_planner(parse, query_string, cursor_options, bound_params);
     dml_frontdoor_maybe_replace_plan_tree(planned_stmt, plan_expr)
 }
 
 fn dml_frontdoor_plan_tree_replacement_expr(
-    query: *mut pg_sys::Query,
+    query_view: DmlFrontdoorQueryView<'_>,
     decision: Option<&SpireDmlFrontdoorReplacementDecisionRow>,
 ) -> Option<SpireDmlFrontdoorPrimitivePlanExpr> {
     let decision = decision?;
     if !dml_frontdoor_uses_plan_tree_replacement(decision) {
         return None;
     }
-    // SAFETY: planner hook supplies a live Query pointer for this callback.
-    let query_view = unsafe { dml_frontdoor_query_view(query) }.unwrap_or_else(|| {
-        pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
-    });
     let plan_expr =
         dml_frontdoor_primitive_plan_expr_catalog_row(query_view).unwrap_or_else(|| {
             pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
@@ -750,10 +754,8 @@ fn dml_frontdoor_uses_plan_tree_replacement(
 }
 
 fn dml_frontdoor_observe_planner_query(
-    query: *mut pg_sys::Query,
+    query_view: DmlFrontdoorQueryView<'_>,
 ) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
-    // SAFETY: planner hook supplies a live Query pointer for this callback.
-    let query_view = unsafe { dml_frontdoor_query_view(query) }?;
     let decision = dml_frontdoor_replacement_decision_catalog_row(query_view)?;
     let action = dml_frontdoor_hook_action(&decision);
     dml_frontdoor_record_hook_observation(&decision, action);

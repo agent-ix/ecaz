@@ -85,6 +85,8 @@ pub(crate) use self::ec_spire::custom_scan_reset_cleanup_counters_for_test;
 pub(crate) use self::ec_spire::custom_scan_reset_rescan_snapshot_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::custom_scan_store_tuple_payload_json_for_test as spire_custom_scan_store_tuple_payload_json_for_test;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::DmlFrontdoorQueryView as SpireDmlFrontdoorQueryView;
 pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
@@ -108,12 +110,12 @@ pub(crate) use self::ec_spire::{
     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
-    dml_frontdoor_query_view as spire_dml_frontdoor_query_view,
     dml_frontdoor_relation_context_cache_row as spire_dml_frontdoor_relation_context_cache_row,
     dml_frontdoor_relation_context_catalog_row as spire_dml_frontdoor_relation_context_catalog_row,
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
     dml_frontdoor_replacement_decision_catalog_row as spire_dml_frontdoor_replacement_decision_catalog_row,
     dml_frontdoor_target_relation_oid as spire_dml_frontdoor_target_relation_oid,
+    with_dml_frontdoor_query_view as spire_with_dml_frontdoor_query_view,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
     index_boundary_replica_placement_diagnostics as spire_index_boundary_replica_placement_diagnostics,

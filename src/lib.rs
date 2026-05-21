@@ -1364,72 +1364,81 @@ fn ec_spire_dml_frontdoor_classify_sql(
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
     // that remains live for this diagnostic function call.
-    let Some(query_view) = (unsafe { am::spire_dml_frontdoor_query_view(query) }) else {
+    let Some(result) = (unsafe {
+        am::spire_with_dml_frontdoor_query_view(query, |query_view| {
+            let Some(target_relation_oid) =
+                am::spire_dml_frontdoor_target_relation_oid(query_view)
+            else {
+                return TableIterator::once((
+                    None,
+                    None,
+                    false,
+                    "unsupported",
+                    "unsupported_target_relation",
+                    "unsupported_shape",
+                    Some(
+                        "ec_spire_distributed: DML front door requires one target heap relation",
+                    ),
+                    Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                    "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+                ));
+            };
+            let relation = am::spire_dml_frontdoor_relation_context_row(target_relation_oid)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let pk_column = relation.pk_column.as_deref().unwrap_or("");
+            let column_names = relation
+                .column_names
+                .iter()
+                .map(|(attnum, name)| (*attnum, name.as_str()))
+                .collect::<Vec<_>>();
+            let embedding_columns = relation
+                .embedding_columns
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            let query_context = am::SpireDmlFrontdoorQueryContext {
+                ec_spire_distributed_table: relation.ec_spire_distributed_table,
+                pk_column,
+                column_names: &column_names,
+                embedding_columns: &embedding_columns,
+            };
+            let Some(shape) = am::spire_classify_dml_frontdoor_query(query_view, query_context)
+            else {
+                return TableIterator::once((
+                    Some(target_relation_oid),
+                    Some(relation.status),
+                    false,
+                    "unsupported",
+                    "unsupported_operation",
+                    "unsupported_shape",
+                    Some(
+                        "ec_spire_distributed: only UPDATE, DELETE, and PK SELECT are supported in v1",
+                    ),
+                    Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                    "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+                ));
+            };
+
+            TableIterator::once((
+                Some(target_relation_oid),
+                Some(relation.status),
+                shape.supported,
+                shape.operation,
+                shape.kind,
+                shape.status,
+                shape.error,
+                shape.hint,
+                if shape.supported {
+                    "wire planner hook to CustomScan executor replacement"
+                } else {
+                    "rewrite query to fit the ADR-069 v1 DML front-door shape"
+                },
+            ))
+        })
+    }) else {
         pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
-    let Some(target_relation_oid) = am::spire_dml_frontdoor_target_relation_oid(query_view)
-    else {
-        return TableIterator::once((
-            None,
-            None,
-            false,
-            "unsupported",
-            "unsupported_target_relation",
-            "unsupported_shape",
-            Some("ec_spire_distributed: DML front door requires one target heap relation"),
-            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-            "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
-        ));
-    };
-    let relation = am::spire_dml_frontdoor_relation_context_row(target_relation_oid)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    let pk_column = relation.pk_column.as_deref().unwrap_or("");
-    let column_names = relation
-        .column_names
-        .iter()
-        .map(|(attnum, name)| (*attnum, name.as_str()))
-        .collect::<Vec<_>>();
-    let embedding_columns = relation
-        .embedding_columns
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    let query_context = am::SpireDmlFrontdoorQueryContext {
-        ec_spire_distributed_table: relation.ec_spire_distributed_table,
-        pk_column,
-        column_names: &column_names,
-        embedding_columns: &embedding_columns,
-    };
-    let Some(shape) = am::spire_classify_dml_frontdoor_query(query_view, query_context)
-    else {
-        return TableIterator::once((
-            Some(target_relation_oid),
-            Some(relation.status),
-            false,
-            "unsupported",
-            "unsupported_operation",
-            "unsupported_shape",
-            Some("ec_spire_distributed: only UPDATE, DELETE, and PK SELECT are supported in v1"),
-            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-            "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
-        ));
-    };
-
-    TableIterator::once((
-        Some(target_relation_oid),
-        Some(relation.status),
-        shape.supported,
-        shape.operation,
-        shape.kind,
-        shape.status,
-        shape.error,
-        shape.hint,
-        if shape.supported {
-            "wire planner hook to CustomScan executor replacement"
-        } else {
-            "rewrite query to fit the ADR-069 v1 DML front-door shape"
-        },
-    ))
+    result
 }
 
 #[pg_extern(stable)]
@@ -1462,54 +1471,62 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
     // that remains live for this diagnostic function call.
-    let Some(query_view) = (unsafe { am::spire_dml_frontdoor_query_view(query) }) else {
+    let Some(result) = (unsafe {
+        am::spire_with_dml_frontdoor_query_view(query, |query_view| {
+            let Some(decision) =
+                am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+            else {
+                return TableIterator::once((
+                    None,
+                    None,
+                    false,
+                    "unsupported",
+                    "unsupported_target_relation",
+                    "unsupported_shape",
+                    "none",
+                    "none",
+                    None,
+                    "other",
+                    None,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Some(
+                        "ec_spire_distributed: DML front door requires one target heap relation",
+                    ),
+                    Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                    "raise ADR-069 planner error instead of using coordinator heap path",
+                ));
+            };
+
+            TableIterator::once((
+                Some(decision.target_relation_oid),
+                if decision.index_oid == pg_sys::InvalidOid {
+                    None
+                } else {
+                    Some(decision.index_oid)
+                },
+                decision.supported,
+                decision.operation,
+                decision.kind,
+                decision.status,
+                decision.custom_scan_mode,
+                decision.primitive,
+                decision.pk_column,
+                decision.pk_value_kind,
+                decision.pk_value_const,
+                decision.pk_value_param_id,
+                decision.updated_columns,
+                decision.projected_columns,
+                decision.error,
+                decision.hint,
+                decision.next_step,
+            ))
+        })
+    }) else {
         pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
-    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view) else {
-        return TableIterator::once((
-            None,
-            None,
-            false,
-            "unsupported",
-            "unsupported_target_relation",
-            "unsupported_shape",
-            "none",
-            "none",
-            None,
-            "other",
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Some("ec_spire_distributed: DML front door requires one target heap relation"),
-            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-            "raise ADR-069 planner error instead of using coordinator heap path",
-        ));
-    };
-
-    TableIterator::once((
-        Some(decision.target_relation_oid),
-        if decision.index_oid == pg_sys::InvalidOid {
-            None
-        } else {
-            Some(decision.index_oid)
-        },
-        decision.supported,
-        decision.operation,
-        decision.kind,
-        decision.status,
-        decision.custom_scan_mode,
-        decision.primitive,
-        decision.pk_column,
-        decision.pk_value_kind,
-        decision.pk_value_const,
-        decision.pk_value_param_id,
-        decision.updated_columns,
-        decision.projected_columns,
-        decision.error,
-        decision.hint,
-        decision.next_step,
-    ))
+    result
 }
 
 #[pg_extern(stable)]
@@ -1540,101 +1557,108 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
     // that remains live for this diagnostic function call.
-    let Some(query_view) = (unsafe { am::spire_dml_frontdoor_query_view(query) }) else {
+    let Some(result) = (unsafe {
+        am::spire_with_dml_frontdoor_query_view(query, |query_view| {
+            let Some(decision) =
+                am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+            else {
+                return TableIterator::once((
+                    None,
+                    None,
+                    false,
+                    "none",
+                    "none",
+                    None,
+                    "other",
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    "unsupported_shape",
+                    Some(
+                        "ec_spire_distributed: DML front door requires one target heap relation"
+                            .to_owned(),
+                    ),
+                    "raise ADR-069 planner error instead of using coordinator heap path",
+                ));
+            };
+            let target_relation_oid = Some(decision.target_relation_oid);
+            let index_oid = if decision.index_oid == pg_sys::InvalidOid {
+                None
+            } else {
+                Some(decision.index_oid)
+            };
+            let custom_scan_mode = decision.custom_scan_mode;
+            let primitive = decision.primitive;
+            let pk_column = decision.pk_column.clone();
+            let pk_value_kind = decision.pk_value_kind;
+            let pk_value_const = decision.pk_value_const;
+            let pk_value_param_id = decision.pk_value_param_id;
+            let updated_columns = decision.updated_columns.clone();
+            let projected_columns = decision.projected_columns.clone();
+
+            let primitive_plan =
+                match am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&decision) {
+                    Ok(plan) => plan,
+                    Err(error) => {
+                        return TableIterator::once((
+                            target_relation_oid,
+                            index_oid,
+                            false,
+                            custom_scan_mode,
+                            primitive,
+                            pk_column,
+                            pk_value_kind,
+                            pk_value_const,
+                            pk_value_param_id,
+                            None,
+                            updated_columns,
+                            projected_columns,
+                            "primitive_plan_not_ready",
+                            Some(error),
+                            "fix the DML replacement decision before building a CustomScan executor node",
+                        ));
+                    }
+                };
+            let (pk_value_bytes, status, error, next_step) =
+                match am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&primitive_plan) {
+                    Ok(bytes) => (
+                        Some(bytes.to_vec()),
+                        "primitive_plan_ready",
+                        None,
+                        "wire planner hook to DML CustomScan executor replacement",
+                    ),
+                    Err(error) => (
+                        None,
+                        "primitive_plan_requires_runtime_params",
+                        Some(error),
+                        "evaluate bound parameters in the DML CustomScan executor before invoking the coordinator primitive",
+                    ),
+                };
+
+            TableIterator::once((
+                target_relation_oid,
+                index_oid,
+                true,
+                custom_scan_mode,
+                primitive,
+                pk_column,
+                pk_value_kind,
+                pk_value_const,
+                pk_value_param_id,
+                pk_value_bytes,
+                updated_columns,
+                projected_columns,
+                status,
+                error,
+                next_step,
+            ))
+        })
+    }) else {
         pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
-    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view) else {
-        return TableIterator::once((
-            None,
-            None,
-            false,
-            "none",
-            "none",
-            None,
-            "other",
-            None,
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            "unsupported_shape",
-            Some(
-                "ec_spire_distributed: DML front door requires one target heap relation".to_owned(),
-            ),
-            "raise ADR-069 planner error instead of using coordinator heap path",
-        ));
-    };
-    let target_relation_oid = Some(decision.target_relation_oid);
-    let index_oid = if decision.index_oid == pg_sys::InvalidOid {
-        None
-    } else {
-        Some(decision.index_oid)
-    };
-    let custom_scan_mode = decision.custom_scan_mode;
-    let primitive = decision.primitive;
-    let pk_column = decision.pk_column.clone();
-    let pk_value_kind = decision.pk_value_kind;
-    let pk_value_const = decision.pk_value_const;
-    let pk_value_param_id = decision.pk_value_param_id;
-    let updated_columns = decision.updated_columns.clone();
-    let projected_columns = decision.projected_columns.clone();
-
-    let primitive_plan =
-        match am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&decision) {
-            Ok(plan) => plan,
-            Err(error) => {
-                return TableIterator::once((
-                    target_relation_oid,
-                    index_oid,
-                    false,
-                    custom_scan_mode,
-                    primitive,
-                    pk_column,
-                    pk_value_kind,
-                    pk_value_const,
-                    pk_value_param_id,
-                    None,
-                    updated_columns,
-                    projected_columns,
-                    "primitive_plan_not_ready",
-                    Some(error),
-                    "fix the DML replacement decision before building a CustomScan executor node",
-                ));
-            }
-        };
-    let (pk_value_bytes, status, error, next_step) =
-        match am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&primitive_plan) {
-            Ok(bytes) => (
-                Some(bytes.to_vec()),
-                "primitive_plan_ready",
-                None,
-                "wire planner hook to DML CustomScan executor replacement",
-            ),
-            Err(error) => (
-                None,
-                "primitive_plan_requires_runtime_params",
-                Some(error),
-                "evaluate bound parameters in the DML CustomScan executor before invoking the coordinator primitive",
-            ),
-        };
-
-    TableIterator::once((
-        target_relation_oid,
-        index_oid,
-        true,
-        custom_scan_mode,
-        primitive,
-        pk_column,
-        pk_value_kind,
-        pk_value_const,
-        pk_value_param_id,
-        pk_value_bytes,
-        updated_columns,
-        projected_columns,
-        status,
-        error,
-        next_step,
-    ))
+    result
 }
 
 #[pg_extern(stable, strict)]

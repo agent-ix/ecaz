@@ -5,6 +5,16 @@
         unsafe { (*expr.cast::<pg_sys::Node>()).type_ }
     }
 
+    fn with_analyzed_query_view<R>(
+        query: *mut pg_sys::Query,
+        f: impl for<'a> FnOnce(am::SpireDmlFrontdoorQueryView<'a>) -> R,
+    ) -> R {
+        // SAFETY: this fixture passes `Query*` values returned by
+        // `analyzed_query` and scopes the borrowed view to `f`.
+        unsafe { am::spire_with_dml_frontdoor_query_view(query, f) }
+            .expect("analyzed query should not be null")
+    }
+
     #[pg_test]
     fn test_ec_spire_dml_frontdoor_hook_status_installed_pass_through() {
         let status_from = "FROM ec_spire_dml_frontdoor_hook_status()";
@@ -245,10 +255,7 @@
                 .expect("DML target oid relation lookup should succeed")
                 .expect("DML target oid relation should exist");
         let target_relation_oid = |query| {
-            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
-            let query_view = unsafe { am::spire_dml_frontdoor_query_view(query) }
-                .expect("analyzed query should not be null");
-            am::spire_dml_frontdoor_target_relation_oid(query_view)
+            with_analyzed_query_view(query, am::spire_dml_frontdoor_target_relation_oid)
         };
 
         for sql in [
@@ -296,10 +303,9 @@
             embedding_columns: &["embedding"],
         };
         let classify_query = |query| {
-            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
-            let query_view = unsafe { am::spire_dml_frontdoor_query_view(query) }
-                .expect("analyzed query should not be null");
-            am::spire_classify_dml_frontdoor_query(query_view, context)
+            with_analyzed_query_view(query, |query_view| {
+                am::spire_classify_dml_frontdoor_query(query_view, context)
+            })
         };
 
         let coerced_const_query =
@@ -1039,10 +1045,9 @@
         )
         .expect("DML PK argument ec_spire index creation should succeed");
         let replacement_decision = |query| {
-            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
-            let query_view = unsafe { am::spire_dml_frontdoor_query_view(query) }
-                .expect("analyzed query should not be null");
-            am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+            with_analyzed_query_view(query, |query_view| {
+                am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+            })
         };
 
         let select_query =
@@ -1086,16 +1091,14 @@
         )
         .expect("DML primitive plan ec_spire index creation should succeed");
         let replacement_decision = |query| {
-            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
-            let query_view = unsafe { am::spire_dml_frontdoor_query_view(query) }
-                .expect("analyzed query should not be null");
-            am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+            with_analyzed_query_view(query, |query_view| {
+                am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+            })
         };
         let primitive_plan_expr = |query| {
-            // SAFETY: this fixture passes `Query*` values returned by `analyzed_query`.
-            let query_view = unsafe { am::spire_dml_frontdoor_query_view(query) }
-                .expect("analyzed query should not be null");
-            am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(query_view)
+            with_analyzed_query_view(query, |query_view| {
+                am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(query_view)
+            })
         };
         let const_primitive_invocation = |plan| {
             // SAFETY: const-PK plans do not read executor parameters, so a null
