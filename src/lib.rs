@@ -17006,8 +17006,10 @@ fn ec_spire_index_maintenance_plan_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_plan_snapshot");
-    let snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_maintenance_plan_snapshot);
+    let snapshot = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_index_maintenance_plan_snapshot
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -17052,7 +17054,7 @@ fn ec_spire_index_locked_maintenance_plan_snapshot(
         index_oid,
         "ec_spire_index_locked_maintenance_plan_snapshot",
     );
-    let snapshot = with_live_index_relation!(
+    let snapshot = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_locked_maintenance_plan_snapshot
     );
@@ -17100,8 +17102,10 @@ fn ec_spire_index_locked_maintenance_run_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_locked_maintenance_run_plan");
-    let result =
-        with_live_index_relation!(index_relation, am::spire_index_locked_maintenance_run_plan);
+    let result = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_index_locked_maintenance_run_plan
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -17148,7 +17152,7 @@ fn ec_spire_index_maintenance_scheduler_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_plan");
-    let snapshot = with_live_index_relation!(
+    let snapshot = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_locked_maintenance_plan_snapshot
     );
@@ -17206,7 +17210,7 @@ fn ec_spire_index_maintenance_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_run");
-    let result = with_live_index_relation!(index_relation, am::spire_index_maintenance_run);
+    let result = with_spire_live_index_relation!(index_relation, am::spire_index_maintenance_run);
     drop(index_relation);
 
     TableIterator::once((
@@ -17258,7 +17262,7 @@ fn ec_spire_index_maintenance_scheduler_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_run");
-    let result = with_live_index_relation!(index_relation, am::spire_index_maintenance_run);
+    let result = with_spire_live_index_relation!(index_relation, am::spire_index_maintenance_run);
     drop(index_relation);
 
     let scheduler_status = if result.published { "ran" } else { "idle" };
