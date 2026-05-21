@@ -2498,7 +2498,7 @@ pub(crate) fn debug_gettuple_scan_heap_tids_with_score_comparisons(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
+fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_scan_uses_grouped_storage");
     let index_relation = index_relation_guard.as_ptr();
@@ -2647,9 +2647,7 @@ pub(crate) fn debug_grouped_scan_comparison_rows(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<DebugGroupedScanComparisonRow> {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
     let rows = debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query);
     let ordered_rows = if grouped_results {
         let mut ordered_rows = rows
@@ -2733,9 +2731,7 @@ pub(crate) fn debug_grouped_scan_comparison_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugGroupedScanComparisonSummary {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
     let rows = debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug comparison summary count should fit in i32");
@@ -2790,9 +2786,7 @@ pub(crate) fn debug_grouped_scan_order_drift_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugGroupedScanOrderDriftSummary {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
     let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug order drift summary count should fit in i32");
@@ -2870,9 +2864,7 @@ pub(crate) fn debug_grouped_scan_windowed_summary(
     query: Vec<f32>,
     window_size: i32,
 ) -> DebugGroupedScanWindowedSummary {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
     let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let window_size = debug_grouped_window_size(window_size);
     let emitted_result_count =
