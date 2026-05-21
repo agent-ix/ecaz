@@ -250,11 +250,8 @@ unsafe fn estimate_custom_scan_cost(
     target_width: f64,
     eligibility: &SpireCustomScanIndexEligibilityRow,
 ) -> SpireCustomScanCostEstimate {
-    // SAFETY: custom-scan costing runs inside PostgreSQL planner callback
-    // context where backend-local planner cost globals are valid to read.
-    let constants = unsafe { current_planner_cost_constants() };
-    // SAFETY: same planner callback context as above.
-    let cpu_tuple_cost = unsafe { current_cpu_tuple_cost() };
+    let constants = current_planner_cost_constants();
+    let cpu_tuple_cost = current_cpu_tuple_cost();
     estimate_custom_scan_cost_with_constants(
         output_rows,
         rel_rows,
