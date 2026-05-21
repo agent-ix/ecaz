@@ -333,8 +333,9 @@ pub(crate) unsafe fn remote_search_candidates(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
+    let index = live_index_relation(index_relation);
     let result = remote_search_candidates_result(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -344,8 +345,8 @@ pub(crate) unsafe fn remote_search_candidates(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_candidates_result(
-    index_relation: pg_sys::Relation,
+fn remote_search_candidates_result(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -362,7 +363,6 @@ unsafe fn remote_search_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
@@ -424,8 +424,9 @@ pub(crate) unsafe fn remote_search_coordinator_local_candidates(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
+    let index = live_index_relation(index_relation);
     let result = remote_search_coordinator_local_candidates_result(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -435,8 +436,8 @@ pub(crate) unsafe fn remote_search_coordinator_local_candidates(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_coordinator_local_candidates_result(
-    index_relation: pg_sys::Relation,
+fn remote_search_coordinator_local_candidates_result(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -454,7 +455,6 @@ unsafe fn remote_search_coordinator_local_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
@@ -527,8 +527,8 @@ unsafe fn remote_search_coordinator_local_candidates_result(
     Ok(merged.candidates)
 }
 
-unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
-    index_relation: pg_sys::Relation,
+fn remote_search_coordinator_local_candidates_for_result_summary(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -546,7 +546,6 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
@@ -677,8 +676,9 @@ pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapResolutionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapResolutionPlanRow>, String> {
+        let index = live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_result(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -720,8 +720,9 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
+        let index = live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_result(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -754,8 +755,9 @@ unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
+        let index = live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_for_result_summary(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
