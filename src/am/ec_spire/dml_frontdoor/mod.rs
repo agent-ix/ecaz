@@ -1506,7 +1506,9 @@ impl<'a> DmlFrontdoorIndexRelationView<'a> {
     fn new(index_relation: &'a IndexRelationGuard) -> Self {
         let index_relation_ptr = index_relation.as_ptr();
         // SAFETY: `index_relation` owns a live index relation while relcache
-        // metadata is inspected.
+        // metadata is inspected. SPIRE's PG17+ support assumes PostgreSQL's
+        // RelationData relcache layout exposes initialized `rd_index` and
+        // `rd_rel` entries for opened index relations.
         let (index_form, class_form) = unsafe {
             (
                 (*index_relation_ptr).rd_index.as_ref(),
