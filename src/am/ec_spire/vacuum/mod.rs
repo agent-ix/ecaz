@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
+use std::ptr::NonNull;
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys};
 
@@ -21,7 +22,13 @@ use super::storage::{
     SpireRelationObjectStoreSet, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use super::{lock_publish_relation, page, scan};
-use crate::am::common::{callback::pg_am_callback, vacuum::alloc_index_bulk_delete_result};
+use crate::am::common::{
+    callback::pg_am_callback,
+    vacuum::{
+        add_index_bulk_delete_tuples_removed, alloc_index_bulk_delete_result,
+        set_index_bulk_delete_summary,
+    },
+};
 use crate::storage::page::ItemPointer;
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::IndexRelationGuard;
@@ -640,23 +647,18 @@ unsafe fn finish_vacuum_stats(
     live_assignments: u64,
     removed_assignments: u64,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: index_relation is open for vacuum stats. stats is either
-    // PostgreSQL-provided or allocated here, then uniquely mutated before being
-    // returned to PostgreSQL.
-    unsafe {
-        let stats = if stats.is_null() {
-            crate::fault::maybe_fail_palloc("ec_spire vacuum stats");
-            alloc_index_bulk_delete_result().into()
-        } else {
-            stats
-        };
-        let block_count = crate::storage::relation::main_fork_block_count(index_relation);
-        (*stats).num_pages = block_count;
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = live_assignments as f64;
-        (*stats).tuples_removed += removed_assignments as f64;
+    let stats = if stats.is_null() {
+        crate::fault::maybe_fail_palloc("ec_spire vacuum stats");
+        alloc_index_bulk_delete_result().into()
+    } else {
         stats
-    }
+    };
+    let stats_handle =
+        NonNull::new(stats).unwrap_or_else(|| pgrx::error!("ec_spire vacuum stats is null"));
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    set_index_bulk_delete_summary(stats_handle, block_count, live_assignments);
+    add_index_bulk_delete_tuples_removed(stats_handle, removed_assignments);
+    stats
 }
 
 fn heap_tid_is_dead(
