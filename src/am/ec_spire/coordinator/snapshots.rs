@@ -188,7 +188,7 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn open_storage_relation_or_index(
+fn open_storage_relation_or_index(
     index_relation: pg_sys::Relation,
     index_relid: u32,
     storage_relid: u32,
