@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/321-spire-boundary-replica-diagnostics-safe-signatures/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/321-spire-boundary-replica-diagnostics-safe-signatures src
+wrote 1368 unsafe ledger rows to reviews/task-50/321-spire-boundary-replica-diagnostics-safe-signatures/artifacts/unsafe-ledger-after.jsonl
