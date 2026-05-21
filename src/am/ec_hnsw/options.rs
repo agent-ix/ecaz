@@ -257,28 +257,16 @@ impl<'a> TqHnswReloptionsView<'a> {
     }
 
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
-        if offset == 0 {
-            return None;
+        // SAFETY: this view was built from the ec_hnsw reloptions blob, and
+        // offsets are fields written by the matching reloptions parser.
+        unsafe {
+            crate::am::common::reloptions::read_string_reloption(
+                self.rd_options,
+                offset,
+                "ec_hnsw",
+                name,
+            )
         }
-
-        // SAFETY: rd_options is PostgreSQL's varlena reloptions blob and
-        // offset is a string reloption offset written by
-        // build_local_reloptions for this layout.
-        let value_ptr = unsafe {
-            self.rd_options
-                .cast::<u8>()
-                .add(offset as usize)
-                .cast::<std::ffi::c_char>()
-        };
-        // SAFETY: string reloptions are stored as NUL-terminated strings inside
-        // the reloptions blob at the validated offset.
-        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-            .to_str()
-            .unwrap_or_else(|e| pgrx::error!("invalid ec_hnsw {name} reloption: {e}"));
-        if value.is_empty() {
-            pgrx::error!("invalid ec_hnsw {name} reloption: value must not be empty");
-        }
-        Some(value.to_owned())
     }
 
     fn to_options(&self) -> TqHnswOptions {

@@ -1581,28 +1581,16 @@ struct EcSpireReloptionsView<'a> {
 
 impl<'a> EcSpireReloptionsView<'a> {
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
-        if offset == 0 {
-            return None;
+        // SAFETY: this view was built from the ec_spire reloptions blob, and
+        // offsets are fields written by the matching reloptions parser.
+        unsafe {
+            crate::am::common::reloptions::read_string_reloption(
+                self.rd_options,
+                offset,
+                "ec_spire",
+                name,
+            )
         }
-
-        // SAFETY: rd_options points to EcSpireReloptions storage and offset is
-        // a nonzero reloption string offset supplied by PostgreSQL's
-        // reloptions parser for this layout.
-        let value_ptr = unsafe {
-            self.rd_options
-                .cast::<u8>()
-                .add(offset as usize)
-                .cast::<std::ffi::c_char>()
-        };
-        // SAFETY: value_ptr points at PostgreSQL's NUL-terminated reloption
-        // string storage for this rd_options allocation.
-        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-            .to_str()
-            .unwrap_or_else(|e| pgrx::error!("invalid ec_spire {name} reloption: {e}"));
-        if value.is_empty() {
-            pgrx::error!("invalid ec_spire {name} reloption: value must not be empty");
-        }
-        Some(value.to_owned())
     }
 
     fn validate(&self) {
