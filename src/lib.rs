@@ -1358,7 +1358,10 @@ fn ec_spire_dml_frontdoor_classify_sql(
 > {
     let query = storage::query::analyze_single_query(sql)
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
-    let Some(target_relation_oid) = am::spire_dml_frontdoor_target_relation_oid(query) else {
+    // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
+    // that remains live for this diagnostic function call.
+    let Some(target_relation_oid) = (unsafe { am::spire_dml_frontdoor_target_relation_oid(query) })
+    else {
         return TableIterator::once((
             None,
             None,
@@ -1390,7 +1393,9 @@ fn ec_spire_dml_frontdoor_classify_sql(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
-    let Some(shape) = am::spire_classify_dml_frontdoor_query(query, query_context) else {
+    // SAFETY: same live analyzed Query pointer as above.
+    let Some(shape) = (unsafe { am::spire_classify_dml_frontdoor_query(query, query_context) })
+    else {
         return TableIterator::once((
             Some(target_relation_oid),
             Some(relation.status),
@@ -1449,7 +1454,11 @@ fn ec_spire_dml_frontdoor_replacement_sql(
 > {
     let query = storage::query::analyze_single_query(sql)
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
-    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query) else {
+    // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
+    // that remains live for this diagnostic function call.
+    let Some(decision) =
+        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
+    else {
         return TableIterator::once((
             None,
             None,
@@ -1522,7 +1531,11 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
 > {
     let query = storage::query::analyze_single_query(sql)
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
-    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query) else {
+    // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
+    // that remains live for this diagnostic function call.
+    let Some(decision) =
+        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
+    else {
         return TableIterator::once((
             None,
             None,
