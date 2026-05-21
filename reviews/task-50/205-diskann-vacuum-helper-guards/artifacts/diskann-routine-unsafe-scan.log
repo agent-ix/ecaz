@@ -1,0 +1,60 @@
+Script started on 2026-05-21 02:39:45-07:00 [<not executed on terminal>]
+35:type BulkDeleteCallback = unsafe extern "C-unwind" fn(pg_sys::ItemPointer, *mut c_void) -> bool;
+144:    unsafe {
+164:        unsafe { PgBox::<pg_sys::IndexAmRoutine>::alloc_node(pg_sys::NodeTag::T_IndexAmRoutine) };
+216:unsafe extern "C-unwind" fn ec_diskann_aminsert(
+472:unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
+494:unsafe extern "C-unwind" fn ec_diskann_amvacuumcleanup(
+504:unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
+530:unsafe extern "C-unwind" fn ec_diskann_amrescan(
+679:unsafe extern "C-unwind" fn ec_diskann_amgettuple(
+711:unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {
+729:    unsafe {
+750:unsafe fn install_backlinks_with_replan(
+768:        let (metadata, mutations) = unsafe {
+784:        pending = unsafe {
+800:unsafe fn plan_backlink_mutations(
+810:    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+894:unsafe fn ec_diskann_noop_vacuum_stats(
+900:    let stats = unsafe {
+916:unsafe fn run_diskann_bulkdelete(
+927:        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+935:        let pass = unsafe {
+944:                unsafe {
+968:unsafe fn run_diskann_bulkdelete_pass(
+976:    let (block_count, metadata, original_chain) = unsafe {
+1088:    let rewrite_outcome = unsafe { apply_tuple_rewrites(index_relation, &rewrites)? };
+1115:    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+1139:        unsafe { crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation) }
+1470:    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+1496:unsafe fn apply_tuple_rewrites(
+1517:        let buffer = unsafe {
+1530:        let page_result: Result<VacuumRewriteApplyOutcome, String> = unsafe {
+1579:unsafe fn write_raw_tuple_bytes(
+1586:    let buffer = unsafe {
+1603:    let page_result: Result<(), String> = unsafe {
+1634:    unsafe {
+1644:unsafe fn vacuum_page_tuple_location(
+1652:    let (tuple_ptr, tuple_len) = unsafe {
+1690:unsafe fn with_vacuum_page_tuple_bytes<R, F>(
+1701:    let tuple_bytes = unsafe {
+1708:unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
+1719:    let tuple_bytes = unsafe {
+1774:    let mut reader = unsafe {
+1786:    let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };
+1811:unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+1817:pub unsafe extern "C-unwind" fn ec_diskann_handler(
+1899:            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
+1910:            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
+1945:            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
+1959:            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
+2177:        let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+2184:        let slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation_ptr) }
+2346:    unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
+2365:        unsafe {
+2388:            unsafe { crate::storage::relation::index_heap_relation_oid(index_relation_ptr) };
+2400:        unsafe {
+3690:            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
+3824:            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
+
+Script done on 2026-05-21 02:39:45-07:00 [COMMAND_EXIT_CODE="0"]
