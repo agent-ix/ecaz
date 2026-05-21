@@ -14408,7 +14408,7 @@ fn ec_spire_remote_search_local_heap_resolution_plan(
         index_oid,
         "ec_spire_remote_search_local_heap_resolution_plan",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_resolution_plan_rows,
         requested_epoch,
@@ -14565,7 +14565,7 @@ fn ec_spire_remote_search_local_heap_candidates(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_local_heap_candidates");
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15492,7 +15492,7 @@ fn ec_spire_remote_search_tuple_payload(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15620,7 +15620,7 @@ fn ec_spire_remote_search_tuple_payload_typed(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload_typed");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15779,7 +15779,7 @@ fn ec_spire_remote_search_local_heap_candidate_summary(
         index_oid,
         "ec_spire_remote_search_local_heap_candidate_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_summary_row,
         requested_epoch,

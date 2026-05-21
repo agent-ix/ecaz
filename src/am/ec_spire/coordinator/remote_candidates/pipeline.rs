@@ -198,19 +198,14 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
     let decoded_local_locator_count = if gate.remote_plan_count == 0
         && gate.status != SPIRE_REMOTE_STATUS_EMPTY_TOP_K
     {
-        // SAFETY: forwards the live index relation and cloned request fields to
-        // the local heap-resolution planner only when the gate selected a local
-        // heap-only path.
-        let rows = unsafe {
-            remote_search_local_heap_resolution_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_local_heap_resolution_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         u64::try_from(rows.len())
             .unwrap_or_else(|_| pgrx::error!("ec_spire local heap resolution row count overflow"))
     } else {

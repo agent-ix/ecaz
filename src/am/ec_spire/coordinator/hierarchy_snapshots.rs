@@ -666,7 +666,7 @@ pub(crate) fn remote_search_coordinator_local_summary(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
+pub(crate) fn remote_search_local_heap_resolution_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -708,7 +708,7 @@ pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
+pub(crate) fn remote_search_local_heap_candidate_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -776,7 +776,7 @@ fn remote_search_local_heap_candidate_rows_for_result_summary(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
+pub(crate) fn remote_search_local_heap_candidate_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -792,22 +792,18 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
         top_k,
         consistency_mode,
     );
-    // SAFETY: gate was derived from the same live index relation and request;
-    // the summary helper only reads heap candidates when the gate allows it.
-    unsafe {
-        remote_search_local_heap_candidate_summary_from_gate(
-            index_relation,
-            &gate,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    }
+    remote_search_local_heap_candidate_summary_from_gate(
+        index_relation,
+        &gate,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    )
 }
 
-unsafe fn remote_search_local_heap_candidate_summary_from_gate(
+fn remote_search_local_heap_candidate_summary_from_gate(
     index_relation: pg_sys::Relation,
     gate: &SpireRemoteSearchCoordinatorGateSummaryRow,
     requested_epoch: u64,
@@ -819,18 +815,14 @@ unsafe fn remote_search_local_heap_candidate_summary_from_gate(
     let (decoded_local_locator_count, returned_candidate_count) = if gate.remote_plan_count == 0
         && remote_search_status_allows_local_heap_rows(gate.status)
     {
-        // SAFETY: gate permits local heap row reads for the same live index
-        // relation and request fields passed to the summary helper.
-        let rows = unsafe {
-            remote_search_local_heap_candidate_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_local_heap_candidate_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let decoded = u64::try_from(rows.len())
             .unwrap_or_else(|_| pgrx::error!("ec_spire local heap candidate count overflow"));
         let returned = u64::try_from(
