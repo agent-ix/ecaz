@@ -876,20 +876,17 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
 
         let appended_overflow_tid = if let Some(overflow_tuple) = append_tuple {
             let encoded = overflow_tuple.encode()?;
-            // SAFETY: `index_relation` is live and PostgreSQL can report the
-            // current main-fork size before choosing an append target block.
-            // SAFETY: `index_relation` is live during DiskANN insert page extension.
-            let existing_blocks =
-                unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
-            let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
-                existing_blocks - 1
-            } else {
-                P_NEW
-            };
             // SAFETY: The overflow tuple bytes are encoded from a validated
-            // overflow tuple, and append_raw_tuple_payload handles page locking
-            // and WAL registration.
+            // overflow tuple. The index relation is live while choosing an
+            // append target and while the append helper locks/WAL-logs the page.
             unsafe {
+                let existing_blocks =
+                    crate::storage::relation::main_fork_block_count(index_relation);
+                let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
+                    existing_blocks - 1
+                } else {
+                    P_NEW
+                };
                 append_raw_tuple_payload(
                     index_relation,
                     &encoded,
@@ -1344,19 +1341,16 @@ pub(super) unsafe fn append_live_node(
         ));
     }
 
-    // SAFETY: `index_relation` is live and PostgreSQL can report the current
-    // main-fork size before choosing an append target block.
-    // SAFETY: `index_relation` is live during DiskANN insert page extension.
-    let existing_blocks =
-        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
-    let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
-        existing_blocks - 1
-    } else {
-        P_NEW
-    };
     // SAFETY: `encoded` is a validated node tuple payload; the append helper
-    // owns page locking, free-space checks, and WAL registration.
+    // owns page locking, free-space checks, and WAL registration. The index
+    // relation is live while choosing an append target and appending.
     unsafe {
+        let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
+        let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
+            existing_blocks - 1
+        } else {
+            P_NEW
+        };
         append_raw_tuple_payload(
             index_relation,
             &encoded,
@@ -1372,20 +1366,17 @@ unsafe fn append_raw_tuple_payload(
     required_bytes: usize,
     target_block: pg_sys::BlockNumber,
 ) -> Result<ItemPointer, String> {
-    let buffer = if target_block == P_NEW {
-        // SAFETY: `index_relation` is live and P_NEW requests a new zeroed page
-        // locked for appending this raw tuple payload.
-        unsafe {
+    // SAFETY: `index_relation` is live; P_NEW requests a new zeroed locked page,
+    // otherwise `target_block` is an existing append candidate opened
+    // exclusively before mutation.
+    let buffer = unsafe {
+        if target_block == P_NEW {
             LockedBufferGuard::read_main_locked(
                 index_relation,
                 target_block,
                 pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
             )
-        }
-    } else {
-        // SAFETY: `target_block` is an existing data page selected from the
-        // relation size and is opened under an exclusive lock for append.
-        unsafe {
+        } else {
             LockedBufferGuard::read_main(
                 index_relation,
                 target_block,
@@ -1400,29 +1391,21 @@ unsafe fn append_raw_tuple_payload(
     // SAFETY: `index_relation` is live while the append is WAL-logged.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
-    if target_block == P_NEW {
-        // SAFETY: `page_ptr` is the newly allocated zeroed page and `page_size`
-        // comes from the locked buffer.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-    } else {
-        // SAFETY: `page_ptr` is a registered, locked existing page; checking
-        // free space is valid before appending.
-        let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
-        if free_space < required_bytes {
-            std::mem::drop(wal_txn);
-            std::mem::drop(buffer);
-            // SAFETY: The existing page lacked space, so the same validated raw
-            // tuple payload is retried on a new page.
-            return unsafe {
-                append_raw_tuple_payload(index_relation, encoded, required_bytes, P_NEW)
-            };
-        }
-    }
-
-    let block_number = buffer.block_number();
-    // SAFETY: `page_ptr` is initialized/locked, and `encoded` remains live for
-    // the duration of the PostgreSQL page insertion call.
+    // SAFETY: `page_ptr` is the WAL-registered locked page. New pages are
+    // initialized before insertion; existing pages are checked for free space
+    // before the validated payload is copied into PostgreSQL page storage.
     let offset_number = unsafe {
+        if target_block == P_NEW {
+            pg_sys::PageInit(page_ptr, page_size, 0);
+        } else {
+            let free_space = pg_sys::PageGetFreeSpace(page_ptr) as usize;
+            if free_space < required_bytes {
+                std::mem::drop(wal_txn);
+                std::mem::drop(buffer);
+                return append_raw_tuple_payload(index_relation, encoded, required_bytes, P_NEW);
+            }
+        }
+
         pg_sys::PageAddItemExtended(
             page_ptr,
             encoded.as_ptr().cast_mut().cast(),
@@ -1431,6 +1414,7 @@ unsafe fn append_raw_tuple_payload(
             0,
         )
     };
+    let block_number = buffer.block_number();
     if offset_number == pg_sys::InvalidOffsetNumber {
         return Err("ec_diskann failed to append live node tuple".into());
     }
