@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/138-custom-scan-list-boundary/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 1544 current unsafe rows
