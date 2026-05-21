@@ -11,6 +11,8 @@ use super::scan::*;
 #[cfg(any(test, feature = "pg_test"))]
 use super::{graph, page, search};
 #[cfg(any(test, feature = "pg_test"))]
+use crate::quant::prod::{PreparedQuery, ProdQuantizer};
+#[cfg(any(test, feature = "pg_test"))]
 use crate::storage::{
     buffer_guard::LockedBufferGuard,
     relation_guard::{HeapRelationGuard, IndexRelationGuard},
@@ -36,6 +38,14 @@ type DebugCandidateFrontierSlots = Vec<DebugCandidateSlot>;
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierProvenanceSlots = Vec<DebugCandidateProvenanceSlot>;
+
+#[cfg(any(test, feature = "pg_test"))]
+struct DebugOracleScoreParts<'a> {
+    storage: graph::GraphStorageDescriptor,
+    scan_m: u16,
+    quantizer: &'a ProdQuantizer,
+    prepared_query: &'a PreparedQuery,
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierLifecycle = (
@@ -579,6 +589,26 @@ fn debug_with_scan_opaque_mut<R>(
     // access, so safe callers cannot keep a mutable borrow across AM callbacks.
     let opaque = unsafe { debug_scan_opaque_mut(scan) };
     f(opaque)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_with_oracle_score_parts<R>(
+    scan: pg_sys::IndexScanDesc,
+    f: impl for<'a> FnOnce(DebugOracleScoreParts<'a>) -> R,
+) -> R {
+    debug_with_scan_opaque(scan, |opaque| {
+        let parts = DebugOracleScoreParts {
+            storage: opaque.scan_graph_storage,
+            scan_m: opaque.scan_m,
+            // SAFETY: AM rescan prepares a cached quantizer before these oracle
+            // debug helpers score graph elements.
+            quantizer: unsafe { &*opaque.cached_quantizer },
+            // SAFETY: AM rescan prepares query storage before these oracle
+            // debug helpers score graph elements.
+            prepared_query: unsafe { &*opaque.prepared_query },
+        };
+        f(parts)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1630,14 +1660,12 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids(
+pub(crate) fn debug_top_level_oracle_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     ef_search: usize,
 ) -> Vec<HeapTidCoords> {
-    // SAFETY: This wrapper forwards the caller-provided index oid, query, and
-    // bounded search parameters to the k-seed oracle helper.
-    unsafe { debug_top_level_oracle_k_seed_scan_heap_tids(index_oid, query, ef_search, 1) }
+    debug_top_level_oracle_k_seed_scan_heap_tids(index_oid, query, ef_search, 1)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1802,7 +1830,7 @@ pub(crate) fn debug_layer0_reachable_live_element_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
+pub(crate) fn debug_top_level_oracle_k_seed_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     top_level_seed_count: usize,
@@ -1831,45 +1859,47 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for top-level element TIDs.
-    let top_level_tids =
-        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
+    let heap_tids = debug_with_oracle_score_parts(scan, |parts| {
+        // SAFETY: The relation guard keeps the graph relation open while the
+        // helper scans locked pages for top-level element TIDs.
+        let top_level_tids = unsafe {
+            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level)
+        };
 
-    let mut heap_tids = top_level_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
-            }
-            Some((
-                search::BeamCandidate::new(
-                    seed_tid,
-                    -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-                ),
-                debug_item_pointer_coords(*element.heaptids.first().expect("heaptids non-empty")),
-            ))
-        })
-        .collect::<Vec<_>>();
-    heap_tids.sort_by(|left, right| left.0.score.total_cmp(&right.0.score));
-    heap_tids.truncate(top_level_seed_count);
-    let heap_tids = heap_tids
-        .into_iter()
-        .map(|(_, heap_tid)| heap_tid)
-        .collect();
+        let mut heap_tids = top_level_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                // SAFETY: `seed_tid` was collected from graph pages matching
+                // the storage element tag, and the graph loader validates the
+                // tuple.
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
+                };
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some((
+                    search::BeamCandidate::new(
+                        seed_tid,
+                        -parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
+                            element.gamma,
+                            &element.code,
+                        ),
+                    ),
+                    debug_item_pointer_coords(
+                        *element.heaptids.first().expect("heaptids non-empty"),
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        heap_tids.sort_by(|left, right| left.0.score.total_cmp(&right.0.score));
+        heap_tids.truncate(top_level_seed_count);
+        heap_tids
+            .into_iter()
+            .map(|(_, heap_tid)| heap_tid)
+            .collect()
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -1879,7 +1909,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
+pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     ef_search: usize,
@@ -1909,81 +1939,82 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for top-level element TIDs.
-    let top_level_tids =
-        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
-
-    let mut seeds = top_level_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
-            }
-            Some(search::BeamCandidate::new(
-                seed_tid,
-                -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-            ))
-        })
-        .collect::<Vec<_>>();
-    seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
-    seeds.truncate(top_level_seed_count);
-
-    let tids = if seeds.is_empty() {
-        Vec::new()
-    } else {
-        // SAFETY: The seed candidates were loaded from graph storage for this
-        // index, and the search helper validates neighbor tuples as it walks
-        // layer 0 with the supplied storage descriptor.
-        let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates_with_storage(
-                index_relation,
-                storage,
-                usize::from(opaque.scan_m),
-                ef_search.max(1),
-                seeds,
-                |_| true,
-                |neighbor| {
-                    Some(-quantizer.score_ip_from_parts(
-                        prepared_query,
-                        neighbor.gamma,
-                        &neighbor.code,
-                    ))
-                },
-            )
+    let tids = debug_with_oracle_score_parts(scan, |parts| {
+        // SAFETY: The relation guard keeps the graph relation open while the
+        // helper scans locked pages for top-level element TIDs.
+        let top_level_tids = unsafe {
+            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level)
         };
-        let mut emitted_elements = std::collections::HashSet::new();
-        let mut heap_tids = Vec::new();
-        for candidate in ordered_candidates {
-            if !emitted_elements.insert(candidate.node) {
-                continue;
-            }
 
-            // SAFETY: Search candidates come from graph traversal on this
-            // relation/storage pair, and the loader validates the tuple body.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
+        let mut seeds = top_level_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                // SAFETY: `seed_tid` was collected from graph pages matching
+                // the storage element tag, and the graph loader validates the
+                // tuple.
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
+                };
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some(search::BeamCandidate::new(
+                    seed_tid,
+                    -parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        element.gamma,
+                        &element.code,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
+        seeds.truncate(top_level_seed_count);
 
-            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+        if seeds.is_empty() {
+            Vec::new()
+        } else {
+            // SAFETY: The seed candidates were loaded from graph storage for
+            // this index, and the search helper validates neighbor tuples as it
+            // walks layer 0 with the supplied storage descriptor.
+            let ordered_candidates = unsafe {
+                graph::search_layer0_result_candidates_with_storage(
+                    index_relation,
+                    parts.storage,
+                    usize::from(parts.scan_m),
+                    ef_search.max(1),
+                    seeds,
+                    |_| true,
+                    |neighbor| {
+                        Some(-parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
+                            neighbor.gamma,
+                            &neighbor.code,
+                        ))
+                    },
+                )
+            };
+            let mut emitted_elements = std::collections::HashSet::new();
+            let mut heap_tids = Vec::new();
+            for candidate in ordered_candidates {
+                if !emitted_elements.insert(candidate.node) {
+                    continue;
+                }
+
+                // SAFETY: Search candidates come from graph traversal on this
+                // relation/storage pair, and the loader validates the tuple body.
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, candidate.node, parts.storage)
+                };
+                if element.deleted || element.heaptids.is_empty() {
+                    continue;
+                }
+
+                heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+            }
+            heap_tids
         }
-        heap_tids
-    };
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -1993,7 +2024,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
+pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     ef_search: usize,
@@ -2028,109 +2059,110 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for candidate element TIDs.
-    let layer_tids =
-        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
+    let tids = debug_with_oracle_score_parts(scan, |parts| {
+        // SAFETY: The relation guard keeps the graph relation open while the
+        // helper scans locked pages for candidate element TIDs.
+        let layer_tids = unsafe {
+            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer)
+        };
 
-    let mut seeds = layer_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
+        let mut seeds = layer_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                // SAFETY: `seed_tid` was collected from graph pages matching
+                // the storage element tag, and the graph loader validates the
+                // tuple.
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
+                };
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some(search::BeamCandidate::new(
+                    seed_tid,
+                    -parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        element.gamma,
+                        &element.code,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
+        seeds.truncate(seed_count);
+
+        if seeds.is_empty() {
+            Vec::new()
+        } else {
+            let mut carrydown_seeds = seeds;
+            for current_layer in (1..=layer).rev() {
+                // SAFETY: The carrydown seeds were loaded from graph storage
+                // for this index, and the search helper validates neighbor
+                // tuples as it walks the requested upper layer.
+                carrydown_seeds = unsafe {
+                    graph::search_layer_result_candidates_with_storage(
+                        index_relation,
+                        parts.storage,
+                        usize::from(parts.scan_m),
+                        current_layer,
+                        ef_search.max(1),
+                        carrydown_seeds,
+                        |_| true,
+                        |neighbor| {
+                            Some(-parts.quantizer.score_ip_from_parts(
+                                parts.prepared_query,
+                                neighbor.gamma,
+                                &neighbor.code,
+                            ))
+                        },
+                    )
+                };
+                if carrydown_seeds.is_empty() {
+                    break;
+                }
             }
-            Some(search::BeamCandidate::new(
-                seed_tid,
-                -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-            ))
-        })
-        .collect::<Vec<_>>();
-    seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
-    seeds.truncate(seed_count);
 
-    let tids = if seeds.is_empty() {
-        Vec::new()
-    } else {
-        let mut carrydown_seeds = seeds;
-        for current_layer in (1..=layer).rev() {
-            // SAFETY: The carrydown seeds were loaded from graph storage for
-            // this index, and the search helper validates neighbor tuples as it
-            // walks the requested upper layer.
-            carrydown_seeds = unsafe {
-                graph::search_layer_result_candidates_with_storage(
+            // SAFETY: The carrydown seeds came from upper-layer graph traversal
+            // on this relation/storage pair, and the layer-0 helper validates
+            // neighbor tuples as it walks.
+            let ordered_candidates = unsafe {
+                graph::search_layer0_result_candidates_with_storage(
                     index_relation,
-                    storage,
-                    usize::from(opaque.scan_m),
-                    current_layer,
+                    parts.storage,
+                    usize::from(parts.scan_m),
                     ef_search.max(1),
                     carrydown_seeds,
                     |_| true,
                     |neighbor| {
-                        Some(-quantizer.score_ip_from_parts(
-                            prepared_query,
+                        Some(-parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
                             neighbor.gamma,
                             &neighbor.code,
                         ))
                     },
                 )
             };
-            if carrydown_seeds.is_empty() {
-                break;
+            let mut emitted_elements = std::collections::HashSet::new();
+            let mut heap_tids = Vec::new();
+            for candidate in ordered_candidates {
+                if !emitted_elements.insert(candidate.node) {
+                    continue;
+                }
+
+                // SAFETY: Search candidates come from graph traversal on this
+                // relation/storage pair, and the loader validates the tuple body.
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, candidate.node, parts.storage)
+                };
+                if element.deleted || element.heaptids.is_empty() {
+                    continue;
+                }
+
+                heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
             }
+            heap_tids
         }
-
-        // SAFETY: The carrydown seeds came from upper-layer graph traversal on
-        // this relation/storage pair, and the layer-0 helper validates neighbor
-        // tuples as it walks.
-        let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates_with_storage(
-                index_relation,
-                storage,
-                usize::from(opaque.scan_m),
-                ef_search.max(1),
-                carrydown_seeds,
-                |_| true,
-                |neighbor| {
-                    Some(-quantizer.score_ip_from_parts(
-                        prepared_query,
-                        neighbor.gamma,
-                        &neighbor.code,
-                    ))
-                },
-            )
-        };
-        let mut emitted_elements = std::collections::HashSet::new();
-        let mut heap_tids = Vec::new();
-        for candidate in ordered_candidates {
-            if !emitted_elements.insert(candidate.node) {
-                continue;
-            }
-
-            // SAFETY: Search candidates come from graph traversal on this
-            // relation/storage pair, and the loader validates the tuple body.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
-
-            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
-        }
-        heap_tids
-    };
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -2140,7 +2172,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
+pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     layer: u8,
@@ -2174,95 +2206,103 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for candidate element TIDs.
-    let layer_tids =
-        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
+    let heap_tids = debug_with_oracle_score_parts(scan, |parts| {
+        // SAFETY: The relation guard keeps the graph relation open while the
+        // helper scans locked pages for candidate element TIDs.
+        let layer_tids = unsafe {
+            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer)
+        };
 
-    let mut seeds = layer_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
-            }
-            Some(search::BeamCandidate::new(
-                seed_tid,
-                -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-            ))
-        })
-        .collect::<Vec<_>>();
-    seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
-    seeds.truncate(seed_count);
+        let mut seeds = layer_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                // SAFETY: `seed_tid` was collected from graph pages matching
+                // the storage element tag, and the graph loader validates the
+                // tuple.
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
+                };
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some(search::BeamCandidate::new(
+                    seed_tid,
+                    -parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        element.gamma,
+                        &element.code,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
+        seeds.truncate(seed_count);
 
-    let mut scored_elements = Vec::new();
-    let mut visited_elements = std::collections::HashSet::new();
-    for seed in seeds {
-        if !visited_elements.insert(seed.node) {
-            continue;
-        }
-
-        // SAFETY: Seed candidates were loaded from graph pages for this
-        // relation/storage pair, and the graph loader validates the tuple.
-        let seed_element =
-            unsafe { graph::load_exact_graph_element(index_relation, seed.node, storage) };
-        if !seed_element.deleted {
-            scored_elements.push((seed.score, seed_element.heaptids.clone()));
-        }
-
-        // SAFETY: The seed element was loaded from graph storage and `scan_m`
-        // comes from the initialized scan opaque; adjacency loading validates
-        // the graph tuple before returning layer-0 neighbors.
-        for neighbor_tid in unsafe {
-            debug_load_neighbor_tids_for_layer(
-                index_relation,
-                storage,
-                seed.node,
-                usize::from(opaque.scan_m),
-                0,
-            )
-        } {
-            if !visited_elements.insert(neighbor_tid) {
+        let mut scored_elements = Vec::new();
+        let mut visited_elements = std::collections::HashSet::new();
+        for seed in seeds {
+            if !visited_elements.insert(seed.node) {
                 continue;
             }
 
-            // SAFETY: Neighbor TIDs come from graph adjacency loading for this
-            // relation/storage pair, and the loader validates the tuple body.
-            let neighbor =
-                unsafe { graph::load_exact_graph_element(index_relation, neighbor_tid, storage) };
-            if neighbor.deleted || neighbor.heaptids.is_empty() {
-                continue;
+            // SAFETY: Seed candidates were loaded from graph pages for this
+            // relation/storage pair, and the graph loader validates the tuple.
+            let seed_element = unsafe {
+                graph::load_exact_graph_element(index_relation, seed.node, parts.storage)
+            };
+            if !seed_element.deleted {
+                scored_elements.push((seed.score, seed_element.heaptids.clone()));
             }
 
-            let score =
-                -quantizer.score_ip_from_parts(prepared_query, neighbor.gamma, &neighbor.code);
-            scored_elements.push((score, neighbor.heaptids));
-        }
-    }
+            // SAFETY: The seed element was loaded from graph storage and
+            // `scan_m` comes from the initialized scan opaque; adjacency
+            // loading validates the graph tuple before returning layer-0
+            // neighbors.
+            for neighbor_tid in unsafe {
+                debug_load_neighbor_tids_for_layer(
+                    index_relation,
+                    parts.storage,
+                    seed.node,
+                    usize::from(parts.scan_m),
+                    0,
+                )
+            } {
+                if !visited_elements.insert(neighbor_tid) {
+                    continue;
+                }
 
-    scored_elements.sort_by(|left, right| left.0.total_cmp(&right.0));
-    let mut heap_tids = Vec::new();
-    let mut seen_heap_tids = std::collections::HashSet::new();
-    for (_score, element_heap_tids) in scored_elements {
-        for heap_tid in element_heap_tids {
-            let coords = debug_item_pointer_coords(heap_tid);
-            if seen_heap_tids.insert(coords) {
-                heap_tids.push(coords);
+                // SAFETY: Neighbor TIDs come from graph adjacency loading for
+                // this relation/storage pair, and the loader validates the
+                // tuple body.
+                let neighbor = unsafe {
+                    graph::load_exact_graph_element(index_relation, neighbor_tid, parts.storage)
+                };
+                if neighbor.deleted || neighbor.heaptids.is_empty() {
+                    continue;
+                }
+
+                let score = -parts.quantizer.score_ip_from_parts(
+                    parts.prepared_query,
+                    neighbor.gamma,
+                    &neighbor.code,
+                );
+                scored_elements.push((score, neighbor.heaptids));
             }
         }
-    }
+
+        scored_elements.sort_by(|left, right| left.0.total_cmp(&right.0));
+        let mut heap_tids = Vec::new();
+        let mut seen_heap_tids = std::collections::HashSet::new();
+        for (_score, element_heap_tids) in scored_elements {
+            for heap_tid in element_heap_tids {
+                let coords = debug_item_pointer_coords(heap_tid);
+                if seen_heap_tids.insert(coords) {
+                    heap_tids.push(coords);
+                }
+            }
+        }
+        heap_tids
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -2272,7 +2312,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
+pub(crate) fn debug_exact_seed_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     seed_heap_tids: Vec<HeapTidCoords>,
@@ -2302,82 +2342,82 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked graph pages and maps heap TIDs to element TIDs.
-    let element_by_heap_tid =
-        unsafe { debug_collect_element_tid_by_heap_tid(index_relation, storage) };
-    let seed_element_tids = seed_heap_tids
-        .into_iter()
-        .filter_map(|heap_tid| element_by_heap_tid.get(&heap_tid).copied())
-        .collect::<Vec<_>>();
-
-    let tids = if seed_element_tids.is_empty() {
-        Vec::new()
-    } else {
-        let seeds = seed_element_tids
+    let tids = debug_with_oracle_score_parts(scan, |parts| {
+        // SAFETY: The relation guard keeps the graph relation open while the
+        // helper scans locked graph pages and maps heap TIDs to element TIDs.
+        let element_by_heap_tid =
+            unsafe { debug_collect_element_tid_by_heap_tid(index_relation, parts.storage) };
+        let seed_element_tids = seed_heap_tids
             .into_iter()
-            .filter_map(|seed_tid| {
-                // SAFETY: Seed element TIDs were resolved from graph pages for
-                // this relation/storage pair, and the loader validates tuples.
-                let element =
-                    unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-                if element.deleted || element.heaptids.is_empty() {
-                    return None;
-                }
-                Some(search::BeamCandidate::new(
-                    seed_tid,
-                    -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-                ))
-            })
+            .filter_map(|heap_tid| element_by_heap_tid.get(&heap_tid).copied())
             .collect::<Vec<_>>();
-        // SAFETY: Seed candidates were resolved from graph storage for this
-        // index, and the search helper validates neighbor tuples as it walks
-        // layer 0 with the supplied storage descriptor.
-        let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates_with_storage(
-                index_relation,
-                storage,
-                usize::from(opaque.scan_m),
-                ef_search.max(1),
-                seeds,
-                |_| true,
-                |neighbor| {
-                    Some(-quantizer.score_ip_from_parts(
-                        prepared_query,
-                        neighbor.gamma,
-                        &neighbor.code,
+
+        if seed_element_tids.is_empty() {
+            Vec::new()
+        } else {
+            let seeds = seed_element_tids
+                .into_iter()
+                .filter_map(|seed_tid| {
+                    // SAFETY: Seed element TIDs were resolved from graph pages
+                    // for this relation/storage pair, and the loader validates
+                    // tuples.
+                    let element = unsafe {
+                        graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
+                    };
+                    if element.deleted || element.heaptids.is_empty() {
+                        return None;
+                    }
+                    Some(search::BeamCandidate::new(
+                        seed_tid,
+                        -parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
+                            element.gamma,
+                            &element.code,
+                        ),
                     ))
-                },
-            )
-        };
-        let mut emitted_elements = std::collections::HashSet::new();
-        let mut heap_tids = Vec::new();
-        for candidate in ordered_candidates {
-            if !emitted_elements.insert(candidate.node) {
-                continue;
-            }
+                })
+                .collect::<Vec<_>>();
+            // SAFETY: Seed candidates were resolved from graph storage for this
+            // index, and the search helper validates neighbor tuples as it
+            // walks layer 0 with the supplied storage descriptor.
+            let ordered_candidates = unsafe {
+                graph::search_layer0_result_candidates_with_storage(
+                    index_relation,
+                    parts.storage,
+                    usize::from(parts.scan_m),
+                    ef_search.max(1),
+                    seeds,
+                    |_| true,
+                    |neighbor| {
+                        Some(-parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
+                            neighbor.gamma,
+                            &neighbor.code,
+                        ))
+                    },
+                )
+            };
+            let mut emitted_elements = std::collections::HashSet::new();
+            let mut heap_tids = Vec::new();
+            for candidate in ordered_candidates {
+                if !emitted_elements.insert(candidate.node) {
+                    continue;
+                }
 
-            // SAFETY: Search candidates come from graph traversal on this
-            // relation/storage pair, and the loader validates the tuple body.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
+                // SAFETY: Search candidates come from graph traversal on this
+                // relation/storage pair, and the loader validates the tuple body.
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, candidate.node, parts.storage)
+                };
+                if element.deleted || element.heaptids.is_empty() {
+                    continue;
+                }
 
-            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+                heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+            }
+            heap_tids
         }
-        heap_tids
-    };
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);

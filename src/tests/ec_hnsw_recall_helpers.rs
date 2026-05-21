@@ -170,14 +170,6 @@
         Vec<i64>, // missed_ids
     );
 
-    macro_rules! hnsw_recall_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before invoking test-only recall/debug helpers for that index and query vector.
-            unsafe { $call }
-        }};
-    }
-
     fn recall_top_k_overlap(left: &[i64], right: &[i64]) -> i32 {
         i32::try_from(left.iter().filter(|id| right.contains(id)).count())
             .expect("top-k overlap should fit into int")
@@ -1467,11 +1459,11 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let oracle_ids = hnsw_recall_debug!(am::debug_top_level_oracle_scan_heap_tids(
+            let oracle_ids = am::debug_top_level_oracle_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -1605,12 +1597,12 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let oracle_ids = hnsw_recall_debug!(am::debug_top_level_oracle_k_seed_scan_heap_tids(
+            let oracle_ids = am::debug_top_level_oracle_k_seed_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
                     seed_count,
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -1746,13 +1738,13 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let oracle_ids = hnsw_recall_debug!(am::debug_layer_oracle_k_carrydown_scan_heap_tids(
+            let oracle_ids = am::debug_layer_oracle_k_carrydown_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
                     layer,
                     seed_count,
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -1889,12 +1881,12 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let neighbor_ids = hnsw_recall_debug!(am::debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
+            let neighbor_ids = am::debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
                     index_oid,
                     query.clone(),
                     layer,
                     seed_count,
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -2008,7 +2000,8 @@
         let mut fully_reachable_queries = 0_i32;
 
         for query in &queries {
-            let oracle_seed_ids = hnsw_recall_debug!(am::debug_top_level_oracle_k_seed_heap_tids(index_oid, query.clone(), seed_count))
+            let oracle_seed_ids =
+                am::debug_top_level_oracle_k_seed_heap_tids(index_oid, query.clone(), seed_count)
             .into_iter()
             .map(|heap_tid| {
                 i64::try_from(
@@ -2216,12 +2209,12 @@
                 .copied()
                 .take(1)
                 .collect::<Vec<_>>();
-            let exact_seed1_ids = hnsw_recall_debug!(am::debug_exact_seed_scan_heap_tids(
+            let exact_seed1_ids = am::debug_exact_seed_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     exact_seed1_input,
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -2233,12 +2226,12 @@
                 .expect("exact-seed1 id should fit into bigint")
             })
             .collect::<Vec<_>>();
-            let exact_seed10_ids = hnsw_recall_debug!(am::debug_exact_seed_scan_heap_tids(
+            let exact_seed10_ids = am::debug_exact_seed_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     exact_seed_heap_tids,
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
