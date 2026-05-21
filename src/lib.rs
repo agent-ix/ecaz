@@ -606,15 +606,16 @@ fn expected_binary_len(data: &[u8]) -> Result<usize, String> {
 }
 
 unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, String> {
-    let remaining = crate::storage::string_info::remaining_len(msg, "invalid tqvector binary")?;
+    let mut msg =
+        crate::storage::string_info::StringInfoReader::from_raw(msg, "invalid tqvector binary")?;
+    let remaining = msg.remaining_len("invalid tqvector binary")?;
     if remaining < MIN_BINARY_BYTES {
         return Err(format!(
             "tqvector too short: {remaining} bytes (need >= {MIN_BINARY_BYTES})"
         ));
     }
 
-    let prefix =
-        crate::storage::string_info::read_bytes(msg, MIN_BINARY_BYTES, "invalid tqvector binary")?;
+    let prefix = msg.read_bytes(MIN_BINARY_BYTES, "invalid tqvector binary")?;
     let expected_len = expected_binary_len(&prefix)?;
     if remaining != expected_len {
         return Err(format!(
@@ -629,15 +630,11 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
 
     let code_bytes_len = expected_len - MIN_BINARY_BYTES;
     if code_bytes_len > 0 {
-        let codes = crate::storage::string_info::read_bytes(
-            msg,
-            code_bytes_len,
-            "invalid tqvector binary",
-        )?;
+        let codes = msg.read_bytes(code_bytes_len, "invalid tqvector binary")?;
         bytes.extend_from_slice(&codes);
     }
 
-    crate::storage::string_info::finish(msg, "invalid tqvector binary")?;
+    msg.finish()?;
     unpack(&bytes)?;
     Ok(bytes)
 }
@@ -739,10 +736,11 @@ fn raw_inner_product(left: &[f32], right: &[f32], label: &str) -> Result<f32, St
 }
 
 unsafe fn recv_raw_f32_message(msg: pg_sys::StringInfo, label: &str) -> Result<Vec<u8>, String> {
-    let remaining = crate::storage::string_info::remaining_len(msg, label)?;
-    let bytes = crate::storage::string_info::read_bytes(msg, remaining, label)?;
+    let mut msg = crate::storage::string_info::StringInfoReader::from_raw(msg, label)?;
+    let remaining = msg.remaining_len(label)?;
+    let bytes = msg.read_bytes(remaining, label)?;
 
-    crate::storage::string_info::finish(msg, label)?;
+    msg.finish()?;
     unpack_raw_f32(&bytes, label)?;
     Ok(bytes)
 }
