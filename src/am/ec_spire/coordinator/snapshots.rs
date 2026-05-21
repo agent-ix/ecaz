@@ -31,15 +31,29 @@ impl SpireLiveIndexRelation {
             return Ok(None);
         }
         let (epoch_manifest, object_manifest, placement_directory) =
-            // SAFETY: `root_control` was read from this live relation and names
-            // the active manifest tuple IDs and local-store config for it.
-            unsafe { scan::load_relation_epoch_manifests(self.relation, root_control)? };
+            self.load_active_epoch_manifests(root_control)?;
         Ok(Some(SpireActiveEpochAnchor {
             root_control,
             epoch_manifest,
             object_manifest,
             placement_directory,
         }))
+    }
+
+    fn load_active_epoch_manifests(
+        self,
+        root_control: meta::SpireRootControlState,
+    ) -> Result<
+        (
+            meta::SpireEpochManifest,
+            meta::SpireObjectManifest,
+            meta::SpirePlacementDirectory,
+        ),
+        String,
+    > {
+        // SAFETY: `root_control` was read from this live relation and names the
+        // active manifest tuple IDs and local-store config for it.
+        unsafe { scan::load_relation_epoch_manifests(self.relation, root_control) }
     }
 
     fn coordinator_fanout_anchor(
