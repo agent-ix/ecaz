@@ -4,7 +4,7 @@ struct SpireLiveIndexRelation {
 }
 
 impl SpireLiveIndexRelation {
-    unsafe fn new(relation: pg_sys::Relation) -> Self {
+    fn new(relation: pg_sys::Relation) -> Self {
         Self { relation }
     }
 
@@ -86,13 +86,14 @@ impl SpireLiveIndexRelation {
     }
 }
 
-unsafe fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
-    // SAFETY: callers are PostgreSQL AM/SQL diagnostic entry points that keep
-    // the SPIRE index relation live for the duration of the helper call.
-    unsafe { SpireLiveIndexRelation::new(index_relation) }
+fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
+    if index_relation.is_null() {
+        pgrx::error!("ec_spire live index relation view received a null relation");
+    }
+    SpireLiveIndexRelation::new(index_relation)
 }
 
-unsafe fn live_index_relid(index_relation: pg_sys::Relation) -> u32 {
+fn live_index_relid(index_relation: pg_sys::Relation) -> u32 {
     live_index_relation(index_relation).relid()
 }
 
