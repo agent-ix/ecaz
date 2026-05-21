@@ -11,7 +11,7 @@ impl SpireLiveIndexRelation {
     fn root_control(self) -> meta::SpireRootControlState {
         // SAFETY: this wrapper is constructed only for a live SPIRE index
         // relation at PostgreSQL AM/SQL diagnostic entry points.
-        page::read_root_control_page(self.relation)
+        unsafe { page::read_root_control_page(self.relation) }
     }
 
     fn relation_options(self) -> options::EcSpireOptions {
@@ -87,7 +87,7 @@ impl SpireLiveIndexRelation {
     {
         // SAFETY: this wrapper is constructed only for a live SPIRE index
         // relation; page::scan_object_tuples owns the page lock/tuple bounds.
-        page::scan_object_tuples(self.relation, visit)
+        unsafe { page::scan_object_tuples(self.relation, visit) }
     }
 }
 

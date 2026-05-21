@@ -9,7 +9,7 @@ fn custom_scan_index_eligibility_result(
 ) -> Result<SpireCustomScanIndexEligibilityRow, String> {
     // SAFETY: index_relation is open for this backend; page helper pins and
     // validates the root/control page before decoding it.
-    let root_control = super::page::read_root_control_page(index_relation);
+    let root_control = unsafe { super::page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
         return Ok(SpireCustomScanIndexEligibilityRow {
             active_epoch: 0,
@@ -97,8 +97,11 @@ fn load_custom_scan_placement_directory(
     // heavier fanout loader used by executor paths, which also decodes epoch
     // and object manifests; executor paths remain responsible for full
     // identity and manifest validation before result-stream merge.
-    let placement_bytes =
-        super::page::read_object_tuple(index_relation, root_control.placement_directory_tid)?;
+    // SAFETY: caller supplies a live SPIRE index relation and root_control
+    // locates the placement directory tuple in that relation.
+    let placement_bytes = unsafe {
+        super::page::read_object_tuple(index_relation, root_control.placement_directory_tid)
+    }?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
     if placement_directory.epoch != root_control.active_epoch {
         return Err(format!(

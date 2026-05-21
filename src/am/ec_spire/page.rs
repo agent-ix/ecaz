@@ -27,7 +27,7 @@ struct SpirePageRelation {
 }
 
 impl SpirePageRelation {
-    fn new(relation: pg_sys::Relation) -> Self {
+    unsafe fn new(relation: pg_sys::Relation) -> Self {
         Self { relation }
     }
 
@@ -148,22 +148,25 @@ impl SpireRegisteredPage {
     }
 }
 
-pub(super) fn initialize_root_control_page(
+pub(super) unsafe fn initialize_root_control_page(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
 ) {
-    initialize_spire_metadata_block_zero(index_relation, root_control);
+    // SAFETY: caller guarantees `index_relation` is live for metadata rewrite.
+    unsafe { initialize_spire_metadata_block_zero(index_relation, root_control) };
 }
 
-pub(super) fn initialize_aux_store_metadata_page(store_relation: pg_sys::Relation) {
-    initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty());
+pub(super) unsafe fn initialize_aux_store_metadata_page(store_relation: pg_sys::Relation) {
+    // SAFETY: caller guarantees `store_relation` is live for metadata rewrite.
+    unsafe { initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty()) };
 }
 
-fn initialize_spire_metadata_block_zero(
+unsafe fn initialize_spire_metadata_block_zero(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
 ) {
-    let relation = SpirePageRelation::new(index_relation);
+    // SAFETY: caller guarantees `index_relation` is live for page access.
+    let relation = unsafe { SpirePageRelation::new(index_relation) };
     let existing_blocks = relation.number_of_blocks();
     let target_block = if existing_blocks == 0 {
         P_NEW
@@ -194,8 +197,11 @@ fn initialize_spire_metadata_block_zero(
     wal_txn.finish();
 }
 
-pub(super) fn read_root_control_page(index_relation: pg_sys::Relation) -> SpireRootControlState {
-    let buffer = SpirePageRelation::new(index_relation)
+pub(super) unsafe fn read_root_control_page(
+    index_relation: pg_sys::Relation,
+) -> SpireRootControlState {
+    // SAFETY: caller guarantees `index_relation` is live for page access.
+    let buffer = unsafe { SpirePageRelation::new(index_relation) }
         .read_main(
             METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -221,7 +227,7 @@ pub(super) fn read_root_control_page(index_relation: pg_sys::Relation) -> SpireR
     root_control
 }
 
-pub(super) fn append_object_tuple(
+pub(super) unsafe fn append_object_tuple(
     index_relation: pg_sys::Relation,
     payload: &[u8],
 ) -> Result<crate::storage::page::ItemPointer, String> {
@@ -229,7 +235,8 @@ pub(super) fn append_object_tuple(
         return Err("ec_spire object tuple payload must not be empty".to_owned());
     }
 
-    let relation = SpirePageRelation::new(index_relation);
+    // SAFETY: caller guarantees `index_relation` is live for page access.
+    let relation = unsafe { SpirePageRelation::new(index_relation) };
     let existing_blocks = relation.number_of_blocks();
     if existing_blocks < FIRST_DATA_BLOCK_NUMBER {
         return Err(
@@ -258,7 +265,7 @@ pub(super) fn append_object_tuple(
     append_object_tuple_to_new_block(relation, payload)
 }
 
-pub(super) fn read_object_tuple(
+pub(super) unsafe fn read_object_tuple(
     index_relation: pg_sys::Relation,
     tid: crate::storage::page::ItemPointer,
 ) -> Result<Vec<u8>, String> {
@@ -282,7 +289,8 @@ where
         ));
     }
 
-    let buffer = SpirePageRelation::new(index_relation)
+    // SAFETY: caller guarantees `index_relation` is live for page access.
+    let buffer = unsafe { SpirePageRelation::new(index_relation) }
         .read_main(
             tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -291,11 +299,12 @@ where
         .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;
     let page = buffer.page();
     let page_size = buffer.page_size();
-    let result = with_object_tuple_from_locked_page(page, page_size, tid, f);
+    // SAFETY: buffer is locked and pinned while the tuple visitor runs.
+    let result = unsafe { with_object_tuple_from_locked_page(page, page_size, tid, f) };
     result
 }
 
-pub(super) fn scan_object_tuples<F>(
+pub(super) unsafe fn scan_object_tuples<F>(
     index_relation: pg_sys::Relation,
     mut visit: F,
 ) -> Result<(), String>
@@ -306,7 +315,8 @@ where
     // BUFFER_LOCK_SHARE. Keep visitors limited to CPU-only tuple inspection
     // and copying bytes into caller-owned state; do not read or pin other pages
     // in this relation from inside the callback.
-    let relation = SpirePageRelation::new(index_relation);
+    // SAFETY: caller guarantees `index_relation` is live for page access.
+    let relation = unsafe { SpirePageRelation::new(index_relation) };
     let block_count = relation.number_of_blocks();
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = relation
@@ -352,12 +362,13 @@ where
     Ok(())
 }
 
-pub(super) fn rewrite_object_tuple_same_len(
+pub(super) unsafe fn rewrite_object_tuple_same_len(
     index_relation: pg_sys::Relation,
     tid: crate::storage::page::ItemPointer,
     payload: &[u8],
 ) -> Result<(), String> {
-    let relation = SpirePageRelation::new(index_relation);
+    // SAFETY: caller guarantees `index_relation` is live for page access.
+    let relation = unsafe { SpirePageRelation::new(index_relation) };
     let buffer = relation
         .read_main(
             tid.block_number,
@@ -368,22 +379,23 @@ pub(super) fn rewrite_object_tuple_same_len(
     let mut wal_txn = relation.start_wal();
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let page_size = buffer.page_size();
-    let result = with_object_tuple_from_locked_page(page, page_size, tid, |tuple| {
-        if tuple.len() != payload.len() {
-            return Err(format!(
-                "ec_spire object tuple rewrite length changed from {} to {}",
-                tuple.len(),
-                payload.len()
-            ));
-        }
+    // SAFETY: buffer is locked and pinned while the tuple visitor runs.
+    let result = unsafe {
+        with_object_tuple_from_locked_page(page, page_size, tid, |tuple| {
+            if tuple.len() != payload.len() {
+                return Err(format!(
+                    "ec_spire object tuple rewrite length changed from {} to {}",
+                    tuple.len(),
+                    payload.len()
+                ));
+            }
 
-        // SAFETY: tuple and payload have equal length, and the source slice
-        // does not overlap the page tuple destination.
-        unsafe {
-            ptr::copy_nonoverlapping(payload.as_ptr(), tuple.as_ptr() as *mut u8, payload.len())
-        };
-        Ok(())
-    });
+            // SAFETY: tuple and payload have equal length, and the source
+            // slice does not overlap the page tuple destination.
+            ptr::copy_nonoverlapping(payload.as_ptr(), tuple.as_ptr() as *mut u8, payload.len());
+            Ok(())
+        })
+    };
     match result {
         Ok(()) => {
             wal_txn.finish();
@@ -396,11 +408,12 @@ pub(super) fn rewrite_object_tuple_same_len(
     }
 }
 
-pub(super) fn delete_object_tuples_no_compact(
+pub(super) unsafe fn delete_object_tuples_no_compact(
     index_relation: pg_sys::Relation,
     tids: &[crate::storage::page::ItemPointer],
 ) -> Result<(u64, u64), String> {
-    let relation = SpirePageRelation::new(index_relation);
+    // SAFETY: caller guarantees `index_relation` is live for page access.
+    let relation = unsafe { SpirePageRelation::new(index_relation) };
     let mut offsets_by_block = std::collections::BTreeMap::<pg_sys::BlockNumber, Vec<u16>>::new();
     for tid in tids {
         if tid.block_number < FIRST_DATA_BLOCK_NUMBER {
@@ -573,7 +586,7 @@ fn append_object_tuple_to_new_block(
     })
 }
 
-fn with_object_tuple_from_locked_page<F, R>(
+unsafe fn with_object_tuple_from_locked_page<F, R>(
     page: pg_sys::Page,
     page_size: usize,
     tid: crate::storage::page::ItemPointer,
@@ -603,7 +616,7 @@ where
     }
 }
 
-fn visit_object_tuple_from_locked_page<F, R>(
+unsafe fn visit_object_tuple_from_locked_page<F, R>(
     page: pg_sys::Page,
     page_size: usize,
     tid: crate::storage::page::ItemPointer,

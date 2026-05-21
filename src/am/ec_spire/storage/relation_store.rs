@@ -869,7 +869,7 @@ impl SpireRelationObjectStore {
         // SAFETY: `SpireRelationObjectStore` instances are constructed from a
         // live PostgreSQL relation opened by the caller/owning store set. This
         // helper is the single append boundary for relation-backed writes.
-        page::append_object_tuple(self.store_relation, encoded)
+        unsafe { page::append_object_tuple(self.store_relation, encoded) }
     }
 }
 

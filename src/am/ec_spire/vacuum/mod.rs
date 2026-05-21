@@ -54,7 +54,7 @@ impl SpireVacuumIndexRelation {
     fn root_control(self) -> SpireRootControlState {
         // SAFETY: this wrapper is constructed only for the live SPIRE index
         // relation supplied to vacuum callbacks.
-        page::read_root_control_page(self.relation)
+        unsafe { page::read_root_control_page(self.relation) }
     }
 
     fn publish_lock(self) -> super::SpireRelationLockGuard {

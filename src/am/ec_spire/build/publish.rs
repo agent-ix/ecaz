@@ -448,13 +448,19 @@ pub(super) fn write_manifest_bundle_to_relation(
     index_relation: pg_sys::Relation,
     manifests: &SpireEncodedManifestBundle,
 ) -> Result<SpirePublishedManifestLocators, String> {
-    let epoch_manifest_tid = page::append_object_tuple(index_relation, &manifests.epoch_manifest)?;
+    // SAFETY: publish callers hold a live SPIRE index relation while appending
+    // the manifest bundle into the relation.
+    let epoch_manifest_tid =
+        unsafe { page::append_object_tuple(index_relation, &manifests.epoch_manifest) }?;
+    // SAFETY: same live relation and publish bundle append scope.
     let object_manifest_tid =
-        page::append_object_tuple(index_relation, &manifests.object_manifest)?;
+        unsafe { page::append_object_tuple(index_relation, &manifests.object_manifest) }?;
+    // SAFETY: same live relation and publish bundle append scope.
     let placement_directory_tid =
-        page::append_object_tuple(index_relation, &manifests.placement_directory)?;
+        unsafe { page::append_object_tuple(index_relation, &manifests.placement_directory) }?;
+    // SAFETY: same live relation and publish bundle append scope.
     let local_store_config_tid =
-        page::append_object_tuple(index_relation, &manifests.local_store_config)?;
+        unsafe { page::append_object_tuple(index_relation, &manifests.local_store_config) }?;
     Ok(SpirePublishedManifestLocators {
         epoch_manifest_tid,
         object_manifest_tid,
@@ -489,7 +495,7 @@ pub(super) fn write_retired_epoch_manifest_to_relation(
     // the original published manifest for snapshot dedupe.
     // SAFETY: index_relation is the open SPIRE index relation and encoded is a
     // validated retired copy of the previous published epoch manifest.
-    page::append_object_tuple(index_relation, &encoded)
+    unsafe { page::append_object_tuple(index_relation, &encoded) }
 }
 
 pub(super) fn publish_replacement_epoch_to_relation(
@@ -503,7 +509,7 @@ pub(super) fn publish_replacement_epoch_to_relation(
     let root_control = root_control_state_for_publish(input, locators)?;
     // SAFETY: root_control points at the manifest locators just appended to this
     // open index relation and publishes the replacement epoch atomically.
-    page::initialize_root_control_page(index_relation, root_control);
+    unsafe { page::initialize_root_control_page(index_relation, root_control) };
     Ok(())
 }
 
@@ -514,7 +520,8 @@ pub(super) fn write_placement_entries_to_relation(
     let mut evidence = Vec::with_capacity(placement_directory.entries.len());
     for entry in &placement_directory.entries {
         let encoded = entry.encode()?;
-        let placement_tid = page::append_object_tuple(index_relation, &encoded)?;
+        // SAFETY: placement publication appends to the live SPIRE index relation.
+        let placement_tid = unsafe { page::append_object_tuple(index_relation, &encoded) }?;
         evidence.push(SpirePublishPlacementWriteEvidence {
             pid: entry.pid,
             placement_tid,

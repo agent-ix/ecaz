@@ -293,7 +293,7 @@ pub(super) fn create_local_store_relations_for_build(
         };
         // SAFETY: store_relation is opened with AccessExclusiveLock and points at
         // the freshly-created auxiliary store relation.
-        page::initialize_aux_store_metadata_page(store_relation.as_ptr());
+        unsafe { page::initialize_aux_store_metadata_page(store_relation.as_ptr()) };
         created.push((entry.local_store_id, store_relid.into()));
     }
 
