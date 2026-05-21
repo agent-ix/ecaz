@@ -1594,8 +1594,10 @@ fn debug_prepared_query_sq_len(opaque: &EcIvfScanOpaque) -> usize {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> super::page::MetadataPage {
-    super::page::read_metadata_page(index_relation)
+fn debug_read_metadata_page(index_relation: &IndexRelationGuard) -> super::page::MetadataPage {
+    // SAFETY: the debug helper owns the open index relation guard for this
+    // metadata read.
+    unsafe { super::page::read_metadata_page(index_relation.as_ptr()) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1703,7 +1705,7 @@ fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys::Oid) -> bool {
+pub(crate) fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys::Oid) -> bool {
     let state = debug_begin_heap_backed_scan(index_oid);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(vec![1.0_f32])
@@ -1738,7 +1740,7 @@ pub(crate) struct EcIvfRescanDebugSnapshot {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
+pub(crate) fn debug_ec_ivf_rescan_query_prep(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> EcIvfRescanDebugSnapshot {
@@ -1776,7 +1778,7 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
+pub(crate) fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug pq fastscan cache",
@@ -1812,7 +1814,7 @@ pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_s
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
+pub(crate) fn debug_ec_ivf_gettuple_outputs(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<(u32, u16, f32)>, bool) {
@@ -1843,12 +1845,12 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u32, u64) {
+pub(crate) fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u32, u64) {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug metadata",
     );
-    let metadata = debug_read_metadata_page(index_relation.as_ptr());
+    let metadata = debug_read_metadata_page(&index_relation);
     (
         metadata.format_version,
         metadata.nlists,
@@ -1859,12 +1861,12 @@ pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
+pub(crate) fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug quantizer cache",
     );
-    let metadata = debug_read_metadata_page(index_relation.as_ptr());
+    let metadata = debug_read_metadata_page(&index_relation);
     if metadata.dimensions == 0 {
         return None;
     }
@@ -1876,24 +1878,24 @@ pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) ->
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
+pub(crate) fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug rerank mode",
     );
-    let metadata = debug_read_metadata_page(index_relation.as_ptr());
+    let metadata = debug_read_metadata_page(&index_relation);
     metadata.rerank.reloption_name()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_build_metadata(
+pub(crate) fn debug_ec_ivf_build_metadata(
     index_oid: pg_sys::Oid,
 ) -> (u16, u32, u16, u64, bool, bool) {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug build metadata",
     );
-    let metadata = debug_read_metadata_page(index_relation.as_ptr());
+    let metadata = debug_read_metadata_page(&index_relation);
     (
         metadata.dimensions,
         metadata.nlists,
@@ -1905,15 +1907,13 @@ pub(crate) unsafe fn debug_ec_ivf_build_metadata(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_directory_summary(
-    index_oid: pg_sys::Oid,
-) -> (u32, u32, u64, u64, u64) {
+pub(crate) fn debug_ec_ivf_directory_summary(index_oid: pg_sys::Oid) -> (u32, u32, u64, u64, u64) {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug directory summary",
     );
     let index_relation_ptr = index_relation.as_ptr();
-    let metadata = debug_read_metadata_page(index_relation_ptr);
+    let metadata = debug_read_metadata_page(&index_relation);
 
     if metadata.directory_head == crate::storage::page::ItemPointer::INVALID {
         if metadata.total_live_tuples != 0 {
@@ -1928,8 +1928,10 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
     let mut dead_sum = 0_u64;
     let mut inserted_sum = 0_u64;
     for expected_list_id in 0..metadata.nlists {
+        // SAFETY: the debug helper owns the open index relation while walking
+        // the directory chain.
         let (directory, following_tid) =
-            super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid)
+            unsafe { super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid) }
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
         if directory.list_id != expected_list_id {
             pgrx::error!(
@@ -1957,7 +1959,7 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_directory_entry(
+pub(crate) fn debug_ec_ivf_directory_entry(
     index_oid: pg_sys::Oid,
     list_id: u32,
 ) -> (u32, u32, u64, u64, u64) {
@@ -1965,8 +1967,10 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
         index_oid,
         "ec_ivf debug directory entry",
     );
-    let metadata = debug_read_metadata_page(index_relation.as_ptr());
-    let directories = load_directory_entries(index_relation.as_ptr(), &metadata)
+    let metadata = debug_read_metadata_page(&index_relation);
+    // SAFETY: the debug helper owns the open index relation while reading the
+    // directory entries.
+    let directories = unsafe { load_directory_entries(index_relation.as_ptr(), &metadata) }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let directory = directories
         .get(list_id as usize)

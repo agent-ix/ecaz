@@ -313,14 +313,14 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_vacuum_stats(
-    index_oid: pg_sys::Oid,
-) -> pg_sys::IndexBulkDeleteResult {
+pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug vacuum stats",
     );
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: debug helper allocates a zeroed vacuum info struct in the
+    // current PostgreSQL memory context for the immediate callback call.
+    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
@@ -337,7 +337,7 @@ pub(crate) unsafe fn debug_ec_ivf_vacuum_stats(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids(
+pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
@@ -346,7 +346,9 @@ pub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids(
         pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         "ec_ivf debug vacuum remove heap tids",
     );
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: debug helper allocates a zeroed vacuum info struct in the
+    // current PostgreSQL memory context for the immediate callback call.
+    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {

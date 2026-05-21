@@ -431,7 +431,7 @@ fn apply_metadata_insert_stats(metadata: &mut page::MetadataPage) -> Result<(), 
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
+pub(crate) fn debug_ec_ivf_validate_no_duplicate_heap_tid(
     index_oid: pg_sys::Oid,
     block_number: u32,
     offset_number: u16,
@@ -441,12 +441,14 @@ pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
         "debug_ec_ivf_validate_no_duplicate_heap_tid",
     );
     // SAFETY: the guarded index relation is live for this metadata read.
-    let metadata = page::read_metadata_page(index_relation.as_ptr());
+    let metadata = unsafe { page::read_metadata_page(index_relation.as_ptr()) };
     let heap_tid = ItemPointer {
         block_number,
         offset_number,
     };
-    let result = ensure_heap_tid_absent(index_relation.as_ptr(), &metadata, heap_tid);
+    // SAFETY: the debug helper owns the guarded index relation while scanning
+    // IVF postings for this heap TID.
+    let result = unsafe { ensure_heap_tid_absent(index_relation.as_ptr(), &metadata, heap_tid) };
     result.unwrap_or_else(|e| pgrx::error!("ec_ivf duplicate heap tid validation failed: {e}"));
 }
 

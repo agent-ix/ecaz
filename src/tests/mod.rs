@@ -2180,10 +2180,7 @@
         ctid_to_id: &HashMap<(u32, u16), usize>,
         k: usize,
     ) -> Vec<usize> {
-        // SAFETY: Test callers create the referenced IVF index before asking
-        // the debug helper to run a gettuple scan for the supplied query.
-        let (outputs, _orderby_cleared) =
-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
+        let (outputs, _orderby_cleared) = am::debug_ec_ivf_gettuple_outputs(index_oid, query);
         outputs
             .into_iter()
             .take(k)

@@ -1,9 +1,6 @@
     macro_rules! ec_ivf_debug {
         ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced IVF index
-            // before calling the extension's test-only debug helper. The
-            // helper owns the PostgreSQL relation access for the supplied OID.
-            unsafe { $call }
+            $call
         }};
     }
 
