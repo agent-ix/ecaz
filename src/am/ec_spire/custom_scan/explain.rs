@@ -66,8 +66,9 @@ fn custom_scan_explain_context(index_oid: pg_sys::Oid) -> SpireCustomScanExplain
     // SAFETY: The relation pointer is owned by `IndexRelationGuard` and
     // remains open under AccessShareLock while these helpers read relation
     // metadata.
-    let eligibility = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) }
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let index = unsafe { super::live_index_relation(index_relation.as_ptr()) };
+    let eligibility =
+        custom_scan_index_eligibility_result(index).unwrap_or_else(|e| pgrx::error!("{e}"));
     let relation_options = super::options::relation_options(index_relation.as_ptr());
     let configured_nlists = u32::try_from(relation_options.nlists).unwrap_or(0);
     let relation_nprobe = u32::try_from(relation_options.nprobe).unwrap_or(0);

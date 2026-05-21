@@ -1,6 +1,7 @@
-pub(crate) unsafe fn custom_scan_index_eligibility_result(
-    index_relation: pg_sys::Relation,
+pub(crate) fn custom_scan_index_eligibility_result(
+    index: SpireLiveIndexRelation,
 ) -> Result<SpireCustomScanIndexEligibilityRow, String> {
+    let index_relation = index.as_ptr();
     // SAFETY: index_relation is open for this backend; page helper pins and
     // validates the root/control page before decoding it.
     let root_control = unsafe { super::page::read_root_control_page(index_relation) };
@@ -20,8 +21,7 @@ pub(crate) unsafe fn custom_scan_index_eligibility_result(
         });
     }
 
-    let placement_directory =
-        unsafe { load_custom_scan_placement_directory(index_relation, root_control) }?;
+    let placement_directory = load_custom_scan_placement_directory(index, root_control)?;
     let active_epoch = root_control.active_epoch;
     let mut local_placement_count = 0_u64;
     let mut remote_placement_count = 0_u64;
@@ -77,8 +77,8 @@ pub(crate) unsafe fn custom_scan_index_eligibility_result(
     })
 }
 
-unsafe fn load_custom_scan_placement_directory(
-    index_relation: pg_sys::Relation,
+fn load_custom_scan_placement_directory(
+    index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
 ) -> Result<meta::SpirePlacementDirectory, String> {
     // The SQL eligibility wrapper normally returns `no_active_epoch` before
@@ -94,6 +94,7 @@ unsafe fn load_custom_scan_placement_directory(
     // identity and manifest validation before result-stream merge.
     // SAFETY: caller supplies a live SPIRE index relation and root_control
     // locates the placement directory tuple in that relation.
+    let index_relation = index.as_ptr();
     let placement_bytes = unsafe {
         super::page::read_object_tuple(index_relation, root_control.placement_directory_tid)
     }?;
@@ -457,9 +458,11 @@ impl<'a> CustomScanRelPathlistInput<'a> {
             else {
                 return true;
             };
-            if let Ok(row) =
-                unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) }
-            {
+            // SAFETY: the guard keeps the candidate SPIRE index relation live
+            // while the planner eligibility helper inspects root/control and
+            // placement metadata.
+            let index = unsafe { super::live_index_relation(index_relation.as_ptr()) };
+            if let Ok(row) = custom_scan_index_eligibility_result(index) {
                 if row.eligible_for_custom_scan {
                     candidate = Some((index_info.indexoid, row));
                     return false;

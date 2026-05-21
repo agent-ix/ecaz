@@ -9,6 +9,7 @@ use crate::am::common::{
 };
 
 use super::meta;
+use super::SpireLiveIndexRelation;
 
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcSpireDistributedScan";
 const CUSTOM_SCAN_ROUTING_SCORE_BOUND: f64 = 64.0;
