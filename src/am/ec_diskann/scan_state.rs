@@ -263,51 +263,50 @@ unsafe fn copy_data_page_tuple_bytes(
     Ok(Some(tuple_bytes))
 }
 
-pub(super) unsafe fn resolve_scan_heap_relation(
-    scan: pg_sys::IndexScanDesc,
-) -> Result<ResolvedScanHeapRelation, String> {
-    // SAFETY: `scan` is the live IndexScanDesc supplied by PostgreSQL; when
-    // heapRelation is present, PostgreSQL owns it for the scan duration.
-    if unsafe { !(*scan).heapRelation.is_null() } {
-        // SAFETY: The heapRelation null check above proved this scan-owned
-        // relation pointer can be borrowed.
-        return Ok(ResolvedScanHeapRelation::borrowed(unsafe {
-            (*scan).heapRelation
-        }));
-    }
-
-    // SAFETY: The scan owns a live index relation descriptor.
-    let index_relation = unsafe { (*scan).indexRelation };
-    // SAFETY: `index_relation` is live while resolving the heap relation.
-    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
-    if heap_oid == pg_sys::InvalidOid {
-        return Err("ec_diskann scan could not resolve heap relation".into());
-    }
-    HeapRelationGuard::try_access_share(heap_oid)
-        .map(ResolvedScanHeapRelation::owned)
-        .ok_or_else(|| "ec_diskann scan could not open heap relation".into())
+pub(super) struct DiskannScanDescView<'a> {
+    scan: &'a pg_sys::IndexScanDescData,
 }
 
-pub(super) unsafe fn resolve_scan_snapshot(
-    scan: pg_sys::IndexScanDesc,
-) -> Result<ResolvedScanSnapshot, String> {
-    // SAFETY: `scan` is the live IndexScanDesc supplied by PostgreSQL; when
-    // xs_snapshot is set, PostgreSQL owns it for the scan duration.
-    if unsafe { !(*scan).xs_snapshot.is_null() } {
-        // SAFETY: The xs_snapshot null check above proved this scan-owned
-        // snapshot pointer can be borrowed.
-        return Ok(ResolvedScanSnapshot::borrowed(unsafe {
-            (*scan).xs_snapshot
-        }));
+impl<'a> DiskannScanDescView<'a> {
+    pub(super) unsafe fn from_raw(scan: pg_sys::IndexScanDesc, context: &str) -> Self {
+        let scan = unsafe { scan.as_ref() }
+            .unwrap_or_else(|| pgrx::error!("{context} received a null scan descriptor"));
+        Self { scan }
     }
 
-    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
-        return Ok(ResolvedScanSnapshot::borrowed(active_snapshot));
+    pub(super) fn index_relation(&self) -> pg_sys::Relation {
+        self.scan.indexRelation
     }
 
-    RegisteredSnapshotGuard::latest()
-        .map(ResolvedScanSnapshot::owned)
-        .ok_or_else(|| "ec_diskann scan could not resolve an active snapshot".into())
+    pub(super) fn resolve_heap_relation(&self) -> Result<ResolvedScanHeapRelation, String> {
+        if !self.scan.heapRelation.is_null() {
+            return Ok(ResolvedScanHeapRelation::borrowed(self.scan.heapRelation));
+        }
+
+        // SAFETY: The scan owns a live index relation descriptor.
+        let heap_oid =
+            unsafe { crate::storage::relation::index_heap_relation_oid(self.index_relation()) };
+        if heap_oid == pg_sys::InvalidOid {
+            return Err("ec_diskann scan could not resolve heap relation".into());
+        }
+        HeapRelationGuard::try_access_share(heap_oid)
+            .map(ResolvedScanHeapRelation::owned)
+            .ok_or_else(|| "ec_diskann scan could not open heap relation".into())
+    }
+
+    pub(super) fn resolve_snapshot(&self) -> Result<ResolvedScanSnapshot, String> {
+        if !self.scan.xs_snapshot.is_null() {
+            return Ok(ResolvedScanSnapshot::borrowed(self.scan.xs_snapshot));
+        }
+
+        if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
+            return Ok(ResolvedScanSnapshot::borrowed(active_snapshot));
+        }
+
+        RegisteredSnapshotGuard::latest()
+            .map(ResolvedScanSnapshot::owned)
+            .ok_or_else(|| "ec_diskann scan could not resolve an active snapshot".into())
+    }
 }
 
 pub(super) fn fetch_heap_row_version_with_reader(

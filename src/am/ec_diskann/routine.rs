@@ -617,13 +617,17 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             return;
         };
 
-        let heap_relation_state = scan_state::resolve_scan_heap_relation(scan)
+        let scan_desc = scan_state::DiskannScanDescView::from_raw(scan, "ec_diskann amrescan");
+        let heap_relation_state = scan_desc
+            .resolve_heap_relation()
             .unwrap_or_else(|e| pgrx::error!("ec_diskann scan heap relation setup failed: {e}"));
-        let snapshot_state = scan_state::resolve_scan_snapshot(scan)
+        let snapshot_state = scan_desc
+            .resolve_snapshot()
             .unwrap_or_else(|e| pgrx::error!("ec_diskann scan snapshot setup failed: {e}"));
-        let source_attnum = indexed_ecvector_attnum((*scan).indexRelation).unwrap_or_else(|e| {
-            pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
-        });
+        let source_attnum =
+            indexed_ecvector_attnum(scan_desc.index_relation()).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
+            });
         let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
         let scan_params = ScanParams {
             entry_point,
