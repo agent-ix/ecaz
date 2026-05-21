@@ -16439,7 +16439,7 @@ fn ec_spire_index_boundary_replica_identity_snapshot(
         index_oid,
         "ec_spire_index_boundary_replica_identity_snapshot",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_boundary_replica_identity_snapshot
     );
@@ -16499,7 +16499,7 @@ fn ec_spire_index_boundary_replica_placement_diagnostics(
         index_oid,
         "ec_spire_index_boundary_replica_placement_diagnostics",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_boundary_replica_placement_diagnostics
     );
