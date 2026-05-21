@@ -259,6 +259,90 @@ fn miri_is_delete_delta_assignment_wrapper_rejects_non_delete_rows() {
 }
 
 #[test]
+fn miri_local_object_store_read_rejects_placement_epoch_below_object_backref() {
+    // Targets local_store.rs:339:13/52, 420:48/82, 448:13/54, 477:13/54,
+    // 506:13/54 — every read_* method (read_object_header,
+    // read_routing_object, read_leaf_object_v2, read_delta_object,
+    // read_top_graph_object) has the same guard:
+    //   `if backref == 0 || backref > placement.epoch { Err }`
+    // Inserting with a high epoch then reading with a placement whose
+    // .epoch is lower than the object's stamped backref makes the
+    // `> placement.epoch` operand true; the `|| → &&` and `> → <`
+    // mutants either skip the check or invert it, so the read no
+    // longer errors. The assertion `unsafe { ... }.is_err()` fails
+    // under the mutants.
+    let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+    // Routing.
+    let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+    let routing_placement = store.insert_routing_object(7, &routing).unwrap();
+    let mut placement_low_epoch = routing_placement;
+    placement_low_epoch.epoch = 1; // < object's backref of 7
+    assert!(store.read_routing_object(&placement_low_epoch).is_err());
+    assert!(store.read_object_header(&placement_low_epoch).is_err());
+
+    // Leaf V2.
+    let leaf_placement = store
+        .insert_leaf_object_v2_from_rows(
+            7,
+            17,
+            3,
+            5,
+            &[leaf_v2_assignment(1, 8), leaf_v2_assignment(2, 8)],
+        )
+        .unwrap();
+    let mut leaf_low = leaf_placement;
+    leaf_low.epoch = 1;
+    assert!(store.read_leaf_object_v2(&leaf_low).is_err());
+
+    // Delta.
+    let delta = SpireDeltaPartitionObject::new(
+        19,
+        4,
+        17,
+        vec![SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            },
+            payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2, 3, 4],
+        }],
+    )
+    .unwrap();
+    let delta_placement = store.insert_delta_object(7, &delta).unwrap();
+    let mut delta_low = delta_placement;
+    delta_low.epoch = 1;
+    assert!(store.read_delta_object(&delta_low).is_err());
+
+    // Top-graph.
+    let top_graph = SpireTopGraphPartitionObject::new(
+        90,
+        3,
+        11,
+        2,
+        2,
+        2,
+        4,
+        1.2,
+        0,
+        vec![SpireTopGraphNodeRecord {
+            child_pid: 21,
+            centroid_ordinal: 0,
+            neighbors: vec![],
+        }],
+    )
+    .unwrap();
+    let tg_placement = store.insert_top_graph_object(7, &top_graph).unwrap();
+    let mut tg_low = tg_placement;
+    tg_low.epoch = 1;
+    assert!(store.read_top_graph_object(&tg_low).is_err());
+}
+
+#[test]
 fn miri_validate_leaf_v2_header_rejects_non_leaf_kind() {
     // Targets helpers.rs:80:5 (`validate_leaf_v2_header -> Ok(())`).
     // A header with a non-Leaf kind must surface the kind-mismatch error
