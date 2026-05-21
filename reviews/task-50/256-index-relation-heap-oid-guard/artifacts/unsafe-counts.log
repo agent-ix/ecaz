@@ -1,0 +1,4 @@
+before_broad_unsafe_grep_hits: 2405
+after_broad_unsafe_grep_hits: 2402
+before_touched_direct_unsafe_blocks: 6 + 135 + 37 + 61 = 239
+after_touched_direct_unsafe_blocks: 7 + 134 + 35 + 60 = 236
