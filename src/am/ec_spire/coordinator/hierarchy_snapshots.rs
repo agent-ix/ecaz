@@ -1201,13 +1201,10 @@ fn remote_search_coordinator_local_summary_result(
     })
 }
 
-pub(crate) unsafe fn index_top_graph_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_top_graph_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexTopGraphSnapshot {
     let result = (|| -> Result<SpireIndexTopGraphSnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let top_graph_plan = relation_options.top_graph_plan()?;
         let root_control = index.root_control();
@@ -1378,13 +1375,10 @@ pub(crate) unsafe fn index_top_graph_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_hierarchy_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_hierarchy_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexHierarchySnapshot {
     let result = (|| -> Result<SpireIndexHierarchySnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0, true, false);
@@ -1540,13 +1534,10 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_object_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_object_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexObjectSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexObjectSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1600,13 +1591,10 @@ pub(crate) unsafe fn index_object_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_delta_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_delta_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexDeltaSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexDeltaSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = live_index_relation(index_relation);
         let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
             return Ok(Vec::new());
         };
@@ -1668,15 +1656,12 @@ pub(crate) unsafe fn index_delta_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_scan_placement_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_scan_placement_snapshot(
+    index: SpireLiveIndexRelation,
     query_values: Vec<f32>,
 ) -> Vec<SpireIndexScanPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexScanPlacementSnapshotRow>, String> {
         let query = scan::SpireScanQuery::new(query_values)?;
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = live_index_relation(index_relation);
         let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
             return Ok(Vec::new());
         };
@@ -1746,27 +1731,24 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_selected_pid_placement_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_selected_pid_placement_snapshot(
+    index: SpireLiveIndexRelation,
     selected_pids: Vec<u64>,
 ) -> Vec<SpireIndexSelectedPidPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexSelectedPidPlacementSnapshotRow>, String> {
-        let root_control = live_index_relation(index_relation).root_control();
-        if root_control.active_epoch == 0 {
+        let root_control = index.root_control();
+        let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        let (_epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+        };
         let mut rows = Vec::with_capacity(selected_pids.len());
         for (selection_index, pid) in selected_pids.into_iter().enumerate() {
             if pid == 0 {
                 return Err("ec_spire selected PID placement snapshot received PID 0".to_owned());
             }
-            let manifest_entry = object_manifest.get(pid).ok_or_else(|| {
+            let manifest_entry = anchor.object_manifest.get(pid).ok_or_else(|| {
                 format!("ec_spire selected PID placement snapshot missing object for pid {pid}")
             })?;
-            let placement = placement_directory.get(pid).ok_or_else(|| {
+            let placement = anchor.placement_directory.get(pid).ok_or_else(|| {
                 format!("ec_spire selected PID placement snapshot missing placement for pid {pid}")
             })?;
             if placement.object_version != manifest_entry.object_version {
@@ -1795,15 +1777,12 @@ pub(crate) unsafe fn index_selected_pid_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_scan_routing_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_scan_routing_snapshot(
+    index: SpireLiveIndexRelation,
     query_values: Vec<f32>,
 ) -> Vec<SpireIndexScanRoutingSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexScanRoutingSnapshotRow>, String> {
         let query = scan::SpireScanQuery::new(query_values)?;
-        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
-        // index relation for the duration of the scan-routing snapshot.
-        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1885,13 +1864,10 @@ pub(crate) unsafe fn index_scan_routing_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_root_routing_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_root_routing_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexRootRoutingSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexRootRoutingSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
-        // index relation for the duration of the root-routing snapshot.
-        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1903,13 +1879,10 @@ pub(crate) unsafe fn index_root_routing_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_routing_centroid_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_routing_centroid_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexRoutingCentroidSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexRoutingCentroidSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic helper with a live SPIRE
-        // index relation for the duration of the routing-centroid snapshot.
-        let index = live_index_relation(index_relation);
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1921,8 +1894,8 @@ pub(crate) unsafe fn index_routing_centroid_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn classify_centroid(
-    index_relation: pg_sys::Relation,
+pub(crate) fn classify_centroid(
+    index: SpireLiveIndexRelation,
     embedding: &[f32],
 ) -> Result<(u32, u64, u64), String> {
     if embedding.is_empty() {
@@ -1932,8 +1905,6 @@ pub(crate) unsafe fn classify_centroid(
         return Err("ec_spire_classify_centroid embedding components must be finite".to_owned());
     }
 
-    // SAFETY: PostgreSQL calls this helper with a live SPIRE index relation.
-    let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     let Some(anchor) = index.active_epoch_anchor(root_control)? else {
         return Err(

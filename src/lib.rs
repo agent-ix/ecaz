@@ -7598,7 +7598,7 @@ fn ec_spire_index_scan_placement_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_placement_snapshot");
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -7692,7 +7692,7 @@ fn ec_spire_index_selected_pid_placement_snapshot(
             index_oid,
             "ec_spire_index_selected_pid_placement_snapshot",
         );
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_selected_pid_placement_snapshot,
             selected_pids
@@ -7738,7 +7738,7 @@ fn ec_spire_index_scan_local_store_execution_snapshot(
             index_oid,
             "ec_spire_index_scan_local_store_execution_snapshot",
         );
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -7788,7 +7788,7 @@ fn ec_spire_index_scan_local_store_read_overlap_harness(
             index_oid,
             "ec_spire_index_scan_local_store_read_overlap_harness",
         );
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -7849,7 +7849,11 @@ fn ec_spire_index_scan_routing_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_routing_snapshot");
-        with_live_index_relation!(index_relation, am::spire_index_scan_routing_snapshot, query)
+        with_spire_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_routing_snapshot,
+            query
+        )
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -7905,12 +7909,12 @@ fn ec_spire_index_scan_pipeline_snapshot(
     let (routing_rows, placement_rows) = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_pipeline_snapshot");
-        let routing_rows = with_live_index_relation!(
+        let routing_rows = with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_routing_snapshot,
             query.clone()
         );
-        let placement_rows = with_live_index_relation!(
+        let placement_rows = with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -8125,7 +8129,7 @@ fn ec_spire_index_root_routing_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_root_routing_snapshot");
-        with_live_index_relation!(index_relation, am::spire_index_root_routing_snapshot)
+        with_spire_live_index_relation!(index_relation, am::spire_index_root_routing_snapshot)
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -8186,7 +8190,7 @@ fn ec_spire_index_routing_centroid_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_routing_centroid_snapshot");
-        with_live_index_relation!(index_relation, am::spire_index_routing_centroid_snapshot)
+        with_spire_live_index_relation!(index_relation, am::spire_index_routing_centroid_snapshot)
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -8233,7 +8237,7 @@ fn ec_spire_classify_centroid(
     let classification = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_classify_centroid");
-        with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
+        with_spire_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
     };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
@@ -8271,7 +8275,7 @@ fn ec_spire_plan_coordinator_insert(
     let classification = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert");
-        with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
+        with_spire_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
     };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
@@ -8396,9 +8400,12 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
             index_oid,
             "ec_spire_prepare_coordinator_insert_tuple_payload",
         );
-        let classification =
-            with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let classification = with_spire_live_index_relation!(
+            index_relation,
+            am::spire_classify_centroid,
+            &embedding
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
         let row_payload_json = row_payload.0.to_string();
         let prepare_row = with_live_index_relation_safe!(
             index_relation,
@@ -9347,7 +9354,8 @@ fn ec_spire_index_hierarchy_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_hierarchy_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_hierarchy_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_hierarchy_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -9421,7 +9429,8 @@ fn ec_spire_index_top_graph_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_top_graph_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_top_graph_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_top_graph_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16254,7 +16263,7 @@ fn ec_spire_index_object_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_object_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_object_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_index_object_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -17294,7 +17303,7 @@ fn ec_spire_index_delta_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_delta_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_delta_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_index_delta_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {

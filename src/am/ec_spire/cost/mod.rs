@@ -230,7 +230,8 @@ unsafe fn cost_index_hierarchy_snapshot(
 ) -> SpireIndexHierarchySnapshot {
     // SAFETY: cost callers pass a live SPIRE index relation, and the snapshot
     // only reads hierarchy metadata.
-    unsafe { index_hierarchy_snapshot(index_relation) }
+    let index = unsafe { live_index_relation(index_relation) };
+    index_hierarchy_snapshot(index)
 }
 
 #[cfg(feature = "pg18")]
