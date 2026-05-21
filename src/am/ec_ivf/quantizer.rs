@@ -388,7 +388,7 @@ pub(super) fn resolve_pq_fastscan_group_size(
     Ok(group_size)
 }
 
-pub(super) unsafe fn load_pq_fastscan_model(
+pub(super) fn load_pq_fastscan_model(
     index_relation: pgrx::pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> Result<IvfPqFastScanModel, String> {

@@ -100,9 +100,7 @@ unsafe fn reencode_tuple_for_storage(
     if metadata.storage_format != options::StorageFormat::PqFastScan {
         return Ok(tuple);
     }
-    // SAFETY: caller passes the live IVF index relation and metadata read from
-    // it; the model chain is validated by the loader.
-    let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+    let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
     let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
         usize::from(metadata.dimensions),

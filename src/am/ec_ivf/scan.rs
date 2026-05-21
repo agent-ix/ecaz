@@ -729,9 +729,7 @@ fn pq_fastscan_model_for_scan<'a>(
     metadata: &super::page::MetadataPage,
 ) -> Result<&'a IvfPqFastScanModel, String> {
     if opaque.pq_fastscan_model.is_null() {
-        // SAFETY: `index_relation` and metadata describe the live IVF index;
-        // the quantizer loader validates the on-disk PQ model.
-        let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+        let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
         opaque.pq_fastscan_model = Box::into_raw(Box::new(model));
     }
     Ok(
