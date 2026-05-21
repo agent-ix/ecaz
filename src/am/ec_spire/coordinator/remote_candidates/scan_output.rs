@@ -805,10 +805,10 @@ pub(crate) unsafe fn remote_search_operator_diagnostics_row(
     top_k: usize,
 ) -> SpireRemoteSearchOperatorDiagnosticsRow {
     let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {
-        let capability = remote_node_capability_summary(index_relation);
         // SAFETY: callers hold the SPIRE index relation open while collecting
         // operator diagnostics.
         let index = unsafe { live_index_relation(index_relation) };
+        let capability = remote_node_capability_summary(index);
         let remote_snapshots = remote_node_snapshot(index)
             .into_iter()
             .filter(|row| row.node_id != meta::SPIRE_LOCAL_NODE_ID)

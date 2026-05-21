@@ -1569,14 +1569,11 @@ pub(crate) fn remote_node_descriptor_registration_contract_rows(
     ]
 }
 
-pub(crate) unsafe fn remote_node_descriptor_readiness(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_node_descriptor_readiness(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireRemoteNodeDescriptorReadinessRow> {
     let mut rows = Vec::new();
     let contract_rows = remote_node_descriptor_contract_rows();
-    // SAFETY: callers hold the SPIRE index relation open while collecting
-    // remote-node descriptor readiness.
-    let index = unsafe { live_index_relation(index_relation) };
     for node in remote_node_snapshot(index) {
         if node.node_id == meta::SPIRE_LOCAL_NODE_ID {
             continue;
@@ -1620,10 +1617,10 @@ pub(crate) unsafe fn remote_node_descriptor_readiness(
     rows
 }
 
-pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_node_descriptor_readiness_summary(
+    index: SpireLiveIndexRelation,
 ) -> SpireRemoteNodeDescriptorReadinessSummaryRow {
-    let root_control = live_index_relation(index_relation).root_control();
+    let root_control = index.root_control();
     let mut summary = SpireRemoteNodeDescriptorReadinessSummaryRow {
         active_epoch: root_control.active_epoch,
         remote_node_count: 0,
@@ -1640,7 +1637,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
     }
 
     let mut seen_nodes = HashSet::new();
-    for row in remote_node_descriptor_readiness(index_relation) {
+    for row in remote_node_descriptor_readiness(index) {
         if seen_nodes.insert(row.node_id) {
             summary.remote_node_count =
                 summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
@@ -1698,22 +1695,19 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
     summary
 }
 
-pub(crate) unsafe fn remote_node_capability_plan(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_node_capability_plan(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
-    // SAFETY: callers hold the SPIRE index relation open while collecting
-    // remote-node capability rows.
-    let index = unsafe { live_index_relation(index_relation) };
     remote_node_snapshot(index)
         .into_iter()
         .map(remote_node_capability_plan_row)
         .collect()
 }
 
-pub(crate) unsafe fn remote_node_capability_summary(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_node_capability_summary(
+    index: SpireLiveIndexRelation,
 ) -> SpireRemoteNodeCapabilitySummaryRow {
-    let root_control = live_index_relation(index_relation).root_control();
+    let root_control = index.root_control();
     let mut summary = SpireRemoteNodeCapabilitySummaryRow {
         active_epoch: root_control.active_epoch,
         node_count: 0,
@@ -1731,7 +1725,7 @@ pub(crate) unsafe fn remote_node_capability_summary(
         return summary;
     }
 
-    for row in remote_node_capability_plan(index_relation) {
+    for row in remote_node_capability_plan(index) {
         summary.node_count = summary.node_count.checked_add(1).unwrap_or_else(|| {
             pgrx::error!("ec_spire remote node capability summary node count overflow")
         });
@@ -1793,12 +1787,9 @@ pub(crate) unsafe fn remote_node_capability_summary(
     summary
 }
 
-pub(crate) unsafe fn remote_epoch_publish_plan(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_epoch_publish_plan(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireRemoteEpochPublishPlanRow> {
-    // SAFETY: callers hold the SPIRE index relation open while collecting
-    // remote epoch publication rows.
-    let index = unsafe { live_index_relation(index_relation) };
     remote_node_snapshot(index)
         .into_iter()
         .filter(|node| node.node_id != meta::SPIRE_LOCAL_NODE_ID)
@@ -1806,10 +1797,10 @@ pub(crate) unsafe fn remote_epoch_publish_plan(
         .collect()
 }
 
-pub(crate) unsafe fn remote_epoch_publish_readiness(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_epoch_publish_readiness(
+    index: SpireLiveIndexRelation,
 ) -> SpireRemoteEpochPublishReadinessRow {
-    let root_control = live_index_relation(index_relation).root_control();
+    let root_control = index.root_control();
     let mut summary = SpireRemoteEpochPublishReadinessRow {
         active_epoch: root_control.active_epoch,
         remote_node_count: 0,
@@ -1827,7 +1818,7 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
         return summary;
     }
 
-    for row in remote_epoch_publish_plan(index_relation) {
+    for row in remote_epoch_publish_plan(index) {
         summary.remote_node_count = summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
             pgrx::error!("ec_spire remote epoch publish readiness node count overflow")
         });
@@ -1909,10 +1900,10 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
     summary
 }
 
-pub(crate) unsafe fn remote_epoch_publish_gate_summary(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_epoch_publish_gate_summary(
+    index: SpireLiveIndexRelation,
 ) -> SpireRemoteEpochPublishGateSummaryRow {
-    let readiness = remote_epoch_publish_readiness(index_relation);
+    let readiness = remote_epoch_publish_readiness(index);
     let (publish_scope, publish_decision, next_blocker, recommendation) =
         if readiness.active_epoch == 0 {
             (
@@ -1965,19 +1956,19 @@ pub(crate) unsafe fn remote_epoch_publish_gate_summary(
     }
 }
 
-pub(crate) unsafe fn remote_epoch_manifest_plan(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_epoch_manifest_plan(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireRemoteEpochManifestPlanRow> {
-    remote_epoch_publish_plan(index_relation)
+    remote_epoch_publish_plan(index)
         .into_iter()
         .map(remote_epoch_manifest_plan_row)
         .collect()
 }
 
-pub(crate) unsafe fn remote_epoch_manifest_summary(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_epoch_manifest_summary(
+    index: SpireLiveIndexRelation,
 ) -> SpireRemoteEpochManifestSummaryRow {
-    let gate = remote_epoch_publish_gate_summary(index_relation);
+    let gate = remote_epoch_publish_gate_summary(index);
     let (manifest_decision, recommendation) = if gate.active_epoch == 0 {
         ("build_required", gate.recommendation)
     } else if gate.publish_decision == "block_publish" {
