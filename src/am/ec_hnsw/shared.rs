@@ -1,8 +1,9 @@
 use std::ptr;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
+use pgrx::{itemptr::item_pointer_get_both, pg_sys};
 
 use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
+use crate::am::common::vacuum::alloc_index_bulk_delete_result;
 use crate::storage::buffer_guard::LockedBufferGuard;
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::IndexRelationGuard;
@@ -138,9 +139,7 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
-        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats
-        // struct owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result()
     } else {
         stats
     };
@@ -967,9 +966,7 @@ pub(crate) struct DebugHnswVacuumStats {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_hnsw_vacuum_stats_row(
-    stats: *mut pg_sys::IndexBulkDeleteResult,
-) -> DebugHnswVacuumStats {
+fn debug_hnsw_vacuum_stats_row(stats: *mut pg_sys::IndexBulkDeleteResult) -> DebugHnswVacuumStats {
     if stats.is_null() {
         pgrx::error!("ec_hnsw debug vacuum stats returned NULL");
     }
@@ -993,7 +990,7 @@ pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> DebugHnswVacuumStats
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_vacuum_stats");
     // SAFETY: The debug helper immediately initializes the required vacuum
     // fields before passing the struct to AM vacuum callbacks.
-    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 

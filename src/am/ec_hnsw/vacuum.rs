@@ -1,9 +1,11 @@
 use std::{collections::HashSet, ffi::c_void};
 
-use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
+use pgrx::{itemptr::item_pointer_set_all, pg_sys};
 
 use super::{graph, options, page, search, shared, source};
-use crate::am::common::{callback::pg_am_callback, heap_slot::HeapSlotReader};
+use crate::am::common::{
+    callback::pg_am_callback, heap_slot::HeapSlotReader, vacuum::alloc_index_bulk_delete_result,
+};
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
@@ -487,9 +489,7 @@ unsafe fn run_bulkdelete_with_adapter(
     let storage = format.graph_storage();
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_hnsw vacuum stats");
-        // SAFETY: PostgreSQL memory context allocation creates a zeroed
-        // IndexBulkDeleteResult owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result()
     } else {
         stats
     };
@@ -2082,7 +2082,7 @@ pub(crate) fn debug_vacuum_remove_heap_tids(
         .map_or(std::ptr::null_mut(), HeapRelationGuard::as_ptr);
     // SAFETY: The debug helper immediately initializes the required vacuum
     // fields before passing the struct to AM vacuum callbacks.
-    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation;
     info.heaprel = heap_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;

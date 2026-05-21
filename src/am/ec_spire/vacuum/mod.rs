@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 
-use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
+use pgrx::{itemptr::item_pointer_set_all, pg_sys};
 
 use super::assign::{
     build_delete_delta_assignments, SpireDeleteDeltaInput, SpireLocalVecIdAllocator,
@@ -21,7 +21,7 @@ use super::storage::{
     SpireRelationObjectStoreSet, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use super::{lock_publish_relation, page, scan};
-use crate::am::common::callback::pg_am_callback;
+use crate::am::common::{callback::pg_am_callback, vacuum::alloc_index_bulk_delete_result};
 use crate::storage::page::ItemPointer;
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::IndexRelationGuard;
@@ -646,7 +646,7 @@ unsafe fn finish_vacuum_stats(
     unsafe {
         let stats = if stats.is_null() {
             crate::fault::maybe_fail_palloc("ec_spire vacuum stats");
-            PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg()
+            alloc_index_bulk_delete_result()
         } else {
             stats
         };
@@ -702,7 +702,7 @@ pub(crate) fn debug_spire_vacuum_remove_heap_tids(
     );
     // SAFETY: the debug helper initializes the fields needed for the direct
     // AM bulkdelete/cleanup calls below before handing the struct to PostgreSQL.
-    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {
@@ -737,7 +737,7 @@ pub(crate) fn debug_spire_vacuum_bulkdelete_heap_tids(
     );
     // SAFETY: the debug helper initializes the fields needed for the direct
     // AM bulkdelete call below before handing the struct to PostgreSQL.
-    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {

@@ -11,6 +11,7 @@ use crate::{
     am::common::{
         callback::pg_am_callback,
         routine::{alloc_index_am_routine, IndexAmRoutineBox},
+        vacuum::alloc_index_bulk_delete_result,
     },
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
@@ -906,7 +907,7 @@ unsafe fn ec_diskann_noop_vacuum_stats(
     let stats = unsafe {
         let stats = if stats.is_null() {
             crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
-            PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg()
+            alloc_index_bulk_delete_result()
         } else {
             stats
         };
@@ -928,9 +929,7 @@ unsafe fn run_diskann_bulkdelete(
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_diskann bulkdelete stats");
-        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats
-        // struct owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result()
     } else {
         stats
     };
@@ -2371,7 +2370,7 @@ mod tests {
         // SAFETY: The test constructs callback-duration vacuum info and invokes
         // the AM bulkdelete/cleanup entries with no delete callback for stats.
         unsafe {
-            let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+            let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
             info.index = index_relation.as_ptr();
             let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
             let stats =
@@ -2404,7 +2403,7 @@ mod tests {
         // SAFETY: The test constructs callback-duration vacuum info and callback
         // state and invokes the AM bulkdelete/cleanup entries directly.
         unsafe {
-            let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+            let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
             info.index = index_relation_ptr;
             info.heaprel = heap_relation
                 .as_ref()

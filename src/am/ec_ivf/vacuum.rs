@@ -1,9 +1,9 @@
 use std::ffi::c_void;
 
-use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
+use pgrx::{itemptr::item_pointer_set_all, pg_sys};
 
 use super::page;
-use crate::am::common::callback::pg_am_callback;
+use crate::am::common::{callback::pg_am_callback, vacuum::alloc_index_bulk_delete_result};
 use crate::storage::page::ItemPointer;
 
 type BulkDeleteCallback =
@@ -76,9 +76,7 @@ unsafe fn run_bulkdelete(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_ivf bulkdelete stats");
-        // SAFETY: allocates a zeroed PostgreSQL-owned stats struct when
-        // PostgreSQL did not pass one to this bulkdelete call.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result()
     } else {
         stats
     };
@@ -261,9 +259,7 @@ unsafe fn finish_vacuum_stats(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_ivf vacuum stats");
-        // SAFETY: allocates a zeroed PostgreSQL-owned stats struct when
-        // PostgreSQL did not pass one to the vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result()
     } else {
         stats
     };
@@ -353,7 +349,7 @@ pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> DebugEcIvfVac
     );
     // SAFETY: debug helper allocates a zeroed vacuum info struct in the
     // current PostgreSQL memory context for the immediate callback call.
-    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
@@ -379,7 +375,7 @@ pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
     );
     // SAFETY: debug helper allocates a zeroed vacuum info struct in the
     // current PostgreSQL memory context for the immediate callback call.
-    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {

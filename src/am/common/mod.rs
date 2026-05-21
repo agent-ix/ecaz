@@ -12,3 +12,4 @@ pub(crate) mod scan_output;
 pub(crate) mod stats;
 pub(crate) mod stream;
 pub(crate) mod training;
+pub(crate) mod vacuum;
