@@ -231,88 +231,90 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
     })
 }
 
-unsafe fn read_string_reloption(
+struct TqHnswReloptionsView<'a> {
     rd_options: *mut pg_sys::varlena,
-    offset: i32,
-    name: &str,
-) -> Option<String> {
-    if offset == 0 {
-        return None;
+    reloptions: &'a TqHnswReloptions,
+}
+
+impl<'a> TqHnswReloptionsView<'a> {
+    unsafe fn from_relation(index_relation: pg_sys::Relation) -> Option<Self> {
+        if index_relation.is_null() {
+            pgrx::error!("ec_hnsw relation options need a valid index relation");
+        }
+        // SAFETY: reloptions are read from a live index relation descriptor.
+        let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
+        if rd_options.is_null() {
+            return None;
+        }
+
+        // SAFETY: rd_options was produced by ec_hnsw_amoptions using the
+        // TqHnswReloptions layout.
+        let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };
+        Some(Self {
+            rd_options,
+            reloptions,
+        })
     }
 
-    // SAFETY: rd_options is PostgreSQL's varlena reloptions blob and offset is
-    // a string reloption offset written by build_local_reloptions.
-    let value_ptr = unsafe {
-        rd_options
-            .cast::<u8>()
-            .add(offset as usize)
-            .cast::<std::ffi::c_char>()
-    };
-    // SAFETY: string reloptions are stored as NUL-terminated strings inside the
-    // reloptions blob at the validated offset.
-    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-        .to_str()
-        .unwrap_or_else(|e| pgrx::error!("invalid ec_hnsw {name} reloption: {e}"));
-    if value.is_empty() {
-        pgrx::error!("invalid ec_hnsw {name} reloption: value must not be empty");
+    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+        if offset == 0 {
+            return None;
+        }
+
+        // SAFETY: rd_options is PostgreSQL's varlena reloptions blob and
+        // offset is a string reloption offset written by
+        // build_local_reloptions for this layout.
+        let value_ptr = unsafe {
+            self.rd_options
+                .cast::<u8>()
+                .add(offset as usize)
+                .cast::<std::ffi::c_char>()
+        };
+        // SAFETY: string reloptions are stored as NUL-terminated strings inside
+        // the reloptions blob at the validated offset.
+        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+            .to_str()
+            .unwrap_or_else(|e| pgrx::error!("invalid ec_hnsw {name} reloption: {e}"));
+        if value.is_empty() {
+            pgrx::error!("invalid ec_hnsw {name} reloption: value must not be empty");
+        }
+        Some(value.to_owned())
     }
-    Some(value.to_owned())
+
+    fn to_options(&self) -> TqHnswOptions {
+        let reloptions = self.reloptions;
+        let build_source_column = self
+            .read_string_reloption(reloptions.build_source_column_offset, "build_source_column");
+        let rerank_source_column = self.read_string_reloption(
+            reloptions.rerank_source_column_offset,
+            "rerank_source_column",
+        );
+        let storage_format =
+            match self.read_string_reloption(reloptions.storage_format_offset, "storage_format") {
+                Some(value) => {
+                    StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+                }
+                None => StorageFormat::DEFAULT,
+            };
+
+        TqHnswOptions {
+            m: reloptions.m,
+            ef_construction: reloptions.ef_construction,
+            ef_search: reloptions.ef_search,
+            build_source_column,
+            rerank_source_column,
+            storage_format,
+        }
+    }
 }
 
 pub(crate) fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
-    if index_relation.is_null() {
-        pgrx::error!("ec_hnsw relation options need a valid index relation");
-    }
-    // SAFETY: reloptions are read from a live index relation descriptor.
-    let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
-    if rd_options.is_null() {
+    // SAFETY: the view borrows PostgreSQL-owned reloptions from a live relation
+    // descriptor only while materializing owned option values.
+    let Some(reloptions) = (unsafe { TqHnswReloptionsView::from_relation(index_relation) }) else {
         return TqHnswOptions::DEFAULT;
-    }
-
-    // SAFETY: rd_options was produced by ec_hnsw_amoptions using the
-    // TqHnswReloptions layout.
-    let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };
-    // SAFETY: build_source_column_offset is a string reloption offset in the
-    // same rd_options blob.
-    let build_source_column = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.build_source_column_offset,
-            "build_source_column",
-        )
     };
-    // SAFETY: rerank_source_column_offset is a string reloption offset in the
-    // same rd_options blob.
-    let rerank_source_column = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.rerank_source_column_offset,
-            "rerank_source_column",
-        )
-    };
-    // SAFETY: storage_format_offset is a string reloption offset in the same
-    // rd_options blob.
-    let storage_format = match unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.storage_format_offset,
-            "storage_format",
-        )
-    } {
-        Some(value) => {
-            StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
-        }
-        None => StorageFormat::DEFAULT,
-    };
-
-    TqHnswOptions {
-        m: reloptions.m,
-        ef_construction: reloptions.ef_construction,
-        ef_search: reloptions.ef_search,
-        build_source_column,
-        rerank_source_column,
-        storage_format,
-    }
+    reloptions.to_options()
 }
 
 #[cfg(test)]
