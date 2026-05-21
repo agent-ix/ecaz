@@ -543,18 +543,11 @@ pub(super) unsafe fn build_heap_tuple(
     if values.is_null() || isnull.is_null() {
         pgrx::error!("ec_hnsw ambuild received null tuple value arrays");
     }
-    // SAFETY: PostgreSQL passed a non-null `isnull` array for the indexed build
-    // value; only the first indexed column is read by this access method.
-    if unsafe { *isnull } {
-        pgrx::error!("ec_hnsw does not support NULL indexed values");
-    }
-
-    // SAFETY: PostgreSQL passed a non-null `values` array for the indexed build
-    // value, and NULL status was checked before reading the datum.
-    let datum = unsafe { *values };
-    if datum.is_null() {
-        pgrx::error!("ec_hnsw ambuild received a null indexed datum");
-    }
+    let values = crate::am::common::pg_ptr::DatumArrayView::new(
+        std::ptr::NonNull::new(values).expect("ec_hnsw values should be non-null"),
+        std::ptr::NonNull::new(isnull).expect("ec_hnsw isnull should be non-null"),
+    );
+    let datum = values.non_null_datum(0, "ec_hnsw ambuild", "indexed value");
 
     // SAFETY: The datum is non-null and comes from the indexed column; the
     // helper validates/detoasts according to the indexed vector kind.

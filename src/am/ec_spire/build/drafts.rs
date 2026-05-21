@@ -464,50 +464,39 @@ pub(super) unsafe fn build_spire_index_tuple(
     if values.is_null() || isnull.is_null() {
         pgrx::error!("ec_spire {context} received null tuple value arrays");
     }
-    // SAFETY: caller supplied non-null PostgreSQL values/isnull arrays and the
-    // indexed key column is at offset 0 for SPIRE index tuples.
-    if unsafe { *isnull } {
-        pgrx::error!("ec_spire does not support NULL indexed values");
-    }
-
-    // SAFETY: values is non-null and points at the indexed key datum.
-    let datum = unsafe { *values };
-    if datum.is_null() {
-        pgrx::error!("ec_spire {context} received a null indexed datum");
-    }
+    let values_view = crate::am::common::pg_ptr::DatumArrayView::new(
+        std::ptr::NonNull::new(values).expect("ec_spire values should be non-null"),
+        std::ptr::NonNull::new(isnull).expect("ec_spire isnull should be non-null"),
+    );
+    let datum = values_view.non_null_datum(0, "ec_spire", "indexed value");
 
     // SAFETY: datum is a non-null varlena Datum for the indexed vector column.
     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
     // SAFETY: values/isnull arrays and tuple_layout come from the same validated
     // index tuple layout for this build or insert callback.
     let vec_id_source_identity = unsafe {
-        build_source_identity_from_tuple_values(values, isnull, tuple_layout.source_identity, context)
+        build_source_identity_from_tuple_values(values_view, tuple_layout.source_identity, context)
     };
     match tuple_layout.vector_kind {
-        SpireIndexedVectorKind::Ecvector => {
-            build_spire_ecvector_tuple(
-                heap_tid,
-                &bytes,
-                payload_format,
-                vec_id_source_identity,
-                context,
-            )
-        }
-        SpireIndexedVectorKind::Tqvector => {
-            build_spire_tqvector_tuple(
-                heap_tid,
-                &bytes,
-                payload_format,
-                vec_id_source_identity,
-                context,
-            )
-        }
+        SpireIndexedVectorKind::Ecvector => build_spire_ecvector_tuple(
+            heap_tid,
+            &bytes,
+            payload_format,
+            vec_id_source_identity,
+            context,
+        ),
+        SpireIndexedVectorKind::Tqvector => build_spire_tqvector_tuple(
+            heap_tid,
+            &bytes,
+            payload_format,
+            vec_id_source_identity,
+            context,
+        ),
     }
 }
 
 unsafe fn build_source_identity_from_tuple_values(
-    values: *mut pg_sys::Datum,
-    isnull: *mut bool,
+    values: crate::am::common::pg_ptr::DatumArrayView,
     source_identity: Option<SpireSourceIdentityAttribute>,
     context: &str,
 ) -> SpireVecIdSourceIdentity {
@@ -515,17 +504,7 @@ unsafe fn build_source_identity_from_tuple_values(
         return SpireVecIdSourceIdentity::AllocateLocal;
     };
     let offset = source_identity.index_attr_offset;
-    // SAFETY: source_identity offset was resolved from IndexInfo and lies within
-    // the non-null callback isnull array for the indexed tuple.
-    if unsafe { *isnull.add(offset) } {
-        pgrx::error!("ec_spire {context} source_identity INCLUDE column must not be NULL");
-    }
-    // SAFETY: source_identity offset was resolved from IndexInfo and lies within
-    // the non-null callback values array for the indexed tuple.
-    let datum = unsafe { *values.add(offset) };
-    if datum.is_null() {
-        pgrx::error!("ec_spire {context} received a null source_identity datum");
-    }
+    let datum = values.non_null_datum(offset, "ec_spire", "source_identity INCLUDE column");
 
     // SAFETY: source_identity datum kind was resolved from the INCLUDE column
     // type; each branch decodes the non-null datum without taking ownership.

@@ -29,3 +29,34 @@ pub(crate) fn item_pointer(tid: NonNull<pg_sys::ItemPointerData>) -> ItemPointer
         offset_number,
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DatumArrayView {
+    values: NonNull<pg_sys::Datum>,
+    isnull: NonNull<bool>,
+}
+
+impl DatumArrayView {
+    pub(crate) fn new(values: NonNull<pg_sys::Datum>, isnull: NonNull<bool>) -> Self {
+        Self { values, isnull }
+    }
+
+    pub(crate) fn non_null_datum(self, offset: usize, context: &str, label: &str) -> pg_sys::Datum {
+        // SAFETY: this view is created from PostgreSQL callback value/null
+        // arrays, and callers pass offsets resolved from the same callback's
+        // index tuple layout.
+        let (is_null, datum) = unsafe {
+            (
+                *self.isnull.as_ptr().add(offset),
+                *self.values.as_ptr().add(offset),
+            )
+        };
+        if is_null {
+            pgrx::error!("{context} {label} must not be NULL");
+        }
+        if datum.is_null() {
+            pgrx::error!("{context} received a null {label} datum");
+        }
+        datum
+    }
+}
