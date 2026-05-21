@@ -749,14 +749,14 @@ fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a TqScanOpaque {
+fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a TqScanOpaque {
     // SAFETY: Debug callers inspect the HNSW opaque while the scan descriptor is
     // live and after begin/rescan initialized the opaque pointer.
     unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut TqScanOpaque {
+fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut TqScanOpaque {
     // SAFETY: Debug callers take exclusive mutable access to the scan opaque
     // while the live scan descriptor is not otherwise borrowed.
     unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() }
@@ -767,10 +767,7 @@ fn debug_with_scan_opaque<R>(
     scan: pg_sys::IndexScanDesc,
     f: impl for<'a> FnOnce(&'a TqScanOpaque) -> R,
 ) -> R {
-    // SAFETY: The closure receives the opaque reference only for this scoped
-    // access, so safe callers cannot keep a borrow across later AM callbacks.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    f(opaque)
+    f(debug_scan_opaque(scan))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -778,10 +775,7 @@ fn debug_with_scan_opaque_mut<R>(
     scan: pg_sys::IndexScanDesc,
     f: impl for<'a> FnOnce(&'a mut TqScanOpaque) -> R,
 ) -> R {
-    // SAFETY: The closure receives exclusive opaque access only for this scoped
-    // access, so safe callers cannot keep a mutable borrow across AM callbacks.
-    let opaque = unsafe { debug_scan_opaque_mut(scan) };
-    f(opaque)
+    f(debug_scan_opaque_mut(scan))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
