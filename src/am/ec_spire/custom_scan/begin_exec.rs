@@ -398,144 +398,153 @@ fn custom_scan_next_output_index(state: &mut SpireCustomScanExecState) -> Option
     Some(output_index)
 }
 
+#[derive(Clone, Copy)]
+struct CustomScanAccessState<'a> {
+    scan_state: *mut pg_sys::ScanState,
+    _scan_state: std::marker::PhantomData<&'a pg_sys::ScanState>,
+}
+
+impl<'a> CustomScanAccessState<'a> {
+    unsafe fn new(scan_state: *mut pg_sys::ScanState) -> Self {
+        if scan_state.is_null() {
+            pgrx::error!("EcSpireDistributedScan access method received null scan state");
+        }
+        Self {
+            scan_state,
+            _scan_state: std::marker::PhantomData,
+        }
+    }
+
+    fn as_ptr(self) -> *mut pg_sys::ScanState {
+        self.scan_state
+    }
+
+    fn tuple_slot(self) -> *mut pg_sys::TupleTableSlot {
+        // SAFETY: ExecScan invokes provider access callbacks with a live
+        // ScanState whose scan tuple slot is owned by the active executor node.
+        unsafe { (*self.scan_state).ss_ScanTupleSlot }
+    }
+
+    fn clear_tuple_slot(self) -> *mut pg_sys::TupleTableSlot {
+        // SAFETY: the slot belongs to the live scan state for this callback.
+        unsafe { pg_sys::ExecClearTuple(self.tuple_slot()) }
+    }
+
+    fn add_processed_count(self, processed: u64) {
+        // SAFETY: the executor estate belongs to the live scan callback;
+        // saturating arithmetic preserves PostgreSQL's processed-row counter.
+        unsafe {
+            let estate = (*self.scan_state).ps.state;
+            if !estate.is_null() {
+                (*estate).es_processed = (*estate).es_processed.saturating_add(processed);
+            }
+        }
+    }
+
+    fn fetch_row_version_into_scan_slot(self, tid: &mut pg_sys::ItemPointerData) -> bool {
+        // SAFETY: relation and slot are borrowed from the live scan state for
+        // the current callback; PostgreSQL writes the visible heap tuple into
+        // the scan tuple slot using the active estate snapshot.
+        unsafe {
+            let estate = (*self.scan_state).ps.state;
+            if estate.is_null() {
+                pgrx::error!("EcSpireDistributedScan missing executor estate");
+            }
+            pg_sys::table_tuple_fetch_row_version(
+                (*self.scan_state).ss_currentRelation,
+                tid,
+                (*estate).es_snapshot,
+                (*self.scan_state).ss_ScanTupleSlot,
+            )
+        }
+    }
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
     let state = custom_scan_exec_state_mut(scan_state.cast(), "access method");
+    // SAFETY: ExecScan invokes this provider callback with its live ScanState.
+    let access_state = unsafe { CustomScanAccessState::new(scan_state) };
     if state.mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
-        return unsafe { custom_scan_dml_pk_select_access(state, scan_state) };
+        return custom_scan_dml_pk_select_access(state, access_state);
     }
     if state.mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
-        return unsafe { custom_scan_dml_update_access(state, scan_state) };
+        return custom_scan_dml_update_access(state, access_state);
     }
     if state.mode == SpireCustomScanPlanMode::DmlDeleteTuplePayload {
-        return unsafe { custom_scan_dml_delete_access(state, scan_state) };
+        return custom_scan_dml_delete_access(state, access_state);
     }
     custom_scan_ensure_outputs(state);
     loop {
         let Some(output_index) = custom_scan_next_output_index(state) else {
-            return unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
+            return access_state.clear_tuple_slot();
         };
         let output = state.outputs[output_index].clone();
         if !matches!(
             output.heap_lookup_owner,
             super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
         ) {
-            return unsafe { custom_scan_store_remote_tuple_payload(state, scan_state, &output) };
+            return custom_scan_store_remote_tuple_payload(state, access_state, &output);
         }
 
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(&mut tid, output.heap_block, output.heap_offset);
-        unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
-        let visible = unsafe { custom_scan_fetch_row_version_into_scan_slot(scan_state, &mut tid) };
+        access_state.clear_tuple_slot();
+        let visible = access_state.fetch_row_version_into_scan_slot(&mut tid);
         if visible {
-            return unsafe { custom_scan_tuple_slot(scan_state) };
+            return access_state.tuple_slot();
         }
     }
 }
 
-unsafe fn custom_scan_tuple_slot(
-    scan_state: *mut pg_sys::ScanState,
-) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: ExecScan invokes provider access callbacks with a live ScanState
-    // whose scan tuple slot is owned by the active executor node.
-    unsafe {
-        let Some(scan_state) = scan_state.as_ref() else {
-            pgrx::error!("EcSpireDistributedScan access method received null scan state");
-        };
-        scan_state.ss_ScanTupleSlot
-    }
-}
-
-unsafe fn custom_scan_clear_scan_tuple_slot(
-    scan_state: *mut pg_sys::ScanState,
-) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: the slot belongs to the live scan state for this callback.
-    unsafe { pg_sys::ExecClearTuple(custom_scan_tuple_slot(scan_state)) }
-}
-
-unsafe fn custom_scan_add_processed_count(scan_state: *mut pg_sys::ScanState, processed: u64) {
-    // SAFETY: the executor estate belongs to the live scan callback; saturating
-    // arithmetic preserves PostgreSQL's processed-row counter type.
-    unsafe {
-        let Some(scan_state) = scan_state.as_ref() else {
-            pgrx::error!("EcSpireDistributedScan access method received null scan state");
-        };
-        let estate = scan_state.ps.state;
-        if !estate.is_null() {
-            (*estate).es_processed = (*estate).es_processed.saturating_add(processed);
-        }
-    }
-}
-
-unsafe fn custom_scan_fetch_row_version_into_scan_slot(
-    scan_state: *mut pg_sys::ScanState,
-    tid: *mut pg_sys::ItemPointerData,
-) -> bool {
-    // SAFETY: relation and slot are borrowed from the live scan state for the
-    // current callback; the estate owns the active snapshot and PostgreSQL
-    // writes the visible heap tuple into the scan tuple slot.
-    unsafe {
-        let Some(scan_state) = scan_state.as_mut() else {
-            pgrx::error!("EcSpireDistributedScan access method received null scan state");
-        };
-        let estate = scan_state.ps.state;
-        if estate.is_null() {
-            pgrx::error!("EcSpireDistributedScan missing executor estate");
-        }
-        pg_sys::table_tuple_fetch_row_version(
-            scan_state.ss_currentRelation,
-            tid,
-            (*estate).es_snapshot,
-            scan_state.ss_ScanTupleSlot,
-        )
-    }
-}
-
-unsafe fn custom_scan_dml_pk_select_access(
+fn custom_scan_dml_pk_select_access(
     state: &mut SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
+    access_state: CustomScanAccessState<'_>,
 ) -> *mut pg_sys::TupleTableSlot {
     custom_scan_ensure_dml_pk_select_payload(state);
     if state.dml_payload_emitted {
-        return unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
+        return access_state.clear_tuple_slot();
     }
     state.dml_payload_emitted = true;
     let Some(payload_json) = state.dml_tuple_payload_json.as_deref() else {
-        return unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
+        return access_state.clear_tuple_slot();
     };
+    // SAFETY: access_state holds the live scan tuple slot for this callback and
+    // state owns the matching tuple payload input cache.
     unsafe {
         custom_scan_store_tuple_payload_json(
-            custom_scan_tuple_slot(scan_state),
+            access_state.tuple_slot(),
             payload_json,
             &mut state.tuple_payload_inputs,
         )
     }
 }
 
-unsafe fn custom_scan_dml_update_access(
+fn custom_scan_dml_update_access(
     state: &mut SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
+    access_state: CustomScanAccessState<'_>,
 ) -> *mut pg_sys::TupleTableSlot {
     if !state.dml_payload_emitted {
-        let updated_count = unsafe { custom_scan_execute_dml_update(state, scan_state) };
-        unsafe { custom_scan_add_processed_count(scan_state, updated_count) };
+        // SAFETY: access_state was built from the live scan callback state.
+        let updated_count = unsafe { custom_scan_execute_dml_update(state, access_state.as_ptr()) };
+        access_state.add_processed_count(updated_count);
         state.dml_payload_emitted = true;
     }
-    unsafe { custom_scan_clear_scan_tuple_slot(scan_state) }
+    access_state.clear_tuple_slot()
 }
 
-unsafe fn custom_scan_dml_delete_access(
+fn custom_scan_dml_delete_access(
     state: &mut SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
+    access_state: CustomScanAccessState<'_>,
 ) -> *mut pg_sys::TupleTableSlot {
     if !state.dml_payload_emitted {
         let deleted_count = custom_scan_execute_dml_delete(state);
-        unsafe { custom_scan_add_processed_count(scan_state, deleted_count) };
+        access_state.add_processed_count(deleted_count);
         state.dml_payload_emitted = true;
     }
-    unsafe { custom_scan_clear_scan_tuple_slot(scan_state) }
+    access_state.clear_tuple_slot()
 }
 
 #[pg_guard]

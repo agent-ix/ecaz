@@ -1,9 +1,9 @@
-unsafe fn custom_scan_store_remote_tuple_payload(
+fn custom_scan_store_remote_tuple_payload(
     state: &mut SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
+    access_state: CustomScanAccessState<'_>,
     output: &super::SpireRemoteProductionScanOutputRow,
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: state and scan_state are PostgreSQL-owned custom scan execution
+    // SAFETY: state and access_state are PostgreSQL-owned custom scan execution
     // pointers for the active callback; this only stores one output row payload
     // into ss_ScanTupleSlot using the state's prepared attribute I/O cache.
     unsafe {
@@ -15,7 +15,7 @@ unsafe fn custom_scan_store_remote_tuple_payload(
         }
         if let Some(payload) = output.typed_tuple_payload.as_ref() {
             return custom_scan_store_tuple_payload_typed(
-                (*scan_state).ss_ScanTupleSlot,
+                access_state.tuple_slot(),
                 payload,
                 &mut state.tuple_payload_inputs,
             );
@@ -28,7 +28,7 @@ unsafe fn custom_scan_store_remote_tuple_payload(
             );
         };
         custom_scan_store_tuple_payload_json(
-            (*scan_state).ss_ScanTupleSlot,
+            access_state.tuple_slot(),
             payload_json,
             &mut state.tuple_payload_inputs,
         )
