@@ -1,11 +1,3 @@
-    macro_rules! hnsw_runtime_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before invoking test-only runtime/profile debug helpers for that index.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_test]
     fn test_pq_fastscan_runtime_profile_frontier_head_exact_counters() {
         let _lock = env_var_test_lock();
@@ -75,7 +67,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
+        ) = am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query());
 
         assert!(
             grouped_traversal_approx_score_calls > 0
@@ -116,7 +108,7 @@
             "ec_hnsw_pq_fastscan_runtime_invalid_score_mode_idx",
         );
 
-        let _ = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
+        let _ = am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query());
     }
 
     #[pg_test]
@@ -131,7 +123,7 @@
             "ec_hnsw_pq_fastscan_runtime_invalid_rerank_mode_idx",
         );
 
-        let _ = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
+        let _ = am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query());
     }
 
     #[pg_test]

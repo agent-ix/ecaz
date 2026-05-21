@@ -924,7 +924,7 @@
             _grouped_traversal_budgeted_expansions,
             _grouped_traversal_budgeted_candidates,
             _grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan(index_oid, query));
+        ) = am::debug_profile_ordered_scan(index_oid, query);
 
         TableIterator::once((
             rescan_elapsed_us,
@@ -1053,11 +1053,11 @@
             _grouped_traversal_budgeted_expansions,
             _grouped_traversal_budgeted_candidates,
             _grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan_with_limit(
-                index_oid,
-                query,
-                Some(usize::try_from(limit_count).expect("limit count should fit in usize")),
-            ));
+        ) = am::debug_profile_ordered_scan_with_limit(
+            index_oid,
+            query,
+            Some(usize::try_from(limit_count).expect("limit count should fit in usize")),
+        );
 
         TableIterator::once((
             rescan_elapsed_us,
@@ -1128,12 +1128,12 @@
             result_count,
             slot_fetch_count,
             projected_count,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan_with_heap_fetch(
+        ) = am::debug_profile_ordered_scan_with_heap_fetch(
                 index_oid,
                 query,
                 usize::try_from(limit_count).expect("limit count should fit in usize"),
                 (project_attnum > 0).then_some(project_attnum),
-            ));
+            );
 
         TableIterator::once((
             rescan_elapsed_us,
@@ -1630,7 +1630,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan(index_oid, query));
+        ) = am::debug_profile_ordered_scan(index_oid, query);
 
         (
             rescan_amrescan_total_elapsed_us,
@@ -1671,14 +1671,14 @@
         query: Vec<f32>,
         limit_count: i32,
     ) -> PqFastScanRerankProfileValues {
-        hnsw_recall_export_debug!(am::debug_grouped_rerank_profile(index_oid, query, limit_count))
+        am::debug_grouped_rerank_profile(index_oid, query, limit_count)
     }
 
     fn turboquant_scan_stage_profile_values(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TurboQuantScanStageProfileValues {
-        hnsw_recall_export_debug!(am::debug_turboquant_scan_stage_profile(index_oid, query))
+        am::debug_turboquant_scan_stage_profile(index_oid, query)
     }
 
     #[pg_extern]

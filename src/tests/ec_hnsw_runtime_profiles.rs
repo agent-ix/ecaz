@@ -1,12 +1,3 @@
-    macro_rules! hnsw_runtime_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before invoking test-only runtime/profile debug helpers for that
-            // index and query vector.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_extern]
     fn ec_hnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
@@ -1363,7 +1354,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
+        ) = am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query());
 
         assert!(
             grouped_traversal_approx_score_calls > 0
@@ -1447,7 +1438,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query()));
+        ) = am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query());
 
         assert!(
             result_count > 0,
@@ -1491,7 +1482,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1539,7 +1530,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1587,7 +1578,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1634,7 +1625,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1682,7 +1673,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1728,7 +1719,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -2323,7 +2314,7 @@
             "ec_hnsw_turboquant_invalid_exact_score_mode_idx",
         );
 
-        let _ = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query()));
+        let _ = am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query());
     }
 
     #[pg_test]
@@ -2390,7 +2381,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
+        ) = am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query());
 
         assert!(
             grouped_traversal_approx_score_calls > 0

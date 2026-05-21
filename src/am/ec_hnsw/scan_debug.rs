@@ -983,17 +983,15 @@ pub(crate) fn debug_gettuple_scan_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_profile_ordered_scan(
+pub(crate) fn debug_profile_ordered_scan(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugScanProfile {
-    // SAFETY: This debug wrapper forwards the caller-provided index oid and
-    // query to the bounded profiler without changing ownership.
-    unsafe { debug_profile_ordered_scan_with_limit(index_oid, query, None) }
+    debug_profile_ordered_scan_with_limit(index_oid, query, None)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
+pub(crate) fn debug_profile_ordered_scan_with_limit(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     result_limit: Option<usize>,
@@ -1016,7 +1014,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
         .expect("rescan timing should fit in i64");
 
     // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let rescan_counters = opaque.explain_counters;
     let rescan_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
     let rescan_current_result = active_result_state_ref(opaque).current().has_element();
@@ -1046,7 +1044,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
 
     // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`
     // consumes `scan_state` below.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let total_counters = opaque.explain_counters;
     let final_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
     let final_ordered_slots = i32::try_from(debug_runtime_ordered_slots(opaque).len())
@@ -1152,7 +1150,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
+pub(crate) fn debug_profile_ordered_scan_with_heap_fetch(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     result_limit: usize,
@@ -1177,8 +1175,11 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     });
     let slot_guard = TupleTableSlotGuard::single_for_heap_guard(&heap_relation)
         .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to allocate tuple slot"));
-    let scan_guard = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
-        .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to begin index scan"));
+    // SAFETY: The heap, index, and snapshot guards stay alive for the full
+    // scan guard lifetime, and the helper supplies one order-by key slot.
+    let scan_guard =
+        unsafe { IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1) }
+            .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to begin index scan"));
     let scan = scan_guard.as_ptr();
     let slot = slot_guard.as_ptr();
 
@@ -1250,7 +1251,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_rerank_profile(
+pub(crate) fn debug_grouped_rerank_profile(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     limit_count: i32,
@@ -1287,7 +1288,7 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
 
     // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`
     // consumes `scan_state` below.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let debug_profile = opaque.debug_profile;
 
     // SAFETY: `scan_state` owns the scan and relation guards and is consumed
@@ -1321,7 +1322,7 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
+pub(crate) fn debug_turboquant_scan_stage_profile(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugTurboQuantScanStageProfile {
@@ -1339,7 +1340,7 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     if !matches!(
         opaque.scan_graph_storage,
         graph::GraphStorageDescriptor::TurboQuant { .. }

@@ -132,7 +132,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_scan_debug!(am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             rescan_phase, "graph_traversal",
