@@ -261,9 +261,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         }],
     )?;
 
-    // SAFETY: the live SPIRE index relation identifies the relation-backed
-    // object store used for the bootstrap epoch.
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let store = SpireRelationObjectStore::for_index_relation(index_relation)?;
     // SAFETY: index_relation remains live while reading its relcache OID.
     let index_oid = unsafe { (*index_relation).rd_id };
     // SAFETY: index_relation remains live while reading its relcache tablespace.

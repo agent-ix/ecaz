@@ -73,9 +73,7 @@ impl SpireLiveIndexRelation {
     }
 
     fn object_store(self) -> Result<storage::SpireRelationObjectStore, String> {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation before reading local relation-backed objects.
-        unsafe { storage::SpireRelationObjectStore::for_index_relation(self.relation) }
+        storage::SpireRelationObjectStore::for_index_relation(self.relation)
     }
 
     fn scan_object_tuples<F>(self, visit: F) -> Result<(), String>

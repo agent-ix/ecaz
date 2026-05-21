@@ -369,10 +369,7 @@ pub(crate) unsafe fn index_maintenance_plan_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            // SAFETY: the live SPIRE index relation identifies the object store
-            // used to inspect maintenance candidates.
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = storage::SpireRelationObjectStore::for_index_relation(index_relation)?;
         reject_recursive_maintenance_until_update_propagation(&snapshot, &object_store)?;
         let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;
         maintenance_plan_snapshot_from_rows(root_control, &epoch_manifest, &rows)
@@ -418,10 +415,7 @@ pub(crate) unsafe fn index_locked_maintenance_run_plan(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            // SAFETY: the live SPIRE index relation identifies the object store
-            // used to inspect maintenance candidates.
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = storage::SpireRelationObjectStore::for_index_relation(index_relation)?;
         reject_recursive_maintenance_until_update_propagation(&snapshot, &object_store)?;
         let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;
         maintenance_run_result_from_rows(root_control, &epoch_manifest, &rows)
@@ -460,9 +454,7 @@ pub(crate) unsafe fn index_maintenance_run(
         let validated_snapshot =
             meta::SpireValidatedEpochSnapshot::from_snapshot(published_snapshot)?;
         let mut object_store =
-            // SAFETY: the live SPIRE index relation identifies the mutable
-            // object store used for scheduled replacement publishing.
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            storage::SpireRelationObjectStore::for_index_relation(index_relation)?;
         reject_recursive_maintenance_until_update_propagation(&validated_snapshot, &object_store)?;
         let rows = collect_leaf_snapshot_rows(root_control, &validated_snapshot, &object_store)?;
         let mut pid_allocator = assign::SpirePidAllocator::new(root_control.next_pid)?;

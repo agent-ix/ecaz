@@ -9,9 +9,7 @@ pub(super) struct SpireRelationObjectStore {
 }
 
 impl SpireRelationObjectStore {
-    pub(super) unsafe fn for_index_relation(
-        index_relation: pg_sys::Relation,
-    ) -> Result<Self, String> {
+    pub(super) fn for_index_relation(index_relation: pg_sys::Relation) -> Result<Self, String> {
         if index_relation.is_null() {
             return Err("ec_spire relation object store needs a valid relation".to_owned());
         }

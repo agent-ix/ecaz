@@ -39,11 +39,7 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u32, u16, u64, u32, u64, u64, u32, u64), String> {
-        // SAFETY: opens the SPIRE relation object store for the debug relation
-        // while the IndexRelationGuard keeps the relation open.
-        let store = unsafe {
-            storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
-        };
+        let store = storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?;
         let object = storage::SpireRoutingPartitionObject::root(
             10,
             1,
@@ -86,11 +82,7 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
     let result = (|| -> Result<(u32, u16, u32, u32, u64, u32), String> {
-        // SAFETY: opens the SPIRE relation object store for the debug relation
-        // while the IndexRelationGuard keeps the relation open.
-        let store = unsafe {
-            storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
-        };
+        let store = storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?;
         let assignments = vec![
             storage::SpireLeafAssignmentRow {
                 flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
@@ -655,11 +647,8 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
             &object_manifest,
             &placement_directory,
         )?;
-        // SAFETY: opens the SPIRE relation object store for the guarded debug
-        // index relation before collecting snapshot diagnostics.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?
-        };
+        let object_store =
+            storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?;
         let diagnostics = diagnostics::collect_snapshot_diagnostics(&snapshot, &object_store)?;
 
         Ok(SpireDebugSnapshotDiagnostics {
