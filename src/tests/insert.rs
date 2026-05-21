@@ -469,8 +469,7 @@
             &remote_sql,
         );
         drop(index_relation);
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        unsafe { ScopedPgQueryCancelFlags::clear_pending_for_test() };
+        ScopedPgQueryCancelFlags::clear_pending_for_test();
 
         let error = result.expect_err("local cancel should abort remote insert prepare");
         let prepared_gid_prefix = format!("ec_spire_insert_{}_21_5_%", u32::from(index_oid));

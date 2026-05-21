@@ -1255,8 +1255,7 @@
         Spi::run("SET LOCAL enable_indexscan = off").expect("disable indexscan should succeed");
         am::custom_scan_reset_cleanup_counters_for_test();
         let cancel_error = pg_sys::PgTryBuilder::new(|| {
-            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            let _cancel_flags = unsafe { ScopedPgQueryCancelFlags::set_pending() }
+            let _cancel_flags = ScopedPgQueryCancelFlags::set_pending()
                 .expect("PostgreSQL query-cancel flags should resolve inside pg_test backend");
             Spi::run(
                 "SELECT id, title FROM ec_spire_customscan_read_cancel_coord_sql \

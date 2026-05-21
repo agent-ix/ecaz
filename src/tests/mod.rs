@@ -32,7 +32,7 @@
     }
 
     impl ScopedPgQueryCancelFlags {
-        unsafe fn set_pending() -> Option<Self> {
+        fn set_pending() -> Option<Self> {
             unsafe extern "C" {
                 fn dlsym(
                     handle: *mut std::ffi::c_void,
@@ -75,7 +75,7 @@
             })
         }
 
-        unsafe fn clear_pending_for_test() {
+        fn clear_pending_for_test() {
             unsafe extern "C" {
                 fn dlsym(
                     handle: *mut std::ffi::c_void,
@@ -141,7 +141,7 @@
     }
 
     impl ScopedPgStatementTimeoutSignal {
-        unsafe fn trigger_after_ms(delay_ms: std::ffi::c_int) -> Option<Self> {
+        fn trigger_after_ms(delay_ms: std::ffi::c_int) -> Option<Self> {
             unsafe extern "C" {
                 fn dlsym(
                     handle: *mut std::ffi::c_void,
@@ -757,10 +757,8 @@
         ),
     > {
         let _interrupt_lock = env_var_test_lock();
-        // SAFETY: The guard resolves PostgreSQL timeout symbols and restores
-        // process-global interrupt state when dropped.
         let timeout_signal =
-            unsafe { ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms) }
+            ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms)
                 .unwrap_or_else(|| {
                     pgrx::error!(
                         "ec_spire_test_prod_transport_stmt_timeout could not resolve PostgreSQL timeout symbols"
@@ -817,16 +815,13 @@
         ),
     > {
         let _interrupt_lock = env_var_test_lock();
-        // SAFETY: The guard resolves PostgreSQL timeout symbols and restores
-        // process-global interrupt state when dropped.
-        let timeout_signal = unsafe {
+        let timeout_signal =
             ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms)
-        }
-        .unwrap_or_else(|| {
-            pgrx::error!(
-                "ec_spire_test_prod_transport_stmt_timeout_summary could not resolve PostgreSQL timeout symbols"
-            )
-        });
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire_test_prod_transport_stmt_timeout_summary could not resolve PostgreSQL timeout symbols"
+                    )
+                });
         if !timeout_signal.statement_timeout_pending() {
             pgrx::error!(
                 "ec_spire_test_prod_transport_stmt_timeout_summary did not observe a pending statement timeout"
