@@ -20,6 +20,24 @@ pub(crate) fn relation_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
     unsafe { (*relation).rd_id }
 }
 
+pub(crate) fn relation_reltuples(relation: pg_sys::Relation) -> f64 {
+    if relation.is_null() {
+        pgrx::error!("relation reltuples read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
+    // belongs to that descriptor and reltuples is copied by value.
+    unsafe { (*(*relation).rd_rel).reltuples as f64 }
+}
+
+pub(crate) fn relation_tablespace(relation: pg_sys::Relation) -> pg_sys::Oid {
+    if relation.is_null() {
+        pgrx::error!("relation tablespace read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
+    // belongs to that descriptor and reltablespace is copied by value.
+    unsafe { (*(*relation).rd_rel).reltablespace }
+}
+
 pub(crate) fn index_heap_relation_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
     index_heap_relation_oid_from_index_oid(relation_oid(index_relation))
 }

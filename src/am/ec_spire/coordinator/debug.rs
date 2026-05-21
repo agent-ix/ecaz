@@ -147,14 +147,10 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
         };
         let object_manifest = meta::SpireObjectManifest::from_entries(1, Vec::new())?;
         let placement_directory = meta::SpirePlacementDirectory::from_entries(1, Vec::new())?;
-        // SAFETY: rd_id and rd_rel belong to the guarded debug index relation
-        // and are copied into the debug local-store config.
-        let (index_relid, tablespace) = unsafe {
-            (
-                (*index_relation.as_ptr()).rd_id.into(),
-                (*(*index_relation.as_ptr()).rd_rel).reltablespace.into(),
-            )
-        };
+        let (index_relid, tablespace) = (
+            crate::storage::relation::relation_oid(index_relation.as_ptr()).into(),
+            crate::storage::relation::relation_tablespace(index_relation.as_ptr()).into(),
+        );
         let input = build::SpirePublishCoordinatorInput {
             epoch_manifest: &epoch_manifest,
             object_manifest: &object_manifest,

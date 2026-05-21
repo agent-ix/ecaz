@@ -254,8 +254,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
 
     let store = SpireRelationObjectStore::for_index_relation(index_relation)?;
     let index_oid = crate::storage::relation::relation_oid(index_relation);
-    // SAFETY: index_relation remains live while reading its relcache tablespace.
-    let tablespace = unsafe { (*(*index_relation).rd_rel).reltablespace };
+    let tablespace = crate::storage::relation::relation_tablespace(index_relation);
     let local_store_config =
         SpireLocalStoreConfig::embedded_single_store(index_oid.into(), tablespace.into())?;
     let placements = vec![

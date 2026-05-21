@@ -138,9 +138,7 @@ pub(crate) fn relation_reltuples(index_relation: pg_sys::Relation) -> f64 {
     if index_relation.is_null() {
         pgrx::error!("planner reltuples read needs a valid index relation");
     }
-    // SAFETY: the live relation descriptor owns rd_rel for the relation
-    // lifetime; reltuples is copied by value.
-    unsafe { (*(*index_relation).rd_rel).reltuples as f64 }
+    crate::storage::relation::relation_reltuples(index_relation)
 }
 
 #[cfg_attr(feature = "pg18", allow(dead_code))]

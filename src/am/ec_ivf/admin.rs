@@ -145,7 +145,7 @@ pub(crate) fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdm
     // SAFETY: the same live index relation is reused for the nested diagnostic
     // snapshot, and PostgreSQL keeps relcache metadata valid for the call.
     let drift = index_drift_snapshot(index_relation);
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = crate::storage::relation::relation_reltuples(index_relation);
 
     IndexAdminSnapshot {
         block_count: drift.block_count,

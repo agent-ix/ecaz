@@ -639,9 +639,7 @@ pub(super) fn resolve_local_store_tablespace_plan(
     if index_relation.is_null() {
         return Err("ec_spire local store tablespace plan needs a valid index relation".to_owned());
     }
-    // SAFETY: index_relation is checked non-null above and remains live while
-    // reading its relcache tablespace.
-    let index_tablespace_oid = unsafe { (*(*index_relation).rd_rel).reltablespace }.into();
+    let index_tablespace_oid = crate::storage::relation::relation_tablespace(index_relation).into();
     plan_local_store_tablespaces_with_resolver(
         options.local_store_count,
         index_tablespace_oid,
