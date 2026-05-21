@@ -130,7 +130,7 @@ enum InsertSearchMetric {
 struct InsertHeapSourceScorer {
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
-    slot: TupleTableSlotGuard,
+    slot: TupleTableSlotGuard<'static>,
     source_attribute: source::SourceAttribute,
 }
 

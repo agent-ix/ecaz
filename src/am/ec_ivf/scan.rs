@@ -257,7 +257,7 @@ impl ResolvedIvfScanSnapshot {
 // Field order is intentional: Rust drops struct fields in declaration order, so
 // the tuple slot is dropped before snapshot and relation guards.
 struct IvfHeapRerankState {
-    slot: TupleTableSlotGuard,
+    slot: TupleTableSlotGuard<'static>,
     snapshot: ResolvedIvfScanSnapshot,
     heap_relation: ResolvedIvfScanHeapRelation,
     source_attnum: i16,
@@ -1624,7 +1624,7 @@ unsafe fn debug_scan_first_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<
 
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    scan: IndexScanGuard,
+    scan: IndexScanGuard<'static, 'static, 'static>,
     _snapshot: ActiveSnapshotGuard,
     _heap_relation: HeapRelationGuard,
     _index_relation: IndexRelationGuard,
@@ -1644,10 +1644,18 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not acquire a latest snapshot"));
-    let scan = unsafe { IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1) }
-        .unwrap_or_else(|| {
-            pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
-        });
+    // SAFETY: this debug state owns the heap relation, index relation, and
+    // snapshot guards; field order drops the scan before those dependencies.
+    let scan = unsafe {
+        IndexScanGuard::begin_from_raw(
+            heap_relation.as_ptr(),
+            index_relation.as_ptr(),
+            snapshot.as_ptr(),
+            0,
+            1,
+        )
+    }
+    .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan"));
 
     DebugHeapBackedScan {
         scan,

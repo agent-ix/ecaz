@@ -569,7 +569,7 @@ unsafe fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
 
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    scan: IndexScanGuard,
+    scan: IndexScanGuard<'static, 'static, 'static>,
     _snapshot: ActiveSnapshotGuard,
     _index_relation: IndexRelationGuard,
     _heap_relation: HeapRelationGuard,
@@ -591,8 +591,18 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
         .unwrap_or_else(|| pgrx::error!("debug scan failed to open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("debug scan could not acquire a fresh latest snapshot"));
-    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
-        .unwrap_or_else(|| pgrx::error!("debug scan failed to begin heap-backed index scan"));
+    // SAFETY: this debug state owns the heap relation, index relation, and
+    // snapshot guards; field order drops the scan before those dependencies.
+    let scan = unsafe {
+        IndexScanGuard::begin_from_raw(
+            heap_relation.as_ptr(),
+            index_relation.as_ptr(),
+            snapshot.as_ptr(),
+            0,
+            1,
+        )
+    }
+    .unwrap_or_else(|| pgrx::error!("debug scan failed to begin heap-backed index scan"));
 
     DebugHeapBackedScan {
         scan,
@@ -1168,7 +1178,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter().unwrap_or_else(|| {
         pgrx::error!("debug heap-fetch profile could not acquire a fresh latest snapshot")
     });
-    let slot_guard = TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
+    let slot_guard = TupleTableSlotGuard::single_for_heap_guard(&heap_relation)
         .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to allocate tuple slot"));
     let scan_guard = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
         .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to begin index scan"));

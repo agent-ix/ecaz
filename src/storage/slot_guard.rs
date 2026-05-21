@@ -1,11 +1,22 @@
+use std::marker::PhantomData;
+
 use pgrx::pg_sys;
 
+use super::relation_guard::HeapRelationGuard;
+
 #[derive(Debug)]
-pub(crate) struct TupleTableSlotGuard {
+pub(crate) struct TupleTableSlotGuard<'rel> {
     slot: *mut pg_sys::TupleTableSlot,
+    _relation: PhantomData<&'rel pg_sys::RelationData>,
 }
 
-impl TupleTableSlotGuard {
+impl<'rel> TupleTableSlotGuard<'rel> {
+    pub(crate) fn create_for_heap_guard(relation: &'rel HeapRelationGuard) -> Option<Self> {
+        // SAFETY: the heap relation guard borrow bounds the returned slot
+        // lifetime.
+        unsafe { Self::create(relation.as_ptr()) }
+    }
+
     pub(crate) unsafe fn create(relation: pg_sys::Relation) -> Option<Self> {
         // SAFETY: `relation` is owned by a live relation guard in the caller;
         // this guard owns the returned slot.
@@ -13,7 +24,16 @@ impl TupleTableSlotGuard {
         if slot.is_null() {
             return None;
         }
-        Some(Self { slot })
+        Some(Self {
+            slot,
+            _relation: PhantomData,
+        })
+    }
+
+    pub(crate) fn single_for_heap_guard(relation: &'rel HeapRelationGuard) -> Option<Self> {
+        // SAFETY: the heap relation guard borrow bounds the returned slot
+        // lifetime.
+        unsafe { Self::single_for_heap(relation.as_ptr()) }
     }
 
     pub(crate) unsafe fn single_for_heap(relation: pg_sys::Relation) -> Option<Self> {
@@ -28,7 +48,10 @@ impl TupleTableSlotGuard {
         if slot.is_null() {
             return None;
         }
-        Some(Self { slot })
+        Some(Self {
+            slot,
+            _relation: PhantomData,
+        })
     }
 
     pub(crate) fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
@@ -36,7 +59,7 @@ impl TupleTableSlotGuard {
     }
 }
 
-impl Drop for TupleTableSlotGuard {
+impl Drop for TupleTableSlotGuard<'_> {
     fn drop(&mut self) {
         // SAFETY: `slot` was returned by one of this guard's constructors;
         // this guard owns the matching drop.

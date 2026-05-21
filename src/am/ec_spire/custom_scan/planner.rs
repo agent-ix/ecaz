@@ -496,9 +496,9 @@ fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
         ) else {
             return false;
         };
-        let Some(slot) =
-            crate::storage::slot_guard::TupleTableSlotGuard::create(placement_relation.as_ptr())
-        else {
+        let Some(slot) = crate::storage::slot_guard::TupleTableSlotGuard::create_for_heap_guard(
+            &placement_relation,
+        ) else {
             return false;
         };
         pg_sys::index_rescan(scan.as_ptr(), &mut scan_key, 1, ptr::null_mut(), 0);

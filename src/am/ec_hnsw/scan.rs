@@ -1736,7 +1736,7 @@ impl ResolvedHnswScanSnapshot {
 // Field order is intentional: Rust drops struct fields in declaration order, so
 // the tuple slot is dropped before snapshot and relation guards.
 struct GroupedHeapRerankState {
-    slot: TupleTableSlotGuard,
+    slot: TupleTableSlotGuard<'static>,
     snapshot: ResolvedHnswScanSnapshot,
     heap_relation: ResolvedHnswScanHeapRelation,
     source_attribute: source::SourceAttribute,

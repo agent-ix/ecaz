@@ -274,7 +274,7 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot
 
 unsafe fn allocate_heap_slot(
     heap_relation: pg_sys::Relation,
-) -> Result<crate::storage::slot_guard::TupleTableSlotGuard, String> {
+) -> Result<crate::storage::slot_guard::TupleTableSlotGuard<'static>, String> {
     crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
         .ok_or_else(|| "ec_spire heap rerank failed to allocate a heap tuple slot".to_owned())
 }

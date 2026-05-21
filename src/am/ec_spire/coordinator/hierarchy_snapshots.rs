@@ -201,7 +201,7 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
         )
     };
     let slot =
-        crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
+        crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(&heap_relation)
             .ok_or_else(|| {
                 "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
             })?;
