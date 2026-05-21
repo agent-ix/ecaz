@@ -1,0 +1,17 @@
+Script started on 2026-05-21 16:49:24-07:00 [<not executed on terminal>]
+src/am/ec_ivf/admin.rs
+145:    let index_options = options::relation_options(index_relation_nonnull);
+
+src/am/ec_ivf/scan.rs
+533:            super::options::relation_options(scan_view.index_relation_nonnull("ec_ivf amrescan"));
+
+src/am/ec_ivf/build.rs
+130:        let options = options::relation_options(index_relation_handle);
+826:        let options = options::relation_options(index_relation_handle);
+
+src/am/ec_ivf/options.rs
+380:            unsafe { crate::storage::relation::relation_options(index_relation.as_ptr()) };
+463:pub(super) fn relation_options(index_relation: NonNull<pg_sys::RelationData>) -> EcIvfOptions {
+464:    let Some(reloptions) = EcIvfReloptionsView::from_relation(index_relation) else {
+
+Script done on 2026-05-21 16:49:24-07:00 [COMMAND_EXIT_CODE="0"]
