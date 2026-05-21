@@ -1,0 +1,28 @@
+commit 19ae8d77583fbcac86e1595854bc51666e1bbf0d
+Author: Agent IX <agent@agent-ix.dev>
+Date:   Wed May 20 19:32:35 2026 -0700
+
+    Check generic xlog registered page
+
+diff --git a/src/storage/wal.rs b/src/storage/wal.rs
+index e83d5367..b03b6edb 100644
+--- a/src/storage/wal.rs
++++ b/src/storage/wal.rs
+@@ -70,13 +70,15 @@ impl GenericXLogTxn {
+         );
+         // SAFETY: `LockedBufferGuard` owns a valid locked buffer. ECAZ's current
+         // GenericXLog usage registers full-page images only.
+-        unsafe {
++        let page = unsafe {
+             pg_sys::GenericXLogRegisterBuffer(
+                 self.state,
+                 buffer.buffer(),
+                 pg_sys::GENERIC_XLOG_FULL_IMAGE as i32,
+             )
+-        }
++        };
++        assert!(!page.is_null(), "GenericXLogRegisterBuffer returned null");
++        page
+     }
+
+     /// Finish the GenericXLog transaction and return the written WAL pointer.
