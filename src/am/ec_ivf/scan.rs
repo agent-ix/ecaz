@@ -152,15 +152,6 @@ fn drop_boxed_scan_ptr<T>(slot: &mut *mut T) {
     }
 }
 
-unsafe fn ivf_scan_desc_ref<'a>(
-    scan: pg_sys::IndexScanDesc,
-    context: &str,
-) -> &'a pg_sys::IndexScanDescData {
-    // SAFETY: AM callbacks and debug helpers pass a PostgreSQL-owned
-    // IndexScanDesc that remains live for the current callback/probe.
-    unsafe { scan.as_ref() }.unwrap_or_else(|| pgrx::error!("{context} received null scan"))
-}
-
 #[derive(Clone, Copy)]
 struct IvfScanDescView<'a> {
     scan: &'a pg_sys::IndexScanDescData,
@@ -168,9 +159,11 @@ struct IvfScanDescView<'a> {
 
 impl<'a> IvfScanDescView<'a> {
     unsafe fn from_raw(scan: pg_sys::IndexScanDesc, context: &str) -> Self {
-        Self {
-            scan: unsafe { ivf_scan_desc_ref(scan, context) },
-        }
+        // SAFETY: AM callbacks and debug helpers pass a PostgreSQL-owned
+        // IndexScanDesc that remains live for the current callback/probe.
+        let scan = unsafe { scan.as_ref() }
+            .unwrap_or_else(|| pgrx::error!("{context} received null scan"));
+        Self { scan }
     }
 
     fn as_ref(self) -> &'a pg_sys::IndexScanDescData {
