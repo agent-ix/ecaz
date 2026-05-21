@@ -114,6 +114,68 @@ impl<'a> CustomScanPlanPrivate<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CustomScanPlan<'a> {
+    plan: *mut pg_sys::CustomScan,
+    plan_ref: &'a pg_sys::CustomScan,
+}
+
+impl<'a> CustomScanPlan<'a> {
+    unsafe fn new(plan: *mut pg_sys::CustomScan) -> Option<Self> {
+        // SAFETY: caller guarantees `plan` is the provider-owned CustomScan
+        // node for immediate inspection during the current PostgreSQL callback.
+        let plan_ref = unsafe { custom_scan_pg_ref(plan)? };
+        Some(Self { plan, plan_ref })
+    }
+
+    unsafe fn from_state(node: *mut pg_sys::CustomScanState) -> Self {
+        // SAFETY: caller guarantees node is the live CustomScanState for the
+        // current executor/explain callback.
+        let Some(state) = (unsafe { custom_scan_pg_ref(node) }) else {
+            pgrx::error!("EcSpireDistributedScan executor state is NULL");
+        };
+        unsafe { Self::new(state.ss.ps.plan.cast::<pg_sys::CustomScan>()) }
+            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is NULL"))
+    }
+
+    fn as_ptr(self) -> *mut pg_sys::CustomScan {
+        self.plan
+    }
+
+    fn custom_private(self, label: &str) -> CustomScanPlanPrivate<'a> {
+        if self.plan_ref.custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata");
+        }
+        // SAFETY: this view was constructed from the live provider-owned
+        // CustomScan plan for the current callback; custom_private is checked
+        // for null before the list wrapper is built.
+        unsafe { CustomScanPlanPrivate::new(self.plan_ref.custom_private) }
+            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata"))
+    }
+
+    fn mode(self) -> SpireCustomScanPlanMode {
+        let custom_private = self.custom_private("private mode");
+        let raw = custom_private.u32_at(0, "mode");
+        custom_scan_mode_from_u32(raw)
+            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan has unknown mode {raw}"))
+    }
+
+    fn index_oid(self) -> pg_sys::Oid {
+        let custom_private = self.custom_private("private index OID");
+        pg_sys::Oid::from(custom_private.u32_at(1, "index OID"))
+    }
+
+    fn dml_column_list(self, offset: i32, label: &str) -> Vec<String> {
+        let custom_private = self.custom_private(label);
+        custom_scan_dml_column_list_from_plan_private(custom_private, offset, label)
+    }
+
+    fn dml_pk_column(self) -> String {
+        let custom_private = self.custom_private("PK column");
+        custom_scan_dml_pk_column_from_plan_private(custom_private)
+    }
+}
+
 unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
     // SAFETY: caller guarantees expr is a live planner expression for
     // immediate node-tag dispatch and Const/Param inspection.
@@ -148,15 +210,6 @@ unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) ->
     Some(values)
 }
 
-unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
-    // SAFETY: caller guarantees node is the live CustomScanState for the
-    // current executor callback.
-    let Some(state) = (unsafe { custom_scan_pg_ref(node) }) else {
-        pgrx::error!("EcSpireDistributedScan executor state is NULL");
-    };
-    state.ss.ps.plan.cast::<pg_sys::CustomScan>()
-}
-
 unsafe fn custom_scan_mode_from_path(
     custom_path: *mut pg_sys::CustomPath,
 ) -> Option<SpireCustomScanPlanMode> {
@@ -180,17 +233,6 @@ unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) 
     custom_private.nth_oid(1).unwrap_or_else(|| {
         pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID")
     })
-}
-
-unsafe fn custom_scan_mode_from_plan(
-    custom_scan: *mut pg_sys::CustomScan,
-) -> SpireCustomScanPlanMode {
-    // SAFETY: caller guarantees custom_scan is a live provider-owned
-    // CustomScan plan node for immediate private-list inspection.
-    let custom_private = unsafe { custom_scan_custom_private(custom_scan, "private mode") };
-    let raw = custom_private.u32_at(0, "mode");
-    custom_scan_mode_from_u32(raw)
-        .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan has unknown mode {raw}"))
 }
 
 fn custom_scan_mode_from_u32(raw: u32) -> Option<SpireCustomScanPlanMode> {
@@ -221,13 +263,6 @@ fn custom_scan_plan_mode_for_dml_mode(
     }
 }
 
-unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
-    // SAFETY: caller guarantees custom_scan is a live provider-owned
-    // CustomScan plan node for immediate private-list inspection.
-    let custom_private = unsafe { custom_scan_custom_private(custom_scan, "private index OID") };
-    pg_sys::Oid::from(custom_private.u32_at(1, "index OID"))
-}
-
 unsafe fn custom_scan_dml_plan_private(
     mode: SpireCustomScanPlanMode,
     index_oid: pg_sys::Oid,
@@ -246,7 +281,7 @@ unsafe fn custom_scan_dml_plan_private(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> String {
+pub(crate) fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> String {
     // SAFETY: test helper builds provider-owned plan-private metadata and asks
     // PostgreSQL to deep-copy it before reading it back.
     unsafe {
@@ -321,15 +356,6 @@ impl CustomScanPlanPrivateBuilder {
     fn into_pg(self) -> *mut pg_sys::List {
         self.list
     }
-}
-
-unsafe fn custom_scan_dml_column_list_from_plan(
-    custom_scan: *mut pg_sys::CustomScan,
-    offset: i32,
-    label: &str,
-) -> Vec<String> {
-    let custom_private = unsafe { custom_scan_custom_private(custom_scan, label) };
-    custom_scan_dml_column_list_from_plan_private(custom_private, offset, label)
 }
 
 fn custom_scan_dml_column_list_from_plan_private(
@@ -423,11 +449,6 @@ fn custom_scan_dml_pk_column_offset(custom_private: CustomScanPlanPrivate<'_>) -
         })
 }
 
-unsafe fn custom_scan_dml_pk_column_from_plan(custom_scan: *mut pg_sys::CustomScan) -> String {
-    let custom_private = unsafe { custom_scan_custom_private(custom_scan, "PK column") };
-    custom_scan_dml_pk_column_from_plan_private(custom_private)
-}
-
 fn custom_scan_dml_pk_column_from_plan_private(
     custom_private: CustomScanPlanPrivate<'_>,
 ) -> String {
@@ -440,19 +461,4 @@ fn custom_scan_dml_pk_column_from_plan_private(
         pgrx::error!("EcSpireDistributedScan DML plan PK column metadata is empty");
     }
     pk_column
-}
-
-unsafe fn custom_scan_custom_private(
-    custom_scan: *mut pg_sys::CustomScan,
-    label: &str,
-) -> CustomScanPlanPrivate<'_> {
-    // SAFETY: caller guarantees custom_scan is a live CustomScan plan node.
-    let Some(custom_scan) = (unsafe { custom_scan_pg_ref(custom_scan) }) else {
-        pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata");
-    };
-    if custom_scan.custom_private.is_null() {
-        pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata");
-    }
-    unsafe { CustomScanPlanPrivate::new(custom_scan.custom_private) }
-        .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata"))
 }

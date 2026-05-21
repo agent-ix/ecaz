@@ -17,8 +17,8 @@ unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
 
     // SAFETY: PostgreSQL invokes ExplainCustomScan with a live provider
     // CustomScanState for the duration of this callback.
-    let custom_scan = unsafe { custom_scan_plan(node) };
-    let index_oid = unsafe { custom_scan_index_oid_from_plan(custom_scan) };
+    let plan = unsafe { CustomScanPlan::from_state(node) };
+    let index_oid = plan.index_oid();
     let context = custom_scan_explain_context(index_oid);
 
     // SAFETY: `es` is the non-null ExplainState supplied by PostgreSQL for the

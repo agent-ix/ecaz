@@ -131,8 +131,8 @@ fn custom_scan_exec_state_mut<'a>(
         .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan {context} state is NULL"))
 }
 
-unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
-    let custom_private = unsafe { custom_scan_custom_private(custom_scan, "private LIMIT") };
+fn custom_scan_top_k_from_plan(plan: CustomScanPlan<'_>) -> usize {
+    let custom_private = plan.custom_private("private LIMIT");
     let raw = custom_private
         .nth_oid(2)
         .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing private LIMIT"));

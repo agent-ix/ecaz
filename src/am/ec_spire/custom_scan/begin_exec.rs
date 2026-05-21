@@ -56,9 +56,10 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     let state = custom_scan_exec_state_mut(node.cast(), "BeginCustomScan");
     // SAFETY: PostgreSQL invokes BeginCustomScan with a live CustomScanState
     // whose plan pointer is the provider-owned CustomScan built by the planner.
-    let custom_scan = unsafe { custom_scan_plan(node) };
-    let mode = unsafe { custom_scan_mode_from_plan(custom_scan) };
-    let index_oid = unsafe { custom_scan_index_oid_from_plan(custom_scan) };
+    let plan = unsafe { CustomScanPlan::from_state(node) };
+    let custom_scan = plan.as_ptr();
+    let mode = plan.mode();
+    let index_oid = plan.index_oid();
     match mode {
         SpireCustomScanPlanMode::VectorOrderLimit => {
             let (tuple_payload_columns, tuple_payload_inputs) =
@@ -66,7 +67,7 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
             custom_scan_init_vector_order_limit_exec_state(
                 state,
                 index_oid,
-                unsafe { custom_scan_top_k_from_plan(custom_scan) },
+                custom_scan_top_k_from_plan(plan),
                 unsafe { custom_scan_query_from_plan(node, custom_scan) },
                 tuple_payload_columns,
                 tuple_payload_inputs,
@@ -75,13 +76,13 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
             // SAFETY: PostgreSQL invokes BeginCustomScan with the live
             // provider-owned CustomScanState and matching CustomScan plan.
-            unsafe { custom_scan_init_dml_exec_state(state, node, custom_scan, mode, index_oid) };
+            unsafe { custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid) };
         }
         SpireCustomScanPlanMode::DmlUpdateTuplePayload
         | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
             // SAFETY: PostgreSQL invokes BeginCustomScan with the live
             // provider-owned CustomScanState and matching CustomScan plan.
-            unsafe { custom_scan_init_dml_exec_state(state, node, custom_scan, mode, index_oid) };
+            unsafe { custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid) };
         }
     }
 }
@@ -140,6 +141,7 @@ unsafe fn custom_scan_init_dml_exec_state(
     state: &mut SpireCustomScanExecState,
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
+    plan: CustomScanPlan<'_>,
     mode: SpireCustomScanPlanMode,
     index_oid: pg_sys::Oid,
 ) {
@@ -153,13 +155,11 @@ unsafe fn custom_scan_init_dml_exec_state(
             custom_scan_init_tuple_payload_state(state, node, custom_scan);
             state.dml_pk_column = custom_scan_dml_pk_column(node);
         } else {
-            state.dml_pk_column = custom_scan_dml_pk_column_from_plan(custom_scan);
+            state.dml_pk_column = plan.dml_pk_column();
         }
         state.dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
-        state.dml_updated_columns =
-            custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
-        state.dml_projected_columns =
-            custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
+        state.dml_updated_columns = plan.dml_column_list(2, "updated columns");
+        state.dml_projected_columns = plan.dml_column_list(3, "projected columns");
         if mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
             state.dml_update_value_exprs = custom_scan_dml_update_value_exprs_from_plan(
                 custom_scan,

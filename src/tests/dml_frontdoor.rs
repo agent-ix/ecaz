@@ -1439,7 +1439,7 @@
 
     #[pg_test]
     fn test_ec_spire_custom_scan_dml_plan_private_copyobject_sql() {
-        let roundtrip = dml_frontdoor_checked!(am::spire_custom_scan_dml_plan_private_copy_roundtrip_for_test());
+        let roundtrip = am::spire_custom_scan_dml_plan_private_copy_roundtrip_for_test();
         assert_eq!(
             roundtrip, "3|12345|title,status||id",
             "DML CustomScan plan-private metadata should survive copyObject"
