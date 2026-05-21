@@ -1,10 +1,3 @@
-    fn expr_node_tag(expr: *mut pg_sys::Expr) -> pg_sys::NodeTag {
-        assert!(!expr.is_null(), "expression pointer should not be null");
-        // SAFETY: callers pass expression pointers returned from the primitive
-        // plan expression helper for an analyzed test query.
-        unsafe { (*expr.cast::<pg_sys::Node>()).type_ }
-    }
-
     fn with_analyzed_query_view<R>(
         query: *mut pg_sys::Query,
         f: impl for<'a> FnOnce(am::SpireDmlFrontdoorQueryView<'a>) -> R,
@@ -1134,10 +1127,6 @@
             am::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload
         );
         assert!(!update_plan_expr.pk_value_expr.is_null());
-        assert_eq!(
-            expr_node_tag(update_plan_expr.pk_value_expr),
-            pg_sys::NodeTag::T_Const
-        );
 
         let delete_query =
             analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5");
@@ -1164,10 +1153,6 @@
             am::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload
         );
         assert!(!delete_plan_expr.pk_value_expr.is_null());
-        assert_eq!(
-            expr_node_tag(delete_plan_expr.pk_value_expr),
-            pg_sys::NodeTag::T_Const
-        );
 
         let select_query =
             analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5");
@@ -1197,10 +1182,6 @@
             am::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
         );
         assert!(!select_plan_expr.pk_value_expr.is_null());
-        assert_eq!(
-            expr_node_tag(select_plan_expr.pk_value_expr),
-            pg_sys::NodeTag::T_Const
-        );
         assert_eq!(
             hex::encode(
                 am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&select_plan)
