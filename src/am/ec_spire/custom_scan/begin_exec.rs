@@ -68,11 +68,52 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
             let (tuple_payload_columns, tuple_payload_inputs, query) = unsafe {
                 let (tuple_payload_columns, tuple_payload_inputs) =
                     custom_scan_tuple_payload_state_from_plan(node, custom_scan);
-                (
-                    tuple_payload_columns,
-                    tuple_payload_inputs,
-                    custom_scan_query_from_plan(node, custom_scan),
-                )
+                let expr =
+                    CustomScanExprList::from_custom_scan(custom_scan, "ORDER BY query expression")
+                        .expr(0, "ORDER BY query expression");
+                let Some(query_expr) = CustomScanExpr::new(expr) else {
+                    pgrx::error!(
+                        "EcSpireDistributedScan plan has a null ORDER BY query expression"
+                    );
+                };
+                let query = match query_expr.tag() {
+                    pg_sys::NodeTag::T_Const => query_expr.query_values_from_const().unwrap_or_else(|| {
+                        pgrx::error!(
+                            "EcSpireDistributedScan requires a non-null finite real[] ORDER BY query"
+                        )
+                    }),
+                    pg_sys::NodeTag::T_Param => {
+                        let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
+                        if expr_state.is_null() {
+                            pgrx::error!("EcSpireDistributedScan failed to initialize ORDER BY query parameter expression");
+                        }
+                        let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                            pgrx::error!(
+                                "EcSpireDistributedScan ORDER BY query expression has no evaluator"
+                            )
+                        });
+                        let mut is_null = false;
+                        let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                        if is_null {
+                            pgrx::error!(
+                                "EcSpireDistributedScan ORDER BY query parameter must not be NULL"
+                            );
+                        }
+                        Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)
+                            .filter(|values| {
+                                !values.is_empty() && values.iter().all(|value| value.is_finite())
+                            })
+                            .unwrap_or_else(|| {
+                                pgrx::error!(
+                                    "EcSpireDistributedScan requires a finite real[] ORDER BY query parameter"
+                                )
+                            })
+                    }
+                    _ => pgrx::error!(
+                        "EcSpireDistributedScan requires a constant or parameter real[] ORDER BY query"
+                    ),
+                };
+                (tuple_payload_columns, tuple_payload_inputs, query)
             };
             custom_scan_init_vector_order_limit_exec_state(
                 state,

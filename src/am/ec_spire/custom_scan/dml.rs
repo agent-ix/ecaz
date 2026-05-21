@@ -140,60 +140,6 @@ fn custom_scan_top_k_from_plan(plan: CustomScanPlan<'_>) -> usize {
         .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan plan LIMIT is out of range"))
 }
 
-unsafe fn custom_scan_query_from_plan(
-    node: *mut pg_sys::CustomScanState,
-    custom_scan: *mut pg_sys::CustomScan,
-) -> Vec<f32> {
-    // SAFETY: executor passes the live CustomScanState; the expression was
-    // extracted from the provider-owned CustomScan custom_exprs list.
-    unsafe {
-        let expr = CustomScanExprList::from_custom_scan(custom_scan, "ORDER BY query expression")
-            .expr(0, "ORDER BY query expression");
-        let Some(query_expr) = CustomScanExpr::new(expr) else {
-            pgrx::error!("EcSpireDistributedScan plan has a null ORDER BY query expression");
-        };
-        let datum = match query_expr.tag() {
-            pg_sys::NodeTag::T_Const => {
-                return query_expr.query_values_from_const().unwrap_or_else(|| {
-                    pgrx::error!(
-                        "EcSpireDistributedScan requires a non-null finite real[] ORDER BY query"
-                    )
-                });
-            }
-            pg_sys::NodeTag::T_Param => {
-                let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
-                if expr_state.is_null() {
-                    pgrx::error!("EcSpireDistributedScan failed to initialize ORDER BY query parameter expression");
-                }
-                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
-                    pgrx::error!(
-                        "EcSpireDistributedScan ORDER BY query expression has no evaluator"
-                    )
-                });
-                let mut is_null = false;
-                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
-                if is_null {
-                    pgrx::error!(
-                        "EcSpireDistributedScan ORDER BY query parameter must not be NULL"
-                    );
-                }
-                datum
-            }
-            _ => pgrx::error!(
-                "EcSpireDistributedScan requires a constant or parameter real[] ORDER BY query"
-            ),
-        };
-        let values = Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)
-            .filter(|values| !values.is_empty() && values.iter().all(|value| value.is_finite()))
-            .unwrap_or_else(|| {
-                pgrx::error!(
-                    "EcSpireDistributedScan requires a finite real[] ORDER BY query parameter"
-                )
-            });
-        values
-    }
-}
-
 #[derive(Clone, Copy)]
 struct CustomScanExprList<'a> {
     custom_exprs: *mut pg_sys::List,
