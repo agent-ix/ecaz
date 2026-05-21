@@ -1,0 +1,62 @@
+Script started on 2026-05-21 15:39:53-07:00 [<not executed on terminal>]
+src/storage/query.rs
+5:pub(crate) fn analyze_single_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
+
+src/am/ec_ivf/vacuum.rs
+316:pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+
+src/am/ec_hnsw/shared.rs
+959:pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+
+src/am/ec_hnsw/options.rs
+299:pub(crate) fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
+warning: safe public function takes a raw PostgreSQL boundary type; prefer unsafe fn or a typed guard/view
+missing SAFETY comment near src/storage/query.rs:11
+missing SAFETY comment near src/am/ec_hnsw/scan_debug.rs:539
+missing SAFETY comment near src/am/ec_hnsw/scan_debug.rs:752
+missing SAFETY comment near src/am/ec_hnsw/scan_debug.rs:764
+missing SAFETY comment near src/am/common/callback.rs:15
+missing SAFETY comment near src/am/common/callback.rs:25
+missing SAFETY comment near src/am/ec_diskann/routine.rs:2192
+missing SAFETY comment near src/am/ec_hnsw/insert.rs:53
+missing SAFETY comment near src/am/common/parallel.rs:411
+missing SAFETY comment near src/am/common/parallel.rs:433
+missing SAFETY comment near src/am/common/parallel.rs:449
+missing SAFETY comment near src/am/common/parallel.rs:472
+missing SAFETY comment near src/am/common/heap_slot.rs:80
+missing SAFETY comment near src/am/ec_diskann/insert.rs:1247
+missing SAFETY comment near src/am/common/cost.rs:380
+missing SAFETY comment near src/am/ec_hnsw/scan.rs:2700
+missing SAFETY comment near src/am/ec_hnsw/shared.rs:735
+missing SAFETY comment near src/am/ec_diskann/scan_state.rs:272
+missing SAFETY comment near src/am/ec_spire/page.rs:632
+missing SAFETY comment near src/am/ec_spire/cost/mod.rs:100
+missing SAFETY comment near src/am/ec_spire/cost/mod.rs:165
+missing SAFETY comment near src/am/ec_spire/cost/mod.rs:204
+missing SAFETY comment near src/am/ec_ivf/scan.rs:191
+missing SAFETY comment near src/am/ec_ivf/scan.rs:916
+missing SAFETY comment near src/am/ec_ivf/scan.rs:1499
+missing SAFETY comment near src/am/ec_ivf/scan.rs:1622
+missing SAFETY comment near src/am/ec_ivf/insert.rs:83
+missing SAFETY comment near src/am/ec_spire/dml_frontdoor/mod.rs:1564
+missing SAFETY comment near src/am/ec_spire/dml_frontdoor/mod.rs:2279
+missing SAFETY comment near src/am/ec_spire/dml_frontdoor/mod.rs:2363
+missing SAFETY comment near src/am/ec_spire/dml_frontdoor/mod.rs:2391
+missing SAFETY comment near src/am/ec_spire/dml_frontdoor/mod.rs:2414
+missing SAFETY comment near src/am/ec_spire/vacuum/mod.rs:193
+missing SAFETY comment near src/am/ec_spire/dml_frontdoor/tests.rs:329
+missing SAFETY comment near src/am/ec_spire/dml_frontdoor/tests.rs:341
+missing SAFETY comment near src/am/ec_spire/storage/relation_store.rs:24
+missing SAFETY comment near src/am/ec_spire/storage/relation_store.rs:1277
+missing SAFETY comment near src/am/ec_spire/storage/relation_store.rs:1349
+missing SAFETY comment near src/am/ec_spire/custom_scan/dml.rs:326
+missing SAFETY comment near src/am/ec_spire/custom_scan/plan_private.rs:137
+missing SAFETY comment near src/am/ec_ivf/build.rs:559
+missing SAFETY comment near src/am/ec_ivf/build.rs:567
+missing SAFETY comment near src/am/ec_ivf/build.rs:780
+missing SAFETY comment near src/am/ec_spire/custom_scan/cost_helpers.rs:30
+missing SAFETY comment near src/am/ec_spire/custom_scan/planner.rs:125
+missing SAFETY comment near src/am/ec_ivf/cost.rs:182
+missing SAFETY comment near src/am/ec_ivf/cost.rs:234
+
+Script done on 2026-05-21 15:39:56-07:00 [COMMAND_EXIT_CODE="1"]
