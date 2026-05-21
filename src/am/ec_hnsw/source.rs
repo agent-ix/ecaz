@@ -1,7 +1,4 @@
-use std::{
-    ffi::{c_int, CStr},
-    marker::PhantomData,
-};
+use std::{ffi::c_int, marker::PhantomData};
 
 use pgrx::pg_sys;
 
@@ -452,7 +449,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute(
 }
 
 unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
-    let name = formatted_base_type_name(type_oid)?;
+    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(IndexedVectorKind::Ecvector),
@@ -466,7 +463,7 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
         pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),
         pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),
         _ => {
-            let name = formatted_base_type_name(type_oid)?;
+            let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
             let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
             if type_name == "ecvector" {
                 Some(SourceDatumKind::Ecvector)
@@ -474,22 +471,6 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
                 None
             }
         }
-    }
-}
-
-fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
-    // SAFETY: PostgreSQL accepts any type OID here, `format_type_be` returns a
-    // palloc'd NUL-terminated string for known type OIDs, and that allocation
-    // is released before the copied Rust string is returned.
-    unsafe {
-        let base_type_oid = pg_sys::getBaseType(type_oid);
-        let formatted = pg_sys::format_type_be(base_type_oid);
-        if formatted.is_null() {
-            return None;
-        }
-        let name = CStr::from_ptr(formatted).to_string_lossy().into_owned();
-        pg_sys::pfree(formatted.cast());
-        Some(name)
     }
 }
 

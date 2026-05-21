@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr;
 

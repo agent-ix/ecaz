@@ -159,21 +159,7 @@ pub(super) fn resolve_indexed_tuple_layout(
 }
 
 fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<SpireIndexedVectorKind> {
-    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
-    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
-    // SAFETY: base_type_oid is the PostgreSQL base type OID returned above.
-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
-    if formatted.is_null() {
-        return None;
-    }
-    // SAFETY: format_type_be returns a non-null NUL-terminated string on
-    // success; it remains valid until pfree below.
-    let name = unsafe { CStr::from_ptr(formatted) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: formatted was allocated by PostgreSQL format_type_be and is no
-    // longer needed after copying into name.
-    unsafe { pg_sys::pfree(formatted.cast()) };
+    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(SpireIndexedVectorKind::Ecvector),
@@ -185,8 +171,7 @@ fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<SpireI
 fn resolve_source_identity_datum_kind(
     type_oid: pg_sys::Oid,
 ) -> Option<SpireSourceIdentityDatumKind> {
-    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
-    match unsafe { pg_sys::getBaseType(type_oid) } {
+    match crate::storage::type_info::base_type_oid(type_oid) {
         pg_sys::UUIDOID => Some(SpireSourceIdentityDatumKind::Uuid),
         pg_sys::BYTEAOID => Some(SpireSourceIdentityDatumKind::Bytea16),
         _ => None,

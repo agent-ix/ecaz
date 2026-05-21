@@ -17,7 +17,7 @@
 //! stays clear on V0 builds. The V0 rerank source is the heap
 //! `ecvector` row (ADR-044 default).
 
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::ptr;
 use std::time::{Duration, Instant};
 
@@ -867,19 +867,8 @@ unsafe fn validate_single_ecvector_attribute(
     if att.attisdropped {
         pgrx::error!("ec_diskann indexed column references a dropped column");
     }
-    // SAFETY: `att.atttypid` comes from copied tuple descriptor metadata.
-    let base_type_oid = unsafe { pg_sys::getBaseType(att.atttypid) };
-    // SAFETY: `base_type_oid` is the normalized type OID returned by PostgreSQL.
-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
-    if formatted.is_null() {
-        pgrx::error!("ec_diskann indexed column has no resolvable type name");
-    }
-    // SAFETY: `format_type_be` returned a non-null NUL-terminated C string.
-    let name = unsafe { CStr::from_ptr(formatted) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: The formatted type name was palloc'd by PostgreSQL.
-    unsafe { pg_sys::pfree(formatted.cast()) };
+    let name = crate::storage::type_info::formatted_base_type_name(att.atttypid)
+        .unwrap_or_else(|| pgrx::error!("ec_diskann indexed column has no resolvable type name"));
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     if type_name != "ecvector" {
         pgrx::error!("ec_diskann indexed column must be ecvector, got {type_name}");
