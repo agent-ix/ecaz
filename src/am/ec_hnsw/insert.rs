@@ -534,7 +534,10 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_aminsert(
     pg_am_callback!({
         crate::fault::maybe_fail_palloc("ec_hnsw aminsert entry");
         let heap_tid = shared::decode_heap_tid(heap_tid);
-        let options = options::relation_options(index_relation);
+        let options = options::relation_options(
+            std::ptr::NonNull::new(index_relation)
+                .expect("ec_hnsw insert index relation should be non-null"),
+        );
         let metadata_snapshot = shared::read_metadata_page(index_relation);
         let format = resolve_insert_format_adapter(index_relation, &metadata_snapshot)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -1925,7 +1928,10 @@ unsafe fn bootstrap_empty_pq_fastscan_flush_output(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
 ) -> build::BuildFlushOutput {
-    let options = options::relation_options(index_relation);
+    let options = options::relation_options(
+        std::ptr::NonNull::new(index_relation)
+            .expect("ec_hnsw bootstrap index relation should be non-null"),
+    );
     let state = build::BuildState {
         options,
         indexed_vector_kind: source::IndexedVectorKind::Ecvector,

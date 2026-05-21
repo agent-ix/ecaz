@@ -241,7 +241,10 @@ impl VacuumSearchMetric {
             pgrx::error!("ec_hnsw vacuum requires a heap relation for source-backed indexes");
         }
 
-        let index_options = options::relation_options(index_relation);
+        let index_options = options::relation_options(
+            std::ptr::NonNull::new(index_relation)
+                .expect("ec_hnsw vacuum index relation should be non-null"),
+        );
         match index_options.build_source_column.as_deref() {
             Some(source_column) => {
                 // SAFETY: The heap relation is live and the configured source

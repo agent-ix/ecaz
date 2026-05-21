@@ -656,7 +656,10 @@ pub(crate) struct PlannerIntegrationSnapshot {
 }
 
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
-    let relation_options = options::relation_options(index_relation);
+    let relation_options = options::relation_options(
+        std::ptr::NonNull::new(index_relation)
+            .expect("ec_hnsw admin index relation should be non-null"),
+    );
     let tuning = options::resolve_scan_tuning(&relation_options);
     // SAFETY: The index relation is live and metadata is read under a shared
     // buffer lock.
@@ -720,7 +723,10 @@ pub(crate) unsafe fn index_explain_snapshot(
 }
 
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
-    let relation_options = options::relation_options(index_relation);
+    let relation_options = options::relation_options(
+        std::ptr::NonNull::new(index_relation)
+            .expect("ec_hnsw cost index relation should be non-null"),
+    );
     let tuning = options::resolve_scan_tuning(&relation_options);
     // SAFETY: The index relation is live and metadata is read under a shared
     // buffer lock.
@@ -934,7 +940,10 @@ unsafe fn read_data_page(
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn debug_index_metadata(index_oid: pg_sys::Oid) -> (u32, i32, i32, page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_metadata");
-    let options = super::options::relation_options(index_relation.as_ptr());
+    let options = super::options::relation_options(
+        std::ptr::NonNull::new(index_relation.as_ptr())
+            .expect("ec_hnsw debug index relation should be non-null"),
+    );
     let block_count = hnsw_main_block_count(index_relation.as_ptr());
     // SAFETY: The index relation guard keeps the metadata page readable.
     let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };

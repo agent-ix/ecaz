@@ -1,5 +1,5 @@
 use std::mem::{offset_of, size_of};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
@@ -11,6 +11,8 @@ use super::{
     EC_HNSW_MIN_EF_SEARCH, EC_HNSW_MIN_M,
 };
 pub(crate) use crate::quant::Family as StorageFormat;
+
+pub(crate) type HnswIndexRelation = NonNull<pg_sys::RelationData>;
 
 const EC_HNSW_SESSION_EF_SEARCH_UNSET: i32 = -1;
 
@@ -237,12 +239,10 @@ struct TqHnswReloptionsView<'a> {
 }
 
 impl<'a> TqHnswReloptionsView<'a> {
-    unsafe fn from_relation(index_relation: pg_sys::Relation) -> Option<Self> {
-        if index_relation.is_null() {
-            pgrx::error!("ec_hnsw relation options need a valid index relation");
-        }
+    fn from_relation(index_relation: HnswIndexRelation) -> Option<Self> {
         // SAFETY: reloptions are read from a live index relation descriptor.
-        let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
+        let rd_options =
+            unsafe { crate::storage::relation::relation_options(index_relation.as_ptr()) };
         if rd_options.is_null() {
             return None;
         }
@@ -296,10 +296,8 @@ impl<'a> TqHnswReloptionsView<'a> {
     }
 }
 
-pub(crate) fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
-    // SAFETY: the view borrows PostgreSQL-owned reloptions from a live relation
-    // descriptor only while materializing owned option values.
-    let Some(reloptions) = (unsafe { TqHnswReloptionsView::from_relation(index_relation) }) else {
+pub(crate) fn relation_options(index_relation: HnswIndexRelation) -> TqHnswOptions {
+    let Some(reloptions) = TqHnswReloptionsView::from_relation(index_relation) else {
         return TqHnswOptions::DEFAULT;
     };
     reloptions.to_options()

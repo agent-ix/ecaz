@@ -36,7 +36,11 @@ impl GraphStorageDescriptor {
         metadata: &page::MetadataPage,
     ) -> Result<Self, String> {
         let descriptor = Self::from_metadata(metadata)?;
-        let expected = options::relation_options(index_relation).storage_format;
+        let expected = options::relation_options(
+            std::ptr::NonNull::new(index_relation)
+                .expect("ec_hnsw graph index relation should be non-null"),
+        )
+        .storage_format;
         if descriptor.matches_storage_format(expected) {
             return Ok(descriptor);
         }

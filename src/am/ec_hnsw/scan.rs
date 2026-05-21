@@ -960,7 +960,10 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
         (*scan).xs_orderbyvals = ptr::null_mut();
         (*scan).xs_orderbynulls = ptr::null_mut();
 
-        let index_options = super::options::relation_options((*scan).indexRelation);
+        let index_options = super::options::relation_options(
+            std::ptr::NonNull::new((*scan).indexRelation)
+                .expect("ec_hnsw scan index relation should be non-null"),
+        );
         let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
         bind_parallel_scan_state(scan, opaque);
         if opaque.rescan_called {
@@ -1511,7 +1514,10 @@ pub(crate) unsafe fn resolve_pq_fastscan_rerank_mode_decision(
         };
     }
 
-    let index_options = super::options::relation_options(index_relation);
+    let index_options = super::options::relation_options(
+        std::ptr::NonNull::new(index_relation)
+            .expect("ec_hnsw grouped rerank index relation should be non-null"),
+    );
     resolve_grouped_rerank_mode_decision(index_relation, &index_options)
 }
 
