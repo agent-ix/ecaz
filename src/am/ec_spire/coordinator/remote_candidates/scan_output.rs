@@ -88,9 +88,10 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
     let result = (|| -> Result<SpireRemoteProductionScanHandoffSummaryRow, String> {
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
-        // SAFETY: reads the SPIRE root control page through the live index
-        // relation supplied by the SQL diagnostic caller.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        // SAFETY: SQL diagnostic callers supply a live SPIRE index relation for
+        // the duration of this snapshot helper.
+        let index = unsafe { live_index_relation(index_relation) };
+        let root_control = index.root_control();
         if root_control.active_epoch == 0 {
             return Ok(SpireRemoteProductionScanHandoffSummaryRow {
                 requested_epoch: 0,
@@ -123,16 +124,11 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             &object_manifest,
             &placement_directory,
         )?;
-        // SAFETY: production scan handoff uses the live SPIRE index relation
-        // supplied by the diagnostic wrapper.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        }?;
-        let relation_options = options::relation_options(index_relation);
+        let object_store = index.object_store_set(
+            &placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
+        let relation_options = index.relation_options();
         let top_graph_plan = relation_options.top_graph_plan()?;
         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
         let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
@@ -475,9 +471,10 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     let mut metrics = SpireRemoteProductionReadMetrics::default();
     let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
-    // SAFETY: reads the SPIRE root control page through the live index
-    // relation supplied by the production scan wrapper.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    // SAFETY: production scan wrappers supply a live SPIRE index relation for
+    // the duration of the scan result helper.
+    let index = unsafe { live_index_relation(index_relation) };
+    let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);
         add_profile_elapsed(&mut metrics.total_elapsed_ms, total_start);
@@ -517,16 +514,11 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         &object_manifest,
         &placement_directory,
     )?;
-    // SAFETY: production scan heap resolution uses the live SPIRE index
-    // relation supplied by the scan wrapper.
-    let object_store = unsafe {
-        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-            index_relation,
-            &placement_directory,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )
-    }?;
-    let relation_options = options::relation_options(index_relation);
+    let object_store = index.object_store_set(
+        &placement_directory,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )?;
+    let relation_options = index.relation_options();
     let top_graph_plan = relation_options.top_graph_plan()?;
     let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
     let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
@@ -586,9 +578,6 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     }
 
     let local_heap_rows = if execution_summary.local_pid_count > 0 {
-        // SAFETY: production scan planning uses the same live SPIRE index
-        // relation and active epoch for the local heap summary rows.
-        let index = unsafe { live_index_relation(index_relation) };
         remote_search_local_heap_candidate_rows_for_result_summary(
             index,
             root_control.active_epoch,
