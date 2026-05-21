@@ -814,18 +814,14 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLocalHeapCandidateSummaryRow {
-    // SAFETY: forwards the live index relation and checked request fields to the
-    // coordinator gate summary used to decide whether heap rows are readable.
-    let gate = unsafe {
-        remote_search_coordinator_gate_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
+    let gate = remote_search_coordinator_gate_summary_row(
+        index_relation,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        consistency_mode,
+    );
     // SAFETY: gate was derived from the same live index relation and request;
     // the summary helper only reads heap candidates when the gate allows it.
     unsafe {
@@ -1006,18 +1002,14 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorResultSummaryRow {
-    // SAFETY: forwards the live index relation and checked request fields to the
-    // coordinator gate summary before selecting heap-resolution paths.
-    let gate = unsafe {
-        remote_search_coordinator_gate_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
+    let gate = remote_search_coordinator_gate_summary_row(
+        index_relation,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        consistency_mode,
+    );
     let mut heap_candidates = Vec::new();
     if gate.local_plan_count > 0
         && (remote_search_status_allows_local_heap_rows(gate.status)

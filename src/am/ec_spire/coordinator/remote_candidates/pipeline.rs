@@ -8,7 +8,7 @@ struct SpireCoordinatorPipeline {
 }
 
 impl SpireCoordinatorPipeline {
-    unsafe fn execute_once(
+    fn execute_once(
         index_relation: pg_sys::Relation,
         requested_epoch: u64,
         query: Vec<f32>,
@@ -39,9 +39,7 @@ impl SpireCoordinatorPipeline {
             consistency_mode,
         )?;
         let request_rows = remote_search_libpq_request_plan_rows_from_execution(&execution_rows);
-        // SAFETY: rd_id is stable while the relation is open for this pipeline
-        // read and is only used as the local index OID for connection planning.
-        let index_oid = unsafe { (*index_relation).rd_id };
+        let index_oid = remote_candidate_index_oid(index_relation, "ec_spire coordinator pipeline");
         let connection_rows =
             remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)?;
         let dispatch_rows =
@@ -75,7 +73,7 @@ impl SpireCoordinatorPipeline {
     }
 }
 
-pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
+pub(crate) fn remote_search_coordinator_gate_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -83,18 +81,14 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorGateSummaryRow {
-    // SAFETY: executes the coordinator pipeline with the live index relation
-    // supplied by the SQL diagnostic caller and checked request fields.
-    let pipeline = unsafe {
-        SpireCoordinatorPipeline::execute_once(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    }
+    let pipeline = SpireCoordinatorPipeline::execute_once(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     let execution_summary = &pipeline.execution_summary;
     let dispatch_summary = &pipeline.dispatch_summary;
@@ -192,18 +186,14 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchHeapResolutionSummaryRow {
-    // SAFETY: forwards the live index relation and request fields into the
-    // coordinator gate summary before deriving heap-resolution status.
-    let gate = unsafe {
-        remote_search_coordinator_gate_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
+    let gate = remote_search_coordinator_gate_summary_row(
+        index_relation,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        consistency_mode,
+    );
 
     let decoded_local_locator_count = if gate.remote_plan_count == 0
         && gate.status != SPIRE_REMOTE_STATUS_EMPTY_TOP_K

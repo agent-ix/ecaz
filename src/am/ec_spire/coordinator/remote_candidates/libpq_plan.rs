@@ -18,6 +18,20 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
 const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
 const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str = "merge_validated_remote_search_candidate_batches";
 
+fn remote_candidate_index_oid(index_relation: pg_sys::Relation, context: &str) -> pg_sys::Oid {
+    if index_relation.is_null() {
+        pgrx::error!("{context} received a null SPIRE index relation");
+    }
+    // SAFETY: callers pass the live SPIRE index relation for the surrounding
+    // diagnostic or coordinator operation. This copies rd_id without taking
+    // ownership of the relation.
+    let index_oid = unsafe { (*index_relation).rd_id };
+    if index_oid == pg_sys::InvalidOid {
+        pgrx::error!("{context} received an invalid SPIRE index relation OID");
+    }
+    index_oid
+}
+
 fn remote_search_result_column_count() -> u64 {
     u64::try_from(remote_search_libpq_result_contract_rows().len())
         .expect("remote search result contract row count should fit in u64")
@@ -326,10 +340,8 @@ pub(crate) fn remote_search_libpq_connection_plan_rows(
             top_k,
             consistency_mode,
         );
-        // SAFETY: rd_id is stable while the caller keeps index_relation open;
-        // it is copied as an OID for descriptor lookups and not dereferenced
-        // after the relation lifetime ends.
-        let index_oid = unsafe { (*index_relation).rd_id };
+        let index_oid =
+            remote_candidate_index_oid(index_relation, "ec_spire remote search connection plan");
         remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -607,9 +619,8 @@ pub(crate) fn coordinator_insert_dispatch_plan_row(
     node_id: u32,
     served_epoch: u64,
 ) -> SpireCoordinatorInsertDispatchPlanRow {
-    // SAFETY: rd_id is stable while the caller keeps index_relation open; this
-    // copies the OID for descriptor lookup and result reporting only.
-    let index_oid = unsafe { (*index_relation).rd_id };
+    let index_oid =
+        remote_candidate_index_oid(index_relation, "ec_spire coordinator insert dispatch plan");
     let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {
         let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;
         let Some(descriptor) = descriptors.get(&node_id) else {

@@ -10952,7 +10952,7 @@ fn ec_spire_remote_search_libpq_secret_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_secret_plan_rows,
         requested_epoch,
@@ -11031,7 +11031,7 @@ fn ec_spire_remote_search_libpq_secret_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_summary");
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_secret_summary_row,
         requested_epoch,
@@ -11109,7 +11109,7 @@ fn ec_spire_remote_search_libpq_connection_open_plan(
         index_oid,
         "ec_spire_remote_search_libpq_connection_open_plan",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_connection_open_plan_rows,
         requested_epoch,
@@ -11193,7 +11193,7 @@ fn ec_spire_remote_search_libpq_connection_open_summary(
         index_oid,
         "ec_spire_remote_search_libpq_connection_open_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_connection_open_summary_row,
         requested_epoch,
@@ -11271,7 +11271,7 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
         index_oid,
         "ec_spire_remote_search_libpq_executor_connection_check",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_libpq_connection_open_plan_rows,
         requested_epoch,
@@ -13500,7 +13500,7 @@ fn spire_remote_pipeline_step_rows(
             top_k,
             &consistency_mode,
         );
-        let connection_open_rows = with_live_index_relation!(
+        let connection_open_rows = with_live_index_relation_safe!(
             index_relation,
             am::spire_remote_search_libpq_connection_open_plan_rows,
             requested_epoch_u64,
@@ -16031,7 +16031,7 @@ fn ec_spire_remote_search_coordinator_gate_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_gate_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_coordinator_gate_summary_row,
         requested_epoch,

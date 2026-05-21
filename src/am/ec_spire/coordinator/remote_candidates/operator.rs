@@ -1,4 +1,4 @@
-pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(
+pub(crate) fn remote_search_libpq_secret_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -76,7 +76,7 @@ fn remote_search_libpq_secret_plan_rows_from_dispatch(
         .collect()
 }
 
-pub(crate) unsafe fn remote_search_libpq_secret_summary_row(
+pub(crate) fn remote_search_libpq_secret_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -84,19 +84,14 @@ pub(crate) unsafe fn remote_search_libpq_secret_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqSecretSummaryRow {
-    // SAFETY: forwards the live index relation and diagnostic request fields to
-    // the secret-plan wrapper, which preserves dispatch gating before secret
-    // resolution.
-    let rows = unsafe {
-        remote_search_libpq_secret_plan_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let rows = remote_search_libpq_secret_plan_rows(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     remote_search_libpq_secret_summary_from_plan_rows(requested_epoch, &rows)
         .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -186,7 +181,7 @@ fn remote_search_libpq_secret_summary_from_plan_rows(
     })
 }
 
-pub(crate) unsafe fn remote_search_libpq_connection_open_plan_rows(
+pub(crate) fn remote_search_libpq_connection_open_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -194,18 +189,14 @@ pub(crate) unsafe fn remote_search_libpq_connection_open_plan_rows(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqConnectionOpenPlanRow> {
-    // SAFETY: forwards the live index relation and request fields through the
-    // secret-plan stage before deriving connection-open actions.
-    let secret_rows = unsafe {
-        remote_search_libpq_secret_plan_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let secret_rows = remote_search_libpq_secret_plan_rows(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
 
     remote_search_libpq_connection_open_plan_rows_from_secrets(&secret_rows)
 }
@@ -252,7 +243,7 @@ fn remote_search_libpq_connection_open_plan_rows_from_secrets(
         .collect()
 }
 
-pub(crate) unsafe fn remote_search_libpq_connection_open_summary_row(
+pub(crate) fn remote_search_libpq_connection_open_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -260,18 +251,14 @@ pub(crate) unsafe fn remote_search_libpq_connection_open_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqConnectionOpenSummaryRow {
-    // SAFETY: forwards the live index relation and diagnostic request fields to
-    // the connection-open plan wrapper before summarizing row counts.
-    let rows = unsafe {
-        remote_search_libpq_connection_open_plan_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let rows = remote_search_libpq_connection_open_plan_rows(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     remote_search_libpq_connection_open_summary_from_plan_rows(requested_epoch, &rows)
         .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
