@@ -1926,26 +1926,11 @@ fn dml_frontdoor_query_has_join_shape(
 }
 
 fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
-    let Some(jointree) = dml_frontdoor_query_jointree(query) else {
-        return false;
-    };
-    if jointree.fromlist.is_null() {
-        return false;
+    match dml_frontdoor_jointree_from_shape(query) {
+        DmlFrontdoorFromShape::Empty => false,
+        DmlFrontdoorFromShape::SingleRangeTableRef(rtindex) => rtindex != query.resultRelation,
+        DmlFrontdoorFromShape::Other => true,
     }
-    let fromlist = unsafe { dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist) };
-    if fromlist.is_empty() {
-        return false;
-    }
-    if fromlist.len() != 1 {
-        return true;
-    }
-    let Some(from_node) = fromlist.get_ptr(0) else {
-        return false;
-    };
-    let Some(range_table_ref) = dml_frontdoor_range_table_ref_node(from_node) else {
-        return true;
-    };
-    range_table_ref.rtindex != query.resultRelation
 }
 
 fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
@@ -1957,16 +1942,45 @@ fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
 }
 
 fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
-    let jointree = dml_frontdoor_query_jointree(query)?;
+    match dml_frontdoor_jointree_from_shape(query) {
+        DmlFrontdoorFromShape::SingleRangeTableRef(rtindex) => Some(rtindex),
+        DmlFrontdoorFromShape::Empty | DmlFrontdoorFromShape::Other => None,
+    }
+}
+
+enum DmlFrontdoorFromShape {
+    Empty,
+    SingleRangeTableRef(i32),
+    Other,
+}
+
+fn dml_frontdoor_jointree_from_shape(query: &pg_sys::Query) -> DmlFrontdoorFromShape {
+    let Some(jointree) = dml_frontdoor_query_jointree(query) else {
+        return DmlFrontdoorFromShape::Empty;
+    };
     if jointree.fromlist.is_null() {
-        return None;
+        return DmlFrontdoorFromShape::Empty;
     }
-    let fromlist = unsafe { dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist) };
-    if fromlist.len() != 1 {
-        return None;
+    // SAFETY: the Query jointree is planner-owned for the active callback; the
+    // fromlist and any RangeTblRef node are inspected immediately.
+    unsafe {
+        let fromlist = dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist);
+        if fromlist.is_empty() {
+            return DmlFrontdoorFromShape::Empty;
+        }
+        if fromlist.len() != 1 {
+            return DmlFrontdoorFromShape::Other;
+        }
+        let Some(from_node) = fromlist.get_ptr(0) else {
+            return DmlFrontdoorFromShape::Empty;
+        };
+        match dml_frontdoor_range_table_ref_node(from_node) {
+            Some(range_table_ref) => {
+                DmlFrontdoorFromShape::SingleRangeTableRef(range_table_ref.rtindex)
+            }
+            None => DmlFrontdoorFromShape::Other,
+        }
     }
-    let from_node = fromlist.get_ptr(0)?;
-    dml_frontdoor_range_table_ref_node(from_node).map(|range_table_ref| range_table_ref.rtindex)
 }
 
 fn dml_frontdoor_relation_oid_from_rtable(
@@ -1976,8 +1990,12 @@ fn dml_frontdoor_relation_oid_from_rtable(
     if rtindex <= 0 || query.rtable.is_null() {
         return None;
     }
-    let rtable = unsafe { dml_frontdoor_pg_list::<pg_sys::RangeTblEntry>(query.rtable) };
-    let rte = unsafe { dml_frontdoor_pg_ref(rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?)? };
+    // SAFETY: the range table is planner-owned for the active callback; the
+    // selected RTE is borrowed only long enough to copy relation metadata.
+    let rte = unsafe {
+        let rtable = dml_frontdoor_pg_list::<pg_sys::RangeTblEntry>(query.rtable);
+        dml_frontdoor_pg_ref(rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?)?
+    };
     if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
         return None;
     }
@@ -2608,27 +2626,29 @@ fn dml_frontdoor_target_column_exprs(
         return Vec::new();
     }
     let mut columns = Vec::new();
-    let targets = unsafe { dml_frontdoor_pg_list::<pg_sys::TargetEntry>(target_list) };
-    for target_entry in targets.iter_ptr() {
-        let Some(target_entry) = (unsafe { dml_frontdoor_pg_ref(target_entry) }) else {
-            continue;
-        };
-        if target_entry.resjunk {
-            continue;
-        }
-        if let Some(column) = context
-            .column_names
-            .iter()
-            .find_map(|(attno, name)| (*attno == target_entry.resno).then(|| (*name).to_owned()))
-        {
-            columns.push((column, target_entry.expr));
-            continue;
-        }
-        if let Ok(column) = dml_frontdoor_c_string(
-            target_entry.resname,
-            "ec_spire DML frontdoor target entry name",
-        ) {
-            columns.push((column, target_entry.expr));
+    // SAFETY: target_list and TargetEntry nodes are planner-owned for the
+    // active callback; target names are copied before returning.
+    unsafe {
+        let targets = dml_frontdoor_pg_list::<pg_sys::TargetEntry>(target_list);
+        for target_entry in targets.iter_ptr() {
+            let Some(target_entry) = dml_frontdoor_pg_ref(target_entry) else {
+                continue;
+            };
+            if target_entry.resjunk {
+                continue;
+            }
+            if let Some(column) = context.column_names.iter().find_map(|(attno, name)| {
+                (*attno == target_entry.resno).then(|| (*name).to_owned())
+            }) {
+                columns.push((column, target_entry.expr));
+                continue;
+            }
+            if let Ok(column) = dml_frontdoor_c_string(
+                target_entry.resname,
+                "ec_spire DML frontdoor target entry name",
+            ) {
+                columns.push((column, target_entry.expr));
+            }
         }
     }
     columns
