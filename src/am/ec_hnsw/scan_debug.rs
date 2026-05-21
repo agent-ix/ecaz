@@ -2377,7 +2377,7 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
+pub(crate) fn debug_gettuple_scan_heap_tids_with_scores(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
@@ -2390,20 +2390,18 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
-    // quals, and `orderby` is a valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-
     let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        let heap_tid = debug_scan_heap_tid(scan);
-        let score = debug_scan_orderby_score(scan)
-            .expect("graph-first scan should publish an order-by score for emitted tuples");
-        tids.push((heap_tid, score));
+    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
+    // quals, and `orderby` is a valid one-key buffer. AM rescan initializes the
+    // HNSW opaque before gettuple advances the same live scan descriptor.
+    unsafe {
+        debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+        while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
+            let heap_tid = debug_scan_heap_tid(scan);
+            let score = debug_scan_orderby_score(scan)
+                .expect("graph-first scan should publish an order-by score for emitted tuples");
+            tids.push((heap_tid, score));
+        }
     }
 
     // SAFETY: `scan_state` owns the scan and relation guards and is consumed
@@ -2413,7 +2411,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
+pub(crate) fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
@@ -2426,23 +2424,21 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
-    // quals, and `orderby` is a valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-
     let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        let heap_tid = debug_scan_heap_tid(scan);
-        let approx_score = debug_current_result_approx_score(scan)
-            .or_else(|| debug_scan_orderby_score(scan))
-            .expect("graph-first scan should publish an approximate score for emitted tuples");
-        let comparison_score = debug_current_result_comparison_score(scan);
-        let approx_rank = debug_current_result_approx_rank(scan);
-        tids.push((heap_tid, approx_score, comparison_score, approx_rank));
+    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
+    // quals, and `orderby` is a valid one-key buffer. AM rescan initializes the
+    // HNSW opaque before gettuple advances the same live scan descriptor.
+    unsafe {
+        debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+        while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
+            let heap_tid = debug_scan_heap_tid(scan);
+            let approx_score = debug_current_result_approx_score(scan)
+                .or_else(|| debug_scan_orderby_score(scan))
+                .expect("graph-first scan should publish an approximate score for emitted tuples");
+            let comparison_score = debug_current_result_comparison_score(scan);
+            let approx_rank = debug_current_result_approx_rank(scan);
+            tids.push((heap_tid, approx_score, comparison_score, approx_rank));
+        }
     }
 
     // SAFETY: `scan_state` owns the scan and relation guards and is consumed
@@ -2604,9 +2600,7 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
     // SAFETY: The debug wrapper forwards the caller-provided index oid to the
     // grouped-storage classifier, which opens and reads index metadata.
     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The score-comparison helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
+    let rows = debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query);
     let ordered_rows = if grouped_results {
         let mut ordered_rows = rows
             .into_iter()
@@ -2692,9 +2686,7 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
     // SAFETY: The debug wrapper forwards the caller-provided index oid to the
     // grouped-storage classifier, which opens and reads index metadata.
     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The score-comparison helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
+    let rows = debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug comparison summary count should fit in i32");
     if !grouped_results {

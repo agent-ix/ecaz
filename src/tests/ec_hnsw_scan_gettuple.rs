@@ -881,7 +881,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let ctid_to_id = ctid_id_map("ec_hnsw_graph_first_ordered_scores");
-        let observed = hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0]));
+        let observed = am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0]);
 
         assert!(
             observed.len() >= 3,

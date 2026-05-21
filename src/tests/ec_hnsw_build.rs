@@ -2423,7 +2423,7 @@
         let query = vec![
             0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
         ];
-        let observed = hnsw_build_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone());
         let exact_scores = (1..=16)
             .map(|id| {
                 let source = (0..16)

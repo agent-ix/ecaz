@@ -218,7 +218,7 @@
         let query = vec![
             0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
         ];
-        let observed = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone());
         let exact_scores = (1..=16)
             .map(|id| {
                 let source = (0..16)
@@ -288,14 +288,14 @@
             Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let observed = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                index_oid,
-                pq_fastscan_binary_runtime_query(),
-            ));
-        let emitted_scores = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(
-                index_oid,
-                pq_fastscan_binary_runtime_query(),
-            ))
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            index_oid,
+            pq_fastscan_binary_runtime_query(),
+        );
+        let emitted_scores = am::debug_gettuple_scan_heap_tids_with_scores(
+            index_oid,
+            pq_fastscan_binary_runtime_query(),
+        )
         .into_iter()
         .collect::<HashMap<_, _>>();
         let query = pq_fastscan_binary_runtime_query();
@@ -1389,7 +1389,7 @@
 
         let ctid_to_id = ctid_id_map("ec_hnsw_insert_empty_pq_fastscan_bootstrap");
         let observed_ids =
-            hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query))
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query)
                 .into_iter()
                 .map(|(heap_tid, _score)| {
                     *ctid_to_id
@@ -1582,14 +1582,15 @@
         assert_eq!(rerank.code.len(), layout.rerank_code_len);
 
         let ctid_to_id = ctid_id_map("ec_hnsw_insert_pq_fastscan_live");
-        let observed_ids = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query.clone()))
-        .into_iter()
-        .map(|(heap_tid, _score)| {
-            *ctid_to_id
-                .get(&heap_tid)
-                .expect("inserted-row query heap tid should map back to a table row")
-        })
-        .collect::<Vec<_>>();
+        let observed_ids =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query.clone())
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("inserted-row query heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
         assert_eq!(
             observed_ids.first().copied(),
             Some(17),
@@ -1833,14 +1834,15 @@
             .map(|dim| (((deleted_row_id * 29 + dim) as f32) * 0.02).sin())
             .collect::<Vec<_>>();
         let ctid_to_id = ctid_id_map(table_name);
-        let observed_before_ids = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query.clone()))
-        .into_iter()
-        .map(|(heap_tid, _score)| {
-            *ctid_to_id
-                .get(&heap_tid)
-                .expect("pre-vacuum heap tid should map back to a table row")
-        })
-        .collect::<Vec<_>>();
+        let observed_before_ids =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query.clone())
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("pre-vacuum heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
         assert_eq!(
             observed_before_ids.first().copied(),
             Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
@@ -1876,7 +1878,7 @@
         );
 
         let observed_after_ids =
-            hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query))
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query)
                 .into_iter()
                 .map(|(heap_tid, _score)| {
                     *ctid_to_id

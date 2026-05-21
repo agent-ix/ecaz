@@ -510,7 +510,7 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let predicted_with_scores =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone());
         let predicted_id_scores = predicted_with_scores
             .into_iter()
             .map(|(heap_tid, score)| {
@@ -995,7 +995,7 @@
         {
             // Graph scan: returns heap tids plus operator-facing `<#>` scores.
             let predicted_row_indices_with_scores: Vec<(usize, f32)> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone())
                     .into_iter()
                     .map(|(heap_tid, operator_score)| {
                         let row_index = *context

@@ -328,7 +328,7 @@
             0.15_f32, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45,
             1.55, 1.65,
         ];
-        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone());
 
         let compared_rows = observed
             .iter()
@@ -589,7 +589,7 @@
             0.05_f32, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35,
             1.45, 1.55,
         ];
-        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone());
         let mut expected_exact_ranks = vec![None; observed.len()];
         let mut ordered_observed = observed
             .iter()
@@ -1419,10 +1419,10 @@
         let (query, live_rows, baseline_rows) = candidate_queries
             .into_iter()
             .find_map(|query| {
-                let live_rows = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                        index_oid,
-                        query.clone(),
-                    ));
+                let live_rows = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                    index_oid,
+                    query.clone(),
+                );
                 let baseline_rows =
                     hnsw_runtime_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query.clone()));
                 let actual_live_order = live_rows
