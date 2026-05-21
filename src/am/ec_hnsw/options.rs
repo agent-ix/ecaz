@@ -3,6 +3,8 @@ use std::ptr;
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
+use crate::am::common::callback::pg_am_callback;
+
 use super::{
     EC_HNSW_DEFAULT_EF_CONSTRUCTION, EC_HNSW_DEFAULT_EF_SEARCH, EC_HNSW_DEFAULT_M,
     EC_HNSW_MAX_EF_CONSTRUCTION, EC_HNSW_MAX_EF_SEARCH, EC_HNSW_MAX_M, EC_HNSW_MIN_EF_CONSTRUCTION,
@@ -157,45 +159,42 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
     reloptions: pg_sys::Datum,
     validate: bool,
 ) -> *mut pg_sys::bytea {
-    // SAFETY: PostgreSQL invokes amoptions with a reloptions Datum and expects
-    // a bytea allocated by build_local_reloptions; pgrx guards the FFI boundary.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let mut relopts = pg_sys::local_relopts::default();
+    pg_am_callback!({
+        let mut relopts = pg_sys::local_relopts::default();
 
-            pg_sys::init_local_reloptions(&mut relopts, size_of::<TqHnswReloptions>());
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                b"m\0".as_ptr().cast(),
-                b"Maximum graph degree per layer.\0".as_ptr().cast(),
-                EC_HNSW_DEFAULT_M,
-                EC_HNSW_MIN_M,
-                EC_HNSW_MAX_M,
-                offset_of!(TqHnswReloptions, m) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                b"ef_construction\0".as_ptr().cast(),
-                b"Candidate list width used during graph construction.\0"
-                    .as_ptr()
-                    .cast(),
-                EC_HNSW_DEFAULT_EF_CONSTRUCTION,
-                EC_HNSW_MIN_EF_CONSTRUCTION,
-                EC_HNSW_MAX_EF_CONSTRUCTION,
-                offset_of!(TqHnswReloptions, ef_construction) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                b"ef_search\0".as_ptr().cast(),
-                b"Candidate list width used during scan search.\0"
-                    .as_ptr()
-                    .cast(),
-                EC_HNSW_DEFAULT_EF_SEARCH,
-                EC_HNSW_MIN_EF_SEARCH,
-                EC_HNSW_MAX_EF_SEARCH,
-                offset_of!(TqHnswReloptions, ef_search) as i32,
-            );
-            pg_sys::add_local_string_reloption(
+        pg_sys::init_local_reloptions(&mut relopts, size_of::<TqHnswReloptions>());
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            b"m\0".as_ptr().cast(),
+            b"Maximum graph degree per layer.\0".as_ptr().cast(),
+            EC_HNSW_DEFAULT_M,
+            EC_HNSW_MIN_M,
+            EC_HNSW_MAX_M,
+            offset_of!(TqHnswReloptions, m) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            b"ef_construction\0".as_ptr().cast(),
+            b"Candidate list width used during graph construction.\0"
+                .as_ptr()
+                .cast(),
+            EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+            EC_HNSW_MIN_EF_CONSTRUCTION,
+            EC_HNSW_MAX_EF_CONSTRUCTION,
+            offset_of!(TqHnswReloptions, ef_construction) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            b"ef_search\0".as_ptr().cast(),
+            b"Candidate list width used during scan search.\0"
+                .as_ptr()
+                .cast(),
+            EC_HNSW_DEFAULT_EF_SEARCH,
+            EC_HNSW_MIN_EF_SEARCH,
+            EC_HNSW_MAX_EF_SEARCH,
+            offset_of!(TqHnswReloptions, ef_search) as i32,
+        );
+        pg_sys::add_local_string_reloption(
                 &mut relopts,
                 b"build_source_column\0".as_ptr().cast(),
                 b"Optional alternate heap column name supplying raw real[] or ecvector values for source-backed graph construction instead of the indexed ecvector column.\0"
@@ -206,7 +205,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
                 None,
                 offset_of!(TqHnswReloptions, build_source_column_offset) as i32,
             );
-            pg_sys::add_local_string_reloption(
+        pg_sys::add_local_string_reloption(
                 &mut relopts,
                 b"rerank_source_column\0".as_ptr().cast(),
                 b"Optional alternate heap column name supplying raw real[], bytea, or ecvector values for grouped heap_f32 rerank instead of the indexed ecvector column.\0"
@@ -217,20 +216,19 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
                 None,
                 offset_of!(TqHnswReloptions, rerank_source_column_offset) as i32,
             );
-            pg_sys::add_local_string_reloption(
-                &mut relopts,
-                b"storage_format\0".as_ptr().cast(),
-                b"Index storage format: 'turboquant' (default) or 'pq_fastscan'.\0"
-                    .as_ptr()
-                    .cast(),
-                ptr::null(),
-                None,
-                None,
-                offset_of!(TqHnswReloptions, storage_format_offset) as i32,
-            );
-            pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
-        })
-    }
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            b"storage_format\0".as_ptr().cast(),
+            b"Index storage format: 'turboquant' (default) or 'pq_fastscan'.\0"
+                .as_ptr()
+                .cast(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(TqHnswReloptions, storage_format_offset) as i32,
+        );
+        pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
+    })
 }
 
 unsafe fn read_string_reloption(

@@ -3,6 +3,7 @@ use std::{cmp::Ordering, collections::HashMap};
 use pgrx::pg_sys;
 
 use super::{build, graph, options, page, search, shared, source};
+use crate::am::common::callback::pg_am_callback;
 use crate::am::common::heap_slot::HeapSlotReader;
 use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
 
@@ -530,78 +531,74 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_aminsert(
     _index_unchanged: bool,
     index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
-    // SAFETY: PostgreSQL calls aminsert with relation pointers, value/null
-    // arrays, heap TID, and IndexInfo valid for the callback duration.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            crate::fault::maybe_fail_palloc("ec_hnsw aminsert entry");
-            let heap_tid = shared::decode_heap_tid(heap_tid);
-            let options = options::relation_options(index_relation);
-            let metadata_snapshot = shared::read_metadata_page(index_relation);
-            let format = resolve_insert_format_adapter(index_relation, &metadata_snapshot)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let tuple;
-            let mut metric;
-            let indexed_attribute = source::resolve_indexed_vector_attribute_from_index_info(
-                heap_relation,
-                index_info,
-                "indexed column",
-            );
-            if let Some(source_column) = options.build_source_column.as_deref() {
-                if values.is_null() || isnull.is_null() {
-                    pgrx::error!("ec_hnsw aminsert received null tuple value arrays");
-                }
-                // SAFETY: Null was checked above; aminsert receives one indexed
-                // value slot for this AM.
-                if *isnull {
-                    pgrx::error!("ec_hnsw does not support NULL indexed values");
-                }
-                let source_attribute = source::resolve_source_attribute(
-                    heap_relation,
-                    source_column,
-                    "build_source_column",
-                    source::SourceTypePolicy::BuildSource,
-                );
-                let mut source_scorer =
-                    InsertHeapSourceScorer::new_with_attribute(heap_relation, source_attribute);
-                let source_vector = source_scorer
-                    .load_source_vector(heap_tid, "ec_hnsw live insert build_source_column");
-                // SAFETY: `values` was checked non-null above and points at the
-                // indexed Datum for this insert callback.
-                tuple = build::build_heap_tuple_with_source(
-                    *values,
-                    heap_tid,
-                    source_vector,
-                    indexed_attribute.kind,
-                );
-                metric = InsertSearchMetric::Source(source_scorer);
-            } else {
-                tuple = build::build_heap_tuple(values, isnull, heap_tid, indexed_attribute.kind);
-                metric = match indexed_attribute.kind {
-                    source::IndexedVectorKind::Ecvector => {
-                        InsertSearchMetric::Source(InsertHeapSourceScorer::new_with_attribute(
-                            heap_relation,
-                            source::SourceAttribute {
-                                attnum: indexed_attribute.attnum,
-                                kind: source::SourceDatumKind::Ecvector,
-                            },
-                        ))
-                    }
-                    source::IndexedVectorKind::Tqvector => InsertSearchMetric::Code,
-                };
+    pg_am_callback!({
+        crate::fault::maybe_fail_palloc("ec_hnsw aminsert entry");
+        let heap_tid = shared::decode_heap_tid(heap_tid);
+        let options = options::relation_options(index_relation);
+        let metadata_snapshot = shared::read_metadata_page(index_relation);
+        let format = resolve_insert_format_adapter(index_relation, &metadata_snapshot)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let tuple;
+        let mut metric;
+        let indexed_attribute = source::resolve_indexed_vector_attribute_from_index_info(
+            heap_relation,
+            index_info,
+            "indexed column",
+        );
+        if let Some(source_column) = options.build_source_column.as_deref() {
+            if values.is_null() || isnull.is_null() {
+                pgrx::error!("ec_hnsw aminsert received null tuple value arrays");
             }
-            run_insert_with_adapter(
-                format,
-                index_relation,
+            // SAFETY: Null was checked above; aminsert receives one indexed
+            // value slot for this AM.
+            if *isnull {
+                pgrx::error!("ec_hnsw does not support NULL indexed values");
+            }
+            let source_attribute = source::resolve_source_attribute(
                 heap_relation,
+                source_column,
+                "build_source_column",
+                source::SourceTypePolicy::BuildSource,
+            );
+            let mut source_scorer =
+                InsertHeapSourceScorer::new_with_attribute(heap_relation, source_attribute);
+            let source_vector = source_scorer
+                .load_source_vector(heap_tid, "ec_hnsw live insert build_source_column");
+            // SAFETY: `values` was checked non-null above and points at the
+            // indexed Datum for this insert callback.
+            tuple = build::build_heap_tuple_with_source(
+                *values,
                 heap_tid,
-                &tuple,
-                &mut metric,
-                &metadata_snapshot,
-                u16::try_from(options.m).expect("validated m should fit in u16"),
-            )
-        })
-    }
+                source_vector,
+                indexed_attribute.kind,
+            );
+            metric = InsertSearchMetric::Source(source_scorer);
+        } else {
+            tuple = build::build_heap_tuple(values, isnull, heap_tid, indexed_attribute.kind);
+            metric = match indexed_attribute.kind {
+                source::IndexedVectorKind::Ecvector => {
+                    InsertSearchMetric::Source(InsertHeapSourceScorer::new_with_attribute(
+                        heap_relation,
+                        source::SourceAttribute {
+                            attnum: indexed_attribute.attnum,
+                            kind: source::SourceDatumKind::Ecvector,
+                        },
+                    ))
+                }
+                source::IndexedVectorKind::Tqvector => InsertSearchMetric::Code,
+            };
+        }
+        run_insert_with_adapter(
+            format,
+            index_relation,
+            heap_relation,
+            heap_tid,
+            &tuple,
+            &mut metric,
+            &metadata_snapshot,
+            u16::try_from(options.m).expect("validated m should fit in u16"),
+        )
+    })
 }
 
 fn resolve_insert_format_adapter(
