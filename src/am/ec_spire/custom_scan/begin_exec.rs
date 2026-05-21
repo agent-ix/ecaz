@@ -124,15 +124,58 @@ unsafe fn custom_scan_tuple_payload_state_from_plan(
     // SAFETY: node/custom_scan are the live executor state and matching plan;
     // the current relation tuple descriptor remains valid during BeginCustomScan.
     unsafe {
-        let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(
+        let tuple_desc_copy = crate::storage::relation::relation_tuple_desc_copy(
             custom_scan_current_relation(node, "tuple payload input descriptor"),
         );
-        let tuple_desc = TupleDescView::from_raw(tuple_desc.as_ptr(), "EcSpireDistributedScan")
-            .unwrap_or_else(|error| pgrx::error!("{error}"));
-        (
-            custom_scan_tuple_payload_columns(node, custom_scan),
-            custom_scan_payload_attr_io(&tuple_desc),
-        )
+        let tuple_desc =
+            TupleDescView::from_raw(tuple_desc_copy.as_ptr(), "EcSpireDistributedScan")
+                .unwrap_or_else(|error| pgrx::error!("{error}"));
+        let mut attr_numbers = std::collections::BTreeSet::new();
+        let mut can_narrow_projection = false;
+        if !custom_scan.is_null() && !(*custom_scan).scan.plan.targetlist.is_null() {
+            let target_list =
+                PgList::<pg_sys::TargetEntry>::from_pg((*custom_scan).scan.plan.targetlist);
+            can_narrow_projection = true;
+            for target_entry in target_list.iter_ptr() {
+                let Some(target_entry) = target_entry.as_ref() else {
+                    continue;
+                };
+                if target_entry.resjunk || target_entry.expr.is_null() {
+                    continue;
+                }
+                let expr = target_entry.expr.cast::<pg_sys::Node>();
+                if (*expr).type_ != pg_sys::NodeTag::T_Var {
+                    can_narrow_projection = false;
+                    break;
+                }
+                let var = &*target_entry.expr.cast::<pg_sys::Var>();
+                if var.varattno > 0 {
+                    attr_numbers.insert(var.varattno);
+                } else {
+                    can_narrow_projection = false;
+                    break;
+                }
+            }
+        }
+        if !can_narrow_projection {
+            attr_numbers.clear();
+        }
+        let natts = tuple_desc.natts();
+        let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
+        for attr_index in 0..natts {
+            let Some(attr) = tuple_desc
+                .attribute(attr_index)
+                .unwrap_or_else(|error| pgrx::error!("{error}"))
+            else {
+                continue;
+            };
+            if !attr_numbers.is_empty() && !attr_numbers.contains(&attr.attnum) {
+                continue;
+            }
+            custom_scan_validate_tuple_payload_attr(&attr);
+            columns.push(attr.name);
+        }
+        (columns, custom_scan_payload_attr_io(&tuple_desc))
     }
 }
 
