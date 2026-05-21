@@ -10,6 +10,9 @@ use std::sync::OnceLock;
 #[cfg(feature = "pg18")]
 use pgrx::pg_sys;
 
+#[cfg(feature = "pg18")]
+use super::callback::pg_callback;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ExplainOptionSnapshot {
     pub option_name: &'static str,
@@ -435,19 +438,15 @@ unsafe extern "C-unwind" fn ecaz_explain_option_handler(
     opt: *mut pg_sys::DefElem,
     _pstate: *mut pg_sys::ParseState,
 ) {
-    // SAFETY: PostgreSQL invokes the option handler with live ExplainState and
-    // DefElem pointers; the guard contains Rust unwinding at the C boundary.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let enabled = pg_sys::defGetBoolean(opt);
-            let state = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
-            if state.is_null() {
-                pgrx::error!("ecaz failed to allocate EXPLAIN option state");
-            }
-            *state = enabled;
-            pg_sys::SetExplainExtensionState(es, explain_extension_id(), state.cast::<c_void>());
-        })
-    }
+    pg_callback!({
+        let enabled = pg_sys::defGetBoolean(opt);
+        let state = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+        if state.is_null() {
+            pgrx::error!("ecaz failed to allocate EXPLAIN option state");
+        }
+        *state = enabled;
+        pg_sys::SetExplainExtensionState(es, explain_extension_id(), state.cast::<c_void>());
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -458,59 +457,50 @@ unsafe extern "C-unwind" fn ecaz_explain_per_node_hook(
     plan_name: *const std::ffi::c_char,
     es: *mut pg_sys::ExplainState,
 ) {
-    // SAFETY: PostgreSQL invokes the per-node hook with hook arguments valid for
-    // the duration of the call; the guard contains Rust unwinding at the C
-    // boundary while preserving previous-hook chaining below.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if !planstate.is_null()
-                && !es.is_null()
-                && (*planstate).type_ == pg_sys::NodeTag::T_IndexScanState
-            {
-                let explain_option_enabled = explain_option_enabled(es);
-                if !explain_option_enabled {
-                    if let Some(previous_hook) = previous_explain_per_node_hook() {
-                        previous_hook(planstate, ancestors, relationship, plan_name, es);
-                    }
-                    return;
+    pg_callback!({
+        if !planstate.is_null()
+            && !es.is_null()
+            && (*planstate).type_ == pg_sys::NodeTag::T_IndexScanState
+        {
+            let explain_option_enabled = explain_option_enabled(es);
+            if !explain_option_enabled {
+                if let Some(previous_hook) = previous_explain_per_node_hook() {
+                    previous_hook(planstate, ancestors, relationship, plan_name, es);
                 }
-
-                let index_state = planstate.cast::<pg_sys::IndexScanState>();
-                let access_method_name = explain_access_method_name(index_state)
-                    .unwrap_or_else(|| "<unknown>".to_owned());
-                let context = ExplainHookContext {
-                    explain_option_enabled,
-                    node_kind: explain_node_kind(planstate),
-                    access_method_name: access_method_name.as_str(),
-                };
-                if should_emit_explain_properties(context) {
-                    match access_method_name.as_str() {
-                        "ec_hnsw" => {
-                            let counters =
-                                crate::am::ec_hnsw::explain_counters_from_index_scan_state(
-                                    index_state,
-                                );
-                            let properties = counters.explain_properties();
-                            emit_explain_properties(es, &properties);
-                        }
-                        "ec_ivf" => {
-                            let counters =
-                                crate::am::ec_ivf::explain_counters_from_index_scan_state(
-                                    index_state,
-                                );
-                            let properties = counters.explain_properties();
-                            emit_explain_properties(es, &properties);
-                        }
-                        _ => {}
-                    }
-                }
+                return;
             }
 
-            if let Some(previous_hook) = previous_explain_per_node_hook() {
-                previous_hook(planstate, ancestors, relationship, plan_name, es);
+            let index_state = planstate.cast::<pg_sys::IndexScanState>();
+            let access_method_name =
+                explain_access_method_name(index_state).unwrap_or_else(|| "<unknown>".to_owned());
+            let context = ExplainHookContext {
+                explain_option_enabled,
+                node_kind: explain_node_kind(planstate),
+                access_method_name: access_method_name.as_str(),
+            };
+            if should_emit_explain_properties(context) {
+                match access_method_name.as_str() {
+                    "ec_hnsw" => {
+                        let counters =
+                            crate::am::ec_hnsw::explain_counters_from_index_scan_state(index_state);
+                        let properties = counters.explain_properties();
+                        emit_explain_properties(es, &properties);
+                    }
+                    "ec_ivf" => {
+                        let counters =
+                            crate::am::ec_ivf::explain_counters_from_index_scan_state(index_state);
+                        let properties = counters.explain_properties();
+                        emit_explain_properties(es, &properties);
+                    }
+                    _ => {}
+                }
             }
-        })
-    }
+        }
+
+        if let Some(previous_hook) = previous_explain_per_node_hook() {
+            previous_hook(planstate, ancestors, relationship, plan_name, es);
+        }
+    })
 }
 
 #[cfg(feature = "pg18")]
