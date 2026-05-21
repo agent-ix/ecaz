@@ -1,0 +1,16 @@
+Script started on 2026-05-21 11:41:58-07:00 [<not executed on terminal>]
+101:fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+104:    unsafe { super::shared::read_metadata_page(index_relation) }
+1720:    let metadata = debug_read_metadata_page(index_relation);
+1759:    let metadata = debug_read_metadata_page(index_relation);
+1815:    let metadata = debug_read_metadata_page(index_relation);
+1869:    let metadata = debug_read_metadata_page(index_relation);
+1940:    let metadata = debug_read_metadata_page(index_relation);
+2049:    let metadata = debug_read_metadata_page(index_relation);
+2187:    let metadata = debug_read_metadata_page(index_relation);
+2310:    let metadata = debug_read_metadata_page(index_relation);
+2471:    let metadata = debug_read_metadata_page(index_relation);
+3232:    let metadata = debug_read_metadata_page(index_relation);
+4219:    let metadata = debug_read_metadata_page(index_relation);
+
+Script done on 2026-05-21 11:41:58-07:00 [COMMAND_EXIT_CODE="0"]
