@@ -380,63 +380,6 @@ fn custom_scan_dml_update_value_exprs_from_list(
     exprs
 }
 
-unsafe fn custom_scan_bigint_expr_value(
-    node: *mut pg_sys::CustomScanState,
-    expr: *mut pg_sys::Expr,
-) -> i64 {
-    // SAFETY: expr comes from the provider-owned DML custom_exprs list; NodeTag
-    // dispatch below guards Const/Param casts and evaluation.
-    unsafe {
-        if expr.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML PK expression is null");
-        }
-        match (*expr.cast::<pg_sys::Node>()).type_ {
-            pg_sys::NodeTag::T_Const => {
-                let const_expr = &*expr.cast::<pg_sys::Const>();
-                if const_expr.constisnull {
-                    pgrx::error!("EcSpireDistributedScan DML constant PK is NULL");
-                }
-                match const_expr.consttype {
-                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(const_expr.constvalue)),
-                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(const_expr.constvalue)),
-                    pg_sys::INT8OID => pg_sys::DatumGetInt64(const_expr.constvalue),
-                    other => pgrx::error!(
-                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
-                        other.to_u32()
-                    ),
-                }
-            }
-            pg_sys::NodeTag::T_Param => {
-                let param = &*expr.cast::<pg_sys::Param>();
-                let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
-                if expr_state.is_null() {
-                    pgrx::error!("EcSpireDistributedScan failed to initialize DML PK parameter");
-                }
-                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
-                    pgrx::error!("EcSpireDistributedScan DML PK parameter has no evaluator")
-                });
-                let mut is_null = false;
-                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
-                if is_null {
-                    pgrx::error!("EcSpireDistributedScan DML PK parameter must not be NULL");
-                }
-                match param.paramtype {
-                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(datum)),
-                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(datum)),
-                    pg_sys::INT8OID => pg_sys::DatumGetInt64(datum),
-                    other => pgrx::error!(
-                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
-                        other.to_u32()
-                    ),
-                }
-            }
-            _ => pgrx::error!(
-                "EcSpireDistributedScan DML path requires a constant or parameter bigint PK"
-            ),
-        }
-    }
-}
-
 fn custom_scan_execute_dml_delete(state: &SpireCustomScanExecState) -> u64 {
     let invocation =
         custom_scan_dml_primitive_invocation(state).unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -499,13 +442,68 @@ fn custom_scan_execute_dml_update(
     }
     let row_payload_json = unsafe {
         let node = access_state.as_ptr().cast::<pg_sys::CustomScanState>();
+        let datum_json_value = |datum: pg_sys::Datum, typoid: pg_sys::Oid| {
+            if typoid == pg_sys::InvalidOid {
+                pgrx::error!("EcSpireDistributedScan DML UPDATE value has invalid type OID");
+            }
+            let mut typoutput = pg_sys::InvalidOid;
+            let mut typisvarlena = false;
+            pg_sys::getTypeOutputInfo(typoid, &mut typoutput, &mut typisvarlena);
+            let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
+            pg_sys::fmgr_info(typoutput, &mut flinfo);
+            let output = pg_sys::OutputFunctionCall(&mut flinfo, datum);
+            if output.is_null() {
+                pgrx::error!("EcSpireDistributedScan DML UPDATE type output returned NULL");
+            }
+            let value = std::ffi::CStr::from_ptr(output)
+                .to_str()
+                .unwrap_or_else(|_| {
+                    pgrx::error!("EcSpireDistributedScan DML UPDATE output value is not UTF-8")
+                })
+                .to_owned();
+            serde_json::Value::String(value)
+        };
         let mut payload = serde_json::Map::with_capacity(invocation.updated_columns.len());
         for (column, expr) in invocation
             .updated_columns
             .iter()
             .zip(state.dml_update_value_exprs.iter().copied())
         {
-            let value = custom_scan_dml_update_expr_json_value(node, expr);
+            if expr.is_null() {
+                pgrx::error!("EcSpireDistributedScan DML UPDATE value expression is null");
+            }
+            let value = match (*expr.cast::<pg_sys::Node>()).type_ {
+                pg_sys::NodeTag::T_Const => {
+                    let const_expr = &*expr.cast::<pg_sys::Const>();
+                    if const_expr.constisnull {
+                        serde_json::Value::Null
+                    } else {
+                        datum_json_value(const_expr.constvalue, const_expr.consttype)
+                    }
+                }
+                pg_sys::NodeTag::T_Param => {
+                    let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
+                    if expr_state.is_null() {
+                        pgrx::error!(
+                            "EcSpireDistributedScan failed to initialize DML UPDATE parameter"
+                        );
+                    }
+                    let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                        pgrx::error!("EcSpireDistributedScan DML UPDATE parameter has no evaluator")
+                    });
+                    let mut is_null = false;
+                    let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                    if is_null {
+                        serde_json::Value::Null
+                    } else {
+                        let typoid = pg_sys::exprType(expr.cast());
+                        datum_json_value(datum, typoid)
+                    }
+                }
+                _ => pgrx::error!(
+                    "EcSpireDistributedScan DML UPDATE supports only constant or parameter SET values in v1"
+                ),
+            };
             payload.insert(column.clone(), value);
         }
         serde_json::Value::Object(payload).to_string()
@@ -555,73 +553,6 @@ fn custom_scan_execute_dml_update(
     u64::try_from(updated_count).unwrap_or_else(|_| {
         pgrx::error!("EcSpireDistributedScan DML UPDATE returned a negative updated_count")
     })
-}
-
-unsafe fn custom_scan_dml_update_expr_json_value(
-    node: *mut pg_sys::CustomScanState,
-    expr: *mut pg_sys::Expr,
-) -> serde_json::Value {
-    // SAFETY: expr is a provider-owned UPDATE value expression; NodeTag dispatch
-    // below guards Const/Param casts and evaluation. Non-null Datum values are
-    // immediately converted through PostgreSQL's type output function.
-    unsafe {
-        let datum_json_value = |datum: pg_sys::Datum, typoid: pg_sys::Oid| {
-            if typoid == pg_sys::InvalidOid {
-                pgrx::error!("EcSpireDistributedScan DML UPDATE value has invalid type OID");
-            }
-            let mut typoutput = pg_sys::InvalidOid;
-            let mut typisvarlena = false;
-            pg_sys::getTypeOutputInfo(typoid, &mut typoutput, &mut typisvarlena);
-            let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
-            pg_sys::fmgr_info(typoutput, &mut flinfo);
-            let output = pg_sys::OutputFunctionCall(&mut flinfo, datum);
-            if output.is_null() {
-                pgrx::error!("EcSpireDistributedScan DML UPDATE type output returned NULL");
-            }
-            let value = std::ffi::CStr::from_ptr(output)
-                .to_str()
-                .unwrap_or_else(|_| {
-                    pgrx::error!("EcSpireDistributedScan DML UPDATE output value is not UTF-8")
-                })
-                .to_owned();
-            serde_json::Value::String(value)
-        };
-        if expr.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML UPDATE value expression is null");
-        }
-        match (*expr.cast::<pg_sys::Node>()).type_ {
-            pg_sys::NodeTag::T_Const => {
-                let const_expr = &*expr.cast::<pg_sys::Const>();
-                if const_expr.constisnull {
-                    serde_json::Value::Null
-                } else {
-                    datum_json_value(const_expr.constvalue, const_expr.consttype)
-                }
-            }
-            pg_sys::NodeTag::T_Param => {
-                let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
-                if expr_state.is_null() {
-                    pgrx::error!(
-                        "EcSpireDistributedScan failed to initialize DML UPDATE parameter"
-                    );
-                }
-                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
-                    pgrx::error!("EcSpireDistributedScan DML UPDATE parameter has no evaluator")
-                });
-                let mut is_null = false;
-                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
-                if is_null {
-                    serde_json::Value::Null
-                } else {
-                    let typoid = pg_sys::exprType(expr.cast());
-                    datum_json_value(datum, typoid)
-                }
-            }
-            _ => pgrx::error!(
-                "EcSpireDistributedScan DML UPDATE supports only constant or parameter SET values in v1"
-            ),
-        }
-    }
 }
 
 fn custom_scan_ensure_dml_pk_select_payload(state: &mut SpireCustomScanExecState) {

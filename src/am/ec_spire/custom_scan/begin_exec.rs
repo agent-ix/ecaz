@@ -160,7 +160,54 @@ unsafe fn custom_scan_init_dml_exec_state(
             state.dml_pk_column = plan.dml_pk_column();
         }
         let dml_exprs = CustomScanExprList::from_custom_scan(custom_scan, "DML expression list");
-        let pk_value = custom_scan_bigint_expr_value(node, dml_exprs.expr(0, "PK expression"));
+        let pk_expr = dml_exprs.expr(0, "PK expression");
+        if pk_expr.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML PK expression is null");
+        }
+        let pk_value = match (*pk_expr.cast::<pg_sys::Node>()).type_ {
+            pg_sys::NodeTag::T_Const => {
+                let const_expr = &*pk_expr.cast::<pg_sys::Const>();
+                if const_expr.constisnull {
+                    pgrx::error!("EcSpireDistributedScan DML constant PK is NULL");
+                }
+                match const_expr.consttype {
+                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(const_expr.constvalue)),
+                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(const_expr.constvalue)),
+                    pg_sys::INT8OID => pg_sys::DatumGetInt64(const_expr.constvalue),
+                    other => pgrx::error!(
+                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
+                        other.to_u32()
+                    ),
+                }
+            }
+            pg_sys::NodeTag::T_Param => {
+                let param = &*pk_expr.cast::<pg_sys::Param>();
+                let expr_state = pg_sys::ExecInitExpr(pk_expr, &mut (*node).ss.ps);
+                if expr_state.is_null() {
+                    pgrx::error!("EcSpireDistributedScan failed to initialize DML PK parameter");
+                }
+                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                    pgrx::error!("EcSpireDistributedScan DML PK parameter has no evaluator")
+                });
+                let mut is_null = false;
+                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                if is_null {
+                    pgrx::error!("EcSpireDistributedScan DML PK parameter must not be NULL");
+                }
+                match param.paramtype {
+                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(datum)),
+                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(datum)),
+                    pg_sys::INT8OID => pg_sys::DatumGetInt64(datum),
+                    other => pgrx::error!(
+                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
+                        other.to_u32()
+                    ),
+                }
+            }
+            _ => pgrx::error!(
+                "EcSpireDistributedScan DML path requires a constant or parameter bigint PK"
+            ),
+        };
         state.dml_pk_value = super::dml_frontdoor_bigint_pk_value_bytes(pk_value);
         state.dml_updated_columns = plan.dml_column_list(2, "updated columns");
         state.dml_projected_columns = plan.dml_column_list(3, "projected columns");
