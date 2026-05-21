@@ -88,9 +88,7 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
     let result = (|| -> Result<SpireRemoteProductionScanHandoffSummaryRow, String> {
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
-        // SAFETY: SQL diagnostic callers supply a live SPIRE index relation for
-        // the duration of this snapshot helper.
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch == 0 {
             return Ok(SpireRemoteProductionScanHandoffSummaryRow {
@@ -471,9 +469,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     let mut metrics = SpireRemoteProductionReadMetrics::default();
     let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
-    // SAFETY: production scan wrappers supply a live SPIRE index relation for
-    // the duration of the scan result helper.
-    let index = unsafe { live_index_relation(index_relation) };
+    let index = checked_live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         add_profile_elapsed(&mut metrics.planning_elapsed_ms, planning_start);

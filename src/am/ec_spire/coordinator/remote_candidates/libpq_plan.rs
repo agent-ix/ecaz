@@ -22,8 +22,7 @@ fn remote_candidate_index_oid(index_relation: pg_sys::Relation, context: &str) -
     if index_relation.is_null() {
         pgrx::error!("{context} received a null SPIRE index relation");
     }
-    // SAFETY: remote-search callers pass a live SPIRE index relation descriptor.
-    let index_oid = unsafe { live_index_relation(index_relation) }.relid().into();
+    let index_oid = checked_live_index_relation(index_relation).relid().into();
     if index_oid == pg_sys::InvalidOid {
         pgrx::error!("{context} received an invalid SPIRE index relation OID");
     }

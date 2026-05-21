@@ -332,7 +332,7 @@ pub(crate) fn remote_search_candidates(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    let index = unsafe { live_index_relation(index_relation) };
+    let index = checked_live_index_relation(index_relation);
     let result = remote_search_candidates_result(
         index,
         requested_epoch,
@@ -423,7 +423,7 @@ pub(crate) fn remote_search_coordinator_local_candidates(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    let index = unsafe { live_index_relation(index_relation) };
+    let index = checked_live_index_relation(index_relation);
     let result = remote_search_coordinator_local_candidates_result(
         index,
         requested_epoch,
@@ -655,7 +655,7 @@ pub(crate) fn remote_search_coordinator_local_summary(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorLocalSummaryRow {
-    let index = unsafe { live_index_relation(index_relation) };
+    let index = checked_live_index_relation(index_relation);
     let result = remote_search_coordinator_local_summary_result(
         index,
         requested_epoch,
@@ -676,7 +676,7 @@ pub(crate) fn remote_search_local_heap_resolution_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapResolutionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapResolutionPlanRow>, String> {
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = checked_live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_result(
             index,
             requested_epoch,
@@ -720,7 +720,7 @@ pub(crate) fn remote_search_local_heap_candidate_rows(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = checked_live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_result(
             index,
             requested_epoch,
@@ -787,7 +787,7 @@ pub(crate) fn remote_search_local_heap_candidate_summary_row(
         top_k,
         consistency_mode,
     );
-    let index = unsafe { live_index_relation(index_relation) };
+    let index = checked_live_index_relation(index_relation);
     remote_search_local_heap_candidate_summary_from_gate(
         index,
         &gate,
@@ -971,7 +971,7 @@ pub(crate) fn remote_search_coordinator_result_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorResultSummaryRow {
-    let index = unsafe { live_index_relation(index_relation) };
+    let index = checked_live_index_relation(index_relation);
     let gate = remote_search_coordinator_gate_summary_row(
         index_relation,
         requested_epoch,

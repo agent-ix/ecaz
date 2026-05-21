@@ -141,9 +141,7 @@ pub(crate) fn remote_search_fanout_plan_rows(
             );
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        // SAFETY: callers provide an open SPIRE index relation; this only reads
-        // its root control page to verify the active epoch.
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
@@ -236,9 +234,7 @@ pub(crate) fn remote_search_target_plan_rows(
             );
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        // SAFETY: callers provide an open SPIRE index relation; this only reads
-        // its root control page to verify the active epoch.
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         if root_control.active_epoch != requested_epoch {
             return Err(format!(

@@ -433,7 +433,7 @@ pub(crate) fn remote_search_endpoint_identity_row(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteSearchEndpointIdentityRow {
     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = checked_live_index_relation(index_relation);
         let relation_options = index.relation_options();
         let index_oid = index.relid().into();
         let assignment_payload_format = relation_options.assignment_payload_format();

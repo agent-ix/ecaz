@@ -134,6 +134,12 @@ unsafe fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveInde
     unsafe { SpireLiveIndexRelation::new(index_relation) }
 }
 
+fn checked_live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveIndexRelation {
+    // SAFETY: SQL diagnostic and AM wrapper entry points pass relation guards
+    // that keep the SPIRE index relation live for the duration of the call.
+    unsafe { live_index_relation(index_relation) }
+}
+
 struct SpireActiveEpochAnchor {
     root_control: meta::SpireRootControlState,
     epoch_manifest: meta::SpireEpochManifest,

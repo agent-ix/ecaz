@@ -13,9 +13,7 @@ pub(crate) fn remote_search_production_consistency_policy_summary_row(
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         let requested_consistency_mode = consistency_mode_name(requested_consistency_mode);
-        // SAFETY: index_relation is the live PostgreSQL index relation supplied
-        // by the SQL diagnostic caller for the duration of this summary read.
-        let index = unsafe { live_index_relation(index_relation) };
+        let index = checked_live_index_relation(index_relation);
         let root_control = index.root_control();
         let (epoch_manifest, _, _) =
             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
