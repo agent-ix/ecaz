@@ -1166,12 +1166,13 @@ pub(super) unsafe fn read_metadata_page(
     }
     .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
     let page = buffer.page();
-    // SAFETY: `page` comes from the locked metadata buffer; the special pointer
-    // identifies the metadata payload area.
-    let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-    // SAFETY: DISKANN metadata pages store exactly `VAMANA_METADATA_BYTES` in
-    // the special area, which remains pinned while the buffer guard is live.
-    let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
+    // SAFETY: `page` comes from the locked metadata buffer; DISKANN metadata
+    // pages store exactly `VAMANA_METADATA_BYTES` in the special area, which
+    // remains pinned while the buffer guard is live.
+    let metadata_bytes = unsafe {
+        let special = pg_sys::PageGetSpecialPointer(page).cast::<u8>();
+        slice::from_raw_parts(special, VAMANA_METADATA_BYTES)
+    };
     VamanaMetadataPage::decode(metadata_bytes)
 }
 
@@ -1193,12 +1194,13 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
 
     let page = buffer.page();
     let page_size = buffer.page_size();
-    // SAFETY: `page` comes from the locked metadata buffer; the special pointer
-    // identifies the serialized metadata payload.
-    let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-    // SAFETY: The metadata special area contains the fixed-size metadata bytes
-    // while the buffer guard pins the page.
-    let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
+    // SAFETY: `page` comes from the locked metadata buffer; the metadata
+    // special area contains the fixed-size metadata bytes while the buffer
+    // guard pins the page.
+    let metadata_bytes = unsafe {
+        let special = pg_sys::PageGetSpecialPointer(page).cast::<u8>();
+        slice::from_raw_parts(special, VAMANA_METADATA_BYTES)
+    };
     let mut metadata = VamanaMetadataPage::decode(metadata_bytes)?;
     let result = f(&mut metadata)?;
 
@@ -1209,14 +1211,14 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
     // SAFETY: `writable_page` is the registered metadata page and `page_size`
-    // comes from the locked buffer; `special_size` is aligned from encoded size.
-    unsafe { pg_sys::PageInit(writable_page, page_size, special_size) };
-    // SAFETY: The page was initialized with sufficient special space for the
-    // encoded metadata bytes.
-    let dst = unsafe { pg_sys::PageGetSpecialPointer(writable_page) }.cast::<u8>();
-    // SAFETY: `dst` points at the initialized special area, and source/dest do
-    // not overlap because `encoded` is owned Rust memory.
-    unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len()) };
+    // comes from the locked buffer. The page is initialized with sufficient
+    // special space for the encoded metadata bytes, then copied from owned Rust
+    // memory into that non-overlapping special area.
+    unsafe {
+        pg_sys::PageInit(writable_page, page_size, special_size);
+        let dst = pg_sys::PageGetSpecialPointer(writable_page).cast::<u8>();
+        ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len());
+    };
     wal_txn.finish();
     Ok(result)
 }
@@ -1699,52 +1701,44 @@ unsafe fn page_tuple_location(
     page_size: usize,
     tid: ItemPointer,
 ) -> Result<(*mut u8, usize), String> {
-    // SAFETY: `page` is a locked PostgreSQL page and may be inspected for its
-    // current max line-pointer offset.
-    let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
-    if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
-        return Err(format!(
-            "ec_diskann backlink target ({},{}) has invalid offset {} (max {})",
-            tid.block_number, tid.offset_number, tid.offset_number, max_offset
-        ));
-    }
+    // SAFETY: `page` is a locked PostgreSQL data page. This block validates
+    // the requested line pointer, checks tuple bounds against the locked page
+    // size, then derives the byte pointer for that same page.
+    let (tuple_ptr, tuple_len) = unsafe {
+        let max_offset = pg_sys::PageGetMaxOffsetNumber(page);
+        if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
+            return Err(format!(
+                "ec_diskann backlink target ({},{}) has invalid offset {} (max {})",
+                tid.block_number, tid.offset_number, tid.offset_number, max_offset
+            ));
+        }
 
-    // SAFETY: The offset was validated against the page's max offset.
-    let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
-    if item_id.is_null() {
-        return Err(format!(
-            "ec_diskann backlink target ({},{}) returned a null item id",
-            tid.block_number, tid.offset_number
-        ));
-    }
-    // SAFETY: `item_id` was checked non-null and points into the locked page's
-    // line pointer array.
-    let item_id_ref = unsafe { &*item_id };
-    if item_id_ref.lp_flags() == 0 {
-        return Err(format!(
-            "ec_diskann backlink target ({},{}) points at an unused slot",
-            tid.block_number, tid.offset_number
-        ));
-    }
+        let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
+        if item_id.is_null() {
+            return Err(format!(
+                "ec_diskann backlink target ({},{}) returned a null item id",
+                tid.block_number, tid.offset_number
+            ));
+        }
+        let item_id_ref = &*item_id;
+        if item_id_ref.lp_flags() == 0 {
+            return Err(format!(
+                "ec_diskann backlink target ({},{}) points at an unused slot",
+                tid.block_number, tid.offset_number
+            ));
+        }
 
-    let tuple_offset = item_id_ref.lp_off() as usize;
-    let tuple_len = item_id_ref.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_diskann backlink target ({},{}) has invalid tuple bounds",
-            tid.block_number, tid.offset_number
-        ));
-    }
+        let tuple_offset = item_id_ref.lp_off() as usize;
+        let tuple_len = item_id_ref.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            return Err(format!(
+                "ec_diskann backlink target ({},{}) has invalid tuple bounds",
+                tid.block_number, tid.offset_number
+            ));
+        }
 
-    // SAFETY: The item id is valid and tuple bounds were checked against the
-    // locked page size before retrieving the tuple pointer.
-    let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
-    if tuple_ptr.is_null() {
-        return Err(format!(
-            "ec_diskann backlink target ({},{}) returned a null tuple pointer",
-            tid.block_number, tid.offset_number
-        ));
-    }
+        ((page as *mut u8).add(tuple_offset), tuple_len)
+    };
     Ok((tuple_ptr, tuple_len))
 }
 
@@ -1757,12 +1751,12 @@ unsafe fn with_page_tuple_bytes_mut<R, F>(
 where
     F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
 {
-    // SAFETY: `page` is locked by the caller, and `page_tuple_location`
-    // validates the tuple offset and length before returning a pointer.
-    let (tuple_ptr, tuple_len) = unsafe { page_tuple_location(page, page_size, tid)? };
-    // SAFETY: The tuple location was bounds-checked on the locked page, and the
-    // mutable slice is confined to the visitor call.
-    let tuple_bytes = unsafe { slice::from_raw_parts_mut(tuple_ptr, tuple_len) };
+    // SAFETY: The caller owns an exclusive page lock; tuple bounds are
+    // validated before constructing the mutable byte slice.
+    let tuple_bytes = unsafe {
+        let (tuple_ptr, tuple_len) = page_tuple_location(page, page_size, tid)?;
+        slice::from_raw_parts_mut(tuple_ptr, tuple_len)
+    };
     visit(tuple_bytes)
 }
 
