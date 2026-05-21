@@ -654,14 +654,18 @@ fn palloc_copy_slice<T: Copy>(values: &[T], context: &str) -> *mut T {
     let bytes = std::mem::size_of_val(values);
     crate::fault::maybe_fail_palloc(context);
     // SAFETY: allocates `bytes` in PostgreSQL memory for scan-local slice
-    // storage; callers have already rejected empty slices.
-    let ptr = unsafe { pg_sys::palloc(bytes) }.cast::<T>();
+    // storage and copies exactly `values.len()` non-overlapping elements into
+    // it; callers have already rejected empty slices.
+    let ptr = unsafe {
+        let ptr = pg_sys::palloc(bytes).cast::<T>();
+        if !ptr.is_null() {
+            ptr::copy_nonoverlapping(values.as_ptr(), ptr, values.len());
+        }
+        ptr
+    };
     if ptr.is_null() {
         pgrx::error!("{context}");
     }
-    // SAFETY: `ptr` points to space for exactly `values.len()` elements, and
-    // source/destination do not overlap.
-    unsafe { ptr::copy_nonoverlapping(values.as_ptr(), ptr, values.len()) };
     ptr
 }
 
@@ -853,18 +857,22 @@ unsafe fn configure_heap_rerank_state(
         return;
     }
 
-    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
-    let heap_relation_ptr = heap_relation.as_ptr();
-    let snapshot = unsafe { resolve_scan_snapshot(scan) };
-    // SAFETY: heap and index relations are live; resolver validates the indexed
-    // ecvector source attribute for heap_f32 rerank.
-    let source_attribute = unsafe {
-        source::resolve_indexed_ecvector_attribute(
+    // SAFETY: the scan descriptor is live for the active callback. The
+    // relation/snapshot resolvers either borrow callback-owned pointers or hold
+    // guards in the returned state, and the attribute resolver validates the
+    // indexed ecvector source attribute for heap_f32 rerank.
+    let (heap_relation, snapshot, source_attribute) = unsafe {
+        let heap_relation = resolve_scan_heap_relation(scan);
+        let heap_relation_ptr = heap_relation.as_ptr();
+        let snapshot = resolve_scan_snapshot(scan);
+        let source_attribute = source::resolve_indexed_ecvector_attribute(
             heap_relation_ptr,
             (*scan).indexRelation,
             "ec_ivf heap_f32 rerank indexed column",
-        )
+        );
+        (heap_relation, snapshot, source_attribute)
     };
+    let heap_relation_ptr = heap_relation.as_ptr();
     let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr).unwrap_or_else(|| {
         pgrx::error!("ec_ivf heap_f32 rerank failed to allocate a heap tuple slot")
     });
@@ -1212,12 +1220,14 @@ fn rerank_probe_candidates_heap_f32(
     }
     let source_attnum = i32::from(state.source_attnum);
     // SAFETY: heap rerank state owns the heap relation/snapshot/slot for this
-    // scan callback and keeps them live while candidates are reranked.
-    let mut heap_reader =
-        unsafe { HeapSlotReader::from_raw(heap_relation, snapshot, slot, "ec_ivf") }
+    // scan callback and keeps them live while candidates are reranked and while
+    // heap blocks are prefetched.
+    let mut heap_reader = unsafe {
+        let heap_reader = HeapSlotReader::from_raw(heap_relation, snapshot, slot, "ec_ivf")
             .unwrap_or_else(|error| pgrx::error!("{error}"));
-
-    unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
+        prefetch_heap_rerank_blocks(heap_relation, candidates);
+        heap_reader
+    };
 
     let rerank_rows = {
         let query_values = opaque.query_values();
@@ -1603,23 +1613,31 @@ unsafe fn debug_scan_orderbynulls_is_null(scan: pg_sys::IndexScanDesc) -> bool {
 
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_scan_first_orderby_is_null(scan: pg_sys::IndexScanDesc) -> bool {
-    if unsafe { debug_scan_orderbynulls_is_null(scan) } {
-        return true;
+    // SAFETY: the debug caller passes a live scan descriptor; this block checks
+    // the order-by null array before reading the first flag.
+    unsafe {
+        let scan_ref = ivf_scan_desc_ref(scan, "ec_ivf debug scan orderby null flag");
+        if scan_ref.xs_orderbynulls.is_null() {
+            return true;
+        }
+        *scan_ref.xs_orderbynulls
     }
-    // SAFETY: null was checked above before reading the first order-by null flag.
-    unsafe { *(*scan).xs_orderbynulls }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_scan_first_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    if unsafe { debug_scan_orderbyvals_is_null(scan) }
-        || unsafe { debug_scan_first_orderby_is_null(scan) }
-    {
-        return None;
+    // SAFETY: the debug caller passes a live scan descriptor; this block checks
+    // the order-by value/null arrays before reading the first score datum.
+    unsafe {
+        let scan_ref = ivf_scan_desc_ref(scan, "ec_ivf debug scan orderby score");
+        if scan_ref.xs_orderbyvals.is_null() || scan_ref.xs_orderbynulls.is_null() {
+            return None;
+        }
+        if *scan_ref.xs_orderbynulls {
+            return None;
+        }
+        f32::from_datum(*scan_ref.xs_orderbyvals, false)
     }
-    // SAFETY: non-null order-by values were verified above and the AM stores
-    // the score as the first f32 datum.
-    unsafe { f32::from_datum(*(*scan).xs_orderbyvals, false) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
