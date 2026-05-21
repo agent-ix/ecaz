@@ -678,7 +678,7 @@ pub(crate) fn dml_frontdoor_primitive_plan_expr_catalog_row(
     }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
+pub(crate) fn dml_frontdoor_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
@@ -741,58 +741,46 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
     }
 }
 
-pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+pub(crate) fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    // SAFETY: the baserel hook supplies the same live planner pointers to the
-    // shared primitive-plan extractor.
-    unsafe {
-        let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
-        Some(plan_expr.and_then(|plan_expr| {
-            dml_frontdoor_primitive_plan_expr_require_mode(
-                plan_expr,
-                SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload,
-                "PK SELECT",
-            )
-        }))
-    }
+    let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+    Some(plan_expr.and_then(|plan_expr| {
+        dml_frontdoor_primitive_plan_expr_require_mode(
+            plan_expr,
+            SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload,
+            "PK SELECT",
+        )
+    }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
+pub(crate) fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    // SAFETY: the baserel hook supplies the same live planner pointers to the
-    // shared primitive-plan extractor.
-    unsafe {
-        let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
-        Some(plan_expr.and_then(|plan_expr| {
-            dml_frontdoor_primitive_plan_expr_require_mode(
-                plan_expr,
-                SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
-                "UPDATE",
-            )
-        }))
-    }
+    let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+    Some(plan_expr.and_then(|plan_expr| {
+        dml_frontdoor_primitive_plan_expr_require_mode(
+            plan_expr,
+            SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
+            "UPDATE",
+        )
+    }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
+pub(crate) fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    // SAFETY: the baserel hook supplies the same live planner pointers to the
-    // shared primitive-plan extractor.
-    unsafe {
-        let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
-        Some(plan_expr.and_then(|plan_expr| {
-            dml_frontdoor_primitive_plan_expr_require_mode(
-                plan_expr,
-                SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload,
-                "DELETE",
-            )
-        }))
-    }
+    let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+    Some(plan_expr.and_then(|plan_expr| {
+        dml_frontdoor_primitive_plan_expr_require_mode(
+            plan_expr,
+            SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload,
+            "DELETE",
+        )
+    }))
 }
 
 fn dml_frontdoor_primitive_plan_expr_require_mode(
@@ -2062,11 +2050,9 @@ fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
         let Some(restrict_info) = dml_frontdoor_pg_ref(restrict_info) else {
             continue;
         };
-        if let Some(predicate) = dml_frontdoor_pk_predicate_from_clause(
-            restrict_info.clause,
-            target_rtindex,
-            context,
-        ) {
+        if let Some(predicate) =
+            dml_frontdoor_pk_predicate_from_clause(restrict_info.clause, target_rtindex, context)
+        {
             return Some(predicate);
         }
     }
