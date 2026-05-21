@@ -166,6 +166,18 @@ fn debug_load_neighbor_tids_for_layer(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_load_graph_element(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: graph::GraphStorageDescriptor,
+) -> graph::GraphElement {
+    // SAFETY: Debug callers pass element TIDs discovered from graph pages or
+    // graph traversal for this relation/storage pair; the loader validates the
+    // storage-specific tuple body before returning an element.
+    unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_runtime_ordered_head(opaque: &mut TqScanOpaque) -> DebugCandidateHead {
     let current = active_result_state_ref(opaque).current();
     if current.has_element() {
@@ -702,13 +714,7 @@ impl DebugAmScan {
         }
     }
 
-    fn rescan(
-        &self,
-        keys: pg_sys::ScanKey,
-        nkeys: i32,
-        orderbys: pg_sys::ScanKey,
-        norderbys: i32,
-    ) {
+    fn rescan(&self, keys: pg_sys::ScanKey, nkeys: i32, orderbys: pg_sys::ScanKey, norderbys: i32) {
         debug_am_rescan(self.scan, keys, nkeys, orderbys, norderbys);
     }
 
@@ -1141,8 +1147,8 @@ pub(crate) fn debug_profile_ordered_scan_with_limit(
     let emit_elapsed_us =
         i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
 
-    let (total_counters, final_phase, final_ordered_slots, final_emitted_count) =
-        scan_state.with_opaque(|opaque| {
+    let (total_counters, final_phase, final_ordered_slots, final_emitted_count) = scan_state
+        .with_opaque(|opaque| {
             (
                 opaque.explain_counters,
                 debug_execution_phase_label(opaque.execution_phase).to_string(),
@@ -1535,18 +1541,14 @@ fn debug_collect_element_tids_at_level(
                 continue;
             }
 
-            // SAFETY: The tuple tag matched the graph element tag on a locked
-            // page, and the graph loader validates the storage-specific body.
-            let element = unsafe {
-                graph::load_exact_graph_element(
-                    index_relation,
-                    page::ItemPointer {
-                        block_number,
-                        offset_number,
-                    },
-                    storage,
-                )
-            };
+            let element = debug_load_graph_element(
+                index_relation,
+                page::ItemPointer {
+                    block_number,
+                    offset_number,
+                },
+                storage,
+            );
             if element.deleted || element.heaptids.is_empty() || element.level != target_level {
                 continue;
             }
@@ -1604,18 +1606,14 @@ fn debug_collect_element_tids_at_or_above_level(
                 continue;
             }
 
-            // SAFETY: The tuple tag matched the graph element tag on a locked
-            // page, and the graph loader validates the storage-specific body.
-            let element = unsafe {
-                graph::load_exact_graph_element(
-                    index_relation,
-                    page::ItemPointer {
-                        block_number,
-                        offset_number,
-                    },
-                    storage,
-                )
-            };
+            let element = debug_load_graph_element(
+                index_relation,
+                page::ItemPointer {
+                    block_number,
+                    offset_number,
+                },
+                storage,
+            );
             if element.deleted || element.heaptids.is_empty() || element.level < min_level {
                 continue;
             }
@@ -1672,18 +1670,14 @@ fn debug_collect_element_tid_by_heap_tid(
                 continue;
             }
 
-            // SAFETY: The tuple tag matched the graph element tag on a locked
-            // page, and the graph loader validates the storage-specific body.
-            let element = unsafe {
-                graph::load_exact_graph_element(
-                    index_relation,
-                    page::ItemPointer {
-                        block_number,
-                        offset_number,
-                    },
-                    storage,
-                )
-            };
+            let element = debug_load_graph_element(
+                index_relation,
+                page::ItemPointer {
+                    block_number,
+                    offset_number,
+                },
+                storage,
+            );
             if element.deleted || element.heaptids.is_empty() {
                 continue;
             }
@@ -1727,12 +1721,7 @@ pub(crate) fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapT
         debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
             .into_iter()
             .filter_map(|element_tid| {
-                // SAFETY: `element_tid` was collected from graph pages matching
-                // the storage element tag, and the graph loader validates the
-                // tuple body.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, element_tid, storage)
-                };
+                let element = debug_load_graph_element(index_relation, element_tid, storage);
                 if element.deleted {
                     return None;
                 }
@@ -1772,11 +1761,7 @@ pub(crate) fn debug_top_level_reachable_heap_tids(index_oid: pg_sys::Oid) -> Vec
             continue;
         }
 
-        let element =
-            // SAFETY: `element_tid` is either the metadata entry point or a
-            // neighbor returned by graph adjacency loading; the graph loader
-            // validates the tuple body before returning it.
-            unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
+        let element = debug_load_graph_element(index_relation, element_tid, storage);
         if element.deleted {
             continue;
         }
@@ -1828,11 +1813,7 @@ pub(crate) fn debug_layer0_reachable_live_element_tids(
             continue;
         }
 
-        let element =
-            // SAFETY: `element_tid` is either the metadata entry point or a
-            // neighbor returned by graph adjacency loading; the graph loader
-            // validates the tuple body before returning it.
-            unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
+        let element = debug_load_graph_element(index_relation, element_tid, storage);
         if element.deleted || element.heaptids.is_empty() {
             continue;
         }
@@ -1890,12 +1871,7 @@ pub(crate) fn debug_top_level_oracle_k_seed_heap_tids(
         let mut heap_tids = top_level_tids
             .into_iter()
             .filter_map(|seed_tid| {
-                // SAFETY: `seed_tid` was collected from graph pages matching
-                // the storage element tag, and the graph loader validates the
-                // tuple.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
-                };
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
                 if element.deleted || element.heaptids.is_empty() {
                     return None;
                 }
@@ -1961,12 +1937,7 @@ pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
         let mut seeds = top_level_tids
             .into_iter()
             .filter_map(|seed_tid| {
-                // SAFETY: `seed_tid` was collected from graph pages matching
-                // the storage element tag, and the graph loader validates the
-                // tuple.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
-                };
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
                 if element.deleted || element.heaptids.is_empty() {
                     return None;
                 }
@@ -2013,11 +1984,8 @@ pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
                     continue;
                 }
 
-                // SAFETY: Search candidates come from graph traversal on this
-                // relation/storage pair, and the loader validates the tuple body.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, candidate.node, parts.storage)
-                };
+                let element =
+                    debug_load_graph_element(index_relation, candidate.node, parts.storage);
                 if element.deleted || element.heaptids.is_empty() {
                     continue;
                 }
@@ -2072,12 +2040,7 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         let mut seeds = layer_tids
             .into_iter()
             .filter_map(|seed_tid| {
-                // SAFETY: `seed_tid` was collected from graph pages matching
-                // the storage element tag, and the graph loader validates the
-                // tuple.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
-                };
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
                 if element.deleted || element.heaptids.is_empty() {
                     return None;
                 }
@@ -2152,11 +2115,8 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
                     continue;
                 }
 
-                // SAFETY: Search candidates come from graph traversal on this
-                // relation/storage pair, and the loader validates the tuple body.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, candidate.node, parts.storage)
-                };
+                let element =
+                    debug_load_graph_element(index_relation, candidate.node, parts.storage);
                 if element.deleted || element.heaptids.is_empty() {
                     continue;
                 }
@@ -2210,12 +2170,7 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         let mut seeds = layer_tids
             .into_iter()
             .filter_map(|seed_tid| {
-                // SAFETY: `seed_tid` was collected from graph pages matching
-                // the storage element tag, and the graph loader validates the
-                // tuple.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
-                };
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
                 if element.deleted || element.heaptids.is_empty() {
                     return None;
                 }
@@ -2239,11 +2194,7 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
                 continue;
             }
 
-            // SAFETY: Seed candidates were loaded from graph pages for this
-            // relation/storage pair, and the graph loader validates the tuple.
-            let seed_element = unsafe {
-                graph::load_exact_graph_element(index_relation, seed.node, parts.storage)
-            };
+            let seed_element = debug_load_graph_element(index_relation, seed.node, parts.storage);
             if !seed_element.deleted {
                 scored_elements.push((seed.score, seed_element.heaptids.clone()));
             }
@@ -2259,12 +2210,8 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
                     continue;
                 }
 
-                // SAFETY: Neighbor TIDs come from graph adjacency loading for
-                // this relation/storage pair, and the loader validates the
-                // tuple body.
-                let neighbor = unsafe {
-                    graph::load_exact_graph_element(index_relation, neighbor_tid, parts.storage)
-                };
+                let neighbor =
+                    debug_load_graph_element(index_relation, neighbor_tid, parts.storage);
                 if neighbor.deleted || neighbor.heaptids.is_empty() {
                     continue;
                 }
@@ -2338,12 +2285,7 @@ pub(crate) fn debug_exact_seed_scan_heap_tids(
             let seeds = seed_element_tids
                 .into_iter()
                 .filter_map(|seed_tid| {
-                    // SAFETY: Seed element TIDs were resolved from graph pages
-                    // for this relation/storage pair, and the loader validates
-                    // tuples.
-                    let element = unsafe {
-                        graph::load_exact_graph_element(index_relation, seed_tid, parts.storage)
-                    };
+                    let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
                     if element.deleted || element.heaptids.is_empty() {
                         return None;
                     }
@@ -2384,11 +2326,8 @@ pub(crate) fn debug_exact_seed_scan_heap_tids(
                     continue;
                 }
 
-                // SAFETY: Search candidates come from graph traversal on this
-                // relation/storage pair, and the loader validates the tuple body.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, candidate.node, parts.storage)
-                };
+                let element =
+                    debug_load_graph_element(index_relation, candidate.node, parts.storage);
                 if element.deleted || element.heaptids.is_empty() {
                     continue;
                 }
@@ -3061,8 +3000,7 @@ fn debug_scan_orderby_score_state(scan: pg_sys::IndexScanDesc) -> (bool, bool, f
         };
         let value_present = !(*scan).xs_orderbyvals.is_null();
         let score = if value_present {
-            f32::from_datum(*(*scan).xs_orderbyvals, is_null)
-                .expect("orderby score should decode")
+            f32::from_datum(*(*scan).xs_orderbyvals, is_null).expect("orderby score should decode")
         } else {
             0.0
         };
@@ -3183,8 +3121,9 @@ pub(crate) fn debug_rescan_entry_candidate_state(
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    let (after_valid, after_tid, after_score) =
-        debug_with_scan_opaque(scan, |opaque| debug_candidate_slot(visible_frontier_slot(opaque, 0)));
+    let (after_valid, after_tid, after_score) = debug_with_scan_opaque(scan, |opaque| {
+        debug_candidate_slot(visible_frontier_slot(opaque, 0))
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
