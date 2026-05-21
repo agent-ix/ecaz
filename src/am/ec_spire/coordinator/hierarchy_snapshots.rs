@@ -323,7 +323,7 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
     Ok((epoch_manifest, object_manifest, placement_directory))
 }
 
-pub(crate) unsafe fn remote_search_candidates(
+pub(crate) fn remote_search_candidates(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -331,22 +331,18 @@ pub(crate) unsafe fn remote_search_candidates(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    // SAFETY: forwards the live index relation and checked SQL arguments into
-    // the fallible remote-candidate implementation.
-    let result = unsafe {
-        remote_search_candidates_result(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let result = remote_search_candidates_result(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_candidates_result(
+fn remote_search_candidates_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -364,8 +360,6 @@ unsafe fn remote_search_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the candidate request.
     let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
@@ -420,7 +414,7 @@ unsafe fn remote_search_candidates_result(
         .collect())
 }
 
-pub(crate) unsafe fn remote_search_coordinator_local_candidates(
+pub(crate) fn remote_search_coordinator_local_candidates(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -428,22 +422,18 @@ pub(crate) unsafe fn remote_search_coordinator_local_candidates(
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    // SAFETY: forwards the live index relation and checked SQL arguments into
-    // the fallible coordinator-local candidate implementation.
-    let result = unsafe {
-        remote_search_coordinator_local_candidates_result(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let result = remote_search_coordinator_local_candidates_result(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_coordinator_local_candidates_result(
+fn remote_search_coordinator_local_candidates_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -462,8 +452,6 @@ unsafe fn remote_search_coordinator_local_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the local-candidate request.
     let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
@@ -537,7 +525,7 @@ unsafe fn remote_search_coordinator_local_candidates_result(
     Ok(merged.candidates)
 }
 
-unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
+fn remote_search_coordinator_local_candidates_for_result_summary(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -556,8 +544,6 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the local-result summary request.
     let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
@@ -661,7 +647,7 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
     Ok(merged.candidates)
 }
 
-pub(crate) unsafe fn remote_search_coordinator_local_summary(
+pub(crate) fn remote_search_coordinator_local_summary(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -669,18 +655,14 @@ pub(crate) unsafe fn remote_search_coordinator_local_summary(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorLocalSummaryRow {
-    // SAFETY: forwards the live index relation and checked SQL arguments into
-    // the fallible coordinator-local summary implementation.
-    let result = unsafe {
-        remote_search_coordinator_local_summary_result(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let result = remote_search_coordinator_local_summary_result(
+        index_relation,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -693,18 +675,14 @@ pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapResolutionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapResolutionPlanRow>, String> {
-        // SAFETY: forwards the live index relation and checked request fields to
-        // local candidate collection before decoding heap locators.
-        let candidates = unsafe {
-            remote_search_coordinator_local_candidates_result(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )?
-        };
+        let candidates = remote_search_coordinator_local_candidates_result(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )?;
         candidates
             .into_iter()
             .map(|candidate| {
@@ -740,18 +718,14 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
-        // SAFETY: forwards the live index relation and checked request fields to
-        // coordinator-local candidate collection before heap resolution.
-        let candidates = unsafe {
-            remote_search_coordinator_local_candidates_result(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )?
-        };
+        let candidates = remote_search_coordinator_local_candidates_result(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )?;
         // SAFETY: candidates were produced from the same live index relation and
         // requested epoch; heap lookup decodes their local row locators.
         unsafe {
@@ -778,18 +752,14 @@ fn remote_search_local_heap_candidate_rows_for_result_summary(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
-        // SAFETY: forwards the live index relation and checked request fields to
-        // the result-summary candidate path before heap resolution.
-        let candidates = unsafe {
-            remote_search_coordinator_local_candidates_for_result_summary(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )?
-        };
+        let candidates = remote_search_coordinator_local_candidates_for_result_summary(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )?;
         // SAFETY: candidates were produced from the same live index relation and
         // requested epoch; heap lookup decodes their local row locators.
         unsafe {
@@ -1111,7 +1081,7 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
     }
 }
 
-unsafe fn remote_search_coordinator_local_summary_result(
+fn remote_search_coordinator_local_summary_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -1127,8 +1097,6 @@ unsafe fn remote_search_coordinator_local_summary_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the local summary request.
     let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
