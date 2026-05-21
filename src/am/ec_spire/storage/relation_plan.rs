@@ -211,9 +211,7 @@ pub(super) fn create_local_store_relations_for_build(
             ));
         }
 
-        // SAFETY: index_relation is live and rd_att points at the tuple
-        // descriptor PostgreSQL keeps for the open relation.
-        let tuple_desc = unsafe { pg_sys::CreateTupleDescCopy((*index_relation).rd_att) };
+        let tuple_desc = crate::storage::relation::relation_raw_tuple_desc_copy(index_relation);
         if tuple_desc.is_null() {
             return Err("ec_spire failed to allocate local store tuple descriptor".to_owned());
         }

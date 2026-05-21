@@ -147,7 +147,9 @@ fn custom_scan_tuple_payload_state_from_plan(
     unsafe {
         (
             custom_scan_tuple_payload_columns(node, custom_scan),
-            custom_scan_payload_attr_io((*(*node).ss.ss_currentRelation).rd_att),
+            custom_scan_payload_attr_io(crate::storage::relation::relation_tuple_desc(
+                (*node).ss.ss_currentRelation,
+            )),
         )
     }
 }

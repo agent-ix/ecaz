@@ -2,7 +2,7 @@
 
 use std::ffi::{c_char, CStr};
 
-use pgrx::pg_sys;
+use pgrx::{pg_sys, PgTupleDesc};
 
 pub(crate) fn main_fork_block_count(relation: pg_sys::Relation) -> pg_sys::BlockNumber {
     if relation.is_null() {
@@ -81,6 +81,45 @@ pub(crate) fn relation_namespace_owner_persistence(
         let rd_rel = &*(*relation).rd_rel;
         (rd_rel.relnamespace, rd_rel.relowner, rd_rel.relpersistence)
     }
+}
+
+pub(crate) fn relation_tuple_desc(relation: pg_sys::Relation) -> pg_sys::TupleDesc {
+    if relation.is_null() {
+        pgrx::error!("relation tuple descriptor read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_att
+    // is borrowed from that descriptor and callers only use it inside the
+    // descriptor's callback/executor lifetime.
+    unsafe { (*relation).rd_att }
+}
+
+pub(crate) fn relation_tuple_desc_copy(relation: pg_sys::Relation) -> PgTupleDesc<'static> {
+    if relation.is_null() {
+        pgrx::error!("relation tuple descriptor copy needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_att
+    // points at PostgreSQL-owned tuple descriptor metadata and PgTupleDesc makes
+    // a CurrentMemoryContext copy that owns its lifetime.
+    unsafe { PgTupleDesc::from_pg_copy((*relation).rd_att) }
+}
+
+pub(crate) fn relation_raw_tuple_desc_copy(relation: pg_sys::Relation) -> pg_sys::TupleDesc {
+    if relation.is_null() {
+        pgrx::error!("raw relation tuple descriptor copy needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_att
+    // points at PostgreSQL-owned tuple descriptor metadata and PostgreSQL
+    // returns a freshly allocated copy for catalog creation callers.
+    unsafe { pg_sys::CreateTupleDescCopy((*relation).rd_att) }
+}
+
+pub(crate) fn relation_options(relation: pg_sys::Relation) -> *mut pg_sys::varlena {
+    if relation.is_null() {
+        pgrx::error!("relation options read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; the
+    // reloptions pointer is copied by value and remains relation-owned.
+    unsafe { (*relation).rd_options }
 }
 
 pub(crate) fn index_heap_relation_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {

@@ -217,7 +217,7 @@ unsafe fn custom_scan_tuple_payload_columns(
         if relation.is_null() {
             pgrx::error!("EcSpireDistributedScan missing scan relation for tuple payload columns");
         }
-        let tuple_desc = (*relation).rd_att;
+        let tuple_desc = crate::storage::relation::relation_tuple_desc(relation);
         if tuple_desc.is_null() {
             pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
         }

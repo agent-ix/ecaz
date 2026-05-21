@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use pgrx::{pg_sys, PgTupleDesc};
+use pgrx::pg_sys;
 
 use crate::am::common::{detoast::DetoastedVarlena, heap_slot};
 
@@ -303,9 +303,7 @@ pub(crate) unsafe fn resolve_source_attribute_by_attnum(
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    // SAFETY: The heap relation is live for the caller's PostgreSQL callback;
-    // `from_pg_copy` copies the tuple descriptor metadata before inspection.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
     let att = tuple_desc
         .get(source_attnum as usize - 1)
         .expect("resolved source attribute should exist");
@@ -416,9 +414,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     // SAFETY: `index_info` is callback-duration PostgreSQL metadata and the
     // helper validates single-key base-column shape.
     let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };
-    // SAFETY: The heap relation is live; `from_pg_copy` copies tuple descriptor
-    // metadata before the indexed attribute is inspected.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
     let att = tuple_desc
         .get(indexed_attnum as usize - 1)
         .expect("resolved indexed attribute should exist");

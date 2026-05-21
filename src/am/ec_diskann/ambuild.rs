@@ -21,7 +21,7 @@ use std::ffi::{c_void, CStr};
 use std::ptr;
 use std::time::{Duration, Instant};
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
+use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use crate::am::common::{detoast::DetoastedVarlena, training};
 use crate::quant::prod::ProdQuantizer;
@@ -860,9 +860,7 @@ unsafe fn validate_single_ecvector_attribute(
         pgrx::error!("ec_diskann ambuild requires a base heap column index key");
     }
 
-    // SAFETY: The heap relation is live for ambuild and `from_pg_copy` copies
-    // tuple descriptor metadata before inspection.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("indexed attribute should exist");

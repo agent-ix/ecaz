@@ -3,7 +3,7 @@ use std::ffi::{c_void, CStr};
 use std::mem::size_of;
 use std::ptr;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
+use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use super::assign::{
     build_boundary_leaf_assignment_placements_with_identity, build_primary_leaf_assignments,

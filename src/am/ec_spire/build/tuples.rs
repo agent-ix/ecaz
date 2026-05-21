@@ -119,9 +119,7 @@ pub(super) fn resolve_indexed_tuple_layout(
         pgrx::error!("ec_spire requires a base heap column index key");
     }
 
-    // SAFETY: heap_relation is an open PostgreSQL relation and rd_att points to
-    // its live tuple descriptor; PgTupleDesc takes its own copy.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(heap_relation);
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("resolved indexed attribute should exist");
