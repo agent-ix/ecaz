@@ -233,6 +233,70 @@ fn debug_consume_and_refill_bootstrap_frontier(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_search_layer0_result_candidates<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+    m: usize,
+    ef_search: usize,
+    seeds: SeedIter,
+    keep_neighbor_tid: KeepFn,
+    score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&graph::GraphElement) -> Option<f32>,
+{
+    // SAFETY: Debug callers pass seed candidates loaded from graph storage for
+    // this relation/storage pair; the graph search helper validates successor
+    // tuples while walking layer 0.
+    unsafe {
+        graph::search_layer0_result_candidates_with_storage(
+            index_relation,
+            storage,
+            m,
+            ef_search,
+            seeds,
+            keep_neighbor_tid,
+            score_candidate,
+        )
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+    m: usize,
+    layer: u8,
+    ef_search: usize,
+    seeds: SeedIter,
+    keep_neighbor_tid: KeepFn,
+    score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&graph::GraphElement) -> Option<f32>,
+{
+    // SAFETY: Debug callers pass frontier candidates loaded from graph storage
+    // for this relation/storage pair; the graph search helper validates
+    // successor tuples while walking the requested layer.
+    unsafe {
+        graph::search_layer_result_candidates_with_storage(
+            index_relation,
+            storage,
+            m,
+            layer,
+            ef_search,
+            seeds,
+            keep_neighbor_tid,
+            score_candidate,
+        )
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_runtime_ordered_head(opaque: &mut TqScanOpaque) -> DebugCandidateHead {
     let current = active_result_state_ref(opaque).current();
     if current.has_element() {
@@ -1949,26 +2013,21 @@ pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
         if seeds.is_empty() {
             Vec::new()
         } else {
-            // SAFETY: The seed candidates were loaded from graph storage for
-            // this index, and the search helper validates neighbor tuples as it
-            // walks layer 0 with the supplied storage descriptor.
-            let ordered_candidates = unsafe {
-                graph::search_layer0_result_candidates_with_storage(
-                    index_relation,
-                    parts.storage,
-                    usize::from(parts.scan_m),
-                    ef_search.max(1),
-                    seeds,
-                    |_| true,
-                    |neighbor| {
-                        Some(-parts.quantizer.score_ip_from_parts(
-                            parts.prepared_query,
-                            neighbor.gamma,
-                            &neighbor.code,
-                        ))
-                    },
-                )
-            };
+            let ordered_candidates = debug_search_layer0_result_candidates(
+                index_relation,
+                parts.storage,
+                usize::from(parts.scan_m),
+                ef_search.max(1),
+                seeds,
+                |_| true,
+                |neighbor| {
+                    Some(-parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        neighbor.gamma,
+                        &neighbor.code,
+                    ))
+                },
+            );
             let mut emitted_elements = std::collections::HashSet::new();
             let mut heap_tids = Vec::new();
             for candidate in ordered_candidates {
@@ -2054,40 +2113,11 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         } else {
             let mut carrydown_seeds = seeds;
             for current_layer in (1..=layer).rev() {
-                // SAFETY: The carrydown seeds were loaded from graph storage
-                // for this index, and the search helper validates neighbor
-                // tuples as it walks the requested upper layer.
-                carrydown_seeds = unsafe {
-                    graph::search_layer_result_candidates_with_storage(
-                        index_relation,
-                        parts.storage,
-                        usize::from(parts.scan_m),
-                        current_layer,
-                        ef_search.max(1),
-                        carrydown_seeds,
-                        |_| true,
-                        |neighbor| {
-                            Some(-parts.quantizer.score_ip_from_parts(
-                                parts.prepared_query,
-                                neighbor.gamma,
-                                &neighbor.code,
-                            ))
-                        },
-                    )
-                };
-                if carrydown_seeds.is_empty() {
-                    break;
-                }
-            }
-
-            // SAFETY: The carrydown seeds came from upper-layer graph traversal
-            // on this relation/storage pair, and the layer-0 helper validates
-            // neighbor tuples as it walks.
-            let ordered_candidates = unsafe {
-                graph::search_layer0_result_candidates_with_storage(
+                carrydown_seeds = debug_search_layer_result_candidates(
                     index_relation,
                     parts.storage,
                     usize::from(parts.scan_m),
+                    current_layer,
                     ef_search.max(1),
                     carrydown_seeds,
                     |_| true,
@@ -2098,8 +2128,27 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
                             &neighbor.code,
                         ))
                     },
-                )
-            };
+                );
+                if carrydown_seeds.is_empty() {
+                    break;
+                }
+            }
+
+            let ordered_candidates = debug_search_layer0_result_candidates(
+                index_relation,
+                parts.storage,
+                usize::from(parts.scan_m),
+                ef_search.max(1),
+                carrydown_seeds,
+                |_| true,
+                |neighbor| {
+                    Some(-parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        neighbor.gamma,
+                        &neighbor.code,
+                    ))
+                },
+            );
             let mut emitted_elements = std::collections::HashSet::new();
             let mut heap_tids = Vec::new();
             for candidate in ordered_candidates {
@@ -2291,26 +2340,21 @@ pub(crate) fn debug_exact_seed_scan_heap_tids(
                     ))
                 })
                 .collect::<Vec<_>>();
-            // SAFETY: Seed candidates were resolved from graph storage for this
-            // index, and the search helper validates neighbor tuples as it
-            // walks layer 0 with the supplied storage descriptor.
-            let ordered_candidates = unsafe {
-                graph::search_layer0_result_candidates_with_storage(
-                    index_relation,
-                    parts.storage,
-                    usize::from(parts.scan_m),
-                    ef_search.max(1),
-                    seeds,
-                    |_| true,
-                    |neighbor| {
-                        Some(-parts.quantizer.score_ip_from_parts(
-                            parts.prepared_query,
-                            neighbor.gamma,
-                            &neighbor.code,
-                        ))
-                    },
-                )
-            };
+            let ordered_candidates = debug_search_layer0_result_candidates(
+                index_relation,
+                parts.storage,
+                usize::from(parts.scan_m),
+                ef_search.max(1),
+                seeds,
+                |_| true,
+                |neighbor| {
+                    Some(-parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        neighbor.gamma,
+                        &neighbor.code,
+                    ))
+                },
+            );
             let mut emitted_elements = std::collections::HashSet::new();
             let mut heap_tids = Vec::new();
             for candidate in ordered_candidates {
@@ -2401,12 +2445,7 @@ fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
     // metadata page is read.
     let metadata = debug_read_metadata_page(index_relation);
     let grouped_results = matches!(
-        // SAFETY: Metadata was read from the open index relation and is used to
-        // resolve the graph storage descriptor for debug classification.
-        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_hnsw debug grouped scan comparison requires valid metadata: {e}")
-            }),
+        debug_graph_storage(index_relation, &metadata),
         graph::GraphStorageDescriptor::PqFastScan(_)
     );
     grouped_results
