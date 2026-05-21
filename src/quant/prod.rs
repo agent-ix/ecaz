@@ -825,8 +825,8 @@ impl ProdQuantizer {
         {
             return None;
         }
-        // SAFETY: runtime feature detection proves AVX2/FMA and the guard above
-        // restricts this fast path to 3-bit MSE codes.
+        // SAFETY: runtime feature detection proves AVX2/FMA.
+        // SAFETY: the guard above restricts this fast path to 3-bit MSE codes.
         Some(unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) })
     }
 
@@ -1032,8 +1032,8 @@ impl ProdQuantizer {
         {
             return None;
         }
-        // SAFETY: runtime feature detection proves AVX2/FMA, and `qjl_enabled`
-        // ensures callers supply QJL payload bytes for this scoring path.
+        // SAFETY: runtime feature detection proves AVX2/FMA.
+        // SAFETY: `qjl_enabled` ensures callers supply QJL payload bytes for this scoring path.
         Some(unsafe {
             self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
         })
@@ -1230,8 +1230,8 @@ impl ProdQuantizer {
         {
             return None;
         }
-        // SAFETY: runtime feature detection proves NEON, and `qjl_enabled`
-        // ensures callers supply QJL payload bytes for this scoring path.
+        // SAFETY: runtime feature detection proves NEON.
+        // SAFETY: `qjl_enabled` ensures callers supply QJL payload bytes for this scoring path.
         Some(unsafe {
             self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
         })
@@ -1372,8 +1372,8 @@ impl ProdQuantizer {
         {
             return None;
         }
-        // SAFETY: runtime feature detection proves NEON and the guard above
-        // restricts this fast path to 3-bit MSE codes.
+        // SAFETY: runtime feature detection proves NEON.
+        // SAFETY: the guard above restricts this fast path to 3-bit MSE codes.
         Some(unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) })
     }
 
