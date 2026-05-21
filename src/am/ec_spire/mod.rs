@@ -51,18 +51,18 @@ pub(crate) use self::dml_frontdoor::{
     SpireDmlFrontdoorQueryContext,
 };
 pub(crate) use self::dml_frontdoor::{
-    dml_frontdoor_baserel_view, dml_frontdoor_bigint_pk_value_bytes,
-    dml_frontdoor_hook_status_row, dml_frontdoor_param_list_info,
-    dml_frontdoor_pk_argument_from_replacement_decision,
+    dml_frontdoor_bigint_pk_value_bytes, dml_frontdoor_hook_status_row,
+    dml_frontdoor_param_list_info, dml_frontdoor_pk_argument_from_replacement_decision,
     dml_frontdoor_pk_select_primitive_plan_expr_from_baserel,
     dml_frontdoor_primitive_invocation_from_plan,
     dml_frontdoor_primitive_plan_const_pk_value_bytes,
     dml_frontdoor_primitive_plan_expr_catalog_row, dml_frontdoor_primitive_plan_expr_from_baserel,
     dml_frontdoor_primitive_plan_from_replacement_decision,
-    dml_frontdoor_primitive_plan_pk_value_bytes, dml_frontdoor_relation_context_cache_row,
-    dml_frontdoor_relation_context_catalog_row, dml_frontdoor_relation_context_row,
-    dml_frontdoor_replacement_decision_catalog_row, dml_frontdoor_query_view,
+    dml_frontdoor_primitive_plan_pk_value_bytes, dml_frontdoor_query_view,
+    dml_frontdoor_relation_context_cache_row, dml_frontdoor_relation_context_catalog_row,
+    dml_frontdoor_relation_context_row, dml_frontdoor_replacement_decision_catalog_row,
     dml_frontdoor_target_relation_oid, register_dml_frontdoor_planner_hook,
+    with_dml_frontdoor_baserel_view,
 };
 pub use self::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,

@@ -211,23 +211,24 @@ pub(crate) unsafe fn dml_frontdoor_param_list_info(
     DmlFrontdoorParamListInfo { params }
 }
 
-pub(crate) unsafe fn dml_frontdoor_baserel_view<'a>(
+pub(crate) unsafe fn with_dml_frontdoor_baserel_view<R>(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
-) -> Option<DmlFrontdoorBaserelView<'a>> {
+    f: impl for<'a> FnOnce(DmlFrontdoorBaserelView<'a>) -> R,
+) -> Option<R> {
     if root.is_null() || rel.is_null() {
         return None;
     }
     // SAFETY: caller guarantees root/rel are live planner callback pointers
-    // and the returned view is used only inside that callback.
+    // and the callback prevents the borrowed baserel view from escaping.
     unsafe {
         let root_ref = root.as_ref()?;
         let rel_ref = rel.as_ref()?;
         let query_view = DmlFrontdoorQueryView::from_raw(root_ref.parse)?;
-        Some(DmlFrontdoorBaserelView {
+        Some(f(DmlFrontdoorBaserelView {
             query_view,
             rel: rel_ref,
-        })
+        }))
     }
 }
 
@@ -706,9 +707,10 @@ fn dml_frontdoor_plan_tree_replacement_expr(
     let query_view = unsafe { dml_frontdoor_query_view(query) }.unwrap_or_else(|| {
         pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
     });
-    let plan_expr = dml_frontdoor_primitive_plan_expr_catalog_row(query_view).unwrap_or_else(|| {
-        pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
-    });
+    let plan_expr =
+        dml_frontdoor_primitive_plan_expr_catalog_row(query_view).unwrap_or_else(|| {
+            pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
+        });
     Some(match plan_expr {
         Ok(plan_expr) => plan_expr,
         Err(err) => pgrx::error!("{err}"),

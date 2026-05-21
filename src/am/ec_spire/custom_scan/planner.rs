@@ -286,13 +286,13 @@ unsafe fn plan_dml_custom_path(
     // SAFETY: caller provides live PlanCustomPath pointers; DML handoff copies
     // expression nodes into the CustomScan before returning it to PostgreSQL.
     unsafe {
-        let baserel = super::dml_frontdoor_baserel_view(root, rel).unwrap_or_else(|| {
+        let plan_expr = match super::with_dml_frontdoor_baserel_view(root, rel, |baserel| {
+            super::dml_frontdoor_primitive_plan_expr_from_baserel(baserel)
+        })
+        .flatten()
+        .unwrap_or_else(|| {
             pgrx::error!("EcSpireDistributedScan could not build DML expression handoff")
-        });
-        let plan_expr = match super::dml_frontdoor_primitive_plan_expr_from_baserel(baserel)
-            .unwrap_or_else(|| {
-                pgrx::error!("EcSpireDistributedScan could not build DML expression handoff")
-            }) {
+        }) {
             Ok(plan_expr) => plan_expr,
             Err(err) => pgrx::error!("{err}"),
         };
@@ -493,10 +493,15 @@ impl<'a> CustomScanRelPathlistInput<'a> {
             true
         });
         let placement_index_oid = placement_index_oid?;
-        // SAFETY: this view is constructed only from live set_rel_pathlist
-        // callback pointers and the DML handoff inspects them immediately.
-        let baserel = unsafe { super::dml_frontdoor_baserel_view(self.root, self.rel) }?;
-        let plan_expr = match super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(baserel)? {
+        // SAFETY: callback receives live set_rel_pathlist pointers; the typed
+        // baserel view is scoped to this closure and cannot escape.
+        let plan_expr = match unsafe {
+            super::with_dml_frontdoor_baserel_view(self.root, self.rel, |baserel| {
+                super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(baserel)
+            })
+        }
+        .flatten()?
+        {
             Ok(plan_expr) => plan_expr,
             Err(_err) => return None,
         };
