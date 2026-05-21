@@ -212,8 +212,8 @@ impl<'slot> TupleSlotWriter<'slot> {
         })
     }
 
-    pub(crate) fn tuple_desc(&self) -> pg_sys::TupleDesc {
-        self.tuple_desc.as_ptr()
+    pub(crate) fn tuple_desc_view(&self) -> &TupleDescView<'slot> {
+        &self.tuple_desc
     }
 
     pub(crate) fn natts(&self) -> std::ffi::c_int {

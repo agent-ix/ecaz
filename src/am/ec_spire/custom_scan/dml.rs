@@ -310,10 +310,8 @@ fn custom_scan_validate_tuple_payload_attr(attr: &TupleSlotAttribute) {
 }
 
 fn custom_scan_payload_attr_io(
-    tuple_desc: pg_sys::TupleDesc,
+    tuple_desc: &TupleDescView<'_>,
 ) -> Vec<Option<SpireCustomScanPayloadAttrIo>> {
-    let tuple_desc = unsafe { TupleDescView::from_raw(tuple_desc, "EcSpireDistributedScan") }
-        .unwrap_or_else(|error| pgrx::error!("{error}"));
     let natts = tuple_desc.natts();
     let mut inputs = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
     for attr_index in 0..natts {

@@ -35,8 +35,7 @@ fn custom_scan_store_tuple_payload_json(
     payload_json: &str,
     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
 ) -> *mut pg_sys::TupleTableSlot {
-    let writer =
-        tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
+    let writer = tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
     custom_scan_store_tuple_payload_json_with_writer(writer, payload_json, attr_inputs)
 }
 
@@ -102,9 +101,8 @@ fn tuple_payload_writer<'slot>(
 fn tuple_payload_attr_io_for_slot(
     slot: *mut pg_sys::TupleTableSlot,
 ) -> Vec<Option<SpireCustomScanPayloadAttrIo>> {
-    let writer =
-        tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
-    custom_scan_payload_attr_io(writer.tuple_desc())
+    let writer = tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
+    custom_scan_payload_attr_io(writer.tuple_desc_view())
 }
 
 fn custom_scan_json_value_to_datum(
@@ -144,8 +142,7 @@ fn custom_scan_store_tuple_payload_typed(
     payload: &super::SpireRemoteTypedTuplePayload,
     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
 ) -> *mut pg_sys::TupleTableSlot {
-    let writer =
-        tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
+    let writer = tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
     custom_scan_store_tuple_payload_typed_with_writer(writer, payload, attr_inputs)
 }
 
