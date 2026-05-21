@@ -995,18 +995,14 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
         ));
     }
     if gate.remote_plan_count > 0 && gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED {
-        // SAFETY: gate requires remote executor heap rows for the same live
-        // index relation and request fields used by the result summary.
-        heap_candidates.extend(unsafe {
-            remote_search_libpq_executor_heap_candidate_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        });
+        heap_candidates.extend(remote_search_libpq_executor_heap_candidate_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        ));
     }
     let heap_candidates = merge_remote_search_heap_candidates_for_result(heap_candidates, top_k)
         .unwrap_or_else(|e| pgrx::error!("{e}"));

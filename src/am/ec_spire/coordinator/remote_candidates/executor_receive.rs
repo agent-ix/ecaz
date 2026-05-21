@@ -196,7 +196,7 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
+pub(crate) fn remote_search_libpq_identity_cache_contract_probe_counts(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -410,7 +410,7 @@ pub(crate) fn remote_search_libpq_executor_budget_contract_probe_counts(
     )
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
+pub(crate) fn remote_search_libpq_executor_receive_attempt_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -661,7 +661,7 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
     )
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
+pub(crate) fn remote_search_libpq_executor_candidate_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -760,7 +760,7 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
     )
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
+pub(crate) fn remote_search_libpq_executor_heap_candidate_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -783,7 +783,7 @@ pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
+pub(crate) fn remote_search_libpq_identity_cache_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -872,7 +872,7 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_receive_plan_rows(
+pub(crate) fn remote_search_receive_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -909,7 +909,7 @@ fn remote_search_receive_plan_rows_from_requests(
         .collect()
 }
 
-pub(crate) unsafe fn remote_search_merge_input_summary_row(
+pub(crate) fn remote_search_merge_input_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
