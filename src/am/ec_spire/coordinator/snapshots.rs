@@ -134,11 +134,6 @@ unsafe fn live_index_relation(index_relation: pg_sys::Relation) -> SpireLiveInde
     unsafe { SpireLiveIndexRelation::new(index_relation) }
 }
 
-unsafe fn live_index_relid(index_relation: pg_sys::Relation) -> u32 {
-    // SAFETY: caller guarantees `index_relation` is live while reading relid.
-    unsafe { live_index_relation(index_relation) }.relid()
-}
-
 struct SpireActiveEpochAnchor {
     root_control: meta::SpireRootControlState,
     epoch_manifest: meta::SpireEpochManifest,
@@ -1093,10 +1088,8 @@ pub(crate) unsafe fn remote_node_snapshot(
             .collect::<Vec<_>>();
         // rd_id is stable while index_relation is open; it is copied as the
         // coordinator index OID for descriptor lookup.
-        let descriptors = load_remote_node_descriptor_rows(
-            live_index_relid(index_relation).into(),
-            &remote_node_ids,
-        )?;
+        let descriptors =
+            load_remote_node_descriptor_rows(index.relid().into(), &remote_node_ids)?;
         for descriptor in descriptors {
             if let Some(row) = rows_by_node.get_mut(&descriptor.node_id) {
                 apply_remote_node_descriptor(row, descriptor);
