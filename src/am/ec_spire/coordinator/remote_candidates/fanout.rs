@@ -128,7 +128,7 @@ fn fanout_placement_state_name(state: meta::SpirePlacementState) -> &'static str
     }
 }
 
-pub(crate) unsafe fn remote_search_fanout_plan_rows(
+pub(crate) fn remote_search_fanout_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     selected_pids: Vec<u64>,
@@ -143,7 +143,8 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         // SAFETY: callers provide an open SPIRE index relation; this only reads
         // its root control page to verify the active epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let index = unsafe { live_index_relation(index_relation) };
+        let root_control = index.root_control();
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
                 "ec_spire remote search fanout requested epoch {requested_epoch} does not match active epoch {}",
@@ -237,7 +238,8 @@ pub(crate) fn remote_search_target_plan_rows(
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         // SAFETY: callers provide an open SPIRE index relation; this only reads
         // its root control page to verify the active epoch.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let index = unsafe { live_index_relation(index_relation) };
+        let root_control = index.root_control();
         if root_control.active_epoch != requested_epoch {
             return Err(format!(
                 "ec_spire remote search target plan requested epoch {requested_epoch} does not match active epoch {}",
@@ -479,7 +481,7 @@ pub(crate) fn remote_search_request_readiness_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_request_summary_row(
+pub(crate) fn remote_search_request_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -549,7 +551,7 @@ pub(crate) unsafe fn remote_search_request_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_readiness_summary_row(
+pub(crate) fn remote_search_readiness_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
