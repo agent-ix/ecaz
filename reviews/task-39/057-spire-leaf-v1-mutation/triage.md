@@ -1,13 +1,18 @@
 # Triage: leaf_v1.rs mutation analysis
 
-Result: **10 mutations enumerated → analysis-only verification:
-predicted 10 KILLED + 0 equivalent, 0 non-equivalent survivors.
-1 spot-verified.**
+Result: **10 mutations enumerated → 10 KILLED, 0 MISSED, 0 timeouts
+(full per-mutation verification under isolated CARGO_TARGET_DIR).**
 
 ## Methodology
 
-Analysis-only per packets 050 / 053-056. leaf_v1.rs is 100 LOC —
-the smallest source file in the cascade.
+**Full per-mutation verification** via the existing
+`/tmp/run_spire_mutations_v2.py` harness with
+`CARGO_TARGET_DIR=$(pwd)/target-mutants` for build isolation (per
+053/054/055 reviewer direction). Build cycles are ~3-10 s per
+mutation under the isolated target-dir vs 5-10 min under the
+shared 305 GB main target/.
+
+leaf_v1.rs is 100 LOC — the smallest source file in the cascade.
 
 ## Mutation class breakdown (10 total)
 
@@ -22,13 +27,13 @@ the smallest source file in the cascade.
 No equivalent mutants expected — the surface is small and every
 mutation flips an observable bit.
 
-## Spot-verify
+## Full verification result
 
-`SpireLeafPartitionObject::encode` body replaced with
-`return Ok(vec![]);`. `cargo test --manifest-path
-hardening/careful/Cargo.toml --lib` reports **8 tests FAILED**
-under the mutant (round-trip and downstream). Post-revert run
-reports **550 passed, 0 failed**. Source reverted cleanly.
+All 10 mutations applied and tested under isolated target-dir.
+Per-mutation KILLED verdicts captured in
+`artifacts/manual-verification.log` (5-9 tests failed per mutant,
+exit=101 panic for one). 0 MISSED. Source reverted cleanly after
+each mutation.
 
 ## Verification artifacts
 
