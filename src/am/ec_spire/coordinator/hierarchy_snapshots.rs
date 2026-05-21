@@ -319,7 +319,7 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
     Ok((epoch_manifest, object_manifest, placement_directory))
 }
 
-pub(crate) fn remote_search_candidates(
+pub(crate) unsafe fn remote_search_candidates(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -338,7 +338,7 @@ pub(crate) fn remote_search_candidates(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-fn remote_search_candidates_result(
+unsafe fn remote_search_candidates_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -410,7 +410,7 @@ fn remote_search_candidates_result(
         .collect())
 }
 
-pub(crate) fn remote_search_coordinator_local_candidates(
+pub(crate) unsafe fn remote_search_coordinator_local_candidates(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -429,7 +429,7 @@ pub(crate) fn remote_search_coordinator_local_candidates(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-fn remote_search_coordinator_local_candidates_result(
+unsafe fn remote_search_coordinator_local_candidates_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -521,7 +521,7 @@ fn remote_search_coordinator_local_candidates_result(
     Ok(merged.candidates)
 }
 
-fn remote_search_coordinator_local_candidates_for_result_summary(
+unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -643,7 +643,7 @@ fn remote_search_coordinator_local_candidates_for_result_summary(
     Ok(merged.candidates)
 }
 
-pub(crate) fn remote_search_coordinator_local_summary(
+pub(crate) unsafe fn remote_search_coordinator_local_summary(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -662,7 +662,7 @@ pub(crate) fn remote_search_coordinator_local_summary(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) fn remote_search_local_heap_resolution_plan_rows(
+pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -704,7 +704,7 @@ pub(crate) fn remote_search_local_heap_resolution_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) fn remote_search_local_heap_candidate_rows(
+pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -738,7 +738,7 @@ pub(crate) fn remote_search_local_heap_candidate_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-fn remote_search_local_heap_candidate_rows_for_result_summary(
+unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -772,7 +772,7 @@ fn remote_search_local_heap_candidate_rows_for_result_summary(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) fn remote_search_local_heap_candidate_summary_row(
+pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -799,7 +799,7 @@ pub(crate) fn remote_search_local_heap_candidate_summary_row(
     )
 }
 
-fn remote_search_local_heap_candidate_summary_from_gate(
+unsafe fn remote_search_local_heap_candidate_summary_from_gate(
     index_relation: pg_sys::Relation,
     gate: &SpireRemoteSearchCoordinatorGateSummaryRow,
     requested_epoch: u64,
@@ -1069,7 +1069,7 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
     }
 }
 
-fn remote_search_coordinator_local_summary_result(
+unsafe fn remote_search_coordinator_local_summary_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     query: Vec<f32>,

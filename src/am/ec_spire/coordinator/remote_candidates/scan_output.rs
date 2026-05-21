@@ -578,14 +578,18 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     }
 
     let local_heap_rows = if execution_summary.local_pid_count > 0 {
-        remote_search_local_heap_candidate_rows_for_result_summary(
-            index_relation,
-            root_control.active_epoch,
-            query.clone(),
-            selected_leaf_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
+        // SAFETY: production scan planning uses the same live SPIRE index
+        // relation and active epoch for the local heap summary rows.
+        unsafe {
+            remote_search_local_heap_candidate_rows_for_result_summary(
+                index_relation,
+                root_control.active_epoch,
+                query.clone(),
+                selected_leaf_pids.clone(),
+                top_k,
+                consistency_mode,
+            )
+        }
     } else {
         Vec::new()
     };
