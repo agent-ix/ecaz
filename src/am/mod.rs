@@ -431,20 +431,16 @@ pub(crate) unsafe fn planner_integration_snapshot(
     unsafe { ec_hnsw::planner_integration_snapshot(index_relation) }
 }
 
-pub(crate) unsafe fn ivf_index_drift_snapshot(
+pub(crate) fn ivf_index_drift_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IndexDriftSnapshot {
-    // SAFETY: callers pass a live ec_ivf index relation opened for this drift
-    // snapshot read.
-    unsafe { ec_ivf::index_drift_snapshot(index_relation) }
+    ec_ivf::index_drift_snapshot(index_relation)
 }
 
-pub(crate) unsafe fn ivf_index_admin_snapshot(
+pub(crate) fn ivf_index_admin_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IvfIndexAdminSnapshot {
-    // SAFETY: callers pass a live ec_ivf index relation opened for this admin
-    // snapshot read.
-    unsafe { ec_ivf::index_admin_snapshot(index_relation) }
+    ec_ivf::index_admin_snapshot(index_relation)
 }
 
 pub(crate) unsafe fn ivf_index_cost_snapshot(
@@ -455,12 +451,10 @@ pub(crate) unsafe fn ivf_index_cost_snapshot(
     unsafe { ec_ivf::index_cost_snapshot(index_relation) }
 }
 
-pub(crate) unsafe fn ivf_index_page_ownership(
+pub(crate) fn ivf_index_page_ownership(
     index_relation: pgrx::pg_sys::Relation,
 ) -> Vec<IvfIndexPageOwnershipSnapshot> {
-    // SAFETY: callers pass a live ec_ivf index relation opened while page
-    // ownership metadata is inspected.
-    unsafe { ec_ivf::index_page_ownership(index_relation) }
+    ec_ivf::index_page_ownership(index_relation)
 }
 
 pub(crate) unsafe fn diskann_graph_summary(

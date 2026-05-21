@@ -79,11 +79,11 @@ struct DirectoryDriftSummary {
     empty_lists: u32,
 }
 
-pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
+pub(crate) fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
     // diagnostic wrapper; page readers validate the metadata/directory layout.
     let metadata = page::read_metadata_page(index_relation);
-    let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
+    let directory = directory_drift_summary(index_relation, &metadata);
     // SAFETY: PostgreSQL owns the relation; querying the main fork block count
     // is valid for the opened index relation.
     let block_count = unsafe {
@@ -137,7 +137,7 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
     }
 }
 
-pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+pub(crate) fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
     // diagnostic wrapper; metadata is read without ownership.
     let metadata = page::read_metadata_page(index_relation);
@@ -146,7 +146,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
     // SAFETY: the same live index relation is reused for the nested diagnostic
     // snapshot, and PostgreSQL keeps relcache metadata valid for the call.
-    let drift = unsafe { index_drift_snapshot(index_relation) };
+    let drift = index_drift_snapshot(index_relation);
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
 
     IndexAdminSnapshot {
@@ -181,7 +181,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
     }
 }
 
-pub(crate) unsafe fn index_page_ownership(
+pub(crate) fn index_page_ownership(
     index_relation: pg_sys::Relation,
 ) -> Vec<IndexPageOwnershipSnapshot> {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
@@ -193,8 +193,9 @@ pub(crate) unsafe fn index_page_ownership(
         metadata_pq_group_size(&metadata),
     )
     .unwrap_or_else(|err| pgrx::error!("{err}"));
-    let summaries = page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
-        .unwrap_or_else(|err| pgrx::error!("{err}"));
+    let summaries =
+        page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
+            .unwrap_or_else(|err| pgrx::error!("{err}"));
     summaries
         .into_iter()
         .map(|summary| {
@@ -226,7 +227,7 @@ pub(crate) unsafe fn index_page_ownership(
         .collect()
 }
 
-unsafe fn directory_drift_summary(
+fn directory_drift_summary(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> DirectoryDriftSummary {
