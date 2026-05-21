@@ -15,6 +15,7 @@ use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use crate::am::common::callback::pg_callback;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -312,27 +313,23 @@ unsafe extern "C-unwind" fn dml_frontdoor_relation_context_relcache_callback(
     _arg: pg_sys::Datum,
     relid: pg_sys::Oid,
 ) {
-    // SAFETY: PostgreSQL invokes this callback with a valid relid sentinel or
-    // relation OID; pgrx_extern_c_guard converts Rust unwinds before returning.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let Some(cache) = RELATION_CONTEXT_CACHE.get() else {
-                return;
-            };
-            let Ok(mut guard) = cache.lock() else {
-                return;
-            };
-            let before = guard.len();
-            if relid == pg_sys::InvalidOid {
-                guard.clear();
-            } else {
-                guard.retain(|_heap_oid, entry| !entry.watched_relation_oids.contains(&relid));
-            }
-            if guard.len() != before {
-                RELATION_CONTEXT_CACHE_INVALIDATIONS.fetch_add(1, Ordering::Relaxed);
-            }
-        })
-    }
+    pg_callback!({
+        let Some(cache) = RELATION_CONTEXT_CACHE.get() else {
+            return;
+        };
+        let Ok(mut guard) = cache.lock() else {
+            return;
+        };
+        let before = guard.len();
+        if relid == pg_sys::InvalidOid {
+            guard.clear();
+        } else {
+            guard.retain(|_heap_oid, entry| !entry.watched_relation_oids.contains(&relid));
+        }
+        if guard.len() != before {
+            RELATION_CONTEXT_CACHE_INVALIDATIONS.fetch_add(1, Ordering::Relaxed);
+        }
+    })
 }
 
 pub(crate) fn dml_frontdoor_relation_context_cache_row() -> SpireDmlFrontdoorRelationContextCacheRow
