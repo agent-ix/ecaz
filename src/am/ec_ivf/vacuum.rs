@@ -300,6 +300,17 @@ struct DebugVacuumCallbackState {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) struct DebugEcIvfVacuumStats {
+    pub(crate) estimated_count: bool,
+    pub(crate) num_index_tuples: f64,
+    pub(crate) tuples_removed: f64,
+    pub(crate) num_pages: pg_sys::BlockNumber,
+    pub(crate) pages_newly_deleted: pg_sys::BlockNumber,
+    pub(crate) pages_deleted: pg_sys::BlockNumber,
+    pub(crate) pages_free: pg_sys::BlockNumber,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
@@ -313,7 +324,29 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+fn debug_ec_ivf_vacuum_stats_row(
+    stats: *mut pg_sys::IndexBulkDeleteResult,
+) -> DebugEcIvfVacuumStats {
+    if stats.is_null() {
+        pgrx::error!("ec_ivf debug vacuum stats returned NULL");
+    }
+    // SAFETY: caller passes the stats pointer returned by the immediate
+    // bulkdelete/vacuumcleanup invocation; scalar fields are copied out before
+    // PostgreSQL-owned memory or relation guards leave scope.
+    let stats = unsafe { &*stats };
+    DebugEcIvfVacuumStats {
+        estimated_count: stats.estimated_count,
+        num_index_tuples: stats.num_index_tuples,
+        tuples_removed: stats.tuples_removed,
+        num_pages: stats.num_pages,
+        pages_newly_deleted: stats.pages_newly_deleted,
+        pages_deleted: stats.pages_deleted,
+        pages_free: stats.pages_free,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> DebugEcIvfVacuumStats {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug vacuum stats",
@@ -331,16 +364,14 @@ pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     // SAFETY: reuses the stats pointer returned by bulkdelete while `info` and
     // the guarded relation are still live.
     let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };
-    // SAFETY: vacuum cleanup returns a valid stats pointer for this debug
-    // helper; the result is copied out before guards are dropped.
-    unsafe { *stats }
+    debug_ec_ivf_vacuum_stats_row(stats)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[ItemPointer],
-) -> pg_sys::IndexBulkDeleteResult {
+) -> DebugEcIvfVacuumStats {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::open(
         index_oid,
         pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
@@ -368,7 +399,5 @@ pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
     // SAFETY: reuses the stats pointer returned by bulkdelete while `info` and
     // the guarded relation are still live.
     let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };
-    // SAFETY: vacuum cleanup returns a valid stats pointer for this debug
-    // helper; the result is copied out before guards are dropped.
-    unsafe { *stats }
+    debug_ec_ivf_vacuum_stats_row(stats)
 }
