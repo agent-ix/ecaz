@@ -2653,29 +2653,6 @@ fn score_grouped_rerank_payload_result(
     -quantizer.score_ip_from_parts(prepared_query, payload.rerank_gamma, &payload.rerank_code)
 }
 
-#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-unsafe fn score_grouped_rerank_payload_from_scan_state(
-    opaque: *mut TqScanOpaque,
-    payload: &GroupedScoreRerankPayload<'_>,
-) -> f32 {
-    // SAFETY: callers pass the current scan opaque pointer; it remains live
-    // while scoring the grouped rerank payload.
-    let opaque = scan_opaque_ref(opaque);
-    if opaque.prepared_query.is_null() {
-        pgrx::error!("ec_hnsw scan state is missing prepared query");
-    }
-    if opaque.cached_quantizer.is_null() {
-        pgrx::error!("ec_hnsw scan state is missing cached quantizer");
-    }
-    // SAFETY: non-null `prepared_query` is Box-owned by this scan opaque until
-    // `free_scan_prepared_query` runs.
-    let prepared_query = scan_box_ref(opaque.prepared_query, opaque)
-        .expect("prepared query should be live for rerank");
-    let quantizer = cached_quantizer_ref(opaque)
-        .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
-    score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
-}
-
 unsafe fn score_grouped_heap_source_from_scan_state(
     opaque: &mut TqScanOpaque,
     heap_tid: page::ItemPointer,

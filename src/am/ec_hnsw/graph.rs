@@ -591,29 +591,6 @@ where
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
-    index_relation: pg_sys::Relation,
-    rerank_tid: page::ItemPointer,
-    layout: PqFastScanLayout,
-    f: F,
-) -> R
-where
-    F: FnOnce(page::TqRerankTupleRef<'_>) -> R,
-{
-    // SAFETY: `index_relation` is live and `rerank_tid` names a rerank payload
-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
-    unsafe {
-        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
-            Ok(f(page::TqRerankTupleRef::decode(
-                tuple_bytes,
-                layout.rerank_code_len,
-            )?))
-        })
-    }
-    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped rerank tuple: {e}"))
-}
-
-#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 pub(crate) unsafe fn load_rerank_payload(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
@@ -843,61 +820,6 @@ pub(crate) unsafe fn load_grouped_graph_adjacency(
     (element, neighbors)
 }
 
-pub(crate) unsafe fn load_layer0_neighbor_tids(
-    index_relation: pg_sys::Relation,
-    element_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-) -> Vec<page::ItemPointer> {
-    // SAFETY: `element_tid` identifies a layer-0 graph node in the live index;
-    // adjacency loading validates the element and neighbor tuple payloads.
-    let (element, neighbors) =
-        unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
-    valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, 0)
-}
-
-pub(crate) unsafe fn load_neighbor_tids_for_layer(
-    index_relation: pg_sys::Relation,
-    element_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-    layer: u8,
-) -> Vec<page::ItemPointer> {
-    // SAFETY: `element_tid` identifies a graph node in the live index;
-    // adjacency loading validates element and neighbor tuple payloads.
-    let (element, neighbors) =
-        unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
-    valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)
-}
-
-pub(crate) unsafe fn load_layer0_successor_candidates<KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    source_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    // SAFETY: `source_tid` is a graph node reached by search traversal, layer
-    // zero is always present, and the keep/score callbacks are live for this
-    // synchronous successor expansion.
-    unsafe {
-        load_successor_candidates_for_layer(
-            index_relation,
-            source_tid,
-            code_len,
-            m,
-            0,
-            &mut keep_neighbor_tid,
-            &mut score_candidate,
-        )
-    }
-}
-
 pub(crate) unsafe fn load_layer0_successor_candidates_with_storage<KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     source_tid: page::ItemPointer,
@@ -923,38 +845,6 @@ where
             &mut score_candidate,
         )
     }
-}
-
-pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    entry_candidate: search::BeamCandidate<page::ItemPointer>,
-    mut score_candidate: ScoreFn,
-) -> search::BeamCandidate<page::ItemPointer>
-where
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    // SAFETY: `entry_candidate.node` is the current graph entry point for the
-    // live index relation; the element load validates its tuple payload.
-    let entry_element =
-        unsafe { load_graph_element(index_relation, entry_candidate.node, code_len) };
-    greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| {
-        // SAFETY: Greedy descent invokes this callback synchronously for graph
-        // nodes it just selected; `score_candidate` remains borrowed for the
-        // duration of the successor expansion.
-        unsafe {
-            load_successor_candidates_for_layer(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                layer,
-                |_| true,
-                &mut score_candidate,
-            )
-        }
-    })
 }
 
 pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
@@ -990,67 +880,6 @@ where
     })
 }
 
-pub(crate) unsafe fn run_layer0_beam_search<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    ef_search: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> search::BeamTrace<page::ItemPointer>
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    run_layer0_beam_search_with_successors(ef_search, seeds, |source_tid| {
-        // SAFETY: Beam search calls the successor closure synchronously for
-        // seeded or discovered graph nodes; the keep/score callbacks remain
-        // live for this layer-0 expansion.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
-pub(crate) unsafe fn search_layer0_result_candidates<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    ef_search: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {
-        // SAFETY: Result collection expands only graph nodes provided by the
-        // beam-search frontier, and the borrowed callbacks outlive this call.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
 pub(crate) unsafe fn search_layer0_result_candidates_with_storage<SeedIter, KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     storage: GraphStorageDescriptor,
@@ -1074,38 +903,6 @@ where
                 source_tid,
                 storage,
                 m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
-pub(crate) unsafe fn search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    layer: u8,
-    ef_search: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {
-        // SAFETY: Layer search expands graph nodes from the current frontier;
-        // the layer bounds are enforced while filtering neighbor slots.
-        unsafe {
-            load_successor_candidates_for_layer(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                layer,
                 &mut keep_neighbor_tid,
                 &mut score_candidate,
             )
@@ -1146,83 +943,10 @@ where
     })
 }
 
-pub(crate) unsafe fn search_upper_layer_seed_candidates<ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    entry_candidate: search::BeamCandidate<page::ItemPointer>,
-    entry_level: u8,
-    ef_search: usize,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    if entry_level == 0 {
-        return vec![entry_candidate];
-    }
-
-    let mut seeds = vec![entry_candidate];
-    for layer in (1..=entry_level).rev() {
-        // SAFETY: `seeds` contain the entry candidate or candidates produced
-        // by prior upper-layer traversal, and `layer` is within entry level.
-        seeds = unsafe {
-            search_layer_result_candidates(
-                index_relation,
-                code_len,
-                m,
-                layer,
-                ef_search,
-                seeds,
-                |_| true,
-                |neighbor| score_candidate(neighbor),
-            )
-        };
-        if seeds.is_empty() {
-            break;
-        }
-    }
-
-    seeds
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Layer0VisibleSeedExpansion {
     pub expanded_source_tids: Vec<page::ItemPointer>,
     pub discovered_candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
-}
-
-pub(crate) unsafe fn load_layer0_refill_successors<KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    source_tid: page::ItemPointer,
-    max_successor_candidates: usize,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    if source_tid == page::ItemPointer::INVALID || max_successor_candidates == 0 {
-        return Vec::new();
-    }
-
-    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| {
-        // SAFETY: Refill expands the validated source or its discovered graph
-        // successors synchronously while the keep/score callbacks are live.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
 }
 
 pub(crate) unsafe fn load_layer0_refill_successors_with_storage<KeepFn, ScoreFn>(
@@ -1250,36 +974,6 @@ where
                 index_relation,
                 source_tid,
                 storage,
-                m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
-pub(crate) unsafe fn expand_layer0_visible_seeds<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    max_successor_candidates: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Layer0VisibleSeedExpansion
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| {
-        // SAFETY: Visible-seed expansion invokes this closure synchronously
-        // for seed or discovered graph nodes while callbacks remain live.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
                 m,
                 &mut keep_neighbor_tid,
                 &mut score_candidate,
@@ -1601,57 +1295,6 @@ where
     let mut search = search::BeamSearch::new(ef_search);
     search.seed_many(seeds);
     search.run(|candidate| successors(candidate.node))
-}
-
-unsafe fn load_successor_candidates_for_layer<KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    source_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-    layer: u8,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    // SAFETY: `source_tid` is provided by graph traversal, and adjacency
-    // loading validates both the element tuple and its neighbor-list tuple.
-    let (element, neighbors) =
-        unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };
-    let mut candidates = Vec::with_capacity(layer_neighbor_slot_capacity(
-        neighbors.tids.len(),
-        element.level,
-        m,
-        layer,
-    ));
-
-    for_each_valid_neighbor_tid_for_layer(
-        &neighbors.tids,
-        element.level,
-        m,
-        layer,
-        |neighbor_tid| {
-            if keep_neighbor_tid(neighbor_tid) {
-                // SAFETY: `neighbor_tid` was taken from a validated neighbor
-                // tuple slot for this layer and is loaded synchronously.
-                let neighbor =
-                    unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };
-                if !neighbor.deleted && !neighbor.heaptids.is_empty() {
-                    if let Some(score) = score_candidate(&neighbor) {
-                        candidates.push(search::BeamCandidate::with_source(
-                            neighbor.tid,
-                            score,
-                            source_tid,
-                        ));
-                    }
-                }
-            }
-        },
-    );
-
-    candidates
 }
 
 unsafe fn load_successor_candidates_for_layer_with_storage<KeepFn, ScoreFn>(
