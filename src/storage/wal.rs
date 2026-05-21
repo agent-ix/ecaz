@@ -70,13 +70,15 @@ impl GenericXLogTxn {
         );
         // SAFETY: `LockedBufferGuard` owns a valid locked buffer. ECAZ's current
         // GenericXLog usage registers full-page images only.
-        unsafe {
+        let page = unsafe {
             pg_sys::GenericXLogRegisterBuffer(
                 self.state,
                 buffer.buffer(),
                 pg_sys::GENERIC_XLOG_FULL_IMAGE as i32,
             )
-        }
+        };
+        assert!(!page.is_null(), "GenericXLogRegisterBuffer returned null");
+        page
     }
 
     /// Finish the GenericXLog transaction and return the written WAL pointer.
