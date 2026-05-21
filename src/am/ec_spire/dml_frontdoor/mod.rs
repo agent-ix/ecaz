@@ -1704,21 +1704,8 @@ fn dml_frontdoor_index_key_column_names_from_rel(
 }
 
 fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
-    // SAFETY: format_type_be returns a palloc'd C string for a catalog type OID
-    // or NULL. A non-null result is copied into an owned Rust String before the
-    // PostgreSQL allocation is released.
-    unsafe {
-        let type_name = pg_sys::format_type_be(type_oid);
-        if type_name.is_null() {
-            return Err("ec_spire DML frontdoor catalog format_type returned NULL".to_owned());
-        }
-        let decoded = CStr::from_ptr(type_name)
-            .to_str()
-            .map(str::to_owned)
-            .map_err(|e| format!("ec_spire DML frontdoor catalog type name is not UTF-8: {e}"));
-        pg_sys::pfree(type_name.cast());
-        decoded
-    }
+    crate::storage::type_info::formatted_base_type_name(type_oid)
+        .ok_or_else(|| "ec_spire DML frontdoor catalog format_type returned NULL".to_owned())
 }
 
 fn dml_frontdoor_ec_spire_index_oid(heap_relation_oid: pg_sys::Oid) -> Result<pg_sys::Oid, String> {

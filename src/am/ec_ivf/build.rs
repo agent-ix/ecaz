@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
@@ -809,27 +809,12 @@ unsafe fn heap_relation_tuple_desc(
 }
 
 fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
-    let name = formatted_base_type_name(type_oid)?;
+    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(IndexedVectorKind::Ecvector),
         "tqvector" => Some(IndexedVectorKind::Tqvector),
         _ => None,
-    }
-}
-
-fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
-    // SAFETY: PostgreSQL accepts a type OID and returns a palloc-backed
-    // NUL-terminated string or null; the non-null string is copied then freed.
-    unsafe {
-        let base_type_oid = pg_sys::getBaseType(type_oid);
-        let formatted = pg_sys::format_type_be(base_type_oid);
-        if formatted.is_null() {
-            return None;
-        }
-        let name = CStr::from_ptr(formatted).to_string_lossy().into_owned();
-        pg_sys::pfree(formatted.cast());
-        Some(name)
     }
 }
 
