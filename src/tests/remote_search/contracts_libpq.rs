@@ -39,7 +39,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
         let plan_from = format!(
             "FROM ec_spire_remote_search_libpq_request_plan(\
              'ec_spire_remote_libpq_req_sql_idx'::regclass, \
@@ -740,7 +740,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
         let receive_from = format!(
             "FROM ec_spire_remote_search_receive_plan(\
              'ec_spire_remote_receive_plan_sql_idx'::regclass, \
@@ -849,7 +849,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
         let summary_from = format!(
             "FROM ec_spire_remote_search_merge_input_summary(\
              'ec_spire_remote_receive_merge_sql_idx'::regclass, \

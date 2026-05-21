@@ -186,13 +186,9 @@
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 91, 'spire/remote/customscan/payload', \
@@ -512,13 +508,9 @@
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
         assert_eq!(coord_leaf_pids.len(), 4);
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 97, 'spire/remote/customscan/pid_payload', \
@@ -931,7 +923,7 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
 
         let remote_status = Spi::get_one::<String>(&format!("SELECT status {eligibility_from}"))
             .expect("remote eligibility status query should succeed")
@@ -1008,12 +1000,9 @@
         .expect("leaf pid query should succeed")
         .expect("leaf pid should exist");
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
             am::debug_spire_rewrite_placement_state(index_oid, selected_pid as u64, "unavailable");
-        }
+
 
         let eligibility_from = "FROM ec_spire_custom_scan_index_eligibility(\
              'ec_spire_customscan_unavailable_sql_idx'::regclass)";
@@ -1089,7 +1078,7 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
         Spi::run("SET enable_seqscan = off").expect("disable seqscan should succeed");
         Spi::run("SET enable_indexscan = off").expect("disable indexscan should succeed");
 
@@ -1246,12 +1235,9 @@
         )
         .expect("coordinator leaf pid query should succeed")
         .expect("coordinator leaf pids should exist");
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 96, 'spire/remote/customscan/read_cancel', \
@@ -1371,7 +1357,7 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 1, 'spire/remote/customscan/array', \

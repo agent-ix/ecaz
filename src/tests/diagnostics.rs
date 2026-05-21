@@ -315,7 +315,7 @@
         let index_oid = index_oid("ec_spire_delta_delete_sql_idx");
         let stats =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_vacuum_bulkdelete_heap_tids(index_oid, &[deleted_tid]) };
+            am::debug_spire_vacuum_bulkdelete_heap_tids(index_oid, &[deleted_tid]);
         assert_eq!(stats.tuples_removed as i64, 1);
 
         let delta_rows = Spi::get_one::<i64>(
@@ -946,7 +946,7 @@
 
         let index_oid = index_oid("ec_spire_storage_debt_sql_idx");
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        let stats = am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]);
         assert_eq!(stats.tuples_removed, 0.0);
         assert_eq!(stats.num_index_tuples, 3.0);
 
@@ -1428,11 +1428,8 @@
         let state_from = "FROM ec_spire_index_boundary_replica_placement_diagnostics(\
              'ec_spire_boundary_replica_diag_state_idx'::regclass)";
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+        am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "unavailable");
 
-        unsafe {
-            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "unavailable");
-        }
         let unavailable_count = Spi::get_one::<i64>(&format!(
             "SELECT count(*) {state_from} \
              WHERE status = 'unavailable_boundary_replica' \
@@ -1442,11 +1439,8 @@
         .expect("unavailable diagnostic query should succeed")
         .expect("unavailable diagnostic count should exist");
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+        am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "skipped");
 
-        unsafe {
-            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "skipped");
-        }
         let skipped_count = Spi::get_one::<i64>(&format!(
             "SELECT count(*) {state_from} \
              WHERE status = 'skipped_boundary_replica' \
@@ -1456,11 +1450,8 @@
         .expect("skipped diagnostic query should succeed")
         .expect("skipped diagnostic count should exist");
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
+        am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "stale");
 
-        unsafe {
-            am::debug_spire_rewrite_placement_state(index_oid, replica_pid as u64, "stale");
-        }
         let stale_count = Spi::get_one::<i64>(&format!(
             "SELECT count(*) {state_from} \
              WHERE status = 'stale_boundary_replica' \
@@ -1694,7 +1685,7 @@
         let index_oid = index_oid("ec_spire_object_tuple_idx");
         let (block, offset, active_epoch, store_relid, pid, object_version, child_count, child_pid) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_relation_object_tuple_roundtrip(index_oid) };
+            am::debug_spire_relation_object_tuple_roundtrip(index_oid);
 
         assert!(block >= 1);
         assert!(offset >= 1);
@@ -1719,7 +1710,7 @@
         let index_oid = index_oid("ec_spire_leaf_v2_tuple_idx");
         let (block, offset, assignment_count, segment_count, first_local_seq, first_heap_block) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_relation_leaf_v2_roundtrip(index_oid) };
+            am::debug_spire_relation_leaf_v2_roundtrip(index_oid);
 
         assert!(block >= 1);
         assert!(offset >= 1);
@@ -1753,7 +1744,7 @@
             placement_block,
             placement_offset,
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        ) = unsafe { am::debug_spire_empty_manifest_publish_roundtrip(index_oid) };
+        ) = am::debug_spire_empty_manifest_publish_roundtrip(index_oid);
 
         assert_eq!(active_epoch, 1);
         assert_eq!(next_pid, 1);

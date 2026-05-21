@@ -691,7 +691,7 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
+pub(crate) fn debug_spire_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
@@ -700,7 +700,9 @@ pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
         pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         "debug_spire_vacuum_remove_heap_tids",
     );
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: the debug helper initializes the fields needed for the direct
+    // AM bulkdelete/cleanup calls below before handing the struct to PostgreSQL.
+    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {
@@ -724,7 +726,7 @@ pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
+pub(crate) fn debug_spire_vacuum_bulkdelete_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
@@ -733,7 +735,9 @@ pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
         pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         "debug_spire_vacuum_bulkdelete_heap_tids",
     );
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: the debug helper initializes the fields needed for the direct
+    // AM bulkdelete call below before handing the struct to PostgreSQL.
+    let mut info = unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() };
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {

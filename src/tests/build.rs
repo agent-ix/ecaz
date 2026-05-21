@@ -249,9 +249,9 @@
         let index_oid = index_oid("ec_spire_populated_build_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_root_control(index_oid) };
+            am::debug_spire_root_control(index_oid);
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let diagnostics = unsafe { am::debug_spire_active_snapshot_diagnostics(index_oid) };
+        let diagnostics = am::debug_spire_active_snapshot_diagnostics(index_oid);
 
         assert_eq!(active_epoch, 1);
         assert_eq!(next_pid, 4);
@@ -744,12 +744,10 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        let (root_store_id, left_store_id, right_store_id, candidate_count, first_vec, second_vec) = unsafe {
-            am::debug_spire_relation_two_store_scan_roundtrip(
+        let (root_store_id, left_store_id, right_store_id, candidate_count, first_vec, second_vec) = am::debug_spire_relation_two_store_scan_roundtrip(
                 index_oid("ec_spire_two_store_scan_root_idx"),
                 index_oid("ec_spire_two_store_scan_aux_idx"),
-            )
-        };
+            );
 
         assert_eq!(root_store_id, 1);
         assert_eq!(left_store_id, 0);

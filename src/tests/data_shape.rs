@@ -166,13 +166,9 @@
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 103, 'spire/remote/customscan/wide_projection', \
@@ -351,13 +347,9 @@
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 107, 'spire/remote/customscan/large_text_projection', \

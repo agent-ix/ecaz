@@ -278,7 +278,7 @@
         });
         // SAFETY: This test-only SQL wrapper validates argument domains before
         // delegating to the SPIRE placement debug rewrite helper.
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, pid, node_id) };
+        am::debug_spire_rewrite_placement_node(index_oid, pid, node_id);
         true
     }
 
@@ -306,7 +306,7 @@
             .collect::<Vec<_>>();
         // SAFETY: This test-only SQL wrapper validates paired rewrite inputs
         // before delegating to the SPIRE placement debug rewrite helper.
-        unsafe { am::debug_spire_rewrite_placement_nodes(index_oid, &rewrites) };
+        am::debug_spire_rewrite_placement_nodes(index_oid, &rewrites);
         true
     }
 
@@ -314,7 +314,7 @@
     fn ec_spire_test_rewrite_consistency_mode(index_oid: pg_sys::Oid, mode: String) -> bool {
         // SAFETY: The test-only SQL wrapper passes a bounded Rust string to
         // the SPIRE debug helper for the supplied test index OID.
-        unsafe { am::debug_spire_rewrite_consistency_mode(index_oid, &mode) };
+        am::debug_spire_rewrite_consistency_mode(index_oid, &mode);
         true
     }
 
