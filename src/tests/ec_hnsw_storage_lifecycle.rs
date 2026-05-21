@@ -1543,27 +1543,25 @@
                     panic!("PqFastScan insert test should still decode as PqFastScan storage")
                 }
             };
-        let index_relation = open_valid_ec_hnsw_index_guard(
-            index_oid,
-            "test_ech_insert_appends_to_built_pq_fastscan_index",
-        );
-        // SAFETY: The guard keeps the HNSW index relation open while loading
-        // the freshly discovered hot tuple TID with the layout decoded from
-        // the same index metadata.
-        let new_hot = unsafe {
-            am::graph::load_grouped_graph_element(index_relation.as_ptr(), new_hot_tid, layout)
-        };
-        // SAFETY: `new_hot.reranktid` comes from the grouped graph element
-        // loaded from this relation, and the same decoded layout is used to
-        // interpret the colocated rerank payload.
-        let rerank = unsafe {
-            am::graph::load_grouped_rerank_payload(
-                index_relation.as_ptr(),
-                new_hot.reranktid,
-                layout,
-            )
-        };
-        drop(index_relation);
+        let (_new_hot_tid, new_hot_tuple) = after_page_tuples
+            .iter()
+            .find(|(tid, _tuple)| *tid == new_hot_tid)
+            .expect("fresh grouped-hot tuple should be present in debug page snapshot");
+        let new_hot = am::page::TqGroupedHotTuple::decode(
+            new_hot_tuple,
+            layout.binary_word_count,
+            layout.search_code_len,
+        )
+        .expect("fresh grouped-hot tuple should decode");
+        let (_rerank_tid, rerank_tuple) = after_page_tuples
+            .iter()
+            .find(|(tid, tuple)| {
+                *tid == new_hot.reranktid
+                    && tuple.first().copied() == Some(am::page::TQ_RERANK_TAG)
+            })
+            .expect("fresh grouped-hot tuple should reference a rerank payload");
+        let rerank = am::page::TqRerankTuple::decode(rerank_tuple, layout.rerank_code_len)
+            .expect("fresh rerank tuple should decode");
         assert!(!new_hot.deleted);
         assert_eq!(new_hot.heaptids.len(), 1);
         assert_eq!(new_hot.search_code.len(), layout.search_code_len);
