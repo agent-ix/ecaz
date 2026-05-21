@@ -1,0 +1,148 @@
+vec_id.rs:22:5: replace | with &
+vec_id.rs:22:5: replace | with ^
+vec_id.rs:21:5: replace | with &
+vec_id.rs:21:5: replace | with ^
+vec_id.rs:20:5: replace | with &
+vec_id.rs:20:5: replace | with ^
+vec_id.rs:19:5: replace | with &
+vec_id.rs:19:5: replace | with ^
+vec_id.rs:18:5: replace | with &
+vec_id.rs:18:5: replace | with ^
+vec_id.rs:42:85: replace + with -
+vec_id.rs:42:85: replace + with *
+vec_id.rs:42:81: replace + with -
+vec_id.rs:42:81: replace + with *
+vec_id.rs:42:77: replace + with -
+vec_id.rs:42:77: replace + with *
+vec_id.rs:48:5: replace spire_assignment_row_heap_tid_offset -> usize with 0
+vec_id.rs:48:5: replace spire_assignment_row_heap_tid_offset -> usize with 1
+vec_id.rs:48:40: replace + with - in spire_assignment_row_heap_tid_offset
+vec_id.rs:48:40: replace + with * in spire_assignment_row_heap_tid_offset
+vec_id.rs:52:5: replace spire_assignment_row_payload_format_offset -> usize with 0
+vec_id.rs:52:5: replace spire_assignment_row_payload_format_offset -> usize with 1
+vec_id.rs:52:54: replace + with - in spire_assignment_row_payload_format_offset
+vec_id.rs:52:54: replace + with * in spire_assignment_row_payload_format_offset
+vec_id.rs:56:5: replace spire_assignment_row_gamma_offset -> usize with 0
+vec_id.rs:56:5: replace spire_assignment_row_gamma_offset -> usize with 1
+vec_id.rs:56:60: replace + with - in spire_assignment_row_gamma_offset
+vec_id.rs:56:60: replace + with * in spire_assignment_row_gamma_offset
+vec_id.rs:60:5: replace spire_assignment_row_payload_len_offset -> usize with 0
+vec_id.rs:60:5: replace spire_assignment_row_payload_len_offset -> usize with 1
+vec_id.rs:60:51: replace + with - in spire_assignment_row_payload_len_offset
+vec_id.rs:60:51: replace + with * in spire_assignment_row_payload_len_offset
+vec_id.rs:64:5: replace spire_assignment_row_payload_offset -> usize with 0
+vec_id.rs:64:5: replace spire_assignment_row_payload_offset -> usize with 1
+vec_id.rs:64:57: replace + with - in spire_assignment_row_payload_offset
+vec_id.rs:64:57: replace + with * in spire_assignment_row_payload_offset
+vec_id.rs:74:50: replace + with -
+vec_id.rs:74:50: replace + with *
+vec_id.rs:75:73: replace + with -
+vec_id.rs:75:73: replace + with *
+vec_id.rs:75:69: replace + with -
+vec_id.rs:75:69: replace + with *
+vec_id.rs:75:65: replace + with -
+vec_id.rs:75:65: replace + with *
+vec_id.rs:75:61: replace + with -
+vec_id.rs:75:61: replace + with *
+vec_id.rs:75:57: replace + with -
+vec_id.rs:75:57: replace + with *
+vec_id.rs:75:53: replace + with -
+vec_id.rs:75:53: replace + with *
+vec_id.rs:76:49: replace + with -
+vec_id.rs:76:49: replace + with *
+vec_id.rs:76:45: replace + with -
+vec_id.rs:76:45: replace + with *
+vec_id.rs:83:52: replace + with -
+vec_id.rs:83:52: replace + with *
+vec_id.rs:83:31: replace + with -
+vec_id.rs:83:31: replace + with *
+vec_id.rs:83:27: replace + with -
+vec_id.rs:83:27: replace + with *
+vec_id.rs:83:23: replace + with -
+vec_id.rs:83:23: replace + with *
+vec_id.rs:83:19: replace + with -
+vec_id.rs:83:19: replace + with *
+vec_id.rs:83:15: replace + with -
+vec_id.rs:83:15: replace + with *
+vec_id.rs:83:11: replace + with -
+vec_id.rs:83:11: replace + with *
+vec_id.rs:83:7: replace + with -
+vec_id.rs:83:7: replace + with *
+vec_id.rs:93:65: replace + with -
+vec_id.rs:93:65: replace + with *
+vec_id.rs:93:61: replace + with -
+vec_id.rs:93:61: replace + with *
+vec_id.rs:93:57: replace + with -
+vec_id.rs:93:57: replace + with *
+vec_id.rs:101:5: replace spire_leaf_v2_segment_vec_ids_offset -> usize with 0
+vec_id.rs:101:5: replace spire_leaf_v2_segment_vec_ids_offset -> usize with 1
+vec_id.rs:101:40: replace + with - in spire_leaf_v2_segment_vec_ids_offset
+vec_id.rs:101:40: replace + with * in spire_leaf_v2_segment_vec_ids_offset
+vec_id.rs:101:52: replace * with + in spire_leaf_v2_segment_vec_ids_offset
+vec_id.rs:101:52: replace * with / in spire_leaf_v2_segment_vec_ids_offset
+vec_id.rs:108:5: replace spire_leaf_v2_segment_heap_tids_offset -> usize with 0
+vec_id.rs:108:5: replace spire_leaf_v2_segment_heap_tids_offset -> usize with 1
+vec_id.rs:108:53: replace + with - in spire_leaf_v2_segment_heap_tids_offset
+vec_id.rs:108:53: replace + with * in spire_leaf_v2_segment_heap_tids_offset
+vec_id.rs:108:65: replace * with + in spire_leaf_v2_segment_heap_tids_offset
+vec_id.rs:108:65: replace * with / in spire_leaf_v2_segment_heap_tids_offset
+vec_id.rs:115:5: replace spire_leaf_v2_segment_gammas_offset -> usize with 0
+vec_id.rs:115:5: replace spire_leaf_v2_segment_gammas_offset -> usize with 1
+vec_id.rs:116:9: replace + with - in spire_leaf_v2_segment_gammas_offset
+vec_id.rs:116:9: replace + with * in spire_leaf_v2_segment_gammas_offset
+vec_id.rs:116:21: replace * with + in spire_leaf_v2_segment_gammas_offset
+vec_id.rs:116:21: replace * with / in spire_leaf_v2_segment_gammas_offset
+vec_id.rs:123:5: replace spire_leaf_v2_segment_payloads_offset -> usize with 0
+vec_id.rs:123:5: replace spire_leaf_v2_segment_payloads_offset -> usize with 1
+vec_id.rs:123:67: replace + with - in spire_leaf_v2_segment_payloads_offset
+vec_id.rs:123:67: replace + with * in spire_leaf_v2_segment_payloads_offset
+vec_id.rs:123:79: replace * with + in spire_leaf_v2_segment_payloads_offset
+vec_id.rs:123:79: replace * with / in spire_leaf_v2_segment_payloads_offset
+vec_id.rs:127:36: replace + with -
+vec_id.rs:127:36: replace + with *
+vec_id.rs:127:15: replace + with -
+vec_id.rs:127:15: replace + with *
+vec_id.rs:127:11: replace + with -
+vec_id.rs:127:11: replace + with *
+vec_id.rs:127:7: replace + with -
+vec_id.rs:127:7: replace + with *
+vec_id.rs:134:11: replace + with -
+vec_id.rs:134:11: replace + with *
+vec_id.rs:134:7: replace + with -
+vec_id.rs:134:7: replace + with *
+vec_id.rs:162:9: replace SpireVecIdKind::decode -> Result<Self, String> with Ok(Default::default())
+vec_id.rs:183:9: replace SpireLeafObjectColumnRowRef<'_>::vec_id -> Result<SpireVecId, String> with Ok(Default::default())
+vec_id.rs:187:9: replace SpireLeafObjectColumnRowRef<'_>::local_vec_seq -> Result<u64, String> with Ok(0)
+vec_id.rs:187:9: replace SpireLeafObjectColumnRowRef<'_>::local_vec_seq -> Result<u64, String> with Ok(1)
+vec_id.rs:208:9: replace SpireLeafObjectColumns<'a>::row_count -> usize with 0
+vec_id.rs:208:9: replace SpireLeafObjectColumns<'a>::row_count -> usize with 1
+vec_id.rs:212:9: replace SpireLeafObjectColumns<'a>::row -> Result<SpireLeafObjectColumnRowRef<'a>, String> with Ok(Default::default())
+vec_id.rs:212:23: replace >= with < in SpireLeafObjectColumns<'a>::row
+vec_id.rs:262:9: replace SpireVecId::local -> Self with Default::default()
+vec_id.rs:269:9: replace SpireVecId::global -> Result<Self, String> with Ok(Default::default())
+vec_id.rs:272:32: replace > with == in SpireVecId::global
+vec_id.rs:272:32: replace > with < in SpireVecId::global
+vec_id.rs:272:32: replace > with >= in SpireVecId::global
+vec_id.rs:272:28: replace + with - in SpireVecId::global
+vec_id.rs:272:28: replace + with * in SpireVecId::global
+vec_id.rs:286:9: replace SpireVecId::from_bytes -> Result<Self, String> with Ok(Default::default())
+vec_id.rs:293:9: replace SpireVecId::as_bytes -> &[u8] with Vec::leak(Vec::new())
+vec_id.rs:293:9: replace SpireVecId::as_bytes -> &[u8] with Vec::leak(vec![0])
+vec_id.rs:293:9: replace SpireVecId::as_bytes -> &[u8] with Vec::leak(vec![1])
+vec_id.rs:297:9: replace SpireVecId::discriminator -> u8 with 0
+vec_id.rs:297:9: replace SpireVecId::discriminator -> u8 with 1
+vec_id.rs:301:9: replace SpireVecId::local_sequence -> Option<u64> with None
+vec_id.rs:301:9: replace SpireVecId::local_sequence -> Option<u64> with Some(0)
+vec_id.rs:301:9: replace SpireVecId::local_sequence -> Option<u64> with Some(1)
+vec_id.rs:301:33: replace != with == in SpireVecId::local_sequence
+vec_id.rs:319:9: replace SpireVecIdRef<'a>::from_bytes -> Result<Self, String> with Ok(Default::default())
+vec_id.rs:324:9: replace SpireVecIdRef<'a>::as_bytes -> &'a[u8] with Vec::leak(Vec::new())
+vec_id.rs:324:9: replace SpireVecIdRef<'a>::as_bytes -> &'a[u8] with Vec::leak(vec![0])
+vec_id.rs:324:9: replace SpireVecIdRef<'a>::as_bytes -> &'a[u8] with Vec::leak(vec![1])
+vec_id.rs:328:9: replace SpireVecIdRef<'a>::discriminator -> u8 with 0
+vec_id.rs:328:9: replace SpireVecIdRef<'a>::discriminator -> u8 with 1
+vec_id.rs:332:9: replace SpireVecIdRef<'a>::local_sequence -> Option<u64> with None
+vec_id.rs:332:9: replace SpireVecIdRef<'a>::local_sequence -> Option<u64> with Some(0)
+vec_id.rs:332:9: replace SpireVecIdRef<'a>::local_sequence -> Option<u64> with Some(1)
+vec_id.rs:332:33: replace != with == in SpireVecIdRef<'a>::local_sequence
+vec_id.rs:343:9: replace SpireVecIdRef<'a>::to_owned -> SpireVecId with Default::default()
