@@ -76,13 +76,17 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
             // SAFETY: PostgreSQL invokes BeginCustomScan with the live
             // provider-owned CustomScanState and matching CustomScan plan.
-            unsafe { custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid) };
+            unsafe {
+                custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid)
+            };
         }
         SpireCustomScanPlanMode::DmlUpdateTuplePayload
         | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
             // SAFETY: PostgreSQL invokes BeginCustomScan with the live
             // provider-owned CustomScanState and matching CustomScan plan.
-            unsafe { custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid) };
+            unsafe {
+                custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid)
+            };
         }
     }
 }
@@ -252,7 +256,7 @@ fn custom_scan_note_pfree_for_test() {
 fn custom_scan_note_pfree_for_test() {}
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext) -> u64 {
+fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext) -> u64 {
     if context.is_null() {
         return u64::MAX;
     }
@@ -266,26 +270,30 @@ unsafe fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::Memory
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn custom_scan_note_memory_baseline_for_test(context: pg_sys::MemoryContext) {
+fn custom_scan_note_memory_baseline_for_test(context: pg_sys::MemoryContext) {
     CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.store(
-        unsafe { custom_scan_memory_context_used_bytes_for_test(context) },
+        // SAFETY: this test-only instrumentation receives the MemoryContext
+        // captured from the CustomScan allocation path.
+        custom_scan_memory_context_used_bytes_for_test(context),
         std::sync::atomic::Ordering::Relaxed,
     );
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
-unsafe fn custom_scan_note_memory_baseline_for_test(_context: pg_sys::MemoryContext) {}
+fn custom_scan_note_memory_baseline_for_test(_context: pg_sys::MemoryContext) {}
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn custom_scan_note_memory_after_end_for_test(context: pg_sys::MemoryContext) {
+fn custom_scan_note_memory_after_end_for_test(context: pg_sys::MemoryContext) {
     CUSTOM_SCAN_MEMORY_AFTER_END_USED_BYTES.store(
-        unsafe { custom_scan_memory_context_used_bytes_for_test(context) },
+        // SAFETY: this test-only instrumentation receives the MemoryContext
+        // captured from the CustomScan allocation path before state release.
+        custom_scan_memory_context_used_bytes_for_test(context),
         std::sync::atomic::Ordering::Relaxed,
     );
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
-unsafe fn custom_scan_note_memory_after_end_for_test(_context: pg_sys::MemoryContext) {}
+fn custom_scan_note_memory_after_end_for_test(_context: pg_sys::MemoryContext) {}
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn custom_scan_reset_cleanup_counters_for_test() {
