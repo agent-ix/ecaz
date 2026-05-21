@@ -532,6 +532,70 @@ type DebugScanProfile = (
 type DebugScanHeapFetchProfile = (i64, i64, i64, i64, i64, i32, i32, i32);
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_run_heap_fetch_profile_loop(
+    scan: pg_sys::IndexScanDesc,
+    slot: *mut pg_sys::TupleTableSlot,
+    orderby: &mut pg_sys::ScanKeyData,
+    result_limit: usize,
+    project_attnum: Option<i32>,
+) -> (i64, i64, i64, i64, i32, i32, i32) {
+    let rescan_started = Instant::now();
+    // SAFETY: The caller passes a live heap-backed index scan and tuple slot
+    // whose heap, index, snapshot, and slot guards outlive this profiling loop.
+    // `orderby` is one initialized order-by key. Successful slot fetches own
+    // the tuple slot contents until this helper clears them between iterations.
+    unsafe {
+        pg_sys::index_rescan(scan, ptr::null_mut(), 0, orderby, 1);
+        let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
+            .expect("rescan timing should fit in i64");
+
+        let emit_started = Instant::now();
+        let mut result_count = 0_i32;
+        let mut slot_fetch_count = 0_i32;
+        let mut projected_count = 0_i32;
+        let mut slot_fetch_elapsed_us = 0_i64;
+        let mut projection_elapsed_us = 0_i64;
+
+        while usize::try_from(result_count).expect("result count should fit in usize")
+            < result_limit
+        {
+            let slot_fetch_started = Instant::now();
+            let found =
+                pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot);
+            slot_fetch_elapsed_us += i64::try_from(slot_fetch_started.elapsed().as_micros())
+                .expect("slot-fetch timing should fit in i64");
+            if !found {
+                break;
+            }
+
+            result_count += 1;
+            slot_fetch_count += 1;
+            if let Some(attnum) = project_attnum {
+                let projection_started = Instant::now();
+                let mut isnull = false;
+                let _ = pg_sys::slot_getattr(slot, attnum, &mut isnull);
+                projection_elapsed_us += i64::try_from(projection_started.elapsed().as_micros())
+                    .expect("projection timing should fit in i64");
+                projected_count += 1;
+            }
+            pg_sys::ExecClearTuple(slot);
+        }
+
+        let emit_elapsed_us = i64::try_from(emit_started.elapsed().as_micros())
+            .expect("emit timing should fit in i64");
+        (
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            slot_fetch_elapsed_us,
+            projection_elapsed_us,
+            result_count,
+            slot_fetch_count,
+            projected_count,
+        )
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 type DebugGroupedRerankProfile = (
     i64,
     i64,
@@ -1390,57 +1454,19 @@ pub(crate) fn debug_profile_ordered_scan_with_heap_fetch(
     let slot = slot_guard.as_ptr();
 
     let total_started = Instant::now();
-    let rescan_started = Instant::now();
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    // SAFETY: `scan` is a live heap-backed index scan, there are no index quals,
-    // and `orderby` points to one initialized order-by key.
-    unsafe { pg_sys::index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
-    let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
-        .expect("rescan timing should fit in i64");
-
-    let emit_started = Instant::now();
-    let mut result_count = 0_i32;
-    let mut slot_fetch_count = 0_i32;
-    let mut projected_count = 0_i32;
-    let mut slot_fetch_elapsed_us = 0_i64;
-    let mut projection_elapsed_us = 0_i64;
-    while usize::try_from(result_count).expect("result count should fit in usize") < result_limit {
-        let slot_fetch_started = Instant::now();
-        // SAFETY: `scan` and `slot` are live guards for the same heap-backed
-        // scan; PostgreSQL fills the slot when a tuple is found.
-        let found = unsafe {
-            pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
-        };
-        slot_fetch_elapsed_us += i64::try_from(slot_fetch_started.elapsed().as_micros())
-            .expect("slot-fetch timing should fit in i64");
-        if !found {
-            break;
-        }
-
-        result_count += 1;
-        slot_fetch_count += 1;
-        if let Some(attnum) = project_attnum {
-            let projection_started = Instant::now();
-            let mut isnull = false;
-            // SAFETY: `slot` contains the tuple produced by the successful
-            // `index_getnext_slot` call, and `attnum` is supplied by the debug
-            // caller for projection timing.
-            let _ = unsafe { pg_sys::slot_getattr(slot, attnum, &mut isnull) };
-            projection_elapsed_us += i64::try_from(projection_started.elapsed().as_micros())
-                .expect("projection timing should fit in i64");
-            projected_count += 1;
-        }
-        // SAFETY: `slot` is the tuple table slot allocated for this scan and may
-        // be cleared between successful fetches.
-        unsafe {
-            pg_sys::ExecClearTuple(slot);
-        }
-    }
-    let emit_elapsed_us =
-        i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
+    let (
+        rescan_elapsed_us,
+        emit_elapsed_us,
+        slot_fetch_elapsed_us,
+        projection_elapsed_us,
+        result_count,
+        slot_fetch_count,
+        projected_count,
+    ) = debug_run_heap_fetch_profile_loop(scan, slot, &mut orderby, result_limit, project_attnum);
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
