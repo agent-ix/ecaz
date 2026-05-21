@@ -361,43 +361,23 @@ unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> Strin
     })
 }
 
-unsafe fn custom_scan_dml_pk_value_from_plan(
-    node: *mut pg_sys::CustomScanState,
-    custom_scan: *mut pg_sys::CustomScan,
-) -> [u8; 8] {
-    // SAFETY: executor passes a live CustomScanState and expr comes from the
-    // provider-owned DML custom_exprs list.
-    let value = unsafe {
-        let expr = CustomScanExprList::from_custom_scan(custom_scan, "PK expression")
-            .expr(0, "PK expression");
-        custom_scan_bigint_expr_value(node, expr)
-    };
-    super::dml_frontdoor_bigint_pk_value_bytes(value)
-}
-
-unsafe fn custom_scan_dml_update_value_exprs_from_plan(
-    custom_scan: *mut pg_sys::CustomScan,
+fn custom_scan_dml_update_value_exprs_from_list(
+    custom_exprs: CustomScanExprList<'_>,
     expected_count: usize,
 ) -> Vec<*mut pg_sys::Expr> {
-    // SAFETY: caller guarantees custom_scan is a live provider-owned
-    // CustomScan plan node carrying the DML UPDATE expression list.
-    unsafe {
-        let custom_exprs =
-            CustomScanExprList::from_custom_scan(custom_scan, "DML UPDATE value expressions");
-        let expected_len = i32::try_from(expected_count.saturating_add(1)).unwrap_or_else(|_| {
-            pgrx::error!("EcSpireDistributedScan DML UPDATE expression list is too wide")
-        });
-        if custom_exprs.len() != expected_len {
-            pgrx::error!(
-                "EcSpireDistributedScan DML UPDATE plan expression count does not match updated columns"
-            );
-        }
-        let mut exprs = Vec::with_capacity(expected_count);
-        for offset in 1..expected_len {
-            exprs.push(custom_exprs.expr(offset, "DML UPDATE value expression"));
-        }
-        exprs
+    let expected_len = i32::try_from(expected_count.saturating_add(1)).unwrap_or_else(|_| {
+        pgrx::error!("EcSpireDistributedScan DML UPDATE expression list is too wide")
+    });
+    if custom_exprs.len() != expected_len {
+        pgrx::error!(
+            "EcSpireDistributedScan DML UPDATE plan expression count does not match updated columns"
+        );
     }
+    let mut exprs = Vec::with_capacity(expected_count);
+    for offset in 1..expected_len {
+        exprs.push(custom_exprs.expr(offset, "DML UPDATE value expression"));
+    }
+    exprs
 }
 
 unsafe fn custom_scan_bigint_expr_value(

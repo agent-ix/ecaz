@@ -159,12 +159,14 @@ unsafe fn custom_scan_init_dml_exec_state(
         } else {
             state.dml_pk_column = plan.dml_pk_column();
         }
-        state.dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
+        let dml_exprs = CustomScanExprList::from_custom_scan(custom_scan, "DML expression list");
+        let pk_value = custom_scan_bigint_expr_value(node, dml_exprs.expr(0, "PK expression"));
+        state.dml_pk_value = super::dml_frontdoor_bigint_pk_value_bytes(pk_value);
         state.dml_updated_columns = plan.dml_column_list(2, "updated columns");
         state.dml_projected_columns = plan.dml_column_list(3, "projected columns");
         if mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
-            state.dml_update_value_exprs = custom_scan_dml_update_value_exprs_from_plan(
-                custom_scan,
+            state.dml_update_value_exprs = custom_scan_dml_update_value_exprs_from_list(
+                dml_exprs,
                 state.dml_updated_columns.len(),
             );
         }
