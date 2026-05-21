@@ -286,7 +286,10 @@ unsafe fn plan_dml_custom_path(
     // SAFETY: caller provides live PlanCustomPath pointers; DML handoff copies
     // expression nodes into the CustomScan before returning it to PostgreSQL.
     unsafe {
-        let plan_expr = match super::dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)
+        let baserel = super::dml_frontdoor_baserel_view(root, rel).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan could not build DML expression handoff")
+        });
+        let plan_expr = match super::dml_frontdoor_primitive_plan_expr_from_baserel(baserel)
             .unwrap_or_else(|| {
                 pgrx::error!("EcSpireDistributedScan could not build DML expression handoff")
             }) {
@@ -492,9 +495,8 @@ impl<'a> CustomScanRelPathlistInput<'a> {
         let placement_index_oid = placement_index_oid?;
         // SAFETY: this view is constructed only from live set_rel_pathlist
         // callback pointers and the DML handoff inspects them immediately.
-        let plan_expr = match unsafe {
-            super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(self.root, self.rel)
-        }? {
+        let baserel = unsafe { super::dml_frontdoor_baserel_view(self.root, self.rel) }?;
+        let plan_expr = match super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(baserel)? {
             Ok(plan_expr) => plan_expr,
             Err(_err) => return None,
         };

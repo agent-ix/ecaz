@@ -191,6 +191,12 @@ pub(crate) struct DmlFrontdoorParamListInfo {
     params: pg_sys::ParamListInfo,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct DmlFrontdoorBaserelView<'a> {
+    query_view: DmlFrontdoorQueryView<'a>,
+    rel: &'a pg_sys::RelOptInfo,
+}
+
 pub(crate) unsafe fn dml_frontdoor_query_view<'a>(
     query: *mut pg_sys::Query,
 ) -> Option<DmlFrontdoorQueryView<'a>> {
@@ -203,6 +209,26 @@ pub(crate) unsafe fn dml_frontdoor_param_list_info(
     params: pg_sys::ParamListInfo,
 ) -> DmlFrontdoorParamListInfo {
     DmlFrontdoorParamListInfo { params }
+}
+
+pub(crate) unsafe fn dml_frontdoor_baserel_view<'a>(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+) -> Option<DmlFrontdoorBaserelView<'a>> {
+    if root.is_null() || rel.is_null() {
+        return None;
+    }
+    // SAFETY: caller guarantees root/rel are live planner callback pointers
+    // and the returned view is used only inside that callback.
+    unsafe {
+        let root_ref = root.as_ref()?;
+        let rel_ref = rel.as_ref()?;
+        let query_view = DmlFrontdoorQueryView::from_raw(root_ref.parse)?;
+        Some(DmlFrontdoorBaserelView {
+            query_view,
+            rel: rel_ref,
+        })
+    }
 }
 
 impl DmlFrontdoorParamListInfo {
@@ -848,75 +874,63 @@ pub(crate) fn dml_frontdoor_primitive_plan_expr_catalog_row(
     }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
+pub(crate) fn dml_frontdoor_primitive_plan_expr_from_baserel(
+    baserel: DmlFrontdoorBaserelView<'_>,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    // SAFETY: set_rel_pathlist supplies live PlannerInfo/RelOptInfo pointers;
-    // this helper keeps all raw planner references inside the hook callback.
-    unsafe {
-        if root.is_null() || rel.is_null() {
-            return None;
+    let query_view = baserel.query_view;
+    let rel_ref = baserel.rel;
+    let query_ref = query_view.as_ref();
+    let operation = query_view.operation()?;
+    let target_rtindex = match dml_frontdoor_baserel_target_rtindex(query_ref, rel_ref, operation) {
+        Ok(Some(target_rtindex)) => target_rtindex,
+        Ok(None) => return None,
+        Err(err) => return Some(Err(err)),
+    };
+    let target_relation_oid = query_view.relation_oid_from_rtable(target_rtindex)?;
+    let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
+        Ok(relation) => relation,
+        Err(_err) => {
+            return Some(Err(
+                "ec_spire DML frontdoor baserel expression handoff could not load relation context"
+                    .to_owned(),
+            ));
         }
-        let root_ref = root.as_ref()?;
-        let rel_ref = rel.as_ref()?;
-        let query_view = DmlFrontdoorQueryView::from_raw(root_ref.parse)?;
-        let query_ref = query_view.as_ref();
-        let operation = query_view.operation()?;
-        let target_rtindex =
-            match dml_frontdoor_baserel_target_rtindex(query_ref, rel_ref, operation) {
-                Ok(Some(target_rtindex)) => target_rtindex,
-                Ok(None) => return None,
-                Err(err) => return Some(Err(err)),
-            };
-        let target_relation_oid = query_view.relation_oid_from_rtable(target_rtindex)?;
-        let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
-            Ok(relation) => relation,
-            Err(_err) => {
-                return Some(Err(
-                    "ec_spire DML frontdoor baserel expression handoff could not load relation context"
-                        .to_owned(),
-                ));
-            }
-        };
-        let detail = dml_frontdoor_query_detail_from_baserel(
-            query_view,
-            rel_ref,
-            operation,
-            target_rtindex,
-            &relation,
-        )?;
-        let pk_value_expr = detail.pk_value_expr;
-        let updated_value_exprs = detail.updated_value_exprs.clone();
-        let decision = dml_frontdoor_replacement_decision_from_shape(
-            target_relation_oid,
-            relation.index_oid,
-            detail,
-        );
-        if !decision.supported {
-            return None;
-        }
-        let pk_value_expr = pk_value_expr.ok_or_else(|| {
-            "ec_spire DML frontdoor baserel expression handoff requires a PK value expression"
-                .to_owned()
-        });
-        let primitive_plan = dml_frontdoor_primitive_plan_from_replacement_decision(&decision);
-        Some(pk_value_expr.and_then(|pk_value_expr| {
-            primitive_plan.map(|primitive_plan| SpireDmlFrontdoorPrimitivePlanExpr {
-                primitive_plan,
-                pk_value_expr,
-                updated_value_exprs,
-            })
-        }))
+    };
+    let detail = dml_frontdoor_query_detail_from_baserel(
+        query_view,
+        rel_ref,
+        operation,
+        target_rtindex,
+        &relation,
+    )?;
+    let pk_value_expr = detail.pk_value_expr;
+    let updated_value_exprs = detail.updated_value_exprs.clone();
+    let decision = dml_frontdoor_replacement_decision_from_shape(
+        target_relation_oid,
+        relation.index_oid,
+        detail,
+    );
+    if !decision.supported {
+        return None;
     }
+    let pk_value_expr = pk_value_expr.ok_or_else(|| {
+        "ec_spire DML frontdoor baserel expression handoff requires a PK value expression"
+            .to_owned()
+    });
+    let primitive_plan = dml_frontdoor_primitive_plan_from_replacement_decision(&decision);
+    Some(pk_value_expr.and_then(|pk_value_expr| {
+        primitive_plan.map(|primitive_plan| SpireDmlFrontdoorPrimitivePlanExpr {
+            primitive_plan,
+            pk_value_expr,
+            updated_value_exprs,
+        })
+    }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
+pub(crate) fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+    baserel: DmlFrontdoorBaserelView<'_>,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    // SAFETY: caller guarantees live planner baserel pointers for this handoff.
-    let plan_expr = unsafe { dml_frontdoor_primitive_plan_expr_from_baserel(root, rel) }?;
+    let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(baserel)?;
     Some(plan_expr.and_then(|plan_expr| {
         dml_frontdoor_primitive_plan_expr_require_mode(
             plan_expr,
