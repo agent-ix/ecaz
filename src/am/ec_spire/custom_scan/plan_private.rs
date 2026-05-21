@@ -149,8 +149,9 @@ impl<'a> CustomScanPlan<'a> {
         // SAFETY: this view was constructed from the live provider-owned
         // CustomScan plan for the current callback; custom_private is checked
         // for null before the list wrapper is built.
-        unsafe { CustomScanPlanPrivate::new(self.plan_ref.custom_private) }
-            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata"))
+        unsafe { CustomScanPlanPrivate::new(self.plan_ref.custom_private) }.unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata")
+        })
     }
 
     fn mode(self) -> SpireCustomScanPlanMode {
@@ -174,40 +175,6 @@ impl<'a> CustomScanPlan<'a> {
         let custom_private = self.custom_private("PK column");
         custom_scan_dml_pk_column_from_plan_private(custom_private)
     }
-}
-
-unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
-    // SAFETY: caller guarantees expr is a live planner expression for
-    // immediate node-tag dispatch and Const/Param inspection.
-    match unsafe { custom_scan_expr_node_tag(expr) } {
-        Some(pg_sys::NodeTag::T_Const) => unsafe {
-            custom_scan_query_values_from_const(expr.cast()).is_some()
-        },
-        Some(pg_sys::NodeTag::T_Param) => {
-            unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Param>()) }
-                .map(|param| param.paramtype == pg_sys::FLOAT4ARRAYOID)
-                .unwrap_or(false)
-        }
-        _ => false,
-    }
-}
-
-unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
-    // SAFETY: caller guarantees const_expr is a live planner Const node.
-    let const_ref = unsafe { custom_scan_pg_ref(const_expr)? };
-    // SAFETY: null was checked above and caller only passes PostgreSQL Const
-    // nodes from planner expressions. Float4 array type/nullability are checked
-    // before decoding the datum without taking ownership from PostgreSQL.
-    let values = unsafe {
-        if const_ref.constisnull || const_ref.consttype != pg_sys::FLOAT4ARRAYOID {
-            return None;
-        }
-        Vec::<f32>::from_polymorphic_datum(const_ref.constvalue, false, pg_sys::FLOAT4ARRAYOID)?
-    };
-    if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
-    Some(values)
 }
 
 unsafe fn custom_scan_mode_from_path(

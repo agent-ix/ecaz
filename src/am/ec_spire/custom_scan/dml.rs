@@ -148,12 +148,12 @@ unsafe fn custom_scan_query_from_plan(
     // SAFETY: executor passes the live CustomScanState; the expression was
     // extracted from the provider-owned CustomScan custom_exprs list above.
     unsafe {
-        let Some(expr_node) = custom_scan_pg_ref(expr.cast::<pg_sys::Node>()) else {
+        let Some(query_expr) = CustomScanExpr::new(expr) else {
             pgrx::error!("EcSpireDistributedScan plan has a null ORDER BY query expression");
         };
-        let datum = match expr_node.type_ {
+        let datum = match query_expr.tag() {
             pg_sys::NodeTag::T_Const => {
-                return custom_scan_query_values_from_const(expr.cast()).unwrap_or_else(|| {
+                return query_expr.query_values_from_const().unwrap_or_else(|| {
                     pgrx::error!(
                         "EcSpireDistributedScan requires a non-null finite real[] ORDER BY query"
                     )

@@ -78,22 +78,20 @@ impl<'a> CustomScanPlannerRel<'a> {
         // SAFETY: expr comes from the planner-owned target list reached through
         // this live callback view and is only inspected for node/list shape.
         unsafe {
-            let op_expr = custom_scan_op_expr(expr)?;
+            let op_expr = CustomScanExpr::new(expr)?.op_expr()?;
             let args = custom_scan_pg_list::<pg_sys::Expr>(op_expr.args);
             if args.len() != 2 {
                 return None;
             }
-            let left = args.get_ptr(0)?;
-            let right = args.get_ptr(1)?;
-            if custom_scan_expr_is_relation_var(left, self.rel_ref.relid)
-                && custom_scan_expr_is_query_value(right)
-            {
-                return Some(right);
+            let left_ptr = args.get_ptr(0)?;
+            let right_ptr = args.get_ptr(1)?;
+            let left = CustomScanExpr::new(left_ptr)?;
+            let right = CustomScanExpr::new(right_ptr)?;
+            if left.is_relation_var(self.rel_ref.relid) && right.is_query_value() {
+                return Some(right_ptr);
             }
-            if custom_scan_expr_is_relation_var(right, self.rel_ref.relid)
-                && custom_scan_expr_is_query_value(left)
-            {
-                return Some(left);
+            if right.is_relation_var(self.rel_ref.relid) && left.is_query_value() {
+                return Some(left_ptr);
             }
             None
         }
@@ -161,6 +159,91 @@ impl<'a> CustomScanPlannerRel<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CustomScanExpr<'a> {
+    expr: *mut pg_sys::Expr,
+    node_ref: &'a pg_sys::Node,
+}
+
+impl<'a> CustomScanExpr<'a> {
+    unsafe fn new(expr: *mut pg_sys::Expr) -> Option<Self> {
+        // SAFETY: caller guarantees expr, when non-null, is a live PostgreSQL
+        // expression node for immediate tag-checked inspection.
+        let node_ref = unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Node>())? };
+        Some(Self { expr, node_ref })
+    }
+
+    fn tag(self) -> pg_sys::NodeTag {
+        self.node_ref.type_
+    }
+
+    fn op_expr(self) -> Option<&'a pg_sys::OpExpr> {
+        if self.tag() != pg_sys::NodeTag::T_OpExpr {
+            return None;
+        }
+        // SAFETY: the node tag was checked before casting to OpExpr.
+        unsafe { custom_scan_pg_ref(self.expr.cast::<pg_sys::OpExpr>()) }
+    }
+
+    fn var(self) -> Option<&'a pg_sys::Var> {
+        if self.tag() != pg_sys::NodeTag::T_Var {
+            return None;
+        }
+        // SAFETY: the node tag was checked before casting to Var.
+        unsafe { custom_scan_pg_ref(self.expr.cast::<pg_sys::Var>()) }
+    }
+
+    fn const_expr(self) -> Option<&'a pg_sys::Const> {
+        if self.tag() != pg_sys::NodeTag::T_Const {
+            return None;
+        }
+        // SAFETY: the node tag was checked before casting to Const.
+        unsafe { custom_scan_pg_ref(self.expr.cast::<pg_sys::Const>()) }
+    }
+
+    fn param(self) -> Option<&'a pg_sys::Param> {
+        if self.tag() != pg_sys::NodeTag::T_Param {
+            return None;
+        }
+        // SAFETY: the node tag was checked before casting to Param.
+        unsafe { custom_scan_pg_ref(self.expr.cast::<pg_sys::Param>()) }
+    }
+
+    fn is_relation_var(self, relid: pg_sys::Index) -> bool {
+        self.var()
+            .map(|var| u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0)
+            .unwrap_or(false)
+    }
+
+    fn query_values_from_const(self) -> Option<Vec<f32>> {
+        let const_ref = self.const_expr()?;
+        // SAFETY: the node tag was checked above. Float4 array
+        // type/nullability are checked before decoding the datum without
+        // taking ownership from PostgreSQL.
+        let values = unsafe {
+            if const_ref.constisnull || const_ref.consttype != pg_sys::FLOAT4ARRAYOID {
+                return None;
+            }
+            Vec::<f32>::from_polymorphic_datum(const_ref.constvalue, false, pg_sys::FLOAT4ARRAYOID)?
+        };
+        if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        Some(values)
+    }
+
+    fn is_query_value(self) -> bool {
+        match self.tag() {
+            pg_sys::NodeTag::T_Const => self.query_values_from_const().is_some(),
+            pg_sys::NodeTag::T_Param => self
+                .param()
+                .map(|param| param.paramtype == pg_sys::FLOAT4ARRAYOID)
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+}
+
 unsafe fn estimate_custom_scan_cost(
     output_rows: f64,
     rel_rows: f64,
@@ -220,14 +303,6 @@ fn estimate_custom_scan_cost_with_constants(
     }
 }
 
-unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
-    // SAFETY: caller guarantees expr is planner-owned and live for immediate
-    // Var tag dispatch.
-    unsafe { custom_scan_var_expr(expr) }
-        .map(|var| u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0)
-        .unwrap_or(false)
-}
-
 unsafe fn custom_scan_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
     // SAFETY: callers pass PostgreSQL-owned planner lists and consume the view
     // immediately during the current planner callback.
@@ -273,26 +348,4 @@ unsafe fn custom_scan_list_nth_node(
     // SAFETY: list is non-null and offset is bounds-checked against the
     // PostgreSQL List length above.
     Some(unsafe { pg_sys::list_nth(list, offset).cast::<pg_sys::Node>() })
-}
-
-unsafe fn custom_scan_op_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::OpExpr> {
-    // SAFETY: caller guarantees expr is live for node-tag dispatch.
-    if unsafe { custom_scan_expr_node_tag(expr) }? != pg_sys::NodeTag::T_OpExpr {
-        return None;
-    }
-    unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::OpExpr>()) }
-}
-
-unsafe fn custom_scan_var_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::Var> {
-    // SAFETY: caller guarantees expr is live for node-tag dispatch.
-    if unsafe { custom_scan_expr_node_tag(expr) }? != pg_sys::NodeTag::T_Var {
-        return None;
-    }
-    unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Var>()) }
-}
-
-unsafe fn custom_scan_expr_node_tag(expr: *mut pg_sys::Expr) -> Option<pg_sys::NodeTag> {
-    // SAFETY: caller guarantees expr, when non-null, is a live PostgreSQL Node.
-    let node = unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Node>())? };
-    Some(node.type_)
 }
