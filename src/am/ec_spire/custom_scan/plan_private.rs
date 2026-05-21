@@ -236,15 +236,13 @@ unsafe fn custom_scan_dml_plan_private(
     projected_columns: &[String],
 ) -> *mut pg_sys::List {
     // SAFETY: caller guarantees PostgreSQL planner memory context is active.
-    let mut custom_private =
-        unsafe { custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string()) };
-    custom_private =
-        unsafe { custom_scan_lappend_string(custom_private, &index_oid.to_u32().to_string()) };
-    custom_private =
-        unsafe { custom_scan_lappend_counted_column_list(custom_private, updated_columns) };
-    custom_private =
-        unsafe { custom_scan_lappend_counted_column_list(custom_private, projected_columns) };
-    unsafe { custom_scan_lappend_string(custom_private, pk_column) }
+    let mut custom_private = unsafe { CustomScanPlanPrivateBuilder::new() };
+    custom_private.append_string(&mode.raw().to_string());
+    custom_private.append_string(&index_oid.to_u32().to_string());
+    custom_private.append_counted_column_list(updated_columns);
+    custom_private.append_counted_column_list(projected_columns);
+    custom_private.append_string(pk_column);
+    custom_private.into_pg()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -289,28 +287,40 @@ fn custom_scan_plan_private_u32(
     custom_private.u32_at(offset, label)
 }
 
-unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_sys::List {
-    // SAFETY: CString rejects interior NULs; pstrdup copies into PostgreSQL
-    // memory before makeString/lappend attach it to the plan-private List.
-    unsafe {
-        let c_value = CString::new(value).unwrap_or_else(|_| {
-            pgrx::error!("EcSpireDistributedScan plan-private string contains NUL")
-        });
-        let copied = pg_sys::pstrdup(c_value.as_ptr());
-        pg_sys::lappend(list, pg_sys::makeString(copied).cast())
-    }
+struct CustomScanPlanPrivateBuilder {
+    list: *mut pg_sys::List,
 }
 
-unsafe fn custom_scan_lappend_counted_column_list(
-    list: *mut pg_sys::List,
-    columns: &[String],
-) -> *mut pg_sys::List {
-    // SAFETY: caller guarantees PostgreSQL planner memory context is active.
-    let mut list = unsafe { custom_scan_lappend_string(list, &columns.len().to_string()) };
-    for column in columns {
-        list = unsafe { custom_scan_lappend_string(list, column) };
+impl CustomScanPlanPrivateBuilder {
+    unsafe fn new() -> Self {
+        Self {
+            list: std::ptr::null_mut(),
+        }
     }
-    list
+
+    fn append_string(&mut self, value: &str) {
+        // SAFETY: this builder is only constructed while PostgreSQL planner
+        // memory is active. CString rejects interior NULs, and pstrdup copies
+        // into PostgreSQL memory before makeString/lappend attach it.
+        unsafe {
+            let c_value = CString::new(value).unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan plan-private string contains NUL")
+            });
+            let copied = pg_sys::pstrdup(c_value.as_ptr());
+            self.list = pg_sys::lappend(self.list, pg_sys::makeString(copied).cast());
+        }
+    }
+
+    fn append_counted_column_list(&mut self, columns: &[String]) {
+        self.append_string(&columns.len().to_string());
+        for column in columns {
+            self.append_string(column);
+        }
+    }
+
+    fn into_pg(self) -> *mut pg_sys::List {
+        self.list
+    }
 }
 
 unsafe fn custom_scan_dml_column_list_from_plan(
