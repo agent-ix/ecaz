@@ -194,23 +194,27 @@ fn bulkdelete_list_postings(
     callback_state: *mut c_void,
 ) -> Result<ListBulkDeleteResult, String> {
     let mut result = ListBulkDeleteResult::default();
-    page::rewrite_ivf_postings_for_list_blocks(
-        index_relation,
-        directory.list_id,
-        directory.head_block,
-        directory.tail_block,
-        payload_len,
-        &[directory_block_number],
-        |posting_tid, mut posting| {
-            bulkdelete_posting(
-                &mut result,
-                posting_tid,
-                &mut posting,
-                callback,
-                callback_state,
-            )
-        },
-    )?;
+    // SAFETY: `index_relation` is the live IVF relation from the vacuum
+    // callback; directory block refs were decoded from that relation.
+    unsafe {
+        page::rewrite_ivf_postings_for_list_blocks(
+            index_relation,
+            directory.list_id,
+            directory.head_block,
+            directory.tail_block,
+            payload_len,
+            &[directory_block_number],
+            |posting_tid, mut posting| {
+                bulkdelete_posting(
+                    &mut result,
+                    posting_tid,
+                    &mut posting,
+                    callback,
+                    callback_state,
+                )
+            },
+        )
+    }?;
 
     Ok(result)
 }

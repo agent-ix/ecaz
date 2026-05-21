@@ -1454,8 +1454,10 @@ fn load_directory_entries(
     let mut next_tid = metadata.directory_head;
     let mut directories = Vec::with_capacity(metadata.nlists as usize);
     for expected_list_id in 0..metadata.nlists {
+        // SAFETY: `index_relation` is the live IVF relation for this scan and
+        // `next_tid` walks the directory chain rooted in its metadata.
         let (directory, following_tid) =
-            super::page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
+            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid) }?;
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",

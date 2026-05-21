@@ -419,7 +419,10 @@ pub(super) fn load_pq_fastscan_model(
                 "ec_ivf pq_fastscan codebook chain ended at group {expected_group_index}"
             ));
         }
-        let tuple = page::read_ivf_pq_codebook(index_relation, next_tid, centroid_count)?;
+        // SAFETY: `index_relation` is the live IVF relation whose metadata
+        // supplied the codebook chain head, and `next_tid` walks that chain.
+        let tuple =
+            unsafe { page::read_ivf_pq_codebook(index_relation, next_tid, centroid_count) }?;
         if usize::from(tuple.group_index) != expected_group_index {
             return Err(format!(
                 "ec_ivf pq_fastscan codebook order mismatch: got {}, expected {expected_group_index}",

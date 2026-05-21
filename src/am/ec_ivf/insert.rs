@@ -143,21 +143,25 @@ fn insert_into_trained_index(
     // a heap line pointer can be reused. The debug validation helper below
     // keeps the corruption-check path available without scanning on inserts.
     let posting_tid =
-        page::append_ivf_posting_to_list_range(index_relation, block_range, &posting)?;
+        unsafe { page::append_ivf_posting_to_list_range(index_relation, block_range, &posting) }?;
 
-    page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
-        if latest_directory.list_id != posting.list_id {
-            return Err(format!(
-                "ec_ivf directory order mismatch during insert: got list {}, expected {}",
-                latest_directory.list_id, posting.list_id
-            ));
-        }
-        apply_directory_insert_stats(latest_directory, posting_tid)
-    })
+    // SAFETY: `index_relation` is the live IVF relation from the aminsert
+    // callback and `directory_tid` was resolved from that relation metadata.
+    unsafe {
+        page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
+            if latest_directory.list_id != posting.list_id {
+                return Err(format!(
+                    "ec_ivf directory order mismatch during insert: got list {}, expected {}",
+                    latest_directory.list_id, posting.list_id
+                ));
+            }
+            apply_directory_insert_stats(latest_directory, posting_tid)
+        })
+    }
     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
     // SAFETY: relation is live and the callback only increments metadata
     // insert counters.
-    page::update_metadata_page(index_relation, apply_metadata_insert_stats)
+    unsafe { page::update_metadata_page(index_relation, apply_metadata_insert_stats) }
         .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
 
     Ok(())
@@ -180,8 +184,10 @@ fn ensure_heap_tid_absent(
     .payload_len();
     let mut next_tid = metadata.directory_head;
     for expected_list_id in 0..metadata.nlists {
+        // SAFETY: `index_relation` is the live IVF relation being checked and
+        // `next_tid` walks the directory chain recorded in its metadata.
         let (directory, following_tid) =
-            page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
+            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid) }?;
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",
@@ -189,13 +195,17 @@ fn ensure_heap_tid_absent(
             ));
         }
 
-        let postings = page::read_ivf_postings_for_list_blocks(
-            index_relation,
-            directory.list_id,
-            directory.head_block,
-            directory.tail_block,
-            payload_len,
-        )?;
+        // SAFETY: directory block refs were decoded from the same live IVF
+        // relation and bound the posting-list walk for this list.
+        let postings = unsafe {
+            page::read_ivf_postings_for_list_blocks(
+                index_relation,
+                directory.list_id,
+                directory.head_block,
+                directory.tail_block,
+                payload_len,
+            )
+        }?;
         if postings
             .iter()
             .filter(|posting| !posting.deleted)
@@ -307,11 +317,13 @@ fn load_centroid_model(
     for expected_list_id in 0..metadata.nlists {
         // SAFETY: relation is live, `next_tid` follows the centroid chain, and
         // metadata dimensions define the centroid payload width.
-        let (centroid, following_tid) = page::read_ivf_centroid_and_next(
-            index_relation,
-            next_tid,
-            usize::from(metadata.dimensions),
-        )?;
+        let (centroid, following_tid) = unsafe {
+            page::read_ivf_centroid_and_next(
+                index_relation,
+                next_tid,
+                usize::from(metadata.dimensions),
+            )
+        }?;
         if centroid.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf centroid order mismatch: got list {}, expected {}",
@@ -340,8 +352,10 @@ fn load_directory_entry(
     let mut next_tid = metadata.directory_head;
     for expected_list_id in 0..metadata.nlists {
         let current_tid = next_tid;
+        // SAFETY: `index_relation` is live and `current_tid` walks the
+        // directory chain rooted in the supplied metadata.
         let (directory, following_tid) =
-            page::read_ivf_list_directory_and_next(index_relation, current_tid)?;
+            unsafe { page::read_ivf_list_directory_and_next(index_relation, current_tid) }?;
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",
