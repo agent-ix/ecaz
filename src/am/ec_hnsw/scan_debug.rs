@@ -693,6 +693,55 @@ impl Drop for DebugPallocScanKey {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+struct DebugAmScan {
+    scan: pg_sys::IndexScanDesc,
+    am_ended: bool,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl DebugAmScan {
+    fn begin(index_relation: pg_sys::Relation, nkeys: i32, norderbys: i32) -> Self {
+        Self {
+            scan: debug_am_begin_scan(index_relation, nkeys, norderbys),
+            am_ended: false,
+        }
+    }
+
+    fn has_opaque(&self) -> bool {
+        // SAFETY: This guard owns a descriptor allocated by the HNSW AM begin
+        // callback and keeps it allocated until drop.
+        unsafe { debug_scan_has_opaque(self.scan) }
+    }
+
+    fn opaque_is_null(&self) -> bool {
+        // SAFETY: This guard owns a descriptor allocated by the HNSW AM begin
+        // callback and keeps it allocated until drop.
+        unsafe { debug_scan_opaque_is_null(self.scan) }
+    }
+
+    fn end_am(&mut self) {
+        if !self.am_ended {
+            debug_am_end_scan(self.scan);
+            self.am_ended = true;
+        }
+    }
+
+    fn end_am_again_for_idempotence_probe(&self) {
+        debug_am_end_scan(self.scan);
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl Drop for DebugAmScan {
+    fn drop(&mut self) {
+        if !self.am_ended {
+            debug_am_end_scan(self.scan);
+        }
+        debug_index_scan_end(self.scan);
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
@@ -729,48 +778,27 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_begin_end_scan");
-    // SAFETY: The index relation guard keeps the relation open for the scan
-    // descriptor returned by the AM begin callback.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
-    // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.
-    let has_opaque = unsafe { debug_scan_has_opaque(scan) };
+    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+    let has_opaque = scan.has_opaque();
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: `ec_hnsw_amendscan` clears the opaque field on the same live
-    // descriptor.
-    let cleared_opaque = unsafe { debug_scan_opaque_is_null(scan) };
+    scan.end_am();
+    let cleared_opaque = scan.opaque_is_null();
 
-    // SAFETY: The descriptor was allocated by `IndexScanBegin` through the AM
-    // begin path and has had AM cleanup run above.
-    debug_index_scan_end(scan);
     (has_opaque, cleared_opaque)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_end_scan_twice");
-    // SAFETY: The index relation guard keeps the relation open for the scan
-    // descriptor returned by the AM begin callback.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
-    // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.
-    let has_opaque = unsafe { debug_scan_has_opaque(scan) };
+    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+    let has_opaque = scan.has_opaque();
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: The descriptor remains allocated after AM cleanup for this debug
-    // idempotence check.
-    let cleared_after_first = unsafe { debug_scan_opaque_is_null(scan) };
+    scan.end_am();
+    let cleared_after_first = scan.opaque_is_null();
 
-    // SAFETY: This deliberately repeats AM cleanup on the same descriptor to
-    // verify the end callback tolerates an already-cleared opaque pointer.
-    debug_am_end_scan(scan);
-    // SAFETY: The descriptor remains allocated until `IndexScanEnd` below.
-    let cleared_after_second = unsafe { debug_scan_opaque_is_null(scan) };
+    scan.end_am_again_for_idempotence_probe();
+    let cleared_after_second = scan.opaque_is_null();
 
-    // SAFETY: The descriptor was allocated by the AM begin path and is freed
-    // exactly once after the idempotence probe.
-    debug_index_scan_end(scan);
     (has_opaque, cleared_after_first, cleared_after_second)
 }
 
