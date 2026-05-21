@@ -93,16 +93,20 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple(
             pgrx::error!("ec_spire amgettuple requires amrescan before scan execution");
         }
 
+        let mut scan_output = crate::am::common::scan_output::IndexScanOutput::from_raw(
+            scan,
+            "ec_spire amgettuple scan output",
+        );
         match opaque.next_output() {
             Some(output) => {
-                set_scan_heap_tid(scan, output.heap_tid);
-                set_scan_orderby_score(scan, output.orderby_score);
+                set_scan_heap_tid(&mut scan_output, output.heap_tid);
+                set_scan_orderby_score(&mut scan_output, output.orderby_score);
                 (*scan).xs_recheck = false;
                 (*scan).xs_recheckorderby = false;
                 true
             }
             None => {
-                clear_scan_orderby_output(scan);
+                clear_scan_orderby_output(&mut scan_output);
                 false
             }
         }

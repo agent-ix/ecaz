@@ -8,6 +8,7 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 
 use crate::am::common::{
     callback::pg_am_callback, explain::IvfExplainCounters, heap_slot::HeapSlotReader,
+    scan_output::IndexScanOutput,
 };
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
@@ -571,18 +572,19 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
         }
 
         let opaque = &mut *opaque_ptr;
+        let mut scan_output = IndexScanOutput::from_raw(scan, "ec_ivf amgettuple scan output");
         if opaque.scan_dimensions == 0 {
-            clear_scan_orderby_output(scan);
+            clear_scan_orderby_output(&mut scan_output);
             return false;
         }
         match opaque.next_posting_candidate() {
             Some(candidate) => {
-                set_scan_heap_tid(scan, candidate.heap_tid);
-                set_scan_orderby_score(scan, candidate.score);
+                set_scan_heap_tid(&mut scan_output, candidate.heap_tid);
+                set_scan_orderby_score(&mut scan_output, candidate.score);
                 true
             }
             None => {
-                clear_scan_orderby_output(scan);
+                clear_scan_orderby_output(&mut scan_output);
                 false
             }
         }
@@ -608,21 +610,20 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
     })
 }
 
-fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
-    crate::am::common::scan_output::set_scan_heap_tid(scan, heap_tid);
+fn set_scan_heap_tid(scan_output: &mut IndexScanOutput<'_>, heap_tid: ItemPointer) {
+    scan_output.set_heap_tid(heap_tid);
 }
 
-fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
-    crate::am::common::scan_output::set_scan_orderby_score(
-        scan,
+fn set_scan_orderby_score(scan_output: &mut IndexScanOutput<'_>, score: f32) {
+    scan_output.set_orderby_score(
         score,
         "ec_ivf scan orderby values",
         "ec_ivf scan orderby nulls",
     );
 }
 
-fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
-    crate::am::common::scan_output::clear_scan_orderby_output(scan);
+fn clear_scan_orderby_output(scan_output: &mut IndexScanOutput<'_>) {
+    scan_output.clear_orderby_output();
 }
 
 fn record_distance_calcs(opaque: &mut EcIvfScanOpaque, count: usize) {

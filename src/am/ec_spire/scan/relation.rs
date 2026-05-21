@@ -1,18 +1,25 @@
-pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
-    crate::am::common::scan_output::set_scan_heap_tid(scan, heap_tid);
+pub(super) fn set_scan_heap_tid(
+    scan_output: &mut crate::am::common::scan_output::IndexScanOutput<'_>,
+    heap_tid: ItemPointer,
+) {
+    scan_output.set_heap_tid(heap_tid);
 }
 
-pub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
-    crate::am::common::scan_output::set_scan_orderby_score(
-        scan,
+pub(super) fn set_scan_orderby_score(
+    scan_output: &mut crate::am::common::scan_output::IndexScanOutput<'_>,
+    score: f32,
+) {
+    scan_output.set_orderby_score(
         score,
         "ec_spire scan orderby values",
         "ec_spire scan orderby nulls",
     );
 }
 
-pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
-    crate::am::common::scan_output::clear_scan_orderby_output(scan);
+pub(super) fn clear_scan_orderby_output(
+    scan_output: &mut crate::am::common::scan_output::IndexScanOutput<'_>,
+) {
+    scan_output.clear_orderby_output();
 }
 
 pub(super) struct ResolvedScanHeapRelation {
@@ -57,12 +64,10 @@ pub(super) unsafe fn load_relation_epoch_manifests(
     }
     // SAFETY: root_control belongs to this open relation and stores the active
     // epoch manifest tuple id; page helper returns owned bytes.
-    let epoch_bytes =
-        page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
+    let epoch_bytes = page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
     // SAFETY: root_control belongs to this open relation and stores the active
     // object manifest tuple id; page helper returns owned bytes.
-    let object_bytes =
-        page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
+    let object_bytes = page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
     // SAFETY: root_control belongs to this open relation and stores the active
     // placement-directory tuple id; page helper returns owned bytes.
     let placement_bytes =
@@ -125,8 +130,7 @@ pub(super) unsafe fn load_relation_local_store_config(
     }
     // SAFETY: root_control belongs to this open relation and stores the active
     // local-store config tuple id; page helper returns owned bytes.
-    let bytes =
-        page::read_object_tuple(index_relation, root_control.local_store_config_tid)?;
+    let bytes = page::read_object_tuple(index_relation, root_control.local_store_config_tid)?;
     SpireLocalStoreConfig::decode(&bytes)
 }
 

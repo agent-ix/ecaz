@@ -7,6 +7,7 @@ use hashbrown::{HashMap, HashSet};
 use pgrx::{pg_sys, FromDatum, PgBox};
 
 use crate::am::common::heap_slot::HeapSlotReader;
+use crate::am::common::scan_output::IndexScanOutput;
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{
     BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
@@ -1904,17 +1905,24 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
             }
 
             if opaque.scan_dimensions == 0 {
-                clear_scan_orderby_output(scan);
+                let mut scan_output =
+                    IndexScanOutput::from_raw(scan, "ec_hnsw amgettuple zero-dimension output");
+                clear_scan_orderby_output(&mut scan_output);
                 return false;
             }
 
             let opaque = &mut *opaque_ptr;
-            if produce_next_scan_heap_tid(scan, (*scan).indexRelation, opaque, opaque.scan_code_len)
-            {
+            let mut scan_output = IndexScanOutput::from_raw(scan, "ec_hnsw amgettuple scan output");
+            if produce_next_scan_heap_tid(
+                &mut scan_output,
+                (*scan).indexRelation,
+                opaque,
+                opaque.scan_code_len,
+            ) {
                 return true;
             }
 
-            clear_scan_orderby_output(scan);
+            clear_scan_orderby_output(&mut scan_output);
             false
         })
     }
@@ -3729,7 +3737,7 @@ pub(super) fn active_result_state_ref(opaque: &TqScanOpaque) -> &ScanResultState
 }
 
 unsafe fn produce_next_scan_heap_tid(
-    scan: pg_sys::IndexScanDesc,
+    scan_output: &mut IndexScanOutput<'_>,
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
@@ -3738,12 +3746,12 @@ unsafe fn produce_next_scan_heap_tid(
         // SAFETY: graph traversal uses the live scan descriptor, relation, and
         // opaque state selected by the current execution phase.
         ScanExecutionPhase::GraphTraversal => unsafe {
-            produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+            produce_next_graph_traversal_heap_tid(scan_output, index_relation, opaque)
         },
         // SAFETY: linear fallback uses the same live scan descriptor/relation
         // after graph traversal has moved the opaque into fallback phase.
         ScanExecutionPhase::LinearFallback => unsafe {
-            produce_next_linear_fallback_heap_tid(scan, index_relation, opaque, code_len)
+            produce_next_linear_fallback_heap_tid(scan_output, index_relation, opaque, code_len)
         },
         ScanExecutionPhase::Exhausted => false,
     }
@@ -4923,7 +4931,7 @@ pub(super) unsafe fn prefetch_next_graph_traversal_result(
 }
 
 unsafe fn produce_next_graph_traversal_heap_tid(
-    scan: pg_sys::IndexScanDesc,
+    scan_output: &mut IndexScanOutput<'_>,
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
@@ -4940,7 +4948,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     let emitted = graph_traversal_cursor(opaque)
         .emit_prefetched_output()
         .map(|output| {
-            emit_scan_output(scan, opaque, output);
+            emit_scan_output(scan_output, opaque, output);
             true
         })
         .unwrap_or(false);
@@ -4963,7 +4971,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
 }
 
 unsafe fn produce_next_linear_fallback_heap_tid(
-    scan: pg_sys::IndexScanDesc,
+    scan_output: &mut IndexScanOutput<'_>,
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
@@ -4971,7 +4979,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     if linear_fallback_cursor(opaque)
         .emit_pending_output()
         .map(|output| {
-            emit_scan_output(scan, opaque, output);
+            emit_scan_output(scan_output, opaque, output);
             true
         })
         .unwrap_or(false)
@@ -4993,7 +5001,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     let emitted = linear_fallback_cursor(opaque)
         .emit_materialized_output(selected)
         .map(|output| {
-            emit_scan_output(scan, opaque, output);
+            emit_scan_output(scan_output, opaque, output);
             true
         })
         .unwrap_or(false);
@@ -5248,8 +5256,8 @@ unsafe fn score_scan_element_result(
     -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
 }
 
-fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
-    crate::am::common::scan_output::set_scan_heap_tid(scan, heap_tid);
+fn set_scan_heap_tid(scan_output: &mut IndexScanOutput<'_>, heap_tid: page::ItemPointer) {
+    scan_output.set_heap_tid(heap_tid);
 }
 
 fn clear_last_emitted_scan_scores(opaque: &mut TqScanOpaque) {
@@ -5262,12 +5270,12 @@ fn clear_last_emitted_scan_scores(opaque: &mut TqScanOpaque) {
 }
 
 fn emit_scan_output(
-    scan: pg_sys::IndexScanDesc,
+    scan_output: &mut IndexScanOutput<'_>,
     opaque: &mut TqScanOpaque,
     output: PendingScanOutput,
 ) {
-    set_scan_heap_tid(scan, output.heap_tid);
-    set_scan_orderby_score(scan, output.score);
+    set_scan_heap_tid(scan_output, output.heap_tid);
+    set_scan_orderby_score(scan_output, output.score);
     match output.approx_score {
         Some(score) => {
             opaque.last_emitted_approx_score = score;
@@ -5300,17 +5308,16 @@ fn emit_scan_output(
     }
 }
 
-fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
-    crate::am::common::scan_output::set_scan_orderby_score(
-        scan,
+fn set_scan_orderby_score(scan_output: &mut IndexScanOutput<'_>, score: f32) {
+    scan_output.set_orderby_score(
         score,
         "ec_hnsw scan orderby values",
         "ec_hnsw scan orderby nulls",
     );
 }
 
-fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
-    crate::am::common::scan_output::clear_scan_orderby_output(scan);
+fn clear_scan_orderby_output(scan_output: &mut IndexScanOutput<'_>) {
+    scan_output.clear_orderby_output();
 }
 
 #[repr(C)]
