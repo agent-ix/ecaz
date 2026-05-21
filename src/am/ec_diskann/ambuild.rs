@@ -445,15 +445,8 @@ fn elapsed_ms(duration: Duration) -> u128 {
     duration.as_millis()
 }
 
-unsafe fn relation_name(relation: pg_sys::Relation) -> String {
-    // SAFETY: The relation is live and PostgreSQL keeps `rd_rel` valid for the
-    // opened relation lifetime.
-    let rd_rel = unsafe { (*relation).rd_rel.as_ref() }
-        .expect("opened relation should expose pg_class metadata");
-    // SAFETY: `relname.data` is PostgreSQL's fixed NUL-terminated name buffer.
-    unsafe { CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-        .to_string_lossy()
-        .into_owned()
+fn relation_name(relation: pg_sys::Relation) -> String {
+    crate::storage::relation::relation_name(relation)
 }
 
 fn log_ambuild_empty_timing(

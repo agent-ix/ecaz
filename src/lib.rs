@@ -414,23 +414,15 @@ fn open_valid_ec_index_guard(
     expected_am_name: &'static str,
 ) -> IndexRelationGuard {
     let index_relation = IndexRelationGuard::access_share(index_oid, caller_name);
-    // SAFETY: `index_relation` is live while the guard is in scope.
-    let rd_rel = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() }
-        .expect("opened index relation should expose pg_class metadata");
-    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
-        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
-        // field is PostgreSQL's fixed-size C string.
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
+    let relation = index_relation.as_ptr();
+    if crate::storage::relation::relation_kind(relation)
+        != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char
+    {
+        let relation_name = crate::storage::relation::relation_name(relation);
         pgrx::error!("{caller_name} requires an index relation, got \"{relation_name}\"");
     }
-    if rd_rel.relam != expected_am_oid {
-        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
-        // field is PostgreSQL's fixed-size C string.
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
+    if crate::storage::relation::relation_am_oid(relation) != expected_am_oid {
+        let relation_name = crate::storage::relation::relation_name(relation);
         pgrx::error!(
             "{caller_name} requires a {expected_am_name} index, got relation \"{relation_name}\""
         );

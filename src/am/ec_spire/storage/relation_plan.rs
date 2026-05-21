@@ -194,12 +194,8 @@ pub(super) fn create_local_store_relations_for_build(
         return Ok(vec![(relation_plan[0].local_store_id, index_relid.into())]);
     }
 
-    // SAFETY: index_relation is live and rd_rel points at its relcache class
-    // tuple while the relation remains open.
-    let index_class = unsafe { &*(*index_relation).rd_rel };
-    let namespace_oid = index_class.relnamespace;
-    let owner_oid = index_class.relowner;
-    let relpersistence = index_class.relpersistence;
+    let (namespace_oid, owner_oid, relpersistence) =
+        crate::storage::relation::relation_namespace_owner_persistence(index_relation);
     let mut created = Vec::with_capacity(relation_plan.len());
 
     for entry in relation_plan {

@@ -1,5 +1,7 @@
 //! PostgreSQL relation descriptor helpers.
 
+use std::ffi::{c_char, CStr};
+
 use pgrx::pg_sys;
 
 pub(crate) fn main_fork_block_count(relation: pg_sys::Relation) -> pg_sys::BlockNumber {
@@ -36,6 +38,49 @@ pub(crate) fn relation_tablespace(relation: pg_sys::Relation) -> pg_sys::Oid {
     // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
     // belongs to that descriptor and reltablespace is copied by value.
     unsafe { (*(*relation).rd_rel).reltablespace }
+}
+
+pub(crate) fn relation_name(relation: pg_sys::Relation) -> String {
+    if relation.is_null() {
+        pgrx::error!("relation name read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
+    // belongs to that descriptor and relname is PostgreSQL's fixed C string.
+    unsafe { CStr::from_ptr((*(*relation).rd_rel).relname.data.as_ptr()) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub(crate) fn relation_kind(relation: pg_sys::Relation) -> c_char {
+    if relation.is_null() {
+        pgrx::error!("relation kind read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
+    // belongs to that descriptor and relkind is copied by value.
+    unsafe { (*(*relation).rd_rel).relkind }
+}
+
+pub(crate) fn relation_am_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
+    if relation.is_null() {
+        pgrx::error!("relation access method read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
+    // belongs to that descriptor and relam is copied by value.
+    unsafe { (*(*relation).rd_rel).relam }
+}
+
+pub(crate) fn relation_namespace_owner_persistence(
+    relation: pg_sys::Relation,
+) -> (pg_sys::Oid, pg_sys::Oid, c_char) {
+    if relation.is_null() {
+        pgrx::error!("relation catalog field read needs a valid relation");
+    }
+    // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
+    // belongs to that descriptor and fields are copied by value.
+    unsafe {
+        let rd_rel = &*(*relation).rd_rel;
+        (rd_rel.relnamespace, rd_rel.relowner, rd_rel.relpersistence)
+    }
 }
 
 pub(crate) fn index_heap_relation_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
