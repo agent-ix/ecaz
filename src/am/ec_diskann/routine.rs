@@ -947,22 +947,20 @@ unsafe fn ec_diskann_noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
-    let stats = if stats.is_null() {
-        crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
-        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats
-        // struct owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
-    } else {
-        stats
-    };
-
     // SAFETY: `stats` is either PostgreSQL-supplied or allocated above; the
     // index relation is live while page count/live tuple stats are computed.
-    unsafe {
+    let stats = unsafe {
+        let stats = if stats.is_null() {
+            crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
+            PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg()
+        } else {
+            stats
+        };
         (*stats).num_pages = crate::storage::relation::main_fork_block_count(index_relation);
         (*stats).estimated_count = false;
         (*stats).num_index_tuples = count_live_node_tuples(index_relation)? as f64;
-    }
+        stats
+    };
 
     Ok(stats)
 }
@@ -992,20 +990,17 @@ unsafe fn run_diskann_bulkdelete(
         max_removed_heap_tids = max_removed_heap_tids.max(pass.removed_heap_tids);
         match pass.rewrite_outcome {
             VacuumRewriteApplyOutcome::Applied => {
-                if pass.entry_point_needs_medoid_refresh {
-                    // SAFETY: Metadata is locked before marking the medoid
-                    // refresh flag after a successful vacuum rewrite pass.
-                    unsafe {
+                // SAFETY: Metadata is locked before marking the medoid refresh
+                // flag, and `stats` is valid for this vacuum callback before
+                // being updated from the applied rewrite pass.
+                unsafe {
+                    if pass.entry_point_needs_medoid_refresh {
                         insert::with_locked_metadata_page(index_relation, |metadata| {
                             metadata.needs_medoid_refresh = true;
                             Ok(())
                         })?
-                    };
-                }
+                    }
 
-                // SAFETY: `stats` is valid for this vacuum callback and updated
-                // only after the rewrite pass has applied.
-                unsafe {
                     (*stats).num_pages = pass.block_count;
                     (*stats).estimated_count = false;
                     (*stats).num_index_tuples = pass.live_tuple_count as f64;
@@ -1028,14 +1023,13 @@ unsafe fn run_diskann_bulkdelete_pass(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<VacuumBulkDeletePassResult, String> {
-    // SAFETY: The index relation is live; this reads the current main-fork block
-    // count for the vacuum pass.
-    // SAFETY: `index_relation` is live while reading DiskANN relation pages.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
-    // SAFETY: The index relation is live and materialization only reads the
-    // persisted DiskANN page chain.
-    let (metadata, original_chain) =
-        unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    // SAFETY: `index_relation` is live while reading the main-fork size and
+    // materializing the persisted DiskANN page chain for this vacuum pass.
+    let (block_count, metadata, original_chain) = unsafe {
+        let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+        let (metadata, original_chain) = scan_state::materialize_chain_from_index(index_relation)?;
+        (block_count, metadata, original_chain)
+    };
     let graph_degree_r = metadata.graph_degree_r;
     let binary_word_count = scan_state::metadata_binary_word_count(&metadata);
     let search_code_len = scan_state::metadata_search_code_len(&metadata);
@@ -1113,10 +1107,10 @@ unsafe fn run_diskann_bulkdelete_pass(
         }
         // SAFETY: The heap relation is either supplied by PostgreSQL or opened
         // from the index relation and remains alive through repair filling.
-        let heap_relation = unsafe { resolve_vacuum_heap_relation(index_relation, heap_relation)? };
-        // SAFETY: Repair targets/dead set were derived from this pass and the
-        // mutable chain is the pass-local rewrite plan.
-        let fill_result = unsafe {
+        // Repair targets/dead set were derived from this pass and the mutable
+        // chain is the pass-local rewrite plan.
+        unsafe {
+            let heap_relation = resolve_vacuum_heap_relation(index_relation, heap_relation)?;
             fill_vacuum_neighbor_slots(
                 index_relation,
                 heap_relation.as_ptr(),
@@ -1124,9 +1118,8 @@ unsafe fn run_diskann_bulkdelete_pass(
                 &mut mutated_chain,
                 &repair_target_tids,
                 &dead_set,
-            )
+            )?
         };
-        fill_result?;
     }
 
     for &tid in &finalize_tids {
