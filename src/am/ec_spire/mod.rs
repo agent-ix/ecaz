@@ -49,8 +49,6 @@ pub(crate) use self::custom_scan::{
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::dml_frontdoor::dml_frontdoor_const_plan_param_list_info;
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::dml_frontdoor::with_dml_frontdoor_query_view;
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::dml_frontdoor::DmlFrontdoorQueryView;
 pub(crate) use self::dml_frontdoor::{
     classify_dml_frontdoor_query, SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan,

@@ -2508,39 +2508,6 @@
     include!("custom_scan_concurrency.rs");
 
     include!("custom_scan_lifecycle.rs");
-
-
-
-
-    fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
-        let sql = CString::new(sql).expect("test SQL should not contain NUL");
-        // SAFETY: The SQL string is NUL-terminated and valid for the duration
-        // of PostgreSQL parsing in this test helper.
-        let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
-        assert!(
-            !raw_parses.is_null(),
-            "parse should return a raw statement list"
-        );
-        // SAFETY: The parser returned a non-null list and this helper expects
-        // one statement in its test SQL input.
-        let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
-        // SAFETY: `raw_stmt` comes from PostgreSQL's parser output and the SQL
-        // string remains alive throughout analyze/rewrite.
-        let queries = unsafe {
-            pg_sys::pg_analyze_and_rewrite_fixedparams(
-                raw_stmt,
-                sql.as_ptr(),
-                std::ptr::null(),
-                0,
-                std::ptr::null_mut(),
-            )
-        };
-        assert!(!queries.is_null(), "analyze should return a query list");
-        // SAFETY: PostgreSQL returned a non-null query list and this helper
-        // expects the first analyzed query for its test SQL input.
-        unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>()
-    }
-
     include!("custom_scan.rs");
     include!("custom_scan_planner.rs");
     include!("custom_scan_fanout.rs");
