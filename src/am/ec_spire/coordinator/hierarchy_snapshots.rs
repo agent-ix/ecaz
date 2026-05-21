@@ -171,17 +171,16 @@ fn remote_search_exact_heap_score(query: &[f32], source_vector: &[f32]) -> Resul
     Ok(-inner_product)
 }
 
-unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
-    index_relation: pg_sys::Relation,
+fn remote_search_heap_candidate_rows_from_compact_candidates(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: &scan::SpireScanQuery,
     candidates: Vec<SpireRemoteSearchCandidateRow>,
     heap_lookup_owner: &'static str,
     context: &str,
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
-    // SAFETY: index_relation is live for the heap-resolution request; rd_id is
-    // copied only to resolve the owning heap relation OID.
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+    let heap_oid =
+        crate::storage::relation::index_heap_relation_oid_from_index_oid(index.relid().into());
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_spire remote heap resolution could not resolve heap relation".to_owned());
     }
@@ -196,7 +195,7 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
     let indexed_attribute = unsafe {
         crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
             heap_relation.as_ptr(),
-            index_relation,
+            index.relation,
             "ec_spire remote heap resolution indexed column",
         )
     };
@@ -656,8 +655,9 @@ pub(crate) unsafe fn remote_search_coordinator_local_summary(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorLocalSummaryRow {
+    let index = live_index_relation(index_relation);
     let result = remote_search_coordinator_local_summary_result(
-        index_relation,
+        index,
         requested_epoch,
         query,
         selected_pids,
@@ -729,24 +729,20 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
             top_k,
             consistency_mode,
         )?;
-        // SAFETY: candidates were produced from the same live index relation and
-        // requested epoch; heap lookup decodes their local row locators.
-        unsafe {
-            remote_search_heap_candidate_rows_from_compact_candidates(
-                index_relation,
-                requested_epoch,
-                &scan_query,
-                candidates,
-                SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-                "local heap candidate rows",
-            )
-        }
+        remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "local heap candidate rows",
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
-    index_relation: pg_sys::Relation,
+fn remote_search_local_heap_candidate_rows_for_result_summary(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -755,7 +751,6 @@ unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
-        let index = live_index_relation(index_relation);
         let candidates = remote_search_coordinator_local_candidates_for_result_summary(
             index,
             requested_epoch,
@@ -764,18 +759,14 @@ unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
             top_k,
             consistency_mode,
         )?;
-        // SAFETY: candidates were produced from the same live index relation and
-        // requested epoch; heap lookup decodes their local row locators.
-        unsafe {
-            remote_search_heap_candidate_rows_from_compact_candidates(
-                index_relation,
-                requested_epoch,
-                &scan_query,
-                candidates,
-                SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-                "coordinator result summary local heap candidates",
-            )
-        }
+        remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "coordinator result summary local heap candidates",
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -796,8 +787,9 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
         top_k,
         consistency_mode,
     );
+    let index = live_index_relation(index_relation);
     remote_search_local_heap_candidate_summary_from_gate(
-        index_relation,
+        index,
         &gate,
         requested_epoch,
         query,
@@ -807,8 +799,8 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
     )
 }
 
-unsafe fn remote_search_local_heap_candidate_summary_from_gate(
-    index_relation: pg_sys::Relation,
+fn remote_search_local_heap_candidate_summary_from_gate(
+    index: SpireLiveIndexRelation,
     gate: &SpireRemoteSearchCoordinatorGateSummaryRow,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -819,14 +811,25 @@ unsafe fn remote_search_local_heap_candidate_summary_from_gate(
     let (decoded_local_locator_count, returned_candidate_count) = if gate.remote_plan_count == 0
         && remote_search_status_allows_local_heap_rows(gate.status)
     {
-        let rows = remote_search_local_heap_candidate_rows(
-            index_relation,
+        let scan_query = scan::SpireScanQuery::new(query.clone()).unwrap_or_else(|e| pgrx::error!("{e}"));
+        let candidates = remote_search_coordinator_local_candidates_result(
+            index,
             requested_epoch,
             query,
             selected_pids,
             top_k,
             consistency_mode,
-        );
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let rows = remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "local heap candidate summary",
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
         let decoded = u64::try_from(rows.len())
             .unwrap_or_else(|_| pgrx::error!("ec_spire local heap candidate count overflow"));
         let returned = u64::try_from(
@@ -968,6 +971,7 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorResultSummaryRow {
+    let index = live_index_relation(index_relation);
     let gate = remote_search_coordinator_gate_summary_row(
         index_relation,
         requested_epoch,
@@ -982,7 +986,7 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
             || gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED)
     {
         heap_candidates.extend(remote_search_local_heap_candidate_rows_for_result_summary(
-            index_relation,
+            index,
             requested_epoch,
             query.clone(),
             selected_pids.clone(),
@@ -1077,8 +1081,8 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
     }
 }
 
-unsafe fn remote_search_coordinator_local_summary_result(
-    index_relation: pg_sys::Relation,
+fn remote_search_coordinator_local_summary_result(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -1093,7 +1097,6 @@ unsafe fn remote_search_coordinator_local_summary_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    let index = live_index_relation(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
