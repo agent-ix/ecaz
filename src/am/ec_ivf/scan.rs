@@ -161,6 +161,48 @@ unsafe fn ivf_scan_desc_ref<'a>(
     unsafe { scan.as_ref() }.unwrap_or_else(|| pgrx::error!("{context} received null scan"))
 }
 
+#[derive(Clone, Copy)]
+struct IvfScanDescView<'a> {
+    scan: &'a pg_sys::IndexScanDescData,
+}
+
+impl<'a> IvfScanDescView<'a> {
+    unsafe fn from_raw(scan: pg_sys::IndexScanDesc, context: &str) -> Self {
+        Self {
+            scan: unsafe { ivf_scan_desc_ref(scan, context) },
+        }
+    }
+
+    fn as_ref(self) -> &'a pg_sys::IndexScanDescData {
+        self.scan
+    }
+
+    fn index_relation(self) -> pg_sys::Relation {
+        self.scan.indexRelation
+    }
+
+    fn heap_relation(self) -> Option<pg_sys::Relation> {
+        (!self.scan.heapRelation.is_null()).then_some(self.scan.heapRelation)
+    }
+
+    fn snapshot(self) -> Option<pg_sys::Snapshot> {
+        (!self.scan.xs_snapshot.is_null()).then_some(self.scan.xs_snapshot)
+    }
+
+    fn heap_oid(self, context: &str) -> pg_sys::Oid {
+        unsafe { ivf_index_heap_oid(self.index_relation(), context) }
+    }
+
+    fn opaque_option(self, context: &str) -> Option<&'a EcIvfScanOpaque> {
+        scan_box_ref(self.scan.opaque.cast::<EcIvfScanOpaque>(), context)
+    }
+
+    fn opaque_ref(self, context: &str) -> &'a EcIvfScanOpaque {
+        self.opaque_option(context)
+            .unwrap_or_else(|| pgrx::error!("{context} missing IVF scan opaque state"))
+    }
+}
+
 unsafe fn ivf_index_scan_state_ref<'a>(
     index_state: *mut pg_sys::IndexScanState,
 ) -> Option<&'a pg_sys::IndexScanState> {
@@ -184,22 +226,6 @@ fn ivf_active_snapshot() -> pg_sys::Snapshot {
     // SAFETY: reads PostgreSQL's active snapshot pointer for the current
     // backend; callers handle a null result.
     unsafe { pg_sys::GetActiveSnapshot() }
-}
-
-unsafe fn ivf_scan_opaque_option<'a>(
-    scan: pg_sys::IndexScanDesc,
-    context: &str,
-) -> Option<&'a EcIvfScanOpaque> {
-    let scan_ref = unsafe { ivf_scan_desc_ref(scan, context) };
-    scan_box_ref(scan_ref.opaque.cast::<EcIvfScanOpaque>(), context)
-}
-
-unsafe fn ivf_scan_opaque_ref<'a>(
-    scan: pg_sys::IndexScanDesc,
-    context: &str,
-) -> &'a EcIvfScanOpaque {
-    unsafe { ivf_scan_opaque_option(scan, context) }
-        .unwrap_or_else(|| pgrx::error!("{context} missing IVF scan opaque state"))
 }
 
 struct ResolvedIvfScanHeapRelation {
@@ -862,12 +888,13 @@ unsafe fn configure_heap_rerank_state(
     // guards in the returned state, and the attribute resolver validates the
     // indexed ecvector source attribute for heap_f32 rerank.
     let (heap_relation, snapshot, source_attribute) = unsafe {
+        let scan = IvfScanDescView::from_raw(scan, "ec_ivf heap_f32 rerank");
         let heap_relation = resolve_scan_heap_relation(scan);
         let heap_relation_ptr = heap_relation.as_ptr();
         let snapshot = resolve_scan_snapshot(scan);
         let source_attribute = source::resolve_indexed_ecvector_attribute(
             heap_relation_ptr,
-            (*scan).indexRelation,
+            scan.index_relation(),
             "ec_ivf heap_f32 rerank indexed column",
         );
         (heap_relation, snapshot, source_attribute)
@@ -1269,13 +1296,12 @@ unsafe fn prefetch_heap_rerank_blocks(
     crate::am::stream::prefetch_relation_blocks(heap_relation, block_numbers, "ec_ivf heap rerank");
 }
 
-unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
-    let scan_ref = ivf_scan_desc_ref(scan, "ec_ivf heap_f32 rerank");
-    if !scan_ref.heapRelation.is_null() {
-        return ResolvedIvfScanHeapRelation::borrowed(scan_ref.heapRelation);
+fn resolve_scan_heap_relation(scan: IvfScanDescView<'_>) -> ResolvedIvfScanHeapRelation {
+    if let Some(heap_relation) = scan.heap_relation() {
+        return ResolvedIvfScanHeapRelation::borrowed(heap_relation);
     }
 
-    let heap_oid = unsafe { ivf_index_heap_oid(scan_ref.indexRelation, "ec_ivf heap_f32 rerank") };
+    let heap_oid = scan.heap_oid("ec_ivf heap_f32 rerank");
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_ivf heap_f32 rerank could not resolve heap relation");
     }
@@ -1284,10 +1310,9 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvf
     ResolvedIvfScanHeapRelation::owned(heap_relation)
 }
 
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
-    let scan_ref = ivf_scan_desc_ref(scan, "ec_ivf heap_f32 rerank");
-    if !scan_ref.xs_snapshot.is_null() {
-        return ResolvedIvfScanSnapshot::borrowed(scan_ref.xs_snapshot);
+fn resolve_scan_snapshot(scan: IvfScanDescView<'_>) -> ResolvedIvfScanSnapshot {
+    if let Some(snapshot) = scan.snapshot() {
+        return ResolvedIvfScanSnapshot::borrowed(snapshot);
     }
 
     let active_snapshot = ivf_active_snapshot();
@@ -1445,7 +1470,9 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
         return IvfExplainCounters::default();
     }
 
-    ivf_scan_opaque_option(scan_desc, "ec_ivf EXPLAIN counters")
+    let scan_desc = unsafe { IvfScanDescView::from_raw(scan_desc, "ec_ivf EXPLAIN counters") };
+    scan_desc
+        .opaque_option("ec_ivf EXPLAIN counters")
         .map(|opaque| opaque.explain_counters)
         .unwrap_or_default()
 }
@@ -1561,16 +1588,13 @@ fn debug_scan_desc_ref<'a>(
 ) -> &'a pg_sys::IndexScanDescData {
     // SAFETY: Debug callers keep the PostgreSQL index scan descriptor live
     // while reading descriptor fields.
-    unsafe { ivf_scan_desc_ref(scan, context) }
+    unsafe { IvfScanDescView::from_raw(scan, context) }.as_ref()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_opaque_option<'a>(scan: pg_sys::IndexScanDesc) -> Option<&'a EcIvfScanOpaque> {
-    let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan opaque");
-    scan_box_ref(
-        scan_ref.opaque.cast::<EcIvfScanOpaque>(),
-        "ec_ivf debug scan opaque",
-    )
+    let scan = unsafe { IvfScanDescView::from_raw(scan, "ec_ivf debug scan opaque") };
+    scan.opaque_option("ec_ivf debug scan opaque")
 }
 
 #[cfg(any(test, feature = "pg_test"))]
