@@ -139,7 +139,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
     // diagnostic wrapper; metadata is read without ownership.
     let metadata = page::read_metadata_page(index_relation);
     // SAFETY: caller guarantees `index_relation` is live for this diagnostic snapshot.
-    let index_options = unsafe { options::relation_options(index_relation) };
+    let index_options = options::relation_options(index_relation);
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
     // SAFETY: same live IVF relation as this admin snapshot.
