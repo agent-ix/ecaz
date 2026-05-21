@@ -1187,10 +1187,14 @@
             ),
             "0000000000000005"
         );
-        let select_invocation = am::spire_dml_frontdoor_primitive_invocation_from_plan(
-            &select_plan,
-            std::ptr::null_mut(),
-        )
+        // SAFETY: this const-PK plan does not read executor parameters, so a
+        // null ParamListInfo is valid for the invocation helper.
+        let select_invocation = unsafe {
+            am::spire_dml_frontdoor_primitive_invocation_from_plan(
+                &select_plan,
+                std::ptr::null_mut(),
+            )
+        }
         .expect("const PK primitive invocation should be buildable");
         assert_eq!(
             select_invocation.mode,

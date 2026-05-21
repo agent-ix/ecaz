@@ -677,7 +677,7 @@ pub(crate) fn dml_frontdoor_primitive_plan_expr_catalog_row(
     }))
 }
 
-pub(crate) fn dml_frontdoor_primitive_plan_expr_from_baserel(
+pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
@@ -740,11 +740,12 @@ pub(crate) fn dml_frontdoor_primitive_plan_expr_from_baserel(
     }
 }
 
-pub(crate) fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+    // SAFETY: caller guarantees live planner baserel pointers for this handoff.
+    let plan_expr = unsafe { dml_frontdoor_primitive_plan_expr_from_baserel(root, rel) }?;
     Some(plan_expr.and_then(|plan_expr| {
         dml_frontdoor_primitive_plan_expr_require_mode(
             plan_expr,
@@ -754,11 +755,12 @@ pub(crate) fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
     }))
 }
 
-pub(crate) fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
+pub(crate) unsafe fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+    // SAFETY: caller guarantees live planner baserel pointers for this handoff.
+    let plan_expr = unsafe { dml_frontdoor_primitive_plan_expr_from_baserel(root, rel) }?;
     Some(plan_expr.and_then(|plan_expr| {
         dml_frontdoor_primitive_plan_expr_require_mode(
             plan_expr,
@@ -768,11 +770,12 @@ pub(crate) fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
     }))
 }
 
-pub(crate) fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
+pub(crate) unsafe fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+    // SAFETY: caller guarantees live planner baserel pointers for this handoff.
+    let plan_expr = unsafe { dml_frontdoor_primitive_plan_expr_from_baserel(root, rel) }?;
     Some(plan_expr.and_then(|plan_expr| {
         dml_frontdoor_primitive_plan_expr_require_mode(
             plan_expr,
@@ -918,7 +921,7 @@ pub(crate) fn dml_frontdoor_primitive_plan_const_pk_value_bytes(
     }
 }
 
-pub(crate) fn dml_frontdoor_primitive_plan_pk_value_bytes(
+pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
     plan: &SpireDmlFrontdoorPrimitivePlan,
     params: pg_sys::ParamListInfo,
 ) -> Result<[u8; 8], String> {
@@ -927,17 +930,19 @@ pub(crate) fn dml_frontdoor_primitive_plan_pk_value_bytes(
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
         SpireDmlFrontdoorPkValuePlan::ParamBigint(param_id) => {
-            let value = dml_frontdoor_bound_param_bigint_value(params, param_id)?;
+            // SAFETY: caller guarantees `params` is live for executor parameter reads.
+            let value = unsafe { dml_frontdoor_bound_param_bigint_value(params, param_id) }?;
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
     }
 }
 
-pub(crate) fn dml_frontdoor_primitive_invocation_from_plan(
+pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
     plan: &SpireDmlFrontdoorPrimitivePlan,
     params: pg_sys::ParamListInfo,
 ) -> Result<SpireDmlFrontdoorPrimitiveInvocation, String> {
-    let pk_value = dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)?;
+    // SAFETY: caller guarantees `params` is live for executor parameter reads.
+    let pk_value = unsafe { dml_frontdoor_primitive_plan_pk_value_bytes(plan, params) }?;
     if plan.pk_argument.pk_column.is_empty() {
         return Err("ec_spire DML frontdoor primitive invocation requires pk_column".to_owned());
     }
@@ -952,7 +957,7 @@ pub(crate) fn dml_frontdoor_primitive_invocation_from_plan(
     })
 }
 
-fn dml_frontdoor_bound_param_bigint_value(
+unsafe fn dml_frontdoor_bound_param_bigint_value(
     params: pg_sys::ParamListInfo,
     param_id: i32,
 ) -> Result<i64, String> {
