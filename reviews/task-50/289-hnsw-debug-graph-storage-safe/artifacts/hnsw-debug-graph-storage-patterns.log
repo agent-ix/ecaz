@@ -1,0 +1,8 @@
+Script started on 2026-05-21 11:34:12-07:00 [<not executed on terminal>]
+101:fn debug_graph_storage(
+1718:    let storage = debug_graph_storage(index_relation, &metadata);
+1757:    let storage = debug_graph_storage(index_relation, &metadata);
+1818:    let storage = debug_graph_storage(index_relation, &metadata);
+4231:    let storage = debug_graph_storage(index_relation, &metadata);
+
+Script done on 2026-05-21 11:34:12-07:00 [COMMAND_EXIT_CODE="0"]
