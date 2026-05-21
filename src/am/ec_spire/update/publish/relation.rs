@@ -114,62 +114,6 @@ pub(super) unsafe fn publish_relation_selected_scheduled_replacement_epoch(
     }
 }
 
-pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
-    index_relation: pgrx::pg_sys::Relation,
-    previous_epoch_manifest: SpireEpochManifest,
-    snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
-    input: SpireRelationReplacementEpochObjectPlacementInput,
-) -> Result<SpireReplacementEpochDraft, String> {
-    if &previous_epoch_manifest != snapshot.epoch_manifest {
-        return Err(format!(
-            "ec_spire replacement publish previous epoch manifest mismatch: got {}, expected {}",
-            previous_epoch_manifest.epoch, snapshot.epoch_manifest.epoch
-        ));
-    }
-    let placement_directory = replacement_placement_directory_from_object_placements(
-        snapshot,
-        object_store,
-        input.epoch,
-        input.replaced_parent_pid,
-        input.affected_leaf_pids,
-        input.replacement_object_placements,
-    )?;
-    // SAFETY: index_relation is the open SPIRE index relation being published,
-    // and placement_directory was derived from the validated replacement input.
-    let placement_write_evidence =
-        write_placement_entries_to_relation(index_relation, &placement_directory)?;
-    let draft = build_replacement_epoch_draft(SpireReplacementEpochInput {
-        epoch: input.epoch,
-        published_at_micros: input.published_at_micros,
-        retain_until_micros: input.retain_until_micros,
-        consistency_mode: input.consistency_mode,
-        placement_directory,
-        placement_write_evidence,
-        next_pid: input.next_pid,
-        next_local_vec_seq: input.next_local_vec_seq,
-    })?;
-    // SAFETY: index_relation is open for this publish operation; the root page
-    // is read to confirm it still references the previous epoch.
-    let root_control = page::read_root_control_page(index_relation);
-    if root_control.active_epoch != previous_epoch_manifest.epoch {
-        return Err(format!(
-            "ec_spire replacement publish root/control epoch {} does not match previous epoch {}",
-            root_control.active_epoch, previous_epoch_manifest.epoch
-        ));
-    }
-    // SAFETY: root_control was read from the same open relation and identifies
-    // the local-store config for the active epoch.
-    let local_store_config =
-        unsafe { load_relation_local_store_config(index_relation, root_control)? };
-    publish_replacement_epoch_to_relation(
-        index_relation,
-        previous_epoch_manifest,
-        draft.publish_input_with_local_store_config(local_store_config),
-    )?;
-    Ok(draft)
-}
-
 fn replacement_placement_directory_from_object_placements(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,

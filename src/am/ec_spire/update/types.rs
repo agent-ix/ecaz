@@ -196,19 +196,6 @@ pub(super) struct SpireReplacementEpochObjectPlacementInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct SpireRelationReplacementEpochObjectPlacementInput {
-    pub(super) epoch: u64,
-    pub(super) published_at_micros: i64,
-    pub(super) retain_until_micros: i64,
-    pub(super) consistency_mode: SpireConsistencyMode,
-    pub(super) replaced_parent_pid: u64,
-    pub(super) affected_leaf_pids: Vec<u64>,
-    pub(super) replacement_object_placements: SpireReplacementObjectPlacements,
-    pub(super) next_pid: u64,
-    pub(super) next_local_vec_seq: u64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireScheduledReplacementEpochObjectPlacementInput {
     pub(super) epoch: u64,
     pub(super) published_at_micros: i64,
