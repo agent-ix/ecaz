@@ -1364,7 +1364,10 @@ fn ec_spire_dml_frontdoor_classify_sql(
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
     // that remains live for this diagnostic function call.
-    let Some(target_relation_oid) = (unsafe { am::spire_dml_frontdoor_target_relation_oid(query) })
+    let Some(query_view) = (unsafe { am::spire_dml_frontdoor_query_view(query) }) else {
+        pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
+    };
+    let Some(target_relation_oid) = am::spire_dml_frontdoor_target_relation_oid(query_view)
     else {
         return TableIterator::once((
             None,
@@ -1397,8 +1400,7 @@ fn ec_spire_dml_frontdoor_classify_sql(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
-    // SAFETY: same live analyzed Query pointer as above.
-    let Some(shape) = (unsafe { am::spire_classify_dml_frontdoor_query(query, query_context) })
+    let Some(shape) = am::spire_classify_dml_frontdoor_query(query_view, query_context)
     else {
         return TableIterator::once((
             Some(target_relation_oid),
@@ -1460,9 +1462,10 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
     // that remains live for this diagnostic function call.
-    let Some(decision) =
-        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
-    else {
+    let Some(query_view) = (unsafe { am::spire_dml_frontdoor_query_view(query) }) else {
+        pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
+    };
+    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view) else {
         return TableIterator::once((
             None,
             None,
@@ -1537,9 +1540,10 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     // SAFETY: `analyze_single_query` returns a planner-owned Query pointer
     // that remains live for this diagnostic function call.
-    let Some(decision) =
-        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
-    else {
+    let Some(query_view) = (unsafe { am::spire_dml_frontdoor_query_view(query) }) else {
+        pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
+    };
+    let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view) else {
         return TableIterator::once((
             None,
             None,

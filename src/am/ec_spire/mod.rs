@@ -60,8 +60,8 @@ pub(crate) use self::dml_frontdoor::{
     dml_frontdoor_primitive_plan_from_replacement_decision,
     dml_frontdoor_primitive_plan_pk_value_bytes, dml_frontdoor_relation_context_cache_row,
     dml_frontdoor_relation_context_catalog_row, dml_frontdoor_relation_context_row,
-    dml_frontdoor_replacement_decision_catalog_row, dml_frontdoor_target_relation_oid,
-    register_dml_frontdoor_planner_hook,
+    dml_frontdoor_replacement_decision_catalog_row, dml_frontdoor_query_view,
+    dml_frontdoor_target_relation_oid, register_dml_frontdoor_planner_hook,
 };
 pub use self::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,

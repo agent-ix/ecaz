@@ -181,9 +181,17 @@ pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
 }
 
 #[derive(Clone, Copy)]
-struct DmlFrontdoorQueryView<'a> {
+pub(crate) struct DmlFrontdoorQueryView<'a> {
     query: &'a pg_sys::Query,
     jointree: Option<&'a pg_sys::FromExpr>,
+}
+
+pub(crate) unsafe fn dml_frontdoor_query_view<'a>(
+    query: *mut pg_sys::Query,
+) -> Option<DmlFrontdoorQueryView<'a>> {
+    // SAFETY: caller binds the returned view lifetime to the live analyzed
+    // Query supplied by PostgreSQL or the local SQL analyzer.
+    unsafe { DmlFrontdoorQueryView::from_raw(query) }
 }
 
 impl<'a> DmlFrontdoorQueryView<'a> {
@@ -652,10 +660,12 @@ fn dml_frontdoor_plan_tree_replacement_expr(
         return None;
     }
     // SAFETY: planner hook supplies a live Query pointer for this callback.
-    let plan_expr =
-        unsafe { dml_frontdoor_primitive_plan_expr_catalog_row(query) }.unwrap_or_else(|| {
-            pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
-        });
+    let query_view = unsafe { dml_frontdoor_query_view(query) }.unwrap_or_else(|| {
+        pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
+    });
+    let plan_expr = dml_frontdoor_primitive_plan_expr_catalog_row(query_view).unwrap_or_else(|| {
+        pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
+    });
     Some(match plan_expr {
         Ok(plan_expr) => plan_expr,
         Err(err) => pgrx::error!("{err}"),
@@ -698,7 +708,8 @@ fn dml_frontdoor_observe_planner_query(
     query: *mut pg_sys::Query,
 ) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
     // SAFETY: planner hook supplies a live Query pointer for this callback.
-    let decision = unsafe { dml_frontdoor_replacement_decision_catalog_row(query) }?;
+    let query_view = unsafe { dml_frontdoor_query_view(query) }?;
+    let decision = dml_frontdoor_replacement_decision_catalog_row(query_view)?;
     let action = dml_frontdoor_hook_action(&decision);
     dml_frontdoor_record_hook_observation(&decision, action);
     if action == "planner_error_fail_closed" {
@@ -750,10 +761,9 @@ fn dml_frontdoor_raise_planner_error(decision: &SpireDmlFrontdoorReplacementDeci
     unreachable!();
 }
 
-pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
-    query: *mut pg_sys::Query,
+pub(crate) fn dml_frontdoor_replacement_decision_catalog_row(
+    query_view: DmlFrontdoorQueryView<'_>,
 ) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
-    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
     let target_relation_oid = dml_frontdoor_target_relation_oid_view(query_view)?;
     let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
         Ok(relation) => relation,
@@ -787,10 +797,9 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
     ))
 }
 
-pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
-    query: *mut pg_sys::Query,
+pub(crate) fn dml_frontdoor_primitive_plan_expr_catalog_row(
+    query_view: DmlFrontdoorQueryView<'_>,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
     let target_relation_oid = dml_frontdoor_target_relation_oid_view(query_view)?;
     let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
         Ok(relation) => relation,
@@ -1967,11 +1976,10 @@ fn classify_pk_select(input: SpireDmlFrontdoorShapeInput<'_>) -> SpireDmlFrontdo
     supported(operation, "pk_select_by_pk")
 }
 
-pub(crate) unsafe fn classify_dml_frontdoor_query(
-    query: *mut pg_sys::Query,
+pub(crate) fn classify_dml_frontdoor_query(
+    query_view: DmlFrontdoorQueryView<'_>,
     context: SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<SpireDmlFrontdoorShapeRow> {
-    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
     classify_dml_frontdoor_query_view(query_view, context)
 }
 
@@ -2020,10 +2028,9 @@ fn classify_dml_frontdoor_query_view(
     }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_target_relation_oid(
-    query: *mut pg_sys::Query,
+pub(crate) fn dml_frontdoor_target_relation_oid(
+    query_view: DmlFrontdoorQueryView<'_>,
 ) -> Option<pg_sys::Oid> {
-    let query_view = unsafe { DmlFrontdoorQueryView::from_raw(query) }?;
     dml_frontdoor_target_relation_oid_view(query_view)
 }
 
