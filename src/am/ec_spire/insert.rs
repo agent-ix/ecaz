@@ -110,15 +110,11 @@ unsafe fn publish_insert_delta_epoch(
         &placement_directory,
     )?;
     let active_lookup = super::meta::SpireValidatedEpochSnapshot::from_snapshot(active_snapshot)?;
-    // SAFETY: the live SPIRE index relation and active local-store config open
-    // the relation-backed stores needed for delta object writes.
-    let mut store = unsafe {
-        SpireRelationObjectStoreSet::for_index_relation_and_config(
-            index_relation,
-            local_store_config.clone(),
-            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-        )?
-    };
+    let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
+        index_relation,
+        local_store_config.clone(),
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+    )?;
     let boundary_replica_count = u32::try_from(relation_options.boundary_replica_count)
         .map_err(|_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned())?;
     let nprobe = boundary_replica_count

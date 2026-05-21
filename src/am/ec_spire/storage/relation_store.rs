@@ -1239,7 +1239,7 @@ impl Drop for OpenedRelationsGuard {
 }
 
 impl SpireRelationObjectStoreSet {
-    pub(super) unsafe fn for_index_relation_and_config(
+    pub(super) fn for_index_relation_and_config(
         index_relation: pg_sys::Relation,
         config: SpireLocalStoreConfig,
         lockmode: pg_sys::LOCKMODE,

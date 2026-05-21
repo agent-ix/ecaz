@@ -283,15 +283,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
         leaf_assignments_by_centroid[centroid_index].push(placement.row);
     }
 
-    // SAFETY: index_relation is a live SPIRE index relation and local_store_config
-    // was derived for this build publish; the store opens with row-exclusive lock.
-    let mut store = unsafe {
-        SpireRelationObjectStoreSet::for_index_relation_and_config(
-            index_relation,
-            local_store_config.clone(),
-            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-        )?
-    };
+    let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
+        index_relation,
+        local_store_config.clone(),
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+    )?;
     let mut placements = Vec::with_capacity(centroid_count + 1);
     placements.push(store.insert_routing_object(SPIRE_INITIAL_EPOCH, &routing_object)?);
     for (pid, assignments) in centroid_pids
@@ -396,15 +392,11 @@ unsafe fn publish_relation_recursive_routing_build(
         &mut pid_allocator,
         &mut local_vec_id_allocator,
     )?;
-    // SAFETY: index_relation is a live SPIRE index relation and local_store_config
-    // was derived for this recursive build publish.
-    let mut store = unsafe {
-        SpireRelationObjectStoreSet::for_index_relation_and_config(
-            index_relation,
-            local_store_config.clone(),
-            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-        )?
-    };
+    let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
+        index_relation,
+        local_store_config.clone(),
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+    )?;
     let top_graph_plan = state.options.top_graph_plan()?;
     let expected_next_pid = if top_graph_plan.enabled {
         coordinator

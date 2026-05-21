@@ -106,15 +106,11 @@ impl SpireVacuumIndexRelation {
         local_store_config: SpireLocalStoreConfig,
         lockmode: pg_sys::LOCKMODE,
     ) -> Result<SpireRelationObjectStoreSet, String> {
-        // SAFETY: local_store_config was loaded from this live relation/root
-        // epoch; store guards own opened relation-backed objects.
-        unsafe {
-            SpireRelationObjectStoreSet::for_index_relation_and_config(
-                self.relation,
-                local_store_config,
-                lockmode,
-            )
-        }
+        SpireRelationObjectStoreSet::for_index_relation_and_config(
+            self.relation,
+            local_store_config,
+            lockmode,
+        )
     }
 
     fn write_placement_entries(
