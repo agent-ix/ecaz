@@ -239,16 +239,18 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
         let source_vector = ambuild::ecvector_datum_to_vec(datum);
         warn_on_non_unit_source_vector(&source_vector, "aminsert");
         let heap_tid = ambuild::decode_heap_tid(heap_tid);
-        let metadata = insert::read_metadata_page(index_relation)
+        let insert_relation = insert::DiskannInsertRelation::from_raw(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert relation error: {e}"));
+        let metadata = insert::read_metadata_page(&insert_relation)
             .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to read metadata: {e}"));
 
         if metadata.dimensions == 0 && metadata.entry_point == ItemPointer::INVALID {
-            let bootstrapped = insert::with_locked_metadata_page(index_relation, |metadata| {
+            let bootstrapped = insert::with_locked_metadata_page(&insert_relation, |metadata| {
                 if metadata.dimensions != 0 || metadata.entry_point != ItemPointer::INVALID {
                     return Ok(false);
                 }
                 let output = insert::bootstrap_empty_insert_output(
-                    index_relation,
+                    &insert_relation,
                     heap_tid,
                     &source_vector,
                 )?;
@@ -264,7 +266,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             }
         }
 
-        let refreshed = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
+        let refreshed = insert::read_metadata_page(&insert_relation).unwrap_or_else(|e| {
             pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}")
         });
         if refreshed.dimensions != 0 && source_vector.len() != refreshed.dimensions as usize {
@@ -327,7 +329,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 existing_vector == source_vector
             });
             if let Some(existing_tid) = duplicate_tid {
-                insert::bind_duplicate_heap_tid(index_relation, existing_tid, heap_tid)
+                insert::bind_duplicate_heap_tid(&insert_relation, existing_tid, heap_tid)
                     .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate bind failed: {e}"));
                 return false;
             }
@@ -446,7 +448,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
         });
         let new_tid = insert::append_live_node(
-            index_relation,
+            &insert_relation,
             &materialized_metadata,
             heap_tid,
             &payload,
@@ -462,7 +464,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             &source_vector,
         )
         .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert backlink update failed: {e}"));
-        insert::increment_inserted_since_rebuild(index_relation).unwrap_or_else(|e| {
+        insert::increment_inserted_since_rebuild(&insert_relation).unwrap_or_else(|e| {
             pgrx::error!("ec_diskann unique insert metadata update failed: {e}")
         });
         false
@@ -757,6 +759,9 @@ unsafe fn install_backlinks_with_replan(
 ) -> Result<(), String> {
     let mut pending = backlink_targets.to_vec();
     sort_and_dedup_item_pointers(&mut pending);
+    // SAFETY: The surrounding AM insert callback supplies a live DISKANN index
+    // relation for the duration of backlink planning and mutation.
+    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation)? };
 
     for _ in 0..insert::MAX_BACKLINK_REPLAN_PASSES {
         if pending.is_empty() {
@@ -779,11 +784,8 @@ unsafe fn install_backlinks_with_replan(
             return Ok(());
         }
 
-        // SAFETY: Mutations were planned against the metadata snapshot returned
-        // above and are applied under page locks by the insert helper.
-        pending = unsafe {
-            insert::apply_backlink_mutations(index_relation, &metadata, &mutations, new_tid)?
-        };
+        pending =
+            insert::apply_backlink_mutations(&insert_relation, &metadata, &mutations, new_tid)?;
     }
 
     if pending.is_empty() {
@@ -928,6 +930,9 @@ unsafe fn run_diskann_bulkdelete(
     } else {
         stats
     };
+    // SAFETY: The surrounding vacuum callback supplies a live DISKANN index
+    // relation for the duration of metadata updates in this pass.
+    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation)? };
     let mut max_removed_heap_tids = 0usize;
     for _ in 0..MAX_REPAIR_REPLAN_PASSES {
         // SAFETY: The index/heap relations and callback state are valid for the
@@ -943,7 +948,7 @@ unsafe fn run_diskann_bulkdelete(
                 // being updated from the applied rewrite pass.
                 unsafe {
                     if pass.entry_point_needs_medoid_refresh {
-                        insert::with_locked_metadata_page(index_relation, |metadata| {
+                        insert::with_locked_metadata_page(&insert_relation, |metadata| {
                             metadata.needs_medoid_refresh = true;
                             Ok(())
                         })?

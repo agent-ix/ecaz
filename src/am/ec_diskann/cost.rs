@@ -101,9 +101,11 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     // broken. Failing loudly during planning is preferable to masking
     // corruption behind a gated cost and continuing with an invalid AM
     // state.
-    // SAFETY: Metadata is read from the live index relation opened by the
-    // planner callback guard.
-    let metadata = unsafe { insert::read_metadata_page(index_relation) }
+    // SAFETY: The planner callback guard supplies a live index relation for
+    // this cost estimate.
+    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation) }
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann planner relation error: {e}"));
+    let metadata = insert::read_metadata_page(&insert_relation)
         .unwrap_or_else(|e| pgrx::error!("ec_diskann planner could not read metadata: {e}"));
     // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
     // context where backend-local planner cost globals are valid to read.
@@ -132,37 +134,40 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
 
-    let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) =
-        if block_count <= FIRST_DATA_BLOCK_NUMBER {
-            (
-                false,
-                "planner scan selection is gated: ec_diskann index has no data pages",
-                0,
-                gated_planner_cost_estimate(index_pages),
-            )
-        } else {
-            // SAFETY: The diagnostic caller supplies a live index relation, and
-            // this branch only reads metadata after confirming data pages exist.
-            let metadata = unsafe { insert::read_metadata_page(index_relation) }
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot failed: {e}"));
-            let estimate = estimate_planner_cost(
-                PlannerCostInputs {
-                    index_pages,
-                    reltuples,
-                    m: relation_options.graph_degree,
-                    ef_search: scan_tuning.effective_list_size,
-                    dimensions: metadata.dimensions,
-                    tree_height: DISKANN_SINGLE_LAYER_TREE_HEIGHT,
-                },
-                constants,
-            );
-            (
-                true,
-                "planner scan selection is live: ec_diskann cost model active",
-                metadata.dimensions,
-                estimate,
-            )
-        };
+    let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) = if block_count
+        <= FIRST_DATA_BLOCK_NUMBER
+    {
+        (
+            false,
+            "planner scan selection is gated: ec_diskann index has no data pages",
+            0,
+            gated_planner_cost_estimate(index_pages),
+        )
+    } else {
+        // SAFETY: The diagnostic caller supplies a live index relation, and
+        // this branch only reads metadata after confirming data pages exist.
+        let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation) }
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot relation error: {e}"));
+        let metadata = insert::read_metadata_page(&insert_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann cost snapshot failed: {e}"));
+        let estimate = estimate_planner_cost(
+            PlannerCostInputs {
+                index_pages,
+                reltuples,
+                m: relation_options.graph_degree,
+                ef_search: scan_tuning.effective_list_size,
+                dimensions: metadata.dimensions,
+                tree_height: DISKANN_SINGLE_LAYER_TREE_HEIGHT,
+            },
+            constants,
+        );
+        (
+            true,
+            "planner scan selection is live: ec_diskann cost model active",
+            metadata.dimensions,
+            estimate,
+        )
+    };
 
     IndexCostSnapshot {
         planner_scan_enabled,

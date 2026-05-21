@@ -13,7 +13,7 @@
 //! logic here once the page-write / backlink / overflow story is
 //! implemented.
 
-use std::{cmp::Ordering, ptr, slice};
+use std::{cmp::Ordering, marker::PhantomData, ptr, slice};
 
 use pgrx::pg_sys;
 
@@ -53,6 +53,61 @@ pub(super) const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 const TQ_VAMANA_OVERFLOW_TAG: u8 = 0x08;
 const VAMANA_OVERFLOW_HEADER_BYTES: usize = 1 + 2 + ITEM_POINTER_BYTES + ITEM_POINTER_BYTES;
 const VAMANA_OVERFLOW_HEAPTID_CAPACITY: usize = HEAPTID_INLINE_CAPACITY;
+
+#[derive(Clone, Copy)]
+pub(super) struct DiskannInsertRelation<'rel> {
+    relation: pg_sys::Relation,
+    _marker: PhantomData<&'rel pg_sys::RelationData>,
+}
+
+impl<'rel> DiskannInsertRelation<'rel> {
+    /// # Safety
+    ///
+    /// `relation` must be a non-null, live DISKANN index relation for the
+    /// returned borrow lifetime.
+    pub(super) unsafe fn from_raw(relation: pg_sys::Relation) -> Result<Self, String> {
+        if relation.is_null() {
+            return Err("ec_diskann insert received a null index relation".to_owned());
+        }
+        Ok(Self {
+            relation,
+            _marker: PhantomData,
+        })
+    }
+
+    fn as_ptr(&self) -> pg_sys::Relation {
+        self.relation
+    }
+
+    fn main_fork_block_count(&self) -> pg_sys::BlockNumber {
+        // SAFETY: `Self` is constructed only from a live index relation borrow.
+        unsafe { crate::storage::relation::main_fork_block_count(self.relation) }
+    }
+
+    fn read_main(
+        &self,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+        lockmode: i32,
+    ) -> Option<LockedBufferGuard> {
+        // SAFETY: `Self` is constructed only from a live index relation borrow.
+        unsafe { LockedBufferGuard::read_main(self.relation, block_number, mode, lockmode) }
+    }
+
+    fn read_main_locked(
+        &self,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+    ) -> Option<LockedBufferGuard> {
+        // SAFETY: `Self` is constructed only from a live index relation borrow.
+        unsafe { LockedBufferGuard::read_main_locked(self.relation, block_number, mode) }
+    }
+
+    fn start_wal(&self) -> wal::GenericXLogTxn {
+        // SAFETY: `Self` is constructed only from a live index relation borrow.
+        unsafe { wal::GenericXLogTxn::start(self.relation) }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DerivedInsertPayload {
@@ -654,8 +709,8 @@ fn plan_duplicate_bind(
     })
 }
 
-unsafe fn apply_duplicate_bind_patches(
-    index_relation: pg_sys::Relation,
+fn apply_duplicate_bind_patches(
+    index_relation: &DiskannInsertRelation<'_>,
     metadata: &VamanaMetadataPage,
     patches: &[DuplicateBindPatch],
     appended_overflow_tid: ItemPointer,
@@ -677,24 +732,18 @@ unsafe fn apply_duplicate_bind_patches(
 
     while start < sorted.len() {
         let block_number = sorted[start].target_tid.block_number;
-        // SAFETY: Patch targets are TIDs from the materialized graph, and this
-        // block is opened under an exclusive lock before tuple mutation.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
+        let buffer = index_relation
+            .read_main(
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
                 pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        }
-        .ok_or_else(|| {
-            format!("ec_diskann duplicate bind could not open target block {block_number}")
-        })?;
+            .ok_or_else(|| {
+                format!("ec_diskann duplicate bind could not open target block {block_number}")
+            })?;
 
         let page_size = buffer.page_size();
-        // SAFETY: `index_relation` is live while duplicate-bind page changes
-        // are WAL-logged.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let mut wal_txn = index_relation.start_wal();
         let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let mut page_retry = false;
@@ -835,8 +884,8 @@ unsafe fn apply_duplicate_bind_patches(
     }
 }
 
-pub(super) unsafe fn bind_duplicate_heap_tid(
-    index_relation: pg_sys::Relation,
+pub(super) fn bind_duplicate_heap_tid(
+    index_relation: &DiskannInsertRelation<'_>,
     existing_node_tid: ItemPointer,
     new_heap_tid: ItemPointer,
 ) -> Result<DuplicateBindResult, String> {
@@ -844,7 +893,7 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
         let (metadata, chain) =
             // SAFETY: `index_relation` is live for insert-time duplicate
             // planning, and materialization copies page tuples into memory.
-            unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr())? };
         let reader = PersistedGraphReader::new(
             &chain,
             metadata.graph_degree_r,
@@ -876,39 +925,28 @@ pub(super) unsafe fn bind_duplicate_heap_tid(
 
         let appended_overflow_tid = if let Some(overflow_tuple) = append_tuple {
             let encoded = overflow_tuple.encode()?;
-            // SAFETY: The overflow tuple bytes are encoded from a validated
-            // overflow tuple. The index relation is live while choosing an
-            // append target and while the append helper locks/WAL-logs the page.
-            unsafe {
-                let existing_blocks =
-                    crate::storage::relation::main_fork_block_count(index_relation);
-                let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
-                    existing_blocks - 1
-                } else {
-                    P_NEW
-                };
-                append_raw_tuple_payload(
-                    index_relation,
-                    &encoded,
-                    raw_tuple_storage_bytes(encoded.len()),
-                    target_block,
-                )?
-            }
+            let existing_blocks = index_relation.main_fork_block_count();
+            let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
+                existing_blocks - 1
+            } else {
+                P_NEW
+            };
+            append_raw_tuple_payload(
+                index_relation,
+                &encoded,
+                raw_tuple_storage_bytes(encoded.len()),
+                target_block,
+            )?
         } else {
             ItemPointer::INVALID
         };
 
-        // SAFETY: The patch plan was computed from the materialized graph and
-        // append result; the helper revalidates tuple state while holding page
-        // locks and may request a replan on concurrent shape changes.
-        match unsafe {
-            apply_duplicate_bind_patches(
-                index_relation,
-                &metadata,
-                &patches,
-                appended_overflow_tid,
-            )?
-        } {
+        match apply_duplicate_bind_patches(
+            index_relation,
+            &metadata,
+            &patches,
+            appended_overflow_tid,
+        )? {
             DuplicateBindApplyOutcome::RetryReplan => continue,
             DuplicateBindApplyOutcome::Changed => return Ok(DuplicateBindResult::Bound),
             DuplicateBindApplyOutcome::NoChange => return Ok(DuplicateBindResult::AlreadyBound),
@@ -1148,20 +1186,16 @@ pub(super) struct EmptyInsertBootstrapOutput {
     pub(super) chain: DataPageChain,
 }
 
-pub(super) unsafe fn read_metadata_page(
-    index_relation: pg_sys::Relation,
+pub(super) fn read_metadata_page(
+    index_relation: &DiskannInsertRelation<'_>,
 ) -> Result<VamanaMetadataPage, String> {
-    // SAFETY: `index_relation` is a live DISKANN index relation and the metadata
-    // block is read under a share lock.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let buffer = index_relation
+        .read_main(
             crate::storage::page::METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    }
-    .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
+        .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
     let page = buffer.page();
     // SAFETY: `page` comes from the locked metadata buffer; DISKANN metadata
     // pages store exactly `VAMANA_METADATA_BYTES` in the special area, which
@@ -1173,21 +1207,17 @@ pub(super) unsafe fn read_metadata_page(
     VamanaMetadataPage::decode(metadata_bytes)
 }
 
-pub(super) unsafe fn with_locked_metadata_page<T>(
-    index_relation: pg_sys::Relation,
+pub(super) fn with_locked_metadata_page<T>(
+    index_relation: &DiskannInsertRelation<'_>,
     f: impl FnOnce(&mut VamanaMetadataPage) -> Result<T, String>,
 ) -> Result<T, String> {
-    // SAFETY: `index_relation` is live and the metadata block is opened under
-    // an exclusive lock before decoding and rewriting metadata.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let buffer = index_relation
+        .read_main(
             crate::storage::page::METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    }
-    .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
+        .ok_or_else(|| "ec_diskann failed to open metadata buffer".to_string())?;
 
     let page = buffer.page();
     let page_size = buffer.page_size();
@@ -1203,9 +1233,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
 
     let encoded = metadata.encode();
     let special_size = (encoded.len() + 7) & !7;
-    // SAFETY: `index_relation` is live while metadata page changes are
-    // WAL-logged.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let mut wal_txn = index_relation.start_wal();
     let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
     // SAFETY: `writable_page` is the registered metadata page and `page_size`
     // comes from the locked buffer. The page is initialized with sufficient
@@ -1220,8 +1248,8 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     Ok(result)
 }
 
-pub(super) unsafe fn bootstrap_empty_insert_output(
-    index_relation: pg_sys::Relation,
+pub(super) fn bootstrap_empty_insert_output(
+    index_relation: &DiskannInsertRelation<'_>,
     heap_tid: ItemPointer,
     source_vector: &[f32],
 ) -> Result<EmptyInsertBootstrapOutput, String> {
@@ -1266,7 +1294,7 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
         search_code: training::derive_grouped_pq4_code(source_vector, &model),
     }];
 
-    let relopts = options::relation_options(index_relation);
+    let relopts = options::relation_options(index_relation.as_ptr());
     let params = BuildParams {
         graph_degree_r: u16::try_from(relopts.graph_degree)
             .map_err(|_| "graph_degree does not fit in u16".to_owned())?,
@@ -1296,8 +1324,8 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
     Ok(EmptyInsertBootstrapOutput { metadata, chain })
 }
 
-pub(super) unsafe fn append_live_node(
-    index_relation: pg_sys::Relation,
+pub(super) fn append_live_node(
+    index_relation: &DiskannInsertRelation<'_>,
     metadata: &VamanaMetadataPage,
     heap_tid: ItemPointer,
     payload: &DerivedInsertPayload,
@@ -1341,55 +1369,39 @@ pub(super) unsafe fn append_live_node(
         ));
     }
 
-    // SAFETY: `encoded` is a validated node tuple payload; the append helper
-    // owns page locking, free-space checks, and WAL registration. The index
-    // relation is live while choosing an append target and appending.
-    unsafe {
-        let existing_blocks = crate::storage::relation::main_fork_block_count(index_relation);
-        let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
-            existing_blocks - 1
-        } else {
-            P_NEW
-        };
-        append_raw_tuple_payload(
-            index_relation,
-            &encoded,
-            raw_tuple_storage_bytes(encoded.len()),
-            target_block,
-        )
-    }
+    let existing_blocks = index_relation.main_fork_block_count();
+    let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
+        existing_blocks - 1
+    } else {
+        P_NEW
+    };
+    append_raw_tuple_payload(
+        index_relation,
+        &encoded,
+        raw_tuple_storage_bytes(encoded.len()),
+        target_block,
+    )
 }
 
-unsafe fn append_raw_tuple_payload(
-    index_relation: pg_sys::Relation,
+fn append_raw_tuple_payload(
+    index_relation: &DiskannInsertRelation<'_>,
     encoded: &[u8],
     required_bytes: usize,
     target_block: pg_sys::BlockNumber,
 ) -> Result<ItemPointer, String> {
-    // SAFETY: `index_relation` is live; P_NEW requests a new zeroed locked page,
-    // otherwise `target_block` is an existing append candidate opened
-    // exclusively before mutation.
-    let buffer = unsafe {
-        if target_block == P_NEW {
-            LockedBufferGuard::read_main_locked(
-                index_relation,
-                target_block,
-                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            )
-        } else {
-            LockedBufferGuard::read_main(
-                index_relation,
-                target_block,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-            )
-        }
+    let buffer = if target_block == P_NEW {
+        index_relation.read_main_locked(target_block, pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK)
+    } else {
+        index_relation.read_main(
+            target_block,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
     }
     .ok_or_else(|| "ec_diskann failed to allocate append buffer".to_string())?;
 
     let page_size = buffer.page_size();
-    // SAFETY: `index_relation` is live while the append is WAL-logged.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let mut wal_txn = index_relation.start_wal();
     let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
     // SAFETY: `page_ptr` is the WAL-registered locked page. New pages are
     // initialized before insertion; existing pages are checked for free space
@@ -1426,8 +1438,8 @@ unsafe fn append_raw_tuple_payload(
     })
 }
 
-pub(super) unsafe fn add_backlinks_if_free(
-    index_relation: pg_sys::Relation,
+pub(super) fn add_backlinks_if_free(
+    index_relation: &DiskannInsertRelation<'_>,
     metadata: &VamanaMetadataPage,
     backlink_targets: &[ItemPointer],
     new_tid: ItemPointer,
@@ -1448,24 +1460,18 @@ pub(super) unsafe fn add_backlinks_if_free(
 
     while start < targets.len() {
         let block_number = targets[start].block_number;
-        // SAFETY: Backlink targets are graph node TIDs and the target block is
-        // opened under an exclusive lock before mutation.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
+        let buffer = index_relation
+            .read_main(
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
                 pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        }
-        .ok_or_else(|| {
-            format!("ec_diskann backlink write could not open target block {block_number}")
-        })?;
+            .ok_or_else(|| {
+                format!("ec_diskann backlink write could not open target block {block_number}")
+            })?;
 
         let page_size = buffer.page_size();
-        // SAFETY: `index_relation` is live while backlink page changes are
-        // WAL-logged.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let mut wal_txn = index_relation.start_wal();
         let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let page_result = (|| -> Result<usize, String> {
@@ -1535,8 +1541,8 @@ pub(super) unsafe fn add_backlinks_if_free(
     Ok(changed)
 }
 
-pub(super) unsafe fn apply_backlink_mutations(
-    index_relation: pg_sys::Relation,
+pub(super) fn apply_backlink_mutations(
+    index_relation: &DiskannInsertRelation<'_>,
     metadata: &VamanaMetadataPage,
     mutations: &[BacklinkMutation],
     new_tid: ItemPointer,
@@ -1557,24 +1563,18 @@ pub(super) unsafe fn apply_backlink_mutations(
 
     while start < sorted.len() {
         let block_number = sorted[start].target_tid.block_number;
-        // SAFETY: Mutation targets are graph node TIDs and this block is opened
-        // under an exclusive lock before tuple rewrite.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
+        let buffer = index_relation
+            .read_main(
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
                 pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
             )
-        }
-        .ok_or_else(|| {
-            format!("ec_diskann backlink rewrite could not open target block {block_number}")
-        })?;
+            .ok_or_else(|| {
+                format!("ec_diskann backlink rewrite could not open target block {block_number}")
+            })?;
 
         let page_size = buffer.page_size();
-        // SAFETY: `index_relation` is live while backlink rewrite changes are
-        // WAL-logged.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let mut wal_txn = index_relation.start_wal();
         let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let page_result = (|| -> Result<(), String> {
@@ -1652,20 +1652,16 @@ pub(super) unsafe fn apply_backlink_mutations(
     Ok(retries)
 }
 
-pub(super) unsafe fn increment_inserted_since_rebuild(
-    index_relation: pg_sys::Relation,
+pub(super) fn increment_inserted_since_rebuild(
+    index_relation: &DiskannInsertRelation<'_>,
 ) -> Result<u64, String> {
-    // SAFETY: `index_relation` is live and the helper locks and WAL-logs the
-    // metadata page while updating the counter.
-    unsafe {
-        with_locked_metadata_page(index_relation, |metadata| {
-            metadata.inserted_since_rebuild = metadata
-                .inserted_since_rebuild
-                .checked_add(1)
-                .ok_or_else(|| "ec_diskann inserted_since_rebuild overflowed u64".to_owned())?;
-            Ok(metadata.inserted_since_rebuild)
-        })
-    }
+    with_locked_metadata_page(index_relation, |metadata| {
+        metadata.inserted_since_rebuild = metadata
+            .inserted_since_rebuild
+            .checked_add(1)
+            .ok_or_else(|| "ec_diskann inserted_since_rebuild overflowed u64".to_owned())?;
+        Ok(metadata.inserted_since_rebuild)
+    })
 }
 
 fn sort_and_dedup_backlink_targets(targets: &mut Vec<ItemPointer>) {
