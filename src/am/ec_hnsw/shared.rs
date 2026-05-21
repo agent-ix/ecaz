@@ -956,7 +956,40 @@ pub(crate) fn debug_update_index_metadata(index_oid: pg_sys::Oid, metadata: page
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+pub(crate) struct DebugHnswVacuumStats {
+    pub(crate) estimated_count: bool,
+    pub(crate) num_index_tuples: f64,
+    pub(crate) tuples_removed: f64,
+    pub(crate) num_pages: pg_sys::BlockNumber,
+    pub(crate) pages_newly_deleted: pg_sys::BlockNumber,
+    pub(crate) pages_deleted: pg_sys::BlockNumber,
+    pub(crate) pages_free: pg_sys::BlockNumber,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_hnsw_vacuum_stats_row(
+    stats: *mut pg_sys::IndexBulkDeleteResult,
+) -> DebugHnswVacuumStats {
+    if stats.is_null() {
+        pgrx::error!("ec_hnsw debug vacuum stats returned NULL");
+    }
+    // SAFETY: caller passes the stats pointer returned by the immediate
+    // bulkdelete/vacuumcleanup invocation; scalar fields are copied out before
+    // PostgreSQL-owned memory or relation guards leave scope.
+    let stats = unsafe { &*stats };
+    DebugHnswVacuumStats {
+        estimated_count: stats.estimated_count,
+        num_index_tuples: stats.num_index_tuples,
+        tuples_removed: stats.tuples_removed,
+        num_pages: stats.num_pages,
+        pages_newly_deleted: stats.pages_newly_deleted,
+        pages_deleted: stats.pages_deleted,
+        pages_free: stats.pages_free,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> DebugHnswVacuumStats {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_vacuum_stats");
     // SAFETY: The debug helper immediately initializes the required vacuum
     // fields before passing the struct to AM vacuum callbacks.
@@ -971,9 +1004,5 @@ pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDel
     };
     // SAFETY: The same vacuum info and stats pointer are valid for cleanup.
     let stats = unsafe { super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats) };
-    // SAFETY: The AM returned a valid stats pointer; copy it before guards leave
-    // scope.
-    let result = unsafe { *stats };
-
-    result
+    debug_hnsw_vacuum_stats_row(stats)
 }
