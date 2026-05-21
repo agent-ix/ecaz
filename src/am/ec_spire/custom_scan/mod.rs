@@ -9,7 +9,6 @@ use crate::am::common::cost::{
 use super::meta;
 
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcSpireDistributedScan";
-const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const CUSTOM_SCAN_ROUTING_SCORE_BOUND: f64 = 64.0;
 const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 1024.0;
 const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 0.5;

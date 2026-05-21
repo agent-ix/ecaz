@@ -429,10 +429,7 @@ fn dml_pk_select_candidate_index_oid(
 }
 
 fn custom_scan_ec_spire_am_oid() -> Option<pg_sys::Oid> {
-    // SAFETY: get_index_am_oid reads PostgreSQL syscache by static C string;
-    // missing AM is represented by InvalidOid because missing_ok is true.
-    let am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
-    (am_oid != pg_sys::InvalidOid).then_some(am_oid)
+    super::ec_spire_access_method_oid()
 }
 
 fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {

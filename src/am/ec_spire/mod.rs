@@ -23,6 +23,15 @@ use pgrx::{pg_sys, Spi};
 
 use self::storage::SpireObjectReader;
 
+const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
+
+pub(crate) fn ec_spire_access_method_oid() -> Option<pg_sys::Oid> {
+    // SAFETY: get_index_am_oid reads PostgreSQL syscache by static C string;
+    // missing AM is represented by InvalidOid because missing_ok is true.
+    let am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    (am_oid != pg_sys::InvalidOid).then_some(am_oid)
+}
+
 pub(crate) use self::cost::{index_cost_snapshot, index_cost_tuning_snapshot};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::custom_scan::custom_scan_dml_plan_private_copy_roundtrip_for_test;

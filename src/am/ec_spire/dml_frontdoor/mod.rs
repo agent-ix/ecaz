@@ -222,7 +222,6 @@ unsafe extern "C" {
     fn CacheRegisterRelcacheCallback(function: RelcacheCallbackFunction, arg: pg_sys::Datum);
 }
 
-const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
 const DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH: usize = 32;
 
@@ -1450,9 +1449,7 @@ fn dml_frontdoor_catalog_index_and_pk(
     ),
     String,
 > {
-    // SAFETY: get_index_am_oid reads PostgreSQL syscache by static C string;
-    // missing AM is represented by InvalidOid because missing_ok is true.
-    let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    let ec_spire_am_oid = super::ec_spire_access_method_oid().unwrap_or(pg_sys::InvalidOid);
     // RelationGetIndexList returns a private OID list, so each index can be
     // opened and closed under AccessShareLock while walking this copy.
     // SAFETY: heap_relation is open and RelationGetIndexList returns a list
