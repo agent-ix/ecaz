@@ -125,53 +125,45 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
         return;
     };
     if let Some((index_oid, eligibility)) = hook_input.custom_scan_candidate_index_oid() {
-        // SAFETY: root/rel were supplied by the current planner hook call and are
-        // inspected only while building this path.
-        if let Some(planner_rel) = unsafe { CustomScanPlannerRel::new(root, rel) } {
-            // SAFETY: root/rel were supplied by the current planner hook call. The
-            // CustomPath node and private OID list are allocated in PostgreSQL planner
-            // memory and transferred with add_path.
-            unsafe {
-                let mut custom_path =
-                    PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
-                let rows = planner_rel.output_rows_for_custom_scan();
-                let cost = planner_rel.estimate_custom_scan_cost(rows, &eligibility);
-                custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
-                custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
-                custom_path.path.parent = rel;
-                custom_path.path.pathtarget = planner_rel.reltarget();
-                custom_path.path.param_info = std::ptr::null_mut();
-                custom_path.path.parallel_aware = false;
-                custom_path.path.parallel_safe = false;
-                custom_path.path.parallel_workers = 0;
-                custom_path.path.rows = rows;
-                custom_path.path.disabled_nodes = 0;
-                custom_path.path.startup_cost = cost.startup_cost;
-                custom_path.path.total_cost = cost.total_cost;
-                custom_path.path.pathkeys = planner_rel.sort_pathkeys();
-                custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
-                custom_path.custom_paths = std::ptr::null_mut();
-                custom_path.custom_restrictinfo = planner_rel.baserestrictinfo();
-                custom_path.custom_private = pg_sys::lappend_oid(
-                    pg_sys::lappend_oid(
-                        std::ptr::null_mut(),
-                        pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
-                    ),
-                    index_oid,
-                );
-                custom_path.methods = &raw const CUSTOM_PATH_METHODS;
+        let planner_rel = hook_input.planner_rel;
+        // SAFETY: hook_input was built from the current planner hook pointers.
+        // The CustomPath node and private OID list are allocated in PostgreSQL
+        // planner memory and transferred with add_path.
+        unsafe {
+            let mut custom_path =
+                PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
+            let rows = planner_rel.output_rows_for_custom_scan();
+            let cost = planner_rel.estimate_custom_scan_cost(rows, &eligibility);
+            custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
+            custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
+            custom_path.path.parent = rel;
+            custom_path.path.pathtarget = planner_rel.reltarget();
+            custom_path.path.param_info = std::ptr::null_mut();
+            custom_path.path.parallel_aware = false;
+            custom_path.path.parallel_safe = false;
+            custom_path.path.parallel_workers = 0;
+            custom_path.path.rows = rows;
+            custom_path.path.disabled_nodes = 0;
+            custom_path.path.startup_cost = cost.startup_cost;
+            custom_path.path.total_cost = cost.total_cost;
+            custom_path.path.pathkeys = planner_rel.sort_pathkeys();
+            custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
+            custom_path.custom_paths = std::ptr::null_mut();
+            custom_path.custom_restrictinfo = planner_rel.baserestrictinfo();
+            custom_path.custom_private = pg_sys::lappend_oid(
+                pg_sys::lappend_oid(
+                    std::ptr::null_mut(),
+                    pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
+                ),
+                index_oid,
+            );
+            custom_path.methods = &raw const CUSTOM_PATH_METHODS;
 
-                pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path);
-            }
+            pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path);
         }
     }
     if let Some(index_oid) = hook_input.dml_pk_select_candidate_index_oid() {
-        // SAFETY: root/rel were supplied by the current planner hook call and are
-        // inspected only while building this path.
-        let Some(planner_rel) = (unsafe { CustomScanPlannerRel::new(root, rel) }) else {
-            return;
-        };
-
+        let planner_rel = hook_input.planner_rel;
         // SAFETY: rel was supplied by the current planner hook call. The CustomPath
         // node and private OID list are allocated in PostgreSQL planner memory and
         // transferred with add_path.
