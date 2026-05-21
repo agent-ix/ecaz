@@ -14,13 +14,17 @@ pub fn fwht_in_place(values: &mut [f32]) {
 
     match backend() {
         #[cfg(target_arch = "x86_64")]
-        // SAFETY: `backend()` only returns `Avx2Fma` on x86_64 when AVX2 and
-        // FMA are available for this process.
-        SimdBackend::Avx2Fma => unsafe { fwht_in_place_avx2(values) },
+        SimdBackend::Avx2Fma => {
+            if !try_fwht_in_place_avx2(values) {
+                fwht_in_place_scalar(values);
+            }
+        }
         #[cfg(target_arch = "aarch64")]
-        // SAFETY: `backend()` only returns `Neon` on aarch64 when NEON is
-        // available for this process.
-        SimdBackend::Neon => unsafe { fwht_in_place_neon(values) },
+        SimdBackend::Neon => {
+            if !try_fwht_in_place_neon(values) {
+                fwht_in_place_scalar(values);
+            }
+        }
         SimdBackend::Scalar => fwht_in_place_scalar(values),
     }
 }
@@ -49,6 +53,16 @@ pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
 
 #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
 pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+    try_fwht_in_place_avx2(values)
+}
+
+#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+pub fn fwht_in_place_neon_for_test(values: &mut [f32]) -> bool {
+    try_fwht_in_place_neon(values)
+}
+
+#[cfg(target_arch = "x86_64")]
+fn try_fwht_in_place_avx2(values: &mut [f32]) -> bool {
     if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
         return false;
     }
@@ -58,8 +72,8 @@ pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
     true
 }
 
-#[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
-pub fn fwht_in_place_neon_for_test(values: &mut [f32]) -> bool {
+#[cfg(target_arch = "aarch64")]
+fn try_fwht_in_place_neon(values: &mut [f32]) -> bool {
     if !std::arch::is_aarch64_feature_detected!("neon") {
         return false;
     }
@@ -766,9 +780,7 @@ mod tests {
             let mut avx = scalar.clone();
             fwht_in_place_scalar(&mut scalar);
 
-            // SAFETY: the test exits unless AVX2/FMA is available and every
-            // listed size is a supported power-of-two FWHT input.
-            unsafe { fwht_in_place_avx2(&mut avx) };
+            assert!(try_fwht_in_place_avx2(&mut avx));
 
             assert_eq!(scalar, avx, "size={size}");
         }
