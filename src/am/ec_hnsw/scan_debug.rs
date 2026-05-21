@@ -752,22 +752,21 @@ pub(crate) fn debug_rescan_query_dimensions(
     // one initialized order-by key for the duration of the rescan call.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: `ec_hnsw_amrescan` initializes the HNSW scan opaque on the live
-    // scan descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
-    let result = (
-        opaque.rescan_called,
-        opaque.query_dimensions,
-        debug_scan_query(opaque),
-        opaque.scan_dimensions,
-        opaque.scan_bits,
-        opaque.scan_code_len,
-        opaque.scan_block_count,
-        !opaque.prepared_query.is_null(),
-        prepared_lut_len,
-        prepared_sq_len,
-    );
+    let result = debug_with_scan_opaque(scan, |opaque| {
+        let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
+        (
+            opaque.rescan_called,
+            opaque.query_dimensions,
+            debug_scan_query(opaque),
+            opaque.scan_dimensions,
+            opaque.scan_bits,
+            opaque.scan_code_len,
+            opaque.scan_block_count,
+            !opaque.prepared_query.is_null(),
+            prepared_lut_len,
+            prepared_sq_len,
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -806,22 +805,21 @@ pub(crate) fn debug_rescan_overwrites_query_dimensions(
     // points to one initialized order-by key for this overwrite rescan.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1);
 
-    // SAFETY: The second AM rescan leaves the HNSW scan opaque initialized on
-    // the live descriptor for debug inspection.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
-    let result = (
-        opaque.rescan_called,
-        opaque.query_dimensions,
-        debug_scan_query(opaque),
-        opaque.scan_dimensions,
-        opaque.scan_bits,
-        opaque.scan_code_len,
-        opaque.scan_block_count,
-        !opaque.prepared_query.is_null(),
-        prepared_lut_len,
-        prepared_sq_len,
-    );
+    let result = debug_with_scan_opaque(scan, |opaque| {
+        let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
+        (
+            opaque.rescan_called,
+            opaque.query_dimensions,
+            debug_scan_query(opaque),
+            opaque.scan_dimensions,
+            opaque.scan_bits,
+            opaque.scan_code_len,
+            opaque.scan_block_count,
+            !opaque.prepared_query.is_null(),
+            prepared_lut_len,
+            prepared_sq_len,
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -887,21 +885,21 @@ pub(crate) fn debug_rescan_with_unused_key_buffer(
     // `unused_keys` must be ignored, and `orderby` is a valid one-key buffer.
     debug_am_rescan(scan, unused_keys, 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initializes the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
-    let result = (
-        opaque.rescan_called,
-        opaque.query_dimensions,
-        debug_scan_query(opaque),
-        opaque.scan_dimensions,
-        opaque.scan_bits,
-        opaque.scan_code_len,
-        opaque.scan_block_count,
-        !opaque.prepared_query.is_null(),
-        prepared_lut_len,
-        prepared_sq_len,
-    );
+    let result = debug_with_scan_opaque(scan, |opaque| {
+        let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
+        (
+            opaque.rescan_called,
+            opaque.query_dimensions,
+            debug_scan_query(opaque),
+            opaque.scan_dimensions,
+            opaque.scan_bits,
+            opaque.scan_code_len,
+            opaque.scan_block_count,
+            !opaque.prepared_query.is_null(),
+            prepared_lut_len,
+            prepared_sq_len,
+        )
+    });
 
     // SAFETY: `unused_keys` was allocated by `palloc0` above and has not been
     // freed yet.
