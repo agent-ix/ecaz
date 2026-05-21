@@ -1574,32 +1574,127 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
     })
 }
 
-fn read_string_reloption(
+struct EcSpireReloptionsView<'a> {
     rd_options: *mut pg_sys::varlena,
-    offset: i32,
-    name: &str,
-) -> Option<String> {
-    if offset == 0 {
-        return None;
+    reloptions: &'a EcSpireReloptions,
+}
+
+impl<'a> EcSpireReloptionsView<'a> {
+    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+        if offset == 0 {
+            return None;
+        }
+
+        // SAFETY: rd_options points to EcSpireReloptions storage and offset is
+        // a nonzero reloption string offset supplied by PostgreSQL's
+        // reloptions parser for this layout.
+        let value_ptr = unsafe {
+            self.rd_options
+                .cast::<u8>()
+                .add(offset as usize)
+                .cast::<std::ffi::c_char>()
+        };
+        // SAFETY: value_ptr points at PostgreSQL's NUL-terminated reloption
+        // string storage for this rd_options allocation.
+        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+            .to_str()
+            .unwrap_or_else(|e| pgrx::error!("invalid ec_spire {name} reloption: {e}"));
+        if value.is_empty() {
+            pgrx::error!("invalid ec_spire {name} reloption: value must not be empty");
+        }
+        Some(value.to_owned())
     }
 
-    // SAFETY: rd_options points to EcSpireReloptions storage and offset is a
-    // nonzero reloption string offset supplied by PostgreSQL's reloptions parser.
-    let value_ptr = unsafe {
-        rd_options
-            .cast::<u8>()
-            .add(offset as usize)
-            .cast::<std::ffi::c_char>()
-    };
-    // SAFETY: value_ptr points at PostgreSQL's NUL-terminated reloption string
-    // storage for this rd_options allocation.
-    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-        .to_str()
-        .unwrap_or_else(|e| pgrx::error!("invalid ec_spire {name} reloption: {e}"));
-    if value.is_empty() {
-        pgrx::error!("invalid ec_spire {name} reloption: value must not be empty");
+    fn validate(&self) {
+        let reloptions = self.reloptions;
+        validate_recursive_fanout_value(reloptions.recursive_fanout)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_local_store_count_value(reloptions.local_store_count)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_boundary_replica_count_value(reloptions.boundary_replica_count)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_max_candidate_rows_value(reloptions.max_candidate_rows)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_enabled_value(reloptions.top_graph_enabled)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_degree_value(reloptions.top_graph_degree)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_build_list_size_value(reloptions.top_graph_build_list_size)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_alpha_value(reloptions.top_graph_alpha as f32)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_search_list_size_value(reloptions.top_graph_search_list_size)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
     }
-    Some(value.to_owned())
+
+    fn to_options(&self) -> EcSpireOptions {
+        self.validate();
+        let reloptions = self.reloptions;
+        let storage_format_reloption =
+            self.read_string_reloption(reloptions.storage_format_offset, "storage_format");
+        let quantizer_reloption =
+            self.read_string_reloption(reloptions.quantizer_offset, "quantizer");
+        if let (Some(storage_format), Some(quantizer)) =
+            (&storage_format_reloption, &quantizer_reloption)
+        {
+            if storage_format != quantizer {
+                pgrx::error!(
+                    "ec_spire storage_format and quantizer reloptions conflict: storage_format = '{}', quantizer = '{}'",
+                    storage_format,
+                    quantizer
+                );
+            }
+        }
+        let storage_format = storage_format_reloption
+            .or(quantizer_reloption)
+            .map(|value| {
+                SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+            })
+            .unwrap_or(SpireStorageFormat::Auto);
+        let source_identity = self
+            .read_string_reloption(reloptions.source_identity_offset, "source_identity")
+            .map(|value| {
+                SpireSourceIdentityProvider::parse_reloption(&value)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"))
+            })
+            .unwrap_or(SpireSourceIdentityProvider::None);
+        let local_store_tablespaces = self
+            .read_string_reloption(
+                reloptions.local_store_tablespaces_offset,
+                "local_store_tablespaces",
+            )
+            .map(|value| {
+                normalize_local_store_tablespaces_reloption(&value, reloptions.local_store_count)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"))
+            });
+        let nprobe_per_level = self
+            .read_string_reloption(reloptions.nprobe_per_level_offset, "nprobe_per_level")
+            .map(|value| {
+                parse_nprobe_per_level_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+            });
+
+        EcSpireOptions {
+            nlists: reloptions.nlists,
+            recursive_fanout: reloptions.recursive_fanout,
+            local_store_count: reloptions.local_store_count,
+            boundary_replica_count: reloptions.boundary_replica_count,
+            nprobe: reloptions.nprobe,
+            rerank_width: reloptions.rerank_width,
+            max_candidate_rows: reloptions.max_candidate_rows,
+            training_sample_rows: reloptions.training_sample_rows,
+            seed: reloptions.seed,
+            pq_group_size: reloptions.pq_group_size,
+            top_graph_enabled: reloptions.top_graph_enabled,
+            top_graph_degree: reloptions.top_graph_degree,
+            top_graph_build_list_size: reloptions.top_graph_build_list_size,
+            top_graph_alpha: reloptions.top_graph_alpha as f32,
+            top_graph_search_list_size: reloptions.top_graph_search_list_size,
+            nprobe_per_level,
+            storage_format,
+            source_identity,
+            local_store_tablespaces,
+        }
+    }
 }
 
 pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
@@ -1615,94 +1710,11 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptio
     // SAFETY: ec_spire_amoptions registers rd_options with the
     // EcSpireReloptions layout for this index AM.
     let reloptions = unsafe { &*rd_options.cast::<EcSpireReloptions>() };
-    validate_recursive_fanout_value(reloptions.recursive_fanout)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_local_store_count_value(reloptions.local_store_count)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_boundary_replica_count_value(reloptions.boundary_replica_count)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_max_candidate_rows_value(reloptions.max_candidate_rows)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_enabled_value(reloptions.top_graph_enabled)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_degree_value(reloptions.top_graph_degree)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_build_list_size_value(reloptions.top_graph_build_list_size)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_alpha_value(reloptions.top_graph_alpha as f32)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_search_list_size_value(reloptions.top_graph_search_list_size)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    let storage_format_reloption = read_string_reloption(
+    EcSpireReloptionsView {
         rd_options,
-        reloptions.storage_format_offset,
-        "storage_format",
-    );
-    let quantizer_reloption =
-        read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer");
-    if let (Some(storage_format), Some(quantizer)) =
-        (&storage_format_reloption, &quantizer_reloption)
-    {
-        if storage_format != quantizer {
-            pgrx::error!(
-                "ec_spire storage_format and quantizer reloptions conflict: storage_format = '{}', quantizer = '{}'",
-                storage_format,
-                quantizer
-            );
-        }
+        reloptions,
     }
-    let storage_format = storage_format_reloption
-        .or(quantizer_reloption)
-        .map(|value| {
-            SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
-        })
-        .unwrap_or(SpireStorageFormat::Auto);
-    let source_identity = read_string_reloption(
-        rd_options,
-        reloptions.source_identity_offset,
-        "source_identity",
-    )
-    .map(|value| {
-        SpireSourceIdentityProvider::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
-    })
-    .unwrap_or(SpireSourceIdentityProvider::None);
-    let local_store_tablespaces = read_string_reloption(
-        rd_options,
-        reloptions.local_store_tablespaces_offset,
-        "local_store_tablespaces",
-    )
-    .map(|value| {
-        normalize_local_store_tablespaces_reloption(&value, reloptions.local_store_count)
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
-    });
-    let nprobe_per_level = read_string_reloption(
-        rd_options,
-        reloptions.nprobe_per_level_offset,
-        "nprobe_per_level",
-    )
-    .map(|value| parse_nprobe_per_level_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")));
-
-    EcSpireOptions {
-        nlists: reloptions.nlists,
-        recursive_fanout: reloptions.recursive_fanout,
-        local_store_count: reloptions.local_store_count,
-        boundary_replica_count: reloptions.boundary_replica_count,
-        nprobe: reloptions.nprobe,
-        rerank_width: reloptions.rerank_width,
-        max_candidate_rows: reloptions.max_candidate_rows,
-        training_sample_rows: reloptions.training_sample_rows,
-        seed: reloptions.seed,
-        pq_group_size: reloptions.pq_group_size,
-        top_graph_enabled: reloptions.top_graph_enabled,
-        top_graph_degree: reloptions.top_graph_degree,
-        top_graph_build_list_size: reloptions.top_graph_build_list_size,
-        top_graph_alpha: reloptions.top_graph_alpha as f32,
-        top_graph_search_list_size: reloptions.top_graph_search_list_size,
-        nprobe_per_level,
-        storage_format,
-        source_identity,
-        local_store_tablespaces,
-    }
+    .to_options()
 }
 
 include!("tests.rs");
