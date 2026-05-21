@@ -25,8 +25,10 @@ unsafe fn estimate_custom_scan_cost(
     )
 }
 
-fn custom_scan_target_width(target: *mut pg_sys::PathTarget) -> f64 {
-    custom_scan_pg_ref(target)
+unsafe fn custom_scan_target_width(target: *mut pg_sys::PathTarget) -> f64 {
+    // SAFETY: caller guarantees target, when non-null, is a live PathTarget
+    // for the current planner callback.
+    unsafe { custom_scan_pg_ref(target) }
         .map(|target| f64::from(target.width.max(0)))
         .unwrap_or(0.0)
 }
@@ -69,85 +71,98 @@ fn estimate_custom_scan_cost_with_constants(
     }
 }
 
-fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
-    let root_ref = custom_scan_pg_ref(root)?;
+unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
+    // SAFETY: caller guarantees root is the current planner callback root.
+    let root_ref = unsafe { custom_scan_pg_ref(root)? };
     if root_ref.limit_tuples < 0.0 || !root_ref.limit_tuples.is_finite() {
         return None;
     }
     Some(root_ref.limit_tuples.max(0.0).ceil() as usize)
 }
 
-fn custom_scan_orderby_query_expr(
+unsafe fn custom_scan_orderby_query_expr(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<*mut pg_sys::Expr> {
-    let root_ref = custom_scan_pg_ref(root)?;
-    let rel_ref = custom_scan_pg_ref(rel)?;
-    let query = custom_scan_pg_ref(root_ref.parse)?;
+    // SAFETY: caller guarantees root/rel and their planner-owned child nodes
+    // are live for the current planner callback.
+    let root_ref = unsafe { custom_scan_pg_ref(root)? };
+    let rel_ref = unsafe { custom_scan_pg_ref(rel)? };
+    let query = unsafe { custom_scan_pg_ref(root_ref.parse)? };
     if query.sortClause.is_null() || query.targetList.is_null() {
         return None;
     }
-    let sort_clauses = custom_scan_pg_list::<pg_sys::SortGroupClause>(query.sortClause);
+    let sort_clauses = unsafe { custom_scan_pg_list::<pg_sys::SortGroupClause>(query.sortClause) };
     if sort_clauses.len() != 1 {
         return None;
     }
-    let sort_clause = custom_scan_pg_ref(sort_clauses.get_ptr(0)?)?;
-    let target_list = custom_scan_pg_list::<pg_sys::TargetEntry>(query.targetList);
+    let sort_clause = unsafe { custom_scan_pg_ref(sort_clauses.get_ptr(0)?)? };
+    let target_list = unsafe { custom_scan_pg_list::<pg_sys::TargetEntry>(query.targetList) };
     for target_entry in target_list.iter_ptr() {
-        let Some(target_entry) = custom_scan_pg_ref(target_entry) else {
+        let Some(target_entry) = (unsafe { custom_scan_pg_ref(target_entry) }) else {
             continue;
         };
         if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {
             continue;
         }
-        return custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid);
+        return unsafe { custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid) };
     }
     None
 }
 
-fn custom_scan_query_expr_from_sort_expr(
+unsafe fn custom_scan_query_expr_from_sort_expr(
     expr: *mut pg_sys::Expr,
     relid: pg_sys::Index,
 ) -> Option<*mut pg_sys::Expr> {
-    let op_expr = custom_scan_op_expr(expr)?;
-    let args = custom_scan_pg_list::<pg_sys::Expr>(op_expr.args);
+    // SAFETY: caller guarantees expr is planner-owned and live for immediate
+    // node-tag dispatch/list inspection.
+    let op_expr = unsafe { custom_scan_op_expr(expr)? };
+    let args = unsafe { custom_scan_pg_list::<pg_sys::Expr>(op_expr.args) };
     if args.len() != 2 {
         return None;
     }
     let left = args.get_ptr(0)?;
     let right = args.get_ptr(1)?;
-    if custom_scan_expr_is_relation_var(left, relid) && custom_scan_expr_is_query_value(right) {
+    if unsafe { custom_scan_expr_is_relation_var(left, relid) }
+        && unsafe { custom_scan_expr_is_query_value(right) }
+    {
         return Some(right);
     }
-    if custom_scan_expr_is_relation_var(right, relid) && custom_scan_expr_is_query_value(left) {
+    if unsafe { custom_scan_expr_is_relation_var(right, relid) }
+        && unsafe { custom_scan_expr_is_query_value(left) }
+    {
         return Some(left);
     }
     None
 }
 
-fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
-    custom_scan_var_expr(expr)
+unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
+    // SAFETY: caller guarantees expr is planner-owned and live for immediate
+    // Var tag dispatch.
+    unsafe { custom_scan_var_expr(expr) }
         .map(|var| u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0)
         .unwrap_or(false)
 }
 
-fn custom_scan_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
+unsafe fn custom_scan_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
     // SAFETY: callers pass PostgreSQL-owned planner lists and consume the view
     // immediately during the current planner callback.
     unsafe { PgList::<T>::from_pg(list) }
 }
 
-fn custom_scan_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
+unsafe fn custom_scan_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
     // SAFETY: callers pass PostgreSQL planner pointers that are live for the
     // current callback and copy or inspect the referenced fields immediately.
     unsafe { ptr.as_ref() }
 }
 
-fn custom_scan_current_relation(
+unsafe fn custom_scan_current_relation(
     node: *mut pg_sys::CustomScanState,
     label: &str,
 ) -> pg_sys::Relation {
-    let Some(node) = custom_scan_pg_ref(node) else {
+    // SAFETY: caller guarantees node is the live CustomScanState for the
+    // current executor callback.
+    let Some(node) = (unsafe { custom_scan_pg_ref(node) }) else {
         pgrx::error!("EcSpireDistributedScan {label} missing custom scan state");
     };
     let relation = node.ss.ss_currentRelation;
@@ -157,19 +172,23 @@ fn custom_scan_current_relation(
     relation
 }
 
-fn custom_scan_list_len(list: *mut pg_sys::List) -> Option<i32> {
-    custom_scan_pg_ref(list).map(|list| list.length)
+unsafe fn custom_scan_list_len(list: *mut pg_sys::List) -> Option<i32> {
+    // SAFETY: caller guarantees list, when non-null, is a live PostgreSQL List.
+    unsafe { custom_scan_pg_ref(list) }.map(|list| list.length)
 }
 
-fn custom_scan_list_tag(list: *mut pg_sys::List) -> Option<pg_sys::NodeTag> {
-    custom_scan_pg_ref(list).map(|list| list.type_)
+unsafe fn custom_scan_list_tag(list: *mut pg_sys::List) -> Option<pg_sys::NodeTag> {
+    // SAFETY: caller guarantees list, when non-null, is a live PostgreSQL List.
+    unsafe { custom_scan_pg_ref(list) }.map(|list| list.type_)
 }
 
-fn custom_scan_list_nth_node(
+unsafe fn custom_scan_list_nth_node(
     list: *mut pg_sys::List,
     offset: i32,
 ) -> Option<*mut pg_sys::Node> {
-    if offset < 0 || custom_scan_list_len(list)? <= offset {
+    // SAFETY: caller guarantees list is a live PostgreSQL List for immediate
+    // bounds-check and element access.
+    if offset < 0 || unsafe { custom_scan_list_len(list) }? <= offset {
         return None;
     }
     // SAFETY: list is non-null and offset is bounds-checked against the
@@ -177,8 +196,10 @@ fn custom_scan_list_nth_node(
     Some(unsafe { pg_sys::list_nth(list, offset).cast::<pg_sys::Node>() })
 }
 
-fn custom_scan_list_nth_oid(list: *mut pg_sys::List, offset: i32) -> Option<pg_sys::Oid> {
-    if offset < 0 || custom_scan_list_len(list)? <= offset {
+unsafe fn custom_scan_list_nth_oid(list: *mut pg_sys::List, offset: i32) -> Option<pg_sys::Oid> {
+    // SAFETY: caller guarantees list is a live PostgreSQL OidList for immediate
+    // bounds-check and element access.
+    if offset < 0 || unsafe { custom_scan_list_len(list) }? <= offset {
         return None;
     }
     // SAFETY: list is non-null and offset is bounds-checked against the
@@ -186,21 +207,24 @@ fn custom_scan_list_nth_oid(list: *mut pg_sys::List, offset: i32) -> Option<pg_s
     Some(unsafe { pg_sys::list_nth_oid(list, offset) })
 }
 
-fn custom_scan_op_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::OpExpr> {
-    if custom_scan_expr_node_tag(expr)? != pg_sys::NodeTag::T_OpExpr {
+unsafe fn custom_scan_op_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::OpExpr> {
+    // SAFETY: caller guarantees expr is live for node-tag dispatch.
+    if unsafe { custom_scan_expr_node_tag(expr) }? != pg_sys::NodeTag::T_OpExpr {
         return None;
     }
-    custom_scan_pg_ref(expr.cast::<pg_sys::OpExpr>())
+    unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::OpExpr>()) }
 }
 
-fn custom_scan_var_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::Var> {
-    if custom_scan_expr_node_tag(expr)? != pg_sys::NodeTag::T_Var {
+unsafe fn custom_scan_var_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::Var> {
+    // SAFETY: caller guarantees expr is live for node-tag dispatch.
+    if unsafe { custom_scan_expr_node_tag(expr) }? != pg_sys::NodeTag::T_Var {
         return None;
     }
-    custom_scan_pg_ref(expr.cast::<pg_sys::Var>())
+    unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Var>()) }
 }
 
-fn custom_scan_expr_node_tag(expr: *mut pg_sys::Expr) -> Option<pg_sys::NodeTag> {
-    let node = custom_scan_pg_ref(expr.cast::<pg_sys::Node>())?;
+unsafe fn custom_scan_expr_node_tag(expr: *mut pg_sys::Expr) -> Option<pg_sys::NodeTag> {
+    // SAFETY: caller guarantees expr, when non-null, is a live PostgreSQL Node.
+    let node = unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Node>())? };
     Some(node.type_)
 }

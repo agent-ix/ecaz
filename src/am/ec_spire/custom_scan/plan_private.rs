@@ -1,17 +1,22 @@
-fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
-    match custom_scan_expr_node_tag(expr) {
-        Some(pg_sys::NodeTag::T_Const) => {
+unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
+    // SAFETY: caller guarantees expr is a live planner expression for
+    // immediate node-tag dispatch and Const/Param inspection.
+    match unsafe { custom_scan_expr_node_tag(expr) } {
+        Some(pg_sys::NodeTag::T_Const) => unsafe {
             custom_scan_query_values_from_const(expr.cast()).is_some()
+        },
+        Some(pg_sys::NodeTag::T_Param) => {
+            unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Param>()) }
+                .map(|param| param.paramtype == pg_sys::FLOAT4ARRAYOID)
+                .unwrap_or(false)
         }
-        Some(pg_sys::NodeTag::T_Param) => custom_scan_pg_ref(expr.cast::<pg_sys::Param>())
-            .map(|param| param.paramtype == pg_sys::FLOAT4ARRAYOID)
-            .unwrap_or(false),
         _ => false,
     }
 }
 
-fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
-    let const_ref = custom_scan_pg_ref(const_expr)?;
+unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
+    // SAFETY: caller guarantees const_expr is a live planner Const node.
+    let const_ref = unsafe { custom_scan_pg_ref(const_expr)? };
     // SAFETY: null was checked above and caller only passes PostgreSQL Const
     // nodes from planner expressions. Float4 array type/nullability are checked
     // before decoding the datum without taking ownership from PostgreSQL.
@@ -27,30 +32,42 @@ fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option
     Some(values)
 }
 
-fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
-    let Some(state) = custom_scan_pg_ref(node) else {
+unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
+    // SAFETY: caller guarantees node is the live CustomScanState for the
+    // current executor callback.
+    let Some(state) = (unsafe { custom_scan_pg_ref(node) }) else {
         pgrx::error!("EcSpireDistributedScan executor state is NULL");
     };
     state.ss.ps.plan.cast::<pg_sys::CustomScan>()
 }
 
-fn custom_scan_mode_from_path(custom_path: *mut pg_sys::CustomPath) -> Option<SpireCustomScanPlanMode> {
-    let custom_private = custom_scan_pg_ref(custom_path)?.custom_private;
-    custom_scan_mode_from_u32(custom_scan_list_nth_oid(custom_private, 0)?.to_u32())
+unsafe fn custom_scan_mode_from_path(
+    custom_path: *mut pg_sys::CustomPath,
+) -> Option<SpireCustomScanPlanMode> {
+    // SAFETY: caller guarantees custom_path is a live CustomPath produced by
+    // this provider for immediate private-list inspection.
+    let custom_private = unsafe { custom_scan_pg_ref(custom_path)? }.custom_private;
+    custom_scan_mode_from_u32(unsafe { custom_scan_list_nth_oid(custom_private, 0)? }.to_u32())
 }
 
-fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) -> pg_sys::Oid {
-    let Some(custom_path) = custom_scan_pg_ref(custom_path) else {
+unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) -> pg_sys::Oid {
+    // SAFETY: caller guarantees custom_path is a live CustomPath produced by
+    // this provider for immediate private-list inspection.
+    let Some(custom_path) = (unsafe { custom_scan_pg_ref(custom_path) }) else {
         pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID");
     };
-    custom_scan_list_nth_oid(custom_path.custom_private, 1).unwrap_or_else(|| {
+    unsafe { custom_scan_list_nth_oid(custom_path.custom_private, 1) }.unwrap_or_else(|| {
         pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID")
     })
 }
 
-fn custom_scan_mode_from_plan(custom_scan: *mut pg_sys::CustomScan) -> SpireCustomScanPlanMode {
-    let custom_private = custom_scan_custom_private(custom_scan, "private mode");
-    let raw = custom_scan_plan_private_u32(custom_private, 0, "mode");
+unsafe fn custom_scan_mode_from_plan(
+    custom_scan: *mut pg_sys::CustomScan,
+) -> SpireCustomScanPlanMode {
+    // SAFETY: caller guarantees custom_scan is a live provider-owned
+    // CustomScan plan node for immediate private-list inspection.
+    let custom_private = unsafe { custom_scan_custom_private(custom_scan, "private mode") };
+    let raw = unsafe { custom_scan_plan_private_u32(custom_private, 0, "mode") };
     custom_scan_mode_from_u32(raw)
         .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan has unknown mode {raw}"))
 }
@@ -83,24 +100,30 @@ fn custom_scan_plan_mode_for_dml_mode(
     }
 }
 
-fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
-    let custom_private = custom_scan_custom_private(custom_scan, "private index OID");
-    pg_sys::Oid::from(custom_scan_plan_private_u32(custom_private, 1, "index OID"))
+unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
+    // SAFETY: caller guarantees custom_scan is a live provider-owned
+    // CustomScan plan node for immediate private-list inspection.
+    let custom_private = unsafe { custom_scan_custom_private(custom_scan, "private index OID") };
+    pg_sys::Oid::from(unsafe { custom_scan_plan_private_u32(custom_private, 1, "index OID") })
 }
 
-fn custom_scan_dml_plan_private(
+unsafe fn custom_scan_dml_plan_private(
     mode: SpireCustomScanPlanMode,
     index_oid: pg_sys::Oid,
     pk_column: &str,
     updated_columns: &[String],
     projected_columns: &[String],
 ) -> *mut pg_sys::List {
+    // SAFETY: caller guarantees PostgreSQL planner memory context is active.
     let mut custom_private =
-        custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
-    custom_private = custom_scan_lappend_string(custom_private, &index_oid.to_u32().to_string());
-    custom_private = custom_scan_lappend_counted_column_list(custom_private, updated_columns);
-    custom_private = custom_scan_lappend_counted_column_list(custom_private, projected_columns);
-    custom_scan_lappend_string(custom_private, pk_column)
+        unsafe { custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string()) };
+    custom_private =
+        unsafe { custom_scan_lappend_string(custom_private, &index_oid.to_u32().to_string()) };
+    custom_private =
+        unsafe { custom_scan_lappend_counted_column_list(custom_private, updated_columns) };
+    custom_private =
+        unsafe { custom_scan_lappend_counted_column_list(custom_private, projected_columns) };
+    unsafe { custom_scan_lappend_string(custom_private, pk_column) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -135,30 +158,37 @@ pub(crate) unsafe fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> S
     }
 }
 
-fn custom_scan_plan_private_u32(
+unsafe fn custom_scan_plan_private_u32(
     custom_private: *mut pg_sys::List,
     offset: i32,
     label: &str,
 ) -> u32 {
-    if offset < 0 || custom_scan_list_len(custom_private).is_none_or(|len| len <= offset) {
+    // SAFETY: caller guarantees custom_private is a live plan-private List
+    // produced by this provider.
+    if offset < 0 || unsafe { custom_scan_list_len(custom_private) }.is_none_or(|len| len <= offset)
+    {
         pgrx::error!("EcSpireDistributedScan plan is missing private {label}");
     }
-    match custom_scan_list_tag(custom_private) {
-        Some(pg_sys::NodeTag::T_OidList) => custom_scan_list_nth_oid(custom_private, offset)
-            .unwrap_or_else(|| {
-                pgrx::error!("EcSpireDistributedScan plan is missing private {label}")
-            })
-            .to_u32(),
+    match unsafe { custom_scan_list_tag(custom_private) } {
+        Some(pg_sys::NodeTag::T_OidList) => {
+            unsafe { custom_scan_list_nth_oid(custom_private, offset) }
+                .unwrap_or_else(|| {
+                    pgrx::error!("EcSpireDistributedScan plan is missing private {label}")
+                })
+                .to_u32()
+        }
         Some(pg_sys::NodeTag::T_List) => {
-            let node = custom_scan_list_nth_node(custom_private, offset).unwrap_or_else(|| {
-                pgrx::error!("EcSpireDistributedScan plan has null private {label}")
-            });
-            let Some(node_ref) = custom_scan_pg_ref(node) else {
+            let node =
+                unsafe { custom_scan_list_nth_node(custom_private, offset) }.unwrap_or_else(|| {
+                    pgrx::error!("EcSpireDistributedScan plan has null private {label}")
+                });
+            let Some(node_ref) = (unsafe { custom_scan_pg_ref(node) }) else {
                 pgrx::error!("EcSpireDistributedScan plan has null private {label}");
             };
             match node_ref.type_ {
                 pg_sys::NodeTag::T_Integer => {
-                    let Some(value_node) = custom_scan_pg_ref(node.cast::<pg_sys::Integer>())
+                    let Some(value_node) =
+                        (unsafe { custom_scan_pg_ref(node.cast::<pg_sys::Integer>()) })
                     else {
                         pgrx::error!("EcSpireDistributedScan plan has null private {label}");
                     };
@@ -166,12 +196,10 @@ fn custom_scan_plan_private_u32(
                         pgrx::error!("EcSpireDistributedScan plan private {label} is negative")
                     })
                 }
-                pg_sys::NodeTag::T_String => custom_scan_string_node_value(node, label)
+                pg_sys::NodeTag::T_String => unsafe { custom_scan_string_node_value(node, label) }
                     .parse::<u32>()
                     .unwrap_or_else(|e| {
-                        pgrx::error!(
-                            "EcSpireDistributedScan plan private {label} is not u32: {e}"
-                        )
+                        pgrx::error!("EcSpireDistributedScan plan private {label} is not u32: {e}")
                     }),
                 _ => pgrx::error!("EcSpireDistributedScan plan has invalid private {label}"),
             }
@@ -180,7 +208,7 @@ fn custom_scan_plan_private_u32(
     }
 }
 
-fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_sys::List {
+unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_sys::List {
     // SAFETY: CString rejects interior NULs; pstrdup copies into PostgreSQL
     // memory before makeString/lappend attach it to the plan-private List.
     unsafe {
@@ -192,18 +220,19 @@ fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_s
     }
 }
 
-fn custom_scan_lappend_counted_column_list(
+unsafe fn custom_scan_lappend_counted_column_list(
     list: *mut pg_sys::List,
     columns: &[String],
 ) -> *mut pg_sys::List {
-    let mut list = custom_scan_lappend_string(list, &columns.len().to_string());
+    // SAFETY: caller guarantees PostgreSQL planner memory context is active.
+    let mut list = unsafe { custom_scan_lappend_string(list, &columns.len().to_string()) };
     for column in columns {
-        list = custom_scan_lappend_string(list, column);
+        list = unsafe { custom_scan_lappend_string(list, column) };
     }
     list
 }
 
-fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
+unsafe fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
     // SAFETY: node is checked for null/String tag and sval null before reading
     // the PostgreSQL-owned NUL-terminated string.
     unsafe {
@@ -228,43 +257,49 @@ unsafe fn custom_scan_dml_column_list_from_plan(
     offset: i32,
     label: &str,
 ) -> Vec<String> {
-    let custom_private = custom_scan_custom_private(custom_scan, label);
-    custom_scan_dml_column_list_from_plan_private(custom_private, offset, label)
+    let custom_private = unsafe { custom_scan_custom_private(custom_scan, label) };
+    unsafe { custom_scan_dml_column_list_from_plan_private(custom_private, offset, label) }
 }
 
-fn custom_scan_dml_column_list_from_plan_private(
+unsafe fn custom_scan_dml_column_list_from_plan_private(
     custom_private: *mut pg_sys::List,
     offset: i32,
     label: &str,
 ) -> Vec<String> {
-    if offset < 0 || custom_scan_list_len(custom_private).is_none_or(|len| len <= offset) {
+    // SAFETY: caller guarantees custom_private is a live plan-private List
+    // produced by this provider.
+    if offset < 0 || unsafe { custom_scan_list_len(custom_private) }.is_none_or(|len| len <= offset)
+    {
         pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
     }
     let count_offset = match offset {
         DML_UPDATED_COLUMN_COUNT_OFFSET => DML_UPDATED_COLUMN_COUNT_OFFSET,
-        3 => custom_scan_dml_projected_column_count_offset(custom_private),
+        3 => unsafe { custom_scan_dml_projected_column_count_offset(custom_private) },
         _ => pgrx::error!("EcSpireDistributedScan DML plan has invalid {label} offset"),
     };
-    custom_scan_dml_counted_column_list_from_plan_private(custom_private, count_offset, label)
-        .unwrap_or_else(|e| pgrx::error!("{e}"))
+    unsafe {
+        custom_scan_dml_counted_column_list_from_plan_private(custom_private, count_offset, label)
+    }
+    .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-fn custom_scan_dml_counted_column_list_from_plan_private(
+unsafe fn custom_scan_dml_counted_column_list_from_plan_private(
     custom_private: *mut pg_sys::List,
     count_offset: i32,
     label: &str,
 ) -> Result<Vec<String>, String> {
-    if count_offset < 0 || custom_scan_list_len(custom_private).is_none_or(|len| len <= count_offset)
+    // SAFETY: caller guarantees custom_private is a live plan-private List
+    // produced by this provider.
+    if count_offset < 0
+        || unsafe { custom_scan_list_len(custom_private) }.is_none_or(|len| len <= count_offset)
     {
         return Err(format!(
             "EcSpireDistributedScan DML plan is missing {label} count metadata"
         ));
     }
-    let count = usize::try_from(custom_scan_plan_private_u32(
-        custom_private,
-        count_offset,
-        &format!("{label} count"),
-    ))
+    let count = usize::try_from(unsafe {
+        custom_scan_plan_private_u32(custom_private, count_offset, &format!("{label} count"))
+    })
     .map_err(|_| format!("EcSpireDistributedScan DML plan {label} count is too large"))?;
     let required_len = count_offset
         .checked_add(1)
@@ -272,7 +307,7 @@ fn custom_scan_dml_counted_column_list_from_plan_private(
         .ok_or_else(|| {
             format!("EcSpireDistributedScan DML plan {label} count overflows metadata list")
         })?;
-    if custom_scan_list_len(custom_private).is_none_or(|len| len < required_len) {
+    if unsafe { custom_scan_list_len(custom_private) }.is_none_or(|len| len < required_len) {
         return Err(format!(
             "EcSpireDistributedScan DML plan {label} metadata is truncated"
         ));
@@ -284,12 +319,14 @@ fn custom_scan_dml_counted_column_list_from_plan_private(
             + i32::try_from(index).unwrap_or_else(|_| {
                 pgrx::error!("EcSpireDistributedScan DML plan {label} index is too large")
             });
-        let column = custom_scan_string_node_value(
-            custom_scan_list_nth_node(custom_private, offset).unwrap_or_else(|| {
-                pgrx::error!("EcSpireDistributedScan DML plan {label} metadata is truncated")
-            }),
-            label,
-        );
+        let column = unsafe {
+            custom_scan_string_node_value(
+                custom_scan_list_nth_node(custom_private, offset).unwrap_or_else(|| {
+                    pgrx::error!("EcSpireDistributedScan DML plan {label} metadata is truncated")
+                }),
+                label,
+            )
+        };
         if column.is_empty() {
             return Err(format!(
                 "EcSpireDistributedScan DML plan {label} metadata contains an empty column name"
@@ -300,12 +337,15 @@ fn custom_scan_dml_counted_column_list_from_plan_private(
     Ok(columns)
 }
 
-fn custom_scan_dml_projected_column_count_offset(custom_private: *mut pg_sys::List) -> i32 {
-    let updated_count = custom_scan_plan_private_u32(
-        custom_private,
-        DML_UPDATED_COLUMN_COUNT_OFFSET,
-        "updated column count",
-    );
+unsafe fn custom_scan_dml_projected_column_count_offset(custom_private: *mut pg_sys::List) -> i32 {
+    // SAFETY: caller guarantees custom_private is a live plan-private List.
+    let updated_count = unsafe {
+        custom_scan_plan_private_u32(
+            custom_private,
+            DML_UPDATED_COLUMN_COUNT_OFFSET,
+            "updated column count",
+        )
+    };
     DML_UPDATED_COLUMN_COUNT_OFFSET
         + 1
         + i32::try_from(updated_count).unwrap_or_else(|_| {
@@ -313,10 +353,12 @@ fn custom_scan_dml_projected_column_count_offset(custom_private: *mut pg_sys::Li
         })
 }
 
-fn custom_scan_dml_pk_column_offset(custom_private: *mut pg_sys::List) -> i32 {
-    let projected_offset = custom_scan_dml_projected_column_count_offset(custom_private);
-    let projected_count =
-        custom_scan_plan_private_u32(custom_private, projected_offset, "projected column count");
+unsafe fn custom_scan_dml_pk_column_offset(custom_private: *mut pg_sys::List) -> i32 {
+    // SAFETY: caller guarantees custom_private is a live plan-private List.
+    let projected_offset = unsafe { custom_scan_dml_projected_column_count_offset(custom_private) };
+    let projected_count = unsafe {
+        custom_scan_plan_private_u32(custom_private, projected_offset, "projected column count")
+    };
     projected_offset
         + 1
         + i32::try_from(projected_count).unwrap_or_else(|_| {
@@ -325,27 +367,29 @@ fn custom_scan_dml_pk_column_offset(custom_private: *mut pg_sys::List) -> i32 {
 }
 
 unsafe fn custom_scan_dml_pk_column_from_plan(custom_scan: *mut pg_sys::CustomScan) -> String {
-    let custom_private = custom_scan_custom_private(custom_scan, "PK column");
-    custom_scan_dml_pk_column_from_plan_private(custom_private)
+    let custom_private = unsafe { custom_scan_custom_private(custom_scan, "PK column") };
+    unsafe { custom_scan_dml_pk_column_from_plan_private(custom_private) }
 }
 
-fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sys::List) -> String {
-    let offset = custom_scan_dml_pk_column_offset(custom_private);
-    let node = custom_scan_list_nth_node(custom_private, offset).unwrap_or_else(|| {
+unsafe fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sys::List) -> String {
+    // SAFETY: caller guarantees custom_private is a live plan-private List.
+    let offset = unsafe { custom_scan_dml_pk_column_offset(custom_private) };
+    let node = unsafe { custom_scan_list_nth_node(custom_private, offset) }.unwrap_or_else(|| {
         pgrx::error!("EcSpireDistributedScan DML plan is missing PK column metadata")
     });
-    let pk_column = custom_scan_string_node_value(node, "PK column");
+    let pk_column = unsafe { custom_scan_string_node_value(node, "PK column") };
     if pk_column.is_empty() {
         pgrx::error!("EcSpireDistributedScan DML plan PK column metadata is empty");
     }
     pk_column
 }
 
-fn custom_scan_custom_private(
+unsafe fn custom_scan_custom_private(
     custom_scan: *mut pg_sys::CustomScan,
     label: &str,
 ) -> *mut pg_sys::List {
-    let Some(custom_scan) = custom_scan_pg_ref(custom_scan) else {
+    // SAFETY: caller guarantees custom_scan is a live CustomScan plan node.
+    let Some(custom_scan) = (unsafe { custom_scan_pg_ref(custom_scan) }) else {
         pgrx::error!("EcSpireDistributedScan plan is missing {label} metadata");
     };
     if custom_scan.custom_private.is_null() {

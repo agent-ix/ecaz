@@ -15,18 +15,16 @@ unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
         return;
     }
 
-    let custom_scan = custom_scan_plan(node);
-    let index_oid = custom_scan_index_oid_from_plan(custom_scan);
+    // SAFETY: PostgreSQL invokes ExplainCustomScan with a live provider
+    // CustomScanState for the duration of this callback.
+    let custom_scan = unsafe { custom_scan_plan(node) };
+    let index_oid = unsafe { custom_scan_index_oid_from_plan(custom_scan) };
     let context = custom_scan_explain_context(index_oid);
 
     // SAFETY: `es` is the non-null ExplainState supplied by PostgreSQL for the
     // duration of this callback; property names and values are static C strings.
     unsafe {
-        pg_sys::ExplainPropertyText(
-            c"node".as_ptr(),
-            c"EcSpireDistributedScan".as_ptr(),
-            es,
-        );
+        pg_sys::ExplainPropertyText(c"node".as_ptr(), c"EcSpireDistributedScan".as_ptr(), es);
         pg_sys::ExplainPropertyUInteger(
             c"remote_fanout".as_ptr(),
             std::ptr::null(),

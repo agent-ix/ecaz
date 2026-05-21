@@ -1,4 +1,4 @@
-fn custom_scan_store_remote_tuple_payload(
+unsafe fn custom_scan_store_remote_tuple_payload(
     state: &mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
     output: &super::SpireRemoteProductionScanOutputRow,
@@ -35,7 +35,7 @@ fn custom_scan_store_remote_tuple_payload(
     }
 }
 
-fn custom_scan_store_tuple_payload_json(
+unsafe fn custom_scan_store_tuple_payload_json(
     slot: *mut pg_sys::TupleTableSlot,
     payload_json: &str,
     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],
@@ -151,7 +151,7 @@ unsafe fn custom_scan_json_value_to_datum(
     }
 }
 
-fn custom_scan_store_tuple_payload_typed(
+unsafe fn custom_scan_store_tuple_payload_typed(
     slot: *mut pg_sys::TupleTableSlot,
     payload: &super::SpireRemoteTypedTuplePayload,
     attr_inputs: &mut [Option<SpireCustomScanPayloadAttrIo>],

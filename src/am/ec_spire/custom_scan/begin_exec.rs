@@ -54,18 +54,20 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     _eflags: core::ffi::c_int,
 ) {
     let state = custom_scan_exec_state_mut(node.cast(), "BeginCustomScan");
-    let custom_scan = custom_scan_plan(node);
-    let mode = custom_scan_mode_from_plan(custom_scan);
-    let index_oid = custom_scan_index_oid_from_plan(custom_scan);
+    // SAFETY: PostgreSQL invokes BeginCustomScan with a live CustomScanState
+    // whose plan pointer is the provider-owned CustomScan built by the planner.
+    let custom_scan = unsafe { custom_scan_plan(node) };
+    let mode = unsafe { custom_scan_mode_from_plan(custom_scan) };
+    let index_oid = unsafe { custom_scan_index_oid_from_plan(custom_scan) };
     match mode {
         SpireCustomScanPlanMode::VectorOrderLimit => {
             let (tuple_payload_columns, tuple_payload_inputs) =
-                custom_scan_tuple_payload_state_from_plan(node, custom_scan);
+                unsafe { custom_scan_tuple_payload_state_from_plan(node, custom_scan) };
             custom_scan_init_vector_order_limit_exec_state(
                 state,
                 index_oid,
-                custom_scan_top_k_from_plan(custom_scan),
-                custom_scan_query_from_plan(node, custom_scan),
+                unsafe { custom_scan_top_k_from_plan(custom_scan) },
+                unsafe { custom_scan_query_from_plan(node, custom_scan) },
                 tuple_payload_columns,
                 tuple_payload_inputs,
             );
@@ -73,13 +75,14 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
             state.mode = mode;
             state.index_oid = index_oid;
-            custom_scan_init_tuple_payload_state(state, node, custom_scan);
-            state.dml_pk_column = custom_scan_dml_pk_column(node);
-            state.dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
+            unsafe { custom_scan_init_tuple_payload_state(state, node, custom_scan) };
+            state.dml_pk_column = unsafe { custom_scan_dml_pk_column(node) };
+            state.dml_pk_value = unsafe { custom_scan_dml_pk_value_from_plan(node, custom_scan) };
             state.dml_updated_columns =
-                custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
-            state.dml_projected_columns =
-                custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
+                unsafe { custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns") };
+            state.dml_projected_columns = unsafe {
+                custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns")
+            };
             custom_scan_validate_dml_column_metadata(
                 state.mode,
                 &state.dml_updated_columns,
@@ -91,17 +94,20 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
             state.mode = mode;
             state.index_oid = index_oid;
-            state.dml_pk_column = custom_scan_dml_pk_column_from_plan(custom_scan);
-            state.dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
+            state.dml_pk_column = unsafe { custom_scan_dml_pk_column_from_plan(custom_scan) };
+            state.dml_pk_value = unsafe { custom_scan_dml_pk_value_from_plan(node, custom_scan) };
             state.dml_updated_columns =
-                custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
-            state.dml_projected_columns =
-                custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
+                unsafe { custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns") };
+            state.dml_projected_columns = unsafe {
+                custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns")
+            };
             if state.mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
-                state.dml_update_value_exprs = custom_scan_dml_update_value_exprs_from_plan(
-                    custom_scan,
-                    state.dml_updated_columns.len(),
-                );
+                state.dml_update_value_exprs = unsafe {
+                    custom_scan_dml_update_value_exprs_from_plan(
+                        custom_scan,
+                        state.dml_updated_columns.len(),
+                    )
+                };
             }
             custom_scan_validate_dml_column_metadata(
                 state.mode,
@@ -135,13 +141,10 @@ fn custom_scan_init_vector_order_limit_exec_state(
     state.dml_tuple_payload_json = None;
 }
 
-fn custom_scan_tuple_payload_state_from_plan(
+unsafe fn custom_scan_tuple_payload_state_from_plan(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
-) -> (
-    Vec<String>,
-    Vec<Option<SpireCustomScanPayloadAttrIo>>,
-) {
+) -> (Vec<String>, Vec<Option<SpireCustomScanPayloadAttrIo>>) {
     // SAFETY: node/custom_scan are the live executor state and matching plan;
     // the current relation tuple descriptor remains valid during BeginCustomScan.
     unsafe {
@@ -155,13 +158,13 @@ fn custom_scan_tuple_payload_state_from_plan(
     }
 }
 
-fn custom_scan_init_tuple_payload_state(
+unsafe fn custom_scan_init_tuple_payload_state(
     state: &mut SpireCustomScanExecState,
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) {
     let (tuple_payload_columns, tuple_payload_inputs) =
-        custom_scan_tuple_payload_state_from_plan(node, custom_scan);
+        unsafe { custom_scan_tuple_payload_state_from_plan(node, custom_scan) };
     state.tuple_payload_columns = tuple_payload_columns;
     state.tuple_payload_inputs = tuple_payload_inputs;
 }
@@ -206,8 +209,7 @@ unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomSc
 static CUSTOM_SCAN_END_CUSTOM_SCAN_COUNT: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 #[cfg(any(test, feature = "pg_test"))]
-static CUSTOM_SCAN_PFREE_COUNT: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+static CUSTOM_SCAN_PFREE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(any(test, feature = "pg_test"))]
 static CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(u64::MAX);
@@ -244,7 +246,7 @@ fn custom_scan_note_pfree_for_test() {
 fn custom_scan_note_pfree_for_test() {}
 
 #[cfg(any(test, feature = "pg_test"))]
-fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext) -> u64 {
+unsafe fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext) -> u64 {
     if context.is_null() {
         return u64::MAX;
     }
@@ -258,26 +260,26 @@ fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn custom_scan_note_memory_baseline_for_test(context: pg_sys::MemoryContext) {
+unsafe fn custom_scan_note_memory_baseline_for_test(context: pg_sys::MemoryContext) {
     CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.store(
-        custom_scan_memory_context_used_bytes_for_test(context),
+        unsafe { custom_scan_memory_context_used_bytes_for_test(context) },
         std::sync::atomic::Ordering::Relaxed,
     );
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
-fn custom_scan_note_memory_baseline_for_test(_context: pg_sys::MemoryContext) {}
+unsafe fn custom_scan_note_memory_baseline_for_test(_context: pg_sys::MemoryContext) {}
 
 #[cfg(any(test, feature = "pg_test"))]
-fn custom_scan_note_memory_after_end_for_test(context: pg_sys::MemoryContext) {
+unsafe fn custom_scan_note_memory_after_end_for_test(context: pg_sys::MemoryContext) {
     CUSTOM_SCAN_MEMORY_AFTER_END_USED_BYTES.store(
-        custom_scan_memory_context_used_bytes_for_test(context),
+        unsafe { custom_scan_memory_context_used_bytes_for_test(context) },
         std::sync::atomic::Ordering::Relaxed,
     );
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
-fn custom_scan_note_memory_after_end_for_test(_context: pg_sys::MemoryContext) {}
+unsafe fn custom_scan_note_memory_after_end_for_test(_context: pg_sys::MemoryContext) {}
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn custom_scan_reset_cleanup_counters_for_test() {
@@ -297,8 +299,8 @@ pub(crate) fn custom_scan_cleanup_counters_for_test() -> SpireCustomScanCleanupC
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn custom_scan_memory_context_snapshot_for_test(
-) -> SpireCustomScanMemoryContextSnapshot {
+pub(crate) fn custom_scan_memory_context_snapshot_for_test() -> SpireCustomScanMemoryContextSnapshot
+{
     let baseline_used_bytes =
         CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.load(std::sync::atomic::Ordering::Relaxed);
     let after_end_used_bytes =
@@ -328,8 +330,10 @@ fn custom_scan_note_rescan_for_test(_state: &SpireCustomScanExecState) {}
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn custom_scan_reset_rescan_snapshot_for_test() {
     CUSTOM_SCAN_RESCAN_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
-    CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET.store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
-    CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET.store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET
+        .store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET
+        .store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
     CUSTOM_SCAN_RESCAN_LOADED_OUTPUTS_AFTER_RESET.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -394,38 +398,40 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
 ) -> *mut pg_sys::TupleTableSlot {
     let state = custom_scan_exec_state_mut(scan_state.cast(), "access method");
     if state.mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
-        return custom_scan_dml_pk_select_access(state, scan_state);
+        return unsafe { custom_scan_dml_pk_select_access(state, scan_state) };
     }
     if state.mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
-        return custom_scan_dml_update_access(state, scan_state);
+        return unsafe { custom_scan_dml_update_access(state, scan_state) };
     }
     if state.mode == SpireCustomScanPlanMode::DmlDeleteTuplePayload {
-        return custom_scan_dml_delete_access(state, scan_state);
+        return unsafe { custom_scan_dml_delete_access(state, scan_state) };
     }
     custom_scan_ensure_outputs(state);
     loop {
         let Some(output_index) = custom_scan_next_output_index(state) else {
-            return custom_scan_clear_scan_tuple_slot(scan_state);
+            return unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
         };
         let output = state.outputs[output_index].clone();
         if !matches!(
             output.heap_lookup_owner,
             super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
         ) {
-            return custom_scan_store_remote_tuple_payload(state, scan_state, &output);
+            return unsafe { custom_scan_store_remote_tuple_payload(state, scan_state, &output) };
         }
 
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(&mut tid, output.heap_block, output.heap_offset);
-        custom_scan_clear_scan_tuple_slot(scan_state);
-        let visible = custom_scan_fetch_row_version_into_scan_slot(scan_state, &mut tid);
+        unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
+        let visible = unsafe { custom_scan_fetch_row_version_into_scan_slot(scan_state, &mut tid) };
         if visible {
-            return custom_scan_tuple_slot(scan_state);
+            return unsafe { custom_scan_tuple_slot(scan_state) };
         }
     }
 }
 
-fn custom_scan_tuple_slot(scan_state: *mut pg_sys::ScanState) -> *mut pg_sys::TupleTableSlot {
+unsafe fn custom_scan_tuple_slot(
+    scan_state: *mut pg_sys::ScanState,
+) -> *mut pg_sys::TupleTableSlot {
     // SAFETY: ExecScan invokes provider access callbacks with a live ScanState
     // whose scan tuple slot is owned by the active executor node.
     unsafe {
@@ -436,14 +442,14 @@ fn custom_scan_tuple_slot(scan_state: *mut pg_sys::ScanState) -> *mut pg_sys::Tu
     }
 }
 
-fn custom_scan_clear_scan_tuple_slot(
+unsafe fn custom_scan_clear_scan_tuple_slot(
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
     // SAFETY: the slot belongs to the live scan state for this callback.
     unsafe { pg_sys::ExecClearTuple(custom_scan_tuple_slot(scan_state)) }
 }
 
-fn custom_scan_add_processed_count(scan_state: *mut pg_sys::ScanState, processed: u64) {
+unsafe fn custom_scan_add_processed_count(scan_state: *mut pg_sys::ScanState, processed: u64) {
     // SAFETY: the executor estate belongs to the live scan callback; saturating
     // arithmetic preserves PostgreSQL's processed-row counter type.
     unsafe {
@@ -457,7 +463,7 @@ fn custom_scan_add_processed_count(scan_state: *mut pg_sys::ScanState, processed
     }
 }
 
-fn custom_scan_fetch_row_version_into_scan_slot(
+unsafe fn custom_scan_fetch_row_version_into_scan_slot(
     scan_state: *mut pg_sys::ScanState,
     tid: *mut pg_sys::ItemPointerData,
 ) -> bool {
@@ -481,47 +487,49 @@ fn custom_scan_fetch_row_version_into_scan_slot(
     }
 }
 
-fn custom_scan_dml_pk_select_access(
+unsafe fn custom_scan_dml_pk_select_access(
     state: &mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
     custom_scan_ensure_dml_pk_select_payload(state);
     if state.dml_payload_emitted {
-        return custom_scan_clear_scan_tuple_slot(scan_state);
+        return unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
     }
     state.dml_payload_emitted = true;
     let Some(payload_json) = state.dml_tuple_payload_json.as_deref() else {
-        return custom_scan_clear_scan_tuple_slot(scan_state);
+        return unsafe { custom_scan_clear_scan_tuple_slot(scan_state) };
     };
-    custom_scan_store_tuple_payload_json(
-        custom_scan_tuple_slot(scan_state),
-        payload_json,
-        &mut state.tuple_payload_inputs,
-    )
+    unsafe {
+        custom_scan_store_tuple_payload_json(
+            custom_scan_tuple_slot(scan_state),
+            payload_json,
+            &mut state.tuple_payload_inputs,
+        )
+    }
 }
 
-fn custom_scan_dml_update_access(
+unsafe fn custom_scan_dml_update_access(
     state: &mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
     if !state.dml_payload_emitted {
-        let updated_count = custom_scan_execute_dml_update(state, scan_state);
-        custom_scan_add_processed_count(scan_state, updated_count);
+        let updated_count = unsafe { custom_scan_execute_dml_update(state, scan_state) };
+        unsafe { custom_scan_add_processed_count(scan_state, updated_count) };
         state.dml_payload_emitted = true;
     }
-    custom_scan_clear_scan_tuple_slot(scan_state)
+    unsafe { custom_scan_clear_scan_tuple_slot(scan_state) }
 }
 
-fn custom_scan_dml_delete_access(
+unsafe fn custom_scan_dml_delete_access(
     state: &mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
     if !state.dml_payload_emitted {
         let deleted_count = custom_scan_execute_dml_delete(state);
-        custom_scan_add_processed_count(scan_state, deleted_count);
+        unsafe { custom_scan_add_processed_count(scan_state, deleted_count) };
         state.dml_payload_emitted = true;
     }
-    custom_scan_clear_scan_tuple_slot(scan_state)
+    unsafe { custom_scan_clear_scan_tuple_slot(scan_state) }
 }
 
 #[pg_guard]

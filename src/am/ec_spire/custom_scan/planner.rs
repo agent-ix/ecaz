@@ -1,10 +1,11 @@
 pub(crate) unsafe fn custom_scan_index_eligibility_row(
     index_relation: pg_sys::Relation,
 ) -> SpireCustomScanIndexEligibilityRow {
-    custom_scan_index_eligibility_result(index_relation).unwrap_or_else(|e| pgrx::error!("{e}"))
+    unsafe { custom_scan_index_eligibility_result(index_relation) }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-fn custom_scan_index_eligibility_result(
+unsafe fn custom_scan_index_eligibility_result(
     index_relation: pg_sys::Relation,
 ) -> Result<SpireCustomScanIndexEligibilityRow, String> {
     // SAFETY: index_relation is open for this backend; page helper pins and
@@ -26,7 +27,8 @@ fn custom_scan_index_eligibility_result(
         });
     }
 
-    let placement_directory = load_custom_scan_placement_directory(index_relation, root_control)?;
+    let placement_directory =
+        unsafe { load_custom_scan_placement_directory(index_relation, root_control) }?;
     let active_epoch = root_control.active_epoch;
     let mut local_placement_count = 0_u64;
     let mut remote_placement_count = 0_u64;
@@ -82,7 +84,7 @@ fn custom_scan_index_eligibility_result(
     })
 }
 
-fn load_custom_scan_placement_directory(
+unsafe fn load_custom_scan_placement_directory(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
 ) -> Result<meta::SpirePlacementDirectory, String> {
@@ -126,11 +128,16 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
             previous_hook(root, rel, rti, rte);
         }
     }
-    if let Some((index_oid, eligibility)) = custom_scan_candidate_index_oid(root, rel, rte) {
-        add_custom_scan_path(root, rel, index_oid, eligibility);
+    // SAFETY: PostgreSQL invokes set_rel_pathlist hooks with live planner
+    // pointers for the duration of this callback.
+    if let Some((index_oid, eligibility)) =
+        unsafe { custom_scan_candidate_index_oid(root, rel, rte) }
+    {
+        unsafe { add_custom_scan_path(root, rel, index_oid, eligibility) };
     }
-    if let Some(index_oid) = dml_pk_select_candidate_index_oid(root, rel, rte) {
-        add_dml_pk_select_custom_scan_path(root, rel, index_oid);
+    // SAFETY: same live planner callback pointer contract as above.
+    if let Some(index_oid) = unsafe { dml_pk_select_candidate_index_oid(root, rel, rte) } {
+        unsafe { add_dml_pk_select_custom_scan_path(root, rel, index_oid) };
     }
 }
 
@@ -340,14 +347,16 @@ pub(crate) unsafe fn custom_scan_dml_replacement_plan(
     }
 }
 
-fn custom_scan_candidate_index_oid(
+unsafe fn custom_scan_candidate_index_oid(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     rte: *mut pg_sys::RangeTblEntry,
 ) -> Option<(pg_sys::Oid, SpireCustomScanIndexEligibilityRow)> {
-    let root_ref = custom_scan_pg_ref(root)?;
-    let rel_ref = custom_scan_pg_ref(rel)?;
-    if custom_scan_pg_ref(rte).is_none() {
+    // SAFETY: caller guarantees the planner hook supplied live pointers for
+    // immediate inspection.
+    let root_ref = unsafe { custom_scan_pg_ref(root)? };
+    let rel_ref = unsafe { custom_scan_pg_ref(rel)? };
+    if unsafe { custom_scan_pg_ref(rte) }.is_none() {
         return None;
     }
     if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
@@ -359,12 +368,12 @@ fn custom_scan_candidate_index_oid(
     if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
         return None;
     }
-    let _ = custom_scan_orderby_query_expr(root, rel)?;
+    let _ = unsafe { custom_scan_orderby_query_expr(root, rel)? };
 
     let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
-    let index_list = custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist);
+    let index_list = unsafe { custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist) };
     for index_info in index_list.iter_ptr() {
-        let Some(index_info) = custom_scan_pg_ref(index_info) else {
+        let Some(index_info) = (unsafe { custom_scan_pg_ref(index_info) }) else {
             continue;
         };
         if index_info.relam != ec_spire_am_oid {
@@ -377,7 +386,7 @@ fn custom_scan_candidate_index_oid(
         else {
             continue;
         };
-        if let Ok(row) = custom_scan_index_eligibility_result(index_relation.as_ptr()) {
+        if let Ok(row) = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) } {
             if row.eligible_for_custom_scan {
                 return Some((index_info.indexoid, row));
             }
@@ -386,13 +395,16 @@ fn custom_scan_candidate_index_oid(
     None
 }
 
-fn dml_pk_select_candidate_index_oid(
+unsafe fn dml_pk_select_candidate_index_oid(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     rte: *mut pg_sys::RangeTblEntry,
 ) -> Option<pg_sys::Oid> {
-    let rel_ref = custom_scan_pg_ref(rel)?;
-    if custom_scan_pg_ref(root).is_none() || custom_scan_pg_ref(rte).is_none() {
+    // SAFETY: caller guarantees the planner hook supplied live pointers for
+    // immediate inspection.
+    let rel_ref = unsafe { custom_scan_pg_ref(rel)? };
+    if unsafe { custom_scan_pg_ref(root) }.is_none() || unsafe { custom_scan_pg_ref(rte) }.is_none()
+    {
         return None;
     }
     if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
@@ -403,10 +415,10 @@ fn dml_pk_select_candidate_index_oid(
     }
     let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
 
-    let index_list = custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist);
+    let index_list = unsafe { custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist) };
     let mut placement_index_oid = None;
     for index_info in index_list.iter_ptr() {
-        let Some(index_info) = custom_scan_pg_ref(index_info) else {
+        let Some(index_info) = (unsafe { custom_scan_pg_ref(index_info) }) else {
             continue;
         };
         if index_info.relam == ec_spire_am_oid
@@ -498,16 +510,18 @@ fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
     }
 }
 
-fn add_custom_scan_path(
+unsafe fn add_custom_scan_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     index_oid: pg_sys::Oid,
     eligibility: SpireCustomScanIndexEligibilityRow,
 ) {
-    let Some(root_ref) = custom_scan_pg_ref(root) else {
+    // SAFETY: root/rel were supplied by the current planner hook call and are
+    // inspected only while building this path.
+    let Some(root_ref) = (unsafe { custom_scan_pg_ref(root) }) else {
         return;
     };
-    let Some(rel_ref) = custom_scan_pg_ref(rel) else {
+    let Some(rel_ref) = (unsafe { custom_scan_pg_ref(rel) }) else {
         return;
     };
 
@@ -554,15 +568,17 @@ fn add_custom_scan_path(
     }
 }
 
-fn add_dml_pk_select_custom_scan_path(
+unsafe fn add_dml_pk_select_custom_scan_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     index_oid: pg_sys::Oid,
 ) {
-    if custom_scan_pg_ref(root).is_none() {
+    // SAFETY: root/rel were supplied by the current planner hook call and are
+    // inspected only while building this path.
+    if unsafe { custom_scan_pg_ref(root) }.is_none() {
         return;
     }
-    let Some(rel_ref) = custom_scan_pg_ref(rel) else {
+    let Some(rel_ref) = (unsafe { custom_scan_pg_ref(rel) }) else {
         return;
     };
 
