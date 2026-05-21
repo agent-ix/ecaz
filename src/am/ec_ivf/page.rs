@@ -3094,16 +3094,14 @@ mod tests {
     #[test]
     #[cfg(not(any(feature = "pg17", feature = "pg18")))]
     fn page_line_pointer_count_uses_header_lower_bound() {
-        let mut bytes =
-            vec![0_u8; size_of::<pg_sys::PageHeaderData>() + 4 * size_of::<pg_sys::ItemIdData>()];
-        let header = bytes.as_mut_ptr().cast::<pg_sys::PageHeaderData>();
-        // SAFETY: `bytes` is large enough for `PageHeaderData`, and this test
-        // writes only the synthetic `pd_lower` field before reading it back.
-        unsafe {
-            (*header).pd_lower =
-                (size_of::<pg_sys::PageHeaderData>() + 3 * size_of::<pg_sys::ItemIdData>()) as u16;
-        }
+        let mut header = pg_sys::PageHeaderData {
+            pd_lower: (size_of::<pg_sys::PageHeaderData>() + 3 * size_of::<pg_sys::ItemIdData>())
+                as u16,
+        };
 
-        assert_eq!(page_line_pointer_count(bytes.as_mut_ptr()), 3);
+        assert_eq!(
+            page_line_pointer_count(std::ptr::addr_of_mut!(header).cast()),
+            3
+        );
     }
 }
