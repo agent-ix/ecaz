@@ -1,0 +1,79 @@
+commit e2486f93570dbb1e3289ac84de93c5cd8123c7c7
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 18:06:12 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 18:06:12 2026 -0700
+
+    Centralize PostgreSQL timestamp unsafe
+---
+ src/am/ec_spire/build/drafts.rs          | 3 +--
+ src/am/ec_spire/coordinator/snapshots.rs | 8 ++------
+ src/storage/mod.rs                       | 1 +
+ src/storage/time.rs                      | 9 +++++++++
+ 4 files changed, 13 insertions(+), 8 deletions(-)
+
+diff --git a/src/am/ec_spire/build/drafts.rs b/src/am/ec_spire/build/drafts.rs
+index 998f406e..cccf17c9 100644
+--- a/src/am/ec_spire/build/drafts.rs
++++ b/src/am/ec_spire/build/drafts.rs
+@@ -443,8 +443,7 @@ unsafe fn publish_relation_recursive_routing_build(
+ }
+
+ pub(super) fn current_epoch_publish_times() -> Result<(i64, i64), String> {
+-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
+-    let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
++    let published_at_micros = crate::storage::time::current_timestamp_micros();
+     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)
+         .checked_mul(MICROS_PER_SECOND)
+         .ok_or_else(|| "ec_spire epoch retention micros overflow".to_owned())?;
+diff --git a/src/am/ec_spire/coordinator/snapshots.rs b/src/am/ec_spire/coordinator/snapshots.rs
+index 57c852da..c87c3345 100644
+--- a/src/am/ec_spire/coordinator/snapshots.rs
++++ b/src/am/ec_spire/coordinator/snapshots.rs
+@@ -676,9 +676,7 @@ pub(crate) unsafe fn index_epoch_snapshot(
+                 Ok(())
+             }
+         })?;
+-        // SAFETY: reads PostgreSQL's current backend timestamp for cleanup-age
+-        // diagnostics; no pointer is retained.
+-        let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
++        let now_micros = crate::storage::time::current_timestamp_micros();
+         epoch_snapshot_rows_from_manifests(root_control, manifests, now_micros)
+     })();
+     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+@@ -867,9 +865,7 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
+             });
+         }
+
+-        // SAFETY: reads PostgreSQL's current backend timestamp for epoch
+-        // retention planning; no pointer is retained.
+-        let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
++        let now_micros = crate::storage::time::current_timestamp_micros();
+         let (cleanup_epochs, protected, candidates_by_relid) =
+             collect_physical_cleanup_candidates(index_relation, root_control, now_micros)?;
+         let cleanup_epoch_count = u64::try_from(cleanup_epochs.len())
+diff --git a/src/storage/mod.rs b/src/storage/mod.rs
+index 7ddfc765..6bdae365 100644
+--- a/src/storage/mod.rs
++++ b/src/storage/mod.rs
+@@ -12,4 +12,5 @@ pub(crate) mod scan_guard;
+ pub(crate) mod slot_guard;
+ pub(crate) mod snapshot_guard;
+ pub(crate) mod spi_guard;
++pub(crate) mod time;
+ pub mod wal;
+diff --git a/src/storage/time.rs b/src/storage/time.rs
+new file mode 100644
+index 00000000..2c1da2f2
+--- /dev/null
++++ b/src/storage/time.rs
+@@ -0,0 +1,9 @@
++//! PostgreSQL backend time helpers.
++
++use pgrx::pg_sys;
++
++pub(crate) fn current_timestamp_micros() -> i64 {
++    // SAFETY: reads PostgreSQL backend-local current timestamp state and
++    // returns it by value; no pointer or backend-owned memory is retained.
++    unsafe { pg_sys::GetCurrentTimestamp() }
++}
