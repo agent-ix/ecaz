@@ -64,13 +64,9 @@ pub(super) fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPo
     if tid.is_null() {
         pgrx::error!("ec_spire {context} received a null heap tid");
     }
-    // SAFETY: tid was checked non-null and points to PostgreSQL's callback-owned
-    // ItemPointerData for the current heap tuple.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_spire heap tid should be non-null"),
+    )
 }
 
 pub(super) fn resolve_indexed_tuple_layout(

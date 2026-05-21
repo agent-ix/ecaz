@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
+use pgrx::{pg_sys, PgBox, PgTupleDesc};
 
 use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
 use super::{options, page, training, P_NEW};
@@ -747,13 +747,9 @@ pub(super) fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPo
     if tid.is_null() {
         pgrx::error!("ec_ivf {context} received a null heap tid");
     }
-    // SAFETY: null was checked above; PostgreSQL's ItemPointerData is copied
-    // out before returning the storage-local representation.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_ivf heap tid should be non-null"),
+    )
 }
 
 pub(super) fn resolve_indexed_vector_kind(

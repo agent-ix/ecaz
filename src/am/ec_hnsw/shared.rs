@@ -1,6 +1,6 @@
 use std::ptr;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys};
+use pgrx::pg_sys;
 
 use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
 use crate::am::common::vacuum::alloc_index_bulk_delete_result;
@@ -510,13 +510,9 @@ pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPoin
     if tid.is_null() {
         pgrx::error!("ec_hnsw ambuild received a null heap tid");
     }
-    // SAFETY: Null was checked above and PostgreSQL supplied this heap TID for
-    // the AM callback currently decoding it.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    page::ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_hnsw heap tid should be non-null"),
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]

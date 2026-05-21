@@ -21,7 +21,7 @@ use std::ffi::c_void;
 use std::ptr;
 use std::time::{Duration, Instant};
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
+use pgrx::{pg_sys, PgBox};
 
 use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena, training};
 use crate::quant::prod::ProdQuantizer;
@@ -810,13 +810,9 @@ pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_diskann ambuild received a null heap tid");
     }
-    // SAFETY: Null was checked above and PostgreSQL supplied this heap TID for
-    // the ambuild callback currently decoding it.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_diskann heap tid should be non-null"),
+    )
 }
 
 unsafe fn validate_single_ecvector_attribute(
