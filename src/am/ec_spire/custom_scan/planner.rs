@@ -128,15 +128,13 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
             previous_hook(root, rel, rti, rte);
         }
     }
-    // SAFETY: PostgreSQL invokes set_rel_pathlist hooks with live planner
-    // pointers for the duration of this callback.
-    if let Some((index_oid, eligibility)) =
-        unsafe { custom_scan_candidate_index_oid(root, rel, rte) }
-    {
+    let Some(hook_input) = (unsafe { CustomScanRelPathlistInput::new(root, rel, rte) }) else {
+        return;
+    };
+    if let Some((index_oid, eligibility)) = hook_input.custom_scan_candidate_index_oid() {
         unsafe { add_custom_scan_path(root, rel, index_oid, eligibility) };
     }
-    // SAFETY: same live planner callback pointer contract as above.
-    if let Some(index_oid) = unsafe { dml_pk_select_candidate_index_oid(root, rel, rte) } {
+    if let Some(index_oid) = hook_input.dml_pk_select_candidate_index_oid() {
         unsafe { add_dml_pk_select_custom_scan_path(root, rel, index_oid) };
     }
 }
@@ -347,89 +345,103 @@ pub(crate) unsafe fn custom_scan_dml_replacement_plan(
     }
 }
 
-unsafe fn custom_scan_candidate_index_oid(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
-    rte: *mut pg_sys::RangeTblEntry,
-) -> Option<(pg_sys::Oid, SpireCustomScanIndexEligibilityRow)> {
-    // SAFETY: caller guarantees the planner hook supplied live pointers for
-    // immediate inspection.
-    let planner_rel = unsafe { CustomScanPlannerRel::new_base_rel(root, rel, rte)? };
-    if !planner_rel.is_plain_base_relation() {
-        return None;
-    }
-    if !planner_rel.has_vector_order_limit_shape() {
-        return None;
-    }
-    let _ = planner_rel.orderby_query_expr()?;
-
-    let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
-    let mut candidate = None;
-    planner_rel.for_each_index_info(|index_info| {
-        if index_info.relam != ec_spire_am_oid {
-            return true;
-        }
-        let Some(index_relation) =
-            crate::storage::relation_guard::IndexRelationGuard::try_access_share(
-                index_info.indexoid,
-            )
-        else {
-            return true;
-        };
-        if let Ok(row) = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) } {
-            if row.eligible_for_custom_scan {
-                candidate = Some((index_info.indexoid, row));
-                return false;
-            }
-        }
-        true
-    });
-    candidate
-}
-
-unsafe fn dml_pk_select_candidate_index_oid(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
-    rte: *mut pg_sys::RangeTblEntry,
-) -> Option<pg_sys::Oid> {
-    // SAFETY: caller guarantees the planner hook supplied live pointers for
-    // immediate inspection.
-    let planner_rel = unsafe { CustomScanPlannerRel::new_base_rel(root, rel, rte)? };
-    if !planner_rel.is_plain_base_relation() {
-        return None;
-    }
-    let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
-
-    let mut placement_index_oid = None;
-    planner_rel.for_each_index_info(|index_info| {
-        if index_info.relam == ec_spire_am_oid
-            && custom_scan_index_has_sql_placement(index_info.indexoid)
-        {
-            placement_index_oid = Some(index_info.indexoid);
-            return false;
-        }
-        true
-    });
-    let placement_index_oid = placement_index_oid?;
-    // SAFETY: set_rel_pathlist supplies live PlannerInfo/RelOptInfo pointers
-    // for immediate PK SELECT handoff planning.
-    let plan_expr = match unsafe {
-        super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(root, rel)
-    }? {
-        Ok(plan_expr) => plan_expr,
-        Err(_err) => return None,
-    };
-    if plan_expr.primitive_plan.mode
-        != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
-    {
-        return None;
-    }
-    (plan_expr.primitive_plan.index_oid == placement_index_oid)
-        .then_some(plan_expr.primitive_plan.index_oid)
-}
-
 fn custom_scan_ec_spire_am_oid() -> Option<pg_sys::Oid> {
     super::ec_spire_access_method_oid()
+}
+
+#[derive(Clone, Copy)]
+struct CustomScanRelPathlistInput<'a> {
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    planner_rel: CustomScanPlannerRel<'a>,
+}
+
+impl<'a> CustomScanRelPathlistInput<'a> {
+    unsafe fn new(
+        root: *mut pg_sys::PlannerInfo,
+        rel: *mut pg_sys::RelOptInfo,
+        rte: *mut pg_sys::RangeTblEntry,
+    ) -> Option<Self> {
+        // SAFETY: PostgreSQL invokes set_rel_pathlist hooks with live planner
+        // pointers for the duration of this callback.
+        let planner_rel = unsafe { CustomScanPlannerRel::new_base_rel(root, rel, rte)? };
+        Some(Self {
+            root,
+            rel,
+            planner_rel,
+        })
+    }
+
+    fn custom_scan_candidate_index_oid(
+        self,
+    ) -> Option<(pg_sys::Oid, SpireCustomScanIndexEligibilityRow)> {
+        if !self.planner_rel.is_plain_base_relation() {
+            return None;
+        }
+        if !self.planner_rel.has_vector_order_limit_shape() {
+            return None;
+        }
+        let _ = self.planner_rel.orderby_query_expr()?;
+
+        let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
+        let mut candidate = None;
+        self.planner_rel.for_each_index_info(|index_info| {
+            if index_info.relam != ec_spire_am_oid {
+                return true;
+            }
+            let Some(index_relation) =
+                crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                    index_info.indexoid,
+                )
+            else {
+                return true;
+            };
+            if let Ok(row) =
+                unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) }
+            {
+                if row.eligible_for_custom_scan {
+                    candidate = Some((index_info.indexoid, row));
+                    return false;
+                }
+            }
+            true
+        });
+        candidate
+    }
+
+    fn dml_pk_select_candidate_index_oid(self) -> Option<pg_sys::Oid> {
+        if !self.planner_rel.is_plain_base_relation() {
+            return None;
+        }
+        let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
+
+        let mut placement_index_oid = None;
+        self.planner_rel.for_each_index_info(|index_info| {
+            if index_info.relam == ec_spire_am_oid
+                && custom_scan_index_has_sql_placement(index_info.indexoid)
+            {
+                placement_index_oid = Some(index_info.indexoid);
+                return false;
+            }
+            true
+        });
+        let placement_index_oid = placement_index_oid?;
+        // SAFETY: this view is constructed only from live set_rel_pathlist
+        // callback pointers and the DML handoff inspects them immediately.
+        let plan_expr = match unsafe {
+            super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(self.root, self.rel)
+        }? {
+            Ok(plan_expr) => plan_expr,
+            Err(_err) => return None,
+        };
+        if plan_expr.primitive_plan.mode
+            != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        {
+            return None;
+        }
+        (plan_expr.primitive_plan.index_oid == placement_index_oid)
+            .then_some(plan_expr.primitive_plan.index_oid)
+    }
 }
 
 fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
