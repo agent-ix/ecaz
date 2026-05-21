@@ -1353,12 +1353,8 @@ fn ec_spire_dml_frontdoor_classify_sql(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: `analyze_single_dml_frontdoor_query` parses and analyzes this
-    // SQL text in the current backend memory context for immediate inspection.
-    let query = unsafe {
-        analyze_single_dml_frontdoor_query(sql)
-            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
-    };
+    let query = storage::query::analyze_single_query(sql)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     let Some(target_relation_oid) = am::spire_dml_frontdoor_target_relation_oid(query) else {
         return TableIterator::once((
             None,
@@ -1448,12 +1444,8 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: the returned analyzed Query is inspected immediately during this
-    // SQL function call and is owned by PostgreSQL's current memory context.
-    let query = unsafe {
-        analyze_single_dml_frontdoor_query(sql)
-            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
-    };
+    let query = storage::query::analyze_single_query(sql)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query) else {
         return TableIterator::once((
             None,
@@ -1525,12 +1517,8 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: the returned analyzed Query is inspected immediately during this
-    // SQL function call and is owned by PostgreSQL's current memory context.
-    let query = unsafe {
-        analyze_single_dml_frontdoor_query(sql)
-            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
-    };
+    let query = storage::query::analyze_single_query(sql)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"));
     let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query) else {
         return TableIterator::once((
             None,
@@ -1623,46 +1611,6 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         error,
         next_step,
     ))
-}
-
-unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
-    let sql = CString::new(sql).map_err(|_| "SQL text contains an interior NUL byte".to_owned())?;
-    // SAFETY: `sql` is a NUL-terminated CString that lives through this parser
-    // call in the current backend.
-    let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
-    if raw_parses.is_null() {
-        return Err("parser returned no statements".to_owned());
-    }
-    // SAFETY: `raw_parses` is the non-null PostgreSQL List returned by
-    // `pg_parse_query`.
-    if unsafe { pg_sys::list_length(raw_parses) } != 1 {
-        return Err("expected exactly one SQL statement".to_owned());
-    }
-    // SAFETY: the list length check above guarantees element 0 exists and is a
-    // RawStmt pointer from PostgreSQL's parser.
-    let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
-    // SAFETY: `raw_stmt` and `sql` come from PostgreSQL parsing in this backend
-    // and are analyzed immediately with no external parameter values.
-    let queries = unsafe {
-        pg_sys::pg_analyze_and_rewrite_fixedparams(
-            raw_stmt,
-            sql.as_ptr(),
-            std::ptr::null(),
-            0,
-            std::ptr::null_mut(),
-        )
-    };
-    if queries.is_null() {
-        return Err("analyzer returned no query".to_owned());
-    }
-    // SAFETY: `queries` is the non-null PostgreSQL List returned by the
-    // analyzer/rewrite step.
-    if unsafe { pg_sys::list_length(queries) } != 1 {
-        return Err("expected exactly one analyzed query".to_owned());
-    }
-    // SAFETY: the list length check above guarantees element 0 exists and is
-    // the single analyzed Query pointer inspected by callers.
-    Ok(unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>())
 }
 
 #[pg_extern(stable, strict)]
