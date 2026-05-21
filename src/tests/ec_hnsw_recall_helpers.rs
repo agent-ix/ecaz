@@ -259,7 +259,7 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
-            hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+            am::debug_gettuple_current_result_state(index_oid, query.clone());
         let predicted_heap_tids =
             am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids = predicted_heap_tids
@@ -409,7 +409,7 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
-            hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+            am::debug_gettuple_current_result_state(index_oid, query.clone());
         let predicted_heap_tids =
             am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids_full = predicted_heap_tids
@@ -2377,7 +2377,7 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
-            hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+            am::debug_gettuple_current_result_state(index_oid, query.clone());
         let predicted_heap_tids =
             am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids = predicted_heap_tids

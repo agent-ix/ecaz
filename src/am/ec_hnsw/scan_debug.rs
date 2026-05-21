@@ -2880,7 +2880,7 @@ pub(crate) fn debug_grouped_scan_windowed_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_exhaustion_state(
+pub(crate) fn debug_gettuple_exhaustion_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<HeapTidCoords>, bool, bool) {
@@ -2925,7 +2925,7 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_state(
+pub(crate) fn debug_gettuple_current_result_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -2954,7 +2954,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let before_found = active_result_state_ref(opaque).current().has_element();
     let before_tid =
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
@@ -2966,7 +2966,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
     let found = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
     // SAFETY: The scan descriptor remains live after gettuple and still owns its
     // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let after_tid =
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let after_score = active_result_state_ref(opaque).current().score_valid();
@@ -2989,7 +2989,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_orderby_score(
+pub(crate) fn debug_gettuple_orderby_score(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, bool, f32) {
@@ -3026,7 +3026,7 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
     } else {
         // SAFETY: The order-by datum pointer was checked non-null above, and the
         // HNSW AM publishes f32 scores in this debug path.
-        f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, is_null)
+        unsafe { f32::from_datum(*(*scan).xs_orderbyvals, is_null) }
             .expect("orderby score should decode")
     };
 
@@ -3084,7 +3084,7 @@ fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> 
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
+pub(crate) fn debug_gettuple_orderby_score_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {

@@ -943,7 +943,7 @@
             after_tid,
             after_score,
             after_score_value,
-        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+        ) = am::debug_gettuple_current_result_state(index_oid, query.clone());
         let expected_score = Spi::get_one::<f32>(&format!(
             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
              FROM ec_hnsw_gettuple_result_state WHERE id = 1",
@@ -1023,7 +1023,7 @@
         .expect("index oid should exist");
         let query = vec![1.0, 0.0, 0.5, -1.0];
         let (found, orderby_is_null, orderby_score) =
-            hnsw_scan_debug!(am::debug_gettuple_orderby_score(index_oid, query.clone()));
+            am::debug_gettuple_orderby_score(index_oid, query.clone());
         let expected_score = Spi::get_one::<f32>(&format!(
             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
              FROM ec_hnsw_gettuple_orderby_score WHERE id = 1",
@@ -1070,7 +1070,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (before, after_first, exhausted, rescanned) = hnsw_scan_debug!(am::debug_gettuple_orderby_score_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (before, after_first, exhausted, rescanned) = am::debug_gettuple_orderby_score_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             before, None,
@@ -2361,7 +2361,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (observed_tids, exhausted_once, exhausted_twice) =
-            hnsw_scan_debug!(am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         let expected_tids = Spi::connect(|client| {
             client
@@ -2775,7 +2775,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (observed_tids, exhausted_once, exhausted_twice) =
-            hnsw_scan_debug!(am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             observed_tids.is_empty(),
