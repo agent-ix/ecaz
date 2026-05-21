@@ -610,14 +610,11 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
         .collect()
 }
 
-pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn coordinator_insert_dispatch_plan_row(
+    index: SpireLiveIndexRelation,
     node_id: u32,
     served_epoch: u64,
 ) -> SpireCoordinatorInsertDispatchPlanRow {
-    // SAFETY: coordinator DML callers hold the SPIRE index relation open for
-    // the duration of dispatch planning.
-    let index = unsafe { live_index_relation(index_relation) };
     let index_oid = remote_candidate_index_oid(index, "ec_spire coordinator insert dispatch plan");
     let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {
         let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;

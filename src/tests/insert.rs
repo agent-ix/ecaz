@@ -462,8 +462,11 @@
             index_oid,
             "test_ec_spire_insert_remote_prepare_local_cancel",
         );
+        // SAFETY: the guard keeps the validated SPIRE index relation open for
+        // the duration of this internal AM helper call.
+        let index = unsafe { am::spire_live_index_relation(index_relation.as_ptr()) };
         let result = am::spire_coordinator_insert_prepare_remote_sql(
-            index_relation.as_ptr(),
+            index,
             21,
             5,
             &remote_sql,

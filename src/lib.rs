@@ -445,13 +445,6 @@ macro_rules! with_live_index_relation {
     }};
 }
 
-macro_rules! with_live_index_relation_safe {
-    ($guard:expr, $func:path $(, $arg:expr)* $(,)?) => {{
-        let index_relation = $guard.as_ptr();
-        $func(index_relation $(, $arg)*)
-    }};
-}
-
 macro_rules! with_spire_live_index_relation {
     ($guard:expr, $func:path $(, $arg:expr)* $(,)?) => {{
         let index_relation = $guard.as_ptr();
@@ -8340,7 +8333,7 @@ fn ec_spire_plan_coordinator_insert_dispatch(
     let row = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert_dispatch");
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_coordinator_insert_dispatch_plan_row,
             node_id,
@@ -8418,7 +8411,7 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
         )
         .unwrap_or_else(|e| pgrx::error!("{e}"));
         let row_payload_json = row_payload.0.to_string();
-        let prepare_row = with_live_index_relation_safe!(
+        let prepare_row = with_spire_live_index_relation!(
             index_relation,
             am::spire_coordinator_insert_prepare_remote_tuple_payload,
             classification.0,
@@ -8646,7 +8639,7 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload_batch(
             index_oid,
             "ec_spire_prepare_coordinator_insert_tuple_payload_batch",
         );
-        with_live_index_relation_safe!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_coordinator_insert_prepare_remote_tuple_payload_batch,
             batch_rows,
@@ -8922,7 +8915,7 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
     if node_id < 0 {
         pgrx::error!("ec_spire coordinator update placement node_id must not be negative");
     }
-    let update_row = with_live_index_relation_safe!(
+    let update_row = with_spire_live_index_relation!(
         index_relation,
         am::spire_coordinator_update_remote_tuple_payload,
         u32::try_from(node_id).expect("positive node_id should fit u32"),
@@ -9082,7 +9075,7 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             "done",
         ));
     }
-    let delete_row = with_live_index_relation_safe!(
+    let delete_row = with_spire_live_index_relation!(
         index_relation,
         am::spire_coordinator_delete_prepare_remote_tuple_payload,
         u32::try_from(node_id).expect("positive node_id should fit u32"),
@@ -9243,7 +9236,7 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
     if node_id < 0 {
         pgrx::error!("ec_spire coordinator select placement node_id must not be negative");
     }
-    let select_row = with_live_index_relation_safe!(
+    let select_row = with_spire_live_index_relation!(
         index_relation,
         am::spire_coordinator_select_remote_tuple_payload,
         u32::try_from(node_id).expect("positive node_id should fit u32"),

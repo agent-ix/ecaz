@@ -1448,8 +1448,11 @@
         let served_epoch_u64 = u64::try_from(served_epoch).expect("served_epoch should fit u64");
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "test_prepare_coordinator_insert_remote_sql");
+        // SAFETY: the guard keeps the validated SPIRE index relation open for
+        // the duration of this internal AM helper call.
+        let index = unsafe { am::spire_live_index_relation(index_relation.as_ptr()) };
         let row = am::spire_coordinator_insert_prepare_remote_sql(
-            index_relation.as_ptr(),
+            index,
             node_id_u32,
             served_epoch_u64,
             remote_sql,
@@ -1500,8 +1503,11 @@
             index_oid,
             "test_prepare_coordinator_insert_remote_tuple_payload",
         );
+        // SAFETY: the guard keeps the validated SPIRE index relation open for
+        // the duration of this internal AM helper call.
+        let index = unsafe { am::spire_live_index_relation(index_relation.as_ptr()) };
         let row = am::spire_coordinator_insert_prepare_remote_tuple_payload(
-            index_relation.as_ptr(),
+            index,
             node_id_u32,
             served_epoch_u64,
             row_payload_json,
