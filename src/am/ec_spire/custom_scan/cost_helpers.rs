@@ -261,11 +261,6 @@ unsafe fn custom_scan_list_len(list: *mut pg_sys::List) -> Option<i32> {
     unsafe { custom_scan_pg_ref(list) }.map(|list| list.length)
 }
 
-unsafe fn custom_scan_list_tag(list: *mut pg_sys::List) -> Option<pg_sys::NodeTag> {
-    // SAFETY: caller guarantees list, when non-null, is a live PostgreSQL List.
-    unsafe { custom_scan_pg_ref(list) }.map(|list| list.type_)
-}
-
 unsafe fn custom_scan_list_nth_node(
     list: *mut pg_sys::List,
     offset: i32,
@@ -278,17 +273,6 @@ unsafe fn custom_scan_list_nth_node(
     // SAFETY: list is non-null and offset is bounds-checked against the
     // PostgreSQL List length above.
     Some(unsafe { pg_sys::list_nth(list, offset).cast::<pg_sys::Node>() })
-}
-
-unsafe fn custom_scan_list_nth_oid(list: *mut pg_sys::List, offset: i32) -> Option<pg_sys::Oid> {
-    // SAFETY: caller guarantees list is a live PostgreSQL OidList for immediate
-    // bounds-check and element access.
-    if offset < 0 || unsafe { custom_scan_list_len(list) }? <= offset {
-        return None;
-    }
-    // SAFETY: list is non-null and offset is bounds-checked against the
-    // PostgreSQL List length above.
-    Some(unsafe { pg_sys::list_nth_oid(list, offset) })
 }
 
 unsafe fn custom_scan_op_expr<'a>(expr: *mut pg_sys::Expr) -> Option<&'a pg_sys::OpExpr> {

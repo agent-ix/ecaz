@@ -313,26 +313,6 @@ unsafe fn custom_scan_lappend_counted_column_list(
     list
 }
 
-unsafe fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
-    // SAFETY: node is checked for null/String tag and sval null before reading
-    // the PostgreSQL-owned NUL-terminated string.
-    unsafe {
-        if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_String {
-            pgrx::error!("EcSpireDistributedScan DML plan has invalid {label} metadata");
-        }
-        let value_node = node.cast::<pg_sys::String>();
-        if (*value_node).sval.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML plan has null {label} metadata");
-        }
-        std::ffi::CStr::from_ptr((*value_node).sval)
-            .to_str()
-            .unwrap_or_else(|_| {
-                pgrx::error!("EcSpireDistributedScan DML plan {label} metadata is not UTF-8")
-            })
-            .to_owned()
-    }
-}
-
 unsafe fn custom_scan_dml_column_list_from_plan(
     custom_scan: *mut pg_sys::CustomScan,
     offset: i32,
