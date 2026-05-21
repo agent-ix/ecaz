@@ -331,7 +331,7 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (frontier_head, _, _, frontier_provenance, expanded_sources) =
-            hnsw_recall_debug!(am::debug_rescan_candidate_frontier(index_oid, query));
+            am::debug_rescan_candidate_frontier(index_oid, query);
 
         (
             probe.0,
@@ -1979,7 +1979,7 @@
                 .expect("seed coverage fixture index oid query should succeed")
                 .expect("seed coverage fixture index oid should exist");
 
-        let all_top_level_ids = hnsw_recall_debug!(am::debug_all_top_level_heap_tids(index_oid))
+        let all_top_level_ids = am::debug_all_top_level_heap_tids(index_oid)
             .into_iter()
             .map(|heap_tid| {
                 i64::try_from(
@@ -1990,7 +1990,7 @@
                 .expect("top-level id should fit into bigint")
             })
             .collect::<std::collections::HashSet<_>>();
-        let reachable_top_level_ids = hnsw_recall_debug!(am::debug_top_level_reachable_heap_tids(index_oid))
+        let reachable_top_level_ids = am::debug_top_level_reachable_heap_tids(index_oid)
             .into_iter()
             .map(|heap_tid| {
                 i64::try_from(

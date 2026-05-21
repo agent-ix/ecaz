@@ -1,11 +1,3 @@
-    macro_rules! hnsw_graph_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index and
-            // pass test-owned metadata, query vectors, or heap tids to test-only debug helpers.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_test]
     fn test_ech_empty_index_insert_initializes_shape_metadata() {
         Spi::run("CREATE TABLE ec_hnsw_empty_insert (id bigint primary key, embedding ecvector)")
@@ -699,7 +691,7 @@
         );
 
         let (_head, frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
-            hnsw_graph_debug!(am::debug_rescan_candidate_frontier(index_oid, query));
+            am::debug_rescan_candidate_frontier(index_oid, query);
         let frontier_tids = frontier_slots
             .iter()
             .filter_map(|(valid, tid, _)| valid.then_some(*tid))

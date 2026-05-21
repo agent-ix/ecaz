@@ -1261,7 +1261,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_valid, before_tid, before_score, after_valid, after_tid, after_score) =
-            hnsw_scan_debug!(am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             before_valid,
@@ -1403,7 +1403,7 @@
             successor_tid,
             _successor_source_tid,
             successor_score,
-        ) = hnsw_scan_debug!(am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             entry_tid,
@@ -1468,7 +1468,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (head, frontier, frontier_slots, frontier_provenance, expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let valid_entry_neighbors = am::debug_entry_point_neighbor_tids(index_oid)
             .into_iter()
             .filter(|tid| *tid != (u32::MAX, u16::MAX))
@@ -1587,7 +1587,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             frontier.len(),
@@ -1632,7 +1632,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             frontier.len(),
@@ -2141,7 +2141,7 @@
                 .expect("index oid should exist");
 
         let (head, _frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let (before, partial, exhausted) =
             hnsw_scan_debug!(am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
 

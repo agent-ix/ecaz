@@ -1619,7 +1619,7 @@ pub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
+pub(crate) fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_all_top_level_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
@@ -1662,9 +1662,7 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
-    index_oid: pg_sys::Oid,
-) -> Vec<HeapTidCoords> {
+pub(crate) fn debug_top_level_reachable_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_top_level_reachable_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
@@ -3133,7 +3131,7 @@ pub(crate) fn debug_gettuple_orderby_score_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_entry_candidate_state(
+pub(crate) fn debug_rescan_entry_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, HeapTidCoords, f32, bool, HeapTidCoords, f32) {
@@ -3153,7 +3151,7 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let current = active_result_state_ref(opaque).current();
     let (before_valid, before_tid, before_score) = if current.has_element() {
         (
@@ -3171,7 +3169,7 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 
     // SAFETY: The scan descriptor remains live after exhaustion and still owns
     // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let (after_valid, after_tid, after_score) =
         debug_candidate_slot(visible_frontier_slot(opaque, 0));
 
@@ -3190,7 +3188,7 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_successor_candidate_state(
+pub(crate) fn debug_rescan_successor_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -3226,7 +3224,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     let entry_neighbors = super::debug_entry_point_neighbor_tids(index_oid);
 
     // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
+    let opaque = unsafe { debug_scan_opaque(scan) };
     let successor_slot = debug_runtime_ordered_provenance_slots(opaque)
         .get(1)
         .copied()
@@ -3247,7 +3245,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_candidate_frontier(
+pub(crate) fn debug_rescan_candidate_frontier(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapSeedState {
@@ -3267,7 +3265,7 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
+    let opaque = unsafe { debug_scan_opaque_mut(scan) };
     let frontier_slots = debug_runtime_ordered_slots(opaque);
     let frontier = frontier_slots.clone();
     let frontier_provenance = debug_runtime_ordered_provenance_slots(opaque);
