@@ -759,12 +759,11 @@ fn protect_tuple(
     }
 }
 
-unsafe fn collect_physical_cleanup_candidates(
-    index_relation: pg_sys::Relation,
+fn collect_physical_cleanup_candidates(
+    index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
     now_micros: i64,
 ) -> Result<SpirePhysicalCleanupCandidates, String> {
-    let index = live_index_relation(index_relation);
     let index_relid = index.relid();
     let manifests = collect_epoch_manifests_for_cleanup(index)?;
     let latest_manifests = latest_epoch_manifests(&manifests);
@@ -839,18 +838,24 @@ unsafe fn collect_physical_cleanup_candidates(
     sorted_storage_relids.sort_unstable();
     for storage_relid in sorted_storage_relids {
         let (storage_relation, _storage_relation_guard) = open_storage_relation_or_index(
-            index_relation,
+            index.relation,
             index_relid,
             storage_relid,
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?;
         let mut candidates = Vec::new();
-        let scan_result = page::scan_object_tuples(storage_relation, |tid, _tuple| {
-            if !protected.contains(&(storage_relid, tid)) {
-                candidates.push(tid);
-            }
-            Ok(())
-        });
+        let scan_result =
+            // SAFETY: `storage_relation` is either the live index relation or a
+            // relation opened by the guard above with RowExclusiveLock for this
+            // scan; `scan_object_tuples` owns page locks and tuple bounds.
+            unsafe {
+                page::scan_object_tuples(storage_relation, |tid, _tuple| {
+                    if !protected.contains(&(storage_relid, tid)) {
+                        candidates.push(tid);
+                    }
+                    Ok(())
+                })
+            };
         scan_result?;
         if !candidates.is_empty() {
             candidates_by_relid.insert(storage_relid, candidates);
@@ -867,7 +872,8 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
     // before physical cleanup inspects and deletes object tuples.
     let _guard = unsafe { lock_publish_relation(index_relation) };
     let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {
-        let root_control = live_index_relation(index_relation).root_control();
+        let index = live_index_relation(index_relation);
+        let root_control = index.root_control();
         if root_control.active_epoch == 0 {
             return Ok(SpireIndexEpochCleanupRunResult {
                 active_epoch: 0,
@@ -882,7 +888,7 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
 
         let now_micros = crate::storage::time::current_timestamp_micros();
         let (cleanup_epochs, protected, candidates_by_relid) =
-            collect_physical_cleanup_candidates(index_relation, root_control, now_micros)?;
+            collect_physical_cleanup_candidates(index, root_control, now_micros)?;
         let cleanup_epoch_count = u64::try_from(cleanup_epochs.len())
             .map_err(|_| "ec_spire cleanup epoch count exceeds u64".to_owned())?;
         if cleanup_epochs.is_empty() {
@@ -901,7 +907,7 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
 
         // rd_id is stable while index_relation is open and locked; it is copied
         // as the index OID for cleanup deletion accounting.
-        let index_relid = live_index_relid(index_relation);
+        let index_relid = index.relid();
         let mut removed_tuple_count = 0_u64;
         let mut removed_tuple_bytes = 0_u64;
         for (storage_relid, tids) in candidates_by_relid {
