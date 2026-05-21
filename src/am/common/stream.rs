@@ -1,5 +1,7 @@
 use pgrx::pg_sys;
 
+use super::callback::pg_callback;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GraphPrefetchState {
     blocks: Vec<u32>,
@@ -491,25 +493,21 @@ pub(crate) unsafe extern "C-unwind" fn graph_prefetch_cb(
     callback_private_data: *mut std::ffi::c_void,
     per_buffer_data: *mut std::ffi::c_void,
 ) -> pg_sys::BlockNumber {
-    // SAFETY: ReadStream callbacks are invoked by PostgreSQL through the C
-    // callback ABI; the guard converts Rust panics into PostgreSQL errors.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if callback_private_data.is_null() {
-                return pg_sys::InvalidBlockNumber;
+    pg_callback!({
+        if callback_private_data.is_null() {
+            return pg_sys::InvalidBlockNumber;
+        }
+        // SAFETY: The graph stream is registered with a `GraphPrefetchState`
+        // callback-private pointer that outlives the callback invocation.
+        let state = &mut *callback_private_data.cast::<GraphPrefetchState>();
+        match graph_prefetch_callback(state) {
+            ReadStreamCallbackResult::Block(block_number) => {
+                write_stream_block(per_buffer_data, block_number);
+                block_number
             }
-            // SAFETY: The graph stream is registered with a `GraphPrefetchState`
-            // callback-private pointer that outlives the callback invocation.
-            let state = &mut *callback_private_data.cast::<GraphPrefetchState>();
-            match graph_prefetch_callback(state) {
-                ReadStreamCallbackResult::Block(block_number) => {
-                    write_stream_block(per_buffer_data, block_number);
-                    block_number
-                }
-                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
-            }
-        })
-    }
+            ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+        }
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -518,25 +516,21 @@ pub(crate) unsafe extern "C-unwind" fn linear_prefetch_cb(
     callback_private_data: *mut std::ffi::c_void,
     per_buffer_data: *mut std::ffi::c_void,
 ) -> pg_sys::BlockNumber {
-    // SAFETY: ReadStream callbacks are invoked by PostgreSQL through the C
-    // callback ABI; the guard converts Rust panics into PostgreSQL errors.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if callback_private_data.is_null() {
-                return pg_sys::InvalidBlockNumber;
+    pg_callback!({
+        if callback_private_data.is_null() {
+            return pg_sys::InvalidBlockNumber;
+        }
+        // SAFETY: The linear stream is registered with a `LinearPrefetchState`
+        // callback-private pointer that outlives the callback invocation.
+        let state = &mut *callback_private_data.cast::<LinearPrefetchState>();
+        match linear_prefetch_callback(state) {
+            ReadStreamCallbackResult::Block(block_number) => {
+                write_stream_block(per_buffer_data, block_number);
+                block_number
             }
-            // SAFETY: The linear stream is registered with a `LinearPrefetchState`
-            // callback-private pointer that outlives the callback invocation.
-            let state = &mut *callback_private_data.cast::<LinearPrefetchState>();
-            match linear_prefetch_callback(state) {
-                ReadStreamCallbackResult::Block(block_number) => {
-                    write_stream_block(per_buffer_data, block_number);
-                    block_number
-                }
-                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
-            }
-        })
-    }
+            ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+        }
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -545,26 +539,22 @@ pub(crate) unsafe extern "C-unwind" fn block_sequence_prefetch_cb(
     callback_private_data: *mut std::ffi::c_void,
     per_buffer_data: *mut std::ffi::c_void,
 ) -> pg_sys::BlockNumber {
-    // SAFETY: ReadStream callbacks are invoked by PostgreSQL through the C
-    // callback ABI; the guard converts Rust panics into PostgreSQL errors.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if callback_private_data.is_null() {
-                return pg_sys::InvalidBlockNumber;
+    pg_callback!({
+        if callback_private_data.is_null() {
+            return pg_sys::InvalidBlockNumber;
+        }
+        // SAFETY: The block-sequence stream is registered with a
+        // `BlockSequencePrefetchState` callback-private pointer that outlives
+        // the callback invocation.
+        let state = &mut *callback_private_data.cast::<BlockSequencePrefetchState>();
+        match block_sequence_prefetch_callback(state) {
+            ReadStreamCallbackResult::Block(block_number) => {
+                write_stream_block(per_buffer_data, block_number);
+                block_number
             }
-            // SAFETY: The block-sequence stream is registered with a
-            // `BlockSequencePrefetchState` callback-private pointer that
-            // outlives the callback invocation.
-            let state = &mut *callback_private_data.cast::<BlockSequencePrefetchState>();
-            match block_sequence_prefetch_callback(state) {
-                ReadStreamCallbackResult::Block(block_number) => {
-                    write_stream_block(per_buffer_data, block_number);
-                    block_number
-                }
-                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
-            }
-        })
-    }
+            ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+        }
+    })
 }
 
 #[cfg(test)]
