@@ -1,0 +1,144 @@
+commit ac2150c2fe5e3ef0b88d249ffa010ef2ee6b6cdc
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 18:20:35 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 18:20:35 2026 -0700
+
+    Reduce SPIRE relation OID unsafe reads
+---
+ src/am/ec_spire/coordinator/lifecycle.rs                     |  4 +---
+ .../coordinator/remote_candidates/endpoint_identity.rs       |  4 +---
+ src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs  |  5 +----
+ src/am/ec_spire/coordinator/snapshots.rs                     |  4 +---
+ src/am/ec_spire/insert.rs                                    |  3 +--
+ src/am/ec_spire/storage/relation_plan.rs                     |  4 +---
+ src/am/ec_spire/storage/relation_store.rs                    | 12 +++---------
+ 7 files changed, 9 insertions(+), 27 deletions(-)
+
+diff --git a/src/am/ec_spire/coordinator/lifecycle.rs b/src/am/ec_spire/coordinator/lifecycle.rs
+index dc80da91..89c8ef55 100644
+--- a/src/am/ec_spire/coordinator/lifecycle.rs
++++ b/src/am/ec_spire/coordinator/lifecycle.rs
+@@ -18,9 +18,7 @@ pub(super) unsafe fn lock_publish_relation(
+ ) -> SpireRelationLockGuard {
+     // Callers hold an open Relation for the guard lifetime. Capture the relid
+     // before locking and unlock by relid so Drop never dereferences the pointer.
+-    // SAFETY: index_relation is live for the publish lock acquisition; only the
+-    // stable relation OID is copied out before locking.
+-    let relid = unsafe { (*index_relation).rd_id };
++    let relid = crate::storage::relation::relation_oid(index_relation);
+     // SAFETY: relid identifies the open index relation and the lock mode is the
+     // fixed publish lock mode paired with SpireRelationLockGuard::drop.
+     unsafe { pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE) };
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs b/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs
+index 103d041a..18e3a1de 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs
+@@ -434,9 +434,7 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
+ ) -> SpireRemoteSearchEndpointIdentityRow {
+     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
+         let relation_options = options::relation_options(index_relation);
+-        // SAFETY: rd_id is stable while the relation is open for this diagnostic
+-        // read and is used only as an OID input to identity helpers.
+-        let index_oid = unsafe { (*index_relation).rd_id };
++        let index_oid = crate::storage::relation::relation_oid(index_relation);
+         let assignment_payload_format = relation_options.assignment_payload_format();
+         let assignment_payload_format_name =
+             remote_search_assignment_payload_format_name(assignment_payload_format);
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs b/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs
+index 1ffba8bc..c368f909 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/libpq_plan.rs
+@@ -22,10 +22,7 @@ fn remote_candidate_index_oid(index_relation: pg_sys::Relation, context: &str) -
+     if index_relation.is_null() {
+         pgrx::error!("{context} received a null SPIRE index relation");
+     }
+-    // SAFETY: callers pass the live SPIRE index relation for the surrounding
+-    // diagnostic or coordinator operation. This copies rd_id without taking
+-    // ownership of the relation.
+-    let index_oid = unsafe { (*index_relation).rd_id };
++    let index_oid = crate::storage::relation::relation_oid(index_relation);
+     if index_oid == pg_sys::InvalidOid {
+         pgrx::error!("{context} received an invalid SPIRE index relation OID");
+     }
+diff --git a/src/am/ec_spire/coordinator/snapshots.rs b/src/am/ec_spire/coordinator/snapshots.rs
+index a0aee363..d41ec610 100644
+--- a/src/am/ec_spire/coordinator/snapshots.rs
++++ b/src/am/ec_spire/coordinator/snapshots.rs
+@@ -19,9 +19,7 @@ impl SpireLiveIndexRelation {
+     }
+
+     fn relid(self) -> u32 {
+-        // SAFETY: this wrapper is constructed only for a live SPIRE index
+-        // relation; rd_id is copied and no ownership is taken.
+-        unsafe { (*self.relation).rd_id }.into()
++        crate::storage::relation::relation_oid(self.relation).into()
+     }
+
+     fn active_epoch_anchor(
+diff --git a/src/am/ec_spire/insert.rs b/src/am/ec_spire/insert.rs
+index 87e2e8e1..cabc204b 100644
+--- a/src/am/ec_spire/insert.rs
++++ b/src/am/ec_spire/insert.rs
+@@ -253,8 +253,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
+     )?;
+
+     let store = SpireRelationObjectStore::for_index_relation(index_relation)?;
+-    // SAFETY: index_relation remains live while reading its relcache OID.
+-    let index_oid = unsafe { (*index_relation).rd_id };
++    let index_oid = crate::storage::relation::relation_oid(index_relation);
+     // SAFETY: index_relation remains live while reading its relcache tablespace.
+     let tablespace = unsafe { (*(*index_relation).rd_rel).reltablespace };
+     let local_store_config =
+diff --git a/src/am/ec_spire/storage/relation_plan.rs b/src/am/ec_spire/storage/relation_plan.rs
+index 7d127629..a22ec1ec 100644
+--- a/src/am/ec_spire/storage/relation_plan.rs
++++ b/src/am/ec_spire/storage/relation_plan.rs
+@@ -185,9 +185,7 @@ pub(super) fn create_local_store_relations_for_build(
+         );
+     }
+
+-    // SAFETY: index_relation was checked non-null above and remains open while
+-    // planning auxiliary local store relation creation.
+-    let index_relid = unsafe { (*index_relation).rd_id };
++    let index_relid = crate::storage::relation::relation_oid(index_relation);
+     if index_relid == pg_sys::InvalidOid {
+         return Err("ec_spire local store relation creation needs a valid index relid".to_owned());
+     }
+diff --git a/src/am/ec_spire/storage/relation_store.rs b/src/am/ec_spire/storage/relation_store.rs
+index f41adc45..8d47adc3 100644
+--- a/src/am/ec_spire/storage/relation_store.rs
++++ b/src/am/ec_spire/storage/relation_store.rs
+@@ -13,9 +13,7 @@ impl SpireRelationObjectStore {
+         if index_relation.is_null() {
+             return Err("ec_spire relation object store needs a valid relation".to_owned());
+         }
+-        // SAFETY: index_relation was checked non-null and is open for the
+-        // caller's relation-store lifetime; rd_id is copied by value.
+-        let relation_oid = unsafe { (*index_relation).rd_id };
++        let relation_oid = crate::storage::relation::relation_oid(index_relation);
+         if relation_oid == pg_sys::InvalidOid {
+             return Err("ec_spire relation object store relid is invalid".to_owned());
+         }
+@@ -1249,9 +1247,7 @@ impl SpireRelationObjectStoreSet {
+                 "ec_spire relation object store set needs a valid index relation".to_owned(),
+             );
+         }
+-        // SAFETY: index_relation was checked non-null and remains open for the
+-        // store-set lifetime; rd_id is copied by value.
+-        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
++        let index_relid: u32 = crate::storage::relation::relation_oid(index_relation).into();
+         let mut stores = Vec::with_capacity(config.stores.len());
+         let mut store_indexes_by_key = HashMap::with_capacity(config.stores.len());
+         let mut opened_relations = OpenedRelationsGuard::new();
+@@ -1313,9 +1309,7 @@ impl SpireRelationObjectStoreSet {
+                 "ec_spire relation object store set needs a valid index relation".to_owned(),
+             );
+         }
+-        // SAFETY: index_relation was checked non-null and remains open for the
+-        // store-set lifetime; rd_id is copied by value.
+-        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
++        let index_relid: u32 = crate::storage::relation::relation_oid(index_relation).into();
+         let mut relid_by_store_id = BTreeMap::<u32, u32>::new();
+         for placement in &placement_directory.entries {
+             if let Some(existing_relid) =
