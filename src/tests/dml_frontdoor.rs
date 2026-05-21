@@ -1100,12 +1100,8 @@
         let const_primitive_invocation = |plan| {
             // SAFETY: const-PK plans do not read executor parameters, so a null
             // ParamListInfo is valid for the invocation helper.
-            unsafe {
-                am::spire_dml_frontdoor_primitive_invocation_from_plan(
-                    plan,
-                    std::ptr::null_mut(),
-                )
-            }
+            let params = unsafe { am::spire_dml_frontdoor_param_list_info(std::ptr::null_mut()) };
+            am::spire_dml_frontdoor_primitive_invocation_from_plan(plan, params)
         };
 
         let update_query = analyzed_query(
@@ -1278,15 +1274,16 @@
                 "bound parameter list allocation should succeed"
             );
             let param = (*params).params.as_mut_ptr();
+            let param_list = am::spire_dml_frontdoor_param_list_info(params);
             (*param).value = pg_sys::Int64GetDatum(-7);
             (*param).isnull = false;
             (*param).ptype = pg_sys::INT8OID;
             let param_bytes =
-                am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, params)
+                am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, param_list)
                     .expect("bound bigint parameter should produce bytea");
             assert_eq!(hex::encode(param_bytes), "fffffffffffffff9");
             let param_invocation =
-                am::spire_dml_frontdoor_primitive_invocation_from_plan(&param_plan, params)
+                am::spire_dml_frontdoor_primitive_invocation_from_plan(&param_plan, param_list)
                     .expect("bound bigint parameter primitive invocation should be buildable");
             assert_eq!(hex::encode(param_invocation.pk_value), "fffffffffffffff9");
             assert_eq!(param_invocation.pk_column, "id");
@@ -1296,13 +1293,13 @@
                 (*param).ptype = pg_sys::INT8OID;
                 let expected = am::spire_dml_frontdoor_bigint_pk_value_bytes(value);
                 assert_eq!(
-                    am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, params)
+                    am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, param_list)
                         .expect("boundary bound bigint parameter should produce bytea"),
                     expected,
                     "{value}"
                 );
                 assert_eq!(
-                    am::spire_dml_frontdoor_primitive_invocation_from_plan(&param_plan, params)
+                    am::spire_dml_frontdoor_primitive_invocation_from_plan(&param_plan, param_list)
                         .expect("boundary bound bigint invocation should be buildable")
                         .pk_value,
                     expected,
@@ -1312,7 +1309,7 @@
 
             (*param).isnull = true;
             let null_error =
-                am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, params)
+                am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, param_list)
                     .expect_err("NULL bound PK parameter should fail closed");
             assert!(null_error.contains("must not be NULL"), "{null_error}");
         }

@@ -186,12 +186,29 @@ pub(crate) struct DmlFrontdoorQueryView<'a> {
     jointree: Option<&'a pg_sys::FromExpr>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct DmlFrontdoorParamListInfo {
+    params: pg_sys::ParamListInfo,
+}
+
 pub(crate) unsafe fn dml_frontdoor_query_view<'a>(
     query: *mut pg_sys::Query,
 ) -> Option<DmlFrontdoorQueryView<'a>> {
     // SAFETY: caller binds the returned view lifetime to the live analyzed
     // Query supplied by PostgreSQL or the local SQL analyzer.
     unsafe { DmlFrontdoorQueryView::from_raw(query) }
+}
+
+pub(crate) unsafe fn dml_frontdoor_param_list_info(
+    params: pg_sys::ParamListInfo,
+) -> DmlFrontdoorParamListInfo {
+    DmlFrontdoorParamListInfo { params }
+}
+
+impl DmlFrontdoorParamListInfo {
+    fn as_ptr(self) -> pg_sys::ParamListInfo {
+        self.params
+    }
 }
 
 impl<'a> DmlFrontdoorQueryView<'a> {
@@ -1045,28 +1062,28 @@ pub(crate) fn dml_frontdoor_primitive_plan_const_pk_value_bytes(
     }
 }
 
-pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
+pub(crate) fn dml_frontdoor_primitive_plan_pk_value_bytes(
     plan: &SpireDmlFrontdoorPrimitivePlan,
-    params: pg_sys::ParamListInfo,
+    params: DmlFrontdoorParamListInfo,
 ) -> Result<[u8; 8], String> {
     match plan.pk_argument.value {
         SpireDmlFrontdoorPkValuePlan::ConstBigint(value) => {
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
         SpireDmlFrontdoorPkValuePlan::ParamBigint(param_id) => {
-            // SAFETY: caller guarantees `params` is live for executor parameter reads.
+            // SAFETY: `params` was explicitly constructed at the executor/test
+            // boundary for this primitive invocation.
             let value = unsafe { dml_frontdoor_bound_param_bigint_value(params, param_id) }?;
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
     }
 }
 
-pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
+pub(crate) fn dml_frontdoor_primitive_invocation_from_plan(
     plan: &SpireDmlFrontdoorPrimitivePlan,
-    params: pg_sys::ParamListInfo,
+    params: DmlFrontdoorParamListInfo,
 ) -> Result<SpireDmlFrontdoorPrimitiveInvocation, String> {
-    // SAFETY: caller guarantees `params` is live for executor parameter reads.
-    let pk_value = unsafe { dml_frontdoor_primitive_plan_pk_value_bytes(plan, params) }?;
+    let pk_value = dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)?;
     if plan.pk_argument.pk_column.is_empty() {
         return Err("ec_spire DML frontdoor primitive invocation requires pk_column".to_owned());
     }
@@ -1082,7 +1099,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
 }
 
 unsafe fn dml_frontdoor_bound_param_bigint_value(
-    params: pg_sys::ParamListInfo,
+    params: DmlFrontdoorParamListInfo,
     param_id: i32,
 ) -> Result<i64, String> {
     if param_id <= 0 {
@@ -1090,6 +1107,7 @@ unsafe fn dml_frontdoor_bound_param_bigint_value(
             "ec_spire DML frontdoor PK parameter id {param_id} is invalid"
         ));
     }
+    let params = params.as_ptr();
     if params.is_null() {
         return Err(format!(
             "ec_spire DML frontdoor PK parameter ${param_id} has no bound parameter list"
