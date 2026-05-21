@@ -1,0 +1,44 @@
+current direct unsafe blocks: 1640
+current unsafe grep hits: 2405
+current files with direct unsafe blocks: 132
+top direct unsafe block files:
+    141 src/am/ec_hnsw/scan.rs
+    135 src/am/ec_hnsw/scan_debug.rs
+    130 src/am/ec_hnsw/build_parallel.rs
+     71 src/am/ec_hnsw/insert.rs
+     61 src/am/ec_hnsw/vacuum.rs
+     45 src/am/ec_hnsw/source.rs
+     42 src/am/ec_spire/dml_frontdoor/mod.rs
+     41 src/am/ec_hnsw/shared.rs
+     39 src/am/ec_hnsw/graph.rs
+     37 src/tests/mod.rs
+     37 src/am/ec_diskann/routine.rs
+     34 src/am/common/parallel.rs
+     29 src/am/ec_spire/page.rs
+     29 src/am/ec_ivf/scan.rs
+     29 src/am/ec_ivf/page.rs
+     26 src/am/ec_hnsw/build.rs
+     24 src/quant/hadamard.rs
+     24 src/am/ec_diskann/ambuild.rs
+     21 src/lib.rs
+     20 src/storage/buffer_guard.rs
+     19 src/tests/dml_frontdoor.rs
+     19 src/am/ec_spire/storage/relation_store.rs
+     18 src/tests/remote_search/contracts.rs
+     18 src/am/common/stream.rs
+     17 src/am/ec_spire/custom_scan/cost_helpers.rs
+     16 src/am/ec_spire/custom_scan/plan_private.rs
+     16 src/am/ec_spire/cost/mod.rs
+     15 src/tests/insert.rs
+     15 src/am/ec_spire/custom_scan/planner.rs
+     15 src/am/ec_spire/custom_scan/begin_exec.rs
+     15 src/am/ec_diskann/insert.rs
+     14 src/am/ec_spire/vacuum/mod.rs
+     13 src/tests/custom_scan.rs
+     13 src/storage/relation.rs
+     13 src/am/ec_spire/storage/relation_plan.rs
+     13 src/am/ec_spire/coordinator/maintenance.rs
+     13 src/am/ec_ivf/vacuum.rs
+     13 src/am/ec_diskann/scan_state.rs
+     13 src/am/common/explain.rs
+     12 src/tests/vacuum.rs
