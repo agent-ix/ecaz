@@ -351,16 +351,6 @@ fn custom_scan_payload_attr_io(
     inputs
 }
 
-unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> String {
-    let relation = unsafe { custom_scan_current_relation(node, "DML path") };
-    let relation_oid = crate::storage::relation::relation_oid(relation);
-    let context = super::dml_frontdoor_relation_context_catalog_row(relation_oid)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    context.pk_column.unwrap_or_else(|| {
-        pgrx::error!("EcSpireDistributedScan DML path relation has no PK column")
-    })
-}
-
 fn custom_scan_dml_update_value_exprs_from_list(
     custom_exprs: CustomScanExprList<'_>,
     expected_count: usize,

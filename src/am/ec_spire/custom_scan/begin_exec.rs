@@ -155,7 +155,13 @@ unsafe fn custom_scan_init_dml_exec_state(
                 custom_scan_tuple_payload_state_from_plan(node, custom_scan);
             state.tuple_payload_columns = tuple_payload_columns;
             state.tuple_payload_inputs = tuple_payload_inputs;
-            state.dml_pk_column = custom_scan_dml_pk_column(node);
+            let relation = custom_scan_current_relation(node, "DML path");
+            let relation_oid = crate::storage::relation::relation_oid(relation);
+            let context = super::dml_frontdoor_relation_context_catalog_row(relation_oid)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            state.dml_pk_column = context.pk_column.unwrap_or_else(|| {
+                pgrx::error!("EcSpireDistributedScan DML path relation has no PK column")
+            });
         } else {
             state.dml_pk_column = plan.dml_pk_column();
         }
