@@ -734,7 +734,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let index_pages = f64::from(block_count);
     let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
-    let constants = super::cost::current_planner_cost_constants();
+    // SAFETY: diagnostic snapshot reads planner cost globals in the current
+    // backend to report the same constants the planner would use.
+    let constants = unsafe { super::cost::current_planner_cost_constants() };
     // Block 0 is always the metadata page; an empty index has block_count == 1.
     // FR-020's "Empty index (0 data pages)" gate must trip on
     // `block_count <= FIRST_DATA_BLOCK_NUMBER`, not on `index_pages <= 0`.
