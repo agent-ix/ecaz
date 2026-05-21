@@ -98,11 +98,13 @@ fn debug_item_pointer_coords(tid: page::ItemPointer) -> HeapTidCoords {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_graph_storage(
+fn debug_graph_storage(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> graph::GraphStorageDescriptor {
-    graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
+    // SAFETY: Debug callers pass an open index relation and metadata read from
+    // that relation; descriptor construction validates the storage format.
+    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw debug failed to resolve graph storage: {e}"))
 }
 
@@ -1713,9 +1715,7 @@ pub(crate) fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapT
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    let storage = debug_graph_storage(index_relation, &metadata);
     let mut heap_tids =
         debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
             .into_iter()
@@ -1754,9 +1754,7 @@ pub(crate) fn debug_top_level_reachable_heap_tids(index_oid: pg_sys::Oid) -> Vec
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    let storage = debug_graph_storage(index_relation, &metadata);
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
     let mut visited = std::collections::HashSet::new();
@@ -1817,9 +1815,7 @@ pub(crate) fn debug_layer0_reachable_live_element_tids(
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    let storage = debug_graph_storage(index_relation, &metadata);
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
     let mut visited = std::collections::HashSet::new();
@@ -4232,9 +4228,7 @@ pub(crate) fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<Hea
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    let storage = debug_graph_storage(index_relation, &metadata);
     // SAFETY: The metadata entry point is valid, and adjacency loading validates
     // the graph tuple body before returning neighbors.
     let (_element, neighbors) =
