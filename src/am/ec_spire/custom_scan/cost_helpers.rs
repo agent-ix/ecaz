@@ -303,18 +303,6 @@ fn estimate_custom_scan_cost_with_constants(
     }
 }
 
-unsafe fn custom_scan_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
-    // SAFETY: callers pass PostgreSQL-owned planner lists and consume the view
-    // immediately during the current planner callback.
-    unsafe { PgList::<T>::from_pg(list) }
-}
-
-unsafe fn custom_scan_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
-    // SAFETY: callers pass PostgreSQL planner pointers that are live for the
-    // current callback and copy or inspect the referenced fields immediately.
-    unsafe { ptr.as_ref() }
-}
-
 unsafe fn custom_scan_current_relation(
     node: *mut pg_sys::CustomScanState,
     label: &str,

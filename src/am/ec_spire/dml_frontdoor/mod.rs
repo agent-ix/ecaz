@@ -18,6 +18,7 @@ use std::sync::{Mutex, OnceLock};
 use crate::am::common::{
     callback::pg_callback,
     heap_slot::{TupleDescView, TupleSlotAttribute},
+    pg_ptr::{pg_list as dml_frontdoor_pg_list, pg_ref as dml_frontdoor_pg_ref},
 };
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 
@@ -2586,19 +2587,6 @@ unsafe fn dml_frontdoor_expr_node<'a>(
         }
     };
     Some(node)
-}
-
-unsafe fn dml_frontdoor_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
-    // SAFETY: DML frontdoor callers pass PostgreSQL-owned planner/catalog
-    // lists and consume the resulting view immediately without retaining list
-    // cells across callbacks.
-    unsafe { PgList::<T>::from_pg(list) }
-}
-
-unsafe fn dml_frontdoor_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
-    // SAFETY: DML frontdoor callers pass pointers from PostgreSQL planner or
-    // relcache structures and copy/inspect the referenced fields immediately.
-    unsafe { ptr.as_ref() }
 }
 
 fn dml_frontdoor_c_string(ptr: *const c_char, context: &str) -> Result<String, String> {

@@ -5,6 +5,7 @@ use std::{ffi::CString, ptr};
 use crate::am::common::{
     cost::{current_cpu_tuple_cost, current_planner_cost_constants, PlannerCostConstants},
     heap_slot::{TupleDescView, TupleSlotAttribute, TupleSlotWriter},
+    pg_ptr::{pg_list as custom_scan_pg_list, pg_ref as custom_scan_pg_ref},
 };
 
 use super::meta;
