@@ -1,6 +1,6 @@
 use std::slice;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys};
+use pgrx::pg_sys;
 
 use crate::am::common::heap_slot;
 use crate::storage::{
@@ -328,19 +328,6 @@ pub(super) fn required_slot_datum_with_reader(
     label: &str,
 ) -> Result<pg_sys::Datum, String> {
     reader.required_datum(attnum, label)
-}
-
-pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> Result<ItemPointer, String> {
-    if tid.is_null() {
-        return Err("ec_diskann scan received a null heap tid".into());
-    }
-    // SAFETY: `tid` was checked non-null and points at PostgreSQL ItemPointer
-    // storage valid for this callback/scan step.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    Ok(ItemPointer {
-        block_number,
-        offset_number,
-    })
 }
 
 pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
