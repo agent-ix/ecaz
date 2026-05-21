@@ -3003,24 +3003,28 @@ pub(crate) fn debug_gettuple_current_result_state(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let before_found = active_result_state_ref(opaque).current().has_element();
-    let before_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let before_score = active_result_state_ref(opaque).current().score_valid();
-    let before_score_value = active_result_state_ref(opaque).current().score();
+    let (before_found, before_tid, before_score, before_score_value) =
+        debug_with_scan_opaque(scan, |opaque| {
+            let current = active_result_state_ref(opaque).current();
+            (
+                current.has_element(),
+                debug_item_pointer_coords(current.element_tid()),
+                current.score_valid(),
+                current.score(),
+            )
+        });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the
     // live descriptor and update current-result state.
     let found = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let after_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let after_score = active_result_state_ref(opaque).current().score_valid();
-    let after_score_value = active_result_state_ref(opaque).current().score();
+    let (after_tid, after_score, after_score_value) = debug_with_scan_opaque(scan, |opaque| {
+        let current = active_result_state_ref(opaque).current();
+        (
+            debug_item_pointer_coords(current.element_tid()),
+            current.score_valid(),
+            current.score(),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3105,32 +3109,29 @@ fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
-    // initialized by AM rescan.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    opaque
-        .last_emitted_comparison_score_valid
-        .then_some(opaque.last_emitted_comparison_score)
+    debug_with_scan_opaque(scan, |opaque| {
+        opaque
+            .last_emitted_comparison_score_valid
+            .then_some(opaque.last_emitted_comparison_score)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
-    // initialized by AM rescan.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    opaque
-        .last_emitted_approx_score_valid
-        .then_some(opaque.last_emitted_approx_score)
+    debug_with_scan_opaque(scan, |opaque| {
+        opaque
+            .last_emitted_approx_score_valid
+            .then_some(opaque.last_emitted_approx_score)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> {
-    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
-    // initialized by AM rescan.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    opaque
-        .last_emitted_approx_rank_valid
-        .then_some(opaque.last_emitted_approx_rank)
+    debug_with_scan_opaque(scan, |opaque| {
+        opaque
+            .last_emitted_approx_rank_valid
+            .then_some(opaque.last_emitted_approx_rank)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3202,28 +3203,25 @@ pub(crate) fn debug_rescan_entry_candidate_state(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let current = active_result_state_ref(opaque).current();
-    let (before_valid, before_tid, before_score) = if current.has_element() {
-        (
-            true,
-            debug_item_pointer_coords(current.element_tid()),
-            current.score(),
-        )
-    } else {
-        debug_candidate_slot(visible_frontier_slot(opaque, 0))
-    };
+    let (before_valid, before_tid, before_score) = debug_with_scan_opaque(scan, |opaque| {
+        let current = active_result_state_ref(opaque).current();
+        if current.has_element() {
+            (
+                true,
+                debug_item_pointer_coords(current.element_tid()),
+                current.score(),
+            )
+        } else {
+            debug_candidate_slot(visible_frontier_slot(opaque, 0))
+        }
+    });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = unsafe { debug_scan_opaque(scan) };
     let (after_valid, after_tid, after_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
+        debug_with_scan_opaque(scan, |opaque| debug_candidate_slot(visible_frontier_slot(opaque, 0)));
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3275,12 +3273,12 @@ pub(crate) fn debug_rescan_successor_candidate_state(
     );
     let entry_neighbors = super::debug_entry_point_neighbor_tids(index_oid);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let successor_slot = debug_runtime_ordered_provenance_slots(opaque)
-        .get(1)
-        .copied()
-        .unwrap_or((false, (u32::MAX, u16::MAX), (u32::MAX, u16::MAX), 0.0));
+    let successor_slot = debug_with_scan_opaque(scan, |opaque| {
+        debug_runtime_ordered_provenance_slots(opaque)
+            .get(1)
+            .copied()
+            .unwrap_or((false, (u32::MAX, u16::MAX), (u32::MAX, u16::MAX), 0.0))
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
