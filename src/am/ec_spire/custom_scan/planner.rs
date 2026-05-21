@@ -1,11 +1,4 @@
-pub(crate) unsafe fn custom_scan_index_eligibility_row(
-    index_relation: pg_sys::Relation,
-) -> SpireCustomScanIndexEligibilityRow {
-    unsafe { custom_scan_index_eligibility_result(index_relation) }
-        .unwrap_or_else(|e| pgrx::error!("{e}"))
-}
-
-unsafe fn custom_scan_index_eligibility_result(
+pub(crate) unsafe fn custom_scan_index_eligibility_result(
     index_relation: pg_sys::Relation,
 ) -> Result<SpireCustomScanIndexEligibilityRow, String> {
     // SAFETY: index_relation is open for this backend; page helper pins and

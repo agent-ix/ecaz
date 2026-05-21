@@ -1651,8 +1651,11 @@ fn ec_spire_custom_scan_index_eligibility(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_custom_scan_index_eligibility");
-    let row =
-        with_live_index_relation!(index_relation, am::spire_custom_scan_index_eligibility_row);
+    let row = with_live_index_relation!(
+        index_relation,
+        am::spire_custom_scan_index_eligibility_result
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),

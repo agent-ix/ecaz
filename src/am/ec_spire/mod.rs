@@ -44,7 +44,7 @@ pub(crate) use self::custom_scan::{
     custom_scan_reset_rescan_snapshot_for_test,
 };
 pub(crate) use self::custom_scan::{
-    custom_scan_index_eligibility_row, custom_scan_status_row, register_custom_scan,
+    custom_scan_index_eligibility_result, custom_scan_status_row, register_custom_scan,
 };
 pub(crate) use self::dml_frontdoor::{
     classify_dml_frontdoor_query, SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan,
