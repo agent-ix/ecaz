@@ -605,26 +605,24 @@ pub(crate) fn dml_frontdoor_relation_context_catalog_row(
         return Err("ec_spire DML frontdoor catalog relation open returned NULL".to_owned());
     };
 
-    // SAFETY: `heap_relation` is held open by `HeapRelationGuard` while the
-    // catalog relation context is built and cached.
-    let result =
-        unsafe { dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation.as_ptr()) }
-            .map(|(context, watched_relation_oids)| {
-                RELATION_CONTEXT_CACHE
-                    .get_or_init(|| Mutex::new(HashMap::new()))
-                    .lock()
-                    .map(|mut guard| {
-                        guard.insert(
-                            cache_key,
-                            CachedRelationContext {
-                                context: context.clone(),
-                                watched_relation_oids,
-                            },
-                        );
-                    })
-                    .ok();
-                context
-            });
+    let result = dml_frontdoor_relation_context_catalog_for_open_heap(&heap_relation).map(
+        |(context, watched_relation_oids)| {
+            RELATION_CONTEXT_CACHE
+                .get_or_init(|| Mutex::new(HashMap::new()))
+                .lock()
+                .map(|mut guard| {
+                    guard.insert(
+                        cache_key,
+                        CachedRelationContext {
+                            context: context.clone(),
+                            watched_relation_oids,
+                        },
+                    );
+                })
+                .ok();
+            context
+        },
+    );
     result
 }
 
@@ -1436,19 +1434,26 @@ impl SpireDmlFrontdoorTupleDesc {
     }
 }
 
-unsafe fn dml_frontdoor_tuple_desc_for_relation(
-    heap_relation: pg_sys::Relation,
+fn dml_frontdoor_tuple_desc_for_relation(
+    heap_relation: &HeapRelationGuard,
 ) -> Result<SpireDmlFrontdoorTupleDesc, String> {
-    let tuple_desc = (*heap_relation).rd_att;
+    // SAFETY: `heap_relation` owns a live PostgreSQL heap relation for this
+    // catalog read.
+    let tuple_desc = unsafe { (*heap_relation.as_ptr()).rd_att };
+    // SAFETY: `tuple_desc` comes from the live heap relation guard and is only
+    // copied through the local TupleDescView wrapper.
     let tuple_desc =
-        TupleDescView::from_raw(tuple_desc, "ec_spire DML frontdoor catalog relation")?;
+        unsafe { TupleDescView::from_raw(tuple_desc, "ec_spire DML frontdoor catalog relation")? };
     Ok(SpireDmlFrontdoorTupleDesc { tuple_desc })
 }
 
-unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
-    heap_relation: pg_sys::Relation,
+fn dml_frontdoor_relation_context_catalog_for_open_heap(
+    heap_relation: &HeapRelationGuard,
 ) -> Result<(SpireDmlFrontdoorRelationContext, Vec<pg_sys::Oid>), String> {
-    let heap_relation_oid = crate::storage::relation::relation_oid(heap_relation);
+    // SAFETY: `heap_relation` owns a live PostgreSQL heap relation for this
+    // catalog read.
+    let heap_relation_oid =
+        unsafe { crate::storage::relation::relation_oid(heap_relation.as_ptr()) };
     let column_names = dml_frontdoor_relation_column_names_from_rel(heap_relation)?;
     let (index_oid, pk, mut watched_relation_oids) =
         dml_frontdoor_catalog_index_and_pk(heap_relation)?;
@@ -1498,8 +1503,8 @@ unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
     ))
 }
 
-unsafe fn dml_frontdoor_catalog_index_and_pk(
-    heap_relation: pg_sys::Relation,
+fn dml_frontdoor_catalog_index_and_pk(
+    heap_relation: &HeapRelationGuard,
 ) -> Result<
     (
         pg_sys::Oid,
@@ -1511,7 +1516,11 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
     let ec_spire_am_oid = super::ec_spire_access_method_oid().unwrap_or(pg_sys::InvalidOid);
     // RelationGetIndexList returns a private OID list, so each index can be
     // opened and closed under AccessShareLock while walking this copy.
-    let index_list = PgList::<pg_sys::Oid>::from_pg(pg_sys::RelationGetIndexList(heap_relation));
+    // SAFETY: `heap_relation` owns a live heap relation while PostgreSQL builds
+    // the copied index OID list.
+    let index_list = unsafe {
+        PgList::<pg_sys::Oid>::from_pg(pg_sys::RelationGetIndexList(heap_relation.as_ptr()))
+    };
     let mut ec_spire_index_count = 0_i64;
     let mut ec_spire_index_oid = pg_sys::InvalidOid;
     let mut primary_key = None;
@@ -1523,8 +1532,14 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
             continue;
         };
         let index_relation_ptr = index_relation.as_ptr();
-        let index_form = (*index_relation_ptr).rd_index.as_ref();
-        let class_form = (*index_relation_ptr).rd_rel.as_ref();
+        // SAFETY: `index_relation` owns a live index relation while relcache
+        // metadata is inspected.
+        let (index_form, class_form) = unsafe {
+            (
+                (*index_relation_ptr).rd_index.as_ref(),
+                (*index_relation_ptr).rd_rel.as_ref(),
+            )
+        };
         if let Some(class_form) = class_form {
             if ec_spire_am_oid != pg_sys::InvalidOid && class_form.relam == ec_spire_am_oid {
                 ec_spire_index_count += 1;
@@ -1552,14 +1567,16 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
     Ok((ec_spire_index_oid, primary_key, watched_index_oids))
 }
 
-unsafe fn dml_frontdoor_primary_key_column_from_index(
-    heap_relation: pg_sys::Relation,
+fn dml_frontdoor_primary_key_column_from_index(
+    heap_relation: &HeapRelationGuard,
     index_form: &pg_sys::FormData_pg_index,
 ) -> Result<Option<SpireDmlFrontdoorPrimaryKeyColumn>, String> {
     if !index_form.indisprimary || index_form.indnkeyatts != 1 {
         return Ok(None);
     }
-    let attnum = *index_form.indkey.values.as_ptr();
+    // SAFETY: single-key primary index metadata guarantees the first indkey
+    // slot is initialized.
+    let attnum = unsafe { *index_form.indkey.values.as_ptr() };
     if attnum <= 0 {
         return Ok(None);
     }
@@ -1577,8 +1594,8 @@ unsafe fn dml_frontdoor_primary_key_column_from_index(
     }))
 }
 
-unsafe fn dml_frontdoor_relation_column_names_from_rel(
-    heap_relation: pg_sys::Relation,
+fn dml_frontdoor_relation_column_names_from_rel(
+    heap_relation: &HeapRelationGuard,
 ) -> Result<Vec<(pg_sys::AttrNumber, String)>, String> {
     let tuple_desc = dml_frontdoor_tuple_desc_for_relation(heap_relation)?;
     let mut columns = Vec::with_capacity(usize::try_from(tuple_desc.natts()).unwrap_or(0));
@@ -1595,24 +1612,32 @@ unsafe fn dml_frontdoor_relation_column_names_from_rel(
     Ok(columns)
 }
 
-unsafe fn dml_frontdoor_index_key_column_names_from_rel(
+fn dml_frontdoor_index_key_column_names_from_rel(
     index_oid: pg_sys::Oid,
-    heap_relation: pg_sys::Relation,
+    heap_relation: &HeapRelationGuard,
 ) -> Result<Vec<String>, String> {
     let Some(index_relation) = IndexRelationGuard::try_access_share(index_oid) else {
         return Err("ec_spire DML frontdoor catalog index open returned NULL".to_owned());
     };
-    let index_form = (*index_relation.as_ptr())
-        .rd_index
-        .as_ref()
-        .ok_or_else(|| "ec_spire DML frontdoor catalog index metadata is NULL".to_owned())?;
+    // SAFETY: `index_relation` owns a live index relation while relcache
+    // metadata is inspected.
+    let index_form = unsafe {
+        (*index_relation.as_ptr())
+            .rd_index
+            .as_ref()
+            .ok_or_else(|| "ec_spire DML frontdoor catalog index metadata is NULL".to_owned())?
+    };
     let mut columns = Vec::new();
     for key_index in 0..index_form.indnkeyatts {
-        let attnum = *index_form
-            .indkey
-            .values
-            .as_ptr()
-            .add(usize::try_from(key_index).unwrap_or(usize::MAX));
+        // SAFETY: key_index is bounded by indnkeyatts, so the indkey slot is
+        // initialized by PostgreSQL relcache metadata.
+        let attnum = unsafe {
+            *index_form
+                .indkey
+                .values
+                .as_ptr()
+                .add(usize::try_from(key_index).unwrap_or(usize::MAX))
+        };
         if attnum <= 0 {
             continue;
         }
@@ -1625,8 +1650,8 @@ unsafe fn dml_frontdoor_index_key_column_names_from_rel(
     Ok(columns)
 }
 
-unsafe fn dml_frontdoor_relation_attr_name_and_form(
-    heap_relation: pg_sys::Relation,
+fn dml_frontdoor_relation_attr_name_and_form(
+    heap_relation: &HeapRelationGuard,
     attnum: pg_sys::AttrNumber,
 ) -> Result<Option<(String, TupleSlotAttribute)>, String> {
     let tuple_desc = dml_frontdoor_tuple_desc_for_relation(heap_relation)?;
