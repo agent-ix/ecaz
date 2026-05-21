@@ -73,6 +73,11 @@ impl<'a> SpireIndexScanView<'a> {
         self.scan_ref.xs_orderbynulls = ptr::null_mut();
     }
 
+    fn install_opaque(&mut self, opaque: *mut std::ffi::c_void) {
+        self.scan_ref.parallel_scan = ptr::null_mut();
+        self.scan_ref.opaque = opaque;
+    }
+
     fn mark_tuple_output_current(&mut self) {
         self.scan_ref.xs_recheck = false;
         self.scan_ref.xs_recheckorderby = false;
@@ -234,61 +239,6 @@ unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireSc
     SpireScanQuery::new(values)
 }
 
-unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
-    scan: pg_sys::IndexScanDesc,
-    snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
-    query: &SpireScanQuery,
-    options: EcSpireOptions,
-) -> Result<SpirePreparedScanCandidates, String> {
-    let scan_view =
-        unsafe { SpireIndexScanView::from_raw(scan, "heap rerank candidate preparation") };
-    let heap_relation = scan_view.heap_relation();
-    let heap_relation_ptr = heap_relation.as_ptr();
-    let snapshot_pg = scan_view.snapshot();
-    // SAFETY: the scan view proves this is the live IndexScanDesc for this scan
-    // path; indexRelation is read only to resolve the indexed vector attribute.
-    let indexed_attribute = unsafe {
-        source::resolve_indexed_vector_attribute(
-            heap_relation_ptr,
-            scan_view.index_relation(),
-            "ec_spire heap rerank indexed column",
-        )
-    };
-    let slot = unsafe { allocate_heap_slot(heap_relation_ptr) }?;
-    // SAFETY: the resolved heap relation/snapshot and allocated tuple slot are
-    // live for the duration of candidate preparation.
-    let mut heap_reader = unsafe {
-        crate::am::common::heap_slot::HeapSlotReader::from_raw(
-            heap_relation_ptr,
-            snapshot_pg,
-            slot.as_ptr(),
-            "ec_spire",
-        )
-    }?;
-
-    let result = prepare_single_level_snapshot_scan_candidates_with_prefetch(
-        snapshot,
-        object_store,
-        query,
-        options,
-        |candidates| {
-            unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates) };
-            Ok(())
-        },
-        |candidate| {
-            exact_heap_source_inner_product(
-                &mut heap_reader,
-                indexed_attribute,
-                query.values(),
-                candidate.heap_tid,
-            )
-        },
-    );
-
-    result
-}
-
 fn heap_rerank_prefetch_block_numbers(
     candidates: &[SpireScoredScanCandidate],
 ) -> Vec<pg_sys::BlockNumber> {
@@ -299,43 +249,6 @@ fn heap_rerank_prefetch_block_numbers(
     block_numbers.sort_unstable();
     block_numbers.dedup();
     block_numbers
-}
-
-unsafe fn prefetch_heap_rerank_candidate_blocks(
-    heap_relation: pg_sys::Relation,
-    candidates: &[SpireScoredScanCandidate],
-) {
-    let block_numbers = heap_rerank_prefetch_block_numbers(candidates);
-    crate::am::stream::prefetch_relation_blocks(
-        heap_relation,
-        block_numbers,
-        "ec_spire heap rerank",
-    );
-}
-
-unsafe fn allocate_heap_slot(
-    heap_relation: pg_sys::Relation,
-) -> Result<crate::storage::slot_guard::TupleTableSlotGuard<'static>, String> {
-    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-        .ok_or_else(|| "ec_spire heap rerank failed to allocate a heap tuple slot".to_owned())
-}
-
-fn exact_heap_source_inner_product(
-    heap_reader: &mut crate::am::common::heap_slot::HeapSlotReader<'_>,
-    indexed_attribute: source::IndexedVectorAttribute,
-    query: &[f32],
-    heap_tid: ItemPointer,
-) -> Result<Option<f32>, String> {
-    let Some(source_vector) = load_indexed_source_vector_from_heap_row(
-        heap_reader,
-        indexed_attribute,
-        heap_tid,
-        "ec_spire heap rerank source vector",
-    )?
-    else {
-        return Ok(None);
-    };
-    exact_source_inner_product(query, &source_vector).map(Some)
 }
 
 pub(super) fn load_indexed_source_vector_from_heap_row(
@@ -387,22 +300,4 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<V
     unsafe { DetoastedVarlena::packed_from_datum(datum) }
         .ok_or_else(|| format!("ec_spire could not detoast {label}"))
         .map(|datum| datum.to_vec())
-}
-
-fn exact_source_inner_product(query: &[f32], source_vector: &[f32]) -> Result<f32, String> {
-    if query.len() != source_vector.len() {
-        return Err(format!(
-            "ec_spire heap rerank dimension mismatch: query dim {}, heap dim {}",
-            query.len(),
-            source_vector.len()
-        ));
-    }
-    if source_vector.iter().any(|value| !value.is_finite()) {
-        return Err("ec_spire heap rerank source vector contains a non-finite value".to_owned());
-    }
-    let score = source::inner_product(query, source_vector);
-    if !score.is_finite() {
-        return Err("ec_spire heap rerank produced a non-finite score".to_owned());
-    }
-    Ok(score)
 }

@@ -14,8 +14,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
             pg_sys::CurrentMemoryContext,
         ));
         ptr::write(opaque.as_ptr(), SpireScanOpaque::default());
-        (*scan).parallel_scan = ptr::null_mut();
-        (*scan).opaque = opaque.into_pg().cast();
+        let mut scan_view = SpireIndexScanView::from_raw(scan, "ambeginscan");
+        scan_view.install_opaque(opaque.into_pg().cast());
         scan
     })
 }
