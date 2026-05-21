@@ -4,6 +4,163 @@ struct SpireCustomScanCostEstimate {
     total_cost: f64,
 }
 
+#[derive(Clone, Copy)]
+struct CustomScanPlannerRel<'a> {
+    root_ref: &'a pg_sys::PlannerInfo,
+    rel_ref: &'a pg_sys::RelOptInfo,
+}
+
+impl<'a> CustomScanPlannerRel<'a> {
+    unsafe fn new(root: *mut pg_sys::PlannerInfo, rel: *mut pg_sys::RelOptInfo) -> Option<Self> {
+        // SAFETY: caller guarantees root/rel are the live planner callback
+        // pointers for immediate inspection during this callback.
+        let (root_ref, rel_ref) = unsafe { (custom_scan_pg_ref(root)?, custom_scan_pg_ref(rel)?) };
+        Some(Self { root_ref, rel_ref })
+    }
+
+    unsafe fn new_base_rel(
+        root: *mut pg_sys::PlannerInfo,
+        rel: *mut pg_sys::RelOptInfo,
+        rte: *mut pg_sys::RangeTblEntry,
+    ) -> Option<Self> {
+        // SAFETY: caller guarantees root/rel/rte are live planner hook
+        // pointers; retaining root/rel and validating rte here ties later safe
+        // accessors to this callback-owned view instead of arbitrary pointers.
+        let planner_rel = unsafe { Self::new(root, rel)? };
+        let _rte = unsafe { custom_scan_pg_ref(rte)? };
+        Some(planner_rel)
+    }
+
+    fn is_plain_base_relation(self) -> bool {
+        self.rel_ref.reloptkind == pg_sys::RelOptKind::RELOPT_BASEREL
+            && self.rel_ref.rtekind == pg_sys::RTEKind::RTE_RELATION
+    }
+
+    fn has_vector_order_limit_shape(self) -> bool {
+        !self.root_ref.sort_pathkeys.is_null() && self.root_ref.limit_tuples >= 0.0
+    }
+
+    fn top_k(self) -> Option<usize> {
+        if self.root_ref.limit_tuples < 0.0 || !self.root_ref.limit_tuples.is_finite() {
+            return None;
+        }
+        Some(self.root_ref.limit_tuples.max(0.0).ceil() as usize)
+    }
+
+    fn orderby_query_expr(self) -> Option<*mut pg_sys::Expr> {
+        // SAFETY: this view was built from live planner callback pointers and
+        // the referenced Query/List nodes are inspected immediately.
+        unsafe {
+            let query = custom_scan_pg_ref(self.root_ref.parse)?;
+            if query.sortClause.is_null() || query.targetList.is_null() {
+                return None;
+            }
+            let sort_clauses = custom_scan_pg_list::<pg_sys::SortGroupClause>(query.sortClause);
+            if sort_clauses.len() != 1 {
+                return None;
+            }
+            let sort_clause = custom_scan_pg_ref(sort_clauses.get_ptr(0)?)?;
+            let target_list = custom_scan_pg_list::<pg_sys::TargetEntry>(query.targetList);
+            for target_entry in target_list.iter_ptr() {
+                let Some(target_entry) = custom_scan_pg_ref(target_entry) else {
+                    continue;
+                };
+                if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {
+                    continue;
+                }
+                return self.query_expr_from_sort_expr(target_entry.expr);
+            }
+            None
+        }
+    }
+
+    fn query_expr_from_sort_expr(self, expr: *mut pg_sys::Expr) -> Option<*mut pg_sys::Expr> {
+        // SAFETY: expr comes from the planner-owned target list reached through
+        // this live callback view and is only inspected for node/list shape.
+        unsafe {
+            let op_expr = custom_scan_op_expr(expr)?;
+            let args = custom_scan_pg_list::<pg_sys::Expr>(op_expr.args);
+            if args.len() != 2 {
+                return None;
+            }
+            let left = args.get_ptr(0)?;
+            let right = args.get_ptr(1)?;
+            if custom_scan_expr_is_relation_var(left, self.rel_ref.relid)
+                && custom_scan_expr_is_query_value(right)
+            {
+                return Some(right);
+            }
+            if custom_scan_expr_is_relation_var(right, self.rel_ref.relid)
+                && custom_scan_expr_is_query_value(left)
+            {
+                return Some(left);
+            }
+            None
+        }
+    }
+
+    fn for_each_index_info(self, mut visit: impl FnMut(&pg_sys::IndexOptInfo) -> bool) {
+        // SAFETY: indexlist is owned by the live RelOptInfo represented by this
+        // view and each index node is inspected synchronously.
+        unsafe {
+            let index_list = custom_scan_pg_list::<pg_sys::IndexOptInfo>(self.rel_ref.indexlist);
+            for index_info in index_list.iter_ptr() {
+                let Some(index_info) = custom_scan_pg_ref(index_info) else {
+                    continue;
+                };
+                if !visit(index_info) {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn sort_pathkeys(self) -> *mut pg_sys::List {
+        self.root_ref.sort_pathkeys
+    }
+
+    fn reltarget(self) -> *mut pg_sys::PathTarget {
+        self.rel_ref.reltarget
+    }
+
+    fn baserestrictinfo(self) -> *mut pg_sys::List {
+        self.rel_ref.baserestrictinfo
+    }
+
+    fn output_rows_for_custom_scan(self) -> f64 {
+        if self.root_ref.limit_tuples >= 0.0 {
+            self.root_ref.limit_tuples.max(1.0)
+        } else {
+            self.rel_ref.rows.max(1.0)
+        }
+    }
+
+    fn target_width(self) -> f64 {
+        // SAFETY: reltarget, when non-null, is owned by the live RelOptInfo
+        // represented by this planner callback view.
+        unsafe { custom_scan_pg_ref(self.rel_ref.reltarget) }
+            .map(|target| f64::from(target.width.max(0)))
+            .unwrap_or(0.0)
+    }
+
+    fn estimate_custom_scan_cost(
+        self,
+        output_rows: f64,
+        eligibility: &SpireCustomScanIndexEligibilityRow,
+    ) -> SpireCustomScanCostEstimate {
+        // SAFETY: this view exists only inside the PostgreSQL planner callback
+        // where backend-local planner cost globals are valid to read.
+        unsafe {
+            estimate_custom_scan_cost(
+                output_rows,
+                self.rel_ref.rows.max(1.0),
+                self.target_width(),
+                eligibility,
+            )
+        }
+    }
+}
+
 unsafe fn estimate_custom_scan_cost(
     output_rows: f64,
     rel_rows: f64,
@@ -23,14 +180,6 @@ unsafe fn estimate_custom_scan_cost(
         constants,
         cpu_tuple_cost,
     )
-}
-
-unsafe fn custom_scan_target_width(target: *mut pg_sys::PathTarget) -> f64 {
-    // SAFETY: caller guarantees target, when non-null, is a live PathTarget
-    // for the current planner callback.
-    unsafe { custom_scan_pg_ref(target) }
-        .map(|target| f64::from(target.width.max(0)))
-        .unwrap_or(0.0)
 }
 
 fn estimate_custom_scan_cost_with_constants(
@@ -69,71 +218,6 @@ fn estimate_custom_scan_cost_with_constants(
             + tuple_delivery_cost
             + tuple_width_cost,
     }
-}
-
-unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
-    // SAFETY: caller guarantees root is the current planner callback root.
-    let root_ref = unsafe { custom_scan_pg_ref(root)? };
-    if root_ref.limit_tuples < 0.0 || !root_ref.limit_tuples.is_finite() {
-        return None;
-    }
-    Some(root_ref.limit_tuples.max(0.0).ceil() as usize)
-}
-
-unsafe fn custom_scan_orderby_query_expr(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
-) -> Option<*mut pg_sys::Expr> {
-    // SAFETY: caller guarantees root/rel and their planner-owned child nodes
-    // are live for the current planner callback.
-    let root_ref = unsafe { custom_scan_pg_ref(root)? };
-    let rel_ref = unsafe { custom_scan_pg_ref(rel)? };
-    let query = unsafe { custom_scan_pg_ref(root_ref.parse)? };
-    if query.sortClause.is_null() || query.targetList.is_null() {
-        return None;
-    }
-    let sort_clauses = unsafe { custom_scan_pg_list::<pg_sys::SortGroupClause>(query.sortClause) };
-    if sort_clauses.len() != 1 {
-        return None;
-    }
-    let sort_clause = unsafe { custom_scan_pg_ref(sort_clauses.get_ptr(0)?)? };
-    let target_list = unsafe { custom_scan_pg_list::<pg_sys::TargetEntry>(query.targetList) };
-    for target_entry in target_list.iter_ptr() {
-        let Some(target_entry) = (unsafe { custom_scan_pg_ref(target_entry) }) else {
-            continue;
-        };
-        if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {
-            continue;
-        }
-        return unsafe { custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid) };
-    }
-    None
-}
-
-unsafe fn custom_scan_query_expr_from_sort_expr(
-    expr: *mut pg_sys::Expr,
-    relid: pg_sys::Index,
-) -> Option<*mut pg_sys::Expr> {
-    // SAFETY: caller guarantees expr is planner-owned and live for immediate
-    // node-tag dispatch/list inspection.
-    let op_expr = unsafe { custom_scan_op_expr(expr)? };
-    let args = unsafe { custom_scan_pg_list::<pg_sys::Expr>(op_expr.args) };
-    if args.len() != 2 {
-        return None;
-    }
-    let left = args.get_ptr(0)?;
-    let right = args.get_ptr(1)?;
-    if unsafe { custom_scan_expr_is_relation_var(left, relid) }
-        && unsafe { custom_scan_expr_is_query_value(right) }
-    {
-        return Some(right);
-    }
-    if unsafe { custom_scan_expr_is_relation_var(right, relid) }
-        && unsafe { custom_scan_expr_is_query_value(left) }
-    {
-        return Some(left);
-    }
-    None
 }
 
 unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {

@@ -153,6 +153,9 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     // SAFETY: PostgreSQL calls PlanCustomPath with live planner/path/list
     // pointers; allocated plan nodes are returned to PostgreSQL ownership.
     unsafe {
+        let planner_rel = CustomScanPlannerRel::new(root, rel).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan PlanCustomPath missing planner relation")
+        });
         let mode = custom_scan_mode_from_path(best_path).unwrap_or_else(|| {
             pgrx::error!("EcSpireDistributedScan CustomPath is missing plan mode")
         });
@@ -160,8 +163,8 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
             return plan_dml_custom_path(root, rel, best_path, tlist, clauses, custom_plans, mode);
         }
 
-        let top_k = custom_scan_top_k(root).unwrap_or(1);
-        let query_expr = custom_scan_orderby_query_expr(root, rel).unwrap_or_else(|| {
+        let top_k = planner_rel.top_k().unwrap_or(1);
+        let query_expr = planner_rel.orderby_query_expr().unwrap_or_else(|| {
             pgrx::error!(
                 "EcSpireDistributedScan could not extract ORDER BY vector query expression"
             )
@@ -354,45 +357,37 @@ unsafe fn custom_scan_candidate_index_oid(
 ) -> Option<(pg_sys::Oid, SpireCustomScanIndexEligibilityRow)> {
     // SAFETY: caller guarantees the planner hook supplied live pointers for
     // immediate inspection.
-    let root_ref = unsafe { custom_scan_pg_ref(root)? };
-    let rel_ref = unsafe { custom_scan_pg_ref(rel)? };
-    if unsafe { custom_scan_pg_ref(rte) }.is_none() {
+    let planner_rel = unsafe { CustomScanPlannerRel::new_base_rel(root, rel, rte)? };
+    if !planner_rel.is_plain_base_relation() {
         return None;
     }
-    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
+    if !planner_rel.has_vector_order_limit_shape() {
         return None;
     }
-    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
-        return None;
-    }
-    if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
-        return None;
-    }
-    let _ = unsafe { custom_scan_orderby_query_expr(root, rel)? };
+    let _ = planner_rel.orderby_query_expr()?;
 
     let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
-    let index_list = unsafe { custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist) };
-    for index_info in index_list.iter_ptr() {
-        let Some(index_info) = (unsafe { custom_scan_pg_ref(index_info) }) else {
-            continue;
-        };
+    let mut candidate = None;
+    planner_rel.for_each_index_info(|index_info| {
         if index_info.relam != ec_spire_am_oid {
-            continue;
+            return true;
         }
         let Some(index_relation) =
             crate::storage::relation_guard::IndexRelationGuard::try_access_share(
                 index_info.indexoid,
             )
         else {
-            continue;
+            return true;
         };
         if let Ok(row) = unsafe { custom_scan_index_eligibility_result(index_relation.as_ptr()) } {
             if row.eligible_for_custom_scan {
-                return Some((index_info.indexoid, row));
+                candidate = Some((index_info.indexoid, row));
+                return false;
             }
         }
-    }
-    None
+        true
+    });
+    candidate
 }
 
 unsafe fn dml_pk_select_candidate_index_oid(
@@ -402,32 +397,22 @@ unsafe fn dml_pk_select_candidate_index_oid(
 ) -> Option<pg_sys::Oid> {
     // SAFETY: caller guarantees the planner hook supplied live pointers for
     // immediate inspection.
-    let rel_ref = unsafe { custom_scan_pg_ref(rel)? };
-    if unsafe { custom_scan_pg_ref(root) }.is_none() || unsafe { custom_scan_pg_ref(rte) }.is_none()
-    {
-        return None;
-    }
-    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
-        return None;
-    }
-    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
+    let planner_rel = unsafe { CustomScanPlannerRel::new_base_rel(root, rel, rte)? };
+    if !planner_rel.is_plain_base_relation() {
         return None;
     }
     let ec_spire_am_oid = custom_scan_ec_spire_am_oid()?;
 
-    let index_list = unsafe { custom_scan_pg_list::<pg_sys::IndexOptInfo>(rel_ref.indexlist) };
     let mut placement_index_oid = None;
-    for index_info in index_list.iter_ptr() {
-        let Some(index_info) = (unsafe { custom_scan_pg_ref(index_info) }) else {
-            continue;
-        };
+    planner_rel.for_each_index_info(|index_info| {
         if index_info.relam == ec_spire_am_oid
             && custom_scan_index_has_sql_placement(index_info.indexoid)
         {
             placement_index_oid = Some(index_info.indexoid);
-            break;
+            return false;
         }
-    }
+        true
+    });
     let placement_index_oid = placement_index_oid?;
     // SAFETY: set_rel_pathlist supplies live PlannerInfo/RelOptInfo pointers
     // for immediate PK SELECT handoff planning.
@@ -518,10 +503,7 @@ unsafe fn add_custom_scan_path(
 ) {
     // SAFETY: root/rel were supplied by the current planner hook call and are
     // inspected only while building this path.
-    let Some(root_ref) = (unsafe { custom_scan_pg_ref(root) }) else {
-        return;
-    };
-    let Some(rel_ref) = (unsafe { custom_scan_pg_ref(rel) }) else {
+    let Some(planner_rel) = (unsafe { CustomScanPlannerRel::new(root, rel) }) else {
         return;
     };
 
@@ -531,18 +513,12 @@ unsafe fn add_custom_scan_path(
     unsafe {
         let mut custom_path =
             PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath);
-        let rows = if root_ref.limit_tuples >= 0.0 {
-            root_ref.limit_tuples.max(1.0)
-        } else {
-            rel_ref.rows.max(1.0)
-        };
-        let target_width = custom_scan_target_width(rel_ref.reltarget);
-        let cost =
-            estimate_custom_scan_cost(rows, rel_ref.rows.max(1.0), target_width, &eligibility);
+        let rows = planner_rel.output_rows_for_custom_scan();
+        let cost = planner_rel.estimate_custom_scan_cost(rows, &eligibility);
         custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
         custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
         custom_path.path.parent = rel;
-        custom_path.path.pathtarget = rel_ref.reltarget;
+        custom_path.path.pathtarget = planner_rel.reltarget();
         custom_path.path.param_info = std::ptr::null_mut();
         custom_path.path.parallel_aware = false;
         custom_path.path.parallel_safe = false;
@@ -551,10 +527,10 @@ unsafe fn add_custom_scan_path(
         custom_path.path.disabled_nodes = 0;
         custom_path.path.startup_cost = cost.startup_cost;
         custom_path.path.total_cost = cost.total_cost;
-        custom_path.path.pathkeys = root_ref.sort_pathkeys;
+        custom_path.path.pathkeys = planner_rel.sort_pathkeys();
         custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
         custom_path.custom_paths = std::ptr::null_mut();
-        custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
+        custom_path.custom_restrictinfo = planner_rel.baserestrictinfo();
         custom_path.custom_private = pg_sys::lappend_oid(
             pg_sys::lappend_oid(
                 std::ptr::null_mut(),
@@ -575,10 +551,7 @@ unsafe fn add_dml_pk_select_custom_scan_path(
 ) {
     // SAFETY: root/rel were supplied by the current planner hook call and are
     // inspected only while building this path.
-    if unsafe { custom_scan_pg_ref(root) }.is_none() {
-        return;
-    }
-    let Some(rel_ref) = (unsafe { custom_scan_pg_ref(rel) }) else {
+    let Some(planner_rel) = (unsafe { CustomScanPlannerRel::new(root, rel) }) else {
         return;
     };
 
@@ -591,7 +564,7 @@ unsafe fn add_dml_pk_select_custom_scan_path(
         custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
         custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
         custom_path.path.parent = rel;
-        custom_path.path.pathtarget = rel_ref.reltarget;
+        custom_path.path.pathtarget = planner_rel.reltarget();
         custom_path.path.param_info = std::ptr::null_mut();
         custom_path.path.parallel_aware = false;
         custom_path.path.parallel_safe = false;
@@ -603,7 +576,7 @@ unsafe fn add_dml_pk_select_custom_scan_path(
         custom_path.path.pathkeys = std::ptr::null_mut();
         custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
         custom_path.custom_paths = std::ptr::null_mut();
-        custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
+        custom_path.custom_restrictinfo = planner_rel.baserestrictinfo();
         custom_path.custom_private = pg_sys::lappend_oid(
             pg_sys::lappend_oid(
                 std::ptr::null_mut(),
