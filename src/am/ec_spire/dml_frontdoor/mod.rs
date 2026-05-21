@@ -1973,7 +1973,7 @@ fn dml_frontdoor_dml_has_extra_from_shape(query: &pg_sys::Query) -> bool {
     if jointree.fromlist.is_null() {
         return false;
     }
-    let fromlist = dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist);
+    let fromlist = unsafe { dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist) };
     if fromlist.is_empty() {
         return false;
     }
@@ -2002,7 +2002,7 @@ fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
     if jointree.fromlist.is_null() {
         return None;
     }
-    let fromlist = dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist);
+    let fromlist = unsafe { dml_frontdoor_pg_list::<pg_sys::Node>(jointree.fromlist) };
     if fromlist.len() != 1 {
         return None;
     }
@@ -2017,8 +2017,8 @@ fn dml_frontdoor_relation_oid_from_rtable(
     if rtindex <= 0 || query.rtable.is_null() {
         return None;
     }
-    let rtable = dml_frontdoor_pg_list::<pg_sys::RangeTblEntry>(query.rtable);
-    let rte = dml_frontdoor_pg_ref(rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?)?;
+    let rtable = unsafe { dml_frontdoor_pg_list::<pg_sys::RangeTblEntry>(query.rtable) };
+    let rte = unsafe { dml_frontdoor_pg_ref(rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?)? };
     if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
         return None;
     }
@@ -2046,9 +2046,9 @@ fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
     if baserestrictinfo.is_null() {
         return None;
     }
-    let restrict_infos = dml_frontdoor_pg_list::<pg_sys::RestrictInfo>(baserestrictinfo);
+    let restrict_infos = unsafe { dml_frontdoor_pg_list::<pg_sys::RestrictInfo>(baserestrictinfo) };
     for restrict_info in restrict_infos.iter_ptr() {
-        let Some(restrict_info) = dml_frontdoor_pg_ref(restrict_info) else {
+        let Some(restrict_info) = (unsafe { dml_frontdoor_pg_ref(restrict_info) }) else {
             continue;
         };
         if let Some(predicate) =
@@ -2077,14 +2077,14 @@ fn dml_frontdoor_pk_predicate_from_clause(
         },
     }
 
-    let clause_read = match dml_frontdoor_expr_node(clause) {
+    let clause_read = match unsafe { dml_frontdoor_expr_node(clause) } {
         Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
             let operator = if dml_frontdoor_bigint_equality_operator(op_expr.opno) {
                 Some("=")
             } else {
                 Some("other")
             };
-            let args = dml_frontdoor_pg_list::<pg_sys::Expr>(op_expr.args);
+            let args = unsafe { dml_frontdoor_pg_list::<pg_sys::Expr>(op_expr.args) };
             if args.len() == 2 {
                 ClauseRead::Binary {
                     operator,
@@ -2135,7 +2135,7 @@ fn dml_frontdoor_pk_predicate_from_clause(
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
-                    value: dml_frontdoor_predicate_value(right),
+                    value: unsafe { dml_frontdoor_predicate_value(right) },
                     value_expr: Some(right),
                 });
             }
@@ -2144,7 +2144,7 @@ fn dml_frontdoor_pk_predicate_from_clause(
                 return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
-                    value: dml_frontdoor_predicate_value(left),
+                    value: unsafe { dml_frontdoor_predicate_value(left) },
                     value_expr: Some(left),
                 });
             }
@@ -2169,10 +2169,10 @@ fn dml_frontdoor_predicate_var_column(
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<String> {
-    if let Some(column) = dml_frontdoor_var_column(expr, target_rtindex, context) {
+    if let Some(column) = unsafe { dml_frontdoor_var_column(expr, target_rtindex, context) } {
         return Some(column);
     }
-    match dml_frontdoor_expr_node(expr) {
+    match unsafe { dml_frontdoor_expr_node(expr) } {
         Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
             dml_frontdoor_predicate_var_column(relabel.arg, target_rtindex, context)
         }
@@ -2194,7 +2194,7 @@ fn dml_frontdoor_single_predicate_var_column(
     if exprs.is_null() {
         return None;
     }
-    let exprs = dml_frontdoor_pg_list::<pg_sys::Expr>(exprs);
+    let exprs = unsafe { dml_frontdoor_pg_list::<pg_sys::Expr>(exprs) };
     if exprs.len() != 1 {
         return None;
     }
@@ -2208,9 +2208,10 @@ fn dml_frontdoor_expr_references_column(
     context: &SpireDmlFrontdoorQueryContext<'_>,
     column_name: &str,
 ) -> bool {
-    match dml_frontdoor_expr_node(expr) {
+    match unsafe { dml_frontdoor_expr_node(expr) } {
         Some(SpireDmlFrontdoorExprNode::Var(_)) => {
-            dml_frontdoor_var_column(expr, target_rtindex, context).as_deref() == Some(column_name)
+            unsafe { dml_frontdoor_var_column(expr, target_rtindex, context) }.as_deref()
+                == Some(column_name)
         }
         Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
             dml_frontdoor_expr_list_references_column(
@@ -2263,7 +2264,7 @@ fn dml_frontdoor_expr_list_references_column(
     if exprs.is_null() {
         return false;
     }
-    let exprs = dml_frontdoor_pg_list::<pg_sys::Expr>(exprs);
+    let exprs = unsafe { dml_frontdoor_pg_list::<pg_sys::Expr>(exprs) };
     let references_column = exprs.iter_ptr().any(|expr| {
         dml_frontdoor_expr_references_column(expr, target_rtindex, context, column_name)
     });
@@ -2286,12 +2287,13 @@ fn dml_frontdoor_empty_pk_predicate() -> SpireDmlFrontdoorPkPredicate {
     }
 }
 
-fn dml_frontdoor_var_column(
+unsafe fn dml_frontdoor_var_column(
     expr: *mut pg_sys::Expr,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<String> {
-    let Some(SpireDmlFrontdoorExprNode::Var(var)) = dml_frontdoor_expr_node(expr) else {
+    let Some(SpireDmlFrontdoorExprNode::Var(var)) = (unsafe { dml_frontdoor_expr_node(expr) })
+    else {
         return None;
     };
     if var.varno != target_rtindex || var.varlevelsup != 0 || var.varattno <= 0 {
@@ -2303,22 +2305,24 @@ fn dml_frontdoor_var_column(
         .find_map(|(attno, name)| (*attno == var.varattno).then(|| (*name).to_owned()))
 }
 
-fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
-    dml_frontdoor_predicate_value(expr).kind
+unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+    unsafe { dml_frontdoor_predicate_value(expr) }.kind
 }
 
-fn dml_frontdoor_predicate_value(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorPredicateValue {
-    dml_frontdoor_predicate_value_inner(expr, 0)
+unsafe fn dml_frontdoor_predicate_value(
+    expr: *mut pg_sys::Expr,
+) -> SpireDmlFrontdoorPredicateValue {
+    unsafe { dml_frontdoor_predicate_value_inner(expr, 0) }
 }
 
-fn dml_frontdoor_predicate_value_inner(
+unsafe fn dml_frontdoor_predicate_value_inner(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
     if wrapper_depth > DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH {
         return dml_frontdoor_other_predicate_value();
     }
-    match dml_frontdoor_expr_node(expr) {
+    match unsafe { dml_frontdoor_expr_node(expr) } {
         Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
             if !const_expr.constisnull
                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
@@ -2347,47 +2351,47 @@ fn dml_frontdoor_predicate_value_inner(
             if func_expr.funcresulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
-            dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth)
+            unsafe { dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth) }
         }
         Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
             if relabel.resulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
-            dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth)
+            unsafe { dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth) }
         }
         Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
             if coerce.resulttype != pg_sys::INT8OID {
                 return dml_frontdoor_other_predicate_value();
             }
-            dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth)
+            unsafe { dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth) }
         }
         _ => dml_frontdoor_other_predicate_value(),
     }
 }
 
-fn dml_frontdoor_single_coerced_arg_value(
+unsafe fn dml_frontdoor_single_coerced_arg_value(
     args: *mut pg_sys::List,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
-    let Some(arg) = dml_frontdoor_single_list_expr_arg(args) else {
+    let Some(arg) = (unsafe { dml_frontdoor_single_list_expr_arg(args) }) else {
         return dml_frontdoor_other_predicate_value();
     };
-    dml_frontdoor_coercible_integer_value(arg, wrapper_depth)
+    unsafe { dml_frontdoor_coercible_integer_value(arg, wrapper_depth) }
 }
 
-fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
-    let args_ref = dml_frontdoor_pg_ref(args)?;
+unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+    let args_ref = unsafe { dml_frontdoor_pg_ref(args)? };
     if args_ref.type_ != pg_sys::NodeTag::T_List || args_ref.length != 1 {
         return None;
     }
-    dml_frontdoor_pg_list::<pg_sys::Expr>(args).get_ptr(0)
+    unsafe { dml_frontdoor_pg_list::<pg_sys::Expr>(args) }.get_ptr(0)
 }
 
-fn dml_frontdoor_coercible_integer_value(
+unsafe fn dml_frontdoor_coercible_integer_value(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
-    match dml_frontdoor_expr_node(expr) {
+    match unsafe { dml_frontdoor_expr_node(expr) } {
         Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
             if !const_expr.constisnull
                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
@@ -2412,7 +2416,7 @@ fn dml_frontdoor_coercible_integer_value(
                 dml_frontdoor_other_predicate_value()
             }
         }
-        _ => dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1),
+        _ => unsafe { dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1) },
     }
 }
 
@@ -2482,7 +2486,9 @@ enum SpireDmlFrontdoorExprNode<'a> {
     Other,
 }
 
-fn dml_frontdoor_expr_node<'a>(expr: *mut pg_sys::Expr) -> Option<SpireDmlFrontdoorExprNode<'a>> {
+unsafe fn dml_frontdoor_expr_node<'a>(
+    expr: *mut pg_sys::Expr,
+) -> Option<SpireDmlFrontdoorExprNode<'a>> {
     if expr.is_null() {
         return None;
     }
@@ -2534,14 +2540,14 @@ fn dml_frontdoor_query_ref<'a>(query: *mut pg_sys::Query) -> Option<&'a pg_sys::
     unsafe { query.as_ref() }
 }
 
-fn dml_frontdoor_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
+unsafe fn dml_frontdoor_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
     // SAFETY: DML frontdoor callers pass PostgreSQL-owned planner/catalog
     // lists and consume the resulting view immediately without retaining list
     // cells across callbacks.
     unsafe { PgList::<T>::from_pg(list) }
 }
 
-fn dml_frontdoor_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
+unsafe fn dml_frontdoor_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
     // SAFETY: DML frontdoor callers pass pointers from PostgreSQL planner or
     // relcache structures and copy/inspect the referenced fields immediately.
     unsafe { ptr.as_ref() }
@@ -2591,9 +2597,9 @@ fn dml_frontdoor_target_column_exprs(
         return Vec::new();
     }
     let mut columns = Vec::new();
-    let targets = dml_frontdoor_pg_list::<pg_sys::TargetEntry>(target_list);
+    let targets = unsafe { dml_frontdoor_pg_list::<pg_sys::TargetEntry>(target_list) };
     for target_entry in targets.iter_ptr() {
-        let Some(target_entry) = dml_frontdoor_pg_ref(target_entry) else {
+        let Some(target_entry) = (unsafe { dml_frontdoor_pg_ref(target_entry) }) else {
             continue;
         };
         if target_entry.resjunk {
