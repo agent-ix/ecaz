@@ -116,7 +116,7 @@ fn debug_graph_tuple_tag(storage: graph::GraphStorageDescriptor) -> u8 {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_with_page_line_tuple_bytes<R, F>(
+fn debug_with_page_line_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     offset: u16,
@@ -1515,16 +1515,12 @@ unsafe fn debug_collect_element_tids_at_level(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            // SAFETY: The buffer remains share-locked while the helper validates
-            // this line pointer and exposes tuple bytes only to the closure.
-            let matches_element_tag = unsafe {
-                debug_with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    offset_number,
-                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
-                )
-            }
+            let matches_element_tag = debug_with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                offset_number,
+                |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+            )
             .unwrap_or(false);
             if !matches_element_tag {
                 continue;
@@ -1588,16 +1584,12 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            // SAFETY: The buffer remains share-locked while the helper validates
-            // this line pointer and exposes tuple bytes only to the closure.
-            let matches_element_tag = unsafe {
-                debug_with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    offset_number,
-                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
-                )
-            }
+            let matches_element_tag = debug_with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                offset_number,
+                |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+            )
             .unwrap_or(false);
             if !matches_element_tag {
                 continue;
@@ -1660,16 +1652,12 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            // SAFETY: The buffer remains share-locked while the helper validates
-            // this line pointer and exposes tuple bytes only to the closure.
-            let matches_element_tag = unsafe {
-                debug_with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    offset_number,
-                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
-                )
-            }
+            let matches_element_tag = debug_with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                offset_number,
+                |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+            )
             .unwrap_or(false);
             if !matches_element_tag {
                 continue;
