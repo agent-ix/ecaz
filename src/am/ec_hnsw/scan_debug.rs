@@ -711,6 +711,13 @@ impl DebugAmScan {
         debug_with_scan_opaque(self.scan, f)
     }
 
+    fn with_oracle_score_parts<R>(
+        &self,
+        f: impl for<'a> FnOnce(DebugOracleScoreParts<'a>) -> R,
+    ) -> R {
+        debug_with_oracle_score_parts(self.scan, f)
+    }
+
     fn has_opaque(&self) -> bool {
         // SAFETY: This guard owns a descriptor allocated by the HNSW AM begin
         // callback and keeps it allocated until drop.
@@ -1886,18 +1893,16 @@ pub(crate) fn debug_top_level_oracle_k_seed_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    let heap_tids = debug_with_oracle_score_parts(scan, |parts| {
+    let heap_tids = scan.with_oracle_score_parts(|parts| {
         // SAFETY: The relation guard keeps the graph relation open while the
         // helper scans locked pages for top-level element TIDs.
         let top_level_tids = unsafe {
@@ -1939,10 +1944,6 @@ pub(crate) fn debug_top_level_oracle_k_seed_heap_tids(
             .collect()
     });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     heap_tids
 }
 
@@ -1966,18 +1967,16 @@ pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    let tids = debug_with_oracle_score_parts(scan, |parts| {
+    let tids = scan.with_oracle_score_parts(|parts| {
         // SAFETY: The relation guard keeps the graph relation open while the
         // helper scans locked pages for top-level element TIDs.
         let top_level_tids = unsafe {
@@ -2054,10 +2053,6 @@ pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
         }
     });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     tids
 }
 
@@ -2086,18 +2081,16 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    let tids = debug_with_oracle_score_parts(scan, |parts| {
+    let tids = scan.with_oracle_score_parts(|parts| {
         // SAFETY: The relation guard keeps the graph relation open while the
         // helper scans locked pages for candidate element TIDs.
         let layer_tids = unsafe {
@@ -2202,10 +2195,6 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         }
     });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     tids
 }
 
@@ -2233,18 +2222,16 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    let heap_tids = debug_with_oracle_score_parts(scan, |parts| {
+    let heap_tids = scan.with_oracle_score_parts(|parts| {
         // SAFETY: The relation guard keeps the graph relation open while the
         // helper scans locked pages for candidate element TIDs.
         let layer_tids = unsafe {
@@ -2342,10 +2329,6 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         heap_tids
     });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     heap_tids
 }
 
@@ -2369,18 +2352,16 @@ pub(crate) fn debug_exact_seed_scan_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    let tids = debug_with_oracle_score_parts(scan, |parts| {
+    let tids = scan.with_oracle_score_parts(|parts| {
         // SAFETY: The relation guard keeps the graph relation open while the
         // helper scans locked graph pages and maps heap TIDs to element TIDs.
         let element_by_heap_tid =
@@ -2457,10 +2438,6 @@ pub(crate) fn debug_exact_seed_scan_heap_tids(
         }
     });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     tids
 }
 
@@ -3100,22 +3077,18 @@ pub(crate) fn debug_gettuple_orderby_score(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    // SAFETY: Callers pass a live scan descriptor; both order-by pointers are
-    // checked before dereference, and the AM publishes f32 order-by datums.
-    unsafe {
-        if (*scan).xs_orderbyvals.is_null() || (*scan).xs_orderbynulls.is_null() {
-            return None;
-        }
-        if *(*scan).xs_orderbynulls {
-            return None;
-        }
-
-        f32::from_datum(*(*scan).xs_orderbyvals, false)
-    }
+    let (is_null, value_present, score) = debug_scan_orderby_score_state(scan);
+    (!is_null && value_present).then_some(score)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_gettuple_orderby_score_slot(scan: pg_sys::IndexScanDesc) -> (bool, f32) {
+    let (is_null, _value_present, score) = debug_scan_orderby_score_state(scan);
+    (is_null, score)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_scan_orderby_score_state(scan: pg_sys::IndexScanDesc) -> (bool, bool, f32) {
     // SAFETY: Callers pass a live scan descriptor immediately after gettuple.
     // The helper checks both order-by pointers before reading, and HNSW debug
     // gettuple publishes f32 order-by datums when the value slot is present.
@@ -3125,13 +3098,14 @@ fn debug_gettuple_orderby_score_slot(scan: pg_sys::IndexScanDesc) -> (bool, f32)
         } else {
             *(*scan).xs_orderbynulls
         };
-        let score = if (*scan).xs_orderbyvals.is_null() {
-            0.0
-        } else {
+        let value_present = !(*scan).xs_orderbyvals.is_null();
+        let score = if value_present {
             f32::from_datum(*(*scan).xs_orderbyvals, is_null)
                 .expect("orderby score should decode")
+        } else {
+            0.0
         };
-        (is_null, score)
+        (is_null, value_present, score)
     }
 }
 
