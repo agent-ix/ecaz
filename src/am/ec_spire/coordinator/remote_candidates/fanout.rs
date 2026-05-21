@@ -221,7 +221,7 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_target_plan_rows(
+pub(crate) fn remote_search_target_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     selected_pids: Vec<u64>,
@@ -313,23 +313,19 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_target_readiness_rows(
+pub(crate) fn remote_search_target_readiness_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
     selected_pids: Vec<u64>,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchTargetReadinessRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchTargetReadinessRow>, String> {
-        // SAFETY: arguments are forwarded unchanged to the target-plan wrapper,
-        // which validates the active epoch and selected placement snapshot.
-        let target_rows = unsafe {
-            remote_search_target_plan_rows(
-                index_relation,
-                requested_epoch,
-                selected_pids,
-                consistency_mode,
-            )
-        };
+        let target_rows = remote_search_target_plan_rows(
+            index_relation,
+            requested_epoch,
+            selected_pids,
+            consistency_mode,
+        );
         let node_rows = remote_node_snapshot(index_relation)
             .into_iter()
             .map(|row| (row.node_id, row))
@@ -405,16 +401,12 @@ pub(crate) fn remote_search_request_plan_rows(
         let top_k = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request plan top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        // SAFETY: the target-plan wrapper owns relation/page reads for this
-        // live index relation and validates epoch plus placement state.
-        let rows = unsafe {
-            remote_search_target_plan_rows(
-                index_relation,
-                requested_epoch,
-                selected_pids,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_target_plan_rows(
+            index_relation,
+            requested_epoch,
+            selected_pids,
+            consistency_mode,
+        );
         Ok(rows
             .into_iter()
             .map(|row| SpireRemoteSearchRequestPlanRow {
@@ -453,16 +445,12 @@ pub(crate) fn remote_search_request_readiness_rows(
         let top_k = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request readiness top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        // SAFETY: the readiness wrapper owns relation/page reads for this live
-        // index relation while deriving node and capability status.
-        let rows = unsafe {
-            remote_search_target_readiness_rows(
-                index_relation,
-                requested_epoch,
-                selected_pids,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_target_readiness_rows(
+            index_relation,
+            requested_epoch,
+            selected_pids,
+            consistency_mode,
+        );
         Ok(rows
             .into_iter()
             .map(|row| SpireRemoteSearchRequestReadinessRow {

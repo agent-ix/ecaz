@@ -9633,7 +9633,7 @@ fn ec_spire_remote_search_target_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_target_plan_rows,
         requested_epoch,
@@ -9700,7 +9700,7 @@ fn ec_spire_remote_search_target_readiness(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_readiness");
-    let rows = with_live_index_relation!(
+    let rows = with_live_index_relation_safe!(
         index_relation,
         am::spire_remote_search_target_readiness_rows,
         requested_epoch,
