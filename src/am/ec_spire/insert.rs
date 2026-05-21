@@ -63,18 +63,13 @@ unsafe fn publish_insert_delta_epoch(
     // SAFETY: the locked SPIRE index relation has a root/control page.
     let root_control = page::read_root_control_page(index_relation);
     let relation_options = options::relation_options(index_relation);
-    // SAFETY: heap_relation and IndexInfo come from PostgreSQL's aminsert
-    // callback and remain valid while deriving the indexed tuple layout.
-    let tuple_layout = unsafe {
-        build::resolve_indexed_tuple_layout(
-            heap_relation,
-            index_info,
-            &relation_options,
-            "aminsert",
-        )
-    };
-    // SAFETY: heap_tid is the non-null item pointer supplied to aminsert.
-    let heap_tid = unsafe { build::decode_heap_tid(heap_tid, "aminsert") };
+    let tuple_layout = build::resolve_indexed_tuple_layout(
+        heap_relation,
+        index_info,
+        &relation_options,
+        "aminsert",
+    );
+    let heap_tid = build::decode_heap_tid(heap_tid, "aminsert");
     // SAFETY: values/isnull are aminsert tuple arrays and tuple_layout was
     // derived from the matching live heap/index metadata.
     let tuple = unsafe {

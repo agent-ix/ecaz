@@ -60,7 +60,7 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> 
         .to_vec()
 }
 
-pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
+pub(super) fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_spire {context} received a null heap tid");
     }
@@ -73,12 +73,15 @@ pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) ->
     }
 }
 
-pub(super) unsafe fn resolve_indexed_tuple_layout(
+pub(super) fn resolve_indexed_tuple_layout(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     options: &options::EcSpireOptions,
     context: &str,
 ) -> SpireIndexedTupleLayout {
+    if heap_relation.is_null() {
+        pgrx::error!("ec_spire {context} received a null heap relation");
+    }
     if index_info.is_null() {
         pgrx::error!("ec_spire {context} received a null IndexInfo");
     }
@@ -101,9 +104,7 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
     if index_info.ii_NumIndexAttrs != expected_index_attrs {
         match options.source_identity {
             options::SpireSourceIdentityProvider::None => {
-                pgrx::error!(
-                    "ec_spire INCLUDE columns require WITH (source_identity = 'include')"
-                );
+                pgrx::error!("ec_spire INCLUDE columns require WITH (source_identity = 'include')");
             }
             options::SpireSourceIdentityProvider::Include => {
                 pgrx::error!(
@@ -127,9 +128,7 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
     if att.attisdropped {
         pgrx::error!("ec_spire indexed column references a dropped column");
     }
-    // SAFETY: att.atttypid is read from the copied tuple descriptor and passed
-    // to PostgreSQL type lookup helpers.
-    let vector_kind = unsafe { resolve_indexed_vector_kind_from_type(att.atttypid) }
+    let vector_kind = resolve_indexed_vector_kind_from_type(att.atttypid)
         .unwrap_or_else(|| pgrx::error!("ec_spire indexed column must be ecvector or tqvector"));
     let source_identity = match options.source_identity {
         options::SpireSourceIdentityProvider::None => None,
@@ -144,13 +143,9 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
             if identity_att.attisdropped {
                 pgrx::error!("ec_spire source_identity INCLUDE column references a dropped column");
             }
-            // SAFETY: identity_att.atttypid is read from the copied tuple
-            // descriptor and passed to PostgreSQL type lookup helpers.
-            let datum_kind = unsafe { resolve_source_identity_datum_kind(identity_att.atttypid) }
+            let datum_kind = resolve_source_identity_datum_kind(identity_att.atttypid)
                 .unwrap_or_else(|| {
-                    pgrx::error!(
-                        "ec_spire source_identity INCLUDE column must be uuid or bytea"
-                    )
+                    pgrx::error!("ec_spire source_identity INCLUDE column must be uuid or bytea")
                 });
             Some(SpireSourceIdentityAttribute {
                 index_attr_offset: 1,
@@ -165,9 +160,7 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
     }
 }
 
-unsafe fn resolve_indexed_vector_kind_from_type(
-    type_oid: pg_sys::Oid,
-) -> Option<SpireIndexedVectorKind> {
+fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<SpireIndexedVectorKind> {
     // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
     let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
     // SAFETY: base_type_oid is the PostgreSQL base type OID returned above.
@@ -191,7 +184,7 @@ unsafe fn resolve_indexed_vector_kind_from_type(
     }
 }
 
-unsafe fn resolve_source_identity_datum_kind(
+fn resolve_source_identity_datum_kind(
     type_oid: pg_sys::Oid,
 ) -> Option<SpireSourceIdentityDatumKind> {
     // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
