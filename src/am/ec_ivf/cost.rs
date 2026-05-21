@@ -181,7 +181,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
     let reltuples = relation_reltuples(index_relation);
-    let constants = current_planner_cost_constants();
+    // SAFETY: diagnostic snapshot reads planner cost globals in the current
+    // backend to report the same constants the planner would use.
+    let constants = unsafe { current_planner_cost_constants() };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let tree_height = resolved_ivf_tree_height_input();
     let translation = ivf_strategy_translation_snapshot();
@@ -231,7 +233,9 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
     let reltuples = relation_reltuples(index_relation);
-    let constants = current_planner_cost_constants();
+    // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
+    // context where backend-local planner cost globals are valid to read.
+    let constants = unsafe { current_planner_cost_constants() };
 
     estimate_ivf_cost(&metadata, index_pages, reltuples, constants)
 }
