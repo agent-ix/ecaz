@@ -1,9 +1,16 @@
 use std::ffi::c_void;
+use std::ptr::NonNull;
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys};
 
 use super::page;
-use crate::am::common::{callback::pg_am_callback, vacuum::alloc_index_bulk_delete_result};
+use crate::am::common::{
+    callback::pg_am_callback,
+    vacuum::{
+        add_index_bulk_delete_tuples_removed, alloc_index_bulk_delete_result,
+        set_index_bulk_delete_summary,
+    },
+};
 use crate::storage::page::ItemPointer;
 
 type BulkDeleteCallback =
@@ -157,11 +164,9 @@ unsafe fn run_bulkdelete(
         // SAFETY: `index_relation` is the live IVF index relation and the
         // updated metadata preserves the same on-disk format fields.
         page::initialize_metadata_page(index_relation, metadata);
-        // SAFETY: `stats` is non-null after allocation/selection above and is
-        // owned by PostgreSQL for this vacuum cycle.
-        unsafe {
-            (*stats).tuples_removed += removed_heap_tids as f64;
-        }
+        let stats_handle = NonNull::new(stats)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf vacuum stats unexpectedly null"));
+        add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
     }
 
     finish_vacuum_stats(index_relation, stats, &metadata)
@@ -265,13 +270,9 @@ unsafe fn finish_vacuum_stats(
     };
     let block_count = crate::storage::relation::main_fork_block_count(index_relation);
 
-    // SAFETY: `stats` is non-null after allocation/selection above and is
-    // writable for the current vacuum callback.
-    unsafe {
-        (*stats).num_pages = block_count;
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = metadata.total_live_tuples as f64;
-    }
+    let stats_handle = NonNull::new(stats)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf vacuum stats unexpectedly null"));
+    set_index_bulk_delete_summary(stats_handle, block_count, metadata.total_live_tuples);
 
     stats
 }
