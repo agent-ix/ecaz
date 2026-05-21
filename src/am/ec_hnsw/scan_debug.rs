@@ -158,10 +158,7 @@ fn debug_load_neighbor_tids_for_layer(
     m: usize,
     layer: u8,
 ) -> Vec<page::ItemPointer> {
-    // SAFETY: Debug callers pass an element TID discovered from the graph
-    // relation; the graph loader validates storage-specific tuple contents.
-    let (element, neighbors) =
-        unsafe { graph::load_exact_graph_adjacency(index_relation, element_tid, storage) };
+    let (element, neighbors) = debug_load_graph_adjacency(index_relation, element_tid, storage);
     graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)
 }
 
@@ -175,6 +172,38 @@ fn debug_load_graph_element(
     // graph traversal for this relation/storage pair; the loader validates the
     // storage-specific tuple body before returning an element.
     unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_load_graph_adjacency(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: graph::GraphStorageDescriptor,
+) -> (graph::GraphElement, graph::GraphNeighbors) {
+    // SAFETY: Debug callers pass element TIDs discovered from graph pages,
+    // metadata, scan frontier, or traversal for this relation/storage pair;
+    // adjacency loading validates the element and neighbor tuple bodies.
+    unsafe { graph::load_exact_graph_adjacency(index_relation, element_tid, storage) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_prefetch_next_graph_traversal_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    // SAFETY: Debug callers pass the live scan opaque borrowed from the scan
+    // descriptor while the index relation guard keeps the relation open.
+    unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_consume_and_refill_bootstrap_frontier(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    // SAFETY: Debug callers pass the live scan opaque borrowed from the scan
+    // descriptor while the index relation guard keeps the relation open.
+    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3341,9 +3370,7 @@ pub(crate) fn debug_materialize_bootstrap_candidate_result(
                 )
             };
             let materialized = current.has_element()
-                // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-                // open by the guard while prefetch materializes the next graph result.
-                || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };
+                || debug_prefetch_next_graph_traversal_result(index_relation, opaque);
             let current_result_tid =
                 debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
             let pending_heap_tids = active_result_state_ref(opaque)
@@ -3542,18 +3569,13 @@ pub(crate) fn debug_consume_candidate_frontier_head(
             .map(|candidate| debug_item_pointer_coords(candidate.node));
         let before_frontier = debug_candidate_frontier_slots(opaque);
 
-        // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-        // open by the guard while the bootstrap frontier is consumed/refilled.
-        let first_consumed =
-            unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+        let first_consumed = debug_consume_and_refill_bootstrap_frontier(index_relation, opaque);
         debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
         let after_first_head = current_candidate_frontier_head(opaque)
             .map(|candidate| debug_item_pointer_coords(candidate.node));
         let after_first_frontier = debug_candidate_frontier_slots(opaque);
 
-        // SAFETY: `opaque` still belongs to the live scan and `index_relation`
-        // is held open while the second frontier consumption is probed.
-        unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+        debug_consume_and_refill_bootstrap_frontier(index_relation, opaque);
         let after_second_head = current_candidate_frontier_head(opaque)
             .map(|candidate| debug_item_pointer_coords(candidate.node));
         let after_second_frontier = debug_candidate_frontier_slots(opaque);
@@ -3614,23 +3636,17 @@ pub(crate) fn debug_consume_candidate_frontier_head_slots(
         let before_head = current_candidate_frontier_head(opaque)
             .map(|candidate| debug_item_pointer_coords(candidate.node));
         let before_slots = debug_candidate_frontier_slots(opaque);
-        // SAFETY: `opaque` belongs to the live scan and `index_relation` is
-        // held open by the guard while the bootstrap frontier is consumed/refilled.
-        let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+        let consumed = debug_consume_and_refill_bootstrap_frontier(index_relation, opaque);
         let consumed_tid = consumed
             .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
             .unwrap_or((u32::MAX, u16::MAX));
         let consumed_neighbors = consumed
             .map(|candidate| {
-                // SAFETY: The consumed candidate came from the scan's graph
-                // frontier; adjacency loading validates the graph tuple body.
-                let (_, neighbors) = unsafe {
-                    graph::load_exact_graph_adjacency(
-                        index_relation,
-                        candidate.node,
-                        opaque.scan_graph_storage,
-                    )
-                };
+                let (_, neighbors) = debug_load_graph_adjacency(
+                    index_relation,
+                    candidate.node,
+                    opaque.scan_graph_storage,
+                );
                 neighbors
                     .tids
                     .into_iter()
@@ -3945,11 +3961,8 @@ pub(crate) fn debug_gettuple_current_result_neighbors(
             opaque.scan_graph_storage,
         )
     });
-    // SAFETY: `current_result_tid` was produced by the live scan, and adjacency
-    // loading validates the graph tuple body.
-    let (_element, neighbors) = unsafe {
-        graph::load_exact_graph_adjacency(index_relation, current_result_tid, scan_graph_storage)
-    };
+    let (_element, neighbors) =
+        debug_load_graph_adjacency(index_relation, current_result_tid, scan_graph_storage);
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -4161,10 +4174,8 @@ pub(crate) fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<Hea
     }
 
     let storage = debug_graph_storage(index_relation, &metadata);
-    // SAFETY: The metadata entry point is valid, and adjacency loading validates
-    // the graph tuple body before returning neighbors.
     let (_element, neighbors) =
-        unsafe { graph::load_exact_graph_adjacency(index_relation, metadata.entry_point, storage) };
+        debug_load_graph_adjacency(index_relation, metadata.entry_point, storage);
     neighbors
         .tids
         .into_iter()
