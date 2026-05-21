@@ -4,6 +4,8 @@ use std::ptr;
 use std::time::Instant;
 
 #[cfg(any(test, feature = "pg_test"))]
+use hashbrown::HashSet;
+#[cfg(any(test, feature = "pg_test"))]
 use pgrx::{pg_sys, FromDatum};
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -341,51 +343,34 @@ type DebugBootstrapCandidateMaterializationState = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    if opaque.visited_tids.is_null() {
+fn debug_sorted_tid_set(tids: *const HashSet<page::ItemPointer>) -> Vec<HeapTidCoords> {
+    if tids.is_null() {
         return Vec::new();
     }
 
-    // SAFETY: `visited_tids` is owned by the live scan opaque while the debug
-    // caller is inspecting the scan state, and null was handled above.
-    let mut tids = unsafe { &*opaque.visited_tids }
+    // SAFETY: Debug callers pass scan-owned set pointers while the owning
+    // opaque is live and null was handled above.
+    let mut tids = unsafe { &*tids }
         .iter()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect::<Vec<_>>();
     tids.sort_unstable();
     tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
+    debug_sorted_tid_set(opaque.visited_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_expanded_source_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    if opaque.expanded_source_tids.is_null() {
-        return Vec::new();
-    }
-
-    // SAFETY: `expanded_source_tids` is owned by the live scan opaque while the
-    // debug caller is inspecting the scan state, and null was handled above.
-    let mut tids = unsafe { &*opaque.expanded_source_tids }
-        .iter()
-        .map(|tid| (tid.block_number, tid.offset_number))
-        .collect::<Vec<_>>();
-    tids.sort_unstable();
-    tids
+    debug_sorted_tid_set(opaque.expanded_source_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_emitted_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    if opaque.emitted_result_tids.is_null() {
-        return Vec::new();
-    }
-
-    // SAFETY: `emitted_result_tids` is owned by the live scan opaque while the
-    // debug caller is inspecting the scan state, and null was handled above.
-    let mut tids = unsafe { &*opaque.emitted_result_tids }
-        .iter()
-        .map(|tid| (tid.block_number, tid.offset_number))
-        .collect::<Vec<_>>();
-    tids.sort_unstable();
-    tids
+    debug_sorted_tid_set(opaque.emitted_result_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -642,27 +627,29 @@ fn debug_with_scan_opaque_mut<R>(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_oracle_score_parts(opaque: &TqScanOpaque) -> DebugOracleScoreParts<'_> {
+    // SAFETY: AM rescan prepares cached quantizer and query storage before
+    // these oracle debug helpers score graph elements.
+    unsafe {
+        DebugOracleScoreParts {
+            storage: opaque.scan_graph_storage,
+            scan_m: opaque.scan_m,
+            quantizer: &*opaque.cached_quantizer,
+            prepared_query: &*opaque.prepared_query,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_with_oracle_score_parts<R>(
     scan: pg_sys::IndexScanDesc,
     f: impl for<'a> FnOnce(DebugOracleScoreParts<'a>) -> R,
 ) -> R {
-    debug_with_scan_opaque(scan, |opaque| {
-        let parts = DebugOracleScoreParts {
-            storage: opaque.scan_graph_storage,
-            scan_m: opaque.scan_m,
-            // SAFETY: AM rescan prepares a cached quantizer before these oracle
-            // debug helpers score graph elements.
-            quantizer: unsafe { &*opaque.cached_quantizer },
-            // SAFETY: AM rescan prepares query storage before these oracle
-            // debug helpers score graph elements.
-            prepared_query: unsafe { &*opaque.prepared_query },
-        };
-        f(parts)
-    })
+    debug_with_scan_opaque(scan, |opaque| f(debug_oracle_score_parts(opaque)))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
+fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
     // SAFETY: Debug callers read xs_heaptid immediately after a successful
     // gettuple call on the same live scan descriptor.
     pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid })
@@ -673,12 +660,7 @@ fn debug_am_gettuple_heap_tid(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> Option<HeapTidCoords> {
-    debug_am_gettuple(scan, direction).then(|| {
-        // SAFETY: The successful gettuple call above populated `xs_heaptid` for
-        // this live index scan descriptor, and this helper snapshots it before
-        // any later AM callback can alter the descriptor.
-        unsafe { debug_scan_heap_tid(scan) }
-    })
+    debug_am_gettuple(scan, direction).then(|| debug_scan_heap_tid(scan))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
