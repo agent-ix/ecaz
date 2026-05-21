@@ -98,8 +98,8 @@ pub(crate) unsafe fn index_cost_snapshot(
     // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
     let relation_options = options::relation_options(index_relation);
-    let diagnostics = cost_active_snapshot_diagnostics(index_relation);
-    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
+    let diagnostics = unsafe { cost_active_snapshot_diagnostics(index_relation) };
+    let hierarchy = unsafe { cost_index_hierarchy_snapshot(index_relation) };
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
         &diagnostics,
@@ -123,7 +123,9 @@ pub(crate) unsafe fn index_cost_snapshot(
         effective_nprobe_source: inputs.effective_nprobe_source,
         local_store_count: inputs.local_store_count,
         recursive_fanout: inputs.recursive_fanout,
-        resolved_tree_height: f64::from(spire_tree_height_callback_value(index_relation)),
+        resolved_tree_height: f64::from(unsafe {
+            spire_tree_height_callback_value(index_relation)
+        }),
         tree_height_source: if cfg!(feature = "pg18") {
             "amgettreeheight_callback"
         } else {
@@ -157,8 +159,8 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
     let index_pages = f64::from(block_count);
     let reltuples = relation_reltuples(index_relation);
     let relation_options = options::relation_options(index_relation);
-    let diagnostics = cost_active_snapshot_diagnostics(index_relation);
-    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
+    let diagnostics = unsafe { cost_active_snapshot_diagnostics(index_relation) };
+    let hierarchy = unsafe { cost_index_hierarchy_snapshot(index_relation) };
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
         &diagnostics,
@@ -196,8 +198,8 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     // context where backend-local planner cost globals are valid to read.
     let constants = unsafe { current_planner_cost_constants() };
     let relation_options = options::relation_options(index_relation);
-    let diagnostics = cost_active_snapshot_diagnostics(index_relation);
-    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
+    let diagnostics = unsafe { cost_active_snapshot_diagnostics(index_relation) };
+    let hierarchy = unsafe { cost_index_hierarchy_snapshot(index_relation) };
     let inputs = SpireCostInputs::from_snapshots(
         &relation_options,
         &diagnostics,
@@ -209,12 +211,12 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     estimate_spire_cost(&inputs, constants)
 }
 
-fn spire_tree_height_callback_value(index_relation: pg_sys::Relation) -> i32 {
-    let hierarchy = cost_index_hierarchy_snapshot(index_relation);
+unsafe fn spire_tree_height_callback_value(index_relation: pg_sys::Relation) -> i32 {
+    let hierarchy = unsafe { cost_index_hierarchy_snapshot(index_relation) };
     i32::from(hierarchy.hierarchy_depth)
 }
 
-fn cost_active_snapshot_diagnostics(
+unsafe fn cost_active_snapshot_diagnostics(
     index_relation: pg_sys::Relation,
 ) -> SpireActiveSnapshotDiagnostics {
     // SAFETY: cost callers pass a live SPIRE index relation, and the snapshot
@@ -222,7 +224,9 @@ fn cost_active_snapshot_diagnostics(
     unsafe { active_snapshot_diagnostics(index_relation) }
 }
 
-fn cost_index_hierarchy_snapshot(index_relation: pg_sys::Relation) -> SpireIndexHierarchySnapshot {
+unsafe fn cost_index_hierarchy_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexHierarchySnapshot {
     // SAFETY: cost callers pass a live SPIRE index relation, and the snapshot
     // only reads hierarchy metadata.
     unsafe { index_hierarchy_snapshot(index_relation) }
@@ -230,7 +234,7 @@ fn cost_index_hierarchy_snapshot(index_relation: pg_sys::Relation) -> SpireIndex
 
 #[cfg(feature = "pg18")]
 pub(super) unsafe extern "C-unwind" fn ec_spire_amgettreeheight(rel: pg_sys::Relation) -> i32 {
-    am_callback(|| spire_tree_height_callback_value(rel))
+    am_callback(|| unsafe { spire_tree_height_callback_value(rel) })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

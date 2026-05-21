@@ -39,7 +39,8 @@ impl SpireCoordinatorPipeline {
             consistency_mode,
         )?;
         let request_rows = remote_search_libpq_request_plan_rows_from_execution(&execution_rows);
-        let index_oid = remote_candidate_index_oid(index_relation, "ec_spire coordinator pipeline");
+        let index_oid =
+            unsafe { remote_candidate_index_oid(index_relation, "ec_spire coordinator pipeline") };
         let connection_rows =
             remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)?;
         let dispatch_rows =

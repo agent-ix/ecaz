@@ -205,10 +205,12 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
     consistency_mode: &str,
 ) -> (u64, u64, u64, u64, String) {
     let result = (|| -> Result<(u64, u64, u64, u64, String), String> {
-        let index_relid = remote_candidate_index_oid(
-            index_relation,
-            "ec_spire libpq identity cache contract probe",
-        );
+        let index_relid = unsafe {
+            remote_candidate_index_oid(
+                index_relation,
+                "ec_spire libpq identity cache contract probe",
+            )
+        };
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
             index_relation,
             requested_epoch,
@@ -420,8 +422,9 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
 ) -> Vec<SpireRemoteSearchLibpqReceiveAttemptRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqReceiveAttemptRow>, String> {
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        let index_relid =
-            remote_candidate_index_oid(index_relation, "ec_spire libpq executor receive attempts");
+        let index_relid = unsafe {
+            remote_candidate_index_oid(index_relation, "ec_spire libpq executor receive attempts")
+        };
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
             index_relation,
             requested_epoch,
@@ -652,7 +655,7 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
         consistency_mode,
     );
     remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
-        remote_candidate_index_oid(index_relation, "ec_spire libpq executor candidates"),
+        unsafe { remote_candidate_index_oid(index_relation, "ec_spire libpq executor candidates") },
         &dispatch_rows,
         &query,
         top_k,
@@ -751,7 +754,7 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
         consistency_mode,
     );
     remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
-        remote_candidate_index_oid(index_relation, "ec_spire libpq heap candidates"),
+        unsafe { remote_candidate_index_oid(index_relation, "ec_spire libpq heap candidates") },
         &dispatch_rows,
         &query,
         top_k,
@@ -792,8 +795,9 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqIdentityCacheSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchLibpqIdentityCacheSummaryRow, String> {
-        let index_relid =
-            remote_candidate_index_oid(index_relation, "ec_spire libpq identity cache summary");
+        let index_relid = unsafe {
+            remote_candidate_index_oid(index_relation, "ec_spire libpq identity cache summary")
+        };
         let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
             index_relation,
             requested_epoch,

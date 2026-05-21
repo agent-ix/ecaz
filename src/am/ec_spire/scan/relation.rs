@@ -159,9 +159,9 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
     query: &SpireScanQuery,
     options: EcSpireOptions,
 ) -> Result<SpirePreparedScanCandidates, String> {
-    let heap_relation = resolve_scan_heap_relation(scan);
+    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
     let heap_relation_ptr = heap_relation.as_ptr();
-    let snapshot_pg = resolve_scan_snapshot(scan);
+    let snapshot_pg = unsafe { resolve_scan_snapshot(scan) };
     // SAFETY: scan is the live IndexScanDesc for this scan path; indexRelation
     // is read only to resolve the indexed vector attribute.
     let indexed_attribute = unsafe {
@@ -171,7 +171,7 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
             "ec_spire heap rerank indexed column",
         )
     };
-    let slot = allocate_heap_slot(heap_relation_ptr)?;
+    let slot = unsafe { allocate_heap_slot(heap_relation_ptr) }?;
     // SAFETY: the resolved heap relation/snapshot and allocated tuple slot are
     // live for the duration of candidate preparation.
     let mut heap_reader = unsafe {
@@ -189,7 +189,7 @@ unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
         query,
         options,
         |candidates| {
-            prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates);
+            unsafe { prefetch_heap_rerank_candidate_blocks(heap_relation_ptr, candidates) };
             Ok(())
         },
         |candidate| {
@@ -217,7 +217,7 @@ fn heap_rerank_prefetch_block_numbers(
     block_numbers
 }
 
-fn prefetch_heap_rerank_candidate_blocks(
+unsafe fn prefetch_heap_rerank_candidate_blocks(
     heap_relation: pg_sys::Relation,
     candidates: &[SpireScoredScanCandidate],
 ) {
@@ -229,7 +229,7 @@ fn prefetch_heap_rerank_candidate_blocks(
     );
 }
 
-fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRelation {
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRelation {
     if scan.is_null() {
         pgrx::error!("ec_spire heap rerank received a null scan descriptor");
     }
@@ -254,7 +254,7 @@ fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedScanHeapRe
     ResolvedScanHeapRelation::owned(relation)
 }
 
-fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
     if scan.is_null() {
         pgrx::error!("ec_spire heap rerank received a null scan descriptor");
     }
@@ -272,7 +272,7 @@ fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
     pgrx::error!("ec_spire heap rerank requires an executor or active snapshot");
 }
 
-fn allocate_heap_slot(
+unsafe fn allocate_heap_slot(
     heap_relation: pg_sys::Relation,
 ) -> Result<crate::storage::slot_guard::TupleTableSlotGuard, String> {
     crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)

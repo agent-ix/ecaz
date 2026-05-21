@@ -18,7 +18,10 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
 const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
 const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str = "merge_validated_remote_search_candidate_batches";
 
-fn remote_candidate_index_oid(index_relation: pg_sys::Relation, context: &str) -> pg_sys::Oid {
+unsafe fn remote_candidate_index_oid(
+    index_relation: pg_sys::Relation,
+    context: &str,
+) -> pg_sys::Oid {
     if index_relation.is_null() {
         pgrx::error!("{context} received a null SPIRE index relation");
     }
@@ -338,8 +341,9 @@ pub(crate) fn remote_search_libpq_connection_plan_rows(
             top_k,
             consistency_mode,
         );
-        let index_oid =
-            remote_candidate_index_oid(index_relation, "ec_spire remote search connection plan");
+        let index_oid = unsafe {
+            remote_candidate_index_oid(index_relation, "ec_spire remote search connection plan")
+        };
         remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -617,8 +621,9 @@ pub(crate) fn coordinator_insert_dispatch_plan_row(
     node_id: u32,
     served_epoch: u64,
 ) -> SpireCoordinatorInsertDispatchPlanRow {
-    let index_oid =
-        remote_candidate_index_oid(index_relation, "ec_spire coordinator insert dispatch plan");
+    let index_oid = unsafe {
+        remote_candidate_index_oid(index_relation, "ec_spire coordinator insert dispatch plan")
+    };
     let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {
         let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;
         let Some(descriptor) = descriptors.get(&node_id) else {

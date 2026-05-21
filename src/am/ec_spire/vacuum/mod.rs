@@ -190,7 +190,7 @@ unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, St
         return Ok(0);
     }
     publish_compacted_delta_epoch_if_needed(index, root_control)?;
-    collect_live_assignment_count(index_relation)
+    unsafe { collect_live_assignment_count(index_relation) }
 }
 
 unsafe fn run_bulkdelete(
@@ -267,7 +267,7 @@ unsafe fn run_bulkdelete(
     })
 }
 
-fn collect_live_assignment_count(index_relation: pg_sys::Relation) -> Result<u64, String> {
+unsafe fn collect_live_assignment_count(index_relation: pg_sys::Relation) -> Result<u64, String> {
     let index = SpireVacuumIndexRelation::from_vacuum_callback(index_relation);
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
