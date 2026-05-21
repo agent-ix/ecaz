@@ -1,0 +1,1 @@
+no unsafe calls or unsafe fn signatures remain for ScopedPgQueryCancelFlags::set_pending, ScopedPgQueryCancelFlags::clear_pending_for_test, or ScopedPgStatementTimeoutSignal::trigger_after_ms
