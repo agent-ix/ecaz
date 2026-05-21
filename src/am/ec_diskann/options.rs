@@ -250,71 +250,85 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
     })
 }
 
-unsafe fn read_string_reloption(
+struct TqDiskannReloptionsView<'a> {
     rd_options: *mut pg_sys::varlena,
-    offset: i32,
-    name: &str,
-) -> Option<String> {
-    if offset == 0 {
-        return None;
+    reloptions: &'a TqDiskannReloptions,
+}
+
+impl<'a> TqDiskannReloptionsView<'a> {
+    unsafe fn from_relation(index_relation: pg_sys::Relation) -> Option<Self> {
+        if index_relation.is_null() {
+            pgrx::error!("ec_diskann relation options need a valid index relation");
+        }
+        // SAFETY: reloptions are read from a live index relation descriptor.
+        let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
+        if rd_options.is_null() {
+            return None;
+        }
+
+        // SAFETY: rd_options was built by ec_diskann_amoptions using the
+        // TqDiskannReloptions layout and remains live with the relation cache entry.
+        let reloptions = unsafe { &*rd_options.cast::<TqDiskannReloptions>() };
+        Some(Self {
+            rd_options,
+            reloptions,
+        })
     }
 
-    // SAFETY: offset is a nonzero PostgreSQL reloption string offset inside
-    // rd_options, which points at the varlena reloptions blob for this relation.
-    let value_ptr = unsafe {
-        rd_options
-            .cast::<u8>()
-            .add(offset as usize)
-            .cast::<std::ffi::c_char>()
-    };
-    // SAFETY: PostgreSQL stores string reloptions as NUL-terminated C strings at
-    // their declared offsets inside the reloptions blob.
-    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-        .to_str()
-        .unwrap_or_else(|e| pgrx::error!("invalid ec_diskann {name} reloption: {e}"));
-    if value.is_empty() {
-        pgrx::error!("invalid ec_diskann {name} reloption: value must not be empty");
+    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+        if offset == 0 {
+            return None;
+        }
+
+        // SAFETY: rd_options is PostgreSQL's varlena reloptions blob and
+        // offset is a string reloption offset written by
+        // build_local_reloptions for this layout.
+        let value_ptr = unsafe {
+            self.rd_options
+                .cast::<u8>()
+                .add(offset as usize)
+                .cast::<std::ffi::c_char>()
+        };
+        // SAFETY: string reloptions are stored as NUL-terminated strings inside
+        // the reloptions blob at the validated offset.
+        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+            .to_str()
+            .unwrap_or_else(|e| pgrx::error!("invalid ec_diskann {name} reloption: {e}"));
+        if value.is_empty() {
+            pgrx::error!("invalid ec_diskann {name} reloption: value must not be empty");
+        }
+        Some(value.to_owned())
     }
-    Some(value.to_owned())
+
+    fn to_options(&self) -> TqDiskannOptions {
+        let reloptions = self.reloptions;
+        let storage_format =
+            match self.read_string_reloption(reloptions.storage_format_offset, "storage_format") {
+                Some(value) => {
+                    StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+                }
+                None => StorageFormat::DEFAULT,
+            };
+
+        TqDiskannOptions {
+            graph_degree: reloptions.graph_degree,
+            build_list_size: reloptions.build_list_size,
+            list_size: reloptions.list_size,
+            rerank_budget: reloptions.rerank_budget,
+            top_k: reloptions.top_k,
+            alpha: reloptions.alpha as f32,
+            storage_format,
+        }
+    }
 }
 
 #[allow(dead_code)]
 pub(super) fn relation_options(index_relation: pg_sys::Relation) -> TqDiskannOptions {
-    if index_relation.is_null() {
-        pgrx::error!("ec_diskann relation options need a valid index relation");
-    }
-    // SAFETY: reloptions are read from a live index relation descriptor.
-    let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
-    if rd_options.is_null() {
-        return TqDiskannOptions::DEFAULT;
-    }
-
-    // SAFETY: rd_options was built by ec_diskann_amoptions using the
-    // TqDiskannReloptions layout and remains live with the relation cache entry.
-    let reloptions = unsafe { &*rd_options.cast::<TqDiskannReloptions>() };
-    // SAFETY: storage_format_offset is read from the validated reloptions blob
-    // and read_string_reloption returns None for the default zero offset.
-    let storage_format = match unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.storage_format_offset,
-            "storage_format",
-        )
-    } {
-        Some(value) => {
-            StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
-        }
-        None => StorageFormat::DEFAULT,
-    };
-
-    TqDiskannOptions {
-        graph_degree: reloptions.graph_degree,
-        build_list_size: reloptions.build_list_size,
-        list_size: reloptions.list_size,
-        rerank_budget: reloptions.rerank_budget,
-        top_k: reloptions.top_k,
-        alpha: reloptions.alpha as f32,
-        storage_format,
+    // SAFETY: callers provide a live PostgreSQL index relation. The view keeps
+    // reloption pointer handling scoped to this relation-options layout.
+    match unsafe { TqDiskannReloptionsView::from_relation(index_relation) } {
+        Some(view) => view.to_options(),
+        None => TqDiskannOptions::DEFAULT,
     }
 }
 
