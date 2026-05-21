@@ -259,9 +259,7 @@ fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
         return scan_ref.xs_snapshot;
     }
 
-    // SAFETY: Reads PostgreSQL backend-local active snapshot state.
-    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-    if !active_snapshot.is_null() {
+    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
         return active_snapshot;
     }
 

@@ -40,13 +40,8 @@ unsafe fn open_spire_heap_relation_for_index(
 }
 
 unsafe fn active_spire_maintenance_snapshot() -> Result<pg_sys::Snapshot, String> {
-    // SAFETY: GetActiveSnapshot returns PostgreSQL backend-local snapshot state;
-    // the caller checks for null before using it.
-    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-    if snapshot.is_null() {
-        return Err("ec_spire maintenance requires an active heap snapshot".to_owned());
-    }
-    Ok(snapshot)
+    crate::storage::snapshot_guard::active_snapshot()
+        .ok_or_else(|| "ec_spire maintenance requires an active heap snapshot".to_owned())
 }
 
 pub(crate) fn register_gucs() {

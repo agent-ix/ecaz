@@ -1782,10 +1782,7 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScan
         return ResolvedHnswScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
     }
 
-    // SAFETY: `GetActiveSnapshot` is valid inside PostgreSQL backend scan
-    // execution and returns a borrowed active snapshot or null.
-    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-    if !active_snapshot.is_null() {
+    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
         return ResolvedHnswScanSnapshot::borrowed(active_snapshot);
     }
 

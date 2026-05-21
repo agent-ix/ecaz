@@ -299,10 +299,7 @@ pub(super) unsafe fn resolve_scan_snapshot(
         }));
     }
 
-    // SAFETY: PostgreSQL exposes the current active snapshot for this backend;
-    // a null return is handled by registering our own snapshot below.
-    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-    if !active_snapshot.is_null() {
+    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
         return Ok(ResolvedScanSnapshot::borrowed(active_snapshot));
     }
 

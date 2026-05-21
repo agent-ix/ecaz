@@ -189,12 +189,8 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
         heap_oid,
     )
     .ok_or_else(|| "ec_spire remote heap resolution could not open heap relation".to_owned())?;
-    // SAFETY: reads the backend-local active snapshot pointer and rejects null
-    // before using it for heap row visibility checks.
-    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-    if snapshot.is_null() {
-        return Err("ec_spire remote heap resolution requires an active snapshot".to_owned());
-    }
+    let snapshot = crate::storage::snapshot_guard::active_snapshot()
+        .ok_or_else(|| "ec_spire remote heap resolution requires an active snapshot".to_owned())?;
     // SAFETY: heap_relation and index_relation are both open for this lookup;
     // the helper resolves the indexed vector attribute for heap fetches.
     let indexed_attribute = unsafe {

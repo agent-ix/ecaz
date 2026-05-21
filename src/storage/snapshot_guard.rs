@@ -4,6 +4,13 @@
 
 use pgrx::pg_sys;
 
+pub(crate) fn active_snapshot() -> Option<pg_sys::Snapshot> {
+    // SAFETY: reads PostgreSQL backend-local active snapshot state and returns
+    // the pointer by value without taking ownership.
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    (!snapshot.is_null()).then_some(snapshot)
+}
+
 pub(crate) struct RegisteredSnapshotGuard {
     snapshot: pg_sys::Snapshot,
 }
