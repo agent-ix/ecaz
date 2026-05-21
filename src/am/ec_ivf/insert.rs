@@ -66,9 +66,7 @@ fn validate_metadata_runtime_options(metadata: &page::MetadataPage) -> Result<()
 }
 
 fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
-    // SAFETY: caller passes a live index relation; reading rd_id does not take
-    // ownership of the relation.
-    let relid = unsafe { (*index_relation).rd_id };
+    let relid = crate::storage::relation::relation_oid(index_relation);
     // SAFETY: locks the relation OID read above until the returned guard drops.
     unsafe { pg_sys::LockRelationOid(relid, EMPTY_BOOTSTRAP_LOCK_MODE) };
     RelationLockGuard {
