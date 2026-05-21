@@ -665,6 +665,34 @@ impl DebugHeapBackedScan {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+struct DebugPallocScanKey {
+    ptr: pg_sys::ScanKey,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl DebugPallocScanKey {
+    fn zeroed() -> Self {
+        // SAFETY: PostgreSQL allocates zeroed memory in the current memory
+        // context; this guard releases it exactly once on drop.
+        let ptr = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
+            .cast::<pg_sys::ScanKeyData>();
+        Self { ptr }
+    }
+
+    fn as_mut_ptr(&mut self) -> pg_sys::ScanKey {
+        self.ptr
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl Drop for DebugPallocScanKey {
+    fn drop(&mut self) {
+        // SAFETY: The pointer is owned by this guard and came from `palloc0`.
+        unsafe { pg_sys::pfree(self.ptr.cast()) };
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
@@ -886,17 +914,14 @@ pub(crate) fn debug_rescan_with_unused_key_buffer(
     // descriptor.
     let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
 
-    // SAFETY: PostgreSQL allocates zeroed memory in the current memory context;
-    // the pointer is freed before the descriptor is ended below.
-    let unused_keys = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
-        .cast::<pg_sys::ScanKeyData>();
+    let mut unused_keys = DebugPallocScanKey::zeroed();
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, the key count is intentionally zero so
     // `unused_keys` must be ignored, and `orderby` is a valid one-key buffer.
-    debug_am_rescan(scan, unused_keys, 0, &mut orderby, 1);
+    debug_am_rescan(scan, unused_keys.as_mut_ptr(), 0, &mut orderby, 1);
 
     let result = debug_with_scan_opaque(scan, |opaque| {
         let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
@@ -914,9 +939,6 @@ pub(crate) fn debug_rescan_with_unused_key_buffer(
         )
     });
 
-    // SAFETY: `unused_keys` was allocated by `palloc0` above and has not been
-    // freed yet.
-    unsafe { pg_sys::pfree(unused_keys.cast()) };
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
     // SAFETY: AM cleanup has run, and the descriptor is released once here.
@@ -3067,24 +3089,7 @@ pub(crate) fn debug_gettuple_orderby_score(
     // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the
     // live descriptor and publish order-by score slots.
     let found = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
-    // SAFETY: `scan` is a live descriptor; null is checked before reading the
-    // order-by null flag.
-    let is_null = if unsafe { (*scan).xs_orderbynulls.is_null() } {
-        true
-    } else {
-        // SAFETY: The order-by nulls pointer was checked non-null above.
-        unsafe { *(*scan).xs_orderbynulls }
-    };
-    // SAFETY: `scan` is a live descriptor; null is checked before reading the
-    // order-by datum slot.
-    let score = if unsafe { (*scan).xs_orderbyvals.is_null() } {
-        0.0
-    } else {
-        // SAFETY: The order-by datum pointer was checked non-null above, and the
-        // HNSW AM publishes f32 scores in this debug path.
-        unsafe { f32::from_datum(*(*scan).xs_orderbyvals, is_null) }
-            .expect("orderby score should decode")
-    };
+    let (is_null, score) = debug_gettuple_orderby_score_slot(scan);
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3106,6 +3111,27 @@ fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
         }
 
         f32::from_datum(*(*scan).xs_orderbyvals, false)
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_gettuple_orderby_score_slot(scan: pg_sys::IndexScanDesc) -> (bool, f32) {
+    // SAFETY: Callers pass a live scan descriptor immediately after gettuple.
+    // The helper checks both order-by pointers before reading, and HNSW debug
+    // gettuple publishes f32 order-by datums when the value slot is present.
+    unsafe {
+        let is_null = if (*scan).xs_orderbynulls.is_null() {
+            true
+        } else {
+            *(*scan).xs_orderbynulls
+        };
+        let score = if (*scan).xs_orderbyvals.is_null() {
+            0.0
+        } else {
+            f32::from_datum(*(*scan).xs_orderbyvals, is_null)
+                .expect("orderby score should decode")
+        };
+        (is_null, score)
     }
 }
 
