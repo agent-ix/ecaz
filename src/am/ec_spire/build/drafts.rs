@@ -443,8 +443,7 @@ unsafe fn publish_relation_recursive_routing_build(
 }
 
 pub(super) fn current_epoch_publish_times() -> Result<(i64, i64), String> {
-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
-    let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+    let published_at_micros = crate::storage::time::current_timestamp_micros();
     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)
         .checked_mul(MICROS_PER_SECOND)
         .ok_or_else(|| "ec_spire epoch retention micros overflow".to_owned())?;

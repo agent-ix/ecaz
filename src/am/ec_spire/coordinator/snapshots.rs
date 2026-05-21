@@ -676,9 +676,7 @@ pub(crate) unsafe fn index_epoch_snapshot(
                 Ok(())
             }
         })?;
-        // SAFETY: reads PostgreSQL's current backend timestamp for cleanup-age
-        // diagnostics; no pointer is retained.
-        let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+        let now_micros = crate::storage::time::current_timestamp_micros();
         epoch_snapshot_rows_from_manifests(root_control, manifests, now_micros)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -867,9 +865,7 @@ pub(crate) unsafe fn index_epoch_cleanup_run(
             });
         }
 
-        // SAFETY: reads PostgreSQL's current backend timestamp for epoch
-        // retention planning; no pointer is retained.
-        let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+        let now_micros = crate::storage::time::current_timestamp_micros();
         let (cleanup_epochs, protected, candidates_by_relid) =
             collect_physical_cleanup_candidates(index_relation, root_control, now_micros)?;
         let cleanup_epoch_count = u64::try_from(cleanup_epochs.len())
