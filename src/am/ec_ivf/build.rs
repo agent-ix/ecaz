@@ -137,7 +137,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
 
         let indexed_vector_kind = resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");
         let mut state = BuildState::new(options, indexed_vector_kind);
-        let heap_tuples = table_index_build_scan(heap_relation, index_relation, index_info, &mut state);
+        let heap_tuples =
+            table_index_build_scan(heap_relation, index_relation, index_info, &mut state);
         let index_tuples = if state.scanned_tuples == 0 {
             0.0
         } else {
@@ -547,7 +548,7 @@ fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -
     row_count.min(DEFAULT_AUTO_TRAINING_SAMPLE_ROWS)
 }
 
-pub(super) fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
+pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
     let metadata_nlists = usize::try_from(plan.metadata.nlists).expect("u32 nlists should fit");
     debug_assert_eq!(plan.centroid_count(), metadata_nlists);
     debug_assert_eq!(plan.directory_count(), metadata_nlists);
@@ -555,19 +556,22 @@ pub(super) fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuild
     debug_assert!(plan.data_page_count() > 0);
     debug_assert_eq!(plan.total_live_tuples(), plan.posting_count() as u64);
 
-    write_data_pages(index_relation, &plan.data_pages);
+    unsafe { write_data_pages(index_relation, &plan.data_pages) };
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.
     page::initialize_metadata_page(index_relation, plan.metadata);
 }
 
-fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
+unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
     for staged_page in data_pages.pages() {
-        write_data_page(index_relation, staged_page);
+        unsafe { write_data_page(index_relation, staged_page) };
     }
 }
 
-fn write_data_page(index_relation: pg_sys::Relation, staged_page: &crate::storage::page::DataPage) {
+unsafe fn write_data_page(
+    index_relation: pg_sys::Relation,
+    staged_page: &crate::storage::page::DataPage,
+) {
     // SAFETY: caller passes the live index relation; P_NEW returns a new locked
     // zeroed main-fork block, then the generic WAL image owns all page mutation
     // until `finish`.
@@ -773,7 +777,7 @@ pub(super) fn resolve_indexed_vector_kind(
         pgrx::error!("ec_ivf requires a base heap column index key");
     }
 
-    let tuple_desc = heap_relation_tuple_desc(heap_relation, context);
+    let tuple_desc = unsafe { heap_relation_tuple_desc(heap_relation, context) };
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("resolved indexed attribute should exist");
@@ -790,7 +794,10 @@ fn index_info_ref<'a>(index_info: *mut pg_sys::IndexInfo, context: &str) -> &'a 
         .unwrap_or_else(|| pgrx::error!("ec_ivf {context} received a null IndexInfo"))
 }
 
-fn heap_relation_tuple_desc(heap_relation: pg_sys::Relation, context: &str) -> PgTupleDesc<'static> {
+unsafe fn heap_relation_tuple_desc(
+    heap_relation: pg_sys::Relation,
+    context: &str,
+) -> PgTupleDesc<'static> {
     // SAFETY: heap_relation is live for the AM callback; `from_pg_copy`
     // copies the tuple descriptor pointer contents for safe attribute access.
     unsafe {
@@ -801,9 +808,7 @@ fn heap_relation_tuple_desc(heap_relation: pg_sys::Relation, context: &str) -> P
     }
 }
 
-fn resolve_indexed_vector_kind_from_type(
-    type_oid: pg_sys::Oid,
-) -> Option<IndexedVectorKind> {
+fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
     let name = formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {

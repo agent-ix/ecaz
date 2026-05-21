@@ -65,7 +65,7 @@ fn validate_metadata_runtime_options(metadata: &page::MetadataPage) -> Result<()
     metadata.rerank.validate_v1_supported()
 }
 
-fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
+unsafe fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
     // SAFETY: `index_relation` is live during IVF insert.
     let relid = unsafe { crate::storage::relation::relation_oid(index_relation) };
     // SAFETY: locks the relation OID read above until the returned guard drops.
@@ -80,7 +80,7 @@ unsafe fn insert_with_empty_bootstrap_lock(
     index_relation: pg_sys::Relation,
     tuple: build::BuildTuple,
 ) -> Result<(), String> {
-    let guard = lock_empty_bootstrap_relation(index_relation);
+    let guard = unsafe { lock_empty_bootstrap_relation(index_relation) };
     // SAFETY: same live index relation, reread under the bootstrap lock.
     let metadata = page::read_metadata_page(index_relation);
     validate_metadata_runtime_options(&metadata)?;
@@ -220,7 +220,7 @@ fn bootstrap_empty_index(
 ) -> Result<(), String> {
     let options = options_from_metadata(metadata)?;
     let plan = build::stage_single_tuple_build_plan(options, tuple)?;
-    build::flush_build_plan(index_relation, &plan);
+    unsafe { build::flush_build_plan(index_relation, &plan) };
     Ok(())
 }
 
