@@ -178,6 +178,11 @@ impl<'a> IvfScanDescView<'a> {
         self.scan.indexRelation
     }
 
+    fn index_relation_nonnull(self, context: &str) -> NonNull<pg_sys::RelationData> {
+        NonNull::new(self.index_relation())
+            .unwrap_or_else(|| pgrx::error!("{context} received null index relation"))
+    }
+
     fn heap_relation(self) -> Option<pg_sys::Relation> {
         (!self.scan.heapRelation.is_null()).then_some(self.scan.heapRelation)
     }
@@ -187,7 +192,7 @@ impl<'a> IvfScanDescView<'a> {
     }
 
     fn heap_oid(self, context: &str) -> pg_sys::Oid {
-        unsafe { ivf_index_heap_oid(self.index_relation(), context) }
+        ivf_index_heap_oid(self.index_relation_nonnull(context))
     }
 
     fn opaque_option(self, context: &str) -> Option<&'a EcIvfScanOpaque> {
@@ -236,15 +241,10 @@ unsafe fn ivf_index_scan_state_ref<'a>(
     unsafe { index_state.as_ref() }
 }
 
-unsafe fn ivf_index_heap_oid(index_relation: pg_sys::Relation, context: &str) -> pg_sys::Oid {
+fn ivf_index_heap_oid(index_relation: NonNull<pg_sys::RelationData>) -> pg_sys::Oid {
     // SAFETY: callers pass a live IVF index relation; PostgreSQL resolves the
     // heap relation OID from the relation id without taking ownership.
-    unsafe {
-        let Some(index_relation) = index_relation.as_ref() else {
-            pgrx::error!("{context} received null index relation");
-        };
-        pg_sys::IndexGetRelation(index_relation.rd_id, false)
-    }
+    unsafe { pg_sys::IndexGetRelation(index_relation.as_ref().rd_id, false) }
 }
 
 fn ivf_active_snapshot() -> pg_sys::Snapshot {
@@ -1660,9 +1660,9 @@ fn debug_read_metadata_page(index_relation: &IndexRelationGuard) -> super::page:
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_index_heap_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
-    // SAFETY: Debug callers keep the index relation open while resolving the
-    // owning heap relation OID.
-    unsafe { ivf_index_heap_oid(index_relation, "ec_ivf debug scan") }
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan received null index relation"));
+    ivf_index_heap_oid(index_relation)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
