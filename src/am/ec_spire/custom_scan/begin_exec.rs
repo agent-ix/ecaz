@@ -62,25 +62,29 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     let index_oid = plan.index_oid();
     match mode {
         SpireCustomScanPlanMode::VectorOrderLimit => {
-            let (tuple_payload_columns, tuple_payload_inputs) =
-                unsafe { custom_scan_tuple_payload_state_from_plan(node, custom_scan) };
+            // SAFETY: PostgreSQL invokes BeginCustomScan with the live
+            // provider-owned CustomScanState and matching CustomScan plan. All
+            // tuple payload and query values are copied into Rust-owned state.
+            let (tuple_payload_columns, tuple_payload_inputs, query) = unsafe {
+                let (tuple_payload_columns, tuple_payload_inputs) =
+                    custom_scan_tuple_payload_state_from_plan(node, custom_scan);
+                (
+                    tuple_payload_columns,
+                    tuple_payload_inputs,
+                    custom_scan_query_from_plan(node, custom_scan),
+                )
+            };
             custom_scan_init_vector_order_limit_exec_state(
                 state,
                 index_oid,
                 custom_scan_top_k_from_plan(plan),
-                unsafe { custom_scan_query_from_plan(node, custom_scan) },
+                query,
                 tuple_payload_columns,
                 tuple_payload_inputs,
             );
         }
-        SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
-            // SAFETY: PostgreSQL invokes BeginCustomScan with the live
-            // provider-owned CustomScanState and matching CustomScan plan.
-            unsafe {
-                custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid)
-            };
-        }
-        SpireCustomScanPlanMode::DmlUpdateTuplePayload
+        SpireCustomScanPlanMode::DmlPkSelectTuplePayload
+        | SpireCustomScanPlanMode::DmlUpdateTuplePayload
         | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
             // SAFETY: PostgreSQL invokes BeginCustomScan with the live
             // provider-owned CustomScanState and matching CustomScan plan.
@@ -130,17 +134,6 @@ unsafe fn custom_scan_tuple_payload_state_from_plan(
     }
 }
 
-unsafe fn custom_scan_init_tuple_payload_state(
-    state: &mut SpireCustomScanExecState,
-    node: *mut pg_sys::CustomScanState,
-    custom_scan: *mut pg_sys::CustomScan,
-) {
-    let (tuple_payload_columns, tuple_payload_inputs) =
-        unsafe { custom_scan_tuple_payload_state_from_plan(node, custom_scan) };
-    state.tuple_payload_columns = tuple_payload_columns;
-    state.tuple_payload_inputs = tuple_payload_inputs;
-}
-
 unsafe fn custom_scan_init_dml_exec_state(
     state: &mut SpireCustomScanExecState,
     node: *mut pg_sys::CustomScanState,
@@ -156,7 +149,10 @@ unsafe fn custom_scan_init_dml_exec_state(
     // copied into Rust-owned state before the callback returns.
     unsafe {
         if mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
-            custom_scan_init_tuple_payload_state(state, node, custom_scan);
+            let (tuple_payload_columns, tuple_payload_inputs) =
+                custom_scan_tuple_payload_state_from_plan(node, custom_scan);
+            state.tuple_payload_columns = tuple_payload_columns;
+            state.tuple_payload_inputs = tuple_payload_inputs;
             state.dml_pk_column = custom_scan_dml_pk_column(node);
         } else {
             state.dml_pk_column = plan.dml_pk_column();
