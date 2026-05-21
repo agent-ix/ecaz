@@ -640,9 +640,7 @@ unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     let mut ip = lanes.iter().sum::<f32>();
 
     while i < len {
-        // SAFETY: The tail loop maintains `i < len`, and `len` is the minimum
-        // of the two slice lengths, so both unchecked reads are in bounds.
-        ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
+        ip += left[i] * right[i];
         i += 1;
     }
 
@@ -707,9 +705,7 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     let mut ip = lanes.iter().sum::<f32>();
 
     while i < len {
-        // SAFETY: The tail loop maintains `i < len`, and `len` is the minimum
-        // of the two slice lengths, so both unchecked reads are in bounds.
-        ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
+        ip += left[i] * right[i];
         i += 1;
     }
 
@@ -768,14 +764,11 @@ fn write_metadata_to_buffer(
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
     // SAFETY: `page_ptr` is the WAL-registered metadata page and `page_size`
-    // comes from the locked buffer guard.
-    unsafe { pg_sys::PageInit(page_ptr, page_size, special_size) };
-    // SAFETY: The page was initialized with a special area large enough for the
-    // encoded metadata bytes.
-    let dst = unsafe { pg_sys::PageGetSpecialPointer(page_ptr) }.cast::<u8>();
-    // SAFETY: Source and destination are non-overlapping and the destination
-    // special area was sized by PageInit above.
+    // comes from the locked buffer guard. The special area is sized from the
+    // encoded metadata before copying from owned Rust memory.
     unsafe {
+        pg_sys::PageInit(page_ptr, page_size, special_size);
+        let dst = pg_sys::PageGetSpecialPointer(page_ptr).cast::<u8>();
         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), dst, metadata_bytes.len());
     }
     wal_txn.finish();
@@ -799,26 +792,25 @@ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
         let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
         // SAFETY: `page_ptr` is the WAL-registered data page and `page_size`
-        // comes from the locked buffer guard.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+        // comes from the locked buffer guard. Each staged tuple byte slice is
+        // immutable and PageAddItemExtended copies it into the initialized page.
+        unsafe {
+            pg_sys::PageInit(page_ptr, page_size, 0);
 
-        for tuple in staged_page.tuples() {
-            // SAFETY: `tuple` bytes are immutable staged page bytes and
-            // PageAddItemExtended copies them into the initialized page.
-            let offset = unsafe {
-                pg_sys::PageAddItemExtended(
+            for tuple in staged_page.tuples() {
+                let offset = pg_sys::PageAddItemExtended(
                     page_ptr,
                     tuple.as_ptr().cast_mut().cast(),
                     tuple.len(),
                     pg_sys::InvalidOffsetNumber,
                     0,
-                )
-            };
-            if offset == pg_sys::InvalidOffsetNumber {
-                pgrx::error!(
-                    "ec_diskann failed to write tuple to block {}",
-                    staged_page.block_number()
                 );
+                if offset == pg_sys::InvalidOffsetNumber {
+                    pgrx::error!(
+                        "ec_diskann failed to write tuple to block {}",
+                        staged_page.block_number()
+                    );
+                }
             }
         }
 
