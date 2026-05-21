@@ -760,36 +760,6 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
     }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
-) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    // SAFETY: caller guarantees live planner baserel pointers for this handoff.
-    let plan_expr = unsafe { dml_frontdoor_primitive_plan_expr_from_baserel(root, rel) }?;
-    Some(plan_expr.and_then(|plan_expr| {
-        dml_frontdoor_primitive_plan_expr_require_mode(
-            plan_expr,
-            SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
-            "UPDATE",
-        )
-    }))
-}
-
-pub(crate) unsafe fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
-) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
-    // SAFETY: caller guarantees live planner baserel pointers for this handoff.
-    let plan_expr = unsafe { dml_frontdoor_primitive_plan_expr_from_baserel(root, rel) }?;
-    Some(plan_expr.and_then(|plan_expr| {
-        dml_frontdoor_primitive_plan_expr_require_mode(
-            plan_expr,
-            SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload,
-            "DELETE",
-        )
-    }))
-}
-
 fn dml_frontdoor_primitive_plan_expr_require_mode(
     plan_expr: SpireDmlFrontdoorPrimitivePlanExpr,
     expected_mode: SpireDmlFrontdoorCustomScanMode,
@@ -2294,7 +2264,10 @@ unsafe fn dml_frontdoor_var_column(
         .find_map(|(attno, name)| (*attno == var.varattno).then(|| (*name).to_owned()))
 }
 
-unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+#[cfg(any(test, feature = "pg_test"))]
+fn dml_frontdoor_value_kind(expr: &mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+    // SAFETY: tests pass locally constructed PostgreSQL expression nodes and
+    // the classifier only reads the node tag and value fields.
     unsafe { dml_frontdoor_predicate_value(expr) }.kind
 }
 

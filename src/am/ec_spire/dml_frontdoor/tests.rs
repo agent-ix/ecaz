@@ -216,21 +216,13 @@ mod tests {
         bigint_const.xpr.type_ = pg_sys::NodeTag::T_Const;
         bigint_const.consttype = pg_sys::INT8OID;
         assert_eq!(
-            unsafe {
-                dml_frontdoor_value_kind(
-                    (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
-                )
-            },
+            dml_frontdoor_value_kind(&mut bigint_const.xpr),
             SpireDmlFrontdoorValueKind::ConstBigint
         );
 
         bigint_const.constisnull = true;
         assert_eq!(
-            unsafe {
-                dml_frontdoor_value_kind(
-                    (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
-                )
-            },
+            dml_frontdoor_value_kind(&mut bigint_const.xpr),
             SpireDmlFrontdoorValueKind::Other
         );
 
@@ -238,11 +230,7 @@ mod tests {
         bigint_param.xpr.type_ = pg_sys::NodeTag::T_Param;
         bigint_param.paramtype = pg_sys::INT8OID;
         assert_eq!(
-            unsafe {
-                dml_frontdoor_value_kind(
-                    (&mut bigint_param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),
-                )
-            },
+            dml_frontdoor_value_kind(&mut bigint_param.xpr),
             SpireDmlFrontdoorValueKind::ParamBigint
         );
     }
@@ -254,11 +242,7 @@ mod tests {
             const_expr.xpr.type_ = pg_sys::NodeTag::T_Const;
             const_expr.consttype = consttype;
             assert_eq!(
-                unsafe {
-                    dml_frontdoor_value_kind(
-                        (&mut const_expr as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
-                    )
-                },
+                dml_frontdoor_value_kind(&mut const_expr.xpr),
                 SpireDmlFrontdoorValueKind::Other
             );
         }
@@ -268,11 +252,7 @@ mod tests {
             param.xpr.type_ = pg_sys::NodeTag::T_Param;
             param.paramtype = paramtype;
             assert_eq!(
-                unsafe {
-                    dml_frontdoor_value_kind(
-                        (&mut param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),
-                    )
-                },
+                dml_frontdoor_value_kind(&mut param.xpr),
                 SpireDmlFrontdoorValueKind::Other
             );
         }
@@ -295,21 +275,13 @@ mod tests {
         relabel.arg = (&mut coerce as *mut pg_sys::CoerceViaIO).cast::<pg_sys::Expr>();
 
         assert_eq!(
-            unsafe {
-                dml_frontdoor_value_kind(
-                    (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),
-                )
-            },
+            dml_frontdoor_value_kind(&mut relabel.xpr),
             SpireDmlFrontdoorValueKind::ParamBigint
         );
 
         relabel.resulttype = pg_sys::INT4OID;
         assert_eq!(
-            unsafe {
-                dml_frontdoor_value_kind(
-                    (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),
-                )
-            },
+            dml_frontdoor_value_kind(&mut relabel.xpr),
             SpireDmlFrontdoorValueKind::Other
         );
     }
