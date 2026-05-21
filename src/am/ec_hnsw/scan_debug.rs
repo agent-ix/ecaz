@@ -98,6 +98,13 @@ fn debug_item_pointer_coords(tid: page::ItemPointer) -> HeapTidCoords {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+    // SAFETY: Debug callers pass an open HNSW index relation; the shared
+    // metadata reader validates the page-level metadata representation.
+    unsafe { super::shared::read_metadata_page(index_relation) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_graph_storage(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
@@ -1710,7 +1717,7 @@ pub(crate) fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapT
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
@@ -1749,7 +1756,7 @@ pub(crate) fn debug_top_level_reachable_heap_tids(index_oid: pg_sys::Oid) -> Vec
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
@@ -1805,7 +1812,7 @@ pub(crate) fn debug_layer0_reachable_live_element_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
@@ -1859,7 +1866,7 @@ pub(crate) fn debug_top_level_oracle_k_seed_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || top_level_seed_count == 0
@@ -1930,7 +1937,7 @@ pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || top_level_seed_count == 0
@@ -2039,7 +2046,7 @@ pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || seed_count == 0
@@ -2177,7 +2184,7 @@ pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || seed_count == 0
@@ -2300,7 +2307,7 @@ pub(crate) fn debug_exact_seed_scan_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || seed_heap_tids.is_empty()
@@ -2461,7 +2468,7 @@ fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     let grouped_results = matches!(
         // SAFETY: Metadata was read from the open index relation and is used to
         // resolve the graph storage descriptor for debug classification.
@@ -3222,7 +3229,7 @@ pub(crate) fn debug_rescan_successor_candidate_state(
 
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     let entry_tid = (
         metadata.entry_point.block_number,
         metadata.entry_point.offset_number,
@@ -4209,7 +4216,7 @@ pub(crate) fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<Hea
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
