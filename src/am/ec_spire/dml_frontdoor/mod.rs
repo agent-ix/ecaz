@@ -15,7 +15,10 @@ use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use crate::am::common::callback::pg_callback;
+use crate::am::common::{
+    callback::pg_callback,
+    heap_slot::{TupleDescView, TupleSlotAttribute},
+};
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1307,36 +1310,28 @@ struct SpireDmlFrontdoorPrimaryKeyColumn {
 }
 
 struct SpireDmlFrontdoorTupleDesc {
-    tuple_desc: pg_sys::TupleDesc,
-    natts: i32,
+    tuple_desc: TupleDescView<'static>,
 }
 
 impl SpireDmlFrontdoorTupleDesc {
-    fn attr_copy_at_index(&self, attr_index: i32) -> Option<pg_sys::FormData_pg_attribute> {
-        if attr_index < 0 || attr_index >= self.natts {
-            return None;
-        }
-        // SAFETY: the descriptor was built from an open relation; attr_index is
-        // bounds-checked against natts before reading and copying the
-        // non-null live tuple descriptor attribute.
-        let attr = unsafe {
-            let attr = pg_sys::TupleDescAttr(self.tuple_desc, attr_index);
-            if attr.is_null() {
-                return None;
-            }
-            *attr
-        };
-        (!attr.attisdropped).then_some(attr)
+    fn natts(&self) -> i32 {
+        self.tuple_desc.natts()
     }
 
-    fn attr_copy_by_attnum(
-        &self,
-        attnum: pg_sys::AttrNumber,
-    ) -> Option<pg_sys::FormData_pg_attribute> {
+    fn attr_at_index(&self, attr_index: i32) -> Option<TupleSlotAttribute> {
+        if attr_index < 0 || attr_index >= self.natts() {
+            return None;
+        }
+        self.tuple_desc
+            .attribute(attr_index)
+            .unwrap_or_else(|error| pgrx::error!("{error}"))
+    }
+
+    fn attr_copy_by_attnum(&self, attnum: pg_sys::AttrNumber) -> Option<TupleSlotAttribute> {
         if attnum <= 0 {
             return None;
         }
-        self.attr_copy_at_index(i32::from(attnum - 1))
+        self.attr_at_index(i32::from(attnum - 1))
     }
 }
 
@@ -1344,18 +1339,9 @@ unsafe fn dml_frontdoor_tuple_desc_for_relation(
     heap_relation: pg_sys::Relation,
 ) -> Result<SpireDmlFrontdoorTupleDesc, String> {
     let tuple_desc = (*heap_relation).rd_att;
-    if tuple_desc.is_null() {
-        return Err("ec_spire DML frontdoor catalog relation tuple descriptor is NULL".to_owned());
-    }
-    let natts = (*tuple_desc).natts;
-    Ok(SpireDmlFrontdoorTupleDesc { tuple_desc, natts })
-}
-
-fn dml_frontdoor_attr_name(attr: &pg_sys::FormData_pg_attribute) -> Result<String, String> {
-    dml_frontdoor_c_string(
-        attr.attname.data.as_ptr(),
-        "ec_spire DML frontdoor catalog attribute name",
-    )
+    let tuple_desc =
+        TupleDescView::from_raw(tuple_desc, "ec_spire DML frontdoor catalog relation")?;
+    Ok(SpireDmlFrontdoorTupleDesc { tuple_desc })
 }
 
 unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
@@ -1481,12 +1467,12 @@ unsafe fn dml_frontdoor_primary_key_column_from_index(
     else {
         return Ok(None);
     };
-    if attr.atttypid != pg_sys::INT8OID {
+    if attr.typid != pg_sys::INT8OID {
         return Ok(None);
     }
     Ok(Some(SpireDmlFrontdoorPrimaryKeyColumn {
         column_name,
-        column_type: dml_frontdoor_format_type_name(attr.atttypid)?,
+        column_type: dml_frontdoor_format_type_name(attr.typid)?,
     }))
 }
 
@@ -1494,17 +1480,16 @@ unsafe fn dml_frontdoor_relation_column_names_from_rel(
     heap_relation: pg_sys::Relation,
 ) -> Result<Vec<(pg_sys::AttrNumber, String)>, String> {
     let tuple_desc = dml_frontdoor_tuple_desc_for_relation(heap_relation)?;
-    let mut columns = Vec::with_capacity(usize::try_from(tuple_desc.natts).unwrap_or(0));
-    for attr_index in 0..tuple_desc.natts {
-        let Some(attr) = tuple_desc.attr_copy_at_index(attr_index) else {
+    let mut columns = Vec::with_capacity(usize::try_from(tuple_desc.natts()).unwrap_or(0));
+    for attr_index in 0..tuple_desc.natts() {
+        let Some(attr) = tuple_desc.attr_at_index(attr_index) else {
             continue;
         };
         let attnum = attr.attnum;
         if attnum <= 0 {
             continue;
         }
-        let name = dml_frontdoor_attr_name(&attr)?;
-        columns.push((attnum, name));
+        columns.push((attnum, attr.name));
     }
     Ok(columns)
 }
@@ -1542,12 +1527,12 @@ unsafe fn dml_frontdoor_index_key_column_names_from_rel(
 unsafe fn dml_frontdoor_relation_attr_name_and_form(
     heap_relation: pg_sys::Relation,
     attnum: pg_sys::AttrNumber,
-) -> Result<Option<(String, pg_sys::FormData_pg_attribute)>, String> {
+) -> Result<Option<(String, TupleSlotAttribute)>, String> {
     let tuple_desc = dml_frontdoor_tuple_desc_for_relation(heap_relation)?;
     let Some(attr) = tuple_desc.attr_copy_by_attnum(attnum) else {
         return Ok(None);
     };
-    Ok(Some((dml_frontdoor_attr_name(&attr)?, attr)))
+    Ok(Some((attr.name.clone(), attr)))
 }
 
 fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {

@@ -208,10 +208,8 @@ unsafe fn custom_scan_tuple_payload_columns(
     unsafe {
         let relation = custom_scan_current_relation(node, "tuple payload columns");
         let tuple_desc = crate::storage::relation::relation_tuple_desc_copy(relation);
-        let tuple_desc = tuple_desc.as_ptr();
-        if tuple_desc.is_null() {
-            pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
-        }
+        let tuple_desc = TupleDescView::from_raw(tuple_desc.as_ptr(), "EcSpireDistributedScan")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
         let mut attr_numbers = std::collections::BTreeSet::new();
         let mut can_narrow_projection = false;
         if !custom_scan.is_null() && !(*custom_scan).scan.plan.targetlist.is_null() {
@@ -242,87 +240,81 @@ unsafe fn custom_scan_tuple_payload_columns(
         if !can_narrow_projection {
             attr_numbers.clear();
         }
-        let natts = (*tuple_desc).natts;
+        let natts = tuple_desc.natts();
         let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
         for attr_index in 0..natts {
-            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
-            if attr.is_null() || (*attr).attisdropped {
+            let Some(attr) = tuple_desc
+                .attribute(attr_index)
+                .unwrap_or_else(|error| pgrx::error!("{error}"))
+            else {
+                continue;
+            };
+            if !attr_numbers.is_empty() && !attr_numbers.contains(&attr.attnum) {
                 continue;
             }
-            if !attr_numbers.is_empty() && !attr_numbers.contains(&(*attr).attnum) {
-                continue;
-            }
-            let name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
-                .to_str()
-                .unwrap_or_else(|_| {
-                    pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
-                })
-                .to_owned();
-            custom_scan_validate_tuple_payload_attr(attr, &name);
-            columns.push(name);
+            custom_scan_validate_tuple_payload_attr(&attr);
+            columns.push(attr.name);
         }
         columns
     }
 }
 
-unsafe fn custom_scan_validate_tuple_payload_attr(attr: pg_sys::Form_pg_attribute, name: &str) {
-    // SAFETY: attr is a live tuple descriptor attribute from the scan relation;
-    // only PostgreSQL type metadata is read.
-    unsafe {
-        let mut typreceive = pg_sys::InvalidOid;
-        let mut typioparam = pg_sys::InvalidOid;
-        pg_sys::getTypeBinaryInputInfo((*attr).atttypid, &mut typreceive, &mut typioparam);
-        if typreceive == pg_sys::InvalidOid {
-            pgrx::error!(
-                "EcSpireDistributedScan tuple payload column \"{name}\" lacks binary receive support"
-            );
-        }
+fn custom_scan_validate_tuple_payload_attr(attr: &TupleSlotAttribute) {
+    let mut typreceive = pg_sys::InvalidOid;
+    let mut typioparam = pg_sys::InvalidOid;
+    // SAFETY: attr metadata was copied from a live tuple descriptor attribute;
+    // PostgreSQL only reads type-cache metadata for this type OID.
+    unsafe { pg_sys::getTypeBinaryInputInfo(attr.typid, &mut typreceive, &mut typioparam) };
+    if typreceive == pg_sys::InvalidOid {
+        pgrx::error!(
+            "EcSpireDistributedScan tuple payload column \"{}\" lacks binary receive support",
+            attr.name
+        );
     }
 }
 
-unsafe fn custom_scan_payload_attr_io(
+fn custom_scan_payload_attr_io(
     tuple_desc: pg_sys::TupleDesc,
 ) -> Vec<Option<SpireCustomScanPayloadAttrIo>> {
-    // SAFETY: tuple_desc belongs to the live scan relation while executor
-    // payload input functions are looked up.
-    unsafe {
-        if tuple_desc.is_null() {
-            pgrx::error!("EcSpireDistributedScan tuple payload input descriptor is null");
-        }
-        let natts = (*tuple_desc).natts;
-        let mut inputs = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
-        for attr_index in 0..natts {
-            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
-            if attr.is_null() || (*attr).attisdropped {
-                inputs.push(None);
-                continue;
-            }
-            let mut typinput = pg_sys::InvalidOid;
-            let mut typioparam = pg_sys::InvalidOid;
-            pg_sys::getTypeInputInfo((*attr).atttypid, &mut typinput, &mut typioparam);
+    let tuple_desc = unsafe { TupleDescView::from_raw(tuple_desc, "EcSpireDistributedScan") }
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let natts = tuple_desc.natts();
+    let mut inputs = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
+    for attr_index in 0..natts {
+        let Some(attr) = tuple_desc
+            .attribute(attr_index)
+            .unwrap_or_else(|error| pgrx::error!("{error}"))
+        else {
+            inputs.push(None);
+            continue;
+        };
+        let mut typinput = pg_sys::InvalidOid;
+        let mut typioparam = pg_sys::InvalidOid;
+        let mut typreceive = pg_sys::InvalidOid;
+        let mut receive_typioparam = pg_sys::InvalidOid;
+        // SAFETY: attr metadata was copied from a live tuple descriptor
+        // attribute. PostgreSQL only reads type-cache metadata for the type OID,
+        // and fmgr_info initializes both FmgrInfo outputs before they are read.
+        let attr_io = unsafe {
+            pg_sys::getTypeInputInfo(attr.typid, &mut typinput, &mut typioparam);
             let mut input_flinfo =
                 std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
             pg_sys::fmgr_info(typinput, &mut input_flinfo);
-            let mut typreceive = pg_sys::InvalidOid;
-            let mut receive_typioparam = pg_sys::InvalidOid;
-            pg_sys::getTypeBinaryInputInfo(
-                (*attr).atttypid,
-                &mut typreceive,
-                &mut receive_typioparam,
-            );
+            pg_sys::getTypeBinaryInputInfo(attr.typid, &mut typreceive, &mut receive_typioparam);
             let mut receive_flinfo =
                 std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
             pg_sys::fmgr_info(typreceive, &mut receive_flinfo);
-            inputs.push(Some(SpireCustomScanPayloadAttrIo {
+            SpireCustomScanPayloadAttrIo {
                 input_flinfo,
                 input_typioparam: typioparam,
                 receive_flinfo,
                 receive_typioparam,
-                typmod: (*attr).atttypmod,
-            }));
-        }
-        inputs
+                typmod: attr.typmod,
+            }
+        };
+        inputs.push(Some(attr_io));
     }
+    inputs
 }
 
 unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> String {

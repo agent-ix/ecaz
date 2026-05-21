@@ -104,8 +104,7 @@ fn tuple_payload_attr_io_for_slot(
 ) -> Vec<Option<SpireCustomScanPayloadAttrIo>> {
     let writer =
         tuple_payload_writer(slot).unwrap_or_else(|error| pgrx::error!("{error}"));
-    // SAFETY: writer construction validated the live slot and tuple descriptor.
-    unsafe { custom_scan_payload_attr_io(writer.tuple_desc()) }
+    custom_scan_payload_attr_io(writer.tuple_desc())
 }
 
 fn custom_scan_json_value_to_datum(

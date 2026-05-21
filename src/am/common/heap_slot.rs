@@ -117,12 +117,76 @@ impl<'slot> HeapSlotReader<'slot> {
 pub(crate) struct TupleSlotAttribute {
     pub(crate) attnum: pg_sys::AttrNumber,
     pub(crate) name: String,
+    pub(crate) typid: pg_sys::Oid,
+    pub(crate) typmod: i32,
+}
+
+pub(crate) struct TupleDescView<'desc> {
+    tuple_desc: NonNull<pg_sys::TupleDescData>,
+    natts: std::ffi::c_int,
+    context: &'static str,
+    _desc: PhantomData<&'desc pg_sys::TupleDescData>,
+}
+
+impl<'desc> TupleDescView<'desc> {
+    pub(crate) unsafe fn from_raw(
+        tuple_desc: pg_sys::TupleDesc,
+        context: &'static str,
+    ) -> Result<Self, String> {
+        let tuple_desc = NonNull::new(tuple_desc)
+            .ok_or_else(|| format!("{context} tuple descriptor is null"))?;
+        // SAFETY: construction requires a live PostgreSQL tuple descriptor for
+        // the returned view's borrow scope.
+        let natts = unsafe { tuple_desc.as_ref().natts };
+        Ok(Self {
+            tuple_desc,
+            natts,
+            context,
+            _desc: PhantomData,
+        })
+    }
+
+    pub(crate) fn as_ptr(&self) -> pg_sys::TupleDesc {
+        self.tuple_desc.as_ptr()
+    }
+
+    pub(crate) fn natts(&self) -> std::ffi::c_int {
+        self.natts
+    }
+
+    pub(crate) fn attribute(
+        &self,
+        attr_index: std::ffi::c_int,
+    ) -> Result<Option<TupleSlotAttribute>, String> {
+        // SAFETY: callers iterate `attr_index` in `0..self.natts()`, and
+        // construction validates the tuple descriptor pointer. PostgreSQL owns
+        // the attribute descriptor and fixed-size NameData storage.
+        unsafe {
+            let attr = pg_sys::TupleDescAttr(self.as_ptr(), attr_index);
+            if attr.is_null() {
+                return Ok(None);
+            }
+            let attr = &*attr;
+            if attr.attisdropped {
+                return Ok(None);
+            }
+            let name = CStr::from_ptr(attr.attname.data.as_ptr())
+                .to_str()
+                .map_err(|_| format!("{} relation attribute name is not UTF-8", self.context))?
+                .to_owned();
+            Ok(Some(TupleSlotAttribute {
+                attnum: attr.attnum,
+                name,
+                typid: attr.atttypid,
+                typmod: attr.atttypmod,
+            }))
+        }
+    }
 }
 
 pub(crate) struct TupleSlotWriter<'slot> {
     slot: NonNull<pg_sys::TupleTableSlot>,
-    tuple_desc: NonNull<pg_sys::TupleDescData>,
-    natts: std::ffi::c_int,
+    tuple_desc: TupleDescView<'slot>,
     context: &'static str,
     _slot: PhantomData<&'slot mut pg_sys::TupleTableSlot>,
 }
@@ -136,16 +200,13 @@ impl<'slot> TupleSlotWriter<'slot> {
             NonNull::new(slot).ok_or_else(|| format!("{context} tuple payload slot is null"))?;
         // SAFETY: construction requires a live TupleTableSlot for the callback
         // scope; the tuple descriptor pointer is owned by PostgreSQL.
-        let (tuple_desc, natts) = unsafe {
+        let tuple_desc = unsafe {
             let tuple_desc = slot.as_ref().tts_tupleDescriptor;
-            let tuple_desc = NonNull::new(tuple_desc)
-                .ok_or_else(|| format!("{context} tuple payload slot has no tuple descriptor"))?;
-            (tuple_desc, tuple_desc.as_ref().natts)
+            TupleDescView::from_raw(tuple_desc, context)?
         };
         Ok(Self {
             slot,
             tuple_desc,
-            natts,
             context,
             _slot: PhantomData,
         })
@@ -156,7 +217,7 @@ impl<'slot> TupleSlotWriter<'slot> {
     }
 
     pub(crate) fn natts(&self) -> std::ffi::c_int {
-        self.natts
+        self.tuple_desc.natts()
     }
 
     pub(crate) fn validate_input_width(&self, width: usize) -> Result<(), String> {
@@ -178,27 +239,7 @@ impl<'slot> TupleSlotWriter<'slot> {
         &self,
         attr_index: std::ffi::c_int,
     ) -> Result<Option<TupleSlotAttribute>, String> {
-        // SAFETY: callers iterate `attr_index` in `0..self.natts()`, and
-        // construction validates the tuple descriptor pointer. PostgreSQL owns
-        // the attribute descriptor and fixed-size NameData storage.
-        unsafe {
-            let attr = pg_sys::TupleDescAttr(self.tuple_desc(), attr_index);
-            if attr.is_null() {
-                return Ok(None);
-            }
-            let attr = &*attr;
-            if attr.attisdropped {
-                return Ok(None);
-            }
-            let name = CStr::from_ptr(attr.attname.data.as_ptr())
-                .to_str()
-                .map_err(|_| format!("{} relation attribute name is not UTF-8", self.context))?
-                .to_owned();
-            Ok(Some(TupleSlotAttribute {
-                attnum: attr.attnum,
-                name,
-            }))
-        }
+        self.tuple_desc.attribute(attr_index)
     }
 
     pub(crate) fn set_null(&mut self, attr_index: std::ffi::c_int) {

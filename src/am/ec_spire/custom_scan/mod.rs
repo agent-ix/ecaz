@@ -4,7 +4,7 @@ use std::{ffi::CString, ptr};
 
 use crate::am::common::{
     cost::{current_cpu_tuple_cost, current_planner_cost_constants, PlannerCostConstants},
-    heap_slot::TupleSlotWriter,
+    heap_slot::{TupleDescView, TupleSlotAttribute, TupleSlotWriter},
 };
 
 use super::meta;
