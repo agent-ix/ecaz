@@ -560,6 +560,28 @@ unsafe fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut TqSc
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_with_scan_opaque<R>(
+    scan: pg_sys::IndexScanDesc,
+    f: impl for<'a> FnOnce(&'a TqScanOpaque) -> R,
+) -> R {
+    // SAFETY: The closure receives the opaque reference only for this scoped
+    // access, so safe callers cannot keep a borrow across later AM callbacks.
+    let opaque = unsafe { debug_scan_opaque(scan) };
+    f(opaque)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_with_scan_opaque_mut<R>(
+    scan: pg_sys::IndexScanDesc,
+    f: impl for<'a> FnOnce(&'a mut TqScanOpaque) -> R,
+) -> R {
+    // SAFETY: The closure receives exclusive opaque access only for this scoped
+    // access, so safe callers cannot keep a mutable borrow across AM callbacks.
+    let opaque = unsafe { debug_scan_opaque_mut(scan) };
+    f(opaque)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_scan_has_opaque(scan: pg_sys::IndexScanDesc) -> bool {
     // SAFETY: Debug callers pass a live scan descriptor and only read the
     // descriptor's opaque pointer.
@@ -3286,7 +3308,7 @@ pub(crate) fn debug_rescan_candidate_frontier(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
+pub(crate) fn debug_gettuple_consumes_bootstrap_candidate(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapConsumeState {
@@ -3305,12 +3327,14 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = debug_runtime_ordered_head(opaque);
-    let before_slots = debug_runtime_ordered_slots(opaque);
-    let current_result_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+    let (before_head, before_slots, current_result_tid) =
+        debug_with_scan_opaque_mut(scan, |opaque| {
+            (
+                debug_runtime_ordered_head(opaque),
+                debug_runtime_ordered_slots(opaque),
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            )
+        });
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3319,11 +3343,12 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         "bootstrap-consume helper requires a first tuple"
     );
 
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let after_head = debug_runtime_ordered_head(opaque);
-    let after_slots = debug_runtime_ordered_slots(opaque);
+    let (after_head, after_slots) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            debug_runtime_ordered_head(opaque),
+            debug_runtime_ordered_slots(opaque),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3339,7 +3364,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
+pub(crate) fn debug_materialize_bootstrap_candidate_result(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapCandidateMaterializationState {
@@ -3358,36 +3383,43 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let current = active_result_state_ref(opaque).current();
-    let candidate_before = if current.has_element() {
-        (
-            true,
-            debug_item_pointer_coords(current.element_tid()),
-            current.score(),
-        )
-    } else {
-        let candidate = current_candidate_frontier_head(opaque);
-        (
-            candidate.is_some(),
-            candidate
-                .map(|candidate| debug_item_pointer_coords(candidate.node))
-                .unwrap_or((u32::MAX, u16::MAX)),
-            candidate.map(|candidate| candidate.score).unwrap_or(0.0),
-        )
-    };
-    let materialized = current.has_element()
-        // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-        // open by the guard while prefetch materializes the next graph result.
-        || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };
-    let current_result_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let pending_heap_tids = active_result_state_ref(opaque)
-        .pending_heap_tids()
-        .iter()
-        .map(|tid| (tid.block_number, tid.offset_number))
-        .collect::<Vec<_>>();
+    let (candidate_before, current_result_tid, pending_heap_tids, materialized) =
+        debug_with_scan_opaque_mut(scan, |opaque| {
+            let current = active_result_state_ref(opaque).current();
+            let candidate_before = if current.has_element() {
+                (
+                    true,
+                    debug_item_pointer_coords(current.element_tid()),
+                    current.score(),
+                )
+            } else {
+                let candidate = current_candidate_frontier_head(opaque);
+                (
+                    candidate.is_some(),
+                    candidate
+                        .map(|candidate| debug_item_pointer_coords(candidate.node))
+                        .unwrap_or((u32::MAX, u16::MAX)),
+                    candidate.map(|candidate| candidate.score).unwrap_or(0.0),
+                )
+            };
+            let materialized = current.has_element()
+                // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
+                // open by the guard while prefetch materializes the next graph result.
+                || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };
+            let current_result_tid =
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+            let pending_heap_tids = active_result_state_ref(opaque)
+                .pending_heap_tids()
+                .iter()
+                .map(|tid| (tid.block_number, tid.offset_number))
+                .collect::<Vec<_>>();
+            (
+                candidate_before,
+                current_result_tid,
+                pending_heap_tids,
+                materialized,
+            )
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3402,7 +3434,7 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_bootstrap_phase_transition(
+pub(crate) fn debug_bootstrap_phase_transition(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapPhaseTransition {
@@ -3422,29 +3454,31 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_complete = !opaque.execution_phase.is_graph_traversal();
+    let before_complete =
+        debug_with_scan_opaque_mut(scan, |opaque| !opaque.execution_phase.is_graph_traversal());
 
-    while opaque.execution_phase.is_graph_traversal()
+    while debug_with_scan_opaque_mut(scan, |opaque| {
+        opaque.execution_phase.is_graph_traversal()
+    })
         // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple
         // calls may advance the live descriptor through graph traversal.
         && debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection)
     {}
 
-    if opaque.execution_phase.is_graph_traversal() {
+    if debug_with_scan_opaque_mut(scan, |opaque| opaque.execution_phase.is_graph_traversal()) {
         // SAFETY: The descriptor remains live and this final gettuple probes the
         // transition out of graph traversal.
         let _ = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
     }
 
-    // SAFETY: The scan descriptor remains live after traversal and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let after_complete = !opaque.execution_phase.is_graph_traversal();
-    let after_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_frontier = debug_candidate_frontier_slots(opaque);
+    let (after_complete, after_head, after_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            !opaque.execution_phase.is_graph_traversal(),
+            current_candidate_frontier_head(opaque)
+                .map(|candidate| debug_item_pointer_coords(candidate.node)),
+            debug_candidate_frontier_slots(opaque),
+        )
+    });
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -3454,9 +3488,8 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
     // valid one-key buffer for this reset probe.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
-    // SAFETY: AM rescan refreshed the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let rescanned_complete = !opaque.execution_phase.is_graph_traversal();
+    let rescanned_complete =
+        debug_with_scan_opaque_mut(scan, |opaque| !opaque.execution_phase.is_graph_traversal());
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3472,7 +3505,7 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
+pub(crate) fn debug_candidate_frontier_head_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierLifecycle {
@@ -3492,10 +3525,12 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = debug_runtime_ordered_head(opaque);
-    let before_frontier = debug_runtime_ordered_slots(opaque);
+    let (before_head, before_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            debug_runtime_ordered_head(opaque),
+            debug_runtime_ordered_slots(opaque),
+        )
+    });
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3503,22 +3538,24 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "frontier-head lifecycle helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let partial_head = debug_runtime_ordered_head(opaque);
-    let partial_frontier = debug_runtime_ordered_slots(opaque);
+    let (partial_head, partial_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            debug_runtime_ordered_head(opaque),
+            debug_runtime_ordered_slots(opaque),
+        )
+    });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let exhausted_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let exhausted_frontier = debug_candidate_frontier_slots(opaque);
+    let (exhausted_head, exhausted_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            current_candidate_frontier_head(opaque)
+                .map(|candidate| debug_item_pointer_coords(candidate.node)),
+            debug_candidate_frontier_slots(opaque),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3535,7 +3572,7 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_consume_candidate_frontier_head(
+pub(crate) fn debug_consume_candidate_frontier_head(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierConsume {
@@ -3555,26 +3592,42 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let before_frontier = debug_candidate_frontier_slots(opaque);
+    let (
+        before_head,
+        before_frontier,
+        after_first_head,
+        after_first_frontier,
+        after_second_head,
+        after_second_frontier,
+    ) = debug_with_scan_opaque_mut(scan, |opaque| {
+        let before_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let before_frontier = debug_candidate_frontier_slots(opaque);
 
-    // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-    // open by the guard while the bootstrap frontier is consumed/refilled.
-    let first_consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
-    let after_first_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_first_frontier = debug_candidate_frontier_slots(opaque);
+        // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
+        // open by the guard while the bootstrap frontier is consumed/refilled.
+        let first_consumed =
+            unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+        debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
+        let after_first_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let after_first_frontier = debug_candidate_frontier_slots(opaque);
 
-    // SAFETY: `opaque` still belongs to the live scan and `index_relation` is
-    // held open while the second frontier consumption is probed.
-    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    let after_second_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_second_frontier = debug_candidate_frontier_slots(opaque);
+        // SAFETY: `opaque` still belongs to the live scan and `index_relation`
+        // is held open while the second frontier consumption is probed.
+        unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+        let after_second_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let after_second_frontier = debug_candidate_frontier_slots(opaque);
+        (
+            before_head,
+            before_frontier,
+            after_first_head,
+            after_first_frontier,
+            after_second_head,
+            after_second_frontier,
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3591,7 +3644,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
+pub(crate) fn debug_consume_candidate_frontier_head_slots(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierSlotConsume {
@@ -3611,41 +3664,58 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let before_slots = debug_candidate_frontier_slots(opaque);
-    // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-    // open by the guard while the bootstrap frontier is consumed/refilled.
-    let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    let consumed_tid = consumed
-        .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
-        .unwrap_or((u32::MAX, u16::MAX));
-    let consumed_neighbors = consumed
-        .map(|candidate| {
-            // SAFETY: The consumed candidate came from the scan's graph
-            // frontier; adjacency loading validates the graph tuple body.
-            let (_, neighbors) = unsafe {
-                graph::load_exact_graph_adjacency(
-                    index_relation,
-                    candidate.node,
-                    opaque.scan_graph_storage,
-                )
-            };
-            neighbors
-                .tids
-                .into_iter()
-                .map(|tid| (tid.block_number, tid.offset_number))
-                .filter(|tid| *tid != (u32::MAX, u16::MAX))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let (
+        before_head,
+        before_slots,
+        consumed_tid,
+        consumed_neighbors,
+        after_head,
+        after_slots,
+        after_provenance_slots,
+    ) = debug_with_scan_opaque_mut(scan, |opaque| {
+        let before_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let before_slots = debug_candidate_frontier_slots(opaque);
+        // SAFETY: `opaque` belongs to the live scan and `index_relation` is
+        // held open by the guard while the bootstrap frontier is consumed/refilled.
+        let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+        let consumed_tid = consumed
+            .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
+            .unwrap_or((u32::MAX, u16::MAX));
+        let consumed_neighbors = consumed
+            .map(|candidate| {
+                // SAFETY: The consumed candidate came from the scan's graph
+                // frontier; adjacency loading validates the graph tuple body.
+                let (_, neighbors) = unsafe {
+                    graph::load_exact_graph_adjacency(
+                        index_relation,
+                        candidate.node,
+                        opaque.scan_graph_storage,
+                    )
+                };
+                neighbors
+                    .tids
+                    .into_iter()
+                    .map(|tid| (tid.block_number, tid.offset_number))
+                    .filter(|tid| *tid != (u32::MAX, u16::MAX))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
-    let after_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_slots = debug_candidate_frontier_slots(opaque);
-    let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
+        let after_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let after_slots = debug_candidate_frontier_slots(opaque);
+        let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
+        (
+            before_head,
+            before_slots,
+            consumed_tid,
+            consumed_neighbors,
+            after_head,
+            after_slots,
+            after_provenance_slots,
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3663,7 +3733,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_visited_seed_lifecycle(
+pub(crate) fn debug_visited_seed_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugVisitedSeedsLifecycle {
@@ -3683,9 +3753,7 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let before = debug_sorted_visited_tids(opaque);
+    let before = debug_with_scan_opaque(scan, debug_sorted_visited_tids);
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3693,18 +3761,12 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "visited-seed lifecycle helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let partial = debug_sorted_visited_tids(opaque);
+    let partial = debug_with_scan_opaque(scan, debug_sorted_visited_tids);
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let exhausted = debug_sorted_visited_tids(opaque);
+    let exhausted = debug_with_scan_opaque(scan, debug_sorted_visited_tids);
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3714,7 +3776,7 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_entry_candidate_lifecycle(
+pub(crate) fn debug_entry_candidate_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -3746,18 +3808,18 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let current = active_result_state_ref(opaque).current();
-    let (before_valid, before_tid, before_score) = if current.has_element() {
-        (
-            true,
-            debug_item_pointer_coords(current.element_tid()),
-            current.score(),
-        )
-    } else {
-        debug_candidate_slot(visible_frontier_slot(opaque, 0))
-    };
+    let (before_valid, before_tid, before_score) = debug_with_scan_opaque(scan, |opaque| {
+        let current = active_result_state_ref(opaque).current();
+        if current.has_element() {
+            (
+                true,
+                debug_item_pointer_coords(current.element_tid()),
+                current.score(),
+            )
+        } else {
+            debug_candidate_slot(visible_frontier_slot(opaque, 0))
+        }
+    });
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3765,24 +3827,27 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "entry-candidate lifecycle helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let (partial_valid, partial_tid, partial_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
-    let partial_result_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let partial_exhausted = opaque.execution_phase.is_exhausted();
+    let (partial_valid, partial_tid, partial_score, partial_result_tid, partial_exhausted) =
+        debug_with_scan_opaque(scan, |opaque| {
+            let (partial_valid, partial_tid, partial_score) =
+                debug_candidate_slot(visible_frontier_slot(opaque, 0));
+            (
+                partial_valid,
+                partial_tid,
+                partial_score,
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+                opaque.execution_phase.is_exhausted(),
+            )
+        });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
     let (exhausted_valid, exhausted_tid, exhausted_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
+        debug_with_scan_opaque(scan, |opaque| {
+            debug_candidate_slot(visible_frontier_slot(opaque, 0))
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3804,7 +3869,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
+pub(crate) fn debug_gettuple_current_result_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -3840,11 +3905,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "first tuple production should succeed for lifecycle debug helper"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let first_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+    let first_tid = debug_with_scan_opaque(scan, |opaque| {
+        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid())
+    });
 
     assert!(
         // SAFETY: The live descriptor may be advanced again to sample the second
@@ -3852,25 +3915,26 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "second tuple production should succeed for duplicate-drain lifecycle debug helper"
     );
-    // SAFETY: The scan descriptor remains live after the second gettuple and
-    // still owns its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let second_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let second_score = active_result_state_ref(opaque).current().score_valid();
-    let second_score_value = active_result_state_ref(opaque).current().score();
+    let (second_tid, second_score, second_score_value) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            active_result_state_ref(opaque).current().score_valid(),
+            active_result_state_ref(opaque).current().score(),
+        )
+    });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let exhausted_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let exhausted_score = active_result_state_ref(opaque).current().score_valid();
-    let exhausted_score_value = active_result_state_ref(opaque).current().score();
+    let (exhausted_tid, exhausted_score, exhausted_score_value) =
+        debug_with_scan_opaque(scan, |opaque| {
+            (
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+                active_result_state_ref(opaque).current().score_valid(),
+                active_result_state_ref(opaque).current().score(),
+            )
+        });
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -3880,11 +3944,12 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     // valid one-key buffer for this lifecycle rescan.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
-    // SAFETY: AM rescan refreshed the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let rescanned_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let rescanned_score = active_result_state_ref(opaque).current().score_valid();
+    let (rescanned_tid, rescanned_score) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            active_result_state_ref(opaque).current().score_valid(),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3904,7 +3969,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
+pub(crate) fn debug_gettuple_current_result_neighbors(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (HeapTidCoords, usize) {
@@ -3922,9 +3987,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let prefetched_tid = active_result_state_ref(opaque).current().element_tid();
+    let prefetched_tid = debug_with_scan_opaque(scan, |opaque| {
+        active_result_state_ref(opaque).current().element_tid()
+    });
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
         // advance the live descriptor for the neighbor sample.
@@ -3932,22 +3997,20 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
         "neighbor debug helper requires a non-empty scan result"
     );
 
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let current_result_tid = if active_result_state_ref(opaque).current().has_element() {
-        active_result_state_ref(opaque).current().element_tid()
-    } else {
-        prefetched_tid
-    };
+    let (current_result_tid, scan_graph_storage) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            if active_result_state_ref(opaque).current().has_element() {
+                active_result_state_ref(opaque).current().element_tid()
+            } else {
+                prefetched_tid
+            },
+            opaque.scan_graph_storage,
+        )
+    });
     // SAFETY: `current_result_tid` was produced by the live scan, and adjacency
     // loading validates the graph tuple body.
     let (_element, neighbors) = unsafe {
-        graph::load_exact_graph_adjacency(
-            index_relation,
-            current_result_tid,
-            opaque.scan_graph_storage,
-        )
+        graph::load_exact_graph_adjacency(index_relation, current_result_tid, scan_graph_storage)
     };
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
@@ -3961,7 +4024,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
+pub(crate) fn debug_gettuple_current_result_heap_progress(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -3993,14 +4056,13 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "heap-progress debug helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let first_heap_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid());
-    let element_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let first_score = active_result_state_ref(opaque).current().score();
+    let (first_heap_tid, element_tid, first_score) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid()),
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            active_result_state_ref(opaque).current().score(),
+        )
+    });
 
     assert!(
         // SAFETY: The live descriptor may be advanced again to sample duplicate
@@ -4008,14 +4070,14 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "heap-progress debug helper requires a duplicate tuple"
     );
-    // SAFETY: The scan descriptor remains live after the second gettuple and
-    // still owns its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let second_heap_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid());
-    let second_element_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let second_score = active_result_state_ref(opaque).current().score();
+    let (second_heap_tid, second_element_tid, second_score) =
+        debug_with_scan_opaque(scan, |opaque| {
+            (
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid()),
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+                active_result_state_ref(opaque).current().score(),
+            )
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);

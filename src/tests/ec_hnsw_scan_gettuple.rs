@@ -1,12 +1,3 @@
-    macro_rules! hnsw_scan_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before calling the extension's test-only scan debug helper. The
-            // helper owns the PostgreSQL relation and scan access for the OID.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_test]
     fn test_ech_debug_scan_result_count_matches_scan_helper() {
         Spi::run(
@@ -1124,7 +1115,7 @@
             exhausted_score_value,
             rescanned_tid,
             rescanned_score,
-        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             second_tid, first_tid,
@@ -1204,7 +1195,7 @@
             second_heap_tid,
             first_score,
             second_score,
-        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             element_tid,
@@ -1323,7 +1314,7 @@
             exhausted_valid,
             exhausted_tid,
             exhausted_score,
-        ) = hnsw_scan_debug!(am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             before_valid,
@@ -1758,7 +1749,7 @@
             partial_frontier,
             exhausted_head,
             exhausted_frontier,
-        ) = hnsw_scan_debug!(am::debug_candidate_frontier_head_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_candidate_frontier_head_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             before_head, None,
@@ -1814,7 +1805,7 @@
             after_first_frontier,
             after_second_head,
             after_second_frontier,
-        ) = hnsw_scan_debug!(am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         if let Some(consumed_tid) = before_head {
             let remaining_slot = before_frontier
@@ -1908,7 +1899,7 @@
             after_head,
             after_slots,
             after_provenance_slots,
-        ) = hnsw_scan_debug!(am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         let expected_visible_width = 1 + valid_entry_neighbors.len().min(2);
         assert!(
@@ -1993,7 +1984,11 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (before_head, before_slots, current_result_tid, after_head, after_slots) = hnsw_scan_debug!(am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (before_head, before_slots, current_result_tid, after_head, after_slots) =
+            am::debug_gettuple_consumes_bootstrap_candidate(
+                index_oid,
+                vec![1.0, 0.0, 0.5, -1.0],
+            );
 
         let consumed_slot = before_slots
             .first()
@@ -2045,7 +2040,11 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (candidate_before, current_result_tid, pending_heap_tids, materialized) = hnsw_scan_debug!(am::debug_materialize_bootstrap_candidate_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (candidate_before, current_result_tid, pending_heap_tids, materialized) =
+            am::debug_materialize_bootstrap_candidate_result(
+                index_oid,
+                vec![1.0, 0.0, 0.5, -1.0],
+            );
 
         assert!(
             candidate_before.0,
@@ -2091,7 +2090,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_complete, after_complete, after_head, after_frontier, rescanned_complete) =
-            hnsw_scan_debug!(am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             !before_complete,
@@ -2143,7 +2142,7 @@
         let (head, _frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
             am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let (before, partial, exhausted) =
-            hnsw_scan_debug!(am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         let mut expected = frontier_slots
             .into_iter()
@@ -2193,7 +2192,8 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (current_result_tid, neighbor_count) = hnsw_scan_debug!(am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (current_result_tid, neighbor_count) =
+            am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let (_block_count, metadata, _data_pages) = am::debug_index_pages(index_oid);
 
         assert_ne!(
