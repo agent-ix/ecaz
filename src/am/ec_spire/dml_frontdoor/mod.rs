@@ -1387,9 +1387,7 @@ fn dml_frontdoor_attr_name(attr: &pg_sys::FormData_pg_attribute) -> Result<Strin
 fn dml_frontdoor_relation_context_catalog_for_open_heap(
     heap_relation: pg_sys::Relation,
 ) -> Result<(SpireDmlFrontdoorRelationContext, Vec<pg_sys::Oid>), String> {
-    // SAFETY: heap_relation is held open by HeapRelationGuard in the caller;
-    // rd_id and descriptor fields are copied while that guard is live.
-    let heap_relation_oid = unsafe { (*heap_relation).rd_id };
+    let heap_relation_oid = crate::storage::relation::relation_oid(heap_relation);
     let column_names = dml_frontdoor_relation_column_names_from_rel(heap_relation)?;
     let (index_oid, pk, mut watched_relation_oids) =
         dml_frontdoor_catalog_index_and_pk(heap_relation)?;
