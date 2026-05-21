@@ -6,7 +6,7 @@ pub(crate) struct TupleTableSlotGuard {
 }
 
 impl TupleTableSlotGuard {
-    pub(crate) fn create(relation: pg_sys::Relation) -> Option<Self> {
+    pub(crate) unsafe fn create(relation: pg_sys::Relation) -> Option<Self> {
         // SAFETY: `relation` is owned by a live relation guard in the caller;
         // this guard owns the returned slot.
         let slot = unsafe { pg_sys::table_slot_create(relation, std::ptr::null_mut()) };
@@ -16,7 +16,7 @@ impl TupleTableSlotGuard {
         Some(Self { slot })
     }
 
-    pub(crate) fn single_for_heap(relation: pg_sys::Relation) -> Option<Self> {
+    pub(crate) unsafe fn single_for_heap(relation: pg_sys::Relation) -> Option<Self> {
         // SAFETY: `relation` is an open heap relation. PostgreSQL owns the
         // returned slot until `ExecDropSingleTupleTableSlot`.
         let slot = unsafe {

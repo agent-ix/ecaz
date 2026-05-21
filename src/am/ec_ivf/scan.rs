@@ -1644,7 +1644,7 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not acquire a latest snapshot"));
-    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
+    let scan = unsafe { IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1) }
         .unwrap_or_else(|| {
             pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
         });

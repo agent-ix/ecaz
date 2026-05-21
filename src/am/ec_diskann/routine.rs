@@ -2255,7 +2255,7 @@ mod tests {
         // metadata to resolve the indexed ecvector attribute.
         let source_attnum = unsafe { super::indexed_ecvector_attnum(index_relation) }
             .expect("indexed source attnum should resolve");
-        let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr)
+        let slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation_ptr) }
             .expect("heap slot allocation should succeed");
         let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
         let mut visited = super::VisitedState::new();

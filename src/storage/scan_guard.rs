@@ -10,7 +10,7 @@ pub(crate) struct IndexScanGuard {
 }
 
 impl IndexScanGuard {
-    pub(crate) fn begin(
+    pub(crate) unsafe fn begin(
         heap_relation: &HeapRelationGuard,
         index_relation: &IndexRelationGuard,
         snapshot: &ActiveSnapshotGuard,
@@ -70,7 +70,7 @@ pub(crate) struct HeapScanGuard {
 }
 
 impl HeapScanGuard {
-    pub(crate) fn begin(
+    pub(crate) unsafe fn begin(
         heap_relation: pg_sys::Relation,
         snapshot: &ActiveSnapshotGuard,
         flags: u32,
