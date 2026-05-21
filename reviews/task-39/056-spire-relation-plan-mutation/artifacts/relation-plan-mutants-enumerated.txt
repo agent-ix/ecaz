@@ -1,0 +1,13 @@
+relation_plan.rs:13:9: replace SpirePartitionObjectKind::decode -> Result<Self, String> with Ok(Default::default())
+relation_plan.rs:35:5: replace spire_local_store_relation_name -> Result<String, String> with Ok(String::new())
+relation_plan.rs:35:5: replace spire_local_store_relation_name -> Result<String, String> with Ok("xyzzy".into())
+relation_plan.rs:35:20: replace == with != in spire_local_store_relation_name
+relation_plan.rs:42:28: replace > with == in spire_local_store_relation_name
+relation_plan.rs:42:28: replace > with < in spire_local_store_relation_name
+relation_plan.rs:42:28: replace > with >= in spire_local_store_relation_name
+relation_plan.rs:52:5: replace pg_identifier_limit_bytes -> Result<usize, String> with Ok(0)
+relation_plan.rs:52:5: replace pg_identifier_limit_bytes -> Result<usize, String> with Ok(1)
+relation_plan.rs:69:5: replace plan_local_store_relations -> Result<Vec<SpireLocalStoreRelationPlanEntry>, String> with Ok(vec![])
+relation_plan.rs:69:5: replace plan_local_store_relations -> Result<Vec<SpireLocalStoreRelationPlanEntry>, String> with Ok(vec![Default::default()])
+relation_plan.rs:85:37: replace == with != in plan_local_store_relations
+relation_plan.rs:101:5: replace local_store_config_from_relation_plan -> Result<SpireLocalStoreConfig, String> with Ok(Default::default())
