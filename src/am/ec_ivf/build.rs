@@ -1,5 +1,6 @@
 use std::ffi::c_void;
 use std::ptr;
+use std::ptr::NonNull;
 
 use pgrx::{pg_sys, PgBox, PgTupleDesc};
 
@@ -124,7 +125,9 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
 ) -> *mut pg_sys::IndexBuildResult {
     pg_am_callback!({
         // SAFETY: PostgreSQL invokes ambuild with a live IVF index relation.
-        let options = options::relation_options(index_relation);
+        let index_relation_handle = NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf ambuild received null index relation"));
+        let options = options::relation_options(index_relation_handle);
         options
             .storage_format
             .validate_v1_supported()
@@ -818,7 +821,9 @@ fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<Indexe
 pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuildempty(index_relation: pg_sys::Relation) {
     pg_am_callback!({
         // SAFETY: PostgreSQL invokes ambuildempty with a live IVF index relation.
-        let options = options::relation_options(index_relation);
+        let index_relation_handle = NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf ambuildempty received null index relation"));
+        let options = options::relation_options(index_relation_handle);
         options
             .storage_format
             .validate_v1_supported()

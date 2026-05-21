@@ -1,5 +1,5 @@
 use std::mem::{offset_of, size_of};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
@@ -373,13 +373,11 @@ struct EcIvfReloptionsView<'a> {
 }
 
 impl<'a> EcIvfReloptionsView<'a> {
-    unsafe fn from_relation(index_relation: pg_sys::Relation) -> Option<Self> {
-        if index_relation.is_null() {
-            pgrx::error!("ec_ivf relation options need a valid index relation");
-        }
+    fn from_relation(index_relation: NonNull<pg_sys::RelationData>) -> Option<Self> {
         // SAFETY: callers pass a live PostgreSQL relation; reading `rd_options`
         // copies a relation-owned pointer without taking ownership.
-        let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
+        let rd_options =
+            unsafe { crate::storage::relation::relation_options(index_relation.as_ptr()) };
         if rd_options.is_null() {
             return None;
         }
@@ -462,10 +460,8 @@ fn build_options_from_reloptions(
     }
 }
 
-pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
-    // SAFETY: the view only borrows PostgreSQL-owned reloptions from a live
-    // relation descriptor for the duration of this function.
-    let Some(reloptions) = (unsafe { EcIvfReloptionsView::from_relation(index_relation) }) else {
+pub(super) fn relation_options(index_relation: NonNull<pg_sys::RelationData>) -> EcIvfOptions {
+    let Some(reloptions) = EcIvfReloptionsView::from_relation(index_relation) else {
         return EcIvfOptions::DEFAULT;
     };
     reloptions.to_options()

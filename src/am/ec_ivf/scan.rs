@@ -524,10 +524,13 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             );
         }
 
-        let metadata = super::page::read_metadata_page((*scan).indexRelation);
-        // SAFETY: AM scan begin owns a live index scan descriptor whose
-        // indexRelation remains open while scan state is initialized.
-        let index_options = super::options::relation_options((*scan).indexRelation);
+        let scan_view = IvfScanDescView::from_nonnull(
+            NonNull::new(scan)
+                .unwrap_or_else(|| pgrx::error!("ec_ivf amrescan received null scan descriptor")),
+        );
+        let metadata = super::page::read_metadata_page(scan_view.index_relation());
+        let index_options =
+            super::options::relation_options(scan_view.index_relation_nonnull("ec_ivf amrescan"));
         metadata
             .storage_format
             .validate_v1_supported()
