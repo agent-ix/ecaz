@@ -2554,6 +2554,6 @@
             "tests.ec_hnsw_debug_reachable_live_element_count",
         ));
 
-        i32::try_from(hnsw_recall_export_debug!(am::debug_layer0_reachable_live_element_tids(index_oid)).len())
+        i32::try_from(am::debug_layer0_reachable_live_element_tids(index_oid).len())
             .expect("debug reachable live element count should fit in i32")
     }

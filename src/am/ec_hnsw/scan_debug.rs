@@ -1725,7 +1725,7 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
+pub(crate) fn debug_layer0_reachable_live_element_tids(
     index_oid: pg_sys::Oid,
 ) -> Vec<page::ItemPointer> {
     let index_relation_guard =
@@ -3223,9 +3223,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
         metadata.entry_point.block_number,
         metadata.entry_point.offset_number,
     );
-    // SAFETY: The debug helper opens the same index and materializes entry
-    // point neighbor TIDs before returning.
-    let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };
+    let entry_neighbors = super::debug_entry_point_neighbor_tids(index_oid);
 
     // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
     let opaque = debug_scan_opaque(scan);
@@ -4173,7 +4171,7 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
+pub(crate) fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_entry_point_neighbor_tids");
     let index_relation = index_relation_guard.as_ptr();

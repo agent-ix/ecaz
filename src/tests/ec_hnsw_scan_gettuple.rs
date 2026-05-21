@@ -396,7 +396,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let rust_count =
-            i32::try_from(hnsw_scan_debug!(am::debug_layer0_reachable_live_element_tids(index_oid).len()))
+            i32::try_from(am::debug_layer0_reachable_live_element_tids(index_oid).len())
                 .expect("reachable live element count should fit in i32");
         let sql_count = Spi::get_one::<i32>(
             "SELECT tests.ec_hnsw_debug_reachable_live_element_count(
@@ -1469,7 +1469,7 @@
         .expect("index oid should exist");
         let (head, frontier, frontier_slots, frontier_provenance, expanded_sources) =
             hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
-        let valid_entry_neighbors = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid))
+        let valid_entry_neighbors = am::debug_entry_point_neighbor_tids(index_oid)
             .into_iter()
             .filter(|tid| *tid != (u32::MAX, u16::MAX))
             .collect::<Vec<_>>();
@@ -1896,7 +1896,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_frontier_head_refill_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let valid_entry_neighbors = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid))
+        let valid_entry_neighbors = am::debug_entry_point_neighbor_tids(index_oid)
             .into_iter()
             .filter(|tid| *tid != (u32::MAX, u16::MAX))
             .collect::<Vec<_>>();
@@ -2231,7 +2231,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let neighbor_tids = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid));
+        let neighbor_tids = am::debug_entry_point_neighbor_tids(index_oid);
         let (_block_count, _metadata, data_pages) = am::debug_index_pages(index_oid);
         let element_tids = data_pages
             .iter()
