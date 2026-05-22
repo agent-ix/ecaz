@@ -257,7 +257,7 @@ unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     sum
 }
 
-pub(crate) unsafe fn resolve_source_attnum(
+pub(crate) fn resolve_source_attnum(
     heap_relation: pg_sys::Relation,
     source_column: &str,
     source_label: &str,
@@ -277,24 +277,17 @@ pub(crate) unsafe fn resolve_source_attnum(
     attnum
 }
 
-pub(crate) unsafe fn resolve_source_attribute(
+pub(crate) fn resolve_source_attribute(
     heap_relation: pg_sys::Relation,
     source_column: &str,
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    // SAFETY: The caller supplies a live heap relation and column label; this
-    // helper validates the resolved attnum before it is reused below.
-    let source_attnum =
-        unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };
-    // SAFETY: `source_attnum` was resolved from this heap relation and type
-    // policy validation happens inside the delegated helper.
-    unsafe {
-        resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy)
-    }
+    let source_attnum = resolve_source_attnum(heap_relation, source_column, source_label);
+    resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy)
 }
 
-pub(crate) unsafe fn resolve_source_attribute_by_attnum(
+pub(crate) fn resolve_source_attribute_by_attnum(
     heap_relation: pg_sys::Relation,
     source_attnum: i32,
     source_label: &str,
@@ -311,7 +304,7 @@ pub(crate) unsafe fn resolve_source_attribute_by_attnum(
     }
 
     // SAFETY: `att.atttypid` comes from the copied tuple descriptor metadata.
-    let kind = unsafe { resolve_source_datum_kind(att.atttypid) }.unwrap_or_default();
+    let kind = resolve_source_datum_kind(att.atttypid).unwrap_or_default();
     let valid = match type_policy {
         SourceTypePolicy::BuildSource => {
             matches!(kind, SourceDatumKind::RealArray | SourceDatumKind::Ecvector)
@@ -452,7 +445,7 @@ unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVe
     }
 }
 
-unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatumKind> {
+fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatumKind> {
     match type_oid {
         pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),
         pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),

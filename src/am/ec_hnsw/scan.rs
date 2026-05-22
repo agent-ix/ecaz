@@ -1837,16 +1837,12 @@ unsafe fn configure_grouped_heap_rerank_state(
     // SAFETY: `scan` is the live descriptor for this rescan configuration.
     let snapshot = unsafe { resolve_scan_snapshot(scan) };
     let source_attribute = if let Some(source_column) = rerank.source_column {
-        // SAFETY: `heap_relation_ptr` is held live by `heap_relation`, and the
-        // source column is resolved only for this scan's rerank state.
-        unsafe {
-            source::resolve_source_attribute(
-                heap_relation_ptr,
-                &source_column,
-                source_label,
-                source::SourceTypePolicy::RerankSource,
-            )
-        }
+        source::resolve_source_attribute(
+            heap_relation_ptr,
+            &source_column,
+            source_label,
+            source::SourceTypePolicy::RerankSource,
+        )
     } else {
         // SAFETY: heap relation is held live by `heap_relation`; index relation
         // is borrowed from the live scan descriptor.

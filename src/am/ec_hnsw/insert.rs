@@ -138,16 +138,12 @@ struct InsertHeapSourceScorer {
 
 impl InsertHeapSourceScorer {
     unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
-        // SAFETY: `heap_relation` is the live heap relation passed to aminsert;
-        // the source-column lookup only reads relation/catalog metadata.
-        let source_attribute = unsafe {
-            source::resolve_source_attribute(
-                heap_relation,
-                source_column,
-                "build_source_column",
-                source::SourceTypePolicy::BuildSource,
-            )
-        };
+        let source_attribute = source::resolve_source_attribute(
+            heap_relation,
+            source_column,
+            "build_source_column",
+            source::SourceTypePolicy::BuildSource,
+        );
         // SAFETY: The source attribute was resolved for this heap relation.
         unsafe { Self::new_with_attribute(heap_relation, source_attribute) }
     }

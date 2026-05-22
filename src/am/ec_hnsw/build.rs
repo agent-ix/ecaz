@@ -500,16 +500,12 @@ fn validate_grouped_rerank_source_column(
         return;
     };
 
-    // SAFETY: `heap_relation` is live during build validation, and the source
-    // resolver validates that the configured rerank column is usable.
-    unsafe {
-        source::resolve_source_attribute(
-            heap_relation,
-            source_column,
-            "rerank_source_column",
-            source::SourceTypePolicy::RerankSource,
-        )
-    };
+    source::resolve_source_attribute(
+        heap_relation,
+        source_column,
+        "rerank_source_column",
+        source::SourceTypePolicy::RerankSource,
+    );
 }
 
 fn validate_grouped_rerank_source_column_for_empty_build(
@@ -696,16 +692,12 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
             "indexed column",
         )
     };
-    // SAFETY: `heap_relation` is live during the scan, and the resolver
-    // validates the configured build source column and source policy.
-    let source_attribute = unsafe {
-        source::resolve_source_attribute(
-            heap_relation,
-            &source_column,
-            "build_source_column",
-            source::SourceTypePolicy::BuildSource,
-        )
-    };
+    let source_attribute = source::resolve_source_attribute(
+        heap_relation,
+        &source_column,
+        "build_source_column",
+        source::SourceTypePolicy::BuildSource,
+    );
 
     let slot = TupleTableSlotGuard::single_for_heap(heap_relation)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to allocate heap scan slot"));
