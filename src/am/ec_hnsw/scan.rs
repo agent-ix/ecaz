@@ -1386,10 +1386,9 @@ pub(super) fn turboquant_exact_score_uses_qjl(opaque: &TqScanOpaque) -> bool {
 }
 
 unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) -> bool {
-    // SAFETY: `index_relation` is a live index relation supplied by the scan
-    // path; PostgreSQL maps its relid back to the heap relation OID.
-    // SAFETY: `index_relation` is live for the scan setup scope.
-    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+    let index_relation_handle = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw scan received null index relation"));
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
     if heap_oid == pg_sys::InvalidOid {
         return false;
     }
@@ -1763,8 +1762,10 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHns
 
     // SAFETY: `indexRelation` is live in the scan descriptor.
     let index_relation = unsafe { (*scan).indexRelation };
-    // SAFETY: `index_relation` is live for grouped heap rerank setup.
-    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+    let index_relation_handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw grouped heap-f32 rerank received null index relation")
+    });
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve heap relation");
     }

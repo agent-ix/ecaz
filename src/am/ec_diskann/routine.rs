@@ -1118,8 +1118,9 @@ fn resolve_vacuum_heap_relation(
         return Ok(ResolvedVacuumHeapRelation::borrowed(heap_relation));
     }
 
-    // SAFETY: `index_relation` is live while resolving the heap relation.
-    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+    let index_relation = ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann vacuum received null index relation".to_owned())?;
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_diskann vacuum could not resolve heap relation".into());
     }

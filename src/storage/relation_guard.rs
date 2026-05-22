@@ -8,6 +8,9 @@
 //! `table_open`, and `RelationGuard` uses generic `relation_open` for
 //! relkinds that are not known statically, such as SPIRE aux stores.
 
+#[cfg(any(test, feature = "pg_test"))]
+use std::ptr::NonNull;
+
 use pgrx::pg_sys;
 
 pub(crate) struct IndexRelationGuard {
@@ -53,9 +56,9 @@ impl IndexRelationGuard {
 
     #[cfg(any(test, feature = "pg_test"))]
     pub(crate) fn heap_relation_oid(&self) -> pg_sys::Oid {
-        // SAFETY: this guard owns a live PostgreSQL index relation descriptor;
-        // the helper copies the linked heap relation OID by value.
-        unsafe { crate::storage::relation::index_heap_relation_oid(self.relation) }
+        let relation = NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("index relation guard unexpectedly null"));
+        crate::storage::relation::index_heap_relation_oid_handle(relation)
     }
 }
 
@@ -134,7 +137,11 @@ impl RelationGuard {
             if rd_options.is_null() {
                 return None;
             }
-            Some((*rd_options.cast::<pg_sys::StdRdOptions>()).autovacuum.enabled)
+            Some(
+                (*rd_options.cast::<pg_sys::StdRdOptions>())
+                    .autovacuum
+                    .enabled,
+            )
         }
     }
 }

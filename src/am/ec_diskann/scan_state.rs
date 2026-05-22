@@ -283,9 +283,9 @@ impl<'a> DiskannScanDescView<'a> {
             return Ok(ResolvedScanHeapRelation::borrowed(self.scan.heapRelation));
         }
 
-        // SAFETY: The scan owns a live index relation descriptor.
-        let heap_oid =
-            unsafe { crate::storage::relation::index_heap_relation_oid(self.index_relation()) };
+        let index_relation = std::ptr::NonNull::new(self.index_relation())
+            .ok_or_else(|| "ec_diskann scan received null index relation".to_owned())?;
+        let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
         if heap_oid == pg_sys::InvalidOid {
             return Err("ec_diskann scan could not resolve heap relation".into());
         }

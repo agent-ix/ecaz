@@ -315,10 +315,10 @@ impl BuildState {
             std::ptr::NonNull::new(index_relation)
                 .expect("ec_hnsw build index relation should be non-null"),
         );
-        // SAFETY: `index_relation` is live and its `rd_id` can be resolved to
-        // the heap relation OID, or InvalidOid for test-only detached state.
-        // SAFETY: `index_relation` is live during ambuild.
-        let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+        let index_relation_handle = std::ptr::NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw build received null index relation"));
+        let heap_oid =
+            crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
         let indexed_vector_kind = if heap_oid == pg_sys::InvalidOid {
             source::IndexedVectorKind::Ecvector
         } else {
@@ -520,10 +520,9 @@ fn validate_grouped_rerank_source_column_for_empty_build(
         return;
     }
 
-    // SAFETY: `index_relation` is live during empty-build validation, and
-    // PostgreSQL resolves its heap relation OID from the index relcache entry.
-    // SAFETY: `index_relation` is live during ambuild.
-    let heap_oid = unsafe { crate::storage::relation::index_heap_relation_oid(index_relation) };
+    let index_relation_handle = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw empty build received null index relation"));
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw rerank_source_column could not resolve heap relation for validation");
     }

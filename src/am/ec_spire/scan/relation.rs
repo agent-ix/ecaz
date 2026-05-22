@@ -107,10 +107,9 @@ impl<'a> SpireIndexScanView<'a> {
             return ResolvedScanHeapRelation::borrowed(self.scan_ref.heapRelation);
         }
 
-        // SAFETY: the scan descriptor view was constructed from a live AM
-        // callback scan; indexRelation is live for relation resolution here.
-        let heap_oid =
-            unsafe { crate::storage::relation::index_heap_relation_oid(self.index_relation()) };
+        let index_relation = std::ptr::NonNull::new(self.index_relation())
+            .unwrap_or_else(|| pgrx::error!("ec_spire heap rerank received null index relation"));
+        let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
         if heap_oid == pg_sys::InvalidOid {
             pgrx::error!("ec_spire heap rerank could not resolve heap relation");
         }
