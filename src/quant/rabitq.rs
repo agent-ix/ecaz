@@ -2874,7 +2874,11 @@ mod tests {
     #[cfg(target_arch = "aarch64")]
     #[test]
     fn neon_sum_query_dequant_matches_scalar_bits1() {
-        for &dim in &[8_usize, 32, 33, 63, 64, 1536] {
+        // Cover the 32-wide loop, 32-wide tail re-entry, and short
+        // sub-32 tails. 1536 is the production dim.
+        for &dim in &[
+            8_usize, 16, 24, 31, 32, 33, 48, 63, 64, 95, 96, 128, 1536,
+        ] {
             let bits = 1_usize;
             let packed_bytes = (dim * bits).div_ceil(8);
             let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
@@ -2886,14 +2890,39 @@ mod tests {
                 .map(|i| ((i as f32) - dim as f32 / 2.0) * 0.07)
                 .collect();
             let lut = build_dequant_lut(dim, bits);
+            let byte_lut = build_bits1_byte_lut_boxed(&lut, 1);
             let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
-            // SAFETY: aarch64 cfg.
-            let neon = unsafe { sum_query_dequant_neon_bits1(&query, dim, &lut, &code) };
+            // SAFETY: aarch64 cfg + valid byte_lut for bits=1.
+            let neon =
+                unsafe { sum_query_dequant_neon_bits1(&query, dim, &byte_lut, &lut, &code) };
             let tol = 1e-4_f32 * scalar.abs().max(1.0);
             assert!(
                 (scalar - neon).abs() <= tol,
                 "bits=1 dim={dim}: scalar={scalar} neon={neon}"
             );
+        }
+    }
+
+    #[test]
+    fn bits1_byte_lut_matches_per_bit_decode() {
+        // The byte LUT must agree with the per-bit scalar decode for
+        // every input byte and every bit position.
+        let lut = build_dequant_lut(1536, 1);
+        let byte_lut = build_bits1_byte_lut_boxed(&lut, 1);
+        for byte in 0_usize..256 {
+            for i in 0_usize..8 {
+                let bit = (byte >> i) & 1;
+                let expected = lut[bit];
+                let actual = byte_lut[byte][i];
+                assert_eq!(actual, expected, "byte={byte} i={i}");
+            }
+        }
+        // bits!=1 returns a zero-filled LUT.
+        let bits4_lut = build_bits1_byte_lut_boxed(&lut, 4);
+        for byte in 0_usize..256 {
+            for i in 0_usize..8 {
+                assert_eq!(bits4_lut[byte][i], 0.0, "bits=4 byte={byte} i={i}");
+            }
         }
     }
 
