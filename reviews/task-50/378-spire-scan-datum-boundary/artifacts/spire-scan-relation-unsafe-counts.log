@@ -1,0 +1,8 @@
+Script started on 2026-05-21 19:23:37-07:00 [<not executed on terminal>]
+59:        let Some(scan_ref) = (unsafe { scan.as_mut() }) else {
+93:        unsafe { &mut *opaque_ptr }
+164:        unsafe { load_relation_local_store_config(index_relation, root_control)? };
+230:    let orderby = unsafe { &*orderbys };
+266:    let result = unsafe {
+
+Script done on 2026-05-21 19:23:37-07:00 [COMMAND_EXIT_CODE="0"]
