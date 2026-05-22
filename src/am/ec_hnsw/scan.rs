@@ -1386,7 +1386,7 @@ pub(super) fn turboquant_exact_score_uses_qjl(opaque: &TqScanOpaque) -> bool {
         && cached_quantizer_ref(opaque).is_some_and(ProdQuantizer::exact_score_uses_qjl)
 }
 
-unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) -> bool {
+fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) -> bool {
     let index_relation_handle = std::ptr::NonNull::new(index_relation)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw scan received null index relation"));
     let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
@@ -1396,15 +1396,11 @@ unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) ->
     let Some(heap_relation) = HeapRelationGuard::try_access_share(heap_oid) else {
         pgrx::error!("ec_hnsw scan could not open heap relation for indexed column")
     };
-    // SAFETY: both relation pointers are live for this lookup; the heap is held
-    // by `HeapRelationGuard` and `index_relation` is owned by the caller scan.
-    let indexed_attribute = 
-        source::resolve_indexed_vector_attribute(
-            heap_relation.as_ptr(),
-            index_relation,
-            "indexed column",
-        )
-    ;
+    let indexed_attribute = source::resolve_indexed_vector_attribute(
+        heap_relation.as_ptr(),
+        index_relation,
+        "indexed column",
+    );
     matches!(indexed_attribute.kind, source::IndexedVectorKind::Ecvector)
 }
 
@@ -1468,9 +1464,7 @@ fn resolve_grouped_rerank_mode_decision(
     index_relation: pg_sys::Relation,
     index_options: &super::options::TqHnswOptions,
 ) -> PqFastScanRerankModeDecision {
-    // SAFETY: callers supply the live index relation being scanned; the helper
-    // only opens the associated heap long enough to inspect source metadata.
-    let has_default_heap_f32_source = unsafe { index_has_default_heap_f32_source(index_relation) };
+    let has_default_heap_f32_source = index_has_default_heap_f32_source(index_relation);
     let Some(raw_mode) = pq_fastscan_env_var(
         PQ_FASTSCAN_RERANK_MODE_ENV,
         LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV,
