@@ -275,13 +275,9 @@ impl SpireRelationObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireRoutingPartitionObject, String> {
         self.validate_local_available_placement(placement)?;
-        // SAFETY: validated placement points at this store relation; page helper
-        // pins the tuple only for the decode callback.
-        let meta = unsafe {
-            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
-                decode_relation_object_chain_meta(raw)
-            })?
-        };
+        let meta = self.with_object_tuple(placement.object_tid, |raw| {
+            decode_relation_object_chain_meta(raw)
+        })?;
         let object = if let Some(meta) = meta {
             let raw = self.read_large_partition_object_bytes(placement, &meta)?;
             SpireRoutingPartitionObject::decode(&raw)?
@@ -318,13 +314,9 @@ impl SpireRelationObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObjectV2, String> {
         self.validate_local_available_placement(placement)?;
-        // SAFETY: validated placement points at this store relation; page helper
-        // pins the meta tuple for immediate decode only.
-        let meta = unsafe {
-            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
-                SpireLeafPartitionObjectV2Meta::decode(raw)
-            })?
-        };
+        let meta = self.with_object_tuple(placement.object_tid, |raw| {
+            SpireLeafPartitionObjectV2Meta::decode(raw)
+        })?;
         if meta.header.pid != placement.pid {
             return Err(format!(
                 "ec_spire placement pid {} does not match leaf V2 pid {}",
@@ -360,13 +352,9 @@ impl SpireRelationObjectStore {
             if next_locator == ItemPointer::INVALID {
                 return Err("ec_spire leaf V2 segment chain ended early".to_owned());
             }
-            // SAFETY: next_locator is from the validated meta/previous segment;
-            // the page helper pins the segment tuple only for decoding.
-            let segment = unsafe {
-                page::with_pinned_object_tuple(self.store_relation, next_locator, |raw| {
-                    SpireLeafPartitionObjectV2Segment::decode(raw, &meta)
-                })?
-            };
+            let segment = self.with_object_tuple(next_locator, |raw| {
+                SpireLeafPartitionObjectV2Segment::decode(raw, &meta)
+            })?;
             next_locator = segment.next_segment_locator;
             segments.push(segment);
         }
@@ -381,68 +369,62 @@ impl SpireRelationObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpirePartitionObjectHeader, String> {
         self.validate_local_available_placement(placement)?;
-        // SAFETY: validated placement points at this store relation; page helper
-        // pins the object tuple only for header/meta decode.
-        let header = unsafe {
-            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
-                let (mut header, format_version, _) =
-                    SpirePartitionObjectHeader::decode_prefix_with_format_version(raw)?;
-                match format_version {
-                    PARTITION_OBJECT_FORMAT_VERSION_V1 => {
-                        let expected_len =
-                            usize::try_from(placement.object_bytes).map_err(|_| {
-                                "ec_spire placement object_bytes exceeds usize".to_owned()
-                            })?;
-                        if raw.len() != expected_len {
-                            return Err(format!(
-                                "ec_spire object byte length mismatch: placement {}, tuple {}",
-                                placement.object_bytes,
-                                raw.len()
-                            ));
-                        }
-                    }
-                    PARTITION_OBJECT_FORMAT_VERSION_V2 => {
-                        if header.kind == SpirePartitionObjectKind::Leaf
-                            && header.flags & LEAF_V2_META_FLAG != 0
-                        {
-                            let meta = SpireLeafPartitionObjectV2Meta::decode(raw)?;
-                            if u64::from(placement.object_bytes) != meta.object_bytes_total {
-                                return Err(format!(
-                                    "ec_spire placement object_bytes {} does not match leaf V2 total {}",
-                                    placement.object_bytes, meta.object_bytes_total
-                                ));
-                            }
-                            header = meta.header;
-                        } else if relation_object_chain_kind_supported(header.kind)
-                            && header.flags & PARTITION_OBJECT_V2_CHAIN_META_FLAG != 0
-                        {
-                            let meta = decode_relation_object_chain_meta(raw)?.ok_or_else(|| {
-                                "ec_spire partition object V2 chain meta decode returned no meta"
-                                    .to_owned()
-                            })?;
-                            if u64::from(placement.object_bytes) != meta.object_bytes_total {
-                                return Err(format!(
-                                    "ec_spire placement object_bytes {} does not match partition object V2 chain total {}",
-                                    placement.object_bytes, meta.object_bytes_total
-                                ));
-                            }
-                            header = meta.header;
-                        } else {
-                            return Err(format!(
-                                "ec_spire unsupported partition object V2 header kind {:?} flags {}",
-                                header.kind, header.flags
-                            ));
-                        }
-                    }
-                    other => {
+        let header = self.with_object_tuple(placement.object_tid, |raw| {
+            let (mut header, format_version, _) =
+                SpirePartitionObjectHeader::decode_prefix_with_format_version(raw)?;
+            match format_version {
+                PARTITION_OBJECT_FORMAT_VERSION_V1 => {
+                    let expected_len = usize::try_from(placement.object_bytes)
+                        .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
+                    if raw.len() != expected_len {
                         return Err(format!(
-                            "ec_spire unsupported partition object format version: {other}"
+                            "ec_spire object byte length mismatch: placement {}, tuple {}",
+                            placement.object_bytes,
+                            raw.len()
                         ));
                     }
                 }
-                Ok(header)
-            })?
-        };
+                PARTITION_OBJECT_FORMAT_VERSION_V2 => {
+                    if header.kind == SpirePartitionObjectKind::Leaf
+                        && header.flags & LEAF_V2_META_FLAG != 0
+                    {
+                        let meta = SpireLeafPartitionObjectV2Meta::decode(raw)?;
+                        if u64::from(placement.object_bytes) != meta.object_bytes_total {
+                            return Err(format!(
+                                    "ec_spire placement object_bytes {} does not match leaf V2 total {}",
+                                    placement.object_bytes, meta.object_bytes_total
+                                ));
+                        }
+                        header = meta.header;
+                    } else if relation_object_chain_kind_supported(header.kind)
+                        && header.flags & PARTITION_OBJECT_V2_CHAIN_META_FLAG != 0
+                    {
+                        let meta = decode_relation_object_chain_meta(raw)?.ok_or_else(|| {
+                            "ec_spire partition object V2 chain meta decode returned no meta"
+                                .to_owned()
+                        })?;
+                        if u64::from(placement.object_bytes) != meta.object_bytes_total {
+                            return Err(format!(
+                                    "ec_spire placement object_bytes {} does not match partition object V2 chain total {}",
+                                    placement.object_bytes, meta.object_bytes_total
+                                ));
+                        }
+                        header = meta.header;
+                    } else {
+                        return Err(format!(
+                            "ec_spire unsupported partition object V2 header kind {:?} flags {}",
+                            header.kind, header.flags
+                        ));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "ec_spire unsupported partition object format version: {other}"
+                    ));
+                }
+            }
+            Ok(header)
+        })?;
         if header.pid != placement.pid {
             return Err(format!(
                 "ec_spire placement pid {} does not match object pid {}",
@@ -474,27 +456,20 @@ impl SpireRelationObjectStore {
         if relation_object_chain_kind_supported(header.kind)
             && header.flags & PARTITION_OBJECT_V2_CHAIN_META_FLAG != 0
         {
-            // SAFETY: chain meta is stored in the validated placement tuple and
-            // decoded while that tuple is pinned.
-            let meta = unsafe {
-                page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
+            let meta = self
+                .with_object_tuple(placement.object_tid, |raw| {
                     decode_relation_object_chain_meta(raw)
                 })?
-            }
-            .ok_or_else(|| "ec_spire partition object V2 chain meta missing".to_owned())?;
+                .ok_or_else(|| "ec_spire partition object V2 chain meta missing".to_owned())?;
             let mut next_locator = meta.first_segment_locator;
             for _ in 0..meta.segment_count {
                 if next_locator == ItemPointer::INVALID {
                     return Err("ec_spire partition object V2 segment chain ended early".to_owned());
                 }
                 locators.push(next_locator);
-                // SAFETY: segment locator comes from previously decoded chain
-                // metadata/segment and is decoded while pinned.
-                let segment = unsafe {
-                    page::with_pinned_object_tuple(self.store_relation, next_locator, |raw| {
-                        decode_relation_object_chain_segment(raw, &meta)
-                    })?
-                };
+                let segment = self.with_object_tuple(next_locator, |raw| {
+                    decode_relation_object_chain_segment(raw, &meta)
+                })?;
                 next_locator = segment.next_segment_locator;
             }
             if next_locator != ItemPointer::INVALID {
@@ -509,13 +484,9 @@ impl SpireRelationObjectStore {
             return Ok(locators);
         }
 
-        // SAFETY: validated placement tuple contains the leaf V2 meta and is
-        // pinned only for immediate decode.
-        let meta = unsafe {
-            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
-                SpireLeafPartitionObjectV2Meta::decode(raw)
-            })?
-        };
+        let meta = self.with_object_tuple(placement.object_tid, |raw| {
+            SpireLeafPartitionObjectV2Meta::decode(raw)
+        })?;
         if meta.header.pid != placement.pid {
             return Err(format!(
                 "ec_spire placement pid {} does not match leaf V2 pid {}",
@@ -535,13 +506,9 @@ impl SpireRelationObjectStore {
                 return Err("ec_spire leaf V2 segment chain ended early".to_owned());
             }
             locators.push(next_locator);
-            // SAFETY: leaf segment locator comes from validated meta/previous
-            // segment and is decoded while pinned.
-            let segment = unsafe {
-                page::with_pinned_object_tuple(self.store_relation, next_locator, |raw| {
-                    SpireLeafPartitionObjectV2Segment::decode(raw, &meta)
-                })?
-            };
+            let segment = self.with_object_tuple(next_locator, |raw| {
+                SpireLeafPartitionObjectV2Segment::decode(raw, &meta)
+            })?;
             next_locator = segment.next_segment_locator;
         }
         if next_locator != ItemPointer::INVALID {
@@ -650,13 +617,9 @@ impl SpireRelationObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireTopGraphPartitionObject, String> {
         self.validate_local_available_placement(placement)?;
-        // SAFETY: validated placement points at this store relation; page helper
-        // pins the object tuple only for chain-meta decode.
-        let meta = unsafe {
-            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
-                decode_relation_object_chain_meta(raw)
-            })?
-        };
+        let meta = self.with_object_tuple(placement.object_tid, |raw| {
+            decode_relation_object_chain_meta(raw)
+        })?;
         let object = if let Some(meta) = meta {
             let raw = self.read_large_partition_object_bytes(placement, &meta)?;
             SpireTopGraphPartitionObject::decode(&raw)?
@@ -693,13 +656,9 @@ impl SpireRelationObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<Vec<u8>, String> {
         self.validate_local_available_placement(placement)?;
-        // SAFETY: validated placement points at this store relation; page helper
-        // pins the object tuple only for chain-meta probe.
-        let meta = unsafe {
-            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
-                decode_relation_object_chain_meta(raw)
-            })?
-        };
+        let meta = self.with_object_tuple(placement.object_tid, |raw| {
+            decode_relation_object_chain_meta(raw)
+        })?;
         if let Some(meta) = meta {
             return self.read_large_partition_object_bytes(placement, &meta);
         }
@@ -715,22 +674,18 @@ impl SpireRelationObjectStore {
         F: FnOnce(&[u8]) -> Result<R, String>,
     {
         self.validate_local_available_placement(placement)?;
-        // SAFETY: validated placement points at this store relation; tuple bytes
-        // are exposed only for the callback while the page remains pinned.
-        unsafe {
-            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
-                let expected_len = usize::try_from(placement.object_bytes)
-                    .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
-                if raw.len() != expected_len {
-                    return Err(format!(
-                        "ec_spire object byte length mismatch: placement {}, tuple {}",
-                        placement.object_bytes,
-                        raw.len()
-                    ));
-                }
-                f(raw)
-            })
-        }
+        self.with_object_tuple(placement.object_tid, |raw| {
+            let expected_len = usize::try_from(placement.object_bytes)
+                .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
+            if raw.len() != expected_len {
+                return Err(format!(
+                    "ec_spire object byte length mismatch: placement {}, tuple {}",
+                    placement.object_bytes,
+                    raw.len()
+                ));
+            }
+            f(raw)
+        })
     }
 
     fn validate_local_available_placement(
@@ -828,13 +783,9 @@ impl SpireRelationObjectStore {
             if next_locator == ItemPointer::INVALID {
                 return Err("ec_spire partition object V2 segment chain ended early".to_owned());
             }
-            // SAFETY: next_locator is from validated chain metadata/segment and
-            // is decoded while the tuple page remains pinned.
-            let segment = unsafe {
-                page::with_pinned_object_tuple(self.store_relation, next_locator, |raw| {
-                    decode_relation_object_chain_segment(raw, meta)
-                })?
-            };
+            let segment = self.with_object_tuple(next_locator, |raw| {
+                decode_relation_object_chain_segment(raw, meta)
+            })?;
             if segment.segment_no != expected_segment_no {
                 return Err(format!(
                     "ec_spire partition object V2 segment number mismatch: got {}, expected {expected_segment_no}",
@@ -870,6 +821,16 @@ impl SpireRelationObjectStore {
 }
 
 impl SpireRelationObjectStore {
+    fn with_object_tuple<F, R>(&self, tid: ItemPointer, f: F) -> Result<R, String>
+    where
+        F: FnOnce(&[u8]) -> Result<R, String>,
+    {
+        // SAFETY: `SpireRelationObjectStore` instances are constructed from a
+        // live PostgreSQL relation opened by the caller/owning store set. Tuple
+        // bytes are exposed only for the callback while the page remains pinned.
+        unsafe { page::with_pinned_object_tuple(self.store_relation, tid, f) }
+    }
+
     fn append_object_tuple(&self, encoded: &[u8]) -> Result<ItemPointer, String> {
         // SAFETY: `SpireRelationObjectStore` instances are constructed from a
         // live PostgreSQL relation opened by the caller/owning store set. This
