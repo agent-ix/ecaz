@@ -382,32 +382,28 @@ impl InsertFormatAdapter {
         tuple: &build::BuildTuple,
         code_len: usize,
     ) -> Option<page::ItemPointer> {
-        // SAFETY: The adapter variant was resolved from the current metadata
-        // and therefore selects the duplicate scanner matching this tuple code.
-        unsafe {
-            match self {
-                Self::TurboQuant { .. } => find_duplicate_element_tid(
-                    index_relation,
-                    heap_relation,
-                    metadata.dimensions,
-                    metadata.bits,
-                    tuple.gamma,
-                    code_len,
-                    &tuple.code,
-                ),
-                Self::TurboQuantHotCold(layout) => find_duplicate_turbo_hot_element_tid(
-                    index_relation,
-                    tuple.gamma,
-                    &tuple.code,
-                    layout,
-                ),
-                Self::PqFastScan(layout) => find_duplicate_grouped_element_tid(
-                    index_relation,
-                    tuple.gamma,
-                    &tuple.code,
-                    layout,
-                ),
-            }
+        match self {
+            Self::TurboQuant { .. } => find_duplicate_element_tid(
+                index_relation,
+                heap_relation,
+                metadata.dimensions,
+                metadata.bits,
+                tuple.gamma,
+                code_len,
+                &tuple.code,
+            ),
+            Self::TurboQuantHotCold(layout) => find_duplicate_turbo_hot_element_tid(
+                index_relation,
+                tuple.gamma,
+                &tuple.code,
+                layout,
+            ),
+            Self::PqFastScan(layout) => find_duplicate_grouped_element_tid(
+                index_relation,
+                tuple.gamma,
+                &tuple.code,
+                layout,
+            ),
         }
     }
 
@@ -443,25 +439,21 @@ impl InsertFormatAdapter {
         level: u8,
         neighbor_tids: &[page::ItemPointer],
     ) -> page::ItemPointer {
-        // SAFETY: The adapter matches the append format and `neighbor_tids` is
-        // sized for the chosen insert level.
-        unsafe {
-            match self {
-                Self::TurboQuant { .. } => {
-                    append_heap_tuple(index_relation, tuple, level, neighbor_tids)
-                }
-                Self::TurboQuantHotCold(layout) => {
-                    append_turbo_hot_cold_tuple(index_relation, tuple, level, neighbor_tids, layout)
-                }
-                Self::PqFastScan(layout) => append_pq_fastscan_tuple(
-                    index_relation,
-                    metadata,
-                    tuple,
-                    level,
-                    neighbor_tids,
-                    layout,
-                ),
+        match self {
+            Self::TurboQuant { .. } => {
+                append_heap_tuple(index_relation, tuple, level, neighbor_tids)
             }
+            Self::TurboQuantHotCold(layout) => {
+                append_turbo_hot_cold_tuple(index_relation, tuple, level, neighbor_tids, layout)
+            }
+            Self::PqFastScan(layout) => append_pq_fastscan_tuple(
+                index_relation,
+                metadata,
+                tuple,
+                level,
+                neighbor_tids,
+                layout,
+            ),
         }
     }
 
@@ -1598,7 +1590,7 @@ fn sort_and_dedup_forward_selections(selections: &mut Vec<LayerForwardSelection>
     selections.dedup();
 }
 
-unsafe fn append_heap_tuple(
+fn append_heap_tuple(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
     level: u8,
@@ -1632,11 +1624,7 @@ unsafe fn append_heap_tuple(
     let mut page_writer = InsertPageWrite::open_tail(index_relation, target_block, "scalar");
     if target_block != P_NEW && page_writer.free_space() < required_bytes {
         std::mem::drop(page_writer);
-        // SAFETY: The current tail page cannot fit this insert, so retry on a
-        // newly allocated page using the already encoded neighbor.
-        return unsafe {
-            append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
-        };
+        return append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload);
     }
 
     let block_number = page_writer.block_number();
@@ -1664,7 +1652,7 @@ unsafe fn append_heap_tuple(
     }
 }
 
-unsafe fn append_heap_tuple_to_new_page(
+fn append_heap_tuple_to_new_page(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
     level: u8,
@@ -1697,7 +1685,7 @@ unsafe fn append_heap_tuple_to_new_page(
     }
 }
 
-unsafe fn append_turbo_hot_cold_tuple(
+fn append_turbo_hot_cold_tuple(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
     level: u8,
@@ -1773,18 +1761,14 @@ unsafe fn append_turbo_hot_cold_tuple(
         InsertPageWrite::open_tail(index_relation, target_block, "TurboQuant V3");
     if target_block != P_NEW && page_writer.free_space() < required_bytes {
         std::mem::drop(page_writer);
-        // SAFETY: The tail page cannot fit all hot/cold payload pieces, so
-        // append them to a freshly allocated page.
-        return unsafe {
-            append_turbo_hot_cold_tuple_to_new_page(
-                index_relation,
-                tuple,
-                level,
-                &neighbor_payload,
-                &rerank_payload,
-                layout,
-            )
-        };
+        return append_turbo_hot_cold_tuple_to_new_page(
+            index_relation,
+            tuple,
+            level,
+            &neighbor_payload,
+            &rerank_payload,
+            layout,
+        );
     }
 
     let block_number = page_writer.block_number();
@@ -1815,7 +1799,7 @@ unsafe fn append_turbo_hot_cold_tuple(
     }
 }
 
-unsafe fn append_turbo_hot_cold_tuple_to_new_page(
+fn append_turbo_hot_cold_tuple_to_new_page(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
     level: u8,
@@ -1869,7 +1853,7 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
     }
 }
 
-unsafe fn derive_pq_fastscan_search_code_for_insert(
+fn derive_pq_fastscan_search_code_for_insert(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     tuple: &build::BuildTuple,
@@ -1903,7 +1887,7 @@ unsafe fn derive_pq_fastscan_search_code_for_insert(
     search_code
 }
 
-unsafe fn bootstrap_empty_pq_fastscan_flush_output(
+fn bootstrap_empty_pq_fastscan_flush_output(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
 ) -> build::BuildFlushOutput {
@@ -1927,7 +1911,7 @@ unsafe fn bootstrap_empty_pq_fastscan_flush_output(
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to bootstrap empty PqFastScan index: {e}"))
 }
 
-unsafe fn append_pq_fastscan_tuple(
+fn append_pq_fastscan_tuple(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     tuple: &build::BuildTuple,
@@ -1935,11 +1919,8 @@ unsafe fn append_pq_fastscan_tuple(
     neighbor_tids: &[page::ItemPointer],
     layout: graph::PqFastScanLayout,
 ) -> page::ItemPointer {
-    // SAFETY: The grouped layout belongs to the current metadata snapshot and
-    // the tuple carries the source vector needed to derive a search code.
-    let search_code = unsafe {
-        derive_pq_fastscan_search_code_for_insert(index_relation, metadata, tuple, layout)
-    };
+    let search_code =
+        derive_pq_fastscan_search_code_for_insert(index_relation, metadata, tuple, layout);
     let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
         tuple.dimensions as usize,
         tuple.bits,
@@ -2004,18 +1985,14 @@ unsafe fn append_pq_fastscan_tuple(
         InsertPageWrite::open_tail(index_relation, target_block, "PqFastScan");
     if target_block != P_NEW && page_writer.free_space() < required_bytes {
         std::mem::drop(page_writer);
-        // SAFETY: The tail page cannot fit all grouped payload pieces, so
-        // append them to a freshly allocated page.
-        return unsafe {
-            append_pq_fastscan_tuple_to_new_page(
-                index_relation,
-                tuple,
-                level,
-                &neighbor_payload,
-                &rerank_payload,
-                search_code,
-            )
-        };
+        return append_pq_fastscan_tuple_to_new_page(
+            index_relation,
+            tuple,
+            level,
+            &neighbor_payload,
+            &rerank_payload,
+            search_code,
+        );
     }
 
     let block_number = page_writer.block_number();
@@ -2048,7 +2025,7 @@ unsafe fn append_pq_fastscan_tuple(
     }
 }
 
-unsafe fn append_pq_fastscan_tuple_to_new_page(
+fn append_pq_fastscan_tuple_to_new_page(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
     level: u8,
@@ -2096,7 +2073,7 @@ unsafe fn append_pq_fastscan_tuple_to_new_page(
     }
 }
 
-unsafe fn find_duplicate_element_tid(
+fn find_duplicate_element_tid(
     index_relation: pg_sys::Relation,
     _heap_relation: pg_sys::Relation,
     dimensions: u16,
@@ -2173,7 +2150,7 @@ unsafe fn find_duplicate_element_tid(
     None
 }
 
-unsafe fn find_duplicate_turbo_hot_element_tid(
+fn find_duplicate_turbo_hot_element_tid(
     index_relation: pg_sys::Relation,
     gamma: f32,
     code: &[u8],
@@ -2252,7 +2229,7 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
     None
 }
 
-unsafe fn find_duplicate_grouped_element_tid(
+fn find_duplicate_grouped_element_tid(
     index_relation: pg_sys::Relation,
     gamma: f32,
     code: &[u8],
