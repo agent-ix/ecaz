@@ -43,6 +43,17 @@ impl SpireRelationObjectStore {
         }
     }
 
+    fn from_live_store_relation(
+        store_relation: pg_sys::Relation,
+        local_store_id: u32,
+        store_relid: u32,
+    ) -> Self {
+        // SAFETY: callers pass either the already-open SPIRE index relation or
+        // a relation owned by `OpenedRelationsGuard`; the resulting store never
+        // outlives the owning relation guard/store set.
+        unsafe { Self::for_store_relation_id(store_relation, local_store_id, store_relid) }
+    }
+
     pub(super) fn insert_routing_object(
         &self,
         epoch: u64,
@@ -1242,13 +1253,11 @@ impl SpireRelationObjectStoreSet {
                 };
                 relation
             };
-            stores.push(unsafe {
-                SpireRelationObjectStore::for_store_relation_id(
-                    store_relation,
-                    descriptor.local_store_id,
-                    descriptor.store_relid,
-                )
-            });
+            stores.push(SpireRelationObjectStore::from_live_store_relation(
+                store_relation,
+                descriptor.local_store_id,
+                descriptor.store_relid,
+            ));
             let store_index = stores.len() - 1;
             if store_indexes_by_key
                 .insert(
@@ -1316,13 +1325,11 @@ impl SpireRelationObjectStoreSet {
                 };
                 relation
             };
-            stores.push(unsafe {
-                SpireRelationObjectStore::for_store_relation_id(
-                    store_relation,
-                    local_store_id,
-                    store_relid,
-                )
-            });
+            stores.push(SpireRelationObjectStore::from_live_store_relation(
+                store_relation,
+                local_store_id,
+                store_relid,
+            ));
             let store_index = stores.len() - 1;
             if store_indexes_by_key
                 .insert((local_store_id, store_relid), store_index)
