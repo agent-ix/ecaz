@@ -1,0 +1,13 @@
+src/am/ec_hnsw/build_parallel.rs:2797:    let mut index_info = super::index_info::IndexInfoView::build_borrowed(
+src/am/ec_hnsw/source.rs:393:    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
+src/am/ec_hnsw/source.rs:437:    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
+src/am/ec_hnsw/index_info.rs:1://! Typed wrappers around `pg_sys::BuildIndexInfo` for HNSW.
+src/am/ec_hnsw/index_info.rs:3://! `IndexInfoGuard` owns the `IndexInfo` allocation and `pfree`s it on drop.
+src/am/ec_hnsw/index_info.rs:7://! `IndexInfoView<'a>` borrows the `IndexInfo` from a surrounding PostgreSQL
+src/am/ec_hnsw/index_info.rs:24:    let ptr = unsafe { pg_sys::BuildIndexInfo(index_relation.as_ptr()) };
+src/am/ec_hnsw/index_info.rs:29:pub(super) struct IndexInfoGuard {
+src/am/ec_hnsw/index_info.rs:33:impl IndexInfoGuard {
+src/am/ec_hnsw/index_info.rs:45:impl Drop for IndexInfoGuard {
+src/am/ec_hnsw/index_info.rs:47:        // SAFETY: `ptr` was allocated by PostgreSQL BuildIndexInfo and this
+src/am/ec_hnsw/index_info.rs:53:pub(super) struct IndexInfoView<'scope> {
+src/am/ec_hnsw/index_info.rs:58:impl<'scope> IndexInfoView<'scope> {
