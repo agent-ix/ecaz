@@ -2213,45 +2213,39 @@ fn dml_frontdoor_pk_predicate_from_clause(
             right,
         } => (operator, left, right),
     };
-    // SAFETY: left/right are immediate child expressions of the planner-owned
-    // clause read above and are inspected without escaping this callback.
-    unsafe {
-        match (left, right) {
-            (Some(left), Some(right)) => {
-                if let Some(column) =
-                    dml_frontdoor_predicate_var_column(left, target_rtindex, context)
-                {
-                    return Some(SpireDmlFrontdoorPkPredicate {
-                        column: Some(column),
-                        operator,
-                        value: dml_frontdoor_predicate_value(right),
-                        value_expr: Some(right),
-                    });
-                }
-                if let Some(column) =
-                    dml_frontdoor_predicate_var_column(right, target_rtindex, context)
-                {
-                    return Some(SpireDmlFrontdoorPkPredicate {
-                        column: Some(column),
-                        operator,
-                        value: dml_frontdoor_predicate_value(left),
-                        value_expr: Some(left),
-                    });
-                }
-                Some(SpireDmlFrontdoorPkPredicate {
-                    column: None,
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            if let Some(column) = dml_frontdoor_predicate_var_column(left, target_rtindex, context)
+            {
+                return Some(SpireDmlFrontdoorPkPredicate {
+                    column: Some(column),
                     operator,
-                    value: dml_frontdoor_other_predicate_value(),
-                    value_expr: None,
-                })
+                    value: dml_frontdoor_predicate_value(right),
+                    value_expr: Some(right),
+                });
             }
-            _ => Some(SpireDmlFrontdoorPkPredicate {
+            if let Some(column) = dml_frontdoor_predicate_var_column(right, target_rtindex, context)
+            {
+                return Some(SpireDmlFrontdoorPkPredicate {
+                    column: Some(column),
+                    operator,
+                    value: dml_frontdoor_predicate_value(left),
+                    value_expr: Some(left),
+                });
+            }
+            Some(SpireDmlFrontdoorPkPredicate {
                 column: None,
                 operator,
                 value: dml_frontdoor_other_predicate_value(),
                 value_expr: None,
-            }),
+            })
         }
+        _ => Some(SpireDmlFrontdoorPkPredicate {
+            column: None,
+            operator,
+            value: dml_frontdoor_other_predicate_value(),
+            value_expr: None,
+        }),
     }
 }
 
@@ -2260,24 +2254,20 @@ fn dml_frontdoor_predicate_var_column(
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<String> {
-    // SAFETY: expr and any wrapper children are planner-owned expression nodes
-    // inspected immediately while classifying the active query.
-    unsafe {
-        if let Some(column) = dml_frontdoor_var_column(expr, target_rtindex, context) {
-            return Some(column);
+    if let Some(column) = dml_frontdoor_var_column(expr, target_rtindex, context) {
+        return Some(column);
+    }
+    match dml_frontdoor_expr_node(expr) {
+        Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
+            dml_frontdoor_predicate_var_column(relabel.arg, target_rtindex, context)
         }
-        match dml_frontdoor_expr_node(expr) {
-            Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
-                dml_frontdoor_predicate_var_column(relabel.arg, target_rtindex, context)
-            }
-            Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
-                dml_frontdoor_predicate_var_column(coerce.arg, target_rtindex, context)
-            }
-            Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
-                dml_frontdoor_single_predicate_var_column(func_expr.args, target_rtindex, context)
-            }
-            _ => None,
+        Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
+            dml_frontdoor_predicate_var_column(coerce.arg, target_rtindex, context)
         }
+        Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
+            dml_frontdoor_single_predicate_var_column(func_expr.args, target_rtindex, context)
+        }
+        _ => None,
     }
 }
 
@@ -2303,64 +2293,49 @@ fn dml_frontdoor_expr_references_column(
     context: &SpireDmlFrontdoorQueryContext<'_>,
     column_name: &str,
 ) -> bool {
-    // SAFETY: expr and any child lists are planner-owned expression nodes
-    // inspected recursively without retaining borrowed fields.
-    unsafe {
-        match dml_frontdoor_expr_node(expr) {
-            Some(SpireDmlFrontdoorExprNode::Var(_)) => {
-                dml_frontdoor_var_column(expr, target_rtindex, context).as_deref()
-                    == Some(column_name)
-            }
-            Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
-                dml_frontdoor_expr_list_references_column(
-                    op_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
-            Some(SpireDmlFrontdoorExprNode::ScalarArrayOpExpr(array_expr)) => {
-                dml_frontdoor_expr_list_references_column(
-                    array_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
-            Some(SpireDmlFrontdoorExprNode::BoolExpr(bool_expr)) => {
-                dml_frontdoor_expr_list_references_column(
-                    bool_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
-            Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
-                dml_frontdoor_expr_list_references_column(
-                    func_expr.args,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
-            Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
-                dml_frontdoor_expr_references_column(
-                    relabel.arg,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
-            Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
-                dml_frontdoor_expr_references_column(
-                    coerce.arg,
-                    target_rtindex,
-                    context,
-                    column_name,
-                )
-            }
-            _ => false,
+    match dml_frontdoor_expr_node(expr) {
+        Some(SpireDmlFrontdoorExprNode::Var(_)) => {
+            dml_frontdoor_var_column(expr, target_rtindex, context).as_deref() == Some(column_name)
         }
+        Some(SpireDmlFrontdoorExprNode::OpExpr(op_expr)) => {
+            dml_frontdoor_expr_list_references_column(
+                op_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
+        }
+        Some(SpireDmlFrontdoorExprNode::ScalarArrayOpExpr(array_expr)) => {
+            dml_frontdoor_expr_list_references_column(
+                array_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
+        }
+        Some(SpireDmlFrontdoorExprNode::BoolExpr(bool_expr)) => {
+            dml_frontdoor_expr_list_references_column(
+                bool_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
+        }
+        Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
+            dml_frontdoor_expr_list_references_column(
+                func_expr.args,
+                target_rtindex,
+                context,
+                column_name,
+            )
+        }
+        Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
+            dml_frontdoor_expr_references_column(relabel.arg, target_rtindex, context, column_name)
+        }
+        Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
+            dml_frontdoor_expr_references_column(coerce.arg, target_rtindex, context, column_name)
+        }
+        _ => false,
     }
 }
 
@@ -2396,13 +2371,12 @@ fn dml_frontdoor_empty_pk_predicate() -> SpireDmlFrontdoorPkPredicate {
     }
 }
 
-unsafe fn dml_frontdoor_var_column(
+fn dml_frontdoor_var_column(
     expr: *mut pg_sys::Expr,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Option<String> {
-    let Some(SpireDmlFrontdoorExprNode::Var(var)) = (unsafe { dml_frontdoor_expr_node(expr) })
-    else {
+    let Some(SpireDmlFrontdoorExprNode::Var(var)) = dml_frontdoor_expr_node(expr) else {
         return None;
     };
     if var.varno != target_rtindex || var.varlevelsup != 0 || var.varattno <= 0 {
@@ -2416,90 +2390,78 @@ unsafe fn dml_frontdoor_var_column(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn dml_frontdoor_value_kind(expr: &mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
-    // SAFETY: tests pass locally constructed PostgreSQL expression nodes and
-    // the classifier only reads the node tag and value fields.
-    unsafe { dml_frontdoor_predicate_value(expr) }.kind
+    dml_frontdoor_predicate_value(expr).kind
 }
 
-unsafe fn dml_frontdoor_predicate_value(
-    expr: *mut pg_sys::Expr,
-) -> SpireDmlFrontdoorPredicateValue {
-    unsafe { dml_frontdoor_predicate_value_inner(expr, 0) }
+fn dml_frontdoor_predicate_value(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorPredicateValue {
+    dml_frontdoor_predicate_value_inner(expr, 0)
 }
 
-unsafe fn dml_frontdoor_predicate_value_inner(
+fn dml_frontdoor_predicate_value_inner(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
     if wrapper_depth > DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH {
         return dml_frontdoor_other_predicate_value();
     }
-    // SAFETY: expr and any coercion wrapper children are planner-owned
-    // expression nodes inspected immediately for shape classification.
-    unsafe {
-        match dml_frontdoor_expr_node(expr) {
-            Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
-                if !const_expr.constisnull
-                    && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
-                {
-                    SpireDmlFrontdoorPredicateValue {
-                        kind: SpireDmlFrontdoorValueKind::ConstBigint,
-                        const_bigint: dml_frontdoor_const_bigint_value(const_expr),
-                        param_id: None,
-                    }
-                } else {
-                    dml_frontdoor_other_predicate_value()
+    match dml_frontdoor_expr_node(expr) {
+        Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
+            if !const_expr.constisnull
+                && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
+            {
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ConstBigint,
+                    const_bigint: dml_frontdoor_const_bigint_value(const_expr),
+                    param_id: None,
                 }
+            } else {
+                dml_frontdoor_other_predicate_value()
             }
-            Some(SpireDmlFrontdoorExprNode::Param(param)) => {
-                if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
-                    SpireDmlFrontdoorPredicateValue {
-                        kind: SpireDmlFrontdoorValueKind::ParamBigint,
-                        const_bigint: None,
-                        param_id: Some(param.paramid),
-                    }
-                } else {
-                    dml_frontdoor_other_predicate_value()
-                }
-            }
-            Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
-                if func_expr.funcresulttype != pg_sys::INT8OID {
-                    return dml_frontdoor_other_predicate_value();
-                }
-                dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth)
-            }
-            Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
-                if relabel.resulttype != pg_sys::INT8OID {
-                    return dml_frontdoor_other_predicate_value();
-                }
-                dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth)
-            }
-            Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
-                if coerce.resulttype != pg_sys::INT8OID {
-                    return dml_frontdoor_other_predicate_value();
-                }
-                dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth)
-            }
-            _ => dml_frontdoor_other_predicate_value(),
         }
+        Some(SpireDmlFrontdoorExprNode::Param(param)) => {
+            if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ParamBigint,
+                    const_bigint: None,
+                    param_id: Some(param.paramid),
+                }
+            } else {
+                dml_frontdoor_other_predicate_value()
+            }
+        }
+        Some(SpireDmlFrontdoorExprNode::FuncExpr(func_expr)) => {
+            if func_expr.funcresulttype != pg_sys::INT8OID {
+                return dml_frontdoor_other_predicate_value();
+            }
+            dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth)
+        }
+        Some(SpireDmlFrontdoorExprNode::RelabelType(relabel)) => {
+            if relabel.resulttype != pg_sys::INT8OID {
+                return dml_frontdoor_other_predicate_value();
+            }
+            dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth)
+        }
+        Some(SpireDmlFrontdoorExprNode::CoerceViaIO(coerce)) => {
+            if coerce.resulttype != pg_sys::INT8OID {
+                return dml_frontdoor_other_predicate_value();
+            }
+            dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth)
+        }
+        _ => dml_frontdoor_other_predicate_value(),
     }
 }
 
-unsafe fn dml_frontdoor_single_coerced_arg_value(
+fn dml_frontdoor_single_coerced_arg_value(
     args: *mut pg_sys::List,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
-    // SAFETY: args is the planner-owned argument list for the wrapper
-    // expression currently being classified.
-    unsafe {
-        let Some(arg) = dml_frontdoor_single_list_expr_arg(args) else {
-            return dml_frontdoor_other_predicate_value();
-        };
-        dml_frontdoor_coercible_integer_value(arg, wrapper_depth)
-    }
+    let Some(arg) = dml_frontdoor_single_list_expr_arg(args) else {
+        return dml_frontdoor_other_predicate_value();
+    };
+    dml_frontdoor_coercible_integer_value(arg, wrapper_depth)
 }
 
-unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
     // SAFETY: args is a planner-owned List pointer inspected immediately.
     unsafe {
         let args_ref = dml_frontdoor_pg_ref(args)?;
@@ -2510,40 +2472,36 @@ unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<
     }
 }
 
-unsafe fn dml_frontdoor_coercible_integer_value(
+fn dml_frontdoor_coercible_integer_value(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
 ) -> SpireDmlFrontdoorPredicateValue {
-    // SAFETY: expr is a planner-owned coercion argument inspected immediately;
-    // recursive descent remains bounded by wrapper_depth.
-    unsafe {
-        match dml_frontdoor_expr_node(expr) {
-            Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
-                if !const_expr.constisnull
-                    && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
-                {
-                    SpireDmlFrontdoorPredicateValue {
-                        kind: SpireDmlFrontdoorValueKind::ConstBigint,
-                        const_bigint: dml_frontdoor_const_bigint_value(const_expr),
-                        param_id: None,
-                    }
-                } else {
-                    dml_frontdoor_other_predicate_value()
+    match dml_frontdoor_expr_node(expr) {
+        Some(SpireDmlFrontdoorExprNode::Const(const_expr)) => {
+            if !const_expr.constisnull
+                && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
+            {
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ConstBigint,
+                    const_bigint: dml_frontdoor_const_bigint_value(const_expr),
+                    param_id: None,
                 }
+            } else {
+                dml_frontdoor_other_predicate_value()
             }
-            Some(SpireDmlFrontdoorExprNode::Param(param)) => {
-                if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
-                    SpireDmlFrontdoorPredicateValue {
-                        kind: SpireDmlFrontdoorValueKind::ParamBigint,
-                        const_bigint: None,
-                        param_id: Some(param.paramid),
-                    }
-                } else {
-                    dml_frontdoor_other_predicate_value()
-                }
-            }
-            _ => dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1),
         }
+        Some(SpireDmlFrontdoorExprNode::Param(param)) => {
+            if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ParamBigint,
+                    const_bigint: None,
+                    param_id: Some(param.paramid),
+                }
+            } else {
+                dml_frontdoor_other_predicate_value()
+            }
+        }
+        _ => dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1),
     }
 }
 
@@ -2613,9 +2571,7 @@ enum SpireDmlFrontdoorExprNode<'a> {
     Other,
 }
 
-unsafe fn dml_frontdoor_expr_node<'a>(
-    expr: *mut pg_sys::Expr,
-) -> Option<SpireDmlFrontdoorExprNode<'a>> {
+fn dml_frontdoor_expr_node<'a>(expr: *mut pg_sys::Expr) -> Option<SpireDmlFrontdoorExprNode<'a>> {
     if expr.is_null() {
         return None;
     }
