@@ -285,13 +285,24 @@ would close that gap but is follow-up work.
 
 ### bits=1 + heap_f32 rerank, width=200
 
-| nprobe | p50 ms | recall@10 | vs bits=4 same recall |
+First-cut kernel (8 scalar conditional selects per byte) numbers
+are in `artifacts/latency-bits1-v3.log`. The kernel was rewritten
+to use a per-query 256 × 8-lane byte-LUT (commit `e50375dc7`)
+which gave an additional ~30% on top:
+
+| nprobe | byte-LUT p50 ms | scalar-select p50 ms | recall@10 |
 | --- | --- | --- | --- |
-| 8 | 2.33 | 0.855 | 2.13 ms (~10% worse — rerank dominates) |
-| 16 | 2.93 | 0.920 | 3.02 ms (matched within noise) |
-| 32 | 4.24 | 0.964 | 4.86 ms (13% faster) |
-| 64 | **6.68** | **0.988** | 8.37 ms (**20% faster**) |
-| 128 | **11.5** | **0.9991** | not measured at bits=4 |
+| 8 | **1.99** | 2.33 | 0.855 |
+| 16 | **2.34** | 2.93 | 0.920 |
+| 32 | **3.17** | 4.24 | 0.964 |
+| 64 | **4.62** | 6.68 | **0.988** |
+| 128 | **7.50** | 11.5 | **0.9991** |
+
+The byte-LUT path replaces 8 scalar conditional selects per code
+byte with a single indexed `vld1q_f32` pair (one row = 8 dequant
+lanes). LUT is 8 KB precomputed once per query, indexed by code
+byte; inner loop is now pure SIMD lane-broadcasting + FMA with
+zero per-byte scalar branches.
 
 The bits=1 + rerank path **matches the recall curve of bits=4 +
 rerank exactly** (post-rerank ordering is by f32 IP regardless of
@@ -304,18 +315,23 @@ cost.
 | System | p50 ms @ matched recall | recall@10 |
 | --- | --- | --- |
 | vchord RaBitQ-on-IVF default | 2.7 | ~0.99+ |
-| ec_ivf bits=1 + rerank w=200 nprobe=64 | **6.68** | **0.988** |
-| ec_ivf bits=1 + rerank w=200 nprobe=128 | 11.5 | 0.9991 |
+| ec_ivf bits=1 + rerank w=200 nprobe=64 (byte-LUT) | **4.62** | **0.988** |
+| ec_ivf bits=1 + rerank w=200 nprobe=128 (byte-LUT) | 7.50 | 0.9991 |
 
-**Gap closed from 3.1× to ~2.5×.** Remaining residual is likely
-the rerank pipeline (per-candidate heap fetch + toast detoast on
-`real[]` source column). Two non-architectural avenues to keep
-exploring:
+**Gap closed from 3.1× → 2.5× → 1.7×** across the bits=1 + byte-LUT
+landing series. At nprobe=128 we reach **vchord's recall ceiling
+exactly** (0.9991 vs vchord 0.9995 at 1m) in 7.5 ms — a sane upper
+bound for production high-recall traffic.
 
-1. Vectorize the bits=1 nibble/sign unpack with `vqtbl1q_u8` /
-   SVE2 tbl — currently ~1.3× kernel speedup leaves ~3× on the table.
-2. Batch heap rerank: block-sort candidates + pin reuse (reviewer
+Remaining residual is the rerank-pipeline cost (heap fetch + toast
+detoast on the `real[]` source column). Non-architectural avenues:
+
+1. Batch heap rerank: block-sort candidates + pin reuse (reviewer
    #4). Would attack the rerank-tail cost directly.
+2. Early-exit rerank: stop reranking once `rabitq_score + ε <
+   top-K f32 cutoff` for the next candidate.
+3. Adaptive `rerank_width = max(k·factor, floor)` so K=10 queries
+   don't rerank 200 candidates by default.
 
 ## Reviewer feedback addressed
 
