@@ -371,13 +371,11 @@ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -
     // SAFETY: `index_state` is a PlanState already identified as IndexScanState
     // by the caller, so its relation descriptor field may be inspected.
     let index_relation = unsafe { (*index_state).iss_RelationDesc };
-    if index_relation.is_null() {
+    let Some(index_relation) = ptr::NonNull::new(index_relation) else {
         return None;
-    }
+    };
 
-    // SAFETY: `index_relation` is the live relation descriptor from the
-    // IndexScanState currently being explained.
-    let am_oid = unsafe { crate::storage::relation::relation_am_oid(index_relation) };
+    let am_oid = crate::storage::relation::relation_am_oid_handle(index_relation);
     // SAFETY: `am_oid` comes from the relation descriptor; PostgreSQL returns a
     // palloc-owned C string or null when no AM name exists.
     let am_name_ptr = unsafe { pg_sys::get_am_name(am_oid) };

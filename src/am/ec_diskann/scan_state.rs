@@ -1,4 +1,4 @@
-use std::slice;
+use std::{ptr::NonNull, slice};
 
 use pgrx::pg_sys;
 
@@ -181,10 +181,9 @@ pub(super) unsafe fn materialize_chain_from_index(
     };
     let (metadata, page_size) = metadata_result?;
 
-    // SAFETY: `index_relation` is live while beginscan materializes the index
-    // and PostgreSQL can report the current main-fork block count.
-    // SAFETY: scan state callers pass a live index relation descriptor.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann scan materialization needs a valid index relation".to_owned())?;
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let mut chain = DataPageChain::new(page_size);
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
         let page_result: Result<(), String> = {

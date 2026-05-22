@@ -13,6 +13,12 @@ const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 const PQ_FASTSCAN_CODEBOOK_METADATA_UNAVAILABLE: &str =
     "ec_hnsw PqFastScan metadata is missing persisted grouped codebooks";
 
+fn index_main_fork_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
+    let index_relation = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw insert needs a valid index relation"));
+    crate::storage::relation::main_fork_block_count_handle(index_relation)
+}
+
 struct InsertPageWrite {
     buffer: LockedBufferGuard,
     wal_txn: Option<wal::GenericXLogTxn>,
@@ -1632,11 +1638,7 @@ unsafe fn append_heap_tuple(
         );
     }
 
-    // SAFETY: The index relation is open for the aminsert callback; this only
-    // reads the current main-fork block count.
-    // SAFETY: `index_relation` is live during insert page extension.
-    let existing_blocks =
-        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let existing_blocks = index_main_fork_block_count(index_relation);
     let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
         existing_blocks - 1
     } else {
@@ -1778,11 +1780,7 @@ unsafe fn append_turbo_hot_cold_tuple(
         );
     }
 
-    // SAFETY: The index relation is open for the aminsert callback; this reads
-    // only the current main-fork block count.
-    // SAFETY: `index_relation` is live during insert page extension.
-    let existing_blocks =
-        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let existing_blocks = index_main_fork_block_count(index_relation);
     let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
         existing_blocks - 1
     } else {
@@ -2013,11 +2011,7 @@ unsafe fn append_pq_fastscan_tuple(
         );
     }
 
-    // SAFETY: The index relation is open for the aminsert callback; this reads
-    // only the current main-fork block count.
-    // SAFETY: `index_relation` is live during insert page extension.
-    let existing_blocks =
-        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let existing_blocks = index_main_fork_block_count(index_relation);
     let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
         existing_blocks - 1
     } else {
@@ -2130,10 +2124,7 @@ unsafe fn find_duplicate_element_tid(
     code_len: usize,
     code: &[u8],
 ) -> Option<page::ItemPointer> {
-    // SAFETY: Duplicate scanning only reads the live index main-fork block
-    // count.
-    // SAFETY: `index_relation` is live during insert validation.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let block_count = index_main_fork_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }
@@ -2208,10 +2199,7 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
     code: &[u8],
     layout: graph::TurboQuantHotColdLayout,
 ) -> Option<page::ItemPointer> {
-    // SAFETY: Duplicate scanning only reads the live index main-fork block
-    // count.
-    // SAFETY: `index_relation` is live during insert validation.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let block_count = index_main_fork_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }
@@ -2291,10 +2279,7 @@ unsafe fn find_duplicate_grouped_element_tid(
     code: &[u8],
     layout: graph::PqFastScanLayout,
 ) -> Option<page::ItemPointer> {
-    // SAFETY: Duplicate scanning only reads the live index main-fork block
-    // count.
-    // SAFETY: `index_relation` is live during insert validation.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let block_count = index_main_fork_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }

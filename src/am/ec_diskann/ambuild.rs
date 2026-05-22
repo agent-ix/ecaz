@@ -18,7 +18,7 @@
 //! `ecvector` row (ADR-044 default).
 
 use std::ffi::c_void;
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::time::{Duration, Instant};
 
 use pgrx::{pg_sys, PgBox};
@@ -701,11 +701,11 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
 }
 
 unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
-    // SAFETY: The index relation is live while initializing its main fork and
-    // PostgreSQL returns the current block count for that fork.
-    // SAFETY: `index_relation` is live during DiskANN build.
+    let index_relation_handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_diskann metadata initialization needs a valid index relation")
+    });
     let existing_blocks =
-        unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+        crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {

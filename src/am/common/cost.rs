@@ -127,11 +127,9 @@ pub(crate) unsafe fn current_cpu_tuple_cost() -> f64 {
 pub(crate) unsafe fn relation_main_fork_block_count(
     index_relation: pg_sys::Relation,
 ) -> pg_sys::BlockNumber {
-    if index_relation.is_null() {
-        pgrx::error!("planner relation block count needs a valid index relation");
-    }
-    // SAFETY: planner callbacks pass a live index relation descriptor.
-    unsafe { crate::storage::relation::main_fork_block_count(index_relation) }
+    let index_relation = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("planner relation block count needs a valid relation"));
+    crate::storage::relation::main_fork_block_count_handle(index_relation)
 }
 
 #[cfg_attr(feature = "pg18", allow(dead_code))]
@@ -366,12 +364,11 @@ unsafe fn compute_amcostestimate(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexOptInfo,
 ) -> PlannerCostEstimate {
-    let relation_options = options::relation_options(
-        std::ptr::NonNull::new(index_relation)
-            .expect("ec_hnsw cost index relation should be non-null"),
-    );
+    let index_relation_handle = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw cost needs a valid index relation"));
+    let relation_options = options::relation_options(index_relation_handle);
     let tuning = options::resolve_scan_tuning(&relation_options);
-    let block_count = relation_main_fork_block_count(index_relation);
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let index_pages = f64::from(block_count);
     // Block 0 is always the metadata page; an index with no data pages still
     // reports block_count == 1. FR-020's "Empty index (0 data pages)" gate
@@ -380,7 +377,7 @@ unsafe fn compute_amcostestimate(
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return gated_planner_cost_estimate(index_pages);
     }
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
     // SAFETY: `index_relation` is a live ec_hnsw relation with block 0 present
     // because the empty-index gate above returned for metadata-only indexes.
     let metadata = unsafe { shared::read_metadata_page(index_relation) };

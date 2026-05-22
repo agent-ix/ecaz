@@ -1,6 +1,6 @@
 //! Relation-backed root/control page helpers for `ec_spire`.
 
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use pgrx::pg_sys;
 
@@ -11,6 +11,7 @@ use crate::storage::{
         align_up, raw_tuple_storage_bytes, ALIGNMENT_BYTES, FIRST_DATA_BLOCK_NUMBER,
         METADATA_BLOCK_NUMBER,
     },
+    relation::{main_fork_block_count_handle, RelationHandle},
     wal,
 };
 
@@ -23,27 +24,28 @@ enum SpireObjectTupleVisit<R> {
 
 #[derive(Clone, Copy)]
 struct SpirePageRelation {
-    relation: pg_sys::Relation,
+    relation: RelationHandle,
 }
 
 impl SpirePageRelation {
-    unsafe fn new(relation: pg_sys::Relation) -> Self {
+    fn new(relation: pg_sys::Relation) -> Self {
+        let relation = NonNull::new(relation)
+            .unwrap_or_else(|| pgrx::error!("ec_spire page access needs a valid relation"));
         Self { relation }
     }
 
     fn raw(self) -> pg_sys::Relation {
-        self.relation
+        self.relation.as_ptr()
     }
 
     fn number_of_blocks(self) -> pg_sys::BlockNumber {
-        // SAFETY: `self.relation` is the live relation behind this page view.
-        unsafe { crate::storage::relation::main_fork_block_count(self.relation) }
+        main_fork_block_count_handle(self.relation)
     }
 
     fn page_with_free_space(self, required_space: usize) -> pg_sys::BlockNumber {
         // SAFETY: this view is constructed only for an open SPIRE relation;
         // required_space is derived from the tuple that will be appended.
-        unsafe { pg_sys::GetPageWithFreeSpace(self.relation, required_space) }
+        unsafe { pg_sys::GetPageWithFreeSpace(self.raw(), required_space) }
     }
 
     fn read_main(
@@ -54,7 +56,7 @@ impl SpirePageRelation {
     ) -> Option<LockedBufferGuard> {
         // SAFETY: this view is constructed only for an open SPIRE relation;
         // callers supply the block/mode/lock shape for the page operation.
-        unsafe { LockedBufferGuard::read_main(self.relation, block_number, mode, lockmode) }
+        unsafe { LockedBufferGuard::read_main(self.raw(), block_number, mode, lockmode) }
     }
 
     fn read_main_locked(
@@ -64,12 +66,12 @@ impl SpirePageRelation {
     ) -> Option<LockedBufferGuard> {
         // SAFETY: this view is constructed only for an open SPIRE relation;
         // callers pass a read mode that returns an already-locked buffer.
-        unsafe { LockedBufferGuard::read_main_locked(self.relation, block_number, mode) }
+        unsafe { LockedBufferGuard::read_main_locked(self.raw(), block_number, mode) }
     }
 
     fn start_wal(self) -> wal::GenericXLogTxn {
         // SAFETY: this view is constructed only for an open SPIRE relation.
-        unsafe { wal::GenericXLogTxn::start(self.relation) }
+        unsafe { wal::GenericXLogTxn::start(self.raw()) }
     }
 }
 
@@ -165,8 +167,7 @@ unsafe fn initialize_spire_metadata_block_zero(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
 ) {
-    // SAFETY: caller guarantees `index_relation` is live for page access.
-    let relation = unsafe { SpirePageRelation::new(index_relation) };
+    let relation = SpirePageRelation::new(index_relation);
     let existing_blocks = relation.number_of_blocks();
     let target_block = if existing_blocks == 0 {
         P_NEW
@@ -200,8 +201,7 @@ unsafe fn initialize_spire_metadata_block_zero(
 pub(super) unsafe fn read_root_control_page(
     index_relation: pg_sys::Relation,
 ) -> SpireRootControlState {
-    // SAFETY: caller guarantees `index_relation` is live for page access.
-    let buffer = unsafe { SpirePageRelation::new(index_relation) }
+    let buffer = SpirePageRelation::new(index_relation)
         .read_main(
             METADATA_BLOCK_NUMBER,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -235,8 +235,7 @@ pub(super) unsafe fn append_object_tuple(
         return Err("ec_spire object tuple payload must not be empty".to_owned());
     }
 
-    // SAFETY: caller guarantees `index_relation` is live for page access.
-    let relation = unsafe { SpirePageRelation::new(index_relation) };
+    let relation = SpirePageRelation::new(index_relation);
     let existing_blocks = relation.number_of_blocks();
     if existing_blocks < FIRST_DATA_BLOCK_NUMBER {
         return Err(
@@ -289,8 +288,7 @@ where
         ));
     }
 
-    // SAFETY: caller guarantees `index_relation` is live for page access.
-    let buffer = unsafe { SpirePageRelation::new(index_relation) }
+    let buffer = SpirePageRelation::new(index_relation)
         .read_main(
             tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -315,8 +313,7 @@ where
     // BUFFER_LOCK_SHARE. Keep visitors limited to CPU-only tuple inspection
     // and copying bytes into caller-owned state; do not read or pin other pages
     // in this relation from inside the callback.
-    // SAFETY: caller guarantees `index_relation` is live for page access.
-    let relation = unsafe { SpirePageRelation::new(index_relation) };
+    let relation = SpirePageRelation::new(index_relation);
     let block_count = relation.number_of_blocks();
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
         let buffer = relation
@@ -367,8 +364,7 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
     tid: crate::storage::page::ItemPointer,
     payload: &[u8],
 ) -> Result<(), String> {
-    // SAFETY: caller guarantees `index_relation` is live for page access.
-    let relation = unsafe { SpirePageRelation::new(index_relation) };
+    let relation = SpirePageRelation::new(index_relation);
     let buffer = relation
         .read_main(
             tid.block_number,
@@ -412,8 +408,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
     index_relation: pg_sys::Relation,
     tids: &[crate::storage::page::ItemPointer],
 ) -> Result<(u64, u64), String> {
-    // SAFETY: caller guarantees `index_relation` is live for page access.
-    let relation = unsafe { SpirePageRelation::new(index_relation) };
+    let relation = SpirePageRelation::new(index_relation);
     let mut offsets_by_block = std::collections::BTreeMap::<pg_sys::BlockNumber, Vec<u16>>::new();
     for tid in tids {
         if tid.block_number < FIRST_DATA_BLOCK_NUMBER {

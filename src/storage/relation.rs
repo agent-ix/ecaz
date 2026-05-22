@@ -33,12 +33,6 @@ pub(crate) fn relation_oid_handle(relation: RelationHandle) -> pg_sys::Oid {
     unsafe { (*relation.as_ptr()).rd_id }
 }
 
-pub(crate) unsafe fn relation_reltuples(relation: pg_sys::Relation) -> f64 {
-    let relation = NonNull::new(relation)
-        .unwrap_or_else(|| pgrx::error!("relation reltuples read needs a valid relation"));
-    relation_reltuples_handle(relation)
-}
-
 pub(crate) fn relation_reltuples_handle(relation: RelationHandle) -> f64 {
     // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
     // belongs to that descriptor and reltuples is copied by value.
@@ -78,12 +72,15 @@ pub(crate) unsafe fn relation_kind(relation: pg_sys::Relation) -> c_char {
 }
 
 pub(crate) unsafe fn relation_am_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
-    if relation.is_null() {
-        pgrx::error!("relation access method read needs a valid relation");
-    }
+    let relation = NonNull::new(relation)
+        .unwrap_or_else(|| pgrx::error!("relation access method read needs a valid relation"));
+    relation_am_oid_handle(relation)
+}
+
+pub(crate) fn relation_am_oid_handle(relation: RelationHandle) -> pg_sys::Oid {
     // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
     // belongs to that descriptor and relam is copied by value.
-    unsafe { (*(*relation).rd_rel).relam }
+    unsafe { (*(*relation.as_ptr()).rd_rel).relam }
 }
 
 pub(crate) unsafe fn relation_namespace_owner_persistence(
