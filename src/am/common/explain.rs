@@ -396,18 +396,15 @@ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -
 unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[ExplainProperty]) {
     let group = explain_output_group();
     let group_label = CString::new(group.group_label).expect("group label should not contain NUL");
-    // SAFETY: `es` is the live ExplainState from PostgreSQL, and the group
-    // labels are NUL-free CStrings that outlive the call.
+    // SAFETY: `es` is the live ExplainState from PostgreSQL. The group and
+    // property labels are NUL-free CStrings that outlive each PostgreSQL call,
+    // and the group is opened and closed within this boundary.
     unsafe {
         pg_sys::ExplainOpenGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);
-    }
 
-    for property in properties {
-        let property_name =
-            CString::new(property.property_name).expect("property name should not contain NUL");
-        // SAFETY: `es` is live during hook execution and `property_name` is a
-        // NUL-free CString that outlives each ExplainProperty call.
-        unsafe {
+        for property in properties {
+            let property_name =
+                CString::new(property.property_name).expect("property name should not contain NUL");
             match property.value {
                 ExplainPropertyValue::Integer(value) => pg_sys::ExplainPropertyInteger(
                     property_name.as_ptr(),
@@ -420,11 +417,7 @@ unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[E
                 }
             }
         }
-    }
 
-    // SAFETY: This closes the group opened above on the same live ExplainState,
-    // using the same CString labels.
-    unsafe {
         pg_sys::ExplainCloseGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);
     }
 }
