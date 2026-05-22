@@ -158,8 +158,10 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambulkdelete(
         }
         let index_relation = (*info).index;
         let Some(callback) = callback else {
-            let live_count = collect_live_assignment_count(index_relation)
-                .unwrap_or_else(|e| pgrx::error!("ec_spire vacuum stats failed: {e}"));
+            let live_count = collect_live_assignment_count(
+                SpireVacuumIndexRelation::from_vacuum_callback(index_relation),
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_spire vacuum stats failed: {e}"));
             return finish_vacuum_stats(index_relation, stats, live_count, 0);
         };
 
@@ -197,7 +199,7 @@ unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, St
         return Ok(0);
     }
     publish_compacted_delta_epoch_if_needed(index, root_control)?;
-    unsafe { collect_live_assignment_count(index_relation) }
+    collect_live_assignment_count(index)
 }
 
 unsafe fn run_bulkdelete(
@@ -274,8 +276,7 @@ unsafe fn run_bulkdelete(
     })
 }
 
-unsafe fn collect_live_assignment_count(index_relation: pg_sys::Relation) -> Result<u64, String> {
-    let index = SpireVacuumIndexRelation::from_vacuum_callback(index_relation);
+fn collect_live_assignment_count(index: SpireVacuumIndexRelation) -> Result<u64, String> {
     let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         return Ok(0);
