@@ -4900,28 +4900,24 @@ unsafe fn select_linear_scan_result_from_buffer(
     };
 
     for offset in offset_start..=line_pointer_count {
-        // SAFETY: `buffer` is share-locked, `page_ptr/page_size` describe that
-        // page, and the tuple bytes are decoded inside the callback.
-        let element = unsafe {
-            super::shared::with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "scanning",
-                |tuple_bytes| {
-                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-                        return None;
-                    }
+        let element = super::shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "scanning",
+            |tuple_bytes| {
+                if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                    return None;
+                }
 
-                    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                        .unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode scan element tuple: {e}")
-                        });
-                    (!element.deleted && !element.heaptids.is_empty()).then_some(element)
-                },
-            )
-        }
+                let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to decode scan element tuple: {e}")
+                    });
+                (!element.deleted && !element.heaptids.is_empty()).then_some(element)
+            },
+        )
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         let Some(element) = element else {

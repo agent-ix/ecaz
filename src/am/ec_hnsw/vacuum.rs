@@ -658,16 +658,13 @@ unsafe fn plan_page_pass1(
             block_number,
             offset_number: offset,
         };
-        // SAFETY: The caller holds the page pinned/locked for reading and the
-        // helper validates each line pointer before exposing tuple bytes.
-        unsafe {
-            shared::with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "planning HNSW vacuum pass1",
-                |tuple_bytes| match storage {
+        shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "planning HNSW vacuum pass1",
+            |tuple_bytes| match storage {
                     graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                         if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
                             return;
@@ -767,8 +764,7 @@ unsafe fn plan_page_pass1(
                     }
                 },
             )
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
-        };
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
     }
 
     plan
@@ -786,15 +782,12 @@ unsafe fn apply_page_pass1_updates(
             | ElementVacuumUpdate::TurboQuantHot { tid, .. }
             | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
         };
-        // SAFETY: Each update was planned from this page and its re-encoded
-        // tuple must match the existing tuple byte length.
-        unsafe {
-            shared::with_writable_page_tuple_bytes(
-                page_ptr,
-                page_size,
-                tid,
-                "vacuum element",
-                |tuple_bytes| {
+        shared::with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            tid,
+            "vacuum element",
+            |tuple_bytes| {
                     let encoded = match update {
                         ElementVacuumUpdate::TurboQuant { tuple, .. } => {
                             tuple.encode().unwrap_or_else(|e| {
@@ -828,7 +821,6 @@ unsafe fn apply_page_pass1_updates(
                     tuple_bytes.copy_from_slice(&encoded);
                 },
             )
-        }
     }
 }
 
@@ -922,7 +914,7 @@ unsafe fn collect_repair_requests_on_page(
     for offset in 1..=line_pointer_count {
         // SAFETY: The caller holds the page pinned/locked and the helper
         // validates each line pointer before exposing tuple bytes.
-        let element_fields = unsafe {
+        let element_fields =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -988,7 +980,6 @@ unsafe fn collect_repair_requests_on_page(
                     }
                 },
             )
-        }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         let Some((level, deleted, heaptids_empty, neighbortid)) = element_fields else {
@@ -1433,7 +1424,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
 
         // SAFETY: The page is pinned/locked by the caller and the helper
         // validates the line pointer before exposing tuple bytes.
-        let candidate = unsafe {
+        let candidate =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1520,8 +1511,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
                         })
                     }
                 },
-            )
-        };
+            );
         let Some(candidate) = candidate.unwrap_or_else(|e| pgrx::error!("{e}")).flatten() else {
             continue;
         };
@@ -1557,7 +1547,6 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
 
     // SAFETY: Same-page rerank TID refers to the pinned page supplied by the
     // caller; the helper validates the line pointer before exposing bytes.
-    unsafe {
         shared::with_page_line_tuple_bytes(
             page_ptr,
             page_size,
@@ -1576,7 +1565,6 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
                 }
             },
         )
-    }
     .unwrap_or_else(|e| pgrx::error!("{e}"))
     .unwrap_or_else(|| {
         pgrx::error!(
@@ -1641,7 +1629,7 @@ unsafe fn apply_repair_plans_on_page(
 
         // SAFETY: `neighbor_tid` points at a tuple on the registered page and
         // the closure preserves the encoded tuple length.
-        let tuple_changed = unsafe {
+        let tuple_changed =
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1690,8 +1678,7 @@ unsafe fn apply_repair_plans_on_page(
                     tuple_bytes.copy_from_slice(&encoded);
                     true
                 },
-            )
-        };
+            );
         if !tuple_changed {
             start = end;
             continue;
@@ -1778,7 +1765,7 @@ unsafe fn plan_page_pass2(
     for offset in 1..=line_pointer_count {
         // SAFETY: The caller holds the page pinned/locked for reading and the
         // helper validates the line pointer before exposing tuple bytes.
-        let update = unsafe {
+        let update =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1814,7 +1801,6 @@ unsafe fn plan_page_pass2(
                     })
                 },
             )
-        }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         if let Some(update) = update {
@@ -1848,7 +1834,6 @@ unsafe fn apply_page_pass2_updates(
     for update in updates {
         // SAFETY: Each update was planned from this page and its re-encoded
         // tuple must match the existing tuple byte length.
-        unsafe {
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1870,7 +1855,6 @@ unsafe fn apply_page_pass2_updates(
                     tuple_bytes.copy_from_slice(&encoded);
                 },
             )
-        }
     }
 }
 
@@ -1928,7 +1912,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     for tid in tids {
         // SAFETY: `tid` targets this locked page and the helper validates the
         // line pointer before exposing tuple bytes.
-        let update = unsafe {
+        let update =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1990,7 +1974,6 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
                     }
                 },
             )
-        }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .unwrap_or_else(|| {
             pgrx::error!(

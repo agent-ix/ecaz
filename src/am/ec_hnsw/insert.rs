@@ -1319,7 +1319,7 @@ unsafe fn add_backlinks_on_page(
 
         // SAFETY: `neighbor_tid` points at a tuple on the registered page and
         // the closure preserves the encoded tuple length.
-        let tuple_changed = unsafe {
+        let tuple_changed =
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1373,8 +1373,7 @@ unsafe fn add_backlinks_on_page(
                     tuple_bytes.copy_from_slice(&encoded);
                     true
                 },
-            )
-        };
+            );
         if !tuple_changed {
             start = end;
             continue;
@@ -2133,7 +2132,7 @@ unsafe fn find_duplicate_element_tid(
         for offset in 1..=line_pointer_count {
             // SAFETY: The buffer page remains pinned/locked and the helper
             // validates the line pointer before exposing tuple bytes.
-            let duplicate_tid = unsafe {
+            let duplicate_tid =
                 shared::with_page_line_tuple_bytes(
                     page_ptr,
                     page_size,
@@ -2161,7 +2160,6 @@ unsafe fn find_duplicate_element_tid(
                         })
                     },
                 )
-            }
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
@@ -2208,7 +2206,7 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
         for offset in 1..=line_pointer_count {
             // SAFETY: The page is locked and the helper validates the candidate
             // line pointer before exposing tuple bytes.
-            let duplicate_tid = unsafe {
+            let duplicate_tid =
                 shared::with_page_line_tuple_bytes(
                     page_ptr,
                     page_size,
@@ -2243,7 +2241,6 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
                             })
                     },
                 )
-            }
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
@@ -2288,7 +2285,7 @@ unsafe fn find_duplicate_grouped_element_tid(
         for offset in 1..=line_pointer_count {
             // SAFETY: The page is locked and the helper validates the candidate
             // line pointer before exposing tuple bytes.
-            let duplicate_tid = unsafe {
+            let duplicate_tid =
                 shared::with_page_line_tuple_bytes(
                     page_ptr,
                     page_size,
@@ -2326,7 +2323,6 @@ unsafe fn find_duplicate_grouped_element_tid(
                             })
                     },
                 )
-            }
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
@@ -2371,7 +2367,7 @@ unsafe fn coalesce_duplicate_heap_tid(
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate tuple on the registered
     // page and the closure preserves the encoded tuple length.
-    let tuple_changed = unsafe {
+    let tuple_changed =
         shared::with_writable_page_tuple_bytes(
             page_ptr,
             page_size,
@@ -2405,8 +2401,7 @@ unsafe fn coalesce_duplicate_heap_tid(
                 tuple_bytes.copy_from_slice(&encoded);
                 true
             },
-        )
-    };
+        );
     if !tuple_changed {
         wal_txn.finish();
         return;
@@ -2448,7 +2443,7 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate hot tuple on the registered
     // page and the closure preserves the encoded tuple length.
-    let tuple_changed = unsafe {
+    let tuple_changed =
         shared::with_writable_page_tuple_bytes(
             page_ptr,
             page_size,
@@ -2485,8 +2480,7 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
                 tuple_bytes.copy_from_slice(&encoded);
                 true
             },
-        )
-    };
+        );
     if !tuple_changed {
         wal_txn.finish();
         return;
@@ -2528,7 +2522,7 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate grouped tuple on the
     // registered page and the closure preserves the encoded tuple length.
-    let tuple_changed = unsafe {
+    let tuple_changed =
         shared::with_writable_page_tuple_bytes(
             page_ptr,
             page_size,
@@ -2566,8 +2560,7 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
                 tuple_bytes.copy_from_slice(&encoded);
                 true
             },
-        )
-    };
+        );
     if !tuple_changed {
         wal_txn.finish();
         return;

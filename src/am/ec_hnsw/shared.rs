@@ -214,16 +214,13 @@ unsafe fn count_live_elements_on_buffer(
     let mut count = 0_usize;
 
     for offset in 1..=line_pointer_count {
-        // SAFETY: The buffer is shared-locked by the caller; offsets are bounded
-        // by this page's line pointer count before tuple bytes are visited.
-        unsafe {
-            with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "counting vacuum tuples",
-                |tuple_bytes| match storage {
+        with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "counting vacuum tuples",
+            |tuple_bytes| match storage {
                     graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                         if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
                             let element = page::TqElementTuple::decode(tuple_bytes, code_len)
@@ -270,10 +267,9 @@ unsafe fn count_live_elements_on_buffer(
                             }
                         }
                     }
-                },
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
-        };
+            },
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     }
 
     count
@@ -304,16 +300,13 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                 block_number,
                 offset_number: offset,
             };
-            // SAFETY: The buffer is shared-locked and the offset is bounded by
-            // this page's line pointer count before tuple bytes are decoded.
-            let candidate = unsafe {
-                with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    block_number,
-                    offset,
-                    "selecting a live entry candidate",
-                    |tuple_bytes| match storage {
+            let candidate = with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "selecting a live entry candidate",
+                |tuple_bytes| match storage {
                         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                             if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
                                 None
@@ -376,9 +369,8 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                                 )
                             }
                         }
-                    },
-                )
-            }
+                },
+            )
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if let Some(candidate) = candidate {
@@ -432,7 +424,7 @@ pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
         / size_of::<pg_sys::ItemIdData>()) as u16
 }
 
-pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
+pub(super) fn with_page_line_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: pg_sys::BlockNumber,
@@ -464,7 +456,7 @@ where
     Ok(Some(visit(tuple_bytes)))
 }
 
-pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(
+pub(super) fn with_writable_page_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     tuple_tid: page::ItemPointer,
