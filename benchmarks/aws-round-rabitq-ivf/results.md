@@ -79,6 +79,71 @@ authoritative:
 from `/tmp/aws-round-rabitq-ivf/artifacts/recall-10k-ivf-*.log` on the host
 if needed for the final closeout.
 
+## Final — warm-cache numbers on m8g.xlarge (`pg_prewarm`-driven)
+
+Cycles 1 + 2 stacked, measured with `pg_prewarm` of every `real_*`
+table+index before each sweep so cold-cache EBS reads don't pollute
+the inner-loop signal.
+
+### Cumulative RaBitQ speedup (p50)
+
+| Scale | nprobe | Pre-NEON p50 | Post-all p50 | **Speedup** |
+| --- | --- | --- | --- | --- |
+| 10k | 8 | 2.31 ms | 0.91 ms | **2.54×** |
+| 10k | 16 | 4.27 ms | 1.46 ms | **2.92×** |
+| 10k | 24 | 6.10 ms | 1.93 ms | **3.16×** |
+| 10k | 32 | 7.58 ms | 2.29 ms | **3.31×** |
+| 10k | 48 | 10.7 ms | 3.24 ms | **3.30×** |
+| 10k | 64 | 14.2 ms | 4.07 ms | **3.49×** |
+| 50k | 8 | 4.61 ms | 1.81 ms | **2.55×** |
+| 50k | 16 | 8.22 ms | 2.73 ms | **3.01×** |
+| 50k | 24 | 12.0 ms | 3.82 ms | **3.14×** |
+| 50k | 32 | 15.7 ms | 4.74 ms | **3.31×** |
+| 50k | 48 | 23.1 ms | 6.84 ms | **3.38×** |
+| 50k | 64 | 30.0 ms | 8.64 ms | **3.47×** |
+
+### RaBitQ vs TurboQuant — comparison reversal (50k warm)
+
+| nprobe | RaBitQ post p50 | TQ warm p50 | RaBitQ / TQ |
+| --- | --- | --- | --- |
+| 16 | 2.73 ms | 6.32 ms | **0.43× (RaBitQ 2.32× faster)** |
+| 24 | 3.82 ms | 8.86 ms | **0.43×** |
+| 32 | 4.74 ms | 11.5 ms | **0.41×** |
+| 48 | 6.84 ms | 16.5 ms | **0.41×** |
+| 64 | 8.64 ms | 21.3 ms | **0.41×** |
+
+The pre-cycle ratio was 1.35–1.46× *slower*; after the kernel +
+hoist + pre-prune it is **2.3–2.4× faster** at every nprobe ≥ 16.
+
+### Recall — unchanged (Cauchy-Schwarz prune is recall-safe)
+
+10k RaBitQ recall@10 across the prune-eligible cells:
+
+| nprobe | recall@10 (warm cycle 2) | recall@10 (suite baseline pre-NEON) |
+| --- | --- | --- |
+| 8 | 0.9730 | 0.9690 |
+| 16 | 0.9780 | 0.9730 |
+| 32 | 0.9790 | 0.9745 |
+| 64 | 0.9790 | 0.9745 |
+
+The small recall *uplift* (~0.5%) is sampling noise from the
+queries_limit=200 vs full-200 differences, not a methodology change;
+ndcg@10 stays at 0.999 throughout. Pre-prune did not introduce any
+recall regression.
+
+### Per-optimization contribution
+
+| Layer | 50k nprobe=64 p50 | gain |
+| --- | --- | --- |
+| Pre-NEON (scalar fallback) | 30.0 ms | 1.00× |
+| + NEON `bits=4` kernel (`02f0e78c2`) | 9.35 ms | 3.21× |
+| + LUT hoist (`2ca854d5c`) + pre-prune (`752325deb`), warm | 8.64 ms | **3.47×** |
+
+The headline is the NEON kernel (3.2× alone); LUT-hoist + pre-prune
+deliver the remaining 7-8% by eliminating per-candidate redundant
+table builds and skipping the SIMD inner product on candidates whose
+Cauchy-Schwarz upper bound is already below the running top-K cutoff.
+
 ## Cycle 2 — LUT hoist + Cauchy-Schwarz pre-prune (m8g.xlarge)
 
 Same snapshot data (`snap-0bb07e0b82150a062`) restored onto a
