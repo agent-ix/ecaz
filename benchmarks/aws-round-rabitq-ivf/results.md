@@ -79,6 +79,45 @@ authoritative:
 from `/tmp/aws-round-rabitq-ivf/artifacts/recall-10k-ivf-*.log` on the host
 if needed for the final closeout.
 
+## Cycle 2 — LUT hoist + Cauchy-Schwarz pre-prune (m8g.xlarge)
+
+Same snapshot data (`snap-0bb07e0b82150a062`) restored onto a
+**m8g.xlarge** (4 vCPU / 16 GB) via the new `10k-medium` profile
+(commit `567e42213`); the previous run was on the under-provisioned
+m8g.large. Branch HEAD `752325deb` adds:
+
+- LUT hoist (`2ca854d5c`): precompute the 16-entry dequant table once
+  per PreparedEstimator instead of per candidate.
+- Cauchy-Schwarz pre-prune (`752325deb`): skip the SIMD inner product
+  when the cheap scalar bound `||o|| · ||q|| / o_dot` falls below the
+  running top-K cutoff.
+
+Latency p50 on the warm cells (50k):
+
+| nprobe | post-NEON only | post-NEON + LUT + preprune | delta |
+| --- | --- | --- | --- |
+| 16 | 2.89 ms | 2.84 ms | -2% |
+| 24 | 4.08 ms | 3.86 ms | -5% |
+| 32 | 5.09 ms | 4.76 ms | -6% |
+| 48 | 7.38 ms | 6.85 ms | -7% |
+| 64 | 9.35 ms | 8.65 ms | -7% |
+
+Recall (10k, k=10) unchanged from the pre-NEON baseline at
+nprobe ∈ {8, 16, 32, 64}: 0.973 → 0.978 → 0.979 → 0.979. Pre-prune
+correctness confirmed: Cauchy-Schwarz is a true upper bound on the
+estimate, so any skipped candidate provably could not enter top-K.
+
+**Cold-cache caveat.** The PG restart between the rebuild and the
+bench wiped buffer pools; the first nprobe=8 cell at 50k shows
+extreme variance (mean 44 ms, max 980 ms) while the warm cells are
+stable (`stddev/p50 < 10%` by nprobe=32). Future cycles should run
+a query warm-up pass before the measured sweep.
+
+Pre-prune fires more aggressively at high nprobe (more candidates
+checked → more skips). The 5–7% gain at nprobe ∈ {32, 48, 64} is
+where it lands; at low nprobe few candidates are scored to begin
+with so the LUT-hoist micro-saving dominates the delta.
+
 ## Cost
 
 m8g.large + 50 GB gp3 ≈ $0.16/hr instance + ~$0.005/hr EBS.
