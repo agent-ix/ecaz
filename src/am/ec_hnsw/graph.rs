@@ -337,7 +337,7 @@ impl<'a> GraphTupleRef<'a> {
     }
 }
 
-pub(crate) unsafe fn load_graph_element(
+pub(crate) fn load_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     code_len: usize,
@@ -357,28 +357,22 @@ pub(crate) unsafe fn load_graph_element(
     }
 }
 
-pub(crate) unsafe fn load_exact_graph_element(
+pub(crate) fn load_exact_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
 ) -> GraphElement {
     match storage {
-        // SAFETY: TurboQuant exact storage keeps the full scalar payload in the
-        // graph element tuple identified by `element_tid`.
-        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+        GraphStorageDescriptor::TurboQuant { code_len } => {
             load_graph_element(index_relation, element_tid, code_len)
-        },
+        }
         GraphStorageDescriptor::TurboQuantHotCold(layout) => {
             let hot =
                 read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                 })
                 .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
-            // SAFETY: `hot.reranktid` was decoded from the live hot tuple and
-            // points at the cold rerank payload for this graph element.
-            let rerank = unsafe {
-                load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len)
-            };
+            let rerank = load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len);
             GraphElement {
                 tid: element_tid,
                 level: hot.level,
@@ -390,13 +384,8 @@ pub(crate) unsafe fn load_exact_graph_element(
             }
         }
         GraphStorageDescriptor::PqFastScan(layout) => {
-            // SAFETY: `element_tid` names a grouped hot tuple in the live index
-            // relation for the supplied PqFastScan layout.
-            let hot = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
-            // SAFETY: `hot.reranktid` was decoded from that grouped hot tuple
-            // and points at the cold rerank payload.
-            let rerank =
-                unsafe { load_grouped_rerank_payload(index_relation, hot.reranktid, layout) };
+            let hot = load_grouped_graph_element(index_relation, element_tid, layout);
+            let rerank = load_grouped_rerank_payload(index_relation, hot.reranktid, layout);
             GraphElement {
                 tid: hot.tid,
                 level: hot.level,
@@ -411,7 +400,7 @@ pub(crate) unsafe fn load_exact_graph_element(
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_graph_element(
+pub(crate) fn load_grouped_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: PqFastScanLayout,
@@ -562,7 +551,7 @@ where
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_rerank_payload(
+pub(crate) fn load_rerank_payload(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
     rerank_code_len: usize,
@@ -579,14 +568,12 @@ pub(crate) unsafe fn load_rerank_payload(
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_rerank_payload(
+pub(crate) fn load_grouped_rerank_payload(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
     layout: PqFastScanLayout,
 ) -> GroupedRerankPayload {
-    // SAFETY: `rerank_tid` came from a grouped hot tuple for this layout and
-    // names the cold rerank payload in the live index relation.
-    unsafe { load_rerank_payload(index_relation, rerank_tid, layout.rerank_code_len) }
+    load_rerank_payload(index_relation, rerank_tid, layout.rerank_code_len)
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
@@ -731,31 +718,23 @@ pub(crate) fn load_graph_neighbors(
     }
 }
 
-pub(crate) unsafe fn load_exact_graph_adjacency(
+pub(crate) fn load_exact_graph_adjacency(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
 ) -> (GraphElement, GraphNeighbors) {
-    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata
-    // or traversal, and `storage` matches the exact element tuple payload.
-    let element = unsafe { load_exact_graph_element(index_relation, element_tid, storage) };
-    // SAFETY: The decoded element owns the neighbor-list TID; the neighbor
-    // loader handles INVALID and validates the tuple payload before use.
+    let element = load_exact_graph_element(index_relation, element_tid, storage);
     let neighbors = load_graph_neighbors(index_relation, element.neighbortid);
     (element, neighbors)
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_graph_adjacency(
+pub(crate) fn load_grouped_graph_adjacency(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: PqFastScanLayout,
 ) -> (GroupedGraphElement, GraphNeighbors) {
-    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata
-    // or traversal, and `layout` is the grouped element payload layout.
-    let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
-    // SAFETY: The grouped element decoder produced `neighbortid`; neighbor
-    // loading performs INVALID and tuple-shape validation before returning.
+    let element = load_grouped_graph_element(index_relation, element_tid, layout);
     let neighbors = load_graph_neighbors(index_relation, element.neighbortid);
     (element, neighbors)
 }
@@ -797,10 +776,7 @@ pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
 where
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    // SAFETY: `entry_candidate.node` is the current graph entry point for the
-    // live index relation, and `storage` matches exact element tuple payloads.
-    let entry_element =
-        unsafe { load_exact_graph_element(index_relation, entry_candidate.node, storage) };
+    let entry_element = load_exact_graph_element(index_relation, entry_candidate.node, storage);
     let mut keep_all = |_| true;
     greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| {
         // SAFETY: Greedy descent invokes this callback synchronously for graph
@@ -1250,10 +1226,7 @@ where
     KeepFn: FnMut(page::ItemPointer) -> bool,
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    // SAFETY: `source_tid` is provided by graph traversal, and exact adjacency
-    // loading validates the element payload and neighbor-list tuple.
-    let (element, neighbors) =
-        unsafe { load_exact_graph_adjacency(index_relation, source_tid, storage) };
+    let (element, neighbors) = load_exact_graph_adjacency(index_relation, source_tid, storage);
     let valid_neighbor_tids =
         valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer);
     let mut candidates = Vec::with_capacity(valid_neighbor_tids.len());
@@ -1263,9 +1236,7 @@ where
             continue;
         }
 
-        // SAFETY: `neighbor_tid` comes from a validated layer-specific neighbor
-        // slot, and `storage` matches the exact graph element payload.
-        let neighbor = unsafe { load_exact_graph_element(index_relation, neighbor_tid, storage) };
+        let neighbor = load_exact_graph_element(index_relation, neighbor_tid, storage);
         let Some(score) = score_candidate(&neighbor) else {
             continue;
         };

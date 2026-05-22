@@ -1099,13 +1099,8 @@ unsafe fn plan_repair_replacement(
     deleted_tids: &HashSet<page::ItemPointer>,
     request: &LayerRepairRequest,
 ) -> Option<LayerRepairPlan> {
-    // SAFETY: `request.source_tid` and `source.neighbortid` were collected from
-    // this graph storage descriptor during repair-request scanning.
-    let (source, neighbors) = unsafe {
-        let source = graph::load_exact_graph_element(index.as_ptr(), request.source_tid, storage);
-        let neighbors = graph::load_graph_neighbors(index.as_ptr(), source.neighbortid);
-        (source, neighbors)
-    };
+    let source = graph::load_exact_graph_element(index.as_ptr(), request.source_tid, storage);
+    let neighbors = graph::load_graph_neighbors(index.as_ptr(), source.neighbortid);
     if source.deleted
         || source.heaptids.is_empty()
         || source.neighbortid != request.neighbor_tid
@@ -1557,9 +1552,7 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
     }
 
     if rerank_tid.block_number != block_number {
-        // SAFETY: Cross-page grouped rerank payloads are loaded through the
-        // graph helper using the persisted layout.
-        return unsafe { graph::load_grouped_rerank_payload(index.as_ptr(), rerank_tid, layout) };
+        return graph::load_grouped_rerank_payload(index.as_ptr(), rerank_tid, layout);
     }
 
     // SAFETY: Same-page rerank TID refers to the pinned page supplied by the

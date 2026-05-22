@@ -822,11 +822,7 @@ unsafe fn run_insert_with_adapter(
     shared::with_locked_metadata_page(index_relation, |metadata| {
         metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
         let entry_point_needs_repair = metadata.entry_point == page::ItemPointer::INVALID || {
-            // SAFETY: Metadata currently names an entry point; loading it under
-            // the metadata lock lets us detect stale/deleted entry pointers.
-            let entry = unsafe {
-                graph::load_exact_graph_element(index_relation, metadata.entry_point, storage)
-            };
+            let entry = graph::load_exact_graph_element(index_relation, metadata.entry_point, storage);
             entry.deleted || entry.heaptids.is_empty()
         };
         if entry_point_needs_repair || insert_level > metadata.max_level {
@@ -1068,10 +1064,7 @@ unsafe fn load_insert_entry_candidate(
         return None;
     }
 
-    // SAFETY: Metadata names a non-invalid entry TID and `storage` matches this
-    // metadata snapshot.
-    let entry =
-        unsafe { graph::load_exact_graph_element(index_relation, metadata.entry_point, storage) };
+    let entry = graph::load_exact_graph_element(index_relation, metadata.entry_point, storage);
     // SAFETY: `entry` was loaded from the graph and metric owns any required
     // source-scoring state.
     let entry_score = unsafe { metric.score_new_tuple_against_element(metadata, tuple, &entry) }?;

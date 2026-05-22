@@ -2503,11 +2503,8 @@ unsafe fn score_cached_graph_element_from_storage(
     // SAFETY: callers pass the current scan opaque pointer; it remains live
     // while loading and scoring the graph element.
     let opaque_ref = scan_opaque_mut(opaque);
-    // SAFETY: `index_relation` is live for this scan and `element_tid` came
-    // from HNSW graph traversal or fallback scan state.
-    let element = unsafe {
-        graph::load_exact_graph_element(index_relation, element_tid, opaque_ref.scan_graph_storage)
-    };
+    let element =
+        graph::load_exact_graph_element(index_relation, element_tid, opaque_ref.scan_graph_storage);
     if element.deleted || element.heaptids.is_empty() {
         pgrx::error!(
             "ec_hnsw cannot exact-score dead or heapless graph element {}:{}",
@@ -2623,19 +2620,15 @@ unsafe fn load_grouped_score_rerank_payload<'a>(
     grouped: GroupedScoreContext<'a>,
 ) -> Option<GroupedScoreRerankPayload<'a>> {
     let payload = grouped_score_payload_view(grouped)?;
-    // SAFETY: `index_relation` is live for this scan and `payload.reranktid`
-    // was read from the validated grouped score input shape.
-    let rerank = unsafe {
-        graph::load_grouped_rerank_payload(
-            index_relation,
-            payload.reranktid,
-            graph::PqFastScanLayout {
-                binary_word_count: payload.binary_words.len(),
-                search_code_len: payload.search_code.len(),
-                rerank_code_len: payload.rerank_code_len,
-            },
-        )
-    };
+    let rerank = graph::load_grouped_rerank_payload(
+        index_relation,
+        payload.reranktid,
+        graph::PqFastScanLayout {
+            binary_word_count: payload.binary_words.len(),
+            search_code_len: payload.search_code.len(),
+            rerank_code_len: payload.rerank_code_len,
+        },
+    );
     grouped_score_rerank_payload(payload, rerank)
 }
 
