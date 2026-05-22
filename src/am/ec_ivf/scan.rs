@@ -620,10 +620,11 @@ fn store_scan_prepared_query(
         return;
     }
 
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
