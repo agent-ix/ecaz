@@ -1,4 +1,10 @@
-# Task 50/398: HNSW `shared::read_metadata_page` safe facade
+# Task 50/399: HNSW `shared::read_metadata_page` safe facade
+
+> Renamed from `398-hnsw-read-metadata-page-safe` after merge with
+> `task-50-unsafe-closeout` showed Agent IX had taken ordinal 398 on
+> `398-release-rebuild-rabitq-ivf-spire-rerun`. Reviewer feedback at
+> `feedback/2026-05-21-01-reviewer.md` was written against the original
+> packet name (`398`); content and approval still apply.
 
 ## Why this slice
 
@@ -50,7 +56,7 @@ block; conversion does not add any new `unsafe` site.
 
 ## Validation
 
-Artifacts under `reviews/task-50/398-hnsw-read-metadata-page-safe/artifacts/`:
+Artifacts under `reviews/task-50/399-hnsw-read-metadata-page-safe/artifacts/`:
 
 - `manifest.md` — head SHA, packet path, command, timestamps.
 - `per-file-after.log` — post-change per-file block counts for HNSW files +

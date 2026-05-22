@@ -1,7 +1,8 @@
-# Packet 398 — Artifact Manifest
+# Packet 399 — Artifact Manifest
 
 Task: 50 — Unsafe Structural Reduction
-Packet: `reviews/task-50/398-hnsw-read-metadata-page-safe/`
+Packet: `reviews/task-50/399-hnsw-read-metadata-page-safe/`
+Renamed from `398-...` post-merge — see request.md header.
 Surface: HNSW shared metadata read facade
 Branch: `task-50-unsafe-closeout`
 Head SHA at slice start: `e4c4749d6debd0a2b9d25f370825088a7ab453a8`
