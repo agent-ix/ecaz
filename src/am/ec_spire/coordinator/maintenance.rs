@@ -451,20 +451,17 @@ pub(crate) fn index_maintenance_run(
                 "active leaves are within split/merge thresholds",
             ));
         };
-        // SAFETY: publish lock is held and all inputs are derived from the same
-        // live epoch snapshot and selected scheduled replacement plan.
-        let input = unsafe {
-            build_relation_selected_scheduled_maintenance_input(
+        // SAFETY: publish lock is held. The selected plan, execution input, and
+        // published replacement objects/manifests all derive from the same live
+        // index relation and epoch snapshot.
+        unsafe {
+            let input = build_relation_selected_scheduled_maintenance_input(
                 index_relation,
                 &published_snapshot,
                 &object_store,
                 &selected,
                 &rows,
-            )?
-        };
-        // SAFETY: publish lock is held; the selected plan and execution input
-        // append replacement objects/manifests for the same live index relation.
-        unsafe {
+            )?;
             update::publish_relation_selected_scheduled_replacement_epoch(
                 index_relation,
                 epoch_manifest,
