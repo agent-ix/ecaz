@@ -260,24 +260,26 @@ pub(super) fn load_indexed_source_vector_from_heap_row(
         return Ok(None);
     }
     let datum = heap_reader.required_datum(indexed_attribute.attnum, label)?;
-    // SAFETY: datum is the non-null vector datum read from the fetched slot.
-    let result =
-        unsafe { indexed_vector_datum_to_source_vector(datum, indexed_attribute.kind, label) };
+    // SAFETY: datum is a non-null varlena vector datum read from the fetched
+    // heap slot. pgrx detoasts/copies it into owned bytes before the slot is
+    // cleared.
+    let result = unsafe {
+        if datum.is_null() {
+            Err(format!("ec_spire does not support NULL {label}"))
+        } else {
+            let bytes = DetoastedVarlena::packed_from_datum(datum)
+                .ok_or_else(|| format!("ec_spire could not detoast {label}"))?
+                .to_vec();
+            match indexed_attribute.kind {
+                source::IndexedVectorKind::Ecvector => crate::unpack_raw_f32(&bytes, label),
+                source::IndexedVectorKind::Tqvector => {
+                    tqvector_bytes_to_source_vector(&bytes, label)
+                }
+            }
+        }
+    };
     heap_reader.clear();
     result.map(Some)
-}
-
-unsafe fn indexed_vector_datum_to_source_vector(
-    datum: pg_sys::Datum,
-    kind: source::IndexedVectorKind,
-    label: &str,
-) -> Result<Vec<f32>, String> {
-    // SAFETY: datum is a non-null varlena vector datum read from a live slot.
-    let bytes = unsafe { detoasted_varlena_bytes(datum, label)? };
-    match kind {
-        source::IndexedVectorKind::Ecvector => crate::unpack_raw_f32(&bytes, label),
-        source::IndexedVectorKind::Tqvector => tqvector_bytes_to_source_vector(&bytes, label),
-    }
 }
 
 fn tqvector_bytes_to_source_vector(bytes: &[u8], label: &str) -> Result<Vec<f32>, String> {
@@ -288,15 +290,4 @@ fn tqvector_bytes_to_source_vector(bytes: &[u8], label: &str) -> Result<Vec<f32>
     full_payload.extend_from_slice(code);
     let quantizer = ProdQuantizer::cached(usize::from(dimensions), bits, seed);
     Ok(quantizer.decode_approximate(&full_payload))
-}
-
-unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<Vec<u8>, String> {
-    if datum.is_null() {
-        return Err(format!("ec_spire does not support NULL {label}"));
-    }
-    // SAFETY: datum is a non-null varlena value borrowed from PostgreSQL; pgrx
-    // detoasts/copies it into owned bytes before the slot is cleared.
-    unsafe { DetoastedVarlena::packed_from_datum(datum) }
-        .ok_or_else(|| format!("ec_spire could not detoast {label}"))
-        .map(|datum| datum.to_vec())
 }
