@@ -876,6 +876,9 @@ impl PreparedEstimator {
     /// is recall-safe: this candidate can never reach top-K.
     ///
     /// IVF-fast variant: returns just the scalar estimate (no ε-bound).
+    /// Folds the pre-prune scalar read with the post-prune kernel call
+    /// so we read `candidate_norm`, `candidate_o_dot`, `candidate_x_norm`
+    /// once instead of twice on the keep path.
     pub fn try_estimate_ip_scalar(&self, code: &[u8], min_ip_to_keep: f32) -> Option<f32> {
         let bits = self.bits_per_dim as usize;
         let packed_bytes = (self.dimensions * bits).div_ceil(8);
@@ -893,6 +896,11 @@ impl PreparedEstimator {
                 .try_into()
                 .expect("o_dot slice is always 4 bytes"),
         );
+        let candidate_x_norm = f32::from_le_bytes(
+            code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+                .try_into()
+                .expect("x_norm slice is always 4 bytes"),
+        );
         const O_DOT_FLOOR: f32 = 1e-6;
         if candidate_norm > 0.0
             && candidate_norm.is_finite()
@@ -904,7 +912,25 @@ impl PreparedEstimator {
                 return None;
             }
         }
-        Some(self.estimate_ip_scalar_only(code))
+        // Inline the keep path so we don't re-read scalars.
+        if !candidate_o_dot.is_finite()
+            || candidate_o_dot.abs() < O_DOT_FLOOR
+            || candidate_x_norm <= 0.0
+            || !candidate_x_norm.is_finite()
+        {
+            return Some(0.0);
+        }
+        let bits = self.bits_per_dim as usize;
+        let sum_q_dequant = sum_query_dequant_with_bf16(
+            &self.query_rotated,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
+            self.dimensions,
+            bits,
+            &self.dequant_lut,
+            code,
+        );
+        Some(candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm))
     }
 
     /// Bound-carrying variant retained for AM tooling that wants the
