@@ -353,24 +353,19 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
         )
         .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;
     let mut wal_txn = relation.start_wal();
-    let page = wal_txn.register_locked_buffer_full_image(&buffer);
-    let page_size = buffer.page_size();
-    // SAFETY: buffer is locked exclusively and registered for WAL while the
-    // tuple visitor mutates bytes in place.
-    let result = unsafe {
-        with_wal_object_tuple_mut(page, page_size, tid, |tuple| {
-            if tuple.len() != payload.len() {
-                return Err(format!(
-                    "ec_spire object tuple rewrite length changed from {} to {}",
-                    tuple.len(),
-                    payload.len()
-                ));
-            }
+    let mut page = wal_txn.register_locked_buffer_full_image_page(&buffer);
+    let result = page.visit_tuple_bytes_mut(tid, "ec_spire object", |tuple| {
+        if tuple.len() != payload.len() {
+            return Err(format!(
+                "ec_spire object tuple rewrite length changed from {} to {}",
+                tuple.len(),
+                payload.len()
+            ));
+        }
 
-            tuple.copy_from_slice(payload);
-            Ok(())
-        })
-    };
+        tuple.copy_from_slice(payload);
+        Ok(())
+    });
     match result {
         Ok(()) => {
             wal_txn.finish();
@@ -558,61 +553,4 @@ fn append_object_tuple_to_new_block(
         block_number,
         offset_number: offset,
     })
-}
-
-unsafe fn with_wal_object_tuple_mut<F, R>(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: crate::storage::page::ItemPointer,
-    visit: F,
-) -> Result<R, String>
-where
-    F: FnOnce(&mut [u8]) -> Result<R, String>,
-{
-    // SAFETY: caller owns an exclusive lock and WAL registration for `page`.
-    // The TID offset, line pointer, tuple bounds, and tuple pointer are checked
-    // before exposing the mutable bytes for the duration of `visit` only.
-    unsafe {
-        let max_offset = pg_sys::PageGetMaxOffsetNumber(page);
-        if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
-            return Err(format!(
-                "ec_spire object tuple offset {} out of range on block {}",
-                tid.offset_number, tid.block_number
-            ));
-        }
-
-        let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
-        if item_id.is_null() {
-            return Err(format!(
-                "ec_spire object tuple ({},{}) returned a null item id",
-                tid.block_number, tid.offset_number
-            ));
-        }
-        let item_id_ref = &*item_id;
-        if item_id_ref.lp_flags() == 0 {
-            return Err(format!(
-                "ec_spire object tuple ({},{}) points at an unused slot",
-                tid.block_number, tid.offset_number
-            ));
-        }
-
-        let tuple_offset = item_id_ref.lp_off() as usize;
-        let tuple_len = item_id_ref.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            return Err(format!(
-                "ec_spire object tuple ({},{}) has invalid bounds",
-                tid.block_number, tid.offset_number
-            ));
-        }
-
-        let tuple_ptr = pg_sys::PageGetItem(page, item_id).cast::<u8>();
-        if tuple_ptr.is_null() {
-            return Err(format!(
-                "ec_spire object tuple ({},{}) returned a null tuple pointer",
-                tid.block_number, tid.offset_number
-            ));
-        }
-        let tuple = std::slice::from_raw_parts_mut(tuple_ptr, tuple_len);
-        visit(tuple)
-    }
 }
