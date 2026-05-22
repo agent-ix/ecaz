@@ -46,12 +46,15 @@ pub(crate) fn relation_reltuples_handle(relation: RelationHandle) -> f64 {
 }
 
 pub(crate) unsafe fn relation_tablespace(relation: pg_sys::Relation) -> pg_sys::Oid {
-    if relation.is_null() {
-        pgrx::error!("relation tablespace read needs a valid relation");
-    }
+    let relation = NonNull::new(relation)
+        .unwrap_or_else(|| pgrx::error!("relation tablespace read needs a valid relation"));
+    relation_tablespace_handle(relation)
+}
+
+pub(crate) fn relation_tablespace_handle(relation: RelationHandle) -> pg_sys::Oid {
     // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_rel
     // belongs to that descriptor and reltablespace is copied by value.
-    unsafe { (*(*relation).rd_rel).reltablespace }
+    unsafe { (*(*relation.as_ptr()).rd_rel).reltablespace }
 }
 
 pub(crate) unsafe fn relation_name(relation: pg_sys::Relation) -> String {

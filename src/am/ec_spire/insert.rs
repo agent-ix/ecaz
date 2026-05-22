@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ptr::NonNull;
 
 use pgrx::pg_sys;
 
@@ -253,10 +254,10 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
     )?;
 
     let store = SpireRelationObjectStore::for_index_relation(index_relation)?;
-    // SAFETY: `index_relation` is live during SPIRE insert.
-    let index_oid = unsafe { crate::storage::relation::relation_oid(index_relation) };
-    // SAFETY: same live index relation descriptor.
-    let tablespace = unsafe { crate::storage::relation::relation_tablespace(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .ok_or_else(|| "ec_spire insert received null index relation".to_owned())?;
+    let index_oid = crate::storage::relation::relation_oid_handle(index_relation_handle);
+    let tablespace = crate::storage::relation::relation_tablespace_handle(index_relation_handle);
     let local_store_config =
         SpireLocalStoreConfig::embedded_single_store(index_oid.into(), tablespace.into())?;
     let placements = vec![

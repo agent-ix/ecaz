@@ -15,14 +15,19 @@ impl SpireRelationObjectStore {
         if index_relation.is_null() {
             return Err("ec_spire relation object store needs a valid relation".to_owned());
         }
-        // SAFETY: `index_relation` is live while constructing the single-store view.
-        let relation_oid = unsafe { crate::storage::relation::relation_oid(index_relation) };
+        let index_relation = std::ptr::NonNull::new(index_relation)
+            .ok_or_else(|| "ec_spire relation object store needs a valid relation".to_owned())?;
+        let relation_oid = crate::storage::relation::relation_oid_handle(index_relation);
         if relation_oid == pg_sys::InvalidOid {
             return Err("ec_spire relation object store relid is invalid".to_owned());
         }
         let store_relid = relation_oid.into();
         Ok(unsafe {
-            Self::for_store_relation_id(index_relation, SPIRE_SINGLE_LOCAL_STORE_ID, store_relid)
+            Self::for_store_relation_id(
+                index_relation.as_ptr(),
+                SPIRE_SINGLE_LOCAL_STORE_ID,
+                store_relid,
+            )
         })
     }
 
@@ -1248,9 +1253,11 @@ impl SpireRelationObjectStoreSet {
                 "ec_spire relation object store set needs a valid index relation".to_owned(),
             );
         }
-        // SAFETY: `index_relation` is live while opening relation-backed stores.
+        let index_relation_handle = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+            "ec_spire relation object store set needs a valid index relation".to_owned()
+        })?;
         let index_relid: u32 =
-            unsafe { crate::storage::relation::relation_oid(index_relation) }.into();
+            crate::storage::relation::relation_oid_handle(index_relation_handle).into();
         let mut stores = Vec::with_capacity(config.stores.len());
         let mut store_indexes_by_key = HashMap::with_capacity(config.stores.len());
         let mut opened_relations = OpenedRelationsGuard::new();
@@ -1314,9 +1321,11 @@ impl SpireRelationObjectStoreSet {
                 "ec_spire relation object store set needs a valid index relation".to_owned(),
             );
         }
-        // SAFETY: `index_relation` is live while opening placement-backed stores.
+        let index_relation_handle = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+            "ec_spire relation object store set needs a valid index relation".to_owned()
+        })?;
         let index_relid: u32 =
-            unsafe { crate::storage::relation::relation_oid(index_relation) }.into();
+            crate::storage::relation::relation_oid_handle(index_relation_handle).into();
         let mut relid_by_store_id = BTreeMap::<u32, u32>::new();
         for placement in &placement_directory.entries {
             if let Some(existing_relid) =

@@ -1,4 +1,5 @@
 use pgrx::pg_sys;
+use std::ptr::NonNull;
 
 use super::{build, options, page, quantizer, training};
 use crate::am::common::callback::pg_am_callback;
@@ -66,8 +67,9 @@ fn validate_metadata_runtime_options(metadata: &page::MetadataPage) -> Result<()
 }
 
 unsafe fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
-    // SAFETY: `index_relation` is live during IVF insert.
-    let relid = unsafe { crate::storage::relation::relation_oid(index_relation) };
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf empty bootstrap received null index relation"));
+    let relid = crate::storage::relation::relation_oid_handle(index_relation);
     // SAFETY: locks the relation OID read above until the returned guard drops.
     unsafe { pg_sys::LockRelationOid(relid, EMPTY_BOOTSTRAP_LOCK_MODE) };
     RelationLockGuard {

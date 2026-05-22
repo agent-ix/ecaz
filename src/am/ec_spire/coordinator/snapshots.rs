@@ -23,8 +23,9 @@ impl SpireLiveIndexRelation {
     }
 
     fn relid(self) -> u32 {
-        // SAFETY: this snapshot relation view is constructed for a live relation.
-        unsafe { crate::storage::relation::relation_oid(self.relation) }.into()
+        let relation = std::ptr::NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("ec_spire snapshot received null index relation"));
+        crate::storage::relation::relation_oid_handle(relation).into()
     }
 
     fn active_epoch_anchor(
