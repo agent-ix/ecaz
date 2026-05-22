@@ -393,10 +393,33 @@ land this round:
 | Batch heap rerank (block-sorted fetch + pin reuse) | ~100–300 µs | PG `table_tuple_fetch_row_version` is the abstraction we'd have to bypass; complex unsafe surface |
 | SVE2 dispatch | uncertain on Neoverse-V2 (same 128-bit VL) | Likely no-op on current host; would need newer Graviton to validate |
 
-Closure runs at 100k/1m are intentionally **not** in this round —
-they're premature until the optimization passes really are done.
+## Closure: 100k
 
-100k+/SPIRE work moves to a follow-up round. At nprobe=128 we reach **vchord's recall ceiling
+After the round's optimization passes landed, ran the same
+production config (bits=1 + `rerank='heap_f32'` + `rerank_width=50`)
+on a freshly-loaded 100k corpus (real DBpedia, sliced via
+`ecaz corpus prepare --profile ec_real_100k`):
+
+| nprobe | 100k p50 ms | 100k recall@10 |
+| --- | --- | --- |
+| 8 | 1.51 | 0.794 |
+| 16 | 2.00 | 0.869 |
+| 32 | 3.08 | 0.925 |
+| 64 | 5.23 | 0.964 |
+| 128 | 9.48 | 0.987 |
+
+vchord 100k baseline (from `benchmarks/comparators-50k-100k-1m`):
+**6.3 ms p50 @ recall ~0.99**.
+
+At matched recall ~0.99 our nprobe=128 100k cell is **9.48 ms vs
+vchord 6.3 ms — 1.5× gap, holds well at scale** (50k was 1.4×).
+IVF needs more probes at larger corpora to maintain recall coverage,
+and we're tracking that ratio cleanly.
+
+1m closure deferred — current 50 GB EBS has 8.3 GB free after the
+100k load, which doesn't fit the 1m corpus expansion (~12 GB load +
+~6 GB TSV). Provision a 1m profile (`m7g.xlarge` / 100 GB) for the
+1m cell. At nprobe=128 we reach **vchord's recall ceiling
 exactly** (0.9991 vs vchord 0.9995 at 1m) in 7.5 ms — a sane upper
 bound for production high-recall traffic.
 
