@@ -232,16 +232,58 @@ vchord baseline from `benchmarks/comparators-50k-100k-1m/manifest.md`
 - vchord: 2.7 ms
 - ec_ivf rerank=heap_f32, width=100, nprobe=64: 8.37 ms
 
-**3.1× gap remains**, and it's now structural. The remaining
-difference is heap_f32 rerank doing `fetch_heap_row_version` per
-candidate (PG heap I/O), while vchord stores the full f32 source
-inline in the index (which is why their index is 415 MB at 50k vs
-our 46 MB — they pay storage to skip heap fetches). Closing that
-gap requires an in-index source variant — a follow-up architectural
-change beyond this round's scope.
+**3.1× gap remains**, and it's structural — driven by two design
+choices vchord made differently:
+
+1. **vchord uses 1-bit RaBitQ codes**; ec_ivf uses 4-bit
+   (`DEFAULT_QUANT_BITS = 4`). 1-bit codes are 4× smaller per
+   vector (192 bytes vs 768 bytes at dim=1536) and the per-byte
+   sign-dot-product kernel runs faster than the per-nibble LUT
+   dispatch. Conservatively this is the dominant factor in the
+   residual gap; at 50k, scoring 14193 candidates at nprobe=64
+   takes ~7.9 ms of pure RaBitQ kernel time here, and on vchord's
+   1-bit codes the equivalent work should be ~1/4 of that. Aligns
+   with vchord's measured 2.7 ms p50.
+
+2. **vchord stores the f32 source inline** in its index (415 MB
+   at 50k vs our 46 MB), skipping heap fetches during rerank. Our
+   `rerank='heap_f32'` mode pays per-candidate `fetch_heap_row_version`
+   + toast detoast for the `real[]` source column.
+
+Closing the gap to vchord at the high-recall ceiling would require
+EITHER (a) a `bits` reloption + 1-bit RaBitQ NEON kernel path, OR
+(b) an in-index source storage variant. Both are architectural and
+out of scope for this round.
 
 At lower recall bands we're closer to parity (3.02 ms @ 0.920 vs
 vchord's 2.7 ms; we just operate at lower recall there).
+
+## Reviewer feedback addressed
+
+Round 2 of reviewer feedback prompted the following follow-up commits:
+
+- `cf6a53784` — centroid `inner_product_neon` switched from
+  `debug_assert_eq!` to release `assert_eq!`; added scalar-vs-NEON
+  differential test at dims {1,3,4,15,16,17,31,32,33,64,100,1536}
+  + length-mismatch panic test.
+- `cf6a53784` — bf16 bfdot dispatch gated behind the new
+  `rabitq-bf16` Cargo feature (off by default). The kernel measured
+  neutral-to-slightly-slower on Neoverse-V2 and lacked a drift gate;
+  kept compilable so a future host can re-enable + measure.
+- `0b4b984b8` — pre-prune wiring fixed: `running_top` now constructs
+  on no-rerank scans via the new `running_top_k_for_pruning` helper
+  (default K=200) instead of being gated on the rerank-set limit.
+  **Caveat**: EXPLAIN counters (artifacts/explain-counters.log) show
+  the Cauchy-Schwarz bound itself is too loose to fire on normalized
+  embeddings — `Postings Pruned By Bound = 0` at every nprobe. The
+  wiring is correct; the bound is the problem. Tightening the bound
+  (ε-concentration or partial-sum early-exit) is a follow-up.
+- `af5ee0dda` — `pg_prewarm` SQL fixed (was eaten by SSM dollar-
+  quoting); `latency-truly-prewarmed.log` captures the working
+  prewarm pass (5888 pages loaded for the 50k RaBitQ index, etc.).
+- Reviewer-flagged attribution corrected: the ~7% previously
+  bucketed as "LUT hoist + pre-prune" is all LUT hoist + scalar-fold
+  + dedup (pre-prune is currently no-op on this corpus).
 
 The headline is the NEON kernel (3.2× alone); LUT-hoist + pre-prune
 deliver the next 7-8% by eliminating per-candidate redundant table
