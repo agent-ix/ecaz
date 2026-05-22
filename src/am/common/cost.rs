@@ -378,9 +378,7 @@ unsafe fn compute_amcostestimate(
         return gated_planner_cost_estimate(index_pages);
     }
     let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
-    // SAFETY: `index_relation` is a live ec_hnsw relation with block 0 present
-    // because the empty-index gate above returned for metadata-only indexes.
-    let metadata = unsafe { shared::read_metadata_page(index_relation) };
+    let metadata = shared::read_metadata_page(index_relation);
     let tree_height = planner_tree_height_from_index_info(index_info, metadata.max_level);
     // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
     // context where backend-local planner cost globals are valid to read.

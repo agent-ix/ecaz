@@ -696,9 +696,7 @@ unsafe fn run_insert_with_adapter(
                 return false;
             }
 
-            // SAFETY: The first-insert race was lost; reread metadata before
-            // re-entering the normal insert path.
-            let refreshed_metadata = unsafe { shared::read_metadata_page(index_relation) };
+            let refreshed_metadata = shared::read_metadata_page(index_relation);
             return unsafe {
                 // SAFETY: Same insert inputs are reused with a fresh metadata
                 // snapshot after grouped bootstrap contention.

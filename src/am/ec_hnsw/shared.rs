@@ -156,9 +156,7 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
 }
 
 pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
-    // SAFETY: The index relation is live and the metadata page is read under a
-    // shared buffer lock.
-    let metadata = unsafe { read_metadata_page(index_relation) };
+    let metadata = read_metadata_page(index_relation);
     // SAFETY: Metadata was decoded from this index and describes its graph
     // storage layout.
     let storage =
@@ -529,8 +527,7 @@ pub(crate) fn debug_index_pages(
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_pages");
     let block_count = hnsw_main_block_count(index_relation.as_ptr());
 
-    // SAFETY: The index relation guard keeps the metadata page readable.
-    let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };
+    let metadata = read_metadata_page(index_relation.as_ptr());
     let mut data_pages = Vec::new();
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         // SAFETY: `block_number` is within the current main-fork block range and
@@ -541,7 +538,7 @@ pub(crate) fn debug_index_pages(
     (block_count, metadata, data_pages)
 }
 
-pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+pub(crate) fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
     let buffer = read_main_buffer(
         index_relation,
         page::METADATA_BLOCK_NUMBER,
@@ -551,8 +548,8 @@ pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
     );
     let raw_page = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
-    // SAFETY: The buffer guard pins the metadata page for the duration of this
-    // borrow and `page_size` bounds the slice.
+    // SAFETY: The buffer guard pins the metadata page and bounds `page_size`
+    // for the page memory; the slice does not outlive the guard.
     let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
     let metadata =
         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
@@ -661,9 +658,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
             .expect("ec_hnsw admin index relation should be non-null"),
     );
     let tuning = options::resolve_scan_tuning(&relation_options);
-    // SAFETY: The index relation is live and metadata is read under a shared
-    // buffer lock.
-    let metadata = unsafe { read_metadata_page(index_relation) };
+    let metadata = read_metadata_page(index_relation);
     // SAFETY: The index relation is live while shared page traversal counts
     // live HNSW element tuples.
     let total_live_nodes = unsafe { count_element_tuples(index_relation) };
@@ -728,9 +723,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
             .expect("ec_hnsw cost index relation should be non-null"),
     );
     let tuning = options::resolve_scan_tuning(&relation_options);
-    // SAFETY: The index relation is live and metadata is read under a shared
-    // buffer lock.
-    let metadata = unsafe { read_metadata_page(index_relation) };
+    let metadata = read_metadata_page(index_relation);
     let block_count = hnsw_main_block_count(index_relation);
     let index_pages = f64::from(block_count);
     let index_relation = NonNull::new(index_relation)
@@ -947,8 +940,7 @@ pub(crate) fn debug_index_metadata(index_oid: pg_sys::Oid) -> (u32, i32, i32, pa
             .expect("ec_hnsw debug index relation should be non-null"),
     );
     let block_count = hnsw_main_block_count(index_relation.as_ptr());
-    // SAFETY: The index relation guard keeps the metadata page readable.
-    let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };
+    let metadata = read_metadata_page(index_relation.as_ptr());
 
     (block_count, options.m, options.ef_construction, metadata)
 }

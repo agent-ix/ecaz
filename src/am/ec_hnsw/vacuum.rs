@@ -35,9 +35,7 @@ impl VacuumIndexRelation {
     }
 
     fn metadata(self) -> page::MetadataPage {
-        // SAFETY: This wrapper is constructed only for the live vacuum callback
-        // index relation and metadata reads do not outlive that callback.
-        unsafe { shared::read_metadata_page(self.relation) }
+        shared::read_metadata_page(self.relation)
     }
 
     fn main_fork_block_count(self) -> pg_sys::BlockNumber {

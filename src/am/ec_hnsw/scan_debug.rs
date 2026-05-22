@@ -101,9 +101,7 @@ fn debug_item_pointer_coords(tid: page::ItemPointer) -> HeapTidCoords {
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
-    // SAFETY: Debug callers pass an open HNSW index relation; the shared
-    // metadata reader validates the page-level metadata representation.
-    unsafe { super::shared::read_metadata_page(index_relation) }
+    super::shared::read_metadata_page(index_relation)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
