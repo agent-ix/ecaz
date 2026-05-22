@@ -47,4 +47,40 @@
 
 ## Bench Status
 
-Benchmarks have not been run from this packet yet.
+Local PG18 RaBitQ smoke run complete on `2026-05-21` at head
+`e81dcf8fd16cc02ddf4e88b7861af94c5f80ff48`. Recall holds vs the
+2026-05-19 local baseline (`benchmarks/task-50-local-baseline/`); latency
+shows a 5–10× regression that is almost certainly attributable to the
+installed PG18 extension being a **debug** build rather than release. Full
+analysis, evidence, and next-step plan are in
+`artifacts/bench-comparison-report.md`.
+
+### Bench artifacts
+
+- `rabitq-ivf-spire-local-suite.json` — suite config (input).
+- `suite-audit.log` — `ecaz bench suite audit` output.
+- `ecaz-bench-suite-dry-run.log`, `suite-dry-run-manifest.json` — dry-run.
+- `ecaz-bench-suite-run.log`, `suite-manifest.json`, `results.jsonl` —
+  authoritative result rows for this packet (4 steps, 2 sweep values each).
+- `ivf-rabitq-10k-recall-k10.log`,
+  `ivf-rabitq-10k-latency-k10-c1.log`,
+  `spire-rabitq-10k-recall-k10.log`,
+  `spire-rabitq-10k-latency-k10-c1.log` — per-step formatted tables.
+- `bench-comparison-report.md` — baseline comparison + issues report
+  (this packet's primary review evidence).
+
+### Re-run command
+
+```
+target/debug/ecaz bench suite run \
+  --config reviews/task-50/397-current-head-pg18-rabitq-ivf-spire-sweep/artifacts/rabitq-ivf-spire-local-suite.json \
+  --host localhost --port 28818 --database tqvector_bench \
+  --manifest-output reviews/task-50/397-current-head-pg18-rabitq-ivf-spire-sweep/artifacts/suite-manifest.json \
+  --results-output reviews/task-50/397-current-head-pg18-rabitq-ivf-spire-sweep/artifacts/results.jsonl \
+  --log-file    reviews/task-50/397-current-head-pg18-rabitq-ivf-spire-sweep/artifacts/ecaz-bench-suite-run.log
+```
+
+Same hardware as baseline (`DESKTOP-BMB4AFO`, WSL2, i9-10900K, no AVX-512).
+Connection mode here is TCP `localhost:28818`; baseline used UDS
+`/home/peter/.pgrx`. Recommend reverting local re-runs to UDS for tighter
+parity.
