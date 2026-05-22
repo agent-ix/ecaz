@@ -1507,6 +1507,32 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
 /// Loop layout: 32 dims per iteration = 4 code bytes, dispatched to
 /// 4 independent `vfmaq_f32` chains. Same 4-way unroll pattern as
 /// the bits=4 kernel to fill Neoverse-V2's 4 SIMD pipes.
+/// 256-entry × 8-lane f32 LUT. Row `b` carries the 8 dequant values
+/// for the 8 bit positions of code byte `b` (bit `i` selects
+/// `lut[1]` if set, `lut[0]` otherwise). Computed once per query
+/// from the 2-entry bits=1 dequant LUT; replaces the 8 scalar
+/// conditional selects per byte in the inner kernel with two SIMD
+/// loads. 8 KB → fits in L1 alongside the query.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn build_bits1_byte_lut(lut: &[f32; 256]) -> [[f32; 8]; 256] {
+    let neg = lut[0];
+    let pos = lut[1];
+    let mut out = [[0.0_f32; 8]; 256];
+    let mut b = 0_usize;
+    while b < 256 {
+        let mut row = [0.0_f32; 8];
+        let mut i = 0;
+        while i < 8 {
+            row[i] = if ((b >> i) & 1) == 1 { pos } else { neg };
+            i += 1;
+        }
+        out[b] = row;
+        b += 1;
+    }
+    out
+}
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn sum_query_dequant_neon_bits1(
@@ -1517,35 +1543,35 @@ unsafe fn sum_query_dequant_neon_bits1(
 ) -> f32 {
     use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
 
+    // SAFETY: caller already confirmed NEON; build_bits1_byte_lut is
+    // pure compute over the input slice.
+    let byte_lut: [[f32; 8]; 256] = unsafe { build_bits1_byte_lut(lut) };
+
     let mut acc0 = vdupq_n_f32(0.0);
     let mut acc1 = vdupq_n_f32(0.0);
     let mut acc2 = vdupq_n_f32(0.0);
     let mut acc3 = vdupq_n_f32(0.0);
 
-    let neg = lut[0];
-    let pos = lut[1];
-
     let mut dim_index = 0_usize;
-    // Each iter consumes 32 dims = 4 code bytes.
+    // Each iter consumes 32 dims = 4 code bytes. The byte LUT gives
+    // 8 dequant lanes per byte as one contiguous 8-f32 row, so we do
+    // exactly 8 vector loads (4 query + 4 dequant) per 32 dims with
+    // zero per-byte scalar work.
     while dim_index + 32 <= dimensions {
         let byte_base = dim_index / 8;
         // SAFETY: dim_index + 32 <= dimensions ⇒ byte_base + 4 <= packed_bytes.
-        let b0 = *code.get_unchecked(byte_base) as u32;
-        let b1 = *code.get_unchecked(byte_base + 1) as u32;
-        let b2 = *code.get_unchecked(byte_base + 2) as u32;
-        let b3 = *code.get_unchecked(byte_base + 3) as u32;
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
 
-        // Expand each byte to 8 lanes; write_level stores bit i of the
-        // byte at coordinate index byte*8 + i (LSB first).
-        let mut dq = [0.0_f32; 32];
-        for i in 0..8 {
-            dq[i] = if (b0 >> i) & 1 == 1 { pos } else { neg };
-            dq[8 + i] = if (b1 >> i) & 1 == 1 { pos } else { neg };
-            dq[16 + i] = if (b2 >> i) & 1 == 1 { pos } else { neg };
-            dq[24 + i] = if (b3 >> i) & 1 == 1 { pos } else { neg };
-        }
+        let r0 = byte_lut.as_ptr().add(b0).cast::<f32>();
+        let r1 = byte_lut.as_ptr().add(b1).cast::<f32>();
+        let r2 = byte_lut.as_ptr().add(b2).cast::<f32>();
+        let r3 = byte_lut.as_ptr().add(b3).cast::<f32>();
 
-        // SAFETY: dim_index + 32 <= dimensions ⇒ four 4-lane query loads.
+        // SAFETY: each row is a [f32; 8] inside the byte_lut owned by this
+        // stack frame; 8-element row → two 4-lane reads, in-bounds.
         let q0 = vld1q_f32(query_rotated.as_ptr().add(dim_index));
         let q1 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 4));
         let q2 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 8));
@@ -1554,14 +1580,14 @@ unsafe fn sum_query_dequant_neon_bits1(
         let q5 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 20));
         let q6 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 24));
         let q7 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 28));
-        let d0 = vld1q_f32(dq.as_ptr());
-        let d1 = vld1q_f32(dq.as_ptr().add(4));
-        let d2 = vld1q_f32(dq.as_ptr().add(8));
-        let d3 = vld1q_f32(dq.as_ptr().add(12));
-        let d4 = vld1q_f32(dq.as_ptr().add(16));
-        let d5 = vld1q_f32(dq.as_ptr().add(20));
-        let d6 = vld1q_f32(dq.as_ptr().add(24));
-        let d7 = vld1q_f32(dq.as_ptr().add(28));
+        let d0 = vld1q_f32(r0);
+        let d1 = vld1q_f32(r0.add(4));
+        let d2 = vld1q_f32(r1);
+        let d3 = vld1q_f32(r1.add(4));
+        let d4 = vld1q_f32(r2);
+        let d5 = vld1q_f32(r2.add(4));
+        let d6 = vld1q_f32(r3);
+        let d7 = vld1q_f32(r3.add(4));
         acc0 = vfmaq_f32(acc0, q0, d0);
         acc1 = vfmaq_f32(acc1, q1, d1);
         acc2 = vfmaq_f32(acc2, q2, d2);
@@ -1573,6 +1599,9 @@ unsafe fn sum_query_dequant_neon_bits1(
 
         dim_index += 32;
     }
+
+    let neg = lut[0];
+    let pos = lut[1];
 
     let mut lanes = [0.0_f32; 4];
     vst1q_f32(
