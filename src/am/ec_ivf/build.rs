@@ -839,6 +839,7 @@ mod tests {
             seed: 7,
             pq_group_size: 0,
             posting_slack_percent: 0,
+            quant_bits: 4,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }

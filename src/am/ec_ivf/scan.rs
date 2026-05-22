@@ -1028,10 +1028,11 @@ unsafe fn materialize_probe_candidates(
     // SAFETY: `prepared_query` is initialized by `store_scan_prepared_query`
     // for this scan opaque and remains owned for the scan lifetime.
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )?;
     let payload_len = quantizer.payload_len();
     // SAFETY: `index_relation` and metadata describe the live IVF index; the

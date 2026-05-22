@@ -38,6 +38,17 @@ pub(super) const EC_IVF_MIN_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_IVF_MAX_PQ_GROUP_SIZE: i32 = 32;
 pub(super) const EC_IVF_DEFAULT_POSTING_SLACK_PERCENT: i32 = 0;
 pub(super) const EC_IVF_MIN_POSTING_SLACK_PERCENT: i32 = 0;
+
+/// Per-dimension code width for `storage_format = 'rabitq'`. The
+/// RaBitQ quantizer supports bits ∈ {1, 2, 4, 8}; 1-bit is the
+/// fastest scoring kernel + smallest code (~4× less storage and ~4×
+/// kernel throughput vs 4-bit) at the cost of recall (must be paired
+/// with `rerank = 'heap_f32'` for high-recall queries). 4 is the
+/// classical paper default and what existing indexes used before this
+/// reloption landed.
+pub(super) const EC_IVF_DEFAULT_QUANT_BITS: i32 = 4;
+pub(super) const EC_IVF_MIN_QUANT_BITS: i32 = 1;
+pub(super) const EC_IVF_MAX_QUANT_BITS: i32 = 8;
 pub(super) const EC_IVF_MAX_POSTING_SLACK_PERCENT: i32 = 1000;
 pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
 

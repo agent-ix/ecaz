@@ -7,12 +7,13 @@ use crate::am::common::callback::pg_am_callback;
 
 use super::{
     EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
-    EC_IVF_DEFAULT_PQ_GROUP_SIZE, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
-    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
-    EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_RERANK_WIDTH,
-    EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE,
-    EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE, EC_IVF_MIN_RERANK_WIDTH,
-    EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
+    EC_IVF_DEFAULT_PQ_GROUP_SIZE, EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH,
+    EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS,
+    EC_IVF_MAX_NPROBE, EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE,
+    EC_IVF_MAX_QUANT_BITS, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
+    EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE,
+    EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE, EC_IVF_MIN_QUANT_BITS,
+    EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
@@ -33,6 +34,7 @@ struct EcIvfReloptions {
     seed: i32,
     pq_group_size: i32,
     posting_slack_percent: i32,
+    quant_bits: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -134,6 +136,7 @@ pub(super) struct EcIvfOptions {
     pub(super) seed: i32,
     pub(super) pq_group_size: i32,
     pub(super) posting_slack_percent: i32,
+    pub(super) quant_bits: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
 }
@@ -147,9 +150,26 @@ impl EcIvfOptions {
         seed: EC_IVF_DEFAULT_SEED,
         pq_group_size: EC_IVF_DEFAULT_PQ_GROUP_SIZE,
         posting_slack_percent: EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
+        quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
     };
+
+    /// Validated, in-range quantizer bits-per-dim used for RaBitQ
+    /// encoding/decoding. Always returns a value in {1, 2, 4, 8}; if
+    /// the index stores 0 (legacy metadata page with no bits field),
+    /// falls back to `EC_IVF_DEFAULT_QUANT_BITS = 4`.
+    pub(super) fn effective_quant_bits(self) -> u8 {
+        let raw = if self.quant_bits == 0 {
+            EC_IVF_DEFAULT_QUANT_BITS
+        } else {
+            self.quant_bits
+        };
+        match raw {
+            1 | 2 | 4 | 8 => raw as u8,
+            _ => EC_IVF_DEFAULT_QUANT_BITS as u8,
+        }
+    }
 
     pub(super) fn requested_pq_group_size(self) -> Option<usize> {
         if self.pq_group_size > 0 {
@@ -334,6 +354,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             EC_IVF_MAX_POSTING_SLACK_PERCENT,
             offset_of!(EcIvfReloptions, posting_slack_percent) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"quant_bits".as_ptr(),
+            c"RaBitQ per-dimension code width: 1, 2, 4 (default), or 8 bits. 1-bit gives ~4x kernel throughput vs 4-bit; pair with rerank='heap_f32' for high-recall queries."
+                .as_ptr(),
+            EC_IVF_DEFAULT_QUANT_BITS,
+            EC_IVF_MIN_QUANT_BITS,
+            EC_IVF_MAX_QUANT_BITS,
+            offset_of!(EcIvfReloptions, quant_bits) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -448,6 +478,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
         seed: reloptions.seed,
         pq_group_size: reloptions.pq_group_size,
         posting_slack_percent: reloptions.posting_slack_percent,
+        quant_bits: reloptions.quant_bits,
         storage_format,
         rerank,
     }
