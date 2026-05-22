@@ -56,10 +56,9 @@ unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {
 }
 
 fn hnsw_main_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
-    // SAFETY: Callers hold a live index relation while copying its current
-    // main-fork block count.
-    // SAFETY: callers pass a live index relation descriptor.
-    unsafe { crate::storage::relation::main_fork_block_count(index_relation) }
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw block count received null index relation"));
+    crate::storage::relation::main_fork_block_count_handle(index_relation)
 }
 
 fn read_main_buffer(
@@ -732,7 +731,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let metadata = unsafe { read_metadata_page(index_relation) };
     let block_count = hnsw_main_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw cost snapshot received null index relation"));
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation);
     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
     // SAFETY: diagnostic snapshot reads planner cost globals in the current
     // backend to report the same constants the planner would use.

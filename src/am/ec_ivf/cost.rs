@@ -1,4 +1,5 @@
 use std::mem::size_of;
+use std::ptr::NonNull;
 
 use pgrx::pg_sys;
 
@@ -179,7 +180,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let metadata = page::read_metadata_page(index_relation);
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf cost snapshot received null index relation"));
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
     // SAFETY: diagnostic snapshot reads planner cost globals in the current
     // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
@@ -231,7 +234,9 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     let metadata = page::read_metadata_page(index_relation);
     let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf cost estimate received null index relation"));
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
     // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
     // context where backend-local planner cost globals are valid to read.
     let constants = unsafe { current_planner_cost_constants() };

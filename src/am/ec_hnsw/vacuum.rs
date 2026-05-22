@@ -41,8 +41,9 @@ impl VacuumIndexRelation {
     }
 
     fn main_fork_block_count(self) -> pg_sys::BlockNumber {
-        // SAFETY: `self.relation` is the live vacuum relation for this page relation view.
-        unsafe { crate::storage::relation::main_fork_block_count(self.relation) }
+        let relation = NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum received a null index relation"));
+        crate::storage::relation::main_fork_block_count_handle(relation)
     }
 
     fn read_main_locked(

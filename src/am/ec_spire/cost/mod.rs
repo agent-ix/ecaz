@@ -1,4 +1,5 @@
 use pgrx::pg_sys;
+use std::ptr::NonNull;
 
 use super::{
     active_snapshot_diagnostics, index_hierarchy_snapshot, live_index_relation, options,
@@ -6,8 +7,7 @@ use super::{
 };
 use crate::am::common::callback::{am_callback, pg_am_callback};
 use crate::am::common::cost::{
-    self, current_planner_cost_constants, relation_main_fork_block_count, PlannerCostConstants,
-    PlannerCostEstimate,
+    self, current_planner_cost_constants, PlannerCostConstants, PlannerCostEstimate,
 };
 use crate::storage::relation_guard::IndexRelationGuard;
 
@@ -93,11 +93,11 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
 
 pub(crate) fn index_cost_snapshot(index: SpireLiveIndexRelation) -> SpireIndexCostSnapshot {
     let index_relation = index.as_ptr();
-    // SAFETY: `index` is a live SPIRE index relation wrapper; the raw
-    // descriptor remains open for this diagnostic cost snapshot.
-    let block_count = unsafe { relation_main_fork_block_count(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire cost snapshot received null index relation"));
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let index_pages = f64::from(block_count);
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
     // SAFETY: diagnostic snapshot reads planner cost globals in the current
     // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
@@ -158,11 +158,11 @@ pub(crate) fn index_cost_tuning_snapshot(
     index: SpireLiveIndexRelation,
 ) -> SpireIndexCostTuningSnapshot {
     let index_relation = index.as_ptr();
-    // SAFETY: `index` is a live SPIRE index relation wrapper; the raw
-    // descriptor remains open for this tuning snapshot.
-    let block_count = unsafe { relation_main_fork_block_count(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire cost tuning received null index relation"));
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let index_pages = f64::from(block_count);
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
     let relation_options = options::relation_options(index_relation);
     let diagnostics = cost_active_snapshot_diagnostics(index);
     let hierarchy = cost_index_hierarchy_snapshot(index);
@@ -197,11 +197,11 @@ pub(crate) fn index_cost_tuning_snapshot(
 
 fn compute_amcostestimate(index: SpireLiveIndexRelation) -> PlannerCostEstimate {
     let index_relation = index.as_ptr();
-    // SAFETY: `index` is a live SPIRE index relation wrapper; the raw
-    // descriptor remains open for planner cost estimation.
-    let block_count = unsafe { relation_main_fork_block_count(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire cost estimate received null index relation"));
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let index_pages = f64::from(block_count);
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
     // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
     // context where backend-local planner cost globals are valid to read.
     let constants = unsafe { current_planner_cost_constants() };
@@ -224,7 +224,9 @@ fn spire_tree_height_callback_value(index: SpireLiveIndexRelation) -> i32 {
     i32::from(hierarchy.hierarchy_depth)
 }
 
-fn cost_active_snapshot_diagnostics(index: SpireLiveIndexRelation) -> SpireActiveSnapshotDiagnostics {
+fn cost_active_snapshot_diagnostics(
+    index: SpireLiveIndexRelation,
+) -> SpireActiveSnapshotDiagnostics {
     active_snapshot_diagnostics(index)
 }
 
