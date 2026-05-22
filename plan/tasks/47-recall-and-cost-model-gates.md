@@ -1,6 +1,10 @@
 # Task 47: Recall and Cost-Model Correctness Gates
 
-Status: **proposed** — turns recall and planner-cost behavior into
+Status: complete — closed by `reviews/task-47/008-task47-closeout/`
+on 2026-05-21 (all four exit criteria met; PR-blocking gate trio
+recall + cross-am + cost now wired in
+`.github/workflows/ci.yml::recall-cost-gates`, with cross-am-gate
+promoted in packet 007). Turns recall and planner-cost behavior into
 machine-verifiable gates, so the things that *matter to users* (search
 quality and plan stability) are protected from regression even when
 correctness-adjacent code changes.

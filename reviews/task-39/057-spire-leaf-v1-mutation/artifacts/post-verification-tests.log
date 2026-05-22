@@ -1,0 +1,5 @@
+test quant::rabitq::tests::persisted_sidecar_helpers_preserve_supported_and_unsupported_lanes ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_on_random_inputs ... ok
+
+test result: ok. 550 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
+

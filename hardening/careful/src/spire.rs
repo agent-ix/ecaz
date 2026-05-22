@@ -101,8 +101,10 @@ pub mod storage {
             SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
             SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
-            SPIRE_PAYLOAD_FORMAT_NONE, SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN,
-            SPIRE_PAYLOAD_FORMAT_TURBOQUANT, SPIRE_VEC_ID_MAX_BYTES,
+            SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES, SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES,
+            SPIRE_PARTITION_OBJECT_HEADER_BYTES, SPIRE_PAYLOAD_FORMAT_NONE,
+            SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+            SPIRE_VEC_ID_MAX_BYTES,
         };
         use crate::careful_pg_guards::pg_sys;
         use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
@@ -182,6 +184,10 @@ pub mod storage {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../src/am/ec_spire/storage/tests/local_store.rs"
+        ));
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../src/am/ec_spire/storage/tests/helpers.rs"
         ));
 
         #[test]

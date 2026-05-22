@@ -139,6 +139,18 @@
     }
 
     #[test]
+    fn routing_partition_object_decode_rejects_prefix_only_tail_with_length_mismatch() {
+        let object = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        let mut encoded = object.encode().unwrap();
+        encoded.truncate(SPIRE_PARTITION_OBJECT_HEADER_BYTES + 4);
+        let err = SpireRoutingPartitionObject::decode(&encoded).unwrap_err();
+        assert!(
+            err.contains("length mismatch"),
+            "expected length-mismatch boundary error, got {err}"
+        );
+    }
+
+    #[test]
     fn local_store_relation_name_is_deterministic() {
         assert_eq!(
             spire_local_store_relation_name(12345, 0).unwrap(),

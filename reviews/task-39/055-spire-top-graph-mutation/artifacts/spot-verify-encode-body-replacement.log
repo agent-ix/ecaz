@@ -1,0 +1,5 @@
+    careful_spire::storage::tests::top_graph_partition_object_rejects_invalid_dimensions_level_assignments_and_flags
+
+test result: FAILED. 531 passed; 19 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.53s
+
+error: test failed, to rerun pass `--lib`

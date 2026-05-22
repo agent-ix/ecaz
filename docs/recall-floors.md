@@ -10,7 +10,7 @@ before becoming full release criteria.
 | --- | --- | --- | --- |
 | `make recall-gate` | `fixtures/gates/recall-gate-small.json` | PR | Fast exact-KNN recall floor check on generated small fixtures. |
 | `make recall-gate-full` | `fixtures/gates/recall-gate-full.json` | Nightly | Larger HNSW sweep over the same fixture and truth-cache path. |
-| `make cross-am-gate` | `fixtures/gates/cross-am-gate-small.json` | PR candidate, report-first | Runs multiple AMs against the same exact truth cache and writes per-query top-k predictions so cross-AM drift is visible in one suite manifest. |
+| `make cross-am-gate` | `fixtures/gates/cross-am-gate-small.json` | PR | Runs multiple AMs against the same exact truth cache and writes per-query top-k predictions so cross-AM drift is visible in one suite manifest. |
 | `make cost-gate` | `fixtures/gates/cost-gate-small.json` | PR | Captures cost-model snapshot rows, enforces positive modeled total cost, and compares against `fixtures/cost-queries/baseline.json`. |
 
 All gate configs write transient local output under `target/gates/`. Reviewable
