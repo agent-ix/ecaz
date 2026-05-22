@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::size_of;
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -168,13 +168,13 @@ enum PageTupleVisit<R> {
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 #[derive(Clone, Copy)]
 struct IvfPageRelation<'a> {
-    relation: pg_sys::Relation,
+    relation: NonNull<pg_sys::RelationData>,
     _relation: PhantomData<&'a pg_sys::RelationData>,
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 impl<'a> IvfPageRelation<'a> {
-    unsafe fn new(relation: pg_sys::Relation) -> Self {
+    fn new(relation: NonNull<pg_sys::RelationData>) -> Self {
         Self {
             relation,
             _relation: PhantomData,
@@ -182,25 +182,28 @@ impl<'a> IvfPageRelation<'a> {
     }
 
     fn raw(self) -> pg_sys::Relation {
-        self.relation
+        self.relation.as_ptr()
     }
 
     fn relid(self) -> pg_sys::Oid {
         // SAFETY: this view is constructed only for a live IVF index relation.
-        unsafe { (*self.relation).rd_id }
+        unsafe { self.relation.as_ref().rd_id }
     }
 
     fn number_of_blocks(self) -> pg_sys::BlockNumber {
         // SAFETY: this view is constructed only for a live IVF index relation.
         unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(self.relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+            pg_sys::RelationGetNumberOfBlocksInFork(
+                self.relation.as_ptr(),
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+            )
         }
     }
 
     fn page_with_free_space(self, required_space: usize) -> pg_sys::BlockNumber {
         // SAFETY: this view is constructed only for a live IVF index relation;
         // required_space is derived from the tuple size that will be inserted.
-        unsafe { pg_sys::GetPageWithFreeSpace(self.relation, required_space) }
+        unsafe { pg_sys::GetPageWithFreeSpace(self.relation.as_ptr(), required_space) }
     }
 
     fn read_main(
@@ -211,7 +214,9 @@ impl<'a> IvfPageRelation<'a> {
     ) -> Option<LockedBufferGuard> {
         // SAFETY: this view owns the live-relation contract; callers choose a
         // block/mode/lock combination appropriate for the local page operation.
-        unsafe { LockedBufferGuard::read_main(self.relation, block_number, mode, lockmode) }
+        unsafe {
+            LockedBufferGuard::read_main(self.relation.as_ptr(), block_number, mode, lockmode)
+        }
     }
 
     fn read_main_locked(
@@ -221,23 +226,30 @@ impl<'a> IvfPageRelation<'a> {
     ) -> Option<LockedBufferGuard> {
         // SAFETY: this view owns the live-relation contract; callers pass a
         // read mode that returns an already-locked buffer.
-        unsafe { LockedBufferGuard::read_main_locked(self.relation, block_number, mode) }
+        unsafe { LockedBufferGuard::read_main_locked(self.relation.as_ptr(), block_number, mode) }
     }
 
     fn start_wal(self) -> wal::GenericXLogTxn {
         // SAFETY: this view is constructed only for a live IVF index relation.
-        unsafe { wal::GenericXLogTxn::start(self.relation) }
+        unsafe { wal::GenericXLogTxn::start(self.relation.as_ptr()) }
     }
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-fn read_posting_block(
+fn ivf_relation_nonnull(
     index_relation: pg_sys::Relation,
+    context: &str,
+) -> NonNull<pg_sys::RelationData> {
+    NonNull::new(index_relation).unwrap_or_else(|| pgrx::error!("{context} received null relation"))
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+fn read_posting_block(
+    index: IvfPageRelation<'_>,
     block_number: pg_sys::BlockNumber,
     context: &str,
 ) -> Result<LockedBufferGuard, String> {
-    // SAFETY: caller supplies a live IVF index relation for the read path.
-    unsafe { IvfPageRelation::new(index_relation) }
+    index
         .read_main(
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -1304,10 +1316,10 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
     tid: ItemPointer,
     dimensions: usize,
 ) -> Result<(IvfCentroidTuple, ItemPointer), String> {
-    let (centroid, line_pointer_count) =
-        read_page_tuple(index_relation, tid, "centroid", |tuple_bytes| {
-            IvfCentroidTuple::decode(tuple_bytes, dimensions)
-        })?;
+    let index = IvfPageRelation::new(ivf_relation_nonnull(index_relation, "ec_ivf centroid read"));
+    let (centroid, line_pointer_count) = read_page_tuple(index, tid, "centroid", |tuple_bytes| {
+        IvfCentroidTuple::decode(tuple_bytes, dimensions)
+    })?;
     Ok((centroid, next_physical_tuple_tid(tid, line_pointer_count)?))
 }
 
@@ -1316,13 +1328,17 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
 ) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf list directory read",
+    ));
     let (directory, line_pointer_count) =
-        read_page_tuple(index_relation, tid, "list directory", |tuple_bytes| {
+        read_page_tuple(index, tid, "list directory", |tuple_bytes| {
             IvfListDirectoryTuple::decode(tuple_bytes)
         })?;
     let physical_next = next_physical_tuple_tid(tid, line_pointer_count)?;
     let next_directory = find_next_tuple_with_tag(
-        index_relation,
+        index,
         physical_next,
         IVF_LIST_DIRECTORY_TAG,
         "list directory",
@@ -1336,7 +1352,11 @@ pub(super) unsafe fn read_ivf_pq_codebook(
     tid: ItemPointer,
     centroid_count: usize,
 ) -> Result<IvfPqCodebookTuple, String> {
-    let (codebook, _) = read_page_tuple(index_relation, tid, "pq codebook", |tuple_bytes| {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf pq codebook read",
+    ));
+    let (codebook, _) = read_page_tuple(index, tid, "pq codebook", |tuple_bytes| {
         IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
     })?;
     Ok(codebook)
@@ -1431,8 +1451,10 @@ pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
-    // SAFETY: caller supplies a live IVF index relation for the rewrite path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting rewrite",
+    ));
     if head_block == BlockRef::INVALID && tail_block == BlockRef::INVALID {
         return Ok(());
     }
@@ -1554,7 +1576,11 @@ fn visit_ivf_postings_for_list_block<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    let buffer = read_posting_block(index_relation, block_number, "posting-list")?;
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting-list read",
+    ));
+    let buffer = read_posting_block(index, block_number, "posting-list")?;
 
     let result =
         visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor);
@@ -1571,7 +1597,11 @@ fn visit_all_ivf_posting_refs_for_block<F>(
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
-    let buffer = read_posting_block(index_relation, block_number, "posting-list")?;
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting-list ref read",
+    ));
+    let buffer = read_posting_block(index, block_number, "posting-list")?;
 
     let result =
         visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor);
@@ -1668,8 +1698,10 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
     block_range: Option<(pg_sys::BlockNumber, pg_sys::BlockNumber)>,
     tuple: &IvfPostingTuple,
 ) -> Result<ItemPointer, String> {
-    // SAFETY: caller supplies a live IVF index relation for the append path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting append",
+    ));
     if !posting_tuple_fits(tuple.payload.len(), pg_sys::BLCKSZ as usize) {
         return Err(format!(
             "ec_ivf posting payload {} does not fit on a page",
@@ -1837,8 +1869,10 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     directory_tid: ItemPointer,
     directory: IvfListDirectoryTuple,
 ) -> Result<(), String> {
-    // SAFETY: caller supplies a live IVF index relation for the rewrite path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf directory rewrite",
+    ));
     let encoded = directory.encode();
     let buffer = index
         .read_main(
@@ -1873,8 +1907,10 @@ pub(super) unsafe fn update_ivf_list_directory<F>(
 where
     F: FnOnce(&mut IvfListDirectoryTuple) -> Result<(), String>,
 {
-    // SAFETY: caller supplies a live IVF index relation for the update path.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf directory update",
+    ));
     let buffer = index
         .read_main(
             directory_tid.block_number,
@@ -1949,8 +1985,10 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
     index_relation: pg_sys::Relation,
     payload_len: usize,
 ) -> Result<Vec<IvfPostingBlockSummary>, String> {
-    // SAFETY: caller supplies a live IVF index relation for the diagnostics read.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting diagnostics",
+    ));
     let block_count = index.number_of_blocks();
     let mut summaries = Vec::new();
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
@@ -2220,7 +2258,7 @@ fn should_compact_posting_deletes(compact_deletes: bool, saw_non_posting_tuple: 
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn read_page_tuple<T, DecodeFn>(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     tuple_tid: ItemPointer,
     tuple_kind: &str,
     decode: DecodeFn,
@@ -2228,8 +2266,7 @@ fn read_page_tuple<T, DecodeFn>(
 where
     DecodeFn: for<'a> FnOnce(&'a [u8]) -> Result<T, String>,
 {
-    // SAFETY: caller supplies a live IVF index relation for the tuple read.
-    let buffer = unsafe { IvfPageRelation::new(index_relation) }
+    let buffer = index
         .read_main(
             tuple_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -2257,13 +2294,11 @@ where
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn find_next_tuple_with_tag(
-    index_relation: pg_sys::Relation,
+    relation: IvfPageRelation<'_>,
     start_tid: ItemPointer,
     tag: u8,
     tuple_kind: &str,
 ) -> Result<ItemPointer, String> {
-    // SAFETY: caller supplies a live IVF index relation for the tuple walk.
-    let relation = unsafe { IvfPageRelation::new(index_relation) };
     let block_count = relation.number_of_blocks();
     let mut block_number = start_tid.block_number;
     let mut offset_number = start_tid.offset_number;
@@ -2365,8 +2400,7 @@ pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: MetadataPage,
 ) {
-    // SAFETY: caller supplies a live IVF index relation for metadata init.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(index_relation, "ec_ivf metadata init"));
     let existing_blocks = index.number_of_blocks();
     let target_block = if existing_blocks == 0 {
         P_NEW
@@ -2403,8 +2437,7 @@ pub(super) unsafe fn initialize_metadata_page(
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
-    // SAFETY: caller supplies a live IVF index relation for metadata read.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(index_relation, "ec_ivf metadata read"));
     let buffer = index.read_main(
         METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
@@ -2425,8 +2458,10 @@ pub(super) unsafe fn update_metadata_page<F>(
 where
     F: FnOnce(&mut MetadataPage) -> Result<(), String>,
 {
-    // SAFETY: caller supplies a live IVF index relation for metadata update.
-    let index = unsafe { IvfPageRelation::new(index_relation) };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf metadata update",
+    ));
     let buffer = index.read_main(
         METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
