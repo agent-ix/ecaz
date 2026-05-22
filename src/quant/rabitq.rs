@@ -457,6 +457,7 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
         let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
+        let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
         let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
         Box::new(RaBitQScorer {
             query_rotated: rotated,
@@ -464,6 +465,7 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
             dimensions: self.dimensions,
             bits_per_dim: self.bits_per_dim,
             dequant_lut,
+            bits1_byte_lut,
             query_bf16,
             dequant_lut_bf16,
         })
@@ -487,6 +489,7 @@ impl RaBitQQuantizer {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
         let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
+        let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
         let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
         PreparedEstimator {
             query_rotated: rotated,
@@ -494,6 +497,7 @@ impl RaBitQQuantizer {
             dimensions: self.dimensions,
             bits_per_dim: self.bits_per_dim,
             dequant_lut,
+            bits1_byte_lut,
             query_bf16,
             dequant_lut_bf16,
         }
@@ -813,6 +817,13 @@ pub struct PreparedEstimator {
     /// loop reuses it for every candidate rather than recomputing
     /// per candidate.
     dequant_lut: [f32; 256],
+    /// 256-row × 8-lane f32 byte-LUT for the bits=1 NEON kernel.
+    /// Each row carries the 8 dequant lanes for a code byte; the
+    /// kernel reads `byte_lut[code_byte]` with two `vld1q_f32`s and
+    /// FMAs against query lanes — no per-byte scalar unpack. Only
+    /// populated when `bits_per_dim == 1`; otherwise an 8 KB zero
+    /// array we just don't touch.
+    bits1_byte_lut: Box<[[f32; 8]; 256]>,
     /// Same `query_rotated` data truncated to bfloat16 (stored as raw
     /// u16 bits — the upper half of the f32). Used by the aarch64 +
     /// `bf16` feature path which executes `bfdot` to FMA 8 bf16 lanes
@@ -842,6 +853,7 @@ impl PreparedEstimator {
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
+            &self.bits1_byte_lut,
             code,
         )
     }
@@ -859,6 +871,7 @@ impl PreparedEstimator {
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
+            &self.bits1_byte_lut,
             code,
         )
     }
@@ -928,6 +941,7 @@ impl PreparedEstimator {
             self.dimensions,
             bits,
             &self.dequant_lut,
+            &self.bits1_byte_lut,
             code,
         );
         Some(candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm))
@@ -976,6 +990,7 @@ pub struct RaBitQScorer {
     dimensions: usize,
     bits_per_dim: u8,
     dequant_lut: [f32; 256],
+    bits1_byte_lut: Box<[[f32; 8]; 256]>,
     query_bf16: Vec<u16>,
     dequant_lut_bf16: [u16; 256],
 }
@@ -989,6 +1004,7 @@ impl crate::quant::QueryScorer for RaBitQScorer {
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
+            &self.bits1_byte_lut,
             code,
         )
     }
@@ -1251,6 +1267,26 @@ fn prepare_bf16_state(query_rotated: &[f32], dequant_lut: &[f32; 256]) -> (Vec<u
     }
 }
 
+/// Build the bits=1 byte-LUT once per prepared query/scorer. Only
+/// populated when `bits_per_dim == 1` — at other widths the inner
+/// kernel doesn't reach this table so we allocate a zero-filled box
+/// to keep the field shape uniform without paying the 256 × row
+/// initialization cost.
+fn build_bits1_byte_lut_boxed(lut: &[f32; 256], bits_per_dim: u8) -> Box<[[f32; 8]; 256]> {
+    let mut out: Box<[[f32; 8]; 256]> = Box::new([[0.0_f32; 8]; 256]);
+    if bits_per_dim != 1 {
+        return out;
+    }
+    let neg = lut[0];
+    let pos = lut[1];
+    for (b, row) in out.iter_mut().enumerate() {
+        for (i, lane) in row.iter_mut().enumerate() {
+            *lane = if ((b >> i) & 1) == 1 { pos } else { neg };
+        }
+    }
+    out
+}
+
 /// Build a 256-entry dequant table indexed by `level`. The first
 /// `1 << bits` entries are valid; the rest are zero-filled. The LUT
 /// depends only on `(bits, sqrt_d)`, so it can be computed once per
@@ -1281,6 +1317,7 @@ fn sum_query_dequant(
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
+    let empty: [[f32; 8]; 256] = [[0.0_f32; 8]; 256];
     sum_query_dequant_with_bf16(
         query_rotated,
         None,
@@ -1288,6 +1325,7 @@ fn sum_query_dequant(
         dimensions,
         bits,
         lut,
+        &empty,
         code,
     )
 }
@@ -1305,6 +1343,7 @@ fn sum_query_dequant_with_bf16(
     dimensions: usize,
     bits: usize,
     lut: &[f32; 256],
+    bits1_byte_lut: &[[f32; 8]; 256],
     code: &[u8],
 ) -> f32 {
     let _ = (query_bf16, dequant_lut_bf16);
@@ -1312,7 +1351,9 @@ fn sum_query_dequant_with_bf16(
     {
         if bits == 1 && std::arch::is_aarch64_feature_detected!("neon") {
             // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
-            return unsafe { sum_query_dequant_neon_bits1(query_rotated, dimensions, lut, code) };
+            return unsafe {
+                sum_query_dequant_neon_bits1(query_rotated, dimensions, bits1_byte_lut, lut, code)
+            };
         }
         if bits == 4 {
             // bf16 bfdot kernel is gated behind the `rabitq-bf16` Cargo
@@ -1507,45 +1548,20 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
 /// Loop layout: 32 dims per iteration = 4 code bytes, dispatched to
 /// 4 independent `vfmaq_f32` chains. Same 4-way unroll pattern as
 /// the bits=4 kernel to fill Neoverse-V2's 4 SIMD pipes.
-/// 256-entry × 8-lane f32 LUT. Row `b` carries the 8 dequant values
-/// for the 8 bit positions of code byte `b` (bit `i` selects
-/// `lut[1]` if set, `lut[0]` otherwise). Computed once per query
-/// from the 2-entry bits=1 dequant LUT; replaces the 8 scalar
-/// conditional selects per byte in the inner kernel with two SIMD
-/// loads. 8 KB → fits in L1 alongside the query.
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-unsafe fn build_bits1_byte_lut(lut: &[f32; 256]) -> [[f32; 8]; 256] {
-    let neg = lut[0];
-    let pos = lut[1];
-    let mut out = [[0.0_f32; 8]; 256];
-    let mut b = 0_usize;
-    while b < 256 {
-        let mut row = [0.0_f32; 8];
-        let mut i = 0;
-        while i < 8 {
-            row[i] = if ((b >> i) & 1) == 1 { pos } else { neg };
-            i += 1;
-        }
-        out[b] = row;
-        b += 1;
-    }
-    out
-}
+// build_bits1_byte_lut_boxed (defined above) is the per-query
+// builder; the prior per-candidate version was a perf bug and is
+// removed.
 
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn sum_query_dequant_neon_bits1(
     query_rotated: &[f32],
     dimensions: usize,
+    byte_lut: &[[f32; 8]; 256],
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
     use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
-
-    // SAFETY: caller already confirmed NEON; build_bits1_byte_lut is
-    // pure compute over the input slice.
-    let byte_lut: [[f32; 8]; 256] = unsafe { build_bits1_byte_lut(lut) };
 
     let mut acc0 = vdupq_n_f32(0.0);
     let mut acc1 = vdupq_n_f32(0.0);
@@ -1760,6 +1776,7 @@ fn estimate_ip_impl(
     dimensions: usize,
     bits_per_dim: u8,
     dequant_lut: &[f32; 256],
+    bits1_byte_lut: &[[f32; 8]; 256],
     code: &[u8],
 ) -> DistanceEstimate {
     debug_assert_eq!(query_rotated.len(), dimensions);
@@ -1795,6 +1812,7 @@ fn estimate_ip_impl(
         dimensions,
         bits,
         dequant_lut,
+        bits1_byte_lut,
         code,
     );
 
@@ -1840,6 +1858,7 @@ fn estimate_ip_scalar_only_impl(
     dimensions: usize,
     bits_per_dim: u8,
     dequant_lut: &[f32; 256],
+    bits1_byte_lut: &[[f32; 8]; 256],
     code: &[u8],
 ) -> f32 {
     debug_assert_eq!(query_rotated.len(), dimensions);
@@ -1875,6 +1894,7 @@ fn estimate_ip_scalar_only_impl(
         dimensions,
         bits,
         dequant_lut,
+        bits1_byte_lut,
         code,
     );
 
