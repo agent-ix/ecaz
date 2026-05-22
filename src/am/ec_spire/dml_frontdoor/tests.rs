@@ -326,25 +326,21 @@ mod tests {
         var.varattno = 1;
 
         assert_eq!(
-            unsafe {
-                dml_frontdoor_var_column(
-                    (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),
-                    1,
-                    &context,
-                )
-            },
+            dml_frontdoor_var_column(
+                (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),
+                1,
+                &context,
+            ),
             Some("id".to_owned())
         );
 
         var.varno = 2;
         assert_eq!(
-            unsafe {
-                dml_frontdoor_var_column(
-                    (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),
-                    1,
-                    &context,
-                )
-            },
+            dml_frontdoor_var_column(
+                (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),
+                1,
+                &context,
+            ),
             None
         );
     }
