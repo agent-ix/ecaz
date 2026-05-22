@@ -41,6 +41,8 @@ use crate::storage::page::{
     HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
 };
 #[cfg(any(feature = "pg17", feature = "pg18"))]
+use crate::storage::relation::{main_fork_block_count_handle, relation_oid_handle, RelationHandle};
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 use crate::storage::{buffer_guard::LockedBufferGuard, wal};
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -168,13 +170,13 @@ enum PageTupleVisit<R> {
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 #[derive(Clone, Copy)]
 struct IvfPageRelation<'a> {
-    relation: NonNull<pg_sys::RelationData>,
+    relation: RelationHandle,
     _relation: PhantomData<&'a pg_sys::RelationData>,
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 impl<'a> IvfPageRelation<'a> {
-    fn new(relation: NonNull<pg_sys::RelationData>) -> Self {
+    fn new(relation: RelationHandle) -> Self {
         Self {
             relation,
             _relation: PhantomData,
@@ -186,18 +188,11 @@ impl<'a> IvfPageRelation<'a> {
     }
 
     fn relid(self) -> pg_sys::Oid {
-        // SAFETY: this view is constructed only for a live IVF index relation.
-        unsafe { self.relation.as_ref().rd_id }
+        relation_oid_handle(self.relation)
     }
 
     fn number_of_blocks(self) -> pg_sys::BlockNumber {
-        // SAFETY: this view is constructed only for a live IVF index relation.
-        unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(
-                self.relation.as_ptr(),
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            )
-        }
+        main_fork_block_count_handle(self.relation)
     }
 
     fn page_with_free_space(self, required_space: usize) -> pg_sys::BlockNumber {
@@ -236,10 +231,7 @@ impl<'a> IvfPageRelation<'a> {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-fn ivf_relation_nonnull(
-    index_relation: pg_sys::Relation,
-    context: &str,
-) -> NonNull<pg_sys::RelationData> {
+fn ivf_relation_nonnull(index_relation: pg_sys::Relation, context: &str) -> RelationHandle {
     NonNull::new(index_relation).unwrap_or_else(|| pgrx::error!("{context} received null relation"))
 }
 

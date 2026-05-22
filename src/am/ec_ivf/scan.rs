@@ -13,8 +13,8 @@ use crate::am::common::{
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
 use crate::storage::{
-    page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
-    snapshot_guard::RegisteredSnapshotGuard,
+    page::ItemPointer, relation::index_heap_relation_oid_handle, relation_guard::HeapRelationGuard,
+    slot_guard::TupleTableSlotGuard, snapshot_guard::RegisteredSnapshotGuard,
 };
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::{
@@ -242,9 +242,7 @@ unsafe fn ivf_index_scan_state_ref<'a>(
 }
 
 fn ivf_index_heap_oid(index_relation: NonNull<pg_sys::RelationData>) -> pg_sys::Oid {
-    // SAFETY: callers pass a live IVF index relation; PostgreSQL resolves the
-    // heap relation OID from the relation id without taking ownership.
-    unsafe { pg_sys::IndexGetRelation(index_relation.as_ref().rd_id, false) }
+    index_heap_relation_oid_handle(index_relation)
 }
 
 fn ivf_active_snapshot() -> pg_sys::Snapshot {
