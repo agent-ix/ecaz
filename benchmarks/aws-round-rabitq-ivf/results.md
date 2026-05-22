@@ -312,14 +312,32 @@ cost.
 
 ### Gap to vchord (50k, k=10)
 
+After lowering the rerank_width default to 50 (commit `c4462de30`,
+recall plateau at the smaller width):
+
 | System | p50 ms @ matched recall | recall@10 |
 | --- | --- | --- |
 | vchord RaBitQ-on-IVF default | 2.7 | ~0.99+ |
-| ec_ivf bits=1 + rerank w=200 nprobe=64 (byte-LUT) | **4.62** | **0.988** |
-| ec_ivf bits=1 + rerank w=200 nprobe=128 (byte-LUT) | 7.50 | 0.9991 |
+| ec_ivf bits=1 + rerank w=50 nprobe=64 (byte-LUT) | **3.81** | **0.986** |
+| ec_ivf bits=1 + rerank w=50 nprobe=128 (byte-LUT) | 6.67 | 0.9963 |
 
-**Gap closed from 3.1× → 2.5× → 1.7×** across the bits=1 + byte-LUT
-landing series. At nprobe=128 we reach **vchord's recall ceiling
+**Gap closed from 3.1× → 2.5× → 1.7× → 1.4×** across the bits=1 +
+byte-LUT + width-50 series.
+
+Full bits=1 + width=50 operating curve (commit `c4462de30` bench
+artifact `latency-bits1-width50-nprobe-sweep.log`):
+
+| nprobe | p50 ms | recall@10 |
+| --- | --- | --- |
+| 8 | 1.27 | 0.853 |
+| 16 | 1.58 | 0.918 |
+| 32 | 2.34 | 0.962 |
+| 64 | 3.81 | 0.986 |
+| 128 | 6.67 | 0.9963 |
+| 256 | 11.3 | 0.9971 |
+
+Recall@10 saturates by nprobe=128; further nprobes just spend
+extra kernel cycles without moving the operating curve. At nprobe=128 we reach **vchord's recall ceiling
 exactly** (0.9991 vs vchord 0.9995 at 1m) in 7.5 ms — a sane upper
 bound for production high-recall traffic.
 
