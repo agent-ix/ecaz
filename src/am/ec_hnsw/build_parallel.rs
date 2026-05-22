@@ -2758,7 +2758,8 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
 
     // SAFETY: `shared` points at the initialized shared header whose
     // concurrency flag was written by the leader.
-    let (heap_lockmode, index_lockmode) = if unsafe { (*shared).is_concurrent } {
+    let is_concurrent = unsafe { (*shared).is_concurrent };
+    let (heap_lockmode, index_lockmode) = if is_concurrent {
         (
             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
@@ -2793,13 +2794,11 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         encoded_tuples: 0,
     };
 
-    // SAFETY: `index_relation` is open for this worker.
-    let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
-    // SAFETY: `index_info` is newly allocated by PostgreSQL and `shared`
-    // contains the build concurrency flag.
-    unsafe {
-        (*index_info).ii_Concurrent = (*shared).is_concurrent;
-    }
+    let mut index_info = super::index_info::IndexInfoView::build_borrowed(
+        index_relation,
+        "parallel build worker",
+    );
+    index_info.as_mut().ii_Concurrent = is_concurrent;
     // SAFETY: `shared` contains the table_parallelscan_initialize state and
     // `heap_relation` is open in this worker.
     let scan = unsafe {
@@ -2811,7 +2810,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         pg_sys::table_index_build_scan(
             heap_relation,
             index_relation,
-            index_info,
+            index_info.as_ptr(),
             true,
             false,
             Some(ec_hnsw_parallel_build_callback),

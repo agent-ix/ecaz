@@ -1,4 +1,4 @@
-use std::{ffi::c_int, marker::PhantomData, ptr::NonNull};
+use std::{ffi::c_int, marker::PhantomData};
 
 use pgrx::pg_sys;
 
@@ -43,35 +43,6 @@ pub(crate) enum IndexedVectorKind {
 pub(crate) struct SourceAttribute {
     pub(crate) attnum: i32,
     pub(crate) kind: SourceDatumKind,
-}
-
-struct IndexInfoGuard {
-    ptr: NonNull<pg_sys::IndexInfo>,
-}
-
-impl IndexInfoGuard {
-    fn build(index_relation: pg_sys::Relation, label: &str) -> Self {
-        let index_relation = NonNull::new(index_relation)
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw {label} needs a valid index relation"));
-        // SAFETY: `index_relation` is a live PostgreSQL index relation; PostgreSQL
-        // returns palloc'd IndexInfo metadata owned by this guard.
-        let ptr = unsafe { pg_sys::BuildIndexInfo(index_relation.as_ptr()) };
-        let ptr = NonNull::new(ptr)
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw {label} could not build index metadata"));
-        Self { ptr }
-    }
-
-    fn as_ptr(&self) -> *mut pg_sys::IndexInfo {
-        self.ptr.as_ptr()
-    }
-}
-
-impl Drop for IndexInfoGuard {
-    fn drop(&mut self) {
-        // SAFETY: `ptr` was allocated by PostgreSQL BuildIndexInfo and this
-        // guard owns the matching pfree.
-        unsafe { pg_sys::pfree(self.ptr.as_ptr().cast()) };
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -419,7 +390,7 @@ pub(crate) unsafe fn resolve_indexed_ecvector_attribute(
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> SourceAttribute {
-    let index_info = IndexInfoGuard::build(index_relation, label);
+    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
     let attribute = unsafe {
         resolve_indexed_ecvector_attribute_from_index_info(
@@ -463,7 +434,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute(
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> IndexedVectorAttribute {
-    let index_info = IndexInfoGuard::build(index_relation, label);
+    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
     let attribute = unsafe {
         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info.as_ptr(), label)
