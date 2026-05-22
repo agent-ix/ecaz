@@ -655,7 +655,7 @@ where
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_codebook_model(
+pub(crate) fn load_grouped_codebook_model(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> GroupedCodebookModel {
@@ -743,7 +743,7 @@ pub(crate) fn derive_grouped_search_code_from_source(
     ))
 }
 
-pub(crate) unsafe fn load_graph_neighbors(
+pub(crate) fn load_graph_neighbors(
     index_relation: pg_sys::Relation,
     neighbor_tid: page::ItemPointer,
 ) -> GraphNeighbors {
@@ -791,7 +791,7 @@ pub(crate) unsafe fn load_exact_graph_adjacency(
     let element = unsafe { load_exact_graph_element(index_relation, element_tid, storage) };
     // SAFETY: The decoded element owns the neighbor-list TID; the neighbor
     // loader handles INVALID and validates the tuple payload before use.
-    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    let neighbors = load_graph_neighbors(index_relation, element.neighbortid);
     (element, neighbors)
 }
 
@@ -806,7 +806,7 @@ pub(crate) unsafe fn load_grouped_graph_adjacency(
     let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
     // SAFETY: The grouped element decoder produced `neighbortid`; neighbor
     // loading performs INVALID and tuple-shape validation before returning.
-    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    let neighbors = load_graph_neighbors(index_relation, element.neighbortid);
     (element, neighbors)
 }
 

@@ -2177,7 +2177,7 @@ unsafe fn load_grouped_scan_query(
 ) -> PreparedGroupedScanQuery {
     // SAFETY: callers pass the live index relation and metadata for a
     // PqFastScan relation whose grouped codebook model is read-only at scan time.
-    let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
+    let model = graph::load_grouped_codebook_model(index_relation, metadata);
     build_prepared_grouped_scan_query(prepared_query, &model)
 }
 
@@ -3038,7 +3038,7 @@ fn cached_graph_neighbors(
     let started = Instant::now();
     // SAFETY: `index_relation` is live for this scan and `neighbor_tid` was
     // read from a cached graph element's neighbor pointer.
-    let neighbors = Arc::new(unsafe { graph::load_graph_neighbors(index_relation, neighbor_tid) });
+    let neighbors = Arc::new(graph::load_graph_neighbors(index_relation, neighbor_tid));
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");

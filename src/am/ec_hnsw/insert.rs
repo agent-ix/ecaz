@@ -1895,7 +1895,7 @@ unsafe fn derive_pq_fastscan_search_code_for_insert(
         .unwrap_or_else(|| pgrx::error!("ec_hnsw PqFastScan live insert requires raw source data"));
     // SAFETY: Grouped metadata was checked above and names the persisted
     // codebook pages for this live index relation.
-    let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
+    let model = graph::load_grouped_codebook_model(index_relation, metadata);
     let search_code =
         graph::derive_grouped_search_code_from_source(metadata, &model, source_vector)
             .unwrap_or_else(|e| {

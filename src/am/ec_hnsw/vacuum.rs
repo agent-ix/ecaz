@@ -1000,7 +1000,7 @@ unsafe fn collect_repair_requests_on_page(
 
         // SAFETY: `neighbortid` came from a live graph element decoded from the
         // same index storage format.
-        let neighbors = unsafe { graph::load_graph_neighbors(index_relation, neighbortid) };
+        let neighbors = graph::load_graph_neighbors(index_relation, neighbortid);
         let source_tid = page::ItemPointer {
             block_number,
             offset_number: offset,
