@@ -421,7 +421,7 @@ pub(crate) fn load_grouped_graph_element(
     }
 }
 
-pub(crate) unsafe fn with_graph_element_tuple<R, F>(
+pub(crate) fn with_graph_element_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     code_len: usize,
@@ -436,7 +436,7 @@ where
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"))
 }
 
-pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
+pub(crate) fn with_turbo_hot_graph_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: TurboQuantHotColdLayout,
@@ -455,7 +455,7 @@ where
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
+pub(crate) fn with_grouped_graph_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: PqFastScanLayout,
@@ -475,7 +475,7 @@ where
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_graph_storage_tuple<R, F>(
+pub(crate) fn with_graph_storage_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
@@ -485,32 +485,26 @@ where
     F: FnOnce(GraphTupleRef<'_>) -> R,
 {
     match storage {
-        // SAFETY: storage descriptor selects the tuple format used for
-        // `element_tid` in this live index relation.
-        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+        GraphStorageDescriptor::TurboQuant { code_len } => {
             with_graph_element_tuple(index_relation, element_tid, code_len, |tuple| {
                 f(GraphTupleRef::Scalar(tuple))
             })
-        },
-        // SAFETY: storage descriptor selects the tuple format used for
-        // `element_tid` in this live index relation.
-        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+        }
+        GraphStorageDescriptor::TurboQuantHotCold(layout) => {
             with_turbo_hot_graph_tuple(index_relation, element_tid, layout, |tuple| {
                 f(GraphTupleRef::TurboHot(tuple))
             })
-        },
-        // SAFETY: storage descriptor selects the tuple format used for
-        // `element_tid` in this live index relation.
-        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+        }
+        GraphStorageDescriptor::PqFastScan(layout) => {
             with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
                 f(GraphTupleRef::GroupedHot(tuple))
             })
-        },
+        }
     }
 }
 
 #[cfg(feature = "pg18")]
-pub(crate) unsafe fn with_graph_storage_tuple_from_buffer<R, F>(
+pub(crate) fn with_graph_storage_tuple_from_buffer<R, F>(
     buffer: &PinnedBufferLockGuard<'_>,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
@@ -577,7 +571,7 @@ pub(crate) fn load_grouped_rerank_payload(
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
+pub(crate) fn with_grouped_codebook_tuple<R, F>(
     index_relation: pg_sys::Relation,
     codebook_tid: page::ItemPointer,
     centroid_count: usize,
@@ -621,18 +615,14 @@ pub(crate) fn load_grouped_codebook_model(
                 group_count
             );
         }
-        // SAFETY: `next_tid` is a non-INVALID link from metadata or the
-        // previous decoded tuple, and the live index relation remains valid
-        // for the synchronous tuple callback.
-        let codebook = unsafe {
+        let codebook =
             with_grouped_codebook_tuple(index_relation, next_tid, centroid_count, |tuple| {
                 page::TqGroupedCodebookTuple {
                     group_index: tuple.group_index,
                     nexttid: tuple.nexttid,
                     centroids: tuple.collect_centroids(),
                 }
-            })
-        };
+            });
         if usize::from(codebook.group_index) != expected_group_index {
             pgrx::error!(
                 "ec_hnsw grouped codebook order mismatch: got group {}, expected {}",

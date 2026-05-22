@@ -2425,16 +2425,12 @@ fn cached_graph_element(
 
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
-    // SAFETY: `index_relation` is live for the scan and `element_tid` came from
-    // HNSW graph traversal; the tuple view is consumed inside the closure.
-    let (element, loaded_state) = unsafe {
-        graph::with_graph_storage_tuple(
-            index_relation,
-            element_tid,
-            opaque_ref.scan_graph_storage,
-            |element| build_cached_graph_element(opaque_ref, element_tid, element),
-        )
-    };
+    let (element, loaded_state) = graph::with_graph_storage_tuple(
+        index_relation,
+        element_tid,
+        opaque_ref.scan_graph_storage,
+        |element| build_cached_graph_element(opaque_ref, element_tid, element),
+    );
     let element = Arc::new(element);
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
@@ -2474,16 +2470,12 @@ fn cached_graph_element_from_buffer(
 
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
-    // SAFETY: `buffer` is pinned and share-locked by the caller; the tuple view
-    // is consumed inside the closure before the lock guard is dropped.
-    let (element, loaded_state) = unsafe {
-        graph::with_graph_storage_tuple_from_buffer(
-            buffer,
-            element_tid,
-            opaque_ref.scan_graph_storage,
-            |element| build_cached_graph_element(opaque_ref, element_tid, element),
-        )
-    };
+    let (element, loaded_state) = graph::with_graph_storage_tuple_from_buffer(
+        buffer,
+        element_tid,
+        opaque_ref.scan_graph_storage,
+        |element| build_cached_graph_element(opaque_ref, element_tid, element),
+    );
     let element = Arc::new(element);
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
