@@ -874,20 +874,21 @@ impl DetoastedTypmodArray {
     fn single_typmod(&self) -> i32 {
         let mut count = 0;
         // SAFETY: `self.array` is a detoasted PostgreSQL ArrayType varlena kept
-        // alive by this wrapper while PostgreSQL decodes integer typmods.
-        let raw_typmods = unsafe {
-            pg_sys::ArrayGetIntegerTypmods(
+        // alive by this wrapper while PostgreSQL decodes integer typmods. The
+        // returned pointer is read only after PostgreSQL reports exactly one
+        // typmod and the pointer is checked non-null.
+        let typmod = unsafe {
+            let raw_typmods = pg_sys::ArrayGetIntegerTypmods(
                 self.array.as_ptr().cast::<pg_sys::ArrayType>(),
                 &mut count,
-            )
+            );
+            if count == 1 && !raw_typmods.is_null() {
+                Some(*raw_typmods)
+            } else {
+                None
+            }
         };
-        if count == 1 {
-            // SAFETY: PostgreSQL reported exactly one typmod element, so the
-            // returned pointer has a first `i32` value to read.
-            unsafe { *raw_typmods }
-        } else {
-            pgrx::error!("invalid type modifier");
-        }
+        typmod.unwrap_or_else(|| pgrx::error!("invalid type modifier"))
     }
 }
 
