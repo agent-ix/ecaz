@@ -86,7 +86,19 @@ pub(crate) use self::ec_spire::custom_scan_reset_rescan_snapshot_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::custom_scan_store_tuple_payload_json_for_test as spire_custom_scan_store_tuple_payload_json_for_test;
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes;
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::dml_frontdoor_const_plan_param_list_info as spire_dml_frontdoor_const_plan_param_list_info;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_param_list_info as spire_dml_frontdoor_param_list_info;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::DmlFrontdoorQueryView as SpireDmlFrontdoorQueryView;
 pub(crate) use self::ec_spire::{
@@ -96,22 +108,15 @@ pub(crate) use self::ec_spire::{
     classify_dml_frontdoor_query as spire_classify_dml_frontdoor_query,
     coordinator_delete_prepare_remote_tuple_payload as spire_coordinator_delete_prepare_remote_tuple_payload,
     coordinator_insert_dispatch_plan_row as spire_coordinator_insert_dispatch_plan_row,
-    coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
     coordinator_insert_prepare_remote_tuple_payload as spire_coordinator_insert_prepare_remote_tuple_payload,
     coordinator_insert_prepare_remote_tuple_payload_batch as spire_coordinator_insert_prepare_remote_tuple_payload_batch,
     coordinator_select_remote_tuple_payload as spire_coordinator_select_remote_tuple_payload,
     coordinator_update_remote_tuple_payload as spire_coordinator_update_remote_tuple_payload,
     custom_scan_index_eligibility_result as spire_custom_scan_index_eligibility_result,
     custom_scan_status_row as spire_custom_scan_status_row,
-    dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
-    dml_frontdoor_param_list_info as spire_dml_frontdoor_param_list_info,
-    dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
-    dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
-    dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
-    dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
     dml_frontdoor_relation_context_cache_row as spire_dml_frontdoor_relation_context_cache_row,
     dml_frontdoor_relation_context_catalog_row as spire_dml_frontdoor_relation_context_catalog_row,
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
@@ -234,7 +239,12 @@ pub(crate) use self::ec_spire::{
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
     remote_write_shape_fingerprint_from_secret as spire_remote_write_shape_fingerprint_from_secret,
     with_analyzed_dml_frontdoor_query_view as spire_with_analyzed_dml_frontdoor_query_view,
-    SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    SpireDmlFrontdoorQueryContext,
+};
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::{
+    coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan,
 };
 pub use self::ec_spire::{
     spire_assignment_row_gamma_offset, spire_assignment_row_heap_tid_offset,

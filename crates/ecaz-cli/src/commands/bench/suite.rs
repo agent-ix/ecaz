@@ -2629,9 +2629,7 @@ mod tests {
         };
         let args = expand_load(&step, &defaults);
         assert!(args.contains(&"--chunked".into()));
-        assert!(args
-            .windows(2)
-            .any(|w| w == ["--storage-format", "rabitq"]));
+        assert!(args.windows(2).any(|w| w == ["--storage-format", "rabitq"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));

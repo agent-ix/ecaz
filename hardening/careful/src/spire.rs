@@ -18,7 +18,7 @@ pub mod storage {
 
     use super::meta::{
         SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState,
-        SpirePlacementEntry, SpirePlacementState, SpirePlacementDirectory, SPIRE_LOCAL_NODE_ID,
+        SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID,
         SPIRE_SINGLE_LOCAL_STORE_ID,
     };
     use super::page;
@@ -87,11 +87,11 @@ pub mod storage {
             SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpirePlacementState,
         };
         use super::{
-            decode_leaf_v2_local_vec_id, is_delete_delta_assignment,
-            is_visible_primary_assignment, is_visible_primary_assignment_ref,
-            is_visible_scored_assignment, local_store_config_from_relation_plan,
-            plan_local_store_relations, spire_local_store_relation_name, SpireDeltaPartitionObject,
-            SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
+            decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
+            is_visible_primary_assignment_ref, is_visible_scored_assignment,
+            local_store_config_from_relation_plan, plan_local_store_relations,
+            spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
+            SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
             SpireLeafPartitionObjectV2Segment, SpireLocalObjectStore, SpireLocalObjectStoreSet,
             SpireLocalStoreState, SpireObjectReader, SpirePartitionObjectHeader,
             SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingChildEntry,
@@ -100,8 +100,8 @@ pub mod storage {
             SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
             SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
-            SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
             SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES, SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES,
+            SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
             SPIRE_PARTITION_OBJECT_HEADER_BYTES, SPIRE_PAYLOAD_FORMAT_NONE,
             SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
             SPIRE_VEC_ID_MAX_BYTES,
@@ -232,8 +232,7 @@ pub mod storage {
             let mut store_set = SpireLocalObjectStoreSet::from_config(config, 1024).unwrap();
 
             // Routing.
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let routing_placement = store_set.insert_routing_object(7, &routing).unwrap();
             assert_eq!(
                 store_set
@@ -311,9 +310,8 @@ pub mod storage {
         #[test]
         fn relation_object_store_for_index_relation_rejects_null_and_invalid_oid() {
             // null relation pointer.
-            let null_result = unsafe {
-                SpireRelationObjectStore::for_index_relation(std::ptr::null_mut())
-            };
+            let null_result =
+                unsafe { SpireRelationObjectStore::for_index_relation(std::ptr::null_mut()) };
             let null_err = match null_result {
                 Err(e) => e,
                 Ok(_) => panic!("null relation must be rejected"),
@@ -329,9 +327,8 @@ pub mod storage {
                 rd_id: pg_sys::InvalidOid,
             };
             let relation: pg_sys::Relation = &mut relation_data;
-            let invalid_oid_result = unsafe {
-                SpireRelationObjectStore::for_index_relation(relation)
-            };
+            let invalid_oid_result =
+                unsafe { SpireRelationObjectStore::for_index_relation(relation) };
             let invalid_oid_err = match invalid_oid_result {
                 Err(e) => e,
                 Ok(_) => panic!("invalid oid must be rejected"),
@@ -345,11 +342,8 @@ pub mod storage {
         #[test]
         fn relation_object_store_inserts_reject_epoch_zero() {
             // for_store_relation_id is safe — it just stores the pointer/id.
-            let store = SpireRelationObjectStore::for_store_relation_id(
-                std::ptr::null_mut(),
-                0,
-                12345,
-            );
+            let store =
+                SpireRelationObjectStore::for_store_relation_id(std::ptr::null_mut(), 0, 12345);
 
             let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             assert!(store.insert_routing_object(0, &routing).is_err());
@@ -393,7 +387,9 @@ pub mod storage {
             assert!(store.insert_top_graph_object(0, &top_graph).is_err());
 
             // Leaf V2 from rows: also rejects epoch == 0 before encoding.
-            assert!(store.insert_leaf_object_v2_from_rows(0, 17, 3, 5, &[]).is_err());
+            assert!(store
+                .insert_leaf_object_v2_from_rows(0, 17, 3, 5, &[])
+                .is_err());
         }
 
         #[test]
@@ -449,8 +445,7 @@ pub mod storage {
             let mut rel = synth_relation(45001);
             let store = make_store(&mut rel);
 
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement = store.insert_routing_object(7, &routing).unwrap();
             assert_eq!(placement.epoch, 7);
             assert_eq!(placement.pid, 11);
@@ -584,14 +579,17 @@ pub mod storage {
         // segment chain decoder reassembles them byte-for-byte.
         // ----------------------------------------------------------------
 
-        fn chain_sized_routing_children(child_count: usize, dimensions: usize)
-            -> Vec<SpireRoutingChildEntry>
-        {
+        fn chain_sized_routing_children(
+            child_count: usize,
+            dimensions: usize,
+        ) -> Vec<SpireRoutingChildEntry> {
             (0..child_count)
                 .map(|i| SpireRoutingChildEntry {
                     centroid_index: i as u32,
                     child_pid: 100 + i as u64,
-                    centroid: (0..dimensions).map(|d| (i * 13 + d) as f32 * 0.001).collect(),
+                    centroid: (0..dimensions)
+                        .map(|d| (i * 13 + d) as f32 * 0.001)
+                        .collect(),
                 })
                 .collect()
         }
@@ -655,10 +653,9 @@ pub mod storage {
             // Args: pid, object_version, root_pid, root_level,
             // dimensions, graph_degree (>= max neighbors per node),
             // build_list_size, alpha, entry_node, nodes.
-            let top_graph = SpireTopGraphPartitionObject::new(
-                500, 6, 11, 2, 2, NODE_COUNT, 120, 1.2, 0, nodes,
-            )
-            .unwrap();
+            let top_graph =
+                SpireTopGraphPartitionObject::new(500, 6, 11, 2, 2, NODE_COUNT, 120, 1.2, 0, nodes)
+                    .unwrap();
             let encoded_len = top_graph.encode().unwrap().len();
             assert!(
                 encoded_len > 7000,
@@ -727,8 +724,7 @@ pub mod storage {
             pg_sys::reset_counters();
             let mut rel = synth_relation(46005);
             let store = make_store(&mut rel);
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement = store.insert_routing_object(7, &routing).unwrap();
             // V1 reader should reject a placement that points at a V2
             // chain meta (which is what the relation store writes).
@@ -743,8 +739,7 @@ pub mod storage {
             pg_sys::reset_counters();
             let mut rel = synth_relation(46006);
             let store = make_store(&mut rel);
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement = store.insert_routing_object(7, &routing).unwrap();
 
             // Wrong node_id.
@@ -775,8 +770,7 @@ pub mod storage {
             pg_sys::reset_counters();
             let mut rel = synth_relation(46007);
             let store = make_store(&mut rel);
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let routing_placement = store.insert_routing_object(7, &routing).unwrap();
             let leaf_v2_placement = store
                 .insert_leaf_object_v2_from_rows(
@@ -806,7 +800,15 @@ pub mod storage {
             .unwrap();
             let delta_placement = store.insert_delta_object(7, &delta).unwrap();
             let top_graph = SpireTopGraphPartitionObject::new(
-                90, 3, 11, 2, 2, 2, 4, 1.2, 0,
+                90,
+                3,
+                11,
+                2,
+                2,
+                2,
+                4,
+                1.2,
+                0,
                 vec![SpireTopGraphNodeRecord {
                     child_pid: 21,
                     centroid_ordinal: 0,
@@ -842,11 +844,19 @@ pub mod storage {
                 17,
             );
             assert_eq!(
-                reader.read_delta_object(&delta_placement).unwrap().header.pid,
+                reader
+                    .read_delta_object(&delta_placement)
+                    .unwrap()
+                    .header
+                    .pid,
                 19,
             );
             assert_eq!(
-                reader.read_top_graph_object(&top_placement).unwrap().header.pid,
+                reader
+                    .read_top_graph_object(&top_placement)
+                    .unwrap()
+                    .header
+                    .pid,
                 90,
             );
         }
@@ -911,8 +921,7 @@ pub mod storage {
             pg_sys::reset_counters();
             let mut rel = synth_relation(46009);
             let store = make_store(&mut rel);
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement_a = store.insert_routing_object(7, &routing).unwrap();
             let routing_b =
                 SpireRoutingPartitionObject::root(12, 1, 2, routing_children()).unwrap();
@@ -920,10 +929,7 @@ pub mod storage {
 
             // SAFETY: emulator-backed PrefetchBuffer/read-stream are no-ops.
             unsafe { store.prefetch_object_tuple(&placement_a) }.unwrap();
-            unsafe {
-                store.prefetch_object_tuples(&[placement_a, placement_b])
-            }
-            .unwrap();
+            unsafe { store.prefetch_object_tuples(&[placement_a, placement_b]) }.unwrap();
 
             let reader: &dyn SpireObjectReader = &store;
             reader.prefetch_object(&placement_a).unwrap();
@@ -954,16 +960,12 @@ pub mod storage {
             };
 
             // Happy path: encode → decode round-trip.
-            let encoded = super::encode_relation_object_chain_meta(
-                valid_header,
-                256,
-                3,
-                valid_locator,
-                1024,
-            )
-            .unwrap();
-            let decoded =
-                super::decode_relation_object_chain_meta(&encoded).unwrap().unwrap();
+            let encoded =
+                super::encode_relation_object_chain_meta(valid_header, 256, 3, valid_locator, 1024)
+                    .unwrap();
+            let decoded = super::decode_relation_object_chain_meta(&encoded)
+                .unwrap()
+                .unwrap();
             assert_eq!(decoded.dimensions, 256);
             assert_eq!(decoded.segment_count, 3);
             assert_eq!(decoded.first_segment_locator, valid_locator);
@@ -973,17 +975,29 @@ pub mod storage {
             let mut bad_kind = valid_header;
             bad_kind.kind = SpirePartitionObjectKind::Leaf;
             assert!(super::encode_relation_object_chain_meta(
-                bad_kind, 256, 3, valid_locator, 1024,
+                bad_kind,
+                256,
+                3,
+                valid_locator,
+                1024,
             )
             .is_err());
 
             // Encode rejects dimensions=0, segment_count=0, INVALID first segment.
             assert!(super::encode_relation_object_chain_meta(
-                valid_header, 0, 3, valid_locator, 1024,
+                valid_header,
+                0,
+                3,
+                valid_locator,
+                1024,
             )
             .is_err());
             assert!(super::encode_relation_object_chain_meta(
-                valid_header, 256, 0, valid_locator, 1024,
+                valid_header,
+                256,
+                0,
+                valid_locator,
+                1024,
             )
             .is_err());
             assert!(super::encode_relation_object_chain_meta(
@@ -1032,14 +1046,9 @@ pub mod storage {
             };
 
             // Round-trip happy path: encode segment + decode against meta.
-            let encoded_meta = super::encode_relation_object_chain_meta(
-                meta_header,
-                256,
-                2,
-                valid_locator,
-                256,
-            )
-            .unwrap();
+            let encoded_meta =
+                super::encode_relation_object_chain_meta(meta_header, 256, 2, valid_locator, 256)
+                    .unwrap();
             let meta = super::decode_relation_object_chain_meta(&encoded_meta)
                 .unwrap()
                 .unwrap();
@@ -1063,13 +1072,21 @@ pub mod storage {
             let mut bad_kind = meta_header;
             bad_kind.kind = SpirePartitionObjectKind::Leaf;
             assert!(super::encode_relation_object_chain_segment(
-                bad_kind, 0, 0, valid_locator, &payload,
+                bad_kind,
+                0,
+                0,
+                valid_locator,
+                &payload,
             )
             .is_err());
 
             // Encode rejects empty payload.
             assert!(super::encode_relation_object_chain_segment(
-                meta_header, 0, 0, valid_locator, &[],
+                meta_header,
+                0,
+                0,
+                valid_locator,
+                &[],
             )
             .is_err());
 
@@ -1085,8 +1102,7 @@ pub mod storage {
             )
             .unwrap();
             assert!(
-                super::decode_relation_object_chain_segment(&encoded_mismatched, &meta)
-                    .is_err()
+                super::decode_relation_object_chain_segment(&encoded_mismatched, &meta).is_err()
             );
         }
 
@@ -1101,8 +1117,7 @@ pub mod storage {
             let mut rel = synth_relation(46010);
             let store = make_store(&mut rel);
 
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement = store.insert_routing_object(7, &routing).unwrap();
 
             let mut wrong_bytes = placement;
@@ -1126,8 +1141,7 @@ pub mod storage {
             pg_sys::reset_counters();
             let mut rel = synth_relation(46011);
             let store = make_store(&mut rel);
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement = store.insert_routing_object(7, &routing).unwrap();
 
             let mut non_local = placement;
@@ -1261,8 +1275,7 @@ pub mod storage {
             pg_sys::reset_counters();
             let mut rel = synth_relation(47002);
             let store = make_store(&mut rel);
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement_a = store.insert_routing_object(7, &routing).unwrap();
             let routing_b =
                 SpireRoutingPartitionObject::root(12, 1, 2, routing_children()).unwrap();
@@ -1277,10 +1290,7 @@ pub mod storage {
 
             // SAFETY: prefetch_object_tuples groups placements by store
             // key and invokes the inner read-stream loop.
-            unsafe {
-                store.prefetch_object_tuples(&[placement_a, placement_b])
-            }
-            .unwrap();
+            unsafe { store.prefetch_object_tuples(&[placement_a, placement_b]) }.unwrap();
         }
 
         #[test]
@@ -1289,13 +1299,14 @@ pub mod storage {
             // max_relation_object_tuple_payload_bytes happy paths so the
             // capacity helpers report sane values used by the chain inserter.
             let max_tuple =
-                super::max_relation_object_tuple_payload_bytes(pg_sys::BLCKSZ as usize)
-                    .unwrap();
+                super::max_relation_object_tuple_payload_bytes(pg_sys::BLCKSZ as usize).unwrap();
             assert!(max_tuple > 0);
-            assert!(max_tuple <= 7_000, "should be capped to 7000-byte tuple ceiling");
+            assert!(
+                max_tuple <= 7_000,
+                "should be capped to 7000-byte tuple ceiling"
+            );
 
-            let max_segment =
-                super::max_partition_object_chain_segment_payload_bytes().unwrap();
+            let max_segment = super::max_partition_object_chain_segment_payload_bytes().unwrap();
             assert!(max_segment > 0);
             assert!(max_segment < max_tuple);
         }
@@ -1310,8 +1321,7 @@ pub mod storage {
             let mut rel = synth_relation(46003);
             let store = make_store(&mut rel);
 
-            let routing =
-                SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+            let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             let placement = store.insert_routing_object(7, &routing).unwrap();
             let mut expected = routing.clone();
             expected.header.published_epoch_backref = 7;
@@ -1555,9 +1565,8 @@ mod page_tests {
         }
 
         // SAFETY: delete the second tuple; first remains readable.
-        let (count, bytes) =
-            unsafe { page::delete_object_tuples_no_compact(relation, &tids[1..]) }
-                .expect("delete should succeed");
+        let (count, bytes) = unsafe { page::delete_object_tuples_no_compact(relation, &tids[1..]) }
+            .expect("delete should succeed");
         assert_eq!(count, 1);
         assert_eq!(bytes, payloads[1].len() as u64);
 
