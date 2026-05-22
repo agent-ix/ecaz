@@ -457,12 +457,15 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
         let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
+        let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
         Box::new(RaBitQScorer {
             query_rotated: rotated,
             query_norm: norm,
             dimensions: self.dimensions,
             bits_per_dim: self.bits_per_dim,
             dequant_lut,
+            query_bf16,
+            dequant_lut_bf16,
         })
     }
 
@@ -484,12 +487,15 @@ impl RaBitQQuantizer {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
         let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
+        let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
         PreparedEstimator {
             query_rotated: rotated,
             query_norm: norm,
             dimensions: self.dimensions,
             bits_per_dim: self.bits_per_dim,
             dequant_lut,
+            query_bf16,
+            dequant_lut_bf16,
         }
     }
 
@@ -807,6 +813,14 @@ pub struct PreparedEstimator {
     /// loop reuses it for every candidate rather than recomputing
     /// per candidate.
     dequant_lut: [f32; 256],
+    /// Same `query_rotated` data truncated to bfloat16 (stored as raw
+    /// u16 bits — the upper half of the f32). Used by the aarch64 +
+    /// `bf16` feature path which executes `bfdot` to FMA 8 bf16 lanes
+    /// at a time vs 4 f32 lanes. Empty when bf16 is not detected at
+    /// runtime so the f32 path doesn't pay the build cost.
+    query_bf16: Vec<u16>,
+    /// bf16 dequant LUT matching `dequant_lut`. Same truncation.
+    dequant_lut_bf16: [u16; 256],
 }
 
 impl PreparedEstimator {
@@ -822,7 +836,26 @@ impl PreparedEstimator {
     pub fn estimate_ip(&self, code: &[u8]) -> DistanceEstimate {
         estimate_ip_impl(
             &self.query_rotated,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
             self.query_norm,
+            self.dimensions,
+            self.bits_per_dim,
+            &self.dequant_lut,
+            code,
+        )
+    }
+
+    /// IVF-fast estimate that skips the ε-concentration bound (sqrt
+    /// + a few multiplies per candidate) since the IVF scan path
+    /// only uses the scalar estimate. Use [`Self::estimate_ip`] if
+    /// you need the bound.
+    #[inline]
+    pub fn estimate_ip_scalar_only(&self, code: &[u8]) -> f32 {
+        estimate_ip_scalar_only_impl(
+            &self.query_rotated,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
@@ -842,14 +875,44 @@ impl PreparedEstimator {
     /// Skipping when that upper bound is below the running top-K cutoff
     /// is recall-safe: this candidate can never reach top-K.
     ///
-    /// Returns `Some(estimate)` if the candidate might place, `None`
-    /// if the Cauchy-Schwarz bound already excludes it.
+    /// IVF-fast variant: returns just the scalar estimate (no ε-bound).
+    pub fn try_estimate_ip_scalar(&self, code: &[u8], min_ip_to_keep: f32) -> Option<f32> {
+        let bits = self.bits_per_dim as usize;
+        let packed_bytes = (self.dimensions * bits).div_ceil(8);
+        if code.len() < packed_bytes + RABITQ_SCALAR_LEN {
+            return Some(self.estimate_ip_scalar_only(code));
+        }
+        let s = packed_bytes;
+        let candidate_norm = f32::from_le_bytes(
+            code[s..s + RABITQ_NORM_LEN]
+                .try_into()
+                .expect("norm slice is always 4 bytes"),
+        );
+        let candidate_o_dot = f32::from_le_bytes(
+            code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+                .try_into()
+                .expect("o_dot slice is always 4 bytes"),
+        );
+        const O_DOT_FLOOR: f32 = 1e-6;
+        if candidate_norm > 0.0
+            && candidate_norm.is_finite()
+            && candidate_o_dot.abs() >= O_DOT_FLOOR
+            && candidate_o_dot.is_finite()
+        {
+            let max_estimate = candidate_norm * self.query_norm / candidate_o_dot.abs();
+            if max_estimate < min_ip_to_keep {
+                return None;
+            }
+        }
+        Some(self.estimate_ip_scalar_only(code))
+    }
+
+    /// Bound-carrying variant retained for AM tooling that wants the
+    /// ε-envelope. IVF callers should prefer `try_estimate_ip_scalar`.
     pub fn try_estimate_ip(&self, code: &[u8], min_ip_to_keep: f32) -> Option<DistanceEstimate> {
         let bits = self.bits_per_dim as usize;
         let packed_bytes = (self.dimensions * bits).div_ceil(8);
         if code.len() < packed_bytes + RABITQ_SCALAR_LEN {
-            // Defer the length panic to the full path so callers see the
-            // canonical error message.
             return Some(self.estimate_ip(code));
         }
         let s = packed_bytes;
@@ -863,7 +926,6 @@ impl PreparedEstimator {
                 .try_into()
                 .expect("o_dot slice is always 4 bytes"),
         );
-        // Skip the pre-prune in degenerate cases; estimate_ip handles them.
         const O_DOT_FLOOR: f32 = 1e-6;
         if candidate_norm > 0.0
             && candidate_norm.is_finite()
@@ -888,19 +950,21 @@ pub struct RaBitQScorer {
     dimensions: usize,
     bits_per_dim: u8,
     dequant_lut: [f32; 256],
+    query_bf16: Vec<u16>,
+    dequant_lut_bf16: [u16; 256],
 }
 
 impl crate::quant::QueryScorer for RaBitQScorer {
     fn score(&self, code: &[u8]) -> f32 {
-        estimate_ip_impl(
+        estimate_ip_scalar_only_impl(
             &self.query_rotated,
-            self.query_norm,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
             code,
         )
-        .estimate
     }
 }
 
@@ -1129,6 +1193,29 @@ fn read_level(code: &[u8], i: usize, bits: usize) -> u32 {
     }
 }
 
+/// Truncate an f32 to bfloat16 by taking the upper 16 bits of its IEEE
+/// 754 representation. Round-to-nearest-even would be ~1 ULP better
+/// but adds branches; truncation is what the BF16 cast instruction
+/// effectively does and is good enough for inner-product accumulation
+/// with a wide accumulator.
+#[inline]
+fn f32_to_bf16_bits(value: f32) -> u16 {
+    (value.to_bits() >> 16) as u16
+}
+
+/// Build the bf16 mirror of `query_rotated` + `dequant_lut`. Always
+/// runs at scorer prep time (cost is negligible vs the rotation
+/// itself); the kernel dispatch decides whether to use them based on
+/// runtime bf16 feature detection.
+fn prepare_bf16_state(query_rotated: &[f32], dequant_lut: &[f32; 256]) -> (Vec<u16>, [u16; 256]) {
+    let query_bf16: Vec<u16> = query_rotated.iter().copied().map(f32_to_bf16_bits).collect();
+    let mut lut_bf16 = [0_u16; 256];
+    for (i, &v) in dequant_lut.iter().enumerate() {
+        lut_bf16[i] = f32_to_bf16_bits(v);
+    }
+    (query_bf16, lut_bf16)
+}
+
 /// Build a 256-entry dequant table indexed by `level`. The first
 /// `1 << bits` entries are valid; the rest are zero-filled. The LUT
 /// depends only on `(bits, sqrt_d)`, so it can be computed once per
@@ -1159,13 +1246,55 @@ fn sum_query_dequant(
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
+    sum_query_dequant_with_bf16(
+        query_rotated,
+        None,
+        None,
+        dimensions,
+        bits,
+        lut,
+        code,
+    )
+}
+
+/// Variant that also accepts the bf16 mirror state. When the caller
+/// already has the bf16 query + LUT computed (per-query, one-time)
+/// and the runtime supports the `bf16` aarch64 extension, this path
+/// dispatches to a bfdot-based kernel that processes 8 lanes per
+/// vbfdotq_f32 call vs 4 lanes per vfmaq_f32.
+#[inline]
+fn sum_query_dequant_with_bf16(
+    query_rotated: &[f32],
+    query_bf16: Option<&[u16]>,
+    dequant_lut_bf16: Option<&[u16; 256]>,
+    dimensions: usize,
+    bits: usize,
+    lut: &[f32; 256],
+    code: &[u8],
+) -> f32 {
     #[cfg(target_arch = "aarch64")]
     {
-        if bits == 4 && std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
-            return unsafe { sum_query_dequant_neon_bits4(query_rotated, dimensions, lut, code) };
+        if bits == 4 {
+            if let (Some(q_bf16), Some(lut_bf16)) = (query_bf16, dequant_lut_bf16) {
+                if q_bf16.len() == dimensions
+                    && std::arch::is_aarch64_feature_detected!("bf16")
+                    && std::arch::is_aarch64_feature_detected!("neon")
+                {
+                    // SAFETY: features confirmed at runtime, lengths checked.
+                    return unsafe {
+                        sum_query_dequant_neon_bf16_bits4(q_bf16, dimensions, lut_bf16, code)
+                    };
+                }
+            }
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
+                return unsafe {
+                    sum_query_dequant_neon_bits4(query_rotated, dimensions, lut, code)
+                };
+            }
         }
     }
+    let _ = (query_bf16, dequant_lut_bf16);
     sum_query_dequant_scalar(query_rotated, dimensions, bits, lut, code)
 }
 
@@ -1182,6 +1311,81 @@ fn sum_query_dequant_scalar(
         let level = read_level(code, i, bits) as usize;
         sum += query_i * lut[level];
     }
+    sum
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon,bf16")]
+unsafe fn sum_query_dequant_neon_bf16_bits4(
+    query_bf16: &[u16],
+    dimensions: usize,
+    lut_bf16: &[u16; 256],
+    code: &[u8],
+) -> f32 {
+    use std::arch::aarch64::{
+        vaddq_f32, vbfdotq_f32, vcombine_bf16, vdupq_n_f32, vld1_bf16, vld1q_bf16, vst1q_f32,
+    };
+
+    let mut acc0 = vdupq_n_f32(0.0);
+    let mut acc1 = vdupq_n_f32(0.0);
+
+    let mut dim_index = 0_usize;
+    // Each iteration consumes 16 dimensions = 8 bytes of code, scoring two
+    // bfdot calls (each does 4 dot-product pairs into 4 f32 lanes).
+    while dim_index + 16 <= dimensions {
+        let byte_base = dim_index / 2;
+        // SAFETY: dim_index + 16 <= dimensions and the code-length invariant
+        // checked by the caller guarantees byte_base + 8 <= packed_bytes.
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
+        let b4 = *code.get_unchecked(byte_base + 4) as usize;
+        let b5 = *code.get_unchecked(byte_base + 5) as usize;
+        let b6 = *code.get_unchecked(byte_base + 6) as usize;
+        let b7 = *code.get_unchecked(byte_base + 7) as usize;
+
+        // 16 nibbles → 16 bf16 dequant values.
+        let dq: [u16; 16] = [
+            lut_bf16[b0 & 0x0F], lut_bf16[b0 >> 4],
+            lut_bf16[b1 & 0x0F], lut_bf16[b1 >> 4],
+            lut_bf16[b2 & 0x0F], lut_bf16[b2 >> 4],
+            lut_bf16[b3 & 0x0F], lut_bf16[b3 >> 4],
+            lut_bf16[b4 & 0x0F], lut_bf16[b4 >> 4],
+            lut_bf16[b5 & 0x0F], lut_bf16[b5 >> 4],
+            lut_bf16[b6 & 0x0F], lut_bf16[b6 >> 4],
+            lut_bf16[b7 & 0x0F], lut_bf16[b7 >> 4],
+        ];
+
+        // SAFETY: dim_index + 16 <= dimensions ⇒ 8-lane bf16 loads OK.
+        // vld1q_bf16 reads 8 bfloat16 lanes (16 bytes) from the *raw* u16 ptr
+        // reinterpreted as bfloat16x8_t.
+        let q_lo = vld1q_bf16(query_bf16.as_ptr().add(dim_index).cast());
+        let q_hi = vld1q_bf16(query_bf16.as_ptr().add(dim_index + 8).cast());
+        let d_lo = vld1q_bf16(dq.as_ptr().cast());
+        let d_hi = vld1q_bf16(dq.as_ptr().add(8).cast());
+
+        acc0 = vbfdotq_f32(acc0, q_lo, d_lo);
+        acc1 = vbfdotq_f32(acc1, q_hi, d_hi);
+
+        let _ = (vld1_bf16, vcombine_bf16); // pulled in for completeness; not used in this layout
+
+        dim_index += 16;
+    }
+
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(lanes.as_mut_ptr(), vaddq_f32(acc0, acc1));
+    let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+
+    // Scalar tail: rebuild from the bf16 representations for consistency.
+    while dim_index < dimensions {
+        let level = ((code.get_unchecked(dim_index / 2) >> ((dim_index % 2) * 4)) & 0x0F) as usize;
+        let q_f32 = f32::from_bits((query_bf16[dim_index] as u32) << 16);
+        let dq_f32 = f32::from_bits((lut_bf16[level] as u32) << 16);
+        sum += q_f32 * dq_f32;
+        dim_index += 1;
+    }
+
     sum
 }
 
@@ -1269,6 +1473,8 @@ unsafe fn sum_query_dequant_neon_bits4(
 /// ```
 fn estimate_ip_impl(
     query_rotated: &[f32],
+    query_bf16: Option<&[u16]>,
+    dequant_lut_bf16: Option<&[u16; 256]>,
     query_norm: f32,
     dimensions: usize,
     bits_per_dim: u8,
@@ -1301,7 +1507,15 @@ fn estimate_ip_impl(
             .expect("x_norm slice is always 4 bytes"),
     );
 
-    let sum_q_dequant = sum_query_dequant(query_rotated, dimensions, bits, dequant_lut, code);
+    let sum_q_dequant = sum_query_dequant_with_bf16(
+        query_rotated,
+        query_bf16,
+        dequant_lut_bf16,
+        dimensions,
+        bits,
+        dequant_lut,
+        code,
+    );
 
     // Guard degenerate cases.
     const O_DOT_FLOOR: f32 = 1e-6;
@@ -1332,6 +1546,66 @@ fn estimate_ip_impl(
     let bound = RABITQ_BOUND_CONFIDENCE * query_norm * candidate_norm * epsilon_sq.sqrt();
 
     DistanceEstimate { estimate, bound }
+}
+
+/// Bound-free variant of `estimate_ip_impl`: skips the ε-concentration
+/// computation (sqrt + scalar multiplies) for callers that don't need
+/// the error envelope. ec_ivf scoring is the canonical user.
+#[inline]
+fn estimate_ip_scalar_only_impl(
+    query_rotated: &[f32],
+    query_bf16: Option<&[u16]>,
+    dequant_lut_bf16: Option<&[u16; 256]>,
+    dimensions: usize,
+    bits_per_dim: u8,
+    dequant_lut: &[f32; 256],
+    code: &[u8],
+) -> f32 {
+    debug_assert_eq!(query_rotated.len(), dimensions);
+    let bits = bits_per_dim as usize;
+    let packed_bytes = (dimensions * bits).div_ceil(8);
+    assert!(
+        code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+        "RaBitQ code too short: got {}, expected at least {}",
+        code.len(),
+        packed_bytes + RABITQ_SCALAR_LEN,
+    );
+    let s = packed_bytes;
+    let candidate_norm = f32::from_le_bytes(
+        code[s..s + RABITQ_NORM_LEN]
+            .try_into()
+            .expect("norm slice is always 4 bytes"),
+    );
+    let candidate_o_dot = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+            .try_into()
+            .expect("o_dot slice is always 4 bytes"),
+    );
+    let candidate_x_norm = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .try_into()
+            .expect("x_norm slice is always 4 bytes"),
+    );
+
+    let sum_q_dequant = sum_query_dequant_with_bf16(
+        query_rotated,
+        query_bf16,
+        dequant_lut_bf16,
+        dimensions,
+        bits,
+        dequant_lut,
+        code,
+    );
+
+    const O_DOT_FLOOR: f32 = 1e-6;
+    if candidate_o_dot.abs() < O_DOT_FLOOR
+        || !candidate_o_dot.is_finite()
+        || candidate_x_norm <= 0.0
+        || !candidate_x_norm.is_finite()
+    {
+        return 0.0;
+    }
+    candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm)
 }
 
 fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {

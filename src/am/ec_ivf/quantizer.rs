@@ -245,7 +245,7 @@ impl IvfQuantizer {
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
                 let _ = gamma;
-                Ok(prepared_query.estimate_ip(payload).estimate)
+                Ok(prepared_query.estimate_ip_scalar_only(payload))
             }
             (
                 IvfQuantizerProfile::PqFastScan { group_count, .. },
@@ -308,7 +308,7 @@ impl IvfQuantizer {
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared), Some(min_ip)) => {
                 let _ = gamma;
-                Ok(prepared.try_estimate_ip(payload, min_ip).map(|de| de.estimate))
+                Ok(prepared.try_estimate_ip_scalar(payload, min_ip))
             }
             _ => self
                 .score_ip_from_parts(prepared_query, gamma, payload)
