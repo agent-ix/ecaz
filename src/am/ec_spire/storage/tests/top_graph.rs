@@ -320,3 +320,58 @@
         assert!(short_node.contains("node 0 body too short"));
         assert!(short_neighbors.contains("neighbors extend past object body"));
     }
+
+    #[test]
+    fn top_graph_partition_object_decode_rejects_prefix_only_tail_at_boundary() {
+        let encoded = valid_top_graph_object().encode().unwrap();
+        let (_header, tail) = SpirePartitionObjectHeader::decode_prefix(&encoded).unwrap();
+        let body_offset = encoded.len() - tail.len();
+        // TOP_GRAPH_OBJECT_BODY_PREFIX_BYTES = 8 + 2 + 2 + 4 + 4 + 4 + 4 = 28.
+        let prefix_only_end = body_offset + 28;
+        let err = SpireTopGraphPartitionObject::decode(&encoded[..prefix_only_end]).unwrap_err();
+        assert!(
+            err.contains("node 0 body too short"),
+            "expected per-node short-body error at prefix boundary, got {err}"
+        );
+    }
+
+    #[test]
+    fn top_graph_partition_object_accepts_alpha_exactly_one() {
+        let object = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            128,
+            3,
+            16,
+            1.0,
+            0,
+            vec![top_graph_node(21, 0, vec![])],
+        )
+        .expect("alpha exactly 1.0 must be accepted");
+        assert_eq!(object.alpha, 1.0);
+    }
+
+    #[test]
+    fn top_graph_partition_object_accepts_neighbor_count_equal_to_degree() {
+        let object = SpireTopGraphPartitionObject::new(
+            90,
+            3,
+            11,
+            2,
+            128,
+            2,
+            16,
+            1.2,
+            0,
+            vec![
+                top_graph_node(21, 0, vec![1, 2]),
+                top_graph_node(22, 1, vec![0, 2]),
+                top_graph_node(23, 2, vec![0, 1]),
+            ],
+        )
+        .expect("neighbors.len() == graph_degree must be accepted");
+        assert_eq!(object.graph_degree, 2);
+        assert_eq!(object.nodes[0].neighbors.len(), 2);
+    }

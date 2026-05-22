@@ -187,6 +187,9 @@ jobs:
       - name: Recall gate
         run: make recall-gate ECAZ_ARGS="--database postgres --host /tmp/tqvector_pgrx_home --port 28818"
 
+      - name: Cross-AM gate
+        run: make cross-am-gate ECAZ_ARGS="--database postgres --host /tmp/tqvector_pgrx_home --port 28818"
+
       - name: Cost gate
         run: make cost-gate ECAZ_ARGS="--database postgres --host /tmp/tqvector_pgrx_home --port 28818"
 

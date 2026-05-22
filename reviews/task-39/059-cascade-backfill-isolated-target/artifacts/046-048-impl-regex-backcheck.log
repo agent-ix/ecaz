@@ -1,0 +1,22 @@
+Back-check for the body-replace regex bug discovered in packet 052
+(BODY_REPLACE_RE didn't match `<impl X>::method` patterns, silently
+skipping mutations). Reviewer (053 feedback) asked: confirm earlier
+packets 046/047/048 didn't have impl-method mutations that were
+silently skipped by the buggy regex.
+
+Method: grep enumeration files for mutations on `<impl ...>::method`
+targets:
+
+  for p in 046 047 048; do
+    grep -cE '^[^:]+:[0-9]+:[0-9]+: replace <impl ' \
+      reviews/task-39/${p}-spire-*/artifacts/*-mutants-enumerated.txt
+  done
+
+Result:
+  046-spire-leaf-v2:        0 impl-method mutations / 14 total
+  047-spire-leaf-v2-parts:  0 impl-method mutations / 68 total
+  048-spire-header:         0 impl-method mutations / 35 total
+
+No impl-method mutations existed in any of these enumerations, so
+the buggy regex couldn't have silently skipped any. The 100%
+verification rate claimed for those packets stands.

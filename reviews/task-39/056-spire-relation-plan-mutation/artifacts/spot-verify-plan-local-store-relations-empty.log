@@ -1,0 +1,5 @@
+    careful_spire::storage::tests::local_store_relation_plan_sorts_and_preserves_tablespaces
+
+test result: FAILED. 548 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
+
+error: test failed, to rerun pass `--lib`
