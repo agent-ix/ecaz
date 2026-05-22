@@ -2444,7 +2444,7 @@ impl EcHnswParallelBuildLeader {
 
         // SAFETY: `heap_relation` is live for this AM build, and `snapshot`
         // points either to SnapshotAnyData or a registered transaction snapshot.
-        let shared_bytes = unsafe { parallel_build_shared_workspace_size(heap_relation, snapshot) };
+        let shared_bytes = parallel_build_shared_workspace_size(heap_relation, snapshot);
         // SAFETY: `pcxt` is a live ParallelContext; estimator calls happen
         // before `InitializeParallelDSM` as PostgreSQL requires.
         unsafe {
@@ -2925,21 +2925,18 @@ enum EcHnswParallelBuildWorkerMessage {
 
 fn send_build_tuple_message(queue_handle: *mut pg_sys::shm_mq_handle, tuple: &build::BuildTuple) {
     let message = encode_build_tuple_message(tuple);
-    // SAFETY: `queue_handle` is this worker's attached queue handle and
-    // `message` remains live for the duration of the send call.
-    unsafe { send_worker_message(queue_handle, &message) };
+    send_worker_message(queue_handle, &message);
 }
 
 fn send_done_message(queue_handle: *mut pg_sys::shm_mq_handle) {
     let message = [BUILD_DONE_MESSAGE];
-    // SAFETY: `queue_handle` is this worker's attached queue handle and the
-    // done marker remains live for the duration of the send call.
-    unsafe { send_worker_message(queue_handle, &message) };
+    send_worker_message(queue_handle, &message);
 }
 
-unsafe fn send_worker_message(queue_handle: *mut pg_sys::shm_mq_handle, message: &[u8]) {
-    // SAFETY: `queue_handle` is an attached shm_mq handle, and `message` points
-    // at contiguous bytes valid for the synchronous send duration.
+fn send_worker_message(queue_handle: *mut pg_sys::shm_mq_handle, message: &[u8]) {
+    // SAFETY: callers pass an attached `shm_mq_handle` obtained from
+    // `shm_mq_attach`, and `message` points at contiguous bytes valid for
+    // the synchronous send duration.
     let result = unsafe {
         pg_sys::shm_mq_send(
             queue_handle,
@@ -3115,25 +3112,27 @@ fn checked_graph_u32(value: usize, field: &str) -> u32 {
     value
 }
 
-unsafe fn parallel_build_shared_workspace_size(
+fn parallel_build_shared_workspace_size(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
 ) -> pg_sys::Size {
     checked_add_size(
         bufferalign(size_of::<EcHnswParallelBuildSharedHeader>() as pg_sys::Size),
-        // SAFETY: `heap_relation` is live for this build and `snapshot` is a
-        // valid PostgreSQL snapshot pointer for the parallel scan estimate.
+        // SAFETY: callers pass a live heap relation and a valid snapshot
+        // pointer obtained from the parallel build setup; the estimate FFI
+        // does not retain the inputs.
         unsafe { pg_sys::table_parallelscan_estimate(heap_relation, snapshot) },
         "parallel build shared workspace size",
     )
 }
 
-unsafe fn parallel_table_scan_from_shared(
+fn parallel_table_scan_from_shared(
     shared: *mut EcHnswParallelBuildSharedHeader,
 ) -> pg_sys::ParallelTableScanDesc {
-    // SAFETY: `shared` points at the beginning of the shared workspace; the
+    // SAFETY: callers pass the beginning of the shared workspace; the
     // parallel table scan descriptor starts immediately after the aligned
-    // shared header.
+    // shared header. Pointer arithmetic is within the shared workspace
+    // allocation owned by the parallel build leader.
     unsafe {
         shared
             .cast::<u8>()
