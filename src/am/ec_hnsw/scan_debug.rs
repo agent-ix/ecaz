@@ -134,19 +134,14 @@ fn debug_with_page_line_tuple_bytes<R, F>(
 where
     F: for<'a> FnOnce(&'a [u8]) -> R,
 {
-    // SAFETY: Debug callers pass a locked page pointer and offset discovered
-    // while scanning relation pages; the shared helper validates the line
-    // pointer and tuple bounds before exposing bytes to `visit`.
-    unsafe {
-        super::shared::with_page_line_tuple_bytes(
-            page_ptr,
-            page_size,
-            0,
-            offset,
-            "debug scanning page tuples",
-            visit,
-        )
-    }
+    super::shared::with_page_line_tuple_bytes(
+        page_ptr,
+        page_size,
+        0,
+        offset,
+        "debug scanning page tuples",
+        visit,
+    )
     .unwrap_or(None)
 }
 
@@ -193,10 +188,7 @@ fn debug_load_graph_element(
     element_tid: page::ItemPointer,
     storage: graph::GraphStorageDescriptor,
 ) -> graph::GraphElement {
-    // SAFETY: Debug callers pass element TIDs discovered from graph pages or
-    // graph traversal for this relation/storage pair; the loader validates the
-    // storage-specific tuple body before returning an element.
-    unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) }
+    graph::load_exact_graph_element(index_relation, element_tid, storage)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -205,10 +197,7 @@ fn debug_load_graph_adjacency(
     element_tid: page::ItemPointer,
     storage: graph::GraphStorageDescriptor,
 ) -> (graph::GraphElement, graph::GraphNeighbors) {
-    // SAFETY: Debug callers pass element TIDs discovered from graph pages,
-    // metadata, scan frontier, or traversal for this relation/storage pair;
-    // adjacency loading validates the element and neighbor tuple bodies.
-    unsafe { graph::load_exact_graph_adjacency(index_relation, element_tid, storage) }
+    graph::load_exact_graph_adjacency(index_relation, element_tid, storage)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
