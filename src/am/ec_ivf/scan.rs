@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
-use std::collections::{hash_map::Entry, BinaryHeap, HashMap, HashSet};
+use hashbrown::hash_map::Entry;
+use hashbrown::HashMap;
+use std::collections::{BinaryHeap, HashSet};
 use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
@@ -998,7 +1000,7 @@ unsafe fn materialize_probe_candidates(
                     return Ok(());
                 }
                 opaque.explain_counters.record_posting_visited();
-                let heap_tid_count = posting.heaptids().count();
+                let heap_tid_count = posting.heaptid_count();
                 if !consume_live_tid_budget(
                     &mut remaining_live_tids_by_list,
                     posting.list_id,
