@@ -1041,7 +1041,7 @@ unsafe fn materialize_probe_candidates(
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
     let mut running_top = quantizer
         .uses_score_bound_pruning()
-        .then(|| pre_rerank_candidate_limit(index_options))
+        .then(|| running_top_k_for_pruning(index_options))
         .flatten()
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
@@ -1139,6 +1139,28 @@ fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> O
         super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
         _ => None,
     }
+}
+
+/// K used to seed the `running_top` Cauchy-Schwarz cutoff during the
+/// posting scan. Distinct from `pre_rerank_candidate_limit`, which
+/// drives the *post-scan* rerank set size. The pre-prune cutoff is
+/// recall-safe at any K ≥ the query's downstream LIMIT: candidates
+/// below the K-th best RaBitQ score by definition cannot enter the
+/// final top-K.
+///
+/// Default is 200 so pre-prune fires on no-rerank scans (where
+/// `pre_rerank_candidate_limit` would otherwise be `None` and the
+/// cutoff would never materialize). Covers the common K ≤ 200 case.
+/// Queries with LIMIT > 200 would see truncation — track via a GUC
+/// override if that workload becomes real. When `heap_f32` rerank is
+/// on with an explicit width, we reuse that width so the cutoff
+/// aligns with the rerank set.
+fn running_top_k_for_pruning(index_options: &super::options::EcIvfOptions) -> Option<usize> {
+    if let Some(width) = pre_rerank_candidate_limit(index_options) {
+        return Some(width);
+    }
+    const DEFAULT_PRE_PRUNE_K: usize = 200;
+    Some(DEFAULT_PRE_PRUNE_K)
 }
 
 fn collect_ranked_probe_candidates<I>(
