@@ -1272,14 +1272,29 @@ fn sum_query_dequant_with_bf16(
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
-    let _ = (query_bf16, dequant_lut_bf16);
     #[cfg(target_arch = "aarch64")]
     {
-        if bits == 4 && std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
-            return unsafe { sum_query_dequant_neon_bits4(query_rotated, dimensions, lut, code) };
+        if bits == 4 {
+            if let (Some(q_bf16), Some(lut_bf16)) = (query_bf16, dequant_lut_bf16) {
+                if q_bf16.len() == dimensions
+                    && std::arch::is_aarch64_feature_detected!("bf16")
+                    && std::arch::is_aarch64_feature_detected!("neon")
+                {
+                    // SAFETY: features confirmed at runtime.
+                    return unsafe {
+                        sum_query_dequant_neon_bf16_bits4(q_bf16, dimensions, lut_bf16, code)
+                    };
+                }
+            }
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                // SAFETY: NEON feature confirmed at runtime.
+                return unsafe {
+                    sum_query_dequant_neon_bits4(query_rotated, dimensions, lut, code)
+                };
+            }
         }
     }
+    let _ = (query_bf16, dequant_lut_bf16);
     sum_query_dequant_scalar(query_rotated, dimensions, bits, lut, code)
 }
 
@@ -1299,11 +1314,98 @@ fn sum_query_dequant_scalar(
     sum
 }
 
-// NOTE: a bf16 `vbfdotq_f32`-based kernel was prototyped (would
-// double the lanes per cycle vs the f32 path) but Rust's
-// `std::arch::aarch64::vbfdotq_f32` is currently nightly-only
-// (`feature(stdarch_neon_bf16)`). Revisit once that stabilizes or
-// land via inline asm if the speedup proves worth the complexity.
+/// bfdot accumulator using inline asm. Equivalent to the nightly
+/// `vbfdotq_f32(acc, a, b)` intrinsic. Operands:
+///   - `acc`: f32x4 accumulator
+///   - `a`, `b`: each carries 8 bf16 lanes packed as u16x8
+/// Result: `acc[i] += a[2i]*b[2i] + a[2i+1]*b[2i+1]` for i ∈ 0..4
+///         (all multiplies happen in bf16, accumulation in f32).
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon,bf16")]
+unsafe fn bfdot_asm(
+    acc: std::arch::aarch64::float32x4_t,
+    a: std::arch::aarch64::uint16x8_t,
+    b: std::arch::aarch64::uint16x8_t,
+) -> std::arch::aarch64::float32x4_t {
+    let mut out = acc;
+    core::arch::asm!(
+        "bfdot {acc:v}.4s, {a:v}.8h, {b:v}.8h",
+        acc = inout(vreg) out,
+        a = in(vreg) a,
+        b = in(vreg) b,
+        options(pure, nomem, nostack),
+    );
+    out
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon,bf16")]
+unsafe fn sum_query_dequant_neon_bf16_bits4(
+    query_bf16: &[u16],
+    dimensions: usize,
+    lut_bf16: &[u16; 256],
+    code: &[u8],
+) -> f32 {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vld1q_u16, vst1q_f32};
+
+    let mut acc0 = vdupq_n_f32(0.0);
+    let mut acc1 = vdupq_n_f32(0.0);
+
+    let mut dim_index = 0_usize;
+    // Each iteration consumes 16 dimensions = 8 bytes of code, scoring two
+    // bfdot calls (each does 4 bf16-pair dot products into 4 f32 lanes).
+    while dim_index + 16 <= dimensions {
+        let byte_base = dim_index / 2;
+        // SAFETY: dim_index + 16 <= dimensions and the code-length invariant
+        // checked by the caller guarantees byte_base + 8 <= packed_bytes.
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
+        let b4 = *code.get_unchecked(byte_base + 4) as usize;
+        let b5 = *code.get_unchecked(byte_base + 5) as usize;
+        let b6 = *code.get_unchecked(byte_base + 6) as usize;
+        let b7 = *code.get_unchecked(byte_base + 7) as usize;
+
+        // 16 nibbles → 16 bf16 dequant values.
+        let dq: [u16; 16] = [
+            lut_bf16[b0 & 0x0F], lut_bf16[b0 >> 4],
+            lut_bf16[b1 & 0x0F], lut_bf16[b1 >> 4],
+            lut_bf16[b2 & 0x0F], lut_bf16[b2 >> 4],
+            lut_bf16[b3 & 0x0F], lut_bf16[b3 >> 4],
+            lut_bf16[b4 & 0x0F], lut_bf16[b4 >> 4],
+            lut_bf16[b5 & 0x0F], lut_bf16[b5 >> 4],
+            lut_bf16[b6 & 0x0F], lut_bf16[b6 >> 4],
+            lut_bf16[b7 & 0x0F], lut_bf16[b7 >> 4],
+        ];
+
+        // SAFETY: dim_index + 16 <= dimensions ⇒ 8-lane loads OK.
+        let q_lo = vld1q_u16(query_bf16.as_ptr().add(dim_index));
+        let q_hi = vld1q_u16(query_bf16.as_ptr().add(dim_index + 8));
+        let d_lo = vld1q_u16(dq.as_ptr());
+        let d_hi = vld1q_u16(dq.as_ptr().add(8));
+
+        acc0 = bfdot_asm(acc0, q_lo, d_lo);
+        acc1 = bfdot_asm(acc1, q_hi, d_hi);
+
+        dim_index += 16;
+    }
+
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(lanes.as_mut_ptr(), vaddq_f32(acc0, acc1));
+    let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+
+    // Scalar tail: rebuild from the bf16 representations for consistency.
+    while dim_index < dimensions {
+        let level = ((*code.get_unchecked(dim_index / 2) >> ((dim_index % 2) * 4)) & 0x0F) as usize;
+        let q_f32 = f32::from_bits((query_bf16[dim_index] as u32) << 16);
+        let dq_f32 = f32::from_bits((lut_bf16[level] as u32) << 16);
+        sum += q_f32 * dq_f32;
+        dim_index += 1;
+    }
+
+    sum
+}
 
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
