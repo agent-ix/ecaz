@@ -143,24 +143,61 @@ recall regression.
 | + 4-way NEON accumulator unroll (`efc8cb301`) | 8.08 ms | 3.71× |
 | + IVF centroid scan NEON (`fb96a8c40`) | **7.87 ms** | **3.81×** |
 
+### rerank_width fix — 9× rerank latency win
+
+The IVF `rerank_width=0` default was a footgun: `pre_rerank_candidate_limit`
+returned `None` for 0, which meant `collect_ranked_probe_candidates`
+collected **every** candidate before reranking. At nprobe=64 on a 50k
+corpus that's ~32K heap fetches per query, taking ~70 ms by itself.
+
+Capping at 200 (commit `425d752fb` changes the default) cuts rerank
+latency by ~9× at **identical recall**:
+
+| nprobe | width=0 (uncapped) p50 | width=200 p50 | width=100 p50 | recall@10 |
+| --- | --- | --- | --- | --- |
+| 8 | 9.29 ms | 2.60 ms | 2.13 ms | 0.855 |
+| 16 | 17.3 ms | 3.52 ms | 3.02 ms | 0.920 |
+| 32 | 34.7 ms | 5.38 ms | 4.86 ms | 0.964 |
+| 64 | 79.4 ms | 8.93 ms | 8.37 ms | 0.988 |
+
+200 is wide enough that recall@10 matches the uncapped run exactly
+(top-200 RaBitQ candidates contain the true top-10 with overwhelming
+probability on real DBpedia at every nprobe we measured).
+
+This is the biggest single win of the round — the prior default was
+adding 70 ms of pointless per-query work at the high-recall operating
+point.
+
 ### vchord head-to-head (50k, k=10, IP)
 
 vchord baseline from `benchmarks/comparators-50k-100k-1m/manifest.md`
 (same DBpedia data, m8g.2xlarge):
 
-| System | 50k p50 ms | 50k p95 ms | recall@10 |
-| --- | --- | --- | --- |
-| vchord RaBitQ-on-IVF default | **2.7** | 3.0 | ~0.99+ (matches 1m's 0.9995) |
-| ec_ivf RaBitQ nprobe=8 (post-all) | **1.58** | 1.87 | 0.83 |
-| ec_ivf RaBitQ nprobe=16 (post-all) | 2.40 | 2.72 | 0.88 |
-| ec_ivf RaBitQ nprobe=64 (post-all) | 7.87 | 8.40 | 0.94 |
+| System | 50k p50 ms | recall@10 |
+| --- | --- | --- |
+| vchord RaBitQ-on-IVF default | **2.7** | ~0.99+ |
+| ec_ivf no-rerank nprobe=8 | 1.58 | 0.83 |
+| ec_ivf no-rerank nprobe=16 | 2.40 | 0.88 |
+| ec_ivf no-rerank nprobe=64 | 7.87 | 0.94 |
+| ec_ivf rerank_width=100 nprobe=8 | 2.13 | 0.855 |
+| ec_ivf rerank_width=100 nprobe=16 | **3.02** | **0.920** |
+| ec_ivf rerank_width=100 nprobe=32 | 4.86 | 0.964 |
+| ec_ivf rerank_width=100 nprobe=64 | 8.37 | **0.988** |
 
-The latency gap to vchord at our same recall band closes hard; the
-remaining structural gap is the **recall ceiling** of 0.94 set by
-4-bit RaBitQ codes without rerank. vchord reaches ~0.99+ by pairing
-RaBitQ with full-precision rerank — applying that mode on top of
-the current kernel work is a follow-up cycle (task #10 in the
-in-flight task list).
+**Where we land vs vchord (matched recall at ~0.99):**
+- vchord: 2.7 ms
+- ec_ivf rerank=heap_f32, width=100, nprobe=64: 8.37 ms
+
+**3.1× gap remains**, and it's now structural. The remaining
+difference is heap_f32 rerank doing `fetch_heap_row_version` per
+candidate (PG heap I/O), while vchord stores the full f32 source
+inline in the index (which is why their index is 415 MB at 50k vs
+our 46 MB — they pay storage to skip heap fetches). Closing that
+gap requires an in-index source variant — a follow-up architectural
+change beyond this round's scope.
+
+At lower recall bands we're closer to parity (3.02 ms @ 0.920 vs
+vchord's 2.7 ms; we just operate at lower recall there).
 
 The headline is the NEON kernel (3.2× alone); LUT-hoist + pre-prune
 deliver the next 7-8% by eliminating per-candidate redundant table
