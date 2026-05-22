@@ -22,6 +22,12 @@ impl SpireLiveIndexRelation {
         options::relation_options(self.relation)
     }
 
+    fn publish_lock(self) -> SpireRelationLockGuard {
+        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        // relation. The guard captures the relation OID and unlocks by OID.
+        unsafe { lock_publish_relation(self.relation) }
+    }
+
     fn relid(self) -> u32 {
         let relation = std::ptr::NonNull::new(self.relation)
             .unwrap_or_else(|| pgrx::error!("ec_spire snapshot received null index relation"));
@@ -882,10 +888,7 @@ fn collect_physical_cleanup_candidates(
 pub(crate) fn index_epoch_cleanup_run(
     index: SpireLiveIndexRelation,
 ) -> SpireIndexEpochCleanupRunResult {
-    let index_relation = index.as_ptr();
-    // SAFETY: acquires the publish relation lock for the live index relation
-    // before physical cleanup inspects and deletes object tuples.
-    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let _guard = index.publish_lock();
     let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {
         let root_control = index.root_control();
         if root_control.active_epoch == 0 {

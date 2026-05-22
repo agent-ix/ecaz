@@ -226,20 +226,18 @@ unsafe fn build_relation_selected_scheduled_maintenance_input(
 
     match selected.decision.mode {
         update::SpireLeafReplacementScheduleMode::Split => {
-            // SAFETY: index_relation is a live SPIRE index relation; the guard
-            // opens the owning heap relation for this maintenance operation.
-            let heap_relation = unsafe { open_spire_heap_relation_for_index(index_relation)? };
-            // SAFETY: split replacement reads heap source rows under the
-            // backend's active maintenance snapshot.
-            let heap_snapshot = unsafe { active_spire_maintenance_snapshot()? };
-            // SAFETY: heap_relation/index_relation are live while resolving the
-            // indexed vector attribute for replacement tuple reconstruction.
-            let indexed_attribute = unsafe {
-                crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+            // SAFETY: index_relation is a live SPIRE index relation. The heap
+            // relation guard, active snapshot, and resolved indexed vector
+            // attribute are all used for this split replacement input build.
+            let (heap_relation, heap_snapshot, indexed_attribute) = unsafe {
+                let heap_relation = open_spire_heap_relation_for_index(index_relation)?;
+                let heap_snapshot = active_spire_maintenance_snapshot()?;
+                let indexed_attribute = crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
                     heap_relation.as_ptr(),
                     index_relation,
                     "ec_spire maintenance split replacement source vector",
-                )
+                );
+                (heap_relation, heap_snapshot, indexed_attribute)
             };
             let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(
                 &heap_relation,
@@ -376,20 +374,14 @@ pub(crate) fn index_maintenance_plan_snapshot(
 pub(crate) fn index_locked_maintenance_plan_snapshot(
     index: SpireLiveIndexRelation,
 ) -> SpireIndexMaintenancePlanSnapshot {
-    let index_relation = index.as_ptr();
-    // SAFETY: caller passes a live SPIRE index relation; the guard serializes
-    // maintenance planning against concurrent publish operations.
-    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let _guard = index.publish_lock();
     index_maintenance_plan_snapshot(index)
 }
 
 pub(crate) fn index_locked_maintenance_run_plan(
     index: SpireLiveIndexRelation,
 ) -> SpireIndexMaintenanceRunResult {
-    let index_relation = index.as_ptr();
-    // SAFETY: caller passes a live SPIRE index relation; the guard serializes
-    // run planning against concurrent publish operations.
-    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let _guard = index.publish_lock();
     let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {
         let root_control = index.root_control();
         if root_control.active_epoch == 0 {
@@ -420,9 +412,7 @@ pub(crate) fn index_maintenance_run(
     index: SpireLiveIndexRelation,
 ) -> SpireIndexMaintenanceRunResult {
     let index_relation = index.as_ptr();
-    // SAFETY: caller passes a live SPIRE index relation; the guard serializes
-    // maintenance execution and replacement publish.
-    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let _guard = index.publish_lock();
     let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {
         let root_control = index.root_control();
         if root_control.active_epoch == 0 {
