@@ -1348,16 +1348,62 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
 ) -> f32 {
     use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vld1q_u16, vst1q_f32};
 
+    // 4 accumulator chains to fill V2's 4 SIMD pipes.
     let mut acc0 = vdupq_n_f32(0.0);
     let mut acc1 = vdupq_n_f32(0.0);
+    let mut acc2 = vdupq_n_f32(0.0);
+    let mut acc3 = vdupq_n_f32(0.0);
 
     let mut dim_index = 0_usize;
-    // Each iteration consumes 16 dimensions = 8 bytes of code, scoring two
-    // bfdot calls (each does 4 bf16-pair dot products into 4 f32 lanes).
+    // Each iteration consumes 32 dimensions = 16 bytes of code,
+    // dispatching 4 independent bfdot calls.
+    while dim_index + 32 <= dimensions {
+        let byte_base = dim_index / 2;
+        let b: [usize; 16] = [
+            *code.get_unchecked(byte_base) as usize,
+            *code.get_unchecked(byte_base + 1) as usize,
+            *code.get_unchecked(byte_base + 2) as usize,
+            *code.get_unchecked(byte_base + 3) as usize,
+            *code.get_unchecked(byte_base + 4) as usize,
+            *code.get_unchecked(byte_base + 5) as usize,
+            *code.get_unchecked(byte_base + 6) as usize,
+            *code.get_unchecked(byte_base + 7) as usize,
+            *code.get_unchecked(byte_base + 8) as usize,
+            *code.get_unchecked(byte_base + 9) as usize,
+            *code.get_unchecked(byte_base + 10) as usize,
+            *code.get_unchecked(byte_base + 11) as usize,
+            *code.get_unchecked(byte_base + 12) as usize,
+            *code.get_unchecked(byte_base + 13) as usize,
+            *code.get_unchecked(byte_base + 14) as usize,
+            *code.get_unchecked(byte_base + 15) as usize,
+        ];
+
+        let mut dq = [0_u16; 32];
+        for (idx, bi) in b.iter().enumerate() {
+            dq[idx * 2] = lut_bf16[bi & 0x0F];
+            dq[idx * 2 + 1] = lut_bf16[bi >> 4];
+        }
+
+        let q0 = vld1q_u16(query_bf16.as_ptr().add(dim_index));
+        let q1 = vld1q_u16(query_bf16.as_ptr().add(dim_index + 8));
+        let q2 = vld1q_u16(query_bf16.as_ptr().add(dim_index + 16));
+        let q3 = vld1q_u16(query_bf16.as_ptr().add(dim_index + 24));
+        let d0 = vld1q_u16(dq.as_ptr());
+        let d1 = vld1q_u16(dq.as_ptr().add(8));
+        let d2 = vld1q_u16(dq.as_ptr().add(16));
+        let d3 = vld1q_u16(dq.as_ptr().add(24));
+
+        acc0 = bfdot_asm(acc0, q0, d0);
+        acc1 = bfdot_asm(acc1, q1, d1);
+        acc2 = bfdot_asm(acc2, q2, d2);
+        acc3 = bfdot_asm(acc3, q3, d3);
+
+        dim_index += 32;
+    }
+
+    // 16-wide tail (one bfdot pair) for the partial trailing chunk.
     while dim_index + 16 <= dimensions {
         let byte_base = dim_index / 2;
-        // SAFETY: dim_index + 16 <= dimensions and the code-length invariant
-        // checked by the caller guarantees byte_base + 8 <= packed_bytes.
         let b0 = *code.get_unchecked(byte_base) as usize;
         let b1 = *code.get_unchecked(byte_base + 1) as usize;
         let b2 = *code.get_unchecked(byte_base + 2) as usize;
@@ -1366,8 +1412,6 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
         let b5 = *code.get_unchecked(byte_base + 5) as usize;
         let b6 = *code.get_unchecked(byte_base + 6) as usize;
         let b7 = *code.get_unchecked(byte_base + 7) as usize;
-
-        // 16 nibbles → 16 bf16 dequant values.
         let dq: [u16; 16] = [
             lut_bf16[b0 & 0x0F], lut_bf16[b0 >> 4],
             lut_bf16[b1 & 0x0F], lut_bf16[b1 >> 4],
@@ -1378,21 +1422,20 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
             lut_bf16[b6 & 0x0F], lut_bf16[b6 >> 4],
             lut_bf16[b7 & 0x0F], lut_bf16[b7 >> 4],
         ];
-
-        // SAFETY: dim_index + 16 <= dimensions ⇒ 8-lane loads OK.
         let q_lo = vld1q_u16(query_bf16.as_ptr().add(dim_index));
         let q_hi = vld1q_u16(query_bf16.as_ptr().add(dim_index + 8));
         let d_lo = vld1q_u16(dq.as_ptr());
         let d_hi = vld1q_u16(dq.as_ptr().add(8));
-
         acc0 = bfdot_asm(acc0, q_lo, d_lo);
         acc1 = bfdot_asm(acc1, q_hi, d_hi);
-
         dim_index += 16;
     }
 
     let mut lanes = [0.0_f32; 4];
-    vst1q_f32(lanes.as_mut_ptr(), vaddq_f32(acc0, acc1));
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)),
+    );
     let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
 
     // Scalar tail: rebuild from the bf16 representations for consistency.
@@ -1417,30 +1460,76 @@ unsafe fn sum_query_dequant_neon_bits4(
 ) -> f32 {
     use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
 
+    // 4 accumulator chains so Neoverse-V2's 4 SIMD pipes stay busy
+    // (each pipe can issue one 128-bit FMA per cycle). With only 2
+    // chains the loop bottlenecks on the dependency chain through
+    // each accumulator's FMA latency.
     let mut acc0 = vdupq_n_f32(0.0);
     let mut acc1 = vdupq_n_f32(0.0);
+    let mut acc2 = vdupq_n_f32(0.0);
+    let mut acc3 = vdupq_n_f32(0.0);
 
     let mut dim_index = 0_usize;
-    // Each iteration consumes 8 dimensions = 4 bytes of code.
-    while dim_index + 8 <= dimensions {
+    // Each iteration consumes 16 dimensions = 8 bytes of code,
+    // dispatching to 4 vfmaq_f32 calls (4 independent chains).
+    while dim_index + 16 <= dimensions {
         let byte_base = dim_index / 2;
-        // SAFETY: dim_index + 8 <= dimensions and the code-length invariant
-        // checked by the caller guarantees byte_base + 4 <= packed_bytes.
+        // SAFETY: dim_index + 16 <= dimensions and the code-length
+        // invariant checked by the caller guarantees byte_base + 8 <=
+        // packed_bytes.
         let b0 = *code.get_unchecked(byte_base) as usize;
         let b1 = *code.get_unchecked(byte_base + 1) as usize;
         let b2 = *code.get_unchecked(byte_base + 2) as usize;
         let b3 = *code.get_unchecked(byte_base + 3) as usize;
+        let b4 = *code.get_unchecked(byte_base + 4) as usize;
+        let b5 = *code.get_unchecked(byte_base + 5) as usize;
+        let b6 = *code.get_unchecked(byte_base + 6) as usize;
+        let b7 = *code.get_unchecked(byte_base + 7) as usize;
 
-        // Unpack 8 nibbles in coordinate order; write_level stores the
-        // low nibble at index `2k`, high nibble at index `2k+1`.
+        // 16 nibbles unpacked in coordinate order (low nibble at 2k,
+        // high nibble at 2k+1).
+        let dq: [f32; 16] = [
+            lut[b0 & 0x0F], lut[b0 >> 4],
+            lut[b1 & 0x0F], lut[b1 >> 4],
+            lut[b2 & 0x0F], lut[b2 >> 4],
+            lut[b3 & 0x0F], lut[b3 >> 4],
+            lut[b4 & 0x0F], lut[b4 >> 4],
+            lut[b5 & 0x0F], lut[b5 >> 4],
+            lut[b6 & 0x0F], lut[b6 >> 4],
+            lut[b7 & 0x0F], lut[b7 >> 4],
+        ];
+
+        // SAFETY: dim_index + 16 <= dimensions ⇒ four 4-lane query loads OK.
+        let q0 = vld1q_f32(query_rotated.as_ptr().add(dim_index));
+        let q1 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 4));
+        let q2 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 8));
+        let q3 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 12));
+        let d0 = vld1q_f32(dq.as_ptr());
+        let d1 = vld1q_f32(dq.as_ptr().add(4));
+        let d2 = vld1q_f32(dq.as_ptr().add(8));
+        let d3 = vld1q_f32(dq.as_ptr().add(12));
+        acc0 = vfmaq_f32(acc0, q0, d0);
+        acc1 = vfmaq_f32(acc1, q1, d1);
+        acc2 = vfmaq_f32(acc2, q2, d2);
+        acc3 = vfmaq_f32(acc3, q3, d3);
+
+        dim_index += 16;
+    }
+
+    // 8-wide tail for the [dim - 16, dim - 8) range (only fires when
+    // `dimensions` is not a multiple of 16).
+    while dim_index + 8 <= dimensions {
+        let byte_base = dim_index / 2;
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
         let dq = [
             lut[b0 & 0x0F], lut[b0 >> 4],
             lut[b1 & 0x0F], lut[b1 >> 4],
             lut[b2 & 0x0F], lut[b2 >> 4],
             lut[b3 & 0x0F], lut[b3 >> 4],
         ];
-
-        // SAFETY: dim_index + 8 <= dimensions ⇒ two 4-lane loads from query.
         let q0 = vld1q_f32(query_rotated.as_ptr().add(dim_index));
         let q1 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 4));
         let d0 = vld1q_f32(dq.as_ptr());
@@ -1451,8 +1540,12 @@ unsafe fn sum_query_dequant_neon_bits4(
         dim_index += 8;
     }
 
+    // Fold the 4 accumulator chains into one f32.
     let mut lanes = [0.0_f32; 4];
-    vst1q_f32(lanes.as_mut_ptr(), vaddq_f32(acc0, acc1));
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)),
+    );
     let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
 
     // Scalar tail for the trailing < 8 dimensions.
