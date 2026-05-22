@@ -1,0 +1,28 @@
+diff --git a/src/am/common/explain.rs b/src/am/common/explain.rs
+index 6b19f530b..ff36e24e6 100644
+--- a/src/am/common/explain.rs
++++ b/src/am/common/explain.rs
+@@ -346,14 +346,16 @@ fn explain_extension_id() -> i32 {
+ unsafe fn explain_option_enabled(es: *mut pg_sys::ExplainState) -> bool {
+     // SAFETY: `es` is the live ExplainState supplied by PostgreSQL's explain
+     // hook; the extension id is registered by `register_pg18_explain_hooks`.
+-    let state = unsafe { pg_sys::GetExplainExtensionState(es, explain_extension_id()) };
+-    if state.is_null() {
+-        return false;
+-    }
++    unsafe {
++        let state = pg_sys::GetExplainExtensionState(es, explain_extension_id());
++        if state.is_null() {
++            return false;
++        }
+ 
+-    // SAFETY: The option handler stores a `bool` allocated for this extension
+-    // id, and a non-null state pointer therefore points at that bool.
+-    unsafe { *(state.cast::<bool>()) }
++        // The option handler stores a `bool` allocated for this extension id,
++        // and a non-null state pointer therefore points at that bool.
++        *(state.cast::<bool>())
++    }
+ }
+ 
+ #[cfg(feature = "pg18")]
