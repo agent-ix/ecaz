@@ -1229,17 +1229,26 @@ fn f32_to_bf16_bits(value: f32) -> u16 {
     (value.to_bits() >> 16) as u16
 }
 
-/// Build the bf16 mirror of `query_rotated` + `dequant_lut`. Always
-/// runs at scorer prep time (cost is negligible vs the rotation
-/// itself); the kernel dispatch decides whether to use them based on
-/// runtime bf16 feature detection.
+/// Build the bf16 mirror of `query_rotated` + `dequant_lut`. Only
+/// allocated when the `rabitq-bf16` feature is on (otherwise the
+/// returned Vec is empty and the bf16 dispatch is dead code). Avoids
+/// the per-query truncation pass + Vec allocation when the kernel
+/// will never use it.
 fn prepare_bf16_state(query_rotated: &[f32], dequant_lut: &[f32; 256]) -> (Vec<u16>, [u16; 256]) {
-    let query_bf16: Vec<u16> = query_rotated.iter().copied().map(f32_to_bf16_bits).collect();
-    let mut lut_bf16 = [0_u16; 256];
-    for (i, &v) in dequant_lut.iter().enumerate() {
-        lut_bf16[i] = f32_to_bf16_bits(v);
+    #[cfg(feature = "rabitq-bf16")]
+    {
+        let query_bf16: Vec<u16> = query_rotated.iter().copied().map(f32_to_bf16_bits).collect();
+        let mut lut_bf16 = [0_u16; 256];
+        for (i, &v) in dequant_lut.iter().enumerate() {
+            lut_bf16[i] = f32_to_bf16_bits(v);
+        }
+        (query_bf16, lut_bf16)
     }
-    (query_bf16, lut_bf16)
+    #[cfg(not(feature = "rabitq-bf16"))]
+    {
+        let _ = (query_rotated, dequant_lut);
+        (Vec::new(), [0_u16; 256])
+    }
 }
 
 /// Build a 256-entry dequant table indexed by `level`. The first
@@ -1298,18 +1307,27 @@ fn sum_query_dequant_with_bf16(
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
+    let _ = (query_bf16, dequant_lut_bf16);
     #[cfg(target_arch = "aarch64")]
     {
         if bits == 4 {
-            if let (Some(q_bf16), Some(lut_bf16)) = (query_bf16, dequant_lut_bf16) {
-                if q_bf16.len() == dimensions
-                    && std::arch::is_aarch64_feature_detected!("bf16")
-                    && std::arch::is_aarch64_feature_detected!("neon")
-                {
-                    // SAFETY: features confirmed at runtime.
-                    return unsafe {
-                        sum_query_dequant_neon_bf16_bits4(q_bf16, dimensions, lut_bf16, code)
-                    };
+            // bf16 bfdot kernel is gated behind the `rabitq-bf16` Cargo
+            // feature. On Neoverse-V2 it measured neutral-to-slightly-
+            // slower vs f32 NEON (same 128-bit VL, no drift test gate
+            // yet). Kept compilable so future hosts with wider SVE2
+            // bf16 issue can flip the feature and benchmark.
+            #[cfg(feature = "rabitq-bf16")]
+            {
+                if let (Some(q_bf16), Some(lut_bf16)) = (query_bf16, dequant_lut_bf16) {
+                    if q_bf16.len() == dimensions
+                        && std::arch::is_aarch64_feature_detected!("bf16")
+                        && std::arch::is_aarch64_feature_detected!("neon")
+                    {
+                        // SAFETY: features confirmed at runtime.
+                        return unsafe {
+                            sum_query_dequant_neon_bf16_bits4(q_bf16, dimensions, lut_bf16, code)
+                        };
+                    }
                 }
             }
             if std::arch::is_aarch64_feature_detected!("neon") {
@@ -1320,7 +1338,6 @@ fn sum_query_dequant_with_bf16(
             }
         }
     }
-    let _ = (query_bf16, dequant_lut_bf16);
     sum_query_dequant_scalar(query_rotated, dimensions, bits, lut, code)
 }
 

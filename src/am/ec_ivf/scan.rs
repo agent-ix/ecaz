@@ -866,12 +866,18 @@ unsafe fn load_centroid_scores(
 }
 
 fn inner_product(left: &[f32], right: &[f32]) -> f32 {
-    debug_assert_eq!(left.len(), right.len());
+    // Release-mode length check; helper relies on slice lengths matching
+    // to skip per-iteration bounds checks in the SIMD body.
+    assert_eq!(
+        left.len(),
+        right.len(),
+        "ec_ivf centroid inner_product slice length mismatch"
+    );
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: NEON feature confirmed at runtime; helper handles
-            // length-tail bookkeeping.
+            // SAFETY: NEON feature confirmed at runtime; assert_eq above
+            // guarantees both slices have the same length.
             return unsafe { inner_product_neon(left, right) };
         }
     }
@@ -2062,10 +2068,37 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 mod tests {
     use super::{
         build_probe_block_sequence, candidate_heap_tid_cmp, consume_live_tid_budget,
-        select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate,
-        ProbeBlockRange,
+        inner_product, inner_product_scalar, select_probe_lists, CandidateTopK,
+        EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
+
+    #[test]
+    fn inner_product_neon_matches_scalar_at_various_dims() {
+        // Cover the 16-wide loop, 4-wide tail, and the trailing scalar
+        // for the last < 4 lanes. 1536 is the production dim; the
+        // others exercise tail paths.
+        for &dim in &[1_usize, 3, 4, 15, 16, 17, 31, 32, 33, 64, 100, 1536] {
+            let a: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.013).sin()).collect();
+            let b: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.017).cos()).collect();
+            let dispatch = inner_product(&a, &b);
+            let scalar = inner_product_scalar(&a, &b);
+            let tol = 1e-4_f32 * scalar.abs().max(1.0);
+            assert!(
+                (dispatch - scalar).abs() <= tol,
+                "dim={dim}: dispatch={dispatch} scalar={scalar} delta={}",
+                (dispatch - scalar).abs()
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "slice length mismatch")]
+    fn inner_product_panics_on_length_mismatch() {
+        let a = vec![1.0_f32; 4];
+        let b = vec![1.0_f32; 5];
+        inner_product(&a, &b);
+    }
 
     fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
         EcIvfScoredCandidate {

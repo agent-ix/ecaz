@@ -23,6 +23,12 @@ pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
 pg_test = []
 bench = []
 dhat-heap = ["dhat"]
+# Experimental: enable the aarch64 bf16 bfdot RaBitQ scoring kernel.
+# Off by default — measured neutral to slightly slower than the f32
+# NEON kernel on Neoverse-V2 (Graviton 4), and lacks a deterministic
+# scalar/f32-NEON↔bf16 score-drift gate. Flip on a host where the
+# bfdot path can be re-evaluated with proper drift + recall checks.
+rabitq-bf16 = []
 
 [dependencies]
 pgrx = "0.17"
