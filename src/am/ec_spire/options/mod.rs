@@ -639,9 +639,11 @@ pub(super) fn resolve_local_store_tablespace_plan(
     if index_relation.is_null() {
         return Err("ec_spire local store tablespace plan needs a valid index relation".to_owned());
     }
-    // SAFETY: SPIRE options callers pass a live index relation descriptor.
+    let index_relation = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_spire local store tablespace plan needs a valid index relation".to_owned()
+    })?;
     let index_tablespace_oid =
-        unsafe { crate::storage::relation::relation_tablespace(index_relation) }.into();
+        crate::storage::relation::relation_tablespace_handle(index_relation).into();
     plan_local_store_tablespaces_with_resolver(
         options.local_store_count,
         index_tablespace_oid,
@@ -1686,11 +1688,9 @@ impl<'a> EcSpireReloptionsView<'a> {
 }
 
 pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
-    if index_relation.is_null() {
-        pgrx::error!("ec_spire relation options need a valid index relation");
-    }
-    // SAFETY: SPIRE options callers pass a live index relation descriptor.
-    let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
+    let index_relation = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire relation options need a valid index relation"));
+    let rd_options = crate::storage::relation::relation_options_handle(index_relation);
     if rd_options.is_null() {
         return EcSpireOptions::DEFAULT;
     }

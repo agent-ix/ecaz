@@ -434,8 +434,9 @@ fn elapsed_ms(duration: Duration) -> u128 {
 }
 
 fn relation_name(relation: pg_sys::Relation) -> String {
-    // SAFETY: callers pass the live relation descriptor from PostgreSQL build context.
-    unsafe { crate::storage::relation::relation_name(relation) }
+    let relation = NonNull::new(relation)
+        .unwrap_or_else(|| pgrx::error!("ec_diskann build needs a valid relation"));
+    crate::storage::relation::relation_name_handle(relation)
 }
 
 fn log_ambuild_empty_timing(
@@ -839,8 +840,9 @@ unsafe fn validate_single_ecvector_attribute(
         pgrx::error!("ec_diskann ambuild requires a base heap column index key");
     }
 
-    // SAFETY: `heap_relation` is live during DiskANN build tuple processing.
-    let tuple_desc = unsafe { crate::storage::relation::relation_tuple_desc_copy(heap_relation) };
+    let heap_relation = NonNull::new(heap_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_diskann ambuild needs a valid heap relation"));
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(heap_relation);
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("indexed attribute should exist");

@@ -55,10 +55,14 @@ impl IndexRelationGuard {
     }
 
     #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn handle(&self) -> crate::storage::relation::RelationHandle {
+        NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("index relation guard unexpectedly null"))
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
     pub(crate) fn heap_relation_oid(&self) -> pg_sys::Oid {
-        let relation = NonNull::new(self.relation)
-            .unwrap_or_else(|| pgrx::error!("index relation guard unexpectedly null"));
-        crate::storage::relation::index_heap_relation_oid_handle(relation)
+        crate::storage::relation::index_heap_relation_oid_handle(self.handle())
     }
 }
 
@@ -133,7 +137,9 @@ impl RelationGuard {
         // reloptions pointer is relation-owned, borrowed only for this read,
         // and this helper is limited to heap relations using StdRdOptions.
         unsafe {
-            let rd_options = crate::storage::relation::relation_options(self.relation);
+            let relation = NonNull::new(self.relation)
+                .unwrap_or_else(|| pgrx::error!("relation guard unexpectedly null"));
+            let rd_options = crate::storage::relation::relation_options_handle(relation);
             if rd_options.is_null() {
                 return None;
             }

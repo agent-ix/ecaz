@@ -159,9 +159,10 @@ pub(crate) fn debug_spire_empty_manifest_publish_roundtrip(
             };
             let object_manifest = meta::SpireObjectManifest::from_entries(1, Vec::new())?;
             let placement_directory = meta::SpirePlacementDirectory::from_entries(1, Vec::new())?;
+            let index_relation = index_relation.handle();
             let (index_relid, tablespace) = (
-                crate::storage::relation::relation_oid(index_relation.as_ptr()).into(),
-                crate::storage::relation::relation_tablespace(index_relation.as_ptr()).into(),
+                crate::storage::relation::relation_oid_handle(index_relation).into(),
+                crate::storage::relation::relation_tablespace_handle(index_relation).into(),
             );
             let input = build::SpirePublishCoordinatorInput {
                 epoch_manifest: &epoch_manifest,

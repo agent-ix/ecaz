@@ -257,11 +257,10 @@ struct TqDiskannReloptionsView<'a> {
 
 impl<'a> TqDiskannReloptionsView<'a> {
     unsafe fn from_relation(index_relation: pg_sys::Relation) -> Option<Self> {
-        if index_relation.is_null() {
-            pgrx::error!("ec_diskann relation options need a valid index relation");
-        }
-        // SAFETY: reloptions are read from a live index relation descriptor.
-        let rd_options = unsafe { crate::storage::relation::relation_options(index_relation) };
+        let index_relation = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+            pgrx::error!("ec_diskann relation options need a valid index relation")
+        });
+        let rd_options = crate::storage::relation::relation_options_handle(index_relation);
         if rd_options.is_null() {
             return None;
         }

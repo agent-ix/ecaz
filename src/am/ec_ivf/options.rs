@@ -374,10 +374,7 @@ struct EcIvfReloptionsView<'a> {
 
 impl<'a> EcIvfReloptionsView<'a> {
     fn from_relation(index_relation: NonNull<pg_sys::RelationData>) -> Option<Self> {
-        // SAFETY: callers pass a live PostgreSQL relation; reading `rd_options`
-        // copies a relation-owned pointer without taking ownership.
-        let rd_options =
-            unsafe { crate::storage::relation::relation_options(index_relation.as_ptr()) };
+        let rd_options = crate::storage::relation::relation_options_handle(index_relation);
         if rd_options.is_null() {
             return None;
         }

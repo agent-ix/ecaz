@@ -240,9 +240,7 @@ struct TqHnswReloptionsView<'a> {
 
 impl<'a> TqHnswReloptionsView<'a> {
     fn from_relation(index_relation: HnswIndexRelation) -> Option<Self> {
-        // SAFETY: reloptions are read from a live index relation descriptor.
-        let rd_options =
-            unsafe { crate::storage::relation::relation_options(index_relation.as_ptr()) };
+        let rd_options = crate::storage::relation::relation_options_handle(index_relation);
         if rd_options.is_null() {
             return None;
         }

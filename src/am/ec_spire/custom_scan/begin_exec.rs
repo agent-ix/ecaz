@@ -165,9 +165,11 @@ unsafe fn custom_scan_tuple_payload_state_from_plan(
     // SAFETY: node/custom_scan are the live executor state and matching plan;
     // the current relation tuple descriptor remains valid during BeginCustomScan.
     unsafe {
-        let tuple_desc_copy = crate::storage::relation::relation_tuple_desc_copy(
-            custom_scan_current_relation(node, "tuple payload input descriptor"),
-        );
+        let relation = custom_scan_current_relation(node, "tuple payload input descriptor");
+        let relation = std::ptr::NonNull::new(relation).unwrap_or_else(|| {
+            pgrx::error!("tuple payload input descriptor needs a valid relation")
+        });
+        let tuple_desc_copy = crate::storage::relation::relation_tuple_desc_copy_handle(relation);
         let tuple_desc =
             TupleDescView::from_raw(tuple_desc_copy.as_ptr(), "EcSpireDistributedScan")
                 .unwrap_or_else(|error| pgrx::error!("{error}"));
