@@ -611,9 +611,9 @@ fn expected_binary_len(data: &[u8]) -> Result<usize, String> {
     Ok(MIN_BINARY_BYTES + code_len(dim as usize, bits))
 }
 
-unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, String> {
-    let mut msg =
-        crate::storage::string_info::StringInfoReader::from_raw(msg, "invalid tqvector binary")?;
+fn recv_tqvector_message(
+    mut msg: crate::storage::string_info::StringInfoReader<'_>,
+) -> Result<Vec<u8>, String> {
     let remaining = msg.remaining_len("invalid tqvector binary")?;
     if remaining < MIN_BINARY_BYTES {
         return Err(format!(
@@ -741,8 +741,10 @@ fn raw_inner_product(left: &[f32], right: &[f32], label: &str) -> Result<f32, St
     Ok(left.iter().zip(right).map(|(l, r)| l * r).sum())
 }
 
-unsafe fn recv_raw_f32_message(msg: pg_sys::StringInfo, label: &str) -> Result<Vec<u8>, String> {
-    let mut msg = crate::storage::string_info::StringInfoReader::from_raw(msg, label)?;
+fn recv_raw_f32_message(
+    mut msg: crate::storage::string_info::StringInfoReader<'_>,
+    label: &str,
+) -> Result<Vec<u8>, String> {
     let remaining = msg.remaining_len(label)?;
     let bytes = msg.read_bytes(remaining, label)?;
 
@@ -779,18 +781,12 @@ fn ecvector_send(vec: Vec<u8>) -> Vec<u8> {
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn ecvector_recv(input: Internal, _type_oid: pg_sys::Oid, typmod: i32) -> Vec<u8> {
-    // SAFETY: PostgreSQL type receive functions are invoked with an `internal`
-    // argument pointing at a live `StringInfoData` input buffer.
-    let msg = unsafe {
-        input
-            .get::<pg_sys::StringInfoData>()
-            .unwrap_or_else(|| pgrx::error!("invalid ecvector binary: missing input buffer"))
-            as *const pg_sys::StringInfoData as pg_sys::StringInfo
-    };
-
-    // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current
-    // receive call.
-    let bytes = unsafe { recv_raw_f32_message(msg, "ecvector") }
+    let msg = crate::storage::string_info::StringInfoReader::from_internal(
+        input,
+        "invalid ecvector binary",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let bytes = recv_raw_f32_message(msg, "ecvector")
         .unwrap_or_else(|e| pgrx::error!("invalid ecvector binary: {e}"));
     validate_ecvector_dim(bytes.len() / std::mem::size_of::<f32>(), typmod, "ecvector")
         .unwrap_or_else(|e| pgrx::error!("invalid ecvector binary: {e}"));
@@ -926,18 +922,12 @@ fn tqvector_send(vec: Vec<u8>) -> Vec<u8> {
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn tqvector_recv(input: Internal) -> Vec<u8> {
-    // SAFETY: PostgreSQL type receive functions are invoked with an `internal`
-    // argument pointing at a live `StringInfoData` input buffer.
-    let msg = unsafe {
-        input
-            .get::<pg_sys::StringInfoData>()
-            .unwrap_or_else(|| pgrx::error!("invalid tqvector binary: missing input buffer"))
-            as *const pg_sys::StringInfoData as pg_sys::StringInfo
-    };
-
-    // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current receive call.
-    unsafe { recv_tqvector_message(msg) }
-        .unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
+    let msg = crate::storage::string_info::StringInfoReader::from_internal(
+        input,
+        "invalid tqvector binary",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    recv_tqvector_message(msg).unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
 }
 
 #[pg_extern(stable, strict)]

@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-use pgrx::pg_sys;
+use pgrx::{pg_sys, Internal};
 
 pub(crate) struct StringInfoReader<'msg> {
     msg: pg_sys::StringInfo,
@@ -10,6 +10,21 @@ pub(crate) struct StringInfoReader<'msg> {
 }
 
 impl<'msg> StringInfoReader<'msg> {
+    pub(crate) fn from_internal(input: Internal, label: &str) -> Result<Self, String> {
+        // SAFETY: PostgreSQL type receive functions pass their `internal`
+        // argument as a live `StringInfoData` input buffer for the duration of
+        // the receive call.
+        let msg = unsafe {
+            input
+                .get::<pg_sys::StringInfoData>()
+                .ok_or_else(|| format!("{label}: missing input buffer"))?
+                as *const pg_sys::StringInfoData as pg_sys::StringInfo
+        };
+        // SAFETY: `msg` is the live receive buffer extracted from `input`
+        // above and the returned reader is scoped to this receive call.
+        unsafe { Self::from_raw(msg, label) }
+    }
+
     /// Create a reader for PostgreSQL's live type-receive buffer.
     ///
     /// # Safety
