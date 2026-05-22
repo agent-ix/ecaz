@@ -89,20 +89,19 @@ impl SpireRegisteredPage {
         }
     }
 
-    fn page(&self) -> pg_sys::Page {
-        self.page
-    }
-
-    fn init(&self, page_size: usize, special_size: usize) {
+    fn init_with_special(&self, page_size: usize, special_size: usize, bytes: &[u8]) {
+        if bytes.len() > special_size {
+            pgrx::error!(
+                "ec_spire root/control special area too small: got {special_size}, need {}",
+                bytes.len()
+            );
+        }
         // SAFETY: this wrapper is only constructed for a WAL-registered page
-        // whose locked buffer is still live.
-        unsafe { pg_sys::PageInit(self.page, page_size, special_size) };
-    }
-
-    fn copy_to_special(&self, bytes: &[u8]) {
-        // SAFETY: callers initialize this page with a special area sized for
-        // `bytes`, and the source slice does not overlap PostgreSQL page memory.
+        // whose locked buffer is still live. The page is initialized with a
+        // special area sized for `bytes`, and the source slice does not overlap
+        // PostgreSQL page memory.
         unsafe {
+            pg_sys::PageInit(self.page, page_size, special_size);
             ptr::copy_nonoverlapping(
                 bytes.as_ptr(),
                 pg_sys::PageGetSpecialPointer(self.page).cast::<u8>(),
@@ -111,37 +110,58 @@ impl SpireRegisteredPage {
         };
     }
 
-    fn free_space(&self) -> usize {
-        // SAFETY: this wrapper owns the WAL-registered page while the buffer is locked.
-        unsafe { pg_sys::PageGetFreeSpace(self.page) as usize }
+    fn init_empty(&self, page_size: usize) {
+        // SAFETY: this wrapper is only constructed for a WAL-registered page
+        // whose locked buffer is still live.
+        unsafe { pg_sys::PageInit(self.page, page_size, 0) };
     }
 
-    fn record_free_space(&self, free_space: usize) {
-        // SAFETY: relation/block identify the same registered page.
-        unsafe { pg_sys::RecordPageWithFreeSpace(self.relation, self.block_number, free_space) };
-    }
-
-    fn add_item(&self, payload: &[u8]) -> pg_sys::OffsetNumber {
-        // SAFETY: payload bytes are copied into the registered page by PostgreSQL.
+    fn add_item_if_space(&self, payload: &[u8]) -> Result<pg_sys::OffsetNumber, usize> {
+        // SAFETY: this wrapper owns the WAL-registered page while the buffer is
+        // locked. The payload bytes are copied into the registered page by
+        // PostgreSQL. When there is insufficient space, the recorded FSM entry
+        // is for this same relation/block pair.
         unsafe {
-            pg_sys::PageAddItemExtended(
+            let free_space = pg_sys::PageGetFreeSpace(self.page) as usize;
+            if free_space < raw_tuple_storage_bytes(payload.len()) {
+                pg_sys::RecordPageWithFreeSpace(self.relation, self.block_number, free_space);
+                return Err(free_space);
+            }
+
+            Ok(pg_sys::PageAddItemExtended(
                 self.page,
                 payload.as_ptr().cast_mut().cast(),
                 payload.len(),
                 pg_sys::InvalidOffsetNumber,
                 0,
-            )
+            ))
         }
     }
 
-    fn max_offset(&self) -> pg_sys::OffsetNumber {
-        // SAFETY: this wrapper owns the WAL-registered page while the buffer is locked.
-        unsafe { pg_sys::PageGetMaxOffsetNumber(self.page) }
+    fn record_current_free_space(&self) {
+        // SAFETY: this wrapper owns the WAL-registered page while the buffer is
+        // locked, and relation/block identify that same page in the FSM.
+        unsafe {
+            let free_space = pg_sys::PageGetFreeSpace(self.page) as usize;
+            pg_sys::RecordPageWithFreeSpace(self.relation, self.block_number, free_space);
+        };
     }
 
-    fn delete_no_compact(&self, offset: pg_sys::OffsetNumber) {
-        // SAFETY: callers validate the offset against this page before delete.
-        unsafe { pg_sys::PageIndexTupleDeleteNoCompact(self.page, offset) };
+    fn delete_no_compact_checked(
+        &self,
+        offset: pg_sys::OffsetNumber,
+    ) -> Result<(), pg_sys::OffsetNumber> {
+        // SAFETY: this wrapper owns the WAL-registered page while the buffer is
+        // locked. The max-offset read and no-compact delete apply to the same
+        // page, so the range check cannot drift between helper calls.
+        unsafe {
+            let max_offset = pg_sys::PageGetMaxOffsetNumber(self.page);
+            if offset == pg_sys::InvalidOffsetNumber || offset > max_offset {
+                return Err(max_offset);
+            }
+            pg_sys::PageIndexTupleDeleteNoCompact(self.page, offset);
+        };
+        Ok(())
     }
 }
 
@@ -187,8 +207,7 @@ unsafe fn initialize_spire_metadata_block_zero(
         .encode()
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let special_size = align_up(root_control_bytes.len(), ALIGNMENT_BYTES);
-    registered.init(page_size, special_size);
-    registered.copy_to_special(&root_control_bytes);
+    registered.init_with_special(page_size, special_size, &root_control_bytes);
 
     wal_txn.finish();
 }
@@ -412,16 +431,8 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
         let mut wal_txn = relation.start_wal();
         let page = wal_txn.register_locked_buffer_full_image(&buffer);
         let registered = SpireRegisteredPage::new(relation.raw(), block_number, page);
-        let max_offset = registered.max_offset();
         let mut changed = false;
         for offset in offsets.into_iter().rev() {
-            if offset == pg_sys::InvalidOffsetNumber || offset > max_offset {
-                std::mem::drop(wal_txn);
-                return Err(format!(
-                    "ec_spire object tuple delete offset {} out of range on block {}",
-                    offset, block_number
-                ));
-            }
             let tid = crate::storage::page::ItemPointer {
                 block_number,
                 offset_number: offset,
@@ -433,7 +444,13 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
                     LockedPageTupleVisit::Unused => continue,
                     LockedPageTupleVisit::Present(tuple_len) => tuple_len,
                 };
-            registered.delete_no_compact(offset);
+            if registered.delete_no_compact_checked(offset).is_err() {
+                std::mem::drop(wal_txn);
+                return Err(format!(
+                    "ec_spire object tuple delete offset {} out of range on block {}",
+                    offset, block_number
+                ));
+            }
             removed_tuple_count = removed_tuple_count
                 .checked_add(1)
                 .ok_or_else(|| "ec_spire removed tuple count overflow".to_owned())?;
@@ -448,7 +465,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
         if changed {
             wal_txn.finish();
         }
-        registered.record_free_space(registered.free_space());
+        registered.record_current_free_space();
     }
     Ok((removed_tuple_count, removed_tuple_bytes))
 }
@@ -477,14 +494,13 @@ fn try_append_object_tuple_to_block(
         ));
     }
 
-    let free_space = registered.free_space();
-    if free_space < raw_tuple_storage_bytes(payload.len()) {
-        registered.record_free_space(free_space);
-        std::mem::drop(wal_txn);
-        return Ok(None);
-    }
-
-    let offset = registered.add_item(payload);
+    let offset = match registered.add_item_if_space(payload) {
+        Ok(offset) => offset,
+        Err(_) => {
+            std::mem::drop(wal_txn);
+            return Ok(None);
+        }
+    };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
         return Err(format!(
@@ -493,7 +509,7 @@ fn try_append_object_tuple_to_block(
     }
 
     wal_txn.finish();
-    registered.record_free_space(registered.free_space());
+    registered.record_current_free_space();
     Ok(Some(crate::storage::page::ItemPointer {
         block_number,
         offset_number: offset,
@@ -518,16 +534,18 @@ fn append_object_tuple_to_new_block(
     let mut wal_txn = relation.start_wal();
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = SpireRegisteredPage::new(relation.raw(), buffer.block_number(), page);
-    registered.init(page_size, 0);
-    if registered.free_space() < raw_tuple_storage_bytes(payload.len()) {
-        std::mem::drop(wal_txn);
-        return Err(format!(
-            "ec_spire object tuple payload {} exceeds page capacity",
-            payload.len()
-        ));
-    }
+    registered.init_empty(page_size);
 
-    let offset = registered.add_item(payload);
+    let offset = match registered.add_item_if_space(payload) {
+        Ok(offset) => offset,
+        Err(_) => {
+            std::mem::drop(wal_txn);
+            return Err(format!(
+                "ec_spire object tuple payload {} exceeds page capacity",
+                payload.len()
+            ));
+        }
+    };
     if offset == pg_sys::InvalidOffsetNumber {
         std::mem::drop(wal_txn);
         return Err("ec_spire failed to append object tuple to new block".to_owned());
@@ -535,7 +553,7 @@ fn append_object_tuple_to_new_block(
     let block_number = buffer.block_number();
 
     wal_txn.finish();
-    registered.record_free_space(registered.free_space());
+    registered.record_current_free_space();
     Ok(crate::storage::page::ItemPointer {
         block_number,
         offset_number: offset,
