@@ -4,7 +4,7 @@ use pgrx::pg_sys;
 
 use crate::am::common::heap_slot;
 use crate::storage::{
-    buffer_guard::LockedBufferGuard,
+    buffer_guard::{LockedBufferGuard, LockedPageTupleVisit},
     page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
     relation_guard::HeapRelationGuard,
     snapshot_guard::RegisteredSnapshotGuard,
@@ -198,17 +198,17 @@ pub(super) unsafe fn materialize_chain_from_index(
             .ok_or_else(|| {
                 format!("ec_diskann beginscan could not open data block {block_number}")
             })?;
-            let page = buffer.page();
-            let data_page_size = buffer.page_size();
-            // SAFETY: `page` comes from the locked data-page buffer and remains
-            // pinned while line pointers are enumerated.
-            let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
+            let max_offset = buffer.max_offset_number();
             for offset in 1..=max_offset {
-                // SAFETY: `offset` is within the page's max offset, and the
-                // helper validates item id and tuple bounds before copying.
-                if let Some(tuple_bytes) = unsafe {
-                    copy_data_page_tuple_bytes(page, data_page_size, block_number, offset)?
-                } {
+                let tid = ItemPointer {
+                    block_number,
+                    offset_number: offset,
+                };
+                let visit =
+                    buffer.visit_tuple_bytes(tid, "ec_diskann data block", |tuple_bytes| {
+                        Ok(tuple_bytes.to_vec())
+                    })?;
+                if let LockedPageTupleVisit::Present(tuple_bytes) = visit {
                     chain.insert_raw_tuple(tuple_bytes)?;
                 }
             }
@@ -218,48 +218,6 @@ pub(super) unsafe fn materialize_chain_from_index(
     }
 
     Ok((metadata, chain))
-}
-
-unsafe fn copy_data_page_tuple_bytes(
-    page: pg_sys::Page,
-    page_size: usize,
-    block_number: pg_sys::BlockNumber,
-    offset: pg_sys::OffsetNumber,
-) -> Result<Option<Vec<u8>>, String> {
-    // SAFETY: Callers pass an offset within the locked page's max offset.
-    let item_id = unsafe { pg_sys::PageGetItemId(page, offset) };
-    if item_id.is_null() {
-        return Err(format!(
-            "ec_diskann data block {block_number} returned a null item id at offset {offset}"
-        ));
-    }
-    // SAFETY: `item_id` was checked non-null and points into the locked page's
-    // line pointer array.
-    let item_id_ref = unsafe { &*item_id };
-    if item_id_ref.lp_flags() == 0 {
-        return Ok(None);
-    }
-
-    let tuple_offset = item_id_ref.lp_off() as usize;
-    let tuple_len = item_id_ref.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_diskann data block {block_number} tuple bounds exceed page at offset {offset}"
-        ));
-    }
-
-    // SAFETY: The item id is valid and its byte bounds were checked against the
-    // locked page size before retrieving the tuple pointer.
-    let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
-    if tuple_ptr.is_null() {
-        return Err(format!(
-            "ec_diskann data block {block_number} returned a null tuple pointer at offset {offset}"
-        ));
-    }
-    // SAFETY: `tuple_ptr` is non-null and the validated tuple length is copied
-    // into owned memory before the page lock is released.
-    let tuple_bytes = unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) }.to_vec();
-    Ok(Some(tuple_bytes))
 }
 
 pub(super) struct DiskannScanDescView<'a> {

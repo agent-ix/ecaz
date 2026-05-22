@@ -18,6 +18,8 @@ use std::ptr;
 
 use pgrx::pg_sys;
 
+use crate::storage::page::ItemPointer;
+
 pub(crate) struct PinnedBufferGuard {
     buffer: pg_sys::Buffer,
 }
@@ -119,6 +121,11 @@ pub(crate) struct LockedBufferGuard {
     buffer: pg_sys::Buffer,
 }
 
+pub(crate) enum LockedPageTupleVisit<R> {
+    Unused,
+    Present(R),
+}
+
 impl LockedBufferGuard {
     pub(crate) unsafe fn read_main(
         relation: pg_sys::Relation,
@@ -201,6 +208,69 @@ impl LockedBufferGuard {
     pub(crate) fn block_number(&self) -> pg_sys::BlockNumber {
         // SAFETY: this guard owns a valid locked buffer.
         unsafe { pg_sys::BufferGetBlockNumber(self.buffer) }
+    }
+
+    pub(crate) fn max_offset_number(&self) -> pg_sys::OffsetNumber {
+        // SAFETY: this guard owns a valid locked buffer.
+        unsafe { pg_sys::PageGetMaxOffsetNumber(self.page()) }
+    }
+
+    pub(crate) fn visit_tuple_bytes<R, F>(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<LockedPageTupleVisit<R>, String>
+    where
+        F: FnOnce(&[u8]) -> Result<R, String>,
+    {
+        let page = self.page();
+        let page_size = self.page_size();
+        let block_number = self.block_number();
+
+        // SAFETY: this guard owns a valid locked buffer. The requested line
+        // pointer is range checked, tuple bounds are checked against the locked
+        // page size, and the borrowed tuple bytes do not escape the visitor.
+        unsafe {
+            let max_offset = self.max_offset_number();
+            if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
+                return Err(format!(
+                    "{tuple_kind} tuple offset {} out of range on block {} (max {})",
+                    tid.offset_number, block_number, max_offset
+                ));
+            }
+
+            let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
+            if item_id.is_null() {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) returned a null item id",
+                    tid.block_number, tid.offset_number
+                ));
+            }
+            let item_id_ref = &*item_id;
+            if item_id_ref.lp_flags() == 0 {
+                return Ok(LockedPageTupleVisit::Unused);
+            }
+
+            let tuple_offset = item_id_ref.lp_off() as usize;
+            let tuple_len = item_id_ref.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) has invalid bounds",
+                    tid.block_number, tid.offset_number
+                ));
+            }
+
+            let tuple_ptr = pg_sys::PageGetItem(page, item_id).cast::<u8>();
+            if tuple_ptr.is_null() {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) returned a null tuple pointer",
+                    tid.block_number, tid.offset_number
+                ));
+            }
+            let tuple_bytes = std::slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len);
+            visit(tuple_bytes).map(LockedPageTupleVisit::Present)
+        }
     }
 }
 

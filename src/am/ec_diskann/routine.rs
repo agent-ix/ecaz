@@ -18,7 +18,7 @@ use crate::{
     },
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
-        buffer_guard::LockedBufferGuard,
+        buffer_guard::{LockedBufferGuard, LockedPageTupleVisit},
         page::{DataPageChain, ItemPointer},
         relation_guard::HeapRelationGuard,
         wal,
@@ -1538,21 +1538,27 @@ unsafe fn apply_tuple_rewrites(
         .ok_or_else(|| {
             format!("ec_diskann vacuum rewrite could not open data block {block_number}")
         })?;
-        // SAFETY: The target page is locked exclusively for this rewrite group;
-        // expected bytes are validated before the registered page is mutated.
-        let page_result: Result<VacuumRewriteApplyOutcome, String> = unsafe {
-            let page = buffer.page();
-            let page_size = buffer.page_size();
-            for rewrite in block_rewrites {
-                let matches_expected =
-                    with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |current_raw| {
-                        Ok(current_raw == rewrite.expected_raw.as_slice())
-                    })?;
-                if !matches_expected {
-                    return Ok(VacuumRewriteApplyOutcome::RetryReplan);
-                }
+        for rewrite in block_rewrites {
+            let visit = buffer.visit_tuple_bytes(
+                rewrite.tid,
+                "ec_diskann vacuum target",
+                |current_raw| Ok(current_raw == rewrite.expected_raw.as_slice()),
+            )?;
+            let LockedPageTupleVisit::Present(matches_expected) = visit else {
+                return Err(format!(
+                    "ec_diskann vacuum target ({},{}) points at an unused slot",
+                    rewrite.tid.block_number, rewrite.tid.offset_number
+                ));
+            };
+            if !matches_expected {
+                return Ok(VacuumRewriteApplyOutcome::RetryReplan);
             }
+        }
 
+        // SAFETY: The target page is locked exclusively for this rewrite group;
+        // expected bytes were validated before the registered page is mutated.
+        let page_result: Result<VacuumRewriteApplyOutcome, String> = unsafe {
+            let page_size = buffer.page_size();
             let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
             let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
             for rewrite in block_rewrites {
@@ -1698,24 +1704,6 @@ unsafe fn vacuum_page_tuple_location(
         ((page as *mut u8).add(tuple_offset), tuple_len)
     };
     Ok((tuple_ptr, tuple_len))
-}
-
-unsafe fn with_vacuum_page_tuple_bytes<R, F>(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-    visit: F,
-) -> Result<R, String>
-where
-    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
-{
-    // SAFETY: The caller owns the page pin/lock; tuple bounds are validated
-    // before constructing the immutable byte slice.
-    let tuple_bytes = unsafe {
-        let (tuple_ptr, tuple_len) = vacuum_page_tuple_location(page, page_size, tid)?;
-        slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len)
-    };
-    visit(tuple_bytes)
 }
 
 unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
