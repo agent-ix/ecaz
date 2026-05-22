@@ -44,6 +44,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             heap_tid,
             indexed_vector_kind,
             metadata.storage_format,
+            metadata.quant_bits,
             "aminsert",
         );
 
