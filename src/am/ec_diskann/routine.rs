@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Mutex, OnceLock,
 };
-use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr, slice};
+use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr};
 
 use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgMemoryContexts};
 
@@ -1555,17 +1555,16 @@ unsafe fn apply_tuple_rewrites(
             }
         }
 
-        // SAFETY: The target page is locked exclusively for this rewrite group;
-        // expected bytes were validated before the registered page is mutated.
-        let page_result: Result<VacuumRewriteApplyOutcome, String> = unsafe {
-            let page_size = buffer.page_size();
-            let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-            let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
+        // SAFETY: `index_relation` is the live relation for this vacuum
+        // callback, and the WAL transaction is finished or aborted in this
+        // scope.
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let page_result: Result<VacuumRewriteApplyOutcome, String> = {
+            let mut writable_page = wal_txn.register_locked_buffer_full_image_page(&buffer);
             for rewrite in block_rewrites {
-                with_vacuum_page_tuple_bytes_mut(
-                    writable_page,
-                    page_size,
+                writable_page.visit_tuple_bytes_mut(
                     rewrite.tid,
+                    "ec_diskann vacuum target",
                     |tuple_bytes| {
                         if tuple_bytes.len() != rewrite.replacement_raw.len() {
                             return Err(format!(
@@ -1617,13 +1616,12 @@ unsafe fn write_raw_tuple_bytes(
         )
     })?;
 
-    // SAFETY: The target page is locked exclusively, the tuple location helper
-    // validates bounds, and the replacement length is checked before copying.
-    let page_result: Result<(), String> = unsafe {
-        let page_size = buffer.page_size();
-        let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
-        with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
+    // SAFETY: `index_relation` is the live relation for this test helper, and
+    // the WAL transaction is finished or aborted in this scope.
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_result: Result<(), String> = {
+        let mut writable_page = wal_txn.register_locked_buffer_full_image_page(&buffer);
+        writable_page.visit_tuple_bytes_mut(tid, "ec_diskann vacuum test target", |tuple_bytes| {
             if tuple_bytes.len() != replacement_raw.len() {
                 return Err(format!(
                             "ec_diskann vacuum test rewrite length mismatch at ({},{}): got {}, expected {}",
@@ -1658,70 +1656,6 @@ fn callback_marks_heap_tid_dead(
         );
         callback(&mut raw_tid, callback_state)
     }
-}
-
-unsafe fn vacuum_page_tuple_location(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-) -> Result<(*mut u8, usize), String> {
-    // SAFETY: The caller supplies a pinned PostgreSQL page. This block reads
-    // the line pointer, validates slot and tuple bounds, then derives the tuple
-    // byte pointer within that same page.
-    let (tuple_ptr, tuple_len) = unsafe {
-        let max_offset = pg_sys::PageGetMaxOffsetNumber(page);
-        if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
-            return Err(format!(
-                "ec_diskann vacuum target ({},{}) has invalid offset {} (max {})",
-                tid.block_number, tid.offset_number, tid.offset_number, max_offset
-            ));
-        }
-
-        let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
-        if item_id.is_null() {
-            return Err(format!(
-                "ec_diskann vacuum target ({},{}) returned a null item id",
-                tid.block_number, tid.offset_number
-            ));
-        }
-        let item_id_ref = &*item_id;
-        if item_id_ref.lp_flags() == 0 {
-            return Err(format!(
-                "ec_diskann vacuum target ({},{}) points at an unused slot",
-                tid.block_number, tid.offset_number
-            ));
-        }
-
-        let tuple_offset = item_id_ref.lp_off() as usize;
-        let tuple_len = item_id_ref.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            return Err(format!(
-                "ec_diskann vacuum target ({},{}) has invalid tuple bounds",
-                tid.block_number, tid.offset_number
-            ));
-        }
-
-        ((page as *mut u8).add(tuple_offset), tuple_len)
-    };
-    Ok((tuple_ptr, tuple_len))
-}
-
-unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-    visit: F,
-) -> Result<R, String>
-where
-    F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
-{
-    // SAFETY: The caller owns an exclusive page lock; tuple bounds are
-    // validated before constructing the mutable byte slice.
-    let tuple_bytes = unsafe {
-        let (tuple_ptr, tuple_len) = vacuum_page_tuple_location(page, page_size, tid)?;
-        slice::from_raw_parts_mut(tuple_ptr, tuple_len)
-    };
-    visit(tuple_bytes)
 }
 
 fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
