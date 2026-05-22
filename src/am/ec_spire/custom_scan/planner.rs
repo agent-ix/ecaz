@@ -458,10 +458,7 @@ impl<'a> CustomScanRelPathlistInput<'a> {
             else {
                 return true;
             };
-            // SAFETY: the guard keeps the candidate SPIRE index relation live
-            // while the planner eligibility helper inspects root/control and
-            // placement metadata.
-            let index = unsafe { super::live_index_relation(index_relation.as_ptr()) };
+            let index = super::live_index_relation_from_guard(&index_relation);
             if let Ok(row) = custom_scan_index_eligibility_result(index) {
                 if row.eligible_for_custom_scan {
                     candidate = Some((index_info.indexoid, row));

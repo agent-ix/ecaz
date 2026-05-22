@@ -152,6 +152,14 @@ pub(crate) unsafe fn live_index_relation(
     unsafe { SpireLiveIndexRelation::new(index_relation) }
 }
 
+pub(crate) fn live_index_relation_from_guard(
+    index_relation: &crate::storage::relation_guard::IndexRelationGuard,
+) -> SpireLiveIndexRelation {
+    // SAFETY: `IndexRelationGuard` owns the open PostgreSQL index relation for
+    // the returned view's immediate call scope.
+    unsafe { SpireLiveIndexRelation::new(index_relation.as_ptr()) }
+}
+
 struct SpireActiveEpochAnchor {
     root_control: meta::SpireRootControlState,
     epoch_manifest: meta::SpireEpochManifest,

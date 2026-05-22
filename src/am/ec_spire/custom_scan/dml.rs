@@ -524,9 +524,7 @@ fn custom_scan_ensure_outputs(state: &mut SpireCustomScanExecState) {
         index_oid,
         "EcSpireDistributedScan production executor",
     );
-    // SAFETY: `index_relation` is held open by the access-share guard for
-    // the duration of production scan output materialization.
-    let index = unsafe { super::live_index_relation(index_relation.as_ptr()) };
+    let index = super::live_index_relation_from_guard(&index_relation);
     let stream = super::remote_search_production_scan_tuple_payload_result_stream(
         index,
         query,
