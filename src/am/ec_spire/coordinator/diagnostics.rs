@@ -97,15 +97,15 @@ fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
     }
     let index_relation = index.as_ptr();
     // SAFETY: root_control was read from this live relation and names manifest
-    // tuple IDs in the same SPIRE index relation.
-    let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid) }?;
-    // SAFETY: same live relation and root/control manifest locator scope.
-    let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid) }?;
-    // SAFETY: same live relation and root/control manifest locator scope.
-    let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid) }?;
+    // tuple IDs in the same SPIRE index relation; page helpers return owned
+    // bytes before the decoded diagnostic manifests are cross-checked below.
+    let (epoch_bytes, object_bytes, placement_bytes) = unsafe {
+        (
+            page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?,
+            page::read_object_tuple(index_relation, root_control.object_manifest_tid)?,
+            page::read_object_tuple(index_relation, root_control.placement_directory_tid)?,
+        )
+    };
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
@@ -246,10 +246,7 @@ pub(crate) fn index_boundary_replica_placement_diagnostics(
             return Ok(Vec::new());
         }
         let (_epoch_manifest, _object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_boundary_placement_diagnostics(
-                index,
-                root_control,
-            )?;
+            load_relation_epoch_manifests_for_boundary_placement_diagnostics(index, root_control)?;
         let object_store = index.object_store_set(
             &placement_directory,
             pg_sys::AccessShareLock as pg_sys::LOCKMODE,
