@@ -327,13 +327,13 @@ impl BuildState {
             };
             // SAFETY: The heap and index relations are live while BuildState is
             // initialized, and the resolver validates the indexed attribute.
-            let indexed_attribute = unsafe {
+            let indexed_attribute = 
                 source::resolve_indexed_vector_attribute(
                     heap_relation.as_ptr(),
                     index_relation,
                     "indexed column",
                 )
-            };
+            ;
             indexed_attribute.kind
         };
         Self {
@@ -685,13 +685,13 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         .expect("source scan should only run when build_source_column is configured");
     // SAFETY: `heap_relation` and `index_info` are live during ambuild, and the
     // resolver validates the indexed attribute for this index.
-    let indexed_attribute = unsafe {
+    let indexed_attribute = 
         source::resolve_indexed_vector_attribute_from_index_info(
             heap_relation,
             index_info,
             "indexed column",
         )
-    };
+    ;
     let source_attribute = source::resolve_source_attribute(
         heap_relation,
         &source_column,

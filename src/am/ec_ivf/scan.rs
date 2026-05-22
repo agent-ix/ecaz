@@ -913,7 +913,7 @@ unsafe fn configure_heap_rerank_state(
     // relation/snapshot resolvers either borrow callback-owned pointers or hold
     // guards in the returned state, and the attribute resolver validates the
     // indexed ecvector source attribute for heap_f32 rerank.
-    let (heap_relation, snapshot, source_attribute) = unsafe {
+    let (heap_relation, snapshot, source_attribute) = {
         let scan = IvfScanDescView::from_nonnull(
             NonNull::new(scan)
                 .unwrap_or_else(|| pgrx::error!("ec_ivf heap_f32 rerank received null scan")),

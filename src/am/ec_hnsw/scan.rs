@@ -1398,13 +1398,13 @@ unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) ->
     };
     // SAFETY: both relation pointers are live for this lookup; the heap is held
     // by `HeapRelationGuard` and `index_relation` is owned by the caller scan.
-    let indexed_attribute = unsafe {
+    let indexed_attribute = 
         source::resolve_indexed_vector_attribute(
             heap_relation.as_ptr(),
             index_relation,
             "indexed column",
         )
-    };
+    ;
     matches!(indexed_attribute.kind, source::IndexedVectorKind::Ecvector)
 }
 

@@ -264,13 +264,13 @@ impl VacuumSearchMetric {
             None => {
                 // SAFETY: The heap and index relations are live; this resolves
                 // the indexed vector attribute from PostgreSQL metadata.
-                let indexed_attribute = unsafe {
+                let indexed_attribute = 
                     source::resolve_indexed_vector_attribute(
                         heap_relation,
                         index_relation,
                         "indexed column",
                     )
-                };
+                ;
                 match indexed_attribute.kind {
                     // SAFETY: The indexed ecvector attribute can be read through
                     // the heap relation during source-backed repair scoring.

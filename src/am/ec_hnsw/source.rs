@@ -332,7 +332,7 @@ pub(crate) fn resolve_source_attribute_by_attnum(
     }
 }
 
-pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
+pub(crate) fn resolve_single_base_heap_index_attnum(
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> i32 {
@@ -359,16 +359,16 @@ pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
     attnum
 }
 
-pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
+pub(crate) fn resolve_indexed_ecvector_attribute_from_index_info(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> SourceAttribute {
     // SAFETY: The heap relation is live and `index_info` is callback-duration
     // metadata owned by PostgreSQL.
-    let indexed = unsafe {
+    let indexed = 
         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
-    };
+    ;
     if indexed.kind != IndexedVectorKind::Ecvector {
         pgrx::error!("ec_hnsw {label} must be ecvector");
     }
@@ -378,31 +378,31 @@ pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
     }
 }
 
-pub(crate) unsafe fn resolve_indexed_ecvector_attribute(
+pub(crate) fn resolve_indexed_ecvector_attribute(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> SourceAttribute {
     let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
-    let attribute = unsafe {
+    let attribute = 
         resolve_indexed_ecvector_attribute_from_index_info(
             heap_relation,
             index_info.as_ptr(),
             label,
         )
-    };
+    ;
     attribute
 }
 
-pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
+pub(crate) fn resolve_indexed_vector_attribute_from_index_info(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> IndexedVectorAttribute {
     // SAFETY: `index_info` is callback-duration PostgreSQL metadata and the
     // helper validates single-key base-column shape.
-    let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };
+    let indexed_attnum = resolve_single_base_heap_index_attnum(index_info, label);
     let heap_relation = std::ptr::NonNull::new(heap_relation)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw source resolution needs a valid heap relation"));
     let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(heap_relation);
@@ -414,7 +414,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     }
 
     // SAFETY: `att.atttypid` comes from the copied tuple descriptor metadata.
-    let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }
+    let kind = resolve_indexed_vector_kind(att.atttypid)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw {label} must be ecvector or tqvector"));
     IndexedVectorAttribute {
         attnum: indexed_attnum,
@@ -422,20 +422,20 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     }
 }
 
-pub(crate) unsafe fn resolve_indexed_vector_attribute(
+pub(crate) fn resolve_indexed_vector_attribute(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> IndexedVectorAttribute {
     let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
-    let attribute = unsafe {
+    let attribute = 
         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info.as_ptr(), label)
-    };
+    ;
     attribute
 }
 
-unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
     let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
