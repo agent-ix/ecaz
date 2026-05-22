@@ -31,7 +31,7 @@ pub(crate) enum GraphStorageDescriptor {
 }
 
 impl GraphStorageDescriptor {
-    pub(crate) unsafe fn from_index_relation(
+    pub(crate) fn from_index_relation(
         index_relation: pg_sys::Relation,
         metadata: &page::MetadataPage,
     ) -> Result<Self, String> {

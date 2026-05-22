@@ -611,7 +611,7 @@ fn resolve_insert_format_adapter(
 ) -> Result<InsertFormatAdapter, String> {
     // SAFETY: `index_relation` is live for the insert, and `metadata` is the
     // metadata page snapshot used to interpret graph storage.
-    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }? {
+    match graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)? {
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(InsertFormatAdapter::TurboQuant { code_len })
         }

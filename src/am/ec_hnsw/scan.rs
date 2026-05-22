@@ -1123,7 +1123,7 @@ fn validate_runtime_scan_format(
 ) -> Result<graph::GraphStorageDescriptor, String> {
     // SAFETY: callers pass the live index relation from PostgreSQL's scan
     // descriptor, and the metadata was read from that same relation.
-    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
+    graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
 }
 
 const INVALID_PARALLEL_SCAN_WORKER_SLOT: u32 = u32::MAX;

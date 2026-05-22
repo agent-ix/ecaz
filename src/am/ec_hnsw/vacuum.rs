@@ -470,7 +470,7 @@ fn resolve_vacuum_format_adapter(
 ) -> Result<VacuumFormatAdapter, String> {
     // SAFETY: `index_relation` is live for vacuum and `metadata` is the page
     // snapshot used to interpret graph storage.
-    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index.as_ptr(), metadata) }? {
+    match graph::GraphStorageDescriptor::from_index_relation(index.as_ptr(), metadata)? {
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(VacuumFormatAdapter::TurboQuant { code_len })
         }

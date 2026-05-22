@@ -157,11 +157,8 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
 
 pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
     let metadata = read_metadata_page(index_relation);
-    // SAFETY: Metadata was decoded from this index and describes its graph
-    // storage layout.
-    let storage =
-        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let storage = graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     let block_count = hnsw_main_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return 0;

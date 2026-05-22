@@ -111,7 +111,7 @@ fn debug_graph_storage(
 ) -> graph::GraphStorageDescriptor {
     // SAFETY: Debug callers pass an open index relation and metadata read from
     // that relation; descriptor construction validates the storage format.
-    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
+    graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw debug failed to resolve graph storage: {e}"))
 }
 
