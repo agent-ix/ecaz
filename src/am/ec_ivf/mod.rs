@@ -20,11 +20,15 @@ pub(super) const EC_IVF_MIN_NPROBE: i32 = 0;
 pub(super) const EC_IVF_MAX_NPROBE: i32 = 1_000_000;
 // 0 historically meant "rerank every candidate" which at high nprobe
 // can run heap fetches for tens of thousands of candidates per query
-// (~80 ms on 50k @ nprobe=64). 200 is wide enough to preserve recall
-// (measured: same 0.988 recall@10 at 50k nprobe=64 vs uncapped) while
-// cutting rerank latency by ~9x. Override at index-create time with
-// WITH (rerank_width = ...) or per-session via SET ec_ivf.rerank_width.
-pub(super) const EC_IVF_DEFAULT_RERANK_WIDTH: i32 = 200;
+// (~80 ms on 50k @ nprobe=64). A small width is enough: at bits=1 +
+// rerank=heap_f32 we measured recall@10 plateau by width=50 on real
+// DBpedia (0.986 vs 0.988 at width=200) — wider just spends more on
+// f32 heap reranks that don't move recall.
+//
+// 50 covers query K up to ~10 with comfortable margin; queries with
+// LIMIT > 10 should bump via WITH (rerank_width = ...) at CREATE
+// INDEX or SET ec_ivf.rerank_width = N per session.
+pub(super) const EC_IVF_DEFAULT_RERANK_WIDTH: i32 = 50;
 pub(super) const EC_IVF_MIN_RERANK_WIDTH: i32 = 0;
 pub(super) const EC_IVF_MAX_RERANK_WIDTH: i32 = 10_000_000;
 pub(super) const EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS: i32 = 0;
