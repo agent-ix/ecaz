@@ -1,7 +1,11 @@
 # Task 39: Test Quality Measurement (Mutation, Coverage, Flake Hunting)
 
-Status: **proposed** — answers the question Task 34 cannot: "do the tests we
-already have actually catch bugs, and what do they leave uncovered?"
+Status: complete — closed by `reviews/task-39/039-task39-closeout/` on
+2026-05-19 (all five exit criteria met; reviewer-accepted). Burn-in
+hardening continues post-closure: full SPIRE storage mutation cascade
+landed in packets 046-058 (0 non-equivalent survivors under isolated
+`CARGO_TARGET_DIR`), and the wire-format byte-layout compile-time
+assertions landed in 053 (`dca0e1483`).
 
 ## Scope
 
