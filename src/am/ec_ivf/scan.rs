@@ -866,10 +866,67 @@ unsafe fn load_centroid_scores(
 }
 
 fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+    debug_assert_eq!(left.len(), right.len());
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            // SAFETY: NEON feature confirmed at runtime; helper handles
+            // length-tail bookkeeping.
+            return unsafe { inner_product_neon(left, right) };
+        }
+    }
+    inner_product_scalar(left, right)
+}
+
+#[inline]
+fn inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
     left.iter()
         .zip(right.iter())
         .map(|(left, right)| left * right)
         .sum()
+}
+
+/// f32 inner product with 4 accumulator chains. Used to score IVF
+/// centroids against the query (~`nlists` × `dimensions` ops at the
+/// start of every scan) — formerly a scalar `.sum()` loop, which at
+/// dim=1536 nlists=224 was ~1 ms of per-query fixed cost on Graviton 4.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
+    let n = left.len();
+    let mut acc0 = vdupq_n_f32(0.0);
+    let mut acc1 = vdupq_n_f32(0.0);
+    let mut acc2 = vdupq_n_f32(0.0);
+    let mut acc3 = vdupq_n_f32(0.0);
+    let mut i = 0_usize;
+    while i + 16 <= n {
+        // SAFETY: i + 16 <= n and both slices have length n.
+        let va0 = vld1q_f32(left.as_ptr().add(i));
+        let va1 = vld1q_f32(left.as_ptr().add(i + 4));
+        let va2 = vld1q_f32(left.as_ptr().add(i + 8));
+        let va3 = vld1q_f32(left.as_ptr().add(i + 12));
+        let vb0 = vld1q_f32(right.as_ptr().add(i));
+        let vb1 = vld1q_f32(right.as_ptr().add(i + 4));
+        let vb2 = vld1q_f32(right.as_ptr().add(i + 8));
+        let vb3 = vld1q_f32(right.as_ptr().add(i + 12));
+        acc0 = vfmaq_f32(acc0, va0, vb0);
+        acc1 = vfmaq_f32(acc1, va1, vb1);
+        acc2 = vfmaq_f32(acc2, va2, vb2);
+        acc3 = vfmaq_f32(acc3, va3, vb3);
+        i += 16;
+    }
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)),
+    );
+    let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+    while i < n {
+        sum += left[i] * right[i];
+        i += 1;
+    }
+    sum
 }
 
 fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> Ordering {
