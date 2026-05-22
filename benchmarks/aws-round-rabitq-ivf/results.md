@@ -131,6 +131,50 @@ queries_limit=200 vs full-200 differences, not a methodology change;
 ndcg@10 stays at 0.999 throughout. Pre-prune did not introduce any
 recall regression.
 
+### EXPLAIN counter attribution (post-reviewer feedback)
+
+Captured `EXPLAIN (FORMAT JSON, ecaz, ANALYZE)` for the no-rerank 50k
+RaBitQ cells after a true `pg_prewarm` (the prior `pg_prewarm` SQL
+was eaten by SSM dollar-quoting expansion; logs in
+`artifacts/explain-counters.log` show the proper counter dump).
+
+| nprobe | Postings Visited | Postings Scored | Postings Pruned By Bound | Filtered Duplicates |
+| --- | --- | --- | --- | --- |
+| 8 | 1881 | 1881 | **0** | 0 |
+| 16 | 3406 | 3406 | **0** | 0 |
+| 32 | 6501 | 6501 | **0** | 0 |
+| 64 | 14193 | 14193 | **0** | 0 |
+
+Two findings the reviewer correctly anticipated:
+
+1. **Cauchy-Schwarz pre-prune never fires on normalized embeddings.**
+   The bound `||o|| · ||q|| / |o_dot|` ≈ 1.4 always exceeds the
+   running top-200 cutoff (~0.6–0.8 for high-similarity DBpedia
+   queries). The pre-prune dispatch is wired correctly post-commit
+   `0b4b984b8`, but the bound itself is too loose to ever exclude
+   a candidate on this workload.
+
+   The ~7% improvement previously attributed to "LUT hoist +
+   pre-prune" is **entirely from LUT hoist + the per-candidate
+   scalar-read fold** (commits `2ca854d5c`, `d839e8cc5`). The
+   pre-prune commit (`752325deb`) is currently a no-op on this
+   workload.
+
+   Follow-up directions: (a) tighter ε-concentration bound (paper
+   formula), (b) incremental partial-sum scoring with early-exit,
+   (c) precomputed per-code dequant-vector norm to tighten Cauchy-
+   Schwarz. All require more design work; none gate the current
+   gains.
+
+2. **Hashbrown dedup is overhead on this workload.** `Filtered
+   Duplicates: 0` at every cell. DBpedia 50k has 1 heap_tid per
+   posting (no replication). Hashbrown still beats std HashMap on
+   the unique-insert path, but the savings are smaller than the
+   prior attribution suggested. The hashbrown swap (`5b4a80c22`)
+   stays because production indexes can have replicated postings;
+   the workload-specific saving is just smaller than the cumulative
+   delta we measured.
+
 ### Per-optimization contribution
 
 | Layer | 50k nprobe=64 p50 | gain |
