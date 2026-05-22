@@ -4242,14 +4242,10 @@ unsafe fn initialize_scan_entry_candidate(
     let (entry, entry_score) = match entry_candidate {
         Some(candidate) => candidate,
         None => {
-            // SAFETY: fallback scans the same live index relation using the
-            // graph storage descriptor attached to this scan.
-            let Some(fallback) = (unsafe {
-                super::shared::highest_level_live_entry_candidate(
-                    index_relation,
-                    opaque.scan_graph_storage,
-                )
-            }) else {
+            let Some(fallback) = super::shared::highest_level_live_entry_candidate(
+                index_relation,
+                opaque.scan_graph_storage,
+            ) else {
                 return;
             };
             let (entry, entry_score) =

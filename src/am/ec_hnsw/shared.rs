@@ -133,7 +133,7 @@ fn rewrite_metadata_buffer(
     }
 }
 
-pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
+pub(super) fn ec_hnsw_noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
@@ -155,7 +155,7 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
     stats
 }
 
-pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+pub(super) fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
     let metadata = read_metadata_page(index_relation);
     let storage = graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -175,9 +175,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                 .max(page::FIRST_DATA_BLOCK_NUMBER),
             "ec_hnsw live tuple count",
             |buffer, block_number| {
-                // SAFETY: The buffer guard owns a shared lock and `storage`
-                // matches the decoded index metadata.
-                count += unsafe { count_live_elements_on_buffer(storage, buffer, block_number) };
+                count += count_live_elements_on_buffer(storage, buffer, block_number);
                 Ok(())
             },
         )
@@ -203,7 +201,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
     count
 }
 
-unsafe fn count_live_elements_on_buffer(
+fn count_live_elements_on_buffer(
     storage: graph::GraphStorageDescriptor,
     buffer: &LockedBufferGuard,
     block_number: u32,
@@ -275,7 +273,7 @@ unsafe fn count_live_elements_on_buffer(
     count
 }
 
-pub(super) unsafe fn highest_level_live_entry_candidate(
+pub(super) fn highest_level_live_entry_candidate(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
 ) -> Option<LiveEntryCandidate> {
@@ -641,16 +639,14 @@ pub(crate) struct PlannerIntegrationSnapshot {
     pub next_pg18_blocker: &'static str,
 }
 
-pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+pub(crate) fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = options::relation_options(
         std::ptr::NonNull::new(index_relation)
             .expect("ec_hnsw admin index relation should be non-null"),
     );
     let tuning = options::resolve_scan_tuning(&relation_options);
     let metadata = read_metadata_page(index_relation);
-    // SAFETY: The index relation is live while shared page traversal counts
-    // live HNSW element tuples.
-    let total_live_nodes = unsafe { count_element_tuples(index_relation) };
+    let total_live_nodes = count_element_tuples(index_relation);
     let inserted_since_rebuild =
         usize::try_from(metadata.inserted_since_rebuild).unwrap_or_else(|_| {
             pgrx::error!(
@@ -681,12 +677,10 @@ fn insert_drift_fraction(total_live_nodes: usize, inserted_since_rebuild: usize)
     inserted_since_rebuild as f64 / total_live_nodes as f64
 }
 
-pub(crate) unsafe fn index_explain_snapshot(
+pub(crate) fn index_explain_snapshot(
     index_relation: pg_sys::Relation,
 ) -> IndexExplainSnapshot {
-    // SAFETY: The index relation is live for the duration of this diagnostic
-    // snapshot and admin snapshot reads only relation metadata.
-    let admin = unsafe { index_admin_snapshot(index_relation) };
+    let admin = index_admin_snapshot(index_relation);
     let translation = super::cost::strategy_translation_snapshot();
     let explain = super::explain::explain_option_snapshot();
     IndexExplainSnapshot {
@@ -706,7 +700,7 @@ pub(crate) unsafe fn index_explain_snapshot(
     }
 }
 
-pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+pub(crate) fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
     let relation_options = options::relation_options(
         std::ptr::NonNull::new(index_relation)
             .expect("ec_hnsw cost index relation should be non-null"),
@@ -801,16 +795,12 @@ pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
     }
 }
 
-pub(crate) unsafe fn planner_integration_snapshot(
+pub(crate) fn planner_integration_snapshot(
     index_relation: pg_sys::Relation,
 ) -> PlannerIntegrationSnapshot {
-    // SAFETY: The index relation is live for the duration of this diagnostic
-    // snapshot and admin snapshot reads only relation metadata.
-    let admin = unsafe { index_admin_snapshot(index_relation) };
-    // SAFETY: Delegates to snapshot helpers using the same live index relation.
-    let explain = unsafe { index_explain_snapshot(index_relation) };
-    // SAFETY: Delegates to snapshot helpers using the same live index relation.
-    let cost = unsafe { index_cost_snapshot(index_relation) };
+    let admin = index_admin_snapshot(index_relation);
+    let explain = index_explain_snapshot(index_relation);
+    let cost = index_cost_snapshot(index_relation);
     let diagnostics = pg18_diagnostics_snapshot();
     let stream = read_stream_snapshot();
 

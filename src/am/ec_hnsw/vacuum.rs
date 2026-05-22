@@ -323,9 +323,7 @@ impl VacuumFormatAdapter {
         stats: *mut pg_sys::IndexBulkDeleteResult,
     ) -> *mut pg_sys::IndexBulkDeleteResult {
         let _ = self;
-        // SAFETY: PostgreSQL supplied the live index relation and optional
-        // stats pointer for this vacuum cleanup callback.
-        unsafe { shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats) }
+        shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats)
     }
 
     unsafe fn repair_graph_connections(
@@ -581,10 +579,7 @@ unsafe fn repair_metadata_entry_point_after_vacuum(
     }
 
     let finalized: HashSet<_> = finalize_tids.iter().copied().collect();
-    // SAFETY: The storage descriptor matches this index and the helper only
-    // reads graph elements to find a replacement entry point.
-    let replacement =
-        unsafe { shared::highest_level_live_entry_candidate(index.as_ptr(), storage) };
+    let replacement = shared::highest_level_live_entry_candidate(index.as_ptr(), storage);
 
     // SAFETY: Metadata is locked exclusively while entry point fields are
     // updated after vacuum finalization.

@@ -438,6 +438,9 @@ macro_rules! with_live_index_relation {
         // SAFETY: callers pass an `IndexRelationGuard` opened and validated
         // for the AM-specific SQL wrapper. The guard keeps the PostgreSQL
         // relation open for the full duration of the AM helper call.
+        // `unused_unsafe` allowed because callers pass a mix of `unsafe fn`
+        // and safe `fn` paths — the macro itself is shape-agnostic.
+        #[allow(unused_unsafe)]
         unsafe { $func(index_relation $(, $arg)*) }
     }};
 }
