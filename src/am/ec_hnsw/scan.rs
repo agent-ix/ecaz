@@ -1020,9 +1020,10 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
                 resolve_grouped_exact_traversal_limit()
             };
         configure_grouped_heap_rerank_state(scan, opaque, &index_options);
-        // SAFETY: `scan` is the live rescan descriptor and owns a live index relation.
+        let index_relation = std::ptr::NonNull::new((*scan).indexRelation)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw rescan needs a valid index relation"));
         opaque.scan_block_count =
-            crate::storage::relation::main_fork_block_count((*scan).indexRelation);
+            crate::storage::relation::main_fork_block_count_handle(index_relation);
         let scan_tuning = super::options::resolve_scan_tuning(&index_options);
         opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
             .expect("ef_search should fit in usize")

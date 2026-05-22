@@ -121,6 +121,11 @@ impl SpireLiveObjectRelation {
         self.relation
     }
 
+    fn handle(self) -> crate::storage::relation::RelationHandle {
+        std::ptr::NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("ec_spire object relation unexpectedly null"))
+    }
+
     fn scan_object_tuples<F>(self, visit: F) -> Result<(), String>
     where
         F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
@@ -271,9 +276,7 @@ pub(crate) fn index_allocator_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) fn index_options_snapshot(
-    index: SpireLiveIndexRelation,
-) -> SpireIndexOptionsSnapshot {
+pub(crate) fn index_options_snapshot(index: SpireLiveIndexRelation) -> SpireIndexOptionsSnapshot {
     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
         let relation_options = index.relation_options();
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
@@ -579,9 +582,7 @@ pub(crate) fn index_scan_sanity_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) fn index_health_snapshot(
-    index: SpireLiveIndexRelation,
-) -> SpireIndexHealthSnapshot {
+pub(crate) fn index_health_snapshot(index: SpireLiveIndexRelation) -> SpireIndexHealthSnapshot {
     let diagnostics = active_snapshot_diagnostics(index);
     health_snapshot_from_diagnostics(&diagnostics)
 }
@@ -637,11 +638,8 @@ pub(crate) fn index_relation_storage_snapshot(
                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
             )?;
 
-            // SAFETY: `storage_relation` is open with AccessShareLock while
-            // collecting relation storage diagnostics.
-            let storage_block_count = unsafe {
-                crate::storage::relation::main_fork_block_count(storage_relation.as_ptr())
-            };
+            let storage_block_count =
+                crate::storage::relation::main_fork_block_count_handle(storage_relation.handle());
             relation_block_count = relation_block_count
                 .checked_add(u64::from(storage_block_count))
                 .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;
@@ -1081,8 +1079,7 @@ pub(crate) fn remote_node_snapshot(
             .collect::<Vec<_>>();
         // rd_id is stable while index_relation is open; it is copied as the
         // coordinator index OID for descriptor lookup.
-        let descriptors =
-            load_remote_node_descriptor_rows(index.relid().into(), &remote_node_ids)?;
+        let descriptors = load_remote_node_descriptor_rows(index.relid().into(), &remote_node_ids)?;
         for descriptor in descriptors {
             if let Some(row) = rows_by_node.get_mut(&descriptor.node_id) {
                 apply_remote_node_descriptor(row, descriptor);
@@ -2326,9 +2323,7 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
     }
 }
 
-pub(crate) fn index_leaf_snapshot(
-    index: SpireLiveIndexRelation,
-) -> Vec<SpireIndexLeafSnapshotRow> {
+pub(crate) fn index_leaf_snapshot(index: SpireLiveIndexRelation) -> Vec<SpireIndexLeafSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {

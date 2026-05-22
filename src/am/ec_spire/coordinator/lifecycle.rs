@@ -18,7 +18,9 @@ pub(super) unsafe fn lock_publish_relation(
 ) -> SpireRelationLockGuard {
     // Callers hold an open Relation for the guard lifetime. Capture the relid
     // before locking and unlock by relid so Drop never dereferences the pointer.
-    let relid = crate::storage::relation::relation_oid(index_relation);
+    let index_relation_handle = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire publish lock needs a valid index relation"));
+    let relid = crate::storage::relation::relation_oid_handle(index_relation_handle);
     // SAFETY: relid identifies the open index relation and the lock mode is the
     // fixed publish lock mode paired with SpireRelationLockGuard::drop.
     unsafe { pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE) };
@@ -31,7 +33,9 @@ pub(super) unsafe fn lock_publish_relation(
 unsafe fn open_spire_heap_relation_for_index(
     index_relation: pg_sys::Relation,
 ) -> Result<HeapRelationGuard, String> {
-    let heap_oid = crate::storage::relation::index_heap_relation_oid(index_relation);
+    let index_relation = std::ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_spire maintenance needs a valid index relation".to_owned())?;
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_spire maintenance could not resolve heap relation".to_owned());
     }

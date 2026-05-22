@@ -2259,11 +2259,11 @@
 
     fn recall_index_block_count(index_oid: pg_sys::Oid, caller_name: &'static str) -> i32 {
         let index_relation = open_valid_ec_hnsw_index_guard(index_oid, caller_name);
-        // SAFETY: `index_relation` guard keeps the relation live for the block count read.
-        let index_block_count = i32::try_from(unsafe {
-            crate::storage::relation::main_fork_block_count(index_relation.as_ptr())
-        })
-        .expect("block count should fit into int");
+        let index_block_count =
+            i32::try_from(crate::storage::relation::main_fork_block_count_handle(
+                index_relation.handle(),
+            ))
+            .expect("block count should fit into int");
         drop(index_relation);
         index_block_count
     }

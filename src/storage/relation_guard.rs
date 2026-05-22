@@ -8,7 +8,6 @@
 //! `table_open`, and `RelationGuard` uses generic `relation_open` for
 //! relkinds that are not known statically, such as SPIRE aux stores.
 
-#[cfg(any(test, feature = "pg_test"))]
 use std::ptr::NonNull;
 
 use pgrx::pg_sys;
@@ -98,6 +97,11 @@ impl HeapRelationGuard {
 
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
+    }
+
+    pub(crate) fn handle(&self) -> crate::storage::relation::RelationHandle {
+        NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("heap relation guard unexpectedly null"))
     }
 }
 

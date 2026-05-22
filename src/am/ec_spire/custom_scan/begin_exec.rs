@@ -242,7 +242,9 @@ unsafe fn custom_scan_init_dml_exec_state(
             state.tuple_payload_columns = tuple_payload_columns;
             state.tuple_payload_inputs = tuple_payload_inputs;
             let relation = custom_scan_current_relation(node, "DML path");
-            let relation_oid = crate::storage::relation::relation_oid(relation);
+            let relation = std::ptr::NonNull::new(relation)
+                .unwrap_or_else(|| pgrx::error!("DML path needs a valid relation"));
+            let relation_oid = crate::storage::relation::relation_oid_handle(relation);
             let context = super::dml_frontdoor_relation_context_catalog_row(relation_oid)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             state.dml_pk_column = context.pk_column.unwrap_or_else(|| {

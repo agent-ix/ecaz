@@ -268,7 +268,9 @@ unsafe fn finish_vacuum_stats(
     } else {
         stats
     };
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf vacuum stats need a valid index relation"));
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation);
 
     let stats_handle = NonNull::new(stats)
         .unwrap_or_else(|| pgrx::error!("ec_ivf vacuum stats unexpectedly null"));

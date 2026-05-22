@@ -145,7 +145,9 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
 
     let stats_handle =
         NonNull::new(stats).unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum stats is null"));
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum stats need a valid index relation"));
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let live_tuples = u64::try_from(count_element_tuples(index_relation))
         .unwrap_or_else(|_| pgrx::error!("ec_hnsw vacuum live tuple count exceeds u64"));
     set_index_bulk_delete_summary(stats_handle, block_count, live_tuples);

@@ -15,18 +15,6 @@ pub(crate) fn main_fork_block_count_handle(relation: RelationHandle) -> pg_sys::
     }
 }
 
-pub(crate) unsafe fn main_fork_block_count(relation: pg_sys::Relation) -> pg_sys::BlockNumber {
-    let relation = NonNull::new(relation)
-        .unwrap_or_else(|| pgrx::error!("main fork block count needs a valid relation"));
-    main_fork_block_count_handle(relation)
-}
-
-pub(crate) unsafe fn relation_oid(relation: pg_sys::Relation) -> pg_sys::Oid {
-    let relation = NonNull::new(relation)
-        .unwrap_or_else(|| pgrx::error!("relation OID read needs a valid relation"));
-    relation_oid_handle(relation)
-}
-
 pub(crate) fn relation_oid_handle(relation: RelationHandle) -> pg_sys::Oid {
     // SAFETY: callers pass a live opened PostgreSQL relation descriptor; rd_id
     // is copied by value and no relation-owned memory is retained.
@@ -94,12 +82,6 @@ pub(crate) fn relation_options_handle(relation: RelationHandle) -> *mut pg_sys::
     // SAFETY: callers pass a live opened PostgreSQL relation descriptor; the
     // reloptions pointer is copied by value and remains relation-owned.
     unsafe { (*relation.as_ptr()).rd_options }
-}
-
-pub(crate) unsafe fn index_heap_relation_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
-    let index_relation = NonNull::new(index_relation)
-        .unwrap_or_else(|| pgrx::error!("index heap relation OID read needs a valid relation"));
-    index_heap_relation_oid_handle(index_relation)
 }
 
 pub(crate) fn index_heap_relation_oid_handle(index_relation: RelationHandle) -> pg_sys::Oid {

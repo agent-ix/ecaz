@@ -913,7 +913,9 @@ unsafe fn ec_diskann_noop_vacuum_stats(
     };
     let stats_handle =
         ptr::NonNull::new(stats).ok_or_else(|| "ec_diskann vacuum stats is null".to_owned())?;
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    let index_relation_handle = ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann vacuum stats needs a valid index relation".to_owned())?;
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let live_tuples = u64::try_from(count_live_node_tuples(index_relation)?)
         .map_err(|_| "ec_diskann live tuple count exceeds u64".to_owned())?;
     set_index_bulk_delete_summary(stats_handle, block_count, live_tuples);
@@ -978,10 +980,13 @@ unsafe fn run_diskann_bulkdelete_pass(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<VacuumBulkDeletePassResult, String> {
-    // SAFETY: `index_relation` is live while reading the main-fork size and
-    // materializing the persisted DiskANN page chain for this vacuum pass.
+    let index_relation_handle = ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann bulkdelete needs a valid index relation".to_owned())?;
+    // SAFETY: `index_relation` is live while materializing the persisted
+    // DiskANN page chain for this vacuum pass.
     let (block_count, metadata, original_chain) = unsafe {
-        let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+        let block_count =
+            crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
         let (metadata, original_chain) = scan_state::materialize_chain_from_index(index_relation)?;
         (block_count, metadata, original_chain)
     };

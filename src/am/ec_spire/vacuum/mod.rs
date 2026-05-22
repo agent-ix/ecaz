@@ -655,7 +655,9 @@ unsafe fn finish_vacuum_stats(
     };
     let stats_handle =
         NonNull::new(stats).unwrap_or_else(|| pgrx::error!("ec_spire vacuum stats is null"));
-    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire vacuum stats need a valid index relation"));
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation);
     set_index_bulk_delete_summary(stats_handle, block_count, live_assignments);
     add_index_bulk_delete_tuples_removed(stats_handle, removed_assignments);
     stats

@@ -1508,12 +1508,13 @@ struct DmlFrontdoorHeapRelationView<'a> {
 impl<'a> DmlFrontdoorHeapRelationView<'a> {
     fn new(heap_relation: &'a HeapRelationGuard) -> Result<Self, String> {
         let heap_relation_ptr = heap_relation.as_ptr();
+        let heap_relation_handle = heap_relation.handle();
         // SAFETY: `heap_relation` owns a live PostgreSQL heap relation for the
         // duration of this catalog read. The tuple descriptor is copied through
         // the local TupleDescView wrapper before leaving this boundary.
         let (relation_oid, tuple_desc) = unsafe {
             (
-                crate::storage::relation::relation_oid(heap_relation_ptr),
+                crate::storage::relation::relation_oid_handle(heap_relation_handle),
                 SpireDmlFrontdoorTupleDesc {
                     tuple_desc: TupleDescView::from_raw(
                         (*heap_relation_ptr).rd_att,
