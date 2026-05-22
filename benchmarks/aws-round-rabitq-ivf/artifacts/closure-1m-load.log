@@ -1,0 +1,42 @@
+=== wait for volume resize ===
+107374182400
+vol resized
+=== grow xfs ===
+meta-data=/dev/nvme1n1           isize=512    agcount=4, agsize=3276800 blks
+         =                       sectsz=4096  attr=2, projid32bit=1
+         =                       crc=1        finobt=1, sparse=1, rmapbt=0
+         =                       reflink=1    bigtime=1 inobtcount=1 nrext64=0
+         =                       exchange=0  
+data     =                       bsize=4096   blocks=13107200, imaxpct=25
+         =                       sunit=0      swidth=0 blks
+naming   =version 2              bsize=4096   ascii-ci=0, ftype=1, parent=0
+log      =internal log           bsize=4096   blocks=16384, version=2
+         =                       sectsz=4096  sunit=1 blks, lazy-count=1
+realtime =none                   extsz=4096   blocks=0, rtextents=0
+data blocks changed from 13107200 to 26214400
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme1n1    100G   42G   59G  42% /var/lib/pgsql/18
+=== load 1m bits=1 + rerank ===
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "real_1m_ivf_rabitq1_rerank")
+[loader] copied corpus table real_1m_ivf_rabitq1_rerank_corpus in 340.23s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table real_1m_ivf_rabitq1_rerank_corpus in 230.21s
+[loader] copied queries table real_1m_ivf_rabitq1_rerank_queries in 3.82s
+[loader] building real_1m_ivf_rabitq1_rerank_rabitq_idx using ec_ivf (reloptions=[quant_bits=1, rerank=heap_f32, rerank_width=50, storage_format=rabitq]) ...
+[loader] built real_1m_ivf_rabitq1_rerank_rabitq_idx in 1126.90s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ real_1m_ivf_rabitq1_rerank_corpus (990000 rows)                                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ real_1m_ivf_rabitq1_rerank_queries (10000 rows)                                                               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ real_1m_ivf_rabitq1_rerank_rabitq_idx [quant_bits=1, rerank=heap_f32, rerank_width=50, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix real_1m_ivf_rabitq1_rerank in 1905.84s
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme1n1    100G   58G   43G  58% /var/lib/pgsql/18
+

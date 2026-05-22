@@ -93,7 +93,7 @@ and on every cycle close-out.
 | `snap-0f0806f9096f95fb7` | 20 GB | 2026-05-16 | synth 10k + 50k + ec_ivf (TurboQuant) |
 | `snap-0bb07e0b82150a062` | 50 GB | 2026-05-22 | post-NEON round state: real 10k + 50k + 6 ec_ivf storage_format variants (TQ/RaBitQ/PQ_FASTSCAN) |
 | `snap-01838d965fa09c433` | 50 GB | 2026-05-22 | post-bits=1 + rerank round state: + ec_ivf bits=1 variants + rerank=heap_f32 variants |
-| _(next snapshot)_ | 100 GB | _(after 1m closure)_ | + real DBpedia 100k + 1m loaded as `real_{100k,1m}_ivf_rabitq1_rerank` |
+| `snap-0975811a1da6ea302` | 100 GB | 2026-05-22 | post-1m closure: + real DBpedia 100k + 1m loaded as `real_{100k,1m}_ivf_rabitq1_rerank_corpus` + `..._queries` + `..._rabitq_idx` (quant_bits=1, rerank=heap_f32, rerank_width=50). branch=aws-optimization-ivf-rabitq-spire HEAD=b2073ad82 |
 
 **When adding rows:** include exact prefixes (`real_50k_ivf_rabitq`,
 not "the 50k tables"), reloptions used (`bits=1`, `rerank=heap_f32`,

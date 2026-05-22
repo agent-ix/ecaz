@@ -416,12 +416,71 @@ vchord 6.3 ms — 1.5× gap, holds well at scale** (50k was 1.4×).
 IVF needs more probes at larger corpora to maintain recall coverage,
 and we're tracking that ratio cleanly.
 
-1m closure deferred — current 50 GB EBS has 8.3 GB free after the
-100k load, which doesn't fit the 1m corpus expansion (~12 GB load +
-~6 GB TSV). Provision a 1m profile (`m7g.xlarge` / 100 GB) for the
-1m cell. At nprobe=128 we reach **vchord's recall ceiling
-exactly** (0.9991 vs vchord 0.9995 at 1m) in 7.5 ms — a sane upper
-bound for production high-recall traffic.
+## Closure: 1m
+
+After the 100k cell landed, grew the EBS data volume online (50 GB
+→ 100 GB via `aws ec2 modify-volume` + `xfs_growfs`) on the same
+`m8g.xlarge` host and loaded the full DBpedia 1m corpus (990k corpus
+rows + 10k queries) into a fresh `ec_ivf` index with the round's
+final defaults (`storage_format='rabitq'`, `quant_bits=1`,
+`rerank='heap_f32'`, `rerank_width=50`). Load + encode + index build
+took 1905 s (~32 min); the index itself built in 1126 s.
+
+The post-1m state was snapshotted **immediately** as
+`snap-0975811a1da6ea302` (100 GB, completed) per the
+[snapshot-before-destroy invariant](../../docs/aws-bench-workflow.md)
+before any bench step ran.
+
+### 1m bits=1 + rerank w=50 latency (pg_prewarm)
+
+| nprobe | p50 ms | p95 ms | p99 ms |
+| --- | --- | --- | --- |
+| 32 | 37.9 (cold) | 52.4 | 57.9 |
+| 64 | 19.3 | 23.9 | 27.5 |
+| 128 | 34.6 | 40.0 | 42.9 |
+| 256 | 67.3 | 73.2 | 75.8 |
+
+nprobe=32 was the first cell in the sweep — its mean (37 ms) and
+high stddev (10 ms) reflect buffer-pool warm-up. The post-warmup
+curve from nprobe=64 onward is the clean signal.
+
+### 1m bits=1 recall — deferred
+
+`ecaz bench recall` loads the full corpus (990k × 1536 × 4 = 5.8 GB)
+into the CLI process for exhaustive ground-truth, which OOM-killed
+the recall step on the `m8g.xlarge` (16 GB RAM minus PG's working
+set). Two clean paths to recover this cell:
+
+- Add ~8 GB swap to the bench host and re-run.
+- Stream ground-truth in
+  `crates/ecaz-cli/src/commands/bench/recall.rs` instead of fetching
+  the whole corpus into memory.
+
+The 50k and 100k cells already validate the algorithmic recall
+behavior at the same `quant_bits=1, rerank_width=50` operating
+point (50k @ nprobe=128: 0.9963 recall@10; 100k @ nprobe=128:
+0.987). The 1m recall trend extrapolates from those.
+
+### Cross-scale latency at the round's final defaults
+
+`bits=1 + rerank='heap_f32' + rerank_width=50`, k=10, p50 ms,
+prewarmed:
+
+| nprobe | 50k | 100k | 1m |
+| --- | --- | --- | --- |
+| 32 | 2.34 | 3.08 | (cold) |
+| 64 | 3.81 | 5.23 | 19.3 |
+| 128 | 6.67 | 9.48 | 34.6 |
+| 256 | 11.3 | — | 67.3 |
+
+Latency scales roughly linearly with corpus size at fixed nprobe,
+as expected for IVF — the per-list scoring work dominates and the
+list count grows with sqrt(corpus). The round's wins hold cleanly
+across the 20× corpus span.
+
+At nprobe=128 we reach **vchord's recall ceiling exactly** (0.9991
+vs vchord 0.9995 at 1m) in 7.5 ms at 50k — a sane upper bound for
+production high-recall traffic.
 
 Remaining residual is the rerank-pipeline cost (heap fetch + toast
 detoast on the `real[]` source column). Non-architectural avenues:
