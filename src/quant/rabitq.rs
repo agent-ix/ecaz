@@ -1310,6 +1310,10 @@ fn sum_query_dequant_with_bf16(
     let _ = (query_bf16, dequant_lut_bf16);
     #[cfg(target_arch = "aarch64")]
     {
+        if bits == 1 && std::arch::is_aarch64_feature_detected!("neon") {
+            // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
+            return unsafe { sum_query_dequant_neon_bits1(query_rotated, dimensions, lut, code) };
+        }
         if bits == 4 {
             // bf16 bfdot kernel is gated behind the `rabitq-bf16` Cargo
             // feature. On Neoverse-V2 it measured neutral-to-slightly-
@@ -1487,6 +1491,100 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
         let q_f32 = f32::from_bits((query_bf16[dim_index] as u32) << 16);
         let dq_f32 = f32::from_bits((lut_bf16[level] as u32) << 16);
         sum += q_f32 * dq_f32;
+        dim_index += 1;
+    }
+
+    sum
+}
+
+/// bits=1 NEON sign-popcount kernel. 1-bit codes are 4× smaller than
+/// 4-bit codes per vector (192 vs 768 bytes at dim=1536), so this
+/// kernel is bandwidth-bound on memory in addition to being compute-
+/// efficient. The dequant LUT has only 2 entries: `lut[0] = -1/√D`,
+/// `lut[1] = +1/√D`. Each code byte unpacks to 8 lanes of dequant
+/// values.
+///
+/// Loop layout: 32 dims per iteration = 4 code bytes, dispatched to
+/// 4 independent `vfmaq_f32` chains. Same 4-way unroll pattern as
+/// the bits=4 kernel to fill Neoverse-V2's 4 SIMD pipes.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn sum_query_dequant_neon_bits1(
+    query_rotated: &[f32],
+    dimensions: usize,
+    lut: &[f32; 256],
+    code: &[u8],
+) -> f32 {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
+
+    let mut acc0 = vdupq_n_f32(0.0);
+    let mut acc1 = vdupq_n_f32(0.0);
+    let mut acc2 = vdupq_n_f32(0.0);
+    let mut acc3 = vdupq_n_f32(0.0);
+
+    let neg = lut[0];
+    let pos = lut[1];
+
+    let mut dim_index = 0_usize;
+    // Each iter consumes 32 dims = 4 code bytes.
+    while dim_index + 32 <= dimensions {
+        let byte_base = dim_index / 8;
+        // SAFETY: dim_index + 32 <= dimensions ⇒ byte_base + 4 <= packed_bytes.
+        let b0 = *code.get_unchecked(byte_base) as u32;
+        let b1 = *code.get_unchecked(byte_base + 1) as u32;
+        let b2 = *code.get_unchecked(byte_base + 2) as u32;
+        let b3 = *code.get_unchecked(byte_base + 3) as u32;
+
+        // Expand each byte to 8 lanes; write_level stores bit i of the
+        // byte at coordinate index byte*8 + i (LSB first).
+        let mut dq = [0.0_f32; 32];
+        for i in 0..8 {
+            dq[i] = if (b0 >> i) & 1 == 1 { pos } else { neg };
+            dq[8 + i] = if (b1 >> i) & 1 == 1 { pos } else { neg };
+            dq[16 + i] = if (b2 >> i) & 1 == 1 { pos } else { neg };
+            dq[24 + i] = if (b3 >> i) & 1 == 1 { pos } else { neg };
+        }
+
+        // SAFETY: dim_index + 32 <= dimensions ⇒ four 4-lane query loads.
+        let q0 = vld1q_f32(query_rotated.as_ptr().add(dim_index));
+        let q1 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 4));
+        let q2 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 8));
+        let q3 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 12));
+        let q4 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 16));
+        let q5 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 20));
+        let q6 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 24));
+        let q7 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 28));
+        let d0 = vld1q_f32(dq.as_ptr());
+        let d1 = vld1q_f32(dq.as_ptr().add(4));
+        let d2 = vld1q_f32(dq.as_ptr().add(8));
+        let d3 = vld1q_f32(dq.as_ptr().add(12));
+        let d4 = vld1q_f32(dq.as_ptr().add(16));
+        let d5 = vld1q_f32(dq.as_ptr().add(20));
+        let d6 = vld1q_f32(dq.as_ptr().add(24));
+        let d7 = vld1q_f32(dq.as_ptr().add(28));
+        acc0 = vfmaq_f32(acc0, q0, d0);
+        acc1 = vfmaq_f32(acc1, q1, d1);
+        acc2 = vfmaq_f32(acc2, q2, d2);
+        acc3 = vfmaq_f32(acc3, q3, d3);
+        acc0 = vfmaq_f32(acc0, q4, d4);
+        acc1 = vfmaq_f32(acc1, q5, d5);
+        acc2 = vfmaq_f32(acc2, q6, d6);
+        acc3 = vfmaq_f32(acc3, q7, d7);
+
+        dim_index += 32;
+    }
+
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)),
+    );
+    let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+
+    // Scalar tail for the trailing < 32 dimensions.
+    while dim_index < dimensions {
+        let bit = (code[dim_index / 8] >> (dim_index % 8)) & 1;
+        sum += query_rotated[dim_index] * if bit == 1 { pos } else { neg };
         dim_index += 1;
     }
 
@@ -2722,6 +2820,32 @@ mod tests {
     fn hamming_similarity_identity_equals_dim() {
         let words = vec![0xAAAA_AAAA_AAAA_AAAA_u64; 2];
         assert_eq!(hamming_similarity(&words, &words, 128), 128.0);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_sum_query_dequant_matches_scalar_bits1() {
+        for &dim in &[8_usize, 32, 33, 63, 64, 1536] {
+            let bits = 1_usize;
+            let packed_bytes = (dim * bits).div_ceil(8);
+            let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
+            for i in 0..dim {
+                let level = ((i * 13) as u32) & 1;
+                write_level(&mut code, i, bits, level);
+            }
+            let query: Vec<f32> = (0..dim)
+                .map(|i| ((i as f32) - dim as f32 / 2.0) * 0.07)
+                .collect();
+            let lut = build_dequant_lut(dim, bits);
+            let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
+            // SAFETY: aarch64 cfg.
+            let neon = unsafe { sum_query_dequant_neon_bits1(&query, dim, &lut, &code) };
+            let tol = 1e-4_f32 * scalar.abs().max(1.0);
+            assert!(
+                (scalar - neon).abs() <= tol,
+                "bits=1 dim={dim}: scalar={scalar} neon={neon}"
+            );
+        }
     }
 
     #[cfg(target_arch = "aarch64")]
