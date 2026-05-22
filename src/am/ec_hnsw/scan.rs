@@ -2408,14 +2408,11 @@ fn build_cached_graph_element(
     )
 }
 
-unsafe fn cached_graph_element(
+fn cached_graph_element(
     index_relation: pg_sys::Relation,
-    opaque: *mut TqScanOpaque,
+    opaque_ref: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
-    // SAFETY: callers pass the current scan opaque pointer; it remains live for
-    // the duration of candidate scoring and graph tuple loading.
-    let opaque_ref = scan_opaque_mut(opaque);
     if !opaque_ref.graph_element_cache.is_null() {
         if let Some(element) = graph_element_cache_mut(opaque_ref)
             .get(&element_tid)
@@ -3042,10 +3039,8 @@ unsafe fn cached_graph_element_and_score(
     element_tid: page::ItemPointer,
     traversal_layer: u8,
 ) -> (Arc<CachedGraphElement>, Option<f32>) {
-    // SAFETY: `index_relation`, `opaque`, and `element_tid` describe the live
-    // scan element requested by the traversal path.
     let (element, loaded_state) =
-        unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+        cached_graph_element(index_relation, scan_opaque_mut(opaque), element_tid);
     if element.deleted || element.heaptids.is_empty() {
         return (element, None);
     }
@@ -3101,8 +3096,7 @@ unsafe fn cached_graph_adjacency(
     opaque: *mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, Arc<graph::GraphNeighbors>) {
-    // SAFETY: `element_tid` belongs to the live graph traversal for this scan.
-    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+    let (element, _) = cached_graph_element(index_relation, scan_opaque_mut(opaque), element_tid);
     // SAFETY: `neighbortid` was copied from the cached graph element loaded
     // from the live index relation.
     let neighbors = unsafe { cached_graph_neighbors(index_relation, opaque, element.neighbortid) };
@@ -3186,9 +3180,7 @@ unsafe fn cached_graph_element_with_prefetch(
         }
     }
 
-    // SAFETY: fallback loading uses the live scan relation, opaque pointer,
-    // and graph TID passed by the traversal caller.
-    unsafe { cached_graph_element(index_relation, opaque, element_tid) }
+    cached_graph_element(index_relation, scan_opaque_mut(opaque), element_tid)
 }
 
 unsafe fn cached_scan_successor_candidates_for_layer<KeepFn>(
@@ -3915,9 +3907,7 @@ unsafe fn buffer_grouped_graph_result_candidate(
     }
 
     opaque.explain_counters.record_bootstrap_page_read();
-    // SAFETY: `candidate.node` was consumed from this scan frontier and names
-    // a graph element in the live index relation.
-    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+    let (element, _) = cached_graph_element(index_relation, opaque, candidate.node);
     if element.deleted || element.heaptids.is_empty() {
         opaque.explain_counters.record_element_skipped();
         return;
@@ -3964,9 +3954,7 @@ unsafe fn materialize_graph_result_candidate(
     }
 
     opaque.explain_counters.record_bootstrap_page_read();
-    // SAFETY: `candidate.node` was consumed from this scan frontier and names
-    // a graph element in the live index relation.
-    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+    let (element, _) = cached_graph_element(index_relation, opaque, candidate.node);
     if element.deleted || element.heaptids.is_empty() {
         opaque.explain_counters.record_element_skipped();
         return None;
@@ -4578,11 +4566,9 @@ unsafe fn refine_grouped_frontier_head_exact(
             return;
         }
 
-        let opaque_ptr = opaque as *mut TqScanOpaque;
-        // SAFETY: `candidate.node` is the current visible frontier head from
-        // this scan, and the relation/opaque pair remain live while refining.
         let (element, loaded_state) =
-            unsafe { cached_graph_element(index_relation, opaque_ptr, candidate.node) };
+            cached_graph_element(index_relation, opaque, candidate.node);
+        let opaque_ptr = opaque as *mut TqScanOpaque;
         if element.deleted || element.heaptids.is_empty() {
             return;
         }
