@@ -154,8 +154,9 @@ where
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_main_fork_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
-    // SAFETY: Debug callers pass a live index relation descriptor.
-    unsafe { crate::storage::relation::main_fork_block_count(index_relation) }
+    let index_relation = ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw debug scan received null index relation"));
+    crate::storage::relation::main_fork_block_count_handle(index_relation)
 }
 
 #[cfg(any(test, feature = "pg_test"))]

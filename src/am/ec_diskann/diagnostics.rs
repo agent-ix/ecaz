@@ -5,6 +5,7 @@
 //! then computes graph-shape counters for local tuning packets.
 
 use std::collections::{HashMap, HashSet};
+use std::ptr::NonNull;
 
 use pgrx::pg_sys;
 
@@ -57,10 +58,9 @@ pub(crate) struct DiskannGraphSummary {
 pub(crate) unsafe fn graph_summary(
     index_relation: pg_sys::Relation,
 ) -> Result<DiskannGraphSummary, String> {
-    // SAFETY: The caller provides a live DiskANN index relation; this read-only
-    // diagnostic only asks PostgreSQL for the current MAIN fork block count.
-    // SAFETY: diagnostics callers pass a live index relation descriptor.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let index_relation_handle = NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann graph summary received null index relation".to_owned())?;
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     // SAFETY: The same live DiskANN index relation is materialized through the
     // scan-state reader without modifying pages.
     let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };

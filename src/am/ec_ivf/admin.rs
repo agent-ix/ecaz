@@ -85,8 +85,10 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
     // diagnostic wrapper; page readers validate the metadata/directory layout.
     let metadata = page::read_metadata_page(index_relation);
     let directory = directory_drift_summary(index_relation, &metadata);
-    // SAFETY: admin callers pass a live IVF index relation descriptor.
-    let block_count = unsafe { crate::storage::relation::main_fork_block_count(index_relation) };
+    let index_relation_nonnull = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf drift snapshot received null index relation"));
+    let block_count =
+        crate::storage::relation::main_fork_block_count_handle(index_relation_nonnull);
 
     let total_live_tuples = metadata.total_live_tuples;
     let changed_row_count = metadata
@@ -147,8 +149,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
     // SAFETY: same live IVF relation as this admin snapshot.
     let drift = unsafe { index_drift_snapshot(index_relation) };
-    // SAFETY: admin callers pass a live IVF index relation descriptor.
-    let reltuples = unsafe { crate::storage::relation::relation_reltuples(index_relation) };
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_nonnull);
 
     IndexAdminSnapshot {
         block_count: drift.block_count,
