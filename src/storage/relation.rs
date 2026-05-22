@@ -84,6 +84,14 @@ pub(crate) fn relation_options_handle(relation: RelationHandle) -> *mut pg_sys::
     unsafe { (*relation.as_ptr()).rd_options }
 }
 
+pub(crate) fn relation_options_layout_ref<T>(rd_options: &NonNull<pg_sys::varlena>) -> &T {
+    // SAFETY: callers pass a non-null relation-owned reloptions blob produced
+    // by that AM's amoptions parser. The returned borrow is tied to the
+    // caller's borrow of the blob handle and must not outlive the relation
+    // cache entry that owns `rd_options`.
+    unsafe { &*rd_options.as_ptr().cast::<T>() }
+}
+
 pub(crate) fn index_heap_relation_oid_handle(index_relation: RelationHandle) -> pg_sys::Oid {
     index_heap_relation_oid_from_index_oid(relation_oid_handle(index_relation))
 }

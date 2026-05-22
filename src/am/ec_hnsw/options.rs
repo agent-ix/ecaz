@@ -233,25 +233,19 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
     })
 }
 
-struct TqHnswReloptionsView<'a> {
-    rd_options: *mut pg_sys::varlena,
-    reloptions: &'a TqHnswReloptions,
+struct TqHnswReloptionsView {
+    rd_options: std::ptr::NonNull<pg_sys::varlena>,
 }
 
-impl<'a> TqHnswReloptionsView<'a> {
+impl TqHnswReloptionsView {
     fn from_relation(index_relation: HnswIndexRelation) -> Option<Self> {
         let rd_options = crate::storage::relation::relation_options_handle(index_relation);
-        if rd_options.is_null() {
-            return None;
-        }
+        let rd_options = std::ptr::NonNull::new(rd_options)?;
+        Some(Self { rd_options })
+    }
 
-        // SAFETY: rd_options was produced by ec_hnsw_amoptions using the
-        // TqHnswReloptions layout.
-        let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };
-        Some(Self {
-            rd_options,
-            reloptions,
-        })
+    fn reloptions(&self) -> &TqHnswReloptions {
+        crate::storage::relation::relation_options_layout_ref(&self.rd_options)
     }
 
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
@@ -259,7 +253,7 @@ impl<'a> TqHnswReloptionsView<'a> {
         // offsets are fields written by the matching reloptions parser.
         unsafe {
             crate::am::common::reloptions::read_string_reloption(
-                self.rd_options,
+                self.rd_options.as_ptr(),
                 offset,
                 "ec_hnsw",
                 name,
@@ -268,7 +262,7 @@ impl<'a> TqHnswReloptionsView<'a> {
     }
 
     fn to_options(&self) -> TqHnswOptions {
-        let reloptions = self.reloptions;
+        let reloptions = self.reloptions();
         let build_source_column = self
             .read_string_reloption(reloptions.build_source_column_offset, "build_source_column");
         let rerank_source_column = self.read_string_reloption(

@@ -250,28 +250,22 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
     })
 }
 
-struct TqDiskannReloptionsView<'a> {
-    rd_options: *mut pg_sys::varlena,
-    reloptions: &'a TqDiskannReloptions,
+struct TqDiskannReloptionsView {
+    rd_options: std::ptr::NonNull<pg_sys::varlena>,
 }
 
-impl<'a> TqDiskannReloptionsView<'a> {
+impl TqDiskannReloptionsView {
     unsafe fn from_relation(index_relation: pg_sys::Relation) -> Option<Self> {
         let index_relation = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
             pgrx::error!("ec_diskann relation options need a valid index relation")
         });
         let rd_options = crate::storage::relation::relation_options_handle(index_relation);
-        if rd_options.is_null() {
-            return None;
-        }
+        let rd_options = std::ptr::NonNull::new(rd_options)?;
+        Some(Self { rd_options })
+    }
 
-        // SAFETY: rd_options was built by ec_diskann_amoptions using the
-        // TqDiskannReloptions layout and remains live with the relation cache entry.
-        let reloptions = unsafe { &*rd_options.cast::<TqDiskannReloptions>() };
-        Some(Self {
-            rd_options,
-            reloptions,
-        })
+    fn reloptions(&self) -> &TqDiskannReloptions {
+        crate::storage::relation::relation_options_layout_ref(&self.rd_options)
     }
 
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
@@ -279,7 +273,7 @@ impl<'a> TqDiskannReloptionsView<'a> {
         // offsets are fields written by the matching reloptions parser.
         unsafe {
             crate::am::common::reloptions::read_string_reloption(
-                self.rd_options,
+                self.rd_options.as_ptr(),
                 offset,
                 "ec_diskann",
                 name,
@@ -288,7 +282,7 @@ impl<'a> TqDiskannReloptionsView<'a> {
     }
 
     fn to_options(&self) -> TqDiskannOptions {
-        let reloptions = self.reloptions;
+        let reloptions = self.reloptions();
         let storage_format =
             match self.read_string_reloption(reloptions.storage_format_offset, "storage_format") {
                 Some(value) => {

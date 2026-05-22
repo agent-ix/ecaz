@@ -1576,18 +1576,21 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
     })
 }
 
-struct EcSpireReloptionsView<'a> {
-    rd_options: *mut pg_sys::varlena,
-    reloptions: &'a EcSpireReloptions,
+struct EcSpireReloptionsView {
+    rd_options: std::ptr::NonNull<pg_sys::varlena>,
 }
 
-impl<'a> EcSpireReloptionsView<'a> {
+impl EcSpireReloptionsView {
+    fn reloptions(&self) -> &EcSpireReloptions {
+        crate::storage::relation::relation_options_layout_ref(&self.rd_options)
+    }
+
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
         // SAFETY: this view was built from the ec_spire reloptions blob, and
         // offsets are fields written by the matching reloptions parser.
         unsafe {
             crate::am::common::reloptions::read_string_reloption(
-                self.rd_options,
+                self.rd_options.as_ptr(),
                 offset,
                 "ec_spire",
                 name,
@@ -1596,7 +1599,7 @@ impl<'a> EcSpireReloptionsView<'a> {
     }
 
     fn validate(&self) {
-        let reloptions = self.reloptions;
+        let reloptions = self.reloptions();
         validate_recursive_fanout_value(reloptions.recursive_fanout)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
         validate_local_store_count_value(reloptions.local_store_count)
@@ -1619,7 +1622,7 @@ impl<'a> EcSpireReloptionsView<'a> {
 
     fn to_options(&self) -> EcSpireOptions {
         self.validate();
-        let reloptions = self.reloptions;
+        let reloptions = self.reloptions();
         let storage_format_reloption =
             self.read_string_reloption(reloptions.storage_format_offset, "storage_format");
         let quantizer_reloption =
@@ -1691,18 +1694,10 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptio
     let index_relation = std::ptr::NonNull::new(index_relation)
         .unwrap_or_else(|| pgrx::error!("ec_spire relation options need a valid index relation"));
     let rd_options = crate::storage::relation::relation_options_handle(index_relation);
-    if rd_options.is_null() {
+    let Some(rd_options) = std::ptr::NonNull::new(rd_options) else {
         return EcSpireOptions::DEFAULT;
-    }
-
-    // SAFETY: ec_spire_amoptions registers rd_options with the
-    // EcSpireReloptions layout for this index AM.
-    let reloptions = unsafe { &*rd_options.cast::<EcSpireReloptions>() };
-    EcSpireReloptionsView {
-        rd_options,
-        reloptions,
-    }
-    .to_options()
+    };
+    EcSpireReloptionsView { rd_options }.to_options()
 }
 
 include!("tests.rs");
