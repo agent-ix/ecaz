@@ -11,7 +11,10 @@ use crate::{
     am::common::{
         callback::pg_am_callback,
         routine::{alloc_index_am_routine, IndexAmRoutineBox},
-        vacuum::alloc_index_bulk_delete_result,
+        vacuum::{
+            add_index_bulk_delete_tuples_removed, alloc_index_bulk_delete_result,
+            set_index_bulk_delete_summary,
+        },
     },
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
@@ -902,20 +905,18 @@ unsafe fn ec_diskann_noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
-    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above; the
-    // index relation is live while page count/live tuple stats are computed.
-    let stats = unsafe {
-        let stats = if stats.is_null() {
-            crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
-            alloc_index_bulk_delete_result().into()
-        } else {
-            stats
-        };
-        (*stats).num_pages = crate::storage::relation::main_fork_block_count(index_relation);
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = count_live_node_tuples(index_relation)? as f64;
+    let stats = if stats.is_null() {
+        crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
+        alloc_index_bulk_delete_result().into()
+    } else {
         stats
     };
+    let stats_handle =
+        ptr::NonNull::new(stats).ok_or_else(|| "ec_diskann vacuum stats is null".to_owned())?;
+    let block_count = crate::storage::relation::main_fork_block_count(index_relation);
+    let live_tuples = u64::try_from(count_live_node_tuples(index_relation)?)
+        .map_err(|_| "ec_diskann live tuple count exceeds u64".to_owned())?;
+    set_index_bulk_delete_summary(stats_handle, block_count, live_tuples);
 
     Ok(stats)
 }
@@ -946,22 +947,20 @@ unsafe fn run_diskann_bulkdelete(
         max_removed_heap_tids = max_removed_heap_tids.max(pass.removed_heap_tids);
         match pass.rewrite_outcome {
             VacuumRewriteApplyOutcome::Applied => {
-                // SAFETY: Metadata is locked before marking the medoid refresh
-                // flag, and `stats` is valid for this vacuum callback before
-                // being updated from the applied rewrite pass.
-                unsafe {
-                    if pass.entry_point_needs_medoid_refresh {
-                        insert::with_locked_metadata_page(&insert_relation, |metadata| {
-                            metadata.needs_medoid_refresh = true;
-                            Ok(())
-                        })?
-                    }
-
-                    (*stats).num_pages = pass.block_count;
-                    (*stats).estimated_count = false;
-                    (*stats).num_index_tuples = pass.live_tuple_count as f64;
-                    (*stats).tuples_removed += max_removed_heap_tids as f64;
+                if pass.entry_point_needs_medoid_refresh {
+                    insert::with_locked_metadata_page(&insert_relation, |metadata| {
+                        metadata.needs_medoid_refresh = true;
+                        Ok(())
+                    })?
                 }
+                let stats_handle = ptr::NonNull::new(stats)
+                    .ok_or_else(|| "ec_diskann vacuum stats is null".to_owned())?;
+                let live_tuple_count = u64::try_from(pass.live_tuple_count)
+                    .map_err(|_| "ec_diskann live tuple count exceeds u64".to_owned())?;
+                let removed_heap_tids = u64::try_from(max_removed_heap_tids)
+                    .map_err(|_| "ec_diskann removed heap tid count exceeds u64".to_owned())?;
+                set_index_bulk_delete_summary(stats_handle, pass.block_count, live_tuple_count);
+                add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
                 return Ok(stats);
             }
             VacuumRewriteApplyOutcome::RetryReplan => record_vacuum_replan_event(),
