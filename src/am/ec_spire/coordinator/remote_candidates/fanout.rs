@@ -135,7 +135,6 @@ pub(crate) fn remote_search_fanout_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchFanoutPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchFanoutPlanRow>, String> {
-        let index_relation = index.as_ptr();
         if requested_epoch == 0 {
             return Err(
                 "ec_spire remote search fanout requested_epoch must be greater than 0".to_owned(),
@@ -151,7 +150,7 @@ pub(crate) fn remote_search_fanout_plan_rows(
         }
 
         let (epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         if epoch_manifest.consistency_mode != requested_consistency_mode {
             return Err(format!(
                 "ec_spire remote search fanout requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
@@ -227,7 +226,6 @@ pub(crate) fn remote_search_target_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchTargetPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchTargetPlanRow>, String> {
-        let index_relation = index.as_ptr();
         if requested_epoch == 0 {
             return Err(
                 "ec_spire remote search target plan requested_epoch must be greater than 0"
@@ -244,7 +242,7 @@ pub(crate) fn remote_search_target_plan_rows(
         }
 
         let (epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         if epoch_manifest.consistency_mode != requested_consistency_mode {
             return Err(format!(
                 "ec_spire remote search target plan requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
@@ -318,12 +316,8 @@ pub(crate) fn remote_search_target_readiness_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchTargetReadinessRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchTargetReadinessRow>, String> {
-        let target_rows = remote_search_target_plan_rows(
-            index,
-            requested_epoch,
-            selected_pids,
-            consistency_mode,
-        );
+        let target_rows =
+            remote_search_target_plan_rows(index, requested_epoch, selected_pids, consistency_mode);
         let node_rows = remote_node_snapshot(index)
             .into_iter()
             .map(|row| (row.node_id, row))
@@ -399,12 +393,8 @@ pub(crate) fn remote_search_request_plan_rows(
         let top_k = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search request plan top_k exceeds u64")?;
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        let rows = remote_search_target_plan_rows(
-            index,
-            requested_epoch,
-            selected_pids,
-            consistency_mode,
-        );
+        let rows =
+            remote_search_target_plan_rows(index, requested_epoch, selected_pids, consistency_mode);
         Ok(rows
             .into_iter()
             .map(|row| SpireRemoteSearchRequestPlanRow {

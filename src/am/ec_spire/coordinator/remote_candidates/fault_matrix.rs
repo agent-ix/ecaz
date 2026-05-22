@@ -5,7 +5,6 @@ pub(crate) fn remote_search_production_consistency_policy_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteProductionConsistencyPolicySummaryRow {
     let result = (|| -> Result<SpireRemoteProductionConsistencyPolicySummaryRow, String> {
-        let index_relation = index.as_ptr();
         if requested_epoch == 0 {
             return Err(
                 "ec_spire remote search production consistency policy requested_epoch must be greater than 0"
@@ -16,36 +15,32 @@ pub(crate) fn remote_search_production_consistency_policy_summary_row(
         let requested_consistency_mode = consistency_mode_name(requested_consistency_mode);
         let root_control = index.root_control();
         let (epoch_manifest, _, _) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         let active_consistency_mode = consistency_mode_name(epoch_manifest.consistency_mode);
 
-        let (
-            status,
-            failure_category,
-            failure_action,
-            recommendation,
-        ) = if root_control.active_epoch != requested_epoch {
-            (
-                SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
-                SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
-                "fail_closed",
-                "request the active epoch before planning production remote fanout",
-            )
-        } else if active_consistency_mode != requested_consistency_mode {
-            (
+        let (status, failure_category, failure_action, recommendation) =
+            if root_control.active_epoch != requested_epoch {
+                (
+                    SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+                    SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+                    "fail_closed",
+                    "request the active epoch before planning production remote fanout",
+                )
+            } else if active_consistency_mode != requested_consistency_mode {
+                (
                 SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
                 SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
                 "fail_closed",
                 "publish a degraded-capable epoch or run the query with the active epoch policy",
             )
-        } else {
-            (
-                SPIRE_REMOTE_STATUS_READY,
-                SPIRE_REMOTE_NONE,
-                SPIRE_REMOTE_NONE,
-                "consistency policy is ready for production dispatch planning",
-            )
-        };
+            } else {
+                (
+                    SPIRE_REMOTE_STATUS_READY,
+                    SPIRE_REMOTE_NONE,
+                    SPIRE_REMOTE_NONE,
+                    "consistency policy is ready for production dispatch planning",
+                )
+            };
 
         Ok(SpireRemoteProductionConsistencyPolicySummaryRow {
             requested_epoch,

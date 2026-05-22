@@ -85,7 +85,7 @@ impl SpireLiveIndexRelation {
             return Ok(None);
         }
         let (epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(self.relation, root_control)?;
+            load_relation_epoch_manifests_for_coordinator_fanout(self, root_control)?;
         Ok(Some(SpireActiveEpochAnchor {
             root_control,
             epoch_manifest,

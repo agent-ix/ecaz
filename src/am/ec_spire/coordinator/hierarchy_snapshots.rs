@@ -282,7 +282,7 @@ fn coordinator_metadata_read_placement(
 }
 
 fn load_relation_epoch_manifests_for_coordinator_fanout(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
 ) -> Result<
     (
@@ -295,17 +295,9 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
-    // SAFETY: root_control was read from this live relation and names manifest
-    // tuple IDs in the same SPIRE index relation; each page helper returns owned
-    // bytes before the decoded manifests are validated below. The tuple groups
-    // the three manifests that are cross-checked against the same active epoch.
-    let (epoch_bytes, object_bytes, placement_bytes) = unsafe {
-        (
-            page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?,
-            page::read_object_tuple(index_relation, root_control.object_manifest_tid)?,
-            page::read_object_tuple(index_relation, root_control.placement_directory_tid)?,
-        )
-    };
+    let epoch_bytes = index.object_tuple(root_control.epoch_manifest_tid)?;
+    let object_bytes = index.object_tuple(root_control.object_manifest_tid)?;
+    let placement_bytes = index.object_tuple(root_control.placement_directory_tid)?;
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;

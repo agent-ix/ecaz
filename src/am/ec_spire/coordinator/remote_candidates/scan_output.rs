@@ -86,7 +86,6 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
     top_k: usize,
 ) -> SpireRemoteProductionScanHandoffSummaryRow {
     let result = (|| -> Result<SpireRemoteProductionScanHandoffSummaryRow, String> {
-        let index_relation = index.as_ptr();
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
         let root_control = index.root_control();
@@ -116,7 +115,7 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
         }
 
         let (epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
             &epoch_manifest,
             &object_manifest,
@@ -504,7 +503,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     }
 
     let (epoch_manifest, object_manifest, placement_directory) =
-        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+        load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
     let snapshot = meta::SpirePublishedEpochSnapshot::new(
         &epoch_manifest,
         &object_manifest,
@@ -764,10 +763,7 @@ pub(crate) fn remote_search_production_scan_heap_resolution_am_result_stream(
 ) -> SpireRemoteProductionScanResultStream {
     let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {
         let stream = remote_search_production_scan_heap_resolution_result_stream_impl(
-            index,
-            query,
-            None,
-            None,
+            index, query, None, None,
         )?
         .stream;
         let _ = (heap_relation, snapshot);
