@@ -412,7 +412,6 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
         let mut wal_txn = relation.start_wal();
         let page = wal_txn.register_locked_buffer_full_image(&buffer);
         let registered = SpireRegisteredPage::new(relation.raw(), block_number, page);
-        let page_size = buffer.page_size();
         let max_offset = registered.max_offset();
         let mut changed = false;
         for offset in offsets.into_iter().rev() {
@@ -423,29 +422,17 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
                     offset, block_number
                 ));
             }
-            // SAFETY: offset was checked in range for this locked page; item id
-            // is checked non-null before reading line pointer fields.
-            let item_id_ref = unsafe {
-                let item_id = pg_sys::PageGetItemId(page, offset);
-                if item_id.is_null() {
-                    std::mem::drop(wal_txn);
-                    return Err(format!(
-                        "ec_spire object tuple delete ({block_number},{offset}) returned a null item id"
-                    ));
-                }
-                &*item_id
+            let tid = crate::storage::page::ItemPointer {
+                block_number,
+                offset_number: offset,
             };
-            if item_id_ref.lp_flags() == 0 {
-                continue;
-            }
-            let tuple_offset = item_id_ref.lp_off() as usize;
-            let tuple_len = item_id_ref.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                std::mem::drop(wal_txn);
-                return Err(format!(
-                    "ec_spire object tuple delete ({block_number},{offset}) has invalid bounds"
-                ));
-            }
+            let tuple_len =
+                match buffer
+                    .visit_tuple_bytes(tid, "ec_spire object delete", |tuple| Ok(tuple.len()))?
+                {
+                    LockedPageTupleVisit::Unused => continue,
+                    LockedPageTupleVisit::Present(tuple_len) => tuple_len,
+                };
             registered.delete_no_compact(offset);
             removed_tuple_count = removed_tuple_count
                 .checked_add(1)
