@@ -750,26 +750,21 @@ fn apply_duplicate_bind_patches(
                 format!("ec_diskann duplicate bind could not open target block {block_number}")
             })?;
 
-        let page_size = buffer.page_size();
         let mut wal_txn = index_relation.start_wal();
-        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let mut page_retry = false;
 
         let page_result = (|| -> Result<(), String> {
+            let mut writable_page = wal_txn.register_locked_buffer_full_image_page(&buffer);
             while start < sorted.len() && sorted[start].target_tid.block_number == block_number {
                 let patch = &sorted[start];
                 start += 1;
 
-                // SAFETY: `writable_page` is the registered, locked page for
-                // `patch.target_tid`; the helper validates offset and tuple
-                // bounds before yielding mutable tuple bytes.
-                let patch_outcome = unsafe {
-                    with_page_tuple_bytes_mut(
-                        writable_page,
-                        page_size,
-                        patch.target_tid,
-                        |tuple_bytes| match &patch.kind {
+                let patch_outcome = writable_page.visit_tuple_bytes_mut(
+                    patch.target_tid,
+                    "ec_diskann duplicate bind target",
+                    |tuple_bytes| {
+                        match &patch.kind {
                             DuplicateBindPatchKind::SetNodeOverflowFlag => {
                                 let mut tuple = VamanaNodeTuple::decode(
                                     tuple_bytes,
@@ -848,9 +843,9 @@ fn apply_duplicate_bind_patches(
                                 tuple_bytes.copy_from_slice(&encoded);
                                 Ok(DuplicateBindApplyOutcome::Changed)
                             }
-                        },
-                    )
-                }?;
+                        }
+                    },
+                )?;
                 match patch_outcome {
                     DuplicateBindApplyOutcome::NoChange => {}
                     DuplicateBindApplyOutcome::Changed => {
@@ -1478,21 +1473,19 @@ pub(super) fn add_backlinks_if_free(
                 format!("ec_diskann backlink write could not open target block {block_number}")
             })?;
 
-        let page_size = buffer.page_size();
         let mut wal_txn = index_relation.start_wal();
-        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let page_result = (|| -> Result<usize, String> {
+            let mut writable_page = wal_txn.register_locked_buffer_full_image_page(&buffer);
             let mut page_changes = 0usize;
             while start < targets.len() && targets[start].block_number == block_number {
                 let target_tid = targets[start];
                 start += 1;
 
-                // SAFETY: `writable_page` is the locked page for `target_tid`;
-                // the helper validates tuple location and yields mutable bytes
-                // only within the page bounds.
-                unsafe {
-                    with_page_tuple_bytes_mut(writable_page, page_size, target_tid, |tuple_bytes| {
+                writable_page.visit_tuple_bytes_mut(
+                    target_tid,
+                    "ec_diskann backlink target",
+                    |tuple_bytes| {
                         let mut tuple = VamanaNodeTuple::decode(
                             tuple_bytes,
                             metadata.graph_degree_r,
@@ -1524,8 +1517,8 @@ pub(super) fn add_backlinks_if_free(
                         page_changed = true;
                         page_changes += 1;
                         Ok(())
-                    })
-                }?;
+                    },
+                )?;
             }
             Ok(page_changes)
         })();
@@ -1581,62 +1574,55 @@ pub(super) fn apply_backlink_mutations(
                 format!("ec_diskann backlink rewrite could not open target block {block_number}")
             })?;
 
-        let page_size = buffer.page_size();
         let mut wal_txn = index_relation.start_wal();
-        let writable_page = wal_txn.register_locked_buffer_full_image(&buffer);
         let mut page_changed = false;
         let page_result = (|| -> Result<(), String> {
+            let mut writable_page = wal_txn.register_locked_buffer_full_image_page(&buffer);
             while start < sorted.len() && sorted[start].target_tid.block_number == block_number {
                 let mutation = &sorted[start];
                 start += 1;
 
-                // SAFETY: `writable_page` is the locked page for the mutation
-                // target; tuple-location validation happens before mutable
-                // bytes are exposed to the closure.
-                unsafe {
-                    with_page_tuple_bytes_mut(
-                        writable_page,
-                        page_size,
-                        mutation.target_tid,
-                        |tuple_bytes| {
-                            let mut tuple = VamanaNodeTuple::decode(
-                                tuple_bytes,
-                                metadata.graph_degree_r,
-                                binary_word_count,
-                                search_code_len,
-                            )?;
-                            if !tuple.is_live() {
-                                return Ok(());
-                            }
+                writable_page.visit_tuple_bytes_mut(
+                    mutation.target_tid,
+                    "ec_diskann backlink rewrite target",
+                    |tuple_bytes| {
+                        let mut tuple = VamanaNodeTuple::decode(
+                            tuple_bytes,
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if !tuple.is_live() {
+                            return Ok(());
+                        }
 
-                            match apply_backlink_mutation(&mut tuple, new_tid, mutation) {
-                                BacklinkMutationOutcome::NoChange => {}
-                                BacklinkMutationOutcome::RetryReplan => {
-                                    retries.push(mutation.target_tid)
-                                }
-                                BacklinkMutationOutcome::Changed => {
-                                    let encoded = tuple.encode(
-                                        metadata.graph_degree_r,
-                                        binary_word_count,
-                                        search_code_len,
-                                    )?;
-                                    if encoded.len() != tuple_bytes.len() {
-                                        return Err(format!(
-                                            "ec_diskann backlink rewrite target tuple size changed from {} to {} at ({},{})",
-                                            tuple_bytes.len(),
-                                            encoded.len(),
-                                            mutation.target_tid.block_number,
-                                            mutation.target_tid.offset_number
-                                        ));
-                                    }
-                                    tuple_bytes.copy_from_slice(&encoded);
-                                    page_changed = true;
-                                }
+                        match apply_backlink_mutation(&mut tuple, new_tid, mutation) {
+                            BacklinkMutationOutcome::NoChange => {}
+                            BacklinkMutationOutcome::RetryReplan => {
+                                retries.push(mutation.target_tid)
                             }
-                            Ok(())
-                        },
-                    )
-                }?;
+                            BacklinkMutationOutcome::Changed => {
+                                let encoded = tuple.encode(
+                                    metadata.graph_degree_r,
+                                    binary_word_count,
+                                    search_code_len,
+                                )?;
+                                if encoded.len() != tuple_bytes.len() {
+                                    return Err(format!(
+                                        "ec_diskann backlink rewrite target tuple size changed from {} to {} at ({},{})",
+                                        tuple_bytes.len(),
+                                        encoded.len(),
+                                        mutation.target_tid.block_number,
+                                        mutation.target_tid.offset_number
+                                    ));
+                                }
+                                tuple_bytes.copy_from_slice(&encoded);
+                                page_changed = true;
+                            }
+                        }
+                        Ok(())
+                    },
+                )?;
             }
             Ok(())
         })();
@@ -1682,70 +1668,6 @@ fn sort_and_dedup_backlink_mutations(mutations: &mut Vec<BacklinkMutation>) {
         cmp_item_pointer_physical(&left.target_tid, &right.target_tid)
     });
     mutations.dedup_by(|left, right| left.target_tid == right.target_tid);
-}
-
-unsafe fn page_tuple_location(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-) -> Result<(*mut u8, usize), String> {
-    // SAFETY: `page` is a locked PostgreSQL data page. This block validates
-    // the requested line pointer, checks tuple bounds against the locked page
-    // size, then derives the byte pointer for that same page.
-    let (tuple_ptr, tuple_len) = unsafe {
-        let max_offset = pg_sys::PageGetMaxOffsetNumber(page);
-        if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
-            return Err(format!(
-                "ec_diskann backlink target ({},{}) has invalid offset {} (max {})",
-                tid.block_number, tid.offset_number, tid.offset_number, max_offset
-            ));
-        }
-
-        let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
-        if item_id.is_null() {
-            return Err(format!(
-                "ec_diskann backlink target ({},{}) returned a null item id",
-                tid.block_number, tid.offset_number
-            ));
-        }
-        let item_id_ref = &*item_id;
-        if item_id_ref.lp_flags() == 0 {
-            return Err(format!(
-                "ec_diskann backlink target ({},{}) points at an unused slot",
-                tid.block_number, tid.offset_number
-            ));
-        }
-
-        let tuple_offset = item_id_ref.lp_off() as usize;
-        let tuple_len = item_id_ref.lp_len() as usize;
-        if tuple_offset + tuple_len > page_size {
-            return Err(format!(
-                "ec_diskann backlink target ({},{}) has invalid tuple bounds",
-                tid.block_number, tid.offset_number
-            ));
-        }
-
-        ((page as *mut u8).add(tuple_offset), tuple_len)
-    };
-    Ok((tuple_ptr, tuple_len))
-}
-
-unsafe fn with_page_tuple_bytes_mut<R, F>(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-    visit: F,
-) -> Result<R, String>
-where
-    F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
-{
-    // SAFETY: The caller owns an exclusive page lock; tuple bounds are
-    // validated before constructing the mutable byte slice.
-    let tuple_bytes = unsafe {
-        let (tuple_ptr, tuple_len) = page_tuple_location(page, page_size, tid)?;
-        slice::from_raw_parts_mut(tuple_ptr, tuple_len)
-    };
-    visit(tuple_bytes)
 }
 
 fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, String> {
