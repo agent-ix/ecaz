@@ -829,6 +829,54 @@ impl PreparedEstimator {
             code,
         )
     }
+
+    /// Cheap pre-prune via Cauchy-Schwarz. Reads only the per-code
+    /// scalar metadata (`||o||`, `o_dot`) and skips the full
+    /// `dimensions`-wide SIMD inner product when even the most
+    /// optimistic estimate falls below `min_ip_to_keep`.
+    ///
+    /// Correctness: the asymmetric RaBitQ estimator is
+    /// `α · ⟨q, x_dec⟩` with `α = ||o|| · o_dot / ||x_dec||`. By
+    /// Cauchy-Schwarz, `|⟨q, x_dec⟩| ≤ ||q|| · ||x_dec||`, so the
+    /// estimate is bounded by `||o|| · ||q|| / o_dot` (positive side).
+    /// Skipping when that upper bound is below the running top-K cutoff
+    /// is recall-safe: this candidate can never reach top-K.
+    ///
+    /// Returns `Some(estimate)` if the candidate might place, `None`
+    /// if the Cauchy-Schwarz bound already excludes it.
+    pub fn try_estimate_ip(&self, code: &[u8], min_ip_to_keep: f32) -> Option<DistanceEstimate> {
+        let bits = self.bits_per_dim as usize;
+        let packed_bytes = (self.dimensions * bits).div_ceil(8);
+        if code.len() < packed_bytes + RABITQ_SCALAR_LEN {
+            // Defer the length panic to the full path so callers see the
+            // canonical error message.
+            return Some(self.estimate_ip(code));
+        }
+        let s = packed_bytes;
+        let candidate_norm = f32::from_le_bytes(
+            code[s..s + RABITQ_NORM_LEN]
+                .try_into()
+                .expect("norm slice is always 4 bytes"),
+        );
+        let candidate_o_dot = f32::from_le_bytes(
+            code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+                .try_into()
+                .expect("o_dot slice is always 4 bytes"),
+        );
+        // Skip the pre-prune in degenerate cases; estimate_ip handles them.
+        const O_DOT_FLOOR: f32 = 1e-6;
+        if candidate_norm > 0.0
+            && candidate_norm.is_finite()
+            && candidate_o_dot.abs() >= O_DOT_FLOOR
+            && candidate_o_dot.is_finite()
+        {
+            let max_estimate = candidate_norm * self.query_norm / candidate_o_dot.abs();
+            if max_estimate < min_ip_to_keep {
+                return None;
+            }
+        }
+        Some(self.estimate_ip(code))
+    }
 }
 
 /// Prepared scorer for the `QueryScorer` trait. Holds the rotated

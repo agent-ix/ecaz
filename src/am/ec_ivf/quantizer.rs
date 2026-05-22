@@ -306,6 +306,10 @@ impl IvfQuantizer {
                     min_ip_to_keep,
                 ))
             }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared), Some(min_ip)) => {
+                let _ = gamma;
+                Ok(prepared.try_estimate_ip(payload, min_ip).map(|de| de.estimate))
+            }
             _ => self
                 .score_ip_from_parts(prepared_query, gamma, payload)
                 .map(Some),
@@ -324,7 +328,10 @@ impl IvfQuantizer {
     }
 
     pub(super) fn uses_score_bound_pruning(self) -> bool {
-        matches!(self.profile, IvfQuantizerProfile::PqFastScan { .. })
+        matches!(
+            self.profile,
+            IvfQuantizerProfile::PqFastScan { .. } | IvfQuantizerProfile::RaBitQ
+        )
     }
 
     fn rabitq_quantizer(self) -> Result<Arc<RaBitQQuantizer>, String> {
