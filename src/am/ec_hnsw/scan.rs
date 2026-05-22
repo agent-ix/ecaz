@@ -1753,16 +1753,15 @@ impl GroupedHeapRerankState {
 }
 
 unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanHeapRelation {
-    // SAFETY: `scan` is a live PostgreSQL scan descriptor while grouped heap
-    // rerank state is configured; `heapRelation` may be pre-filled by executor.
-    if !unsafe { (*scan).heapRelation }.is_null() {
-        // SAFETY: the non-null heap relation pointer belongs to the live scan
-        // descriptor and remains borrowed for the scan callback.
-        return ResolvedHnswScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
+    // SAFETY: callers pass a live PostgreSQL scan descriptor; the borrow is
+    // bounded by this function frame, and the executor keeps `heapRelation`
+    // and `indexRelation` live for the duration of the scan callback.
+    let scan_ref = unsafe { &*scan };
+    if !scan_ref.heapRelation.is_null() {
+        return ResolvedHnswScanHeapRelation::borrowed(scan_ref.heapRelation);
     }
 
-    // SAFETY: `indexRelation` is live in the scan descriptor.
-    let index_relation = unsafe { (*scan).indexRelation };
+    let index_relation = scan_ref.indexRelation;
     let index_relation_handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
         pgrx::error!("ec_hnsw grouped heap-f32 rerank received null index relation")
     });
@@ -1777,11 +1776,12 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedHns
 }
 
 unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScanSnapshot {
-    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `xs_snapshot` may be
-    // set by the executor and is borrowed without taking ownership.
-    if !unsafe { (*scan).xs_snapshot }.is_null() {
-        // SAFETY: the non-null snapshot pointer belongs to the active scan.
-        return ResolvedHnswScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
+    // SAFETY: callers pass a live PostgreSQL scan descriptor; the borrow is
+    // bounded by this function frame, and `xs_snapshot` is borrowed without
+    // taking ownership.
+    let scan_ref = unsafe { &*scan };
+    if !scan_ref.xs_snapshot.is_null() {
+        return ResolvedHnswScanSnapshot::borrowed(scan_ref.xs_snapshot);
     }
 
     if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
