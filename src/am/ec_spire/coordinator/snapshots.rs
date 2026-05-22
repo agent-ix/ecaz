@@ -12,7 +12,7 @@ impl SpireLiveIndexRelation {
         self.relation
     }
 
-    fn root_control(self) -> meta::SpireRootControlState {
+    pub(in crate::am::ec_spire) fn root_control(self) -> meta::SpireRootControlState {
         // SAFETY: this wrapper is constructed only for a live SPIRE index
         // relation at PostgreSQL AM/SQL diagnostic entry points.
         unsafe { page::read_root_control_page(self.relation) }

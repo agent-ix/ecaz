@@ -1,10 +1,7 @@
 pub(crate) fn custom_scan_index_eligibility_result(
     index: SpireLiveIndexRelation,
 ) -> Result<SpireCustomScanIndexEligibilityRow, String> {
-    let index_relation = index.as_ptr();
-    // SAFETY: index_relation is open for this backend; page helper pins and
-    // validates the root/control page before decoding it.
-    let root_control = unsafe { super::page::read_root_control_page(index_relation) };
+    let root_control = index.root_control();
     if root_control.active_epoch == 0 {
         return Ok(SpireCustomScanIndexEligibilityRow {
             active_epoch: 0,
