@@ -137,12 +137,39 @@ recall regression.
 | --- | --- | --- |
 | Pre-NEON (scalar fallback) | 30.0 ms | 1.00× |
 | + NEON `bits=4` kernel (`02f0e78c2`) | 9.35 ms | 3.21× |
-| + LUT hoist (`2ca854d5c`) + pre-prune (`752325deb`), warm | 8.64 ms | **3.47×** |
+| + LUT hoist (`2ca854d5c`) + pre-prune (`752325deb`), warm | 8.64 ms | 3.47× |
+| + bf16 bfdot via inline asm (`02d8cb0da`), kept but inactive on V2 | 8.82 ms | (no measurable Δ on Neoverse-V2 — same 128-bit VL as NEON; kept for future Graviton) |
+| + IVF scan dedup → hashbrown / heaptid_count field (`5b4a80c22`) | 8.60 ms | 3.49× |
+| + 4-way NEON accumulator unroll (`efc8cb301`) | 8.08 ms | 3.71× |
+| + IVF centroid scan NEON (`fb96a8c40`) | **7.87 ms** | **3.81×** |
+
+### vchord head-to-head (50k, k=10, IP)
+
+vchord baseline from `benchmarks/comparators-50k-100k-1m/manifest.md`
+(same DBpedia data, m8g.2xlarge):
+
+| System | 50k p50 ms | 50k p95 ms | recall@10 |
+| --- | --- | --- | --- |
+| vchord RaBitQ-on-IVF default | **2.7** | 3.0 | ~0.99+ (matches 1m's 0.9995) |
+| ec_ivf RaBitQ nprobe=8 (post-all) | **1.58** | 1.87 | 0.83 |
+| ec_ivf RaBitQ nprobe=16 (post-all) | 2.40 | 2.72 | 0.88 |
+| ec_ivf RaBitQ nprobe=64 (post-all) | 7.87 | 8.40 | 0.94 |
+
+The latency gap to vchord at our same recall band closes hard; the
+remaining structural gap is the **recall ceiling** of 0.94 set by
+4-bit RaBitQ codes without rerank. vchord reaches ~0.99+ by pairing
+RaBitQ with full-precision rerank — applying that mode on top of
+the current kernel work is a follow-up cycle (task #10 in the
+in-flight task list).
 
 The headline is the NEON kernel (3.2× alone); LUT-hoist + pre-prune
-deliver the remaining 7-8% by eliminating per-candidate redundant
-table builds and skipping the SIMD inner product on candidates whose
-Cauchy-Schwarz upper bound is already below the running top-K cutoff.
+deliver the next 7-8% by eliminating per-candidate redundant table
+builds and skipping the SIMD inner product on candidates whose
+Cauchy-Schwarz upper bound is already below the running top-K
+cutoff. Hashbrown + 4-way unroll + centroid SIMD add another ~10%
+combined by clearing the V2 pipe-utilization bottleneck and lifting
+the previously-scalar centroid-scoring step that was burning ~1 ms
+of per-query fixed cost.
 
 ## Cycle 2 — LUT hoist + Cauchy-Schwarz pre-prune (m8g.xlarge)
 
