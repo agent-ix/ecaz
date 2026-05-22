@@ -337,7 +337,66 @@ artifact `latency-bits1-width50-nprobe-sweep.log`):
 | 256 | 11.3 | 0.9971 |
 
 Recall@10 saturates by nprobe=128; further nprobes just spend
-extra kernel cycles without moving the operating curve. At nprobe=128 we reach **vchord's recall ceiling
+extra kernel cycles without moving the operating curve.
+
+## Round closeout
+
+The round started with `ec_ivf+RaBitQ` at 50k nprobe=64 in **30 ms
+@ recall 0.94** (scalar-only kernel, no rerank, no quant_bits tuning).
+It ends at **3.81 ms @ recall 0.986** — an **8× latency win at
+higher recall** on the same host, against the same DBpedia data.
+
+### Round-level commit graph
+
+| Phase | Commit | Win |
+| --- | --- | --- |
+| Phase A — kernel | `02f0e78c2` | NEON bits=4 (3.21× alone) |
+| Phase A — kernel | `2ca854d5c` | LUT hoist per-query |
+| Phase A — kernel | `752325deb` | Cauchy-Schwarz pre-prune (wiring; bound too loose to fire) |
+| Phase A — IVF | `5b4a80c22` | hashbrown dedup + heaptid_count |
+| Phase A — kernel | `efc8cb301` | 4-way accumulator unroll |
+| Phase A — IVF | `fb96a8c40` | centroid scan SIMD (~1 ms fixed-cost win) |
+| Phase A — kernel | `d839e8cc5` | scalar-read fold |
+| Phase A — defaults | `425d752fb` | `rerank_width` 0 → 200 (9.5× rerank-path) |
+| Phase B — reviewer | `cf6a53784` | centroid bounds + bf16 cargo gate |
+| Phase B — reviewer | `0b4b984b8` | pre-prune wiring on no-rerank scans |
+| Phase B — reviewer | `af5ee0dda` | prewarm fix + EXPLAIN counters + attribution honesty |
+| Phase C — bits | `466d436e3` | `quant_bits` reloption + MetadataPage v2 |
+| Phase C — bits | `0f47224f6` | NEON bits=1 sign-popcount kernel |
+| Phase C — bits | `47e178772` | build-path bits threading |
+| Phase C — bits | `dc7cfba50` | scan-prep bits threading |
+| Phase C — kernel | `77dab6e85` → `e50375dc7` | bits=1 byte-LUT (per-query) |
+| Phase C — defaults | `c4462de30` | `rerank_width` 200 → 50 |
+| Phase C — tests | `a7a8723c0` | bits=1 NEON↔scalar equivalence widened |
+
+### Recall ladder at the final operating point
+
+bits=1 + `rerank='heap_f32'` + `rerank_width=50` on real DBpedia 50k:
+
+- 1.27 ms → 0.853 recall@10
+- 1.58 ms → 0.918
+- 2.34 ms → 0.962
+- **3.81 ms → 0.986**  ← matched-recall pt vs vchord (2.7 ms @ ~0.99)
+- 6.67 ms → 0.9963
+- 11.3 ms → 0.9971
+
+### What's left and why we stopped
+
+Remaining levers, ranked by expected gain, with reasons they didn't
+land this round:
+
+| Lever | Expected gain | Why deferred |
+| --- | --- | --- |
+| In-index source storage (vchord's approach) | ~1.4 → 1.0× vs vchord | User explicitly deferred ("not sure I want to go to in-index rerank") |
+| Partial-sum early-exit (bits=1 specific) | ~25% kernel-time gain | Needs per-bit completion-bound math + kernel refactor (~150 LoC) with uncertain prune rate on real data |
+| Precomputed scale metadata (`scale = norm/(o_dot * x_norm)`) | ~5% per candidate | MetadataPage v3 + per-code format change; small payoff for the diff size |
+| Batch heap rerank (block-sorted fetch + pin reuse) | ~100–300 µs | PG `table_tuple_fetch_row_version` is the abstraction we'd have to bypass; complex unsafe surface |
+| SVE2 dispatch | uncertain on Neoverse-V2 (same 128-bit VL) | Likely no-op on current host; would need newer Graviton to validate |
+
+Closure runs at 100k/1m are intentionally **not** in this round —
+they're premature until the optimization passes really are done.
+
+100k+/SPIRE work moves to a follow-up round. At nprobe=128 we reach **vchord's recall ceiling
 exactly** (0.9991 vs vchord 0.9995 at 1m) in 7.5 ms — a sane upper
 bound for production high-recall traffic.
 
