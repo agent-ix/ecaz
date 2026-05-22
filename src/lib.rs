@@ -876,7 +876,8 @@ impl DetoastedTypmodArray {
         // SAFETY: `self.array` is a detoasted PostgreSQL ArrayType varlena kept
         // alive by this wrapper while PostgreSQL decodes integer typmods. The
         // returned pointer is read only after PostgreSQL reports exactly one
-        // typmod and the pointer is checked non-null.
+        // typmod, so dereferencing the non-null pointer reads the single int4
+        // slot PostgreSQL says is present.
         let typmod = unsafe {
             let raw_typmods = pg_sys::ArrayGetIntegerTypmods(
                 self.array.as_ptr().cast::<pg_sys::ArrayType>(),

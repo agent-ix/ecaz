@@ -41,7 +41,8 @@ impl<'msg> StringInfoReader<'msg> {
 
     pub(crate) fn remaining_len(&self, label: &str) -> Result<usize, String> {
         // SAFETY: `StringInfoReader` is constructed only for PostgreSQL's live
-        // receive buffer; len and cursor are read-only fields copied by value.
+        // receive buffer; len and cursor are read-only fields copied by value
+        // from the same StringInfoData before bounds are checked below.
         let (total_len, cursor) = unsafe {
             (
                 usize::try_from((*self.msg).len)
@@ -65,8 +66,8 @@ impl<'msg> StringInfoReader<'msg> {
         }
         // SAFETY: `StringInfoReader` owns the live receive-buffer cursor for
         // this call. PostgreSQL advances the cursor and returns a pointer to
-        // the requested byte range; copy before returning so no borrowed
-        // message-buffer lifetime escapes.
+        // the requested byte range for exactly `len` bytes; copy before
+        // returning so no borrowed message-buffer lifetime escapes.
         unsafe {
             let ptr = pg_sys::pq_getmsgbytes(self.msg, len as i32) as *const u8;
             Ok(std::slice::from_raw_parts(ptr, len).to_vec())

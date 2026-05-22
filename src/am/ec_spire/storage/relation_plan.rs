@@ -148,7 +148,8 @@ fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
     // SAFETY: option is a NUL-terminated CString that remains live while
     // PostgreSQL copies it into a text Datum. The non-null text varlena is then
     // wrapped as one TEXT datum, copied into a PostgreSQL array value, and the
-    // resulting non-null array varlena is returned as a Datum.
+    // resulting non-null array varlena is returned as a Datum. The one-element
+    // Datum array is stack-local and remains live for construct_array_builtin.
     unsafe {
         let text = pg_sys::cstring_to_text(option.as_ptr());
         if text.is_null() {

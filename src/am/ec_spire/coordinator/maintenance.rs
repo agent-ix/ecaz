@@ -453,7 +453,9 @@ pub(crate) fn index_maintenance_run(
         };
         // SAFETY: publish lock is held. The selected plan, execution input, and
         // published replacement objects/manifests all derive from the same live
-        // index relation and epoch snapshot.
+        // index relation and epoch snapshot; the input is constructed and
+        // consumed within this boundary before the mutable object-store borrow
+        // returns to safe code.
         unsafe {
             let input = build_relation_selected_scheduled_maintenance_input(
                 index_relation,

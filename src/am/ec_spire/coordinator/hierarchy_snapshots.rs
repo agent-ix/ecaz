@@ -195,8 +195,9 @@ fn remote_search_heap_candidate_rows_from_compact_candidates(
                 "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
             })?;
     // SAFETY: heap_relation and index relation are both open for this lookup.
-    // The resolved indexed vector attribute, heap relation guard, active
-    // snapshot, and tuple slot stay live through the local-heap resolution pass.
+    // The returned tuple is valid because the indexed vector attribute is copied
+    // by value, and the heap relation guard, active snapshot, and tuple slot stay
+    // live through the local-heap resolution pass.
     let (indexed_attribute, mut heap_reader) = unsafe {
         let indexed_attribute = crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
             heap_relation.as_ptr(),
@@ -296,7 +297,8 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
     }
     // SAFETY: root_control was read from this live relation and names manifest
     // tuple IDs in the same SPIRE index relation; each page helper returns owned
-    // bytes before the decoded manifests are validated below.
+    // bytes before the decoded manifests are validated below. The tuple groups
+    // the three manifests that are cross-checked against the same active epoch.
     let (epoch_bytes, object_bytes, placement_bytes) = unsafe {
         (
             page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?,
