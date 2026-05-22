@@ -1,0 +1,5 @@
+Script started on 2026-05-21 18:10:40-07:00 [<not executed on terminal>]
+src/storage/buffer_guard.rs
+264:            let tuple_ptr = pg_sys::PageGetItem(page, item_id).cast::<u8>();
+
+Script done on 2026-05-21 18:10:40-07:00 [COMMAND_EXIT_CODE="0"]
