@@ -1,0 +1,8 @@
+Script started on 2026-05-21 20:57:18-07:00 [<not executed on terminal>]
+[suite:task50-post-main-rabitq-ivf-spire-local] completed=4 failed=0 skipped=0 dry_run=0 missing_artifacts=0 stale=0
+Succeeded    ivf-rabitq-10k-recall-k10            --database tqvector_bench --host localhost --port 28818 bench recall --prefix ec_real_10k_ivfrabitq --profile ec_ivf --k 10 --sweep "8,16" --queries-limit 50 --bits 4 --seed 42 --force-index --log-output reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/ivf-rabitq-10k-recall-k10.log
+Succeeded    ivf-rabitq-10k-latency-k10-c1        --database tqvector_bench --host localhost --port 28818 bench latency --prefix ec_real_10k_ivfrabitq --profile ec_ivf --k 10 --concurrency 1 --iterations 50 --sweep "8,16" --bits 4 --seed 42 --force-index --memory-sample-interval-ms 25 --log-output reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/ivf-rabitq-10k-latency-k10-c1.log
+Succeeded    spire-rabitq-10k-recall-k10          --database tqvector_bench --host localhost --port 28818 bench recall --prefix ec_real_10k_spirerabitq --profile ec_spire --k 10 --sweep "8,16" --queries-limit 50 --bits 4 --seed 42 --force-index --log-output reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/spire-rabitq-10k-recall-k10.log
+Succeeded    spire-rabitq-10k-latency-k10-c1      --database tqvector_bench --host localhost --port 28818 bench latency --prefix ec_real_10k_spirerabitq --profile ec_spire --k 10 --concurrency 1 --iterations 50 --sweep "8,16" --bits 4 --seed 42 --force-index --memory-sample-interval-ms 25 --log-output reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/spire-rabitq-10k-latency-k10-c1.log
+
+Script done on 2026-05-21 20:57:18-07:00 [COMMAND_EXIT_CODE="0"]
