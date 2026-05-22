@@ -1,5 +1,63 @@
+struct SpireRelationScheduledPublishRelation {
+    relation: pgrx::pg_sys::Relation,
+}
+
+impl SpireRelationScheduledPublishRelation {
+    fn new(relation: pgrx::pg_sys::Relation) -> Self {
+        if relation.is_null() {
+            pgrx::error!("ec_spire scheduled replacement publish needs a valid index relation");
+        }
+        Self { relation }
+    }
+
+    fn raw(&self) -> pgrx::pg_sys::Relation {
+        self.relation
+    }
+
+    fn local_store_config_for_previous_epoch(
+        &self,
+        previous_epoch_manifest: &SpireEpochManifest,
+    ) -> Result<SpireLocalStoreConfig, String> {
+        // SAFETY: this wrapper is constructed for the open SPIRE index relation
+        // being published. The root/control read and local-store config load are
+        // from the same relation and root/control state.
+        unsafe {
+            let root_control = page::read_root_control_page(self.relation);
+            if root_control.active_epoch != previous_epoch_manifest.epoch {
+                return Err(format!(
+                    "ec_spire scheduled replacement publish root/control epoch {} does not match previous epoch {}",
+                    root_control.active_epoch, previous_epoch_manifest.epoch
+                ));
+            }
+            load_relation_local_store_config(self.relation, root_control)
+        }
+    }
+}
+
 pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     index_relation: pgrx::pg_sys::Relation,
+    previous_epoch_manifest: SpireEpochManifest,
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    publish_plan: &SpireScheduledReplacementPublishPlan,
+    input: SpireRelationScheduledReplacementExecutionInput,
+    object_store: &mut SpireRelationObjectStore,
+) -> Result<SpireReplacementEpochDraft, String> {
+    publish_relation_scheduled_replacement_epoch_impl(
+        SpireRelationScheduledPublishRelation::new(index_relation),
+        previous_epoch_manifest,
+        snapshot,
+        decision,
+        pid_plan,
+        publish_plan,
+        input,
+        object_store,
+    )
+}
+
+fn publish_relation_scheduled_replacement_epoch_impl(
+    relation: SpireRelationScheduledPublishRelation,
     previous_epoch_manifest: SpireEpochManifest,
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     decision: &SpireLeafReplacementScheduleDecision,
@@ -47,7 +105,7 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     // SAFETY: index_relation is the open SPIRE index relation being published,
     // and placement_directory was derived from the validated replacement plan.
     let placement_write_evidence =
-        write_placement_entries_to_relation(index_relation, &placement_directory)?;
+        write_placement_entries_to_relation(relation.raw(), &placement_directory)?;
     let draft = build_scheduled_replacement_epoch_draft_from_object_placements(
         snapshot,
         object_store,
@@ -63,21 +121,10 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
             next_local_vec_seq: input.next_local_vec_seq,
         },
     )?;
-    // SAFETY: index_relation is open for this publish operation; the root page
-    // is read to confirm it still references the previous epoch.
-    let root_control = page::read_root_control_page(index_relation);
-    if root_control.active_epoch != previous_epoch_manifest.epoch {
-        return Err(format!(
-            "ec_spire scheduled replacement publish root/control epoch {} does not match previous epoch {}",
-            root_control.active_epoch, previous_epoch_manifest.epoch
-        ));
-    }
-    // SAFETY: root_control was read from the same open relation and identifies
-    // the local-store config for the active epoch.
     let local_store_config =
-        unsafe { load_relation_local_store_config(index_relation, root_control)? };
+        relation.local_store_config_for_previous_epoch(&previous_epoch_manifest)?;
     publish_replacement_epoch_to_relation(
-        index_relation,
+        relation.raw(),
         previous_epoch_manifest,
         draft.publish_input_with_local_store_config(local_store_config),
     )?;
@@ -98,20 +145,16 @@ pub(super) unsafe fn publish_relation_selected_scheduled_replacement_epoch(
         selected,
         &input,
     )?;
-    // SAFETY: selected contains the validated decision, PID plan, and publish
-    // plan; arguments are forwarded unchanged to the relation publish helper.
-    unsafe {
-        publish_relation_scheduled_replacement_epoch(
-            index_relation,
-            previous_epoch_manifest,
-            snapshot,
-            &selected.decision,
-            &selected.lock_plan.pid_plan,
-            &selected.lock_plan.publish_plan,
-            input,
-            object_store,
-        )
-    }
+    publish_relation_scheduled_replacement_epoch_impl(
+        SpireRelationScheduledPublishRelation::new(index_relation),
+        previous_epoch_manifest,
+        snapshot,
+        &selected.decision,
+        &selected.lock_plan.pid_plan,
+        &selected.lock_plan.publish_plan,
+        input,
+        object_store,
+    )
 }
 
 fn replacement_placement_directory_from_object_placements(
