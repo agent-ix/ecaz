@@ -1068,6 +1068,114 @@ fn read_level(code: &[u8], i: usize, bits: usize) -> u32 {
     }
 }
 
+/// Σ_i q_i · dequant(level_i) — the inner sum that dominates
+/// `estimate_ip_impl` runtime. Scalar fallback always available;
+/// aarch64 NEON path lifts the `bits == 4` hot case (production
+/// `storage_format = 'rabitq'` uses 4-bit codes per `DEFAULT_QUANT_BITS`).
+#[inline]
+fn sum_query_dequant(
+    query_rotated: &[f32],
+    dimensions: usize,
+    bits: usize,
+    code: &[u8],
+    sqrt_d: f32,
+) -> f32 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if bits == 4 && std::arch::is_aarch64_feature_detected!("neon") {
+            // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
+            return unsafe {
+                sum_query_dequant_neon_bits4(query_rotated, dimensions, code, sqrt_d)
+            };
+        }
+    }
+    sum_query_dequant_scalar(query_rotated, dimensions, bits, code, sqrt_d)
+}
+
+#[inline]
+fn sum_query_dequant_scalar(
+    query_rotated: &[f32],
+    dimensions: usize,
+    bits: usize,
+    code: &[u8],
+    sqrt_d: f32,
+) -> f32 {
+    let mut sum = 0.0_f32;
+    for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {
+        let level = read_level(code, i, bits);
+        let dequant = dequant_level(level, bits, sqrt_d);
+        sum += query_i * dequant;
+    }
+    sum
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn sum_query_dequant_neon_bits4(
+    query_rotated: &[f32],
+    dimensions: usize,
+    code: &[u8],
+    sqrt_d: f32,
+) -> f32 {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
+
+    // 16-entry dequant LUT for bits=4. Cheap to recompute per call;
+    // depends only on (level, sqrt_d) which is fixed for the query.
+    let mut lut = [0.0_f32; 16];
+    let mut level = 0_u32;
+    while (level as usize) < 16 {
+        lut[level as usize] = dequant_level(level, 4, sqrt_d);
+        level += 1;
+    }
+
+    let mut acc0 = vdupq_n_f32(0.0);
+    let mut acc1 = vdupq_n_f32(0.0);
+
+    let mut dim_index = 0_usize;
+    // Each iteration consumes 8 dimensions = 4 bytes of code.
+    while dim_index + 8 <= dimensions {
+        let byte_base = dim_index / 2;
+        // SAFETY: dim_index + 8 <= dimensions and the code-length invariant
+        // checked by the caller guarantees byte_base + 4 <= packed_bytes.
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
+
+        // Unpack 8 nibbles in coordinate order; write_level stores the
+        // low nibble at index `2k`, high nibble at index `2k+1`.
+        let dq = [
+            lut[b0 & 0x0F], lut[b0 >> 4],
+            lut[b1 & 0x0F], lut[b1 >> 4],
+            lut[b2 & 0x0F], lut[b2 >> 4],
+            lut[b3 & 0x0F], lut[b3 >> 4],
+        ];
+
+        // SAFETY: dim_index + 8 <= dimensions ⇒ two 4-lane loads from query.
+        let q0 = vld1q_f32(query_rotated.as_ptr().add(dim_index));
+        let q1 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 4));
+        let d0 = vld1q_f32(dq.as_ptr());
+        let d1 = vld1q_f32(dq.as_ptr().add(4));
+        acc0 = vfmaq_f32(acc0, q0, d0);
+        acc1 = vfmaq_f32(acc1, q1, d1);
+
+        dim_index += 8;
+    }
+
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(lanes.as_mut_ptr(), vaddq_f32(acc0, acc1));
+    let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+
+    // Scalar tail for the trailing < 8 dimensions.
+    while dim_index < dimensions {
+        let l = read_level(code, dim_index, 4);
+        sum += query_rotated[dim_index] * lut[l as usize];
+        dim_index += 1;
+    }
+
+    sum
+}
+
 /// Paper-faithful RaBitQ inner-product estimator with an
 /// ε-concentration error bound.
 ///
@@ -1127,13 +1235,7 @@ fn estimate_ip_impl(
 
     let sqrt_d = (dimensions as f32).sqrt();
 
-    // Σ_i q_i · dequant(level_i) in the rotated basis.
-    let mut sum_q_dequant = 0.0_f32;
-    for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {
-        let level = read_level(code, i, bits);
-        let dequant = dequant_level(level, bits, sqrt_d);
-        sum_q_dequant += query_i * dequant;
-    }
+    let sum_q_dequant = sum_query_dequant(query_rotated, dimensions, bits, code, sqrt_d);
 
     // Guard degenerate cases.
     const O_DOT_FLOOR: f32 = 1e-6;
@@ -2126,5 +2228,38 @@ mod tests {
     fn hamming_similarity_identity_equals_dim() {
         let words = vec![0xAAAA_AAAA_AAAA_AAAA_u64; 2];
         assert_eq!(hamming_similarity(&words, &words, 128), 128.0);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_sum_query_dequant_matches_scalar_bits4() {
+        // bits=4 is the production path (DEFAULT_QUANT_BITS=4); cover both
+        // the 8-wide NEON body and a non-multiple-of-8 tail by sweeping a
+        // few dimensions.
+        for &dim in &[8_usize, 16, 24, 31, 64, 1536] {
+            let bits = 4_usize;
+            let packed_bytes = (dim * bits).div_ceil(8);
+            // Deterministic non-trivial inputs.
+            let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
+            for i in 0..dim {
+                let level = ((i * 7) as u32) & 0x0F;
+                write_level(&mut code, i, bits, level);
+            }
+            let query: Vec<f32> = (0..dim)
+                .map(|i| ((i as f32) - dim as f32 / 2.0) * 0.13)
+                .collect();
+            let sqrt_d = (dim as f32).sqrt();
+
+            let scalar = sum_query_dequant_scalar(&query, dim, bits, &code, sqrt_d);
+            // SAFETY: aarch64 cfg + always-present NEON on the supported
+            // bench hosts (Graviton).
+            let neon = unsafe { sum_query_dequant_neon_bits4(&query, dim, &code, sqrt_d) };
+            let tol = 1e-4_f32 * scalar.abs().max(1.0);
+            assert!(
+                (scalar - neon).abs() <= tol,
+                "scalar={scalar} neon={neon} dim={dim} delta={}",
+                (scalar - neon).abs(),
+            );
+        }
     }
 }
