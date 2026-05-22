@@ -456,11 +456,13 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
     ) -> Box<dyn crate::quant::QueryScorer + Send + Sync + '_> {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
+        let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
         Box::new(RaBitQScorer {
             query_rotated: rotated,
             query_norm: norm,
             dimensions: self.dimensions,
             bits_per_dim: self.bits_per_dim,
+            dequant_lut,
         })
     }
 
@@ -481,11 +483,13 @@ impl RaBitQQuantizer {
     pub fn prepare_estimator(&self, query: &[f32]) -> PreparedEstimator {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
+        let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
         PreparedEstimator {
             query_rotated: rotated,
             query_norm: norm,
             dimensions: self.dimensions,
             bits_per_dim: self.bits_per_dim,
+            dequant_lut,
         }
     }
 
@@ -797,6 +801,12 @@ pub struct PreparedEstimator {
     query_norm: f32,
     dimensions: usize,
     bits_per_dim: u8,
+    /// Per-quantizer dequant LUT. At `bits_per_dim ∈ {1, 2, 4, 8}`
+    /// the table has `1 << bits_per_dim` entries; the remainder is
+    /// unused. Precomputed once per prepared query so the NEON inner
+    /// loop reuses it for every candidate rather than recomputing
+    /// per candidate.
+    dequant_lut: [f32; 256],
 }
 
 impl PreparedEstimator {
@@ -815,6 +825,7 @@ impl PreparedEstimator {
             self.query_norm,
             self.dimensions,
             self.bits_per_dim,
+            &self.dequant_lut,
             code,
         )
     }
@@ -828,6 +839,7 @@ pub struct RaBitQScorer {
     query_norm: f32,
     dimensions: usize,
     bits_per_dim: u8,
+    dequant_lut: [f32; 256],
 }
 
 impl crate::quant::QueryScorer for RaBitQScorer {
@@ -837,6 +849,7 @@ impl crate::quant::QueryScorer for RaBitQScorer {
             self.query_norm,
             self.dimensions,
             self.bits_per_dim,
+            &self.dequant_lut,
             code,
         )
         .estimate
@@ -1068,28 +1081,44 @@ fn read_level(code: &[u8], i: usize, bits: usize) -> u32 {
     }
 }
 
+/// Build a 256-entry dequant table indexed by `level`. The first
+/// `1 << bits` entries are valid; the rest are zero-filled. The LUT
+/// depends only on `(bits, sqrt_d)`, so it can be computed once per
+/// prepared query and reused across every candidate code.
+fn build_dequant_lut(dimensions: usize, bits: usize) -> [f32; 256] {
+    let mut lut = [0.0_f32; 256];
+    let sqrt_d = (dimensions as f32).sqrt();
+    let entries = 1_usize << bits;
+    let mut level = 0_u32;
+    while (level as usize) < entries {
+        lut[level as usize] = dequant_level(level, bits, sqrt_d);
+        level += 1;
+    }
+    lut
+}
+
 /// Σ_i q_i · dequant(level_i) — the inner sum that dominates
-/// `estimate_ip_impl` runtime. Scalar fallback always available;
-/// aarch64 NEON path lifts the `bits == 4` hot case (production
-/// `storage_format = 'rabitq'` uses 4-bit codes per `DEFAULT_QUANT_BITS`).
+/// `estimate_ip_impl` runtime. `lut` is the precomputed dequant table
+/// (`build_dequant_lut` filled the first `1 << bits` entries; the rest
+/// are zero). Scalar fallback always available; aarch64 NEON path
+/// lifts the `bits == 4` hot case (production `storage_format =
+/// 'rabitq'` uses 4-bit codes per `DEFAULT_QUANT_BITS`).
 #[inline]
 fn sum_query_dequant(
     query_rotated: &[f32],
     dimensions: usize,
     bits: usize,
+    lut: &[f32; 256],
     code: &[u8],
-    sqrt_d: f32,
 ) -> f32 {
     #[cfg(target_arch = "aarch64")]
     {
         if bits == 4 && std::arch::is_aarch64_feature_detected!("neon") {
             // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
-            return unsafe {
-                sum_query_dequant_neon_bits4(query_rotated, dimensions, code, sqrt_d)
-            };
+            return unsafe { sum_query_dequant_neon_bits4(query_rotated, dimensions, lut, code) };
         }
     }
-    sum_query_dequant_scalar(query_rotated, dimensions, bits, code, sqrt_d)
+    sum_query_dequant_scalar(query_rotated, dimensions, bits, lut, code)
 }
 
 #[inline]
@@ -1097,14 +1126,13 @@ fn sum_query_dequant_scalar(
     query_rotated: &[f32],
     dimensions: usize,
     bits: usize,
+    lut: &[f32; 256],
     code: &[u8],
-    sqrt_d: f32,
 ) -> f32 {
     let mut sum = 0.0_f32;
     for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {
-        let level = read_level(code, i, bits);
-        let dequant = dequant_level(level, bits, sqrt_d);
-        sum += query_i * dequant;
+        let level = read_level(code, i, bits) as usize;
+        sum += query_i * lut[level];
     }
     sum
 }
@@ -1114,19 +1142,10 @@ fn sum_query_dequant_scalar(
 unsafe fn sum_query_dequant_neon_bits4(
     query_rotated: &[f32],
     dimensions: usize,
+    lut: &[f32; 256],
     code: &[u8],
-    sqrt_d: f32,
 ) -> f32 {
     use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
-
-    // 16-entry dequant LUT for bits=4. Cheap to recompute per call;
-    // depends only on (level, sqrt_d) which is fixed for the query.
-    let mut lut = [0.0_f32; 16];
-    let mut level = 0_u32;
-    while (level as usize) < 16 {
-        lut[level as usize] = dequant_level(level, 4, sqrt_d);
-        level += 1;
-    }
 
     let mut acc0 = vdupq_n_f32(0.0);
     let mut acc1 = vdupq_n_f32(0.0);
@@ -1168,8 +1187,8 @@ unsafe fn sum_query_dequant_neon_bits4(
 
     // Scalar tail for the trailing < 8 dimensions.
     while dim_index < dimensions {
-        let l = read_level(code, dim_index, 4);
-        sum += query_rotated[dim_index] * lut[l as usize];
+        let l = read_level(code, dim_index, 4) as usize;
+        sum += query_rotated[dim_index] * lut[l];
         dim_index += 1;
     }
 
@@ -1205,6 +1224,7 @@ fn estimate_ip_impl(
     query_norm: f32,
     dimensions: usize,
     bits_per_dim: u8,
+    dequant_lut: &[f32; 256],
     code: &[u8],
 ) -> DistanceEstimate {
     debug_assert_eq!(query_rotated.len(), dimensions);
@@ -1233,9 +1253,7 @@ fn estimate_ip_impl(
             .expect("x_norm slice is always 4 bytes"),
     );
 
-    let sqrt_d = (dimensions as f32).sqrt();
-
-    let sum_q_dequant = sum_query_dequant(query_rotated, dimensions, bits, code, sqrt_d);
+    let sum_q_dequant = sum_query_dequant(query_rotated, dimensions, bits, dequant_lut, code);
 
     // Guard degenerate cases.
     const O_DOT_FLOOR: f32 = 1e-6;
@@ -2250,10 +2268,11 @@ mod tests {
                 .collect();
             let sqrt_d = (dim as f32).sqrt();
 
-            let scalar = sum_query_dequant_scalar(&query, dim, bits, &code, sqrt_d);
+            let lut = build_dequant_lut(dim, bits);
+            let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
             // SAFETY: aarch64 cfg + always-present NEON on the supported
             // bench hosts (Graviton).
-            let neon = unsafe { sum_query_dequant_neon_bits4(&query, dim, &code, sqrt_d) };
+            let neon = unsafe { sum_query_dequant_neon_bits4(&query, dim, &lut, &code) };
             let tol = 1e-4_f32 * scalar.abs().max(1.0);
             assert!(
                 (scalar - neon).abs() <= tol,
