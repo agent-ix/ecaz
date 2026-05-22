@@ -64,9 +64,7 @@ impl VacuumIndexRelation {
     }
 
     fn begin_page_rewrite(self, buffer: &LockedBufferGuard) -> VacuumPageRewrite {
-        // SAFETY: The buffer belongs to this live relation and remains locked
-        // while the returned rewrite guard is active.
-        unsafe { VacuumPageRewrite::start(self.relation, buffer) }
+        VacuumPageRewrite::start(self.relation, buffer)
     }
 }
 
@@ -76,9 +74,9 @@ struct VacuumPageRewrite {
 }
 
 impl VacuumPageRewrite {
-    unsafe fn start(relation: pg_sys::Relation, buffer: &LockedBufferGuard) -> Self {
-        // SAFETY: The caller guarantees `relation` is live and `buffer` belongs
-        // to that relation for the GenericXLog transaction.
+    fn start(relation: pg_sys::Relation, buffer: &LockedBufferGuard) -> Self {
+        // SAFETY: callers guarantee `relation` is live and `buffer` belongs to
+        // that relation for the duration of the GenericXLog transaction.
         let (wal_txn, page_ptr) = unsafe {
             let mut wal_txn = wal::GenericXLogTxn::start(relation);
             let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
