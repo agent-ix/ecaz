@@ -1,7 +1,7 @@
 #[cfg(feature = "pg18")]
 use std::ffi::{c_void, CStr, CString};
 #[cfg(feature = "pg18")]
-use std::ptr;
+use std::ptr::{self, NonNull};
 #[cfg(feature = "pg18")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "pg18")]
@@ -12,6 +12,8 @@ use pgrx::pg_sys;
 
 #[cfg(feature = "pg18")]
 use super::callback::pg_callback;
+#[cfg(feature = "pg18")]
+use crate::storage::relation::RelationHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ExplainOptionSnapshot {
@@ -328,6 +330,13 @@ static PREVIOUS_EXPLAIN_PER_NODE_HOOK: OnceLock<pg_sys::explain_per_node_hook_ty
 static ECAZ_EXPLAIN_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "pg18")]
+#[derive(Clone, Copy)]
+struct ExplainIndexScanNode {
+    index_state: NonNull<pg_sys::IndexScanState>,
+    index_relation: RelationHandle,
+}
+
+#[cfg(feature = "pg18")]
 fn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {
     PREVIOUS_EXPLAIN_PER_NODE_HOOK
         .get()
@@ -336,18 +345,12 @@ fn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {
 }
 
 #[cfg(feature = "pg18")]
-fn explain_extension_id() -> i32 {
-    // SAFETY: The literal is NUL-terminated and has static lifetime for
-    // PostgreSQL's extension EXPLAIN option lookup.
-    unsafe { pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()) }
-}
-
-#[cfg(feature = "pg18")]
 unsafe fn explain_option_enabled(es: *mut pg_sys::ExplainState) -> bool {
     // SAFETY: `es` is the live ExplainState supplied by PostgreSQL's explain
     // hook; the extension id is registered by `register_pg18_explain_hooks`.
     unsafe {
-        let state = pg_sys::GetExplainExtensionState(es, explain_extension_id());
+        let state =
+            pg_sys::GetExplainExtensionState(es, pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()));
         if state.is_null() {
             return false;
         }
@@ -359,24 +362,29 @@ unsafe fn explain_option_enabled(es: *mut pg_sys::ExplainState) -> bool {
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn explain_node_kind(planstate: *mut pg_sys::PlanState) -> ExplainNodeKind {
-    // SAFETY: Callers pass PostgreSQL's non-null PlanState while processing the
-    // per-node EXPLAIN hook.
-    match unsafe { (*planstate).type_ } {
-        pg_sys::NodeTag::T_IndexScanState => ExplainNodeKind::IndexScan,
-        _ => ExplainNodeKind::Other,
+unsafe fn explain_index_scan_node(
+    planstate: *mut pg_sys::PlanState,
+) -> Option<ExplainIndexScanNode> {
+    let planstate = NonNull::new(planstate)?;
+
+    // SAFETY: PostgreSQL invokes the per-node EXPLAIN hook with a live PlanState.
+    // This boundary checks the node tag before treating it as IndexScanState and
+    // copies only non-null executor-owned descriptor pointers for this hook call.
+    unsafe {
+        if (*planstate.as_ptr()).type_ != pg_sys::NodeTag::T_IndexScanState {
+            return None;
+        }
+        let index_state = NonNull::new(planstate.as_ptr().cast::<pg_sys::IndexScanState>())?;
+        let index_relation = NonNull::new((*index_state.as_ptr()).iss_RelationDesc)?;
+        Some(ExplainIndexScanNode {
+            index_state,
+            index_relation,
+        })
     }
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -> Option<String> {
-    // SAFETY: `index_state` is a PlanState already identified as IndexScanState
-    // by the caller, so its relation descriptor field may be inspected.
-    let index_relation = unsafe { (*index_state).iss_RelationDesc };
-    let Some(index_relation) = ptr::NonNull::new(index_relation) else {
-        return None;
-    };
-
+fn explain_access_method_name(index_relation: RelationHandle) -> Option<String> {
     let am_oid = crate::storage::relation::relation_am_oid_handle(index_relation);
     // SAFETY: `am_oid` comes from the relation descriptor; PostgreSQL returns a
     // palloc-owned C string or null when no AM name exists. When present, the
@@ -435,7 +443,11 @@ unsafe extern "C-unwind" fn ecaz_explain_option_handler(
             pgrx::error!("ecaz failed to allocate EXPLAIN option state");
         }
         *state = enabled;
-        pg_sys::SetExplainExtensionState(es, explain_extension_id(), state.cast::<c_void>());
+        pg_sys::SetExplainExtensionState(
+            es,
+            pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()),
+            state.cast::<c_void>(),
+        );
     })
 }
 
@@ -448,10 +460,13 @@ unsafe extern "C-unwind" fn ecaz_explain_per_node_hook(
     es: *mut pg_sys::ExplainState,
 ) {
     pg_callback!({
-        if !planstate.is_null()
-            && !es.is_null()
-            && (*planstate).type_ == pg_sys::NodeTag::T_IndexScanState
-        {
+        if !es.is_null() {
+            let Some(index_node) = explain_index_scan_node(planstate) else {
+                if let Some(previous_hook) = previous_explain_per_node_hook() {
+                    previous_hook(planstate, ancestors, relationship, plan_name, es);
+                }
+                return;
+            };
             let explain_option_enabled = explain_option_enabled(es);
             if !explain_option_enabled {
                 if let Some(previous_hook) = previous_explain_per_node_hook() {
@@ -460,25 +475,26 @@ unsafe extern "C-unwind" fn ecaz_explain_per_node_hook(
                 return;
             }
 
-            let index_state = planstate.cast::<pg_sys::IndexScanState>();
-            let access_method_name =
-                explain_access_method_name(index_state).unwrap_or_else(|| "<unknown>".to_owned());
+            let access_method_name = explain_access_method_name(index_node.index_relation)
+                .unwrap_or_else(|| "<unknown>".to_owned());
             let context = ExplainHookContext {
                 explain_option_enabled,
-                node_kind: explain_node_kind(planstate),
+                node_kind: ExplainNodeKind::IndexScan,
                 access_method_name: access_method_name.as_str(),
             };
             if should_emit_explain_properties(context) {
                 match access_method_name.as_str() {
                     "ec_hnsw" => {
-                        let counters =
-                            crate::am::ec_hnsw::explain_counters_from_index_scan_state(index_state);
+                        let counters = crate::am::ec_hnsw::explain_counters_from_index_scan_state(
+                            index_node.index_state.as_ptr(),
+                        );
                         let properties = counters.explain_properties();
                         emit_explain_properties(es, &properties);
                     }
                     "ec_ivf" => {
-                        let counters =
-                            crate::am::ec_ivf::explain_counters_from_index_scan_state(index_state);
+                        let counters = crate::am::ec_ivf::explain_counters_from_index_scan_state(
+                            index_node.index_state.as_ptr(),
+                        );
                         let properties = counters.explain_properties();
                         emit_explain_properties(es, &properties);
                     }
