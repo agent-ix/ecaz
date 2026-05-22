@@ -368,31 +368,25 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
 }
 
 struct EcIvfReloptionsView {
-    rd_options: NonNull<pg_sys::varlena>,
+    rd_options: crate::am::common::reloptions::ReloptionsBlob,
 }
 
 impl EcIvfReloptionsView {
     fn from_relation(index_relation: NonNull<pg_sys::RelationData>) -> Option<Self> {
         let rd_options = crate::storage::relation::relation_options_handle(index_relation);
         let rd_options = NonNull::new(rd_options)?;
-        Some(Self { rd_options })
+        Some(Self {
+            rd_options: crate::am::common::reloptions::ReloptionsBlob::new(rd_options),
+        })
     }
 
     fn reloptions(&self) -> &EcIvfReloptions {
-        crate::storage::relation::relation_options_layout_ref(&self.rd_options)
+        crate::storage::relation::relation_options_layout_ref(self.rd_options.handle())
     }
 
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
-        // SAFETY: this view was built from the ec_ivf reloptions blob, and
-        // offsets are fields written by the matching reloptions parser.
-        unsafe {
-            crate::am::common::reloptions::read_string_reloption(
-                self.rd_options.as_ptr(),
-                offset,
-                "ec_ivf",
-                name,
-            )
-        }
+        self.rd_options
+            .read_string_reloption(offset, "ec_ivf", name)
     }
 
     fn to_options(&self) -> EcIvfOptions {

@@ -1577,25 +1577,17 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
 }
 
 struct EcSpireReloptionsView {
-    rd_options: std::ptr::NonNull<pg_sys::varlena>,
+    rd_options: crate::am::common::reloptions::ReloptionsBlob,
 }
 
 impl EcSpireReloptionsView {
     fn reloptions(&self) -> &EcSpireReloptions {
-        crate::storage::relation::relation_options_layout_ref(&self.rd_options)
+        crate::storage::relation::relation_options_layout_ref(self.rd_options.handle())
     }
 
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
-        // SAFETY: this view was built from the ec_spire reloptions blob, and
-        // offsets are fields written by the matching reloptions parser.
-        unsafe {
-            crate::am::common::reloptions::read_string_reloption(
-                self.rd_options.as_ptr(),
-                offset,
-                "ec_spire",
-                name,
-            )
-        }
+        self.rd_options
+            .read_string_reloption(offset, "ec_spire", name)
     }
 
     fn validate(&self) {
@@ -1697,7 +1689,10 @@ pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptio
     let Some(rd_options) = std::ptr::NonNull::new(rd_options) else {
         return EcSpireOptions::DEFAULT;
     };
-    EcSpireReloptionsView { rd_options }.to_options()
+    EcSpireReloptionsView {
+        rd_options: crate::am::common::reloptions::ReloptionsBlob::new(rd_options),
+    }
+    .to_options()
 }
 
 include!("tests.rs");

@@ -251,7 +251,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
 }
 
 struct TqDiskannReloptionsView {
-    rd_options: std::ptr::NonNull<pg_sys::varlena>,
+    rd_options: crate::am::common::reloptions::ReloptionsBlob,
 }
 
 impl TqDiskannReloptionsView {
@@ -261,24 +261,18 @@ impl TqDiskannReloptionsView {
         });
         let rd_options = crate::storage::relation::relation_options_handle(index_relation);
         let rd_options = std::ptr::NonNull::new(rd_options)?;
-        Some(Self { rd_options })
+        Some(Self {
+            rd_options: crate::am::common::reloptions::ReloptionsBlob::new(rd_options),
+        })
     }
 
     fn reloptions(&self) -> &TqDiskannReloptions {
-        crate::storage::relation::relation_options_layout_ref(&self.rd_options)
+        crate::storage::relation::relation_options_layout_ref(self.rd_options.handle())
     }
 
     fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
-        // SAFETY: this view was built from the ec_diskann reloptions blob, and
-        // offsets are fields written by the matching reloptions parser.
-        unsafe {
-            crate::am::common::reloptions::read_string_reloption(
-                self.rd_options.as_ptr(),
-                offset,
-                "ec_diskann",
-                name,
-            )
-        }
+        self.rd_options
+            .read_string_reloption(offset, "ec_diskann", name)
     }
 
     fn to_options(&self) -> TqDiskannOptions {
