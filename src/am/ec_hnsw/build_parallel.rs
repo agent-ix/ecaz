@@ -1989,6 +1989,22 @@ fn checked_u16(value: i32, field: &str) -> u16 {
     u16::try_from(value).unwrap_or_else(|_| panic!("parallel build {field} should fit in u16"))
 }
 
+/// Borrow the worker's shared build header.
+///
+/// Workers receive `shared` from `shm_toc_lookup`; the leader initialized
+/// the header before launching workers and does not free it until every
+/// worker has exited, so an immutable borrow for any lifetime caller code
+/// requires is safe.
+fn shared_header_ref<'a>(
+    shared: *mut EcHnswParallelBuildSharedHeader,
+) -> &'a EcHnswParallelBuildSharedHeader {
+    let header = ptr::NonNull::new(shared)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build shared header is null"));
+    // SAFETY: see function-level contract above; the header is non-null,
+    // initialized by the leader, and outlives all worker reads.
+    unsafe { header.as_ref() }
+}
+
 pub(super) fn reset_debug_last_parallel_build_workers_launched() {
     LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
     LAST_PARALLEL_HEAP_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
@@ -2736,8 +2752,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
             .cast::<EcHnswParallelBuildSharedHeader>()
     };
-    // SAFETY: `shared` points at an initialized shared header.
-    unsafe { (*shared).validate() };
+    shared_header_ref(shared).validate();
 
     // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
     // parallel worker entrypoint.
@@ -2756,9 +2771,8 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
     unsafe { pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc) };
     let queue_handle = unsafe { pg_sys::shm_mq_attach(queue, seg, ptr::null_mut()) };
 
-    // SAFETY: `shared` points at the initialized shared header whose
-    // concurrency flag was written by the leader.
-    let is_concurrent = unsafe { (*shared).is_concurrent };
+    let header = shared_header_ref(shared);
+    let is_concurrent = header.is_concurrent;
     let (heap_lockmode, index_lockmode) = if is_concurrent {
         (
             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
@@ -2771,16 +2785,10 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         )
     };
 
-    // SAFETY: The shared header stores the heap relation OID written by the
-    // leader; the lock mode matches the build flavor.
-    let heap_relation_guard =
-        HeapRelationGuard::try_open(unsafe { (*shared).heaprelid }, heap_lockmode)
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open heap"));
-    // SAFETY: The shared header stores the index relation OID written by the
-    // leader; the lock mode matches the build flavor.
-    let index_relation_guard =
-        IndexRelationGuard::try_open(unsafe { (*shared).indexrelid }, index_lockmode)
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open index"));
+    let heap_relation_guard = HeapRelationGuard::try_open(header.heaprelid, heap_lockmode)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open heap"));
+    let index_relation_guard = IndexRelationGuard::try_open(header.indexrelid, index_lockmode)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open index"));
     let heap_relation = heap_relation_guard.as_ptr();
     let index_relation = index_relation_guard.as_ptr();
 
@@ -2858,8 +2866,7 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
             .cast::<EcHnswParallelBuildSharedHeader>()
     };
-    // SAFETY: `shared` points at an initialized shared header.
-    unsafe { (*shared).validate() };
+    shared_header_ref(shared).validate();
 
     // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
     // graph-build worker entrypoint.
@@ -2882,19 +2889,16 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
     // SAFETY: The worker is running inside PostgreSQL parallel query
     // instrumentation scope.
     unsafe { pg_sys::InstrStartParallelQuery() };
-    // SAFETY: The worker number and participant count bound this worker's
-    // partition assignment, and the attachment/config came from the DSM image.
-    let inserted = unsafe {
-        insert_concurrent_dsm_graph_participant(
-            attachment.parts,
-            attachment.layout,
-            config,
-            (*shared).participant_count,
-            checked_u16(worker_number, "graph worker participant index"),
-            &mut scratch,
-            EcHnswConcurrentDsmLockOps::postgres(),
-        )
-    };
+    let participant_count = shared_header_ref(shared).participant_count;
+    let inserted = insert_concurrent_dsm_graph_participant(
+        attachment.parts,
+        attachment.layout,
+        config,
+        participant_count,
+        checked_u16(worker_number, "graph worker participant index"),
+        &mut scratch,
+        EcHnswConcurrentDsmLockOps::postgres(),
+    );
 
     // SAFETY: `shared` is the initialized shared header; the spinlock protects
     // aggregate counters and the condition variable wakes the leader.
