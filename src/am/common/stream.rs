@@ -254,6 +254,19 @@ impl Drop for PgReadStreamGuard {
 }
 
 #[cfg(feature = "pg18")]
+fn read_stream_per_buffer_block_number(
+    per_buffer_data: *mut std::ffi::c_void,
+) -> Option<pg_sys::BlockNumber> {
+    if per_buffer_data.is_null() {
+        None
+    } else {
+        // SAFETY: registered read-stream callbacks store one BlockNumber in
+        // per-buffer data when PostgreSQL supplies the slot.
+        Some(unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() })
+    }
+}
+
+#[cfg(feature = "pg18")]
 fn visit_read_stream<F>(
     stream: &PgReadStreamGuard,
     context: &str,
@@ -282,13 +295,8 @@ where
             )
         }
         .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
-        let block_number = if per_buffer_data.is_null() {
-            buffer.block_number()
-        } else {
-            // SAFETY: the registered callback stores one BlockNumber in
-            // per-buffer data when PostgreSQL supplies the slot.
-            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-        };
+        let block_number = read_stream_per_buffer_block_number(per_buffer_data)
+            .unwrap_or_else(|| buffer.block_number());
         visitor(&buffer, block_number)?;
     }
     Ok(())
@@ -318,13 +326,7 @@ fn next_scan_owned_read_stream_buffer(
     if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
         return None;
     }
-    let block_number = if per_buffer_data.is_null() {
-        None
-    } else {
-        // SAFETY: registered read-stream callbacks store one BlockNumber in
-        // per-buffer data when PostgreSQL supplies the slot.
-        Some(unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() })
-    };
+    let block_number = read_stream_per_buffer_block_number(per_buffer_data);
     Some(ScanOwnedReadStreamBuffer {
         buffer,
         block_number,
