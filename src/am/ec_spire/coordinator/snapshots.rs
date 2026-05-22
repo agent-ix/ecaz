@@ -18,6 +18,16 @@ impl SpireLiveIndexRelation {
         unsafe { page::read_root_control_page(self.relation) }
     }
 
+    pub(in crate::am::ec_spire) fn object_tuple(
+        self,
+        tid: crate::storage::page::ItemPointer,
+    ) -> Result<Vec<u8>, String> {
+        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        // relation. The page helper pins the buffer and returns owned bytes
+        // before the relation view can be reused by callers.
+        unsafe { page::read_object_tuple(self.relation, tid) }
+    }
+
     fn relation_options(self) -> options::EcSpireOptions {
         options::relation_options(self.relation)
     }

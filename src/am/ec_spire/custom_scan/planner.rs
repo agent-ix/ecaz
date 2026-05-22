@@ -89,12 +89,7 @@ fn load_custom_scan_placement_directory(
     // heavier fanout loader used by executor paths, which also decodes epoch
     // and object manifests; executor paths remain responsible for full
     // identity and manifest validation before result-stream merge.
-    // SAFETY: caller supplies a live SPIRE index relation and root_control
-    // locates the placement directory tuple in that relation.
-    let index_relation = index.as_ptr();
-    let placement_bytes = unsafe {
-        super::page::read_object_tuple(index_relation, root_control.placement_directory_tid)
-    }?;
+    let placement_bytes = index.object_tuple(root_control.placement_directory_tid)?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
     if placement_directory.epoch != root_control.active_epoch {
         return Err(format!(
