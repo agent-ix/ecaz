@@ -379,20 +379,17 @@ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -
 
     let am_oid = crate::storage::relation::relation_am_oid_handle(index_relation);
     // SAFETY: `am_oid` comes from the relation descriptor; PostgreSQL returns a
-    // palloc-owned C string or null when no AM name exists.
-    let am_name_ptr = unsafe { pg_sys::get_am_name(am_oid) };
-    if am_name_ptr.is_null() {
-        return None;
+    // palloc-owned C string or null when no AM name exists. When present, the
+    // string is copied immediately and then released with `pfree`.
+    unsafe {
+        let am_name_ptr = pg_sys::get_am_name(am_oid);
+        if am_name_ptr.is_null() {
+            return None;
+        }
+        let name = CStr::from_ptr(am_name_ptr).to_string_lossy().into_owned();
+        pg_sys::pfree(am_name_ptr.cast());
+        Some(name)
     }
-
-    // SAFETY: `get_am_name` returned a non-null NUL-terminated C string.
-    let name = unsafe { CStr::from_ptr(am_name_ptr) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: PostgreSQL allocated the string returned by `get_am_name`, so it
-    // must be released with `pfree` after copying.
-    unsafe { pg_sys::pfree(am_name_ptr.cast()) };
-    Some(name)
 }
 
 #[cfg(feature = "pg18")]
