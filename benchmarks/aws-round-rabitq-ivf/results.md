@@ -258,6 +258,65 @@ out of scope for this round.
 At lower recall bands we're closer to parity (3.02 ms @ 0.920 vs
 vchord's 2.7 ms; we just operate at lower recall there).
 
+## bits=1 RaBitQ + heap_f32 rerank — closes the structural gap
+
+User direction: "1-bit plus re-rank starts to look a lot more
+interesting then." Landed as commits `466d436e3` (quant_bits
+reloption + MetadataPage v2), `0f47224f6` (NEON sign-popcount
+kernel), `47e178772` (build-path bits threading), `dc7cfba50`
+(scan-side store_scan_prepared_query threading).
+
+Measured on the same m8g.xlarge, real DBpedia 50k, k=10,
+prewarm-verified buffer pool, 1000 iterations:
+
+### bits=1 no-rerank (raw recall ceiling)
+
+| nprobe | p50 ms | recall@10 |
+| --- | --- | --- |
+| 8 | 1.28 | 0.704 |
+| 64 | 5.95 | 0.771 |
+| 128 | 11.3 | 0.775 |
+
+1-bit codes top out around recall 0.77 — exactly why you must pair
+them with rerank. Kernel speedup vs bits=4 no-rerank is ~1.3× (not
+the theoretical ~4×); the per-byte LUT lookup compute is the
+bottleneck, not memory traffic. A `vqtbl1q_u8` / SVE2 `tbl` path
+would close that gap but is follow-up work.
+
+### bits=1 + heap_f32 rerank, width=200
+
+| nprobe | p50 ms | recall@10 | vs bits=4 same recall |
+| --- | --- | --- | --- |
+| 8 | 2.33 | 0.855 | 2.13 ms (~10% worse — rerank dominates) |
+| 16 | 2.93 | 0.920 | 3.02 ms (matched within noise) |
+| 32 | 4.24 | 0.964 | 4.86 ms (13% faster) |
+| 64 | **6.68** | **0.988** | 8.37 ms (**20% faster**) |
+| 128 | **11.5** | **0.9991** | not measured at bits=4 |
+
+The bits=1 + rerank path **matches the recall curve of bits=4 +
+rerank exactly** (post-rerank ordering is by f32 IP regardless of
+the RaBitQ code width), and at the high-recall operating points
+the savings from the cheaper kernel outweigh any incremental rerank
+cost.
+
+### Gap to vchord (50k, k=10)
+
+| System | p50 ms @ matched recall | recall@10 |
+| --- | --- | --- |
+| vchord RaBitQ-on-IVF default | 2.7 | ~0.99+ |
+| ec_ivf bits=1 + rerank w=200 nprobe=64 | **6.68** | **0.988** |
+| ec_ivf bits=1 + rerank w=200 nprobe=128 | 11.5 | 0.9991 |
+
+**Gap closed from 3.1× to ~2.5×.** Remaining residual is likely
+the rerank pipeline (per-candidate heap fetch + toast detoast on
+`real[]` source column). Two non-architectural avenues to keep
+exploring:
+
+1. Vectorize the bits=1 nibble/sign unpack with `vqtbl1q_u8` /
+   SVE2 tbl — currently ~1.3× kernel speedup leaves ~3× on the table.
+2. Batch heap rerank: block-sort candidates + pin reuse (reviewer
+   #4). Would attack the rerank-tail cost directly.
+
 ## Reviewer feedback addressed
 
 Round 2 of reviewer feedback prompted the following follow-up commits:
